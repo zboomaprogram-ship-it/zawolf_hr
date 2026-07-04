@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "469569205485",
+    "project_id": "zawolf-hr-system-60317",
+    "storage_bucket": "zawolf-hr-system-60317.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:469569205485:android:2cb0cfe3c4b67a203d48e4",
+        "android_client_info": {
+          "package_name": "com.example.zawolf_hr"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAKdpWuQahVQ2WB8HUtTnbgJQS4Hvkt5vo"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:469569205485:android:8ada173dd2f2db373d48e4",
+        "android_client_info": {
+          "package_name": "com.zbooma.zawolfhr"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAKdpWuQahVQ2WB8HUtTnbgJQS4Hvkt5vo"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

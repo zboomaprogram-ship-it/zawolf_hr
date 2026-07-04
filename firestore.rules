@@ -1,0 +1,284 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    function isAuth() { return request.auth != null; }
+    function uid() { return request.auth.uid; }
+    
+    function userDocExists() {
+      return exists(/databases/$(database)/documents/users/$(uid()));
+    }
+    
+    function userDoc() {
+      return get(/databases/$(database)/documents/users/$(uid())).data;
+    }
+    
+    function role() { 
+      return userDocExists() ? userDoc().get('role', '') : ''; 
+    }
+    
+    function isActive() { 
+      return (request.auth.token.email in ['hr@zawolf.com', 'ceo@zawolf.com']) ||
+             (userDocExists() ? userDoc().get('isActive', true) == true : false); 
+    }
+    
+    function isSuperAdmin() {
+      return request.auth.token.email == 'ceo@zawolf.com' || role() in ['super_admin', 'superAdmin', 'admin'];
+    }
+    function isManager() {
+      return role() in ['manager', 'hr_admin', 'hr'] || isSuperAdmin();
+    }
+    function canReviewSuggestions() {
+      return role() in ['manager', 'hr_admin', 'hr'] || isSuperAdmin();
+    }
+    function isHR() {
+      return request.auth.token.email in ['hr@zawolf.com', 'ceo@zawolf.com'] || role() in ['hr_admin', 'hr'] || isSuperAdmin();
+    }
+    function isOwner(docUserId) { return uid() == docUserId; }
+    function isMyManager(managerId) { return uid() == managerId; }
+    function recipientDoc(userId) {
+      return get(/databases/$(database)/documents/users/$(userId)).data;
+    }
+    function validRequestManagerId() {
+      return request.resource.data.get('managerId', '') == userDoc().get('managerId', '');
+    }
+    function isValidSelfCreate() {
+      return request.resource.data.userId == uid()
+        && request.resource.data.employeeId == userDoc().employeeId
+        && request.resource.data.employeeName == userDoc().displayName
+        && request.resource.data.locationId == userDoc().locationId
+        && validRequestManagerId();
+    }
+    function isReviewUpdate() {
+      return request.resource.data.diff(resource.data).affectedKeys()
+        .hasOnly([
+          'status', 'reviewedBy', 'reviewedAt', 'reviewerComment', 'isRead',
+          'hrReviewedBy', 'hrReviewedAt', 'hrReviewerComment',
+          'managerReviewedBy', 'managerReviewedAt', 'managerReviewerComment'
+        ])
+        && request.resource.data.reviewedBy == uid()
+        && request.resource.data.status in [
+          'pending_manager', 'approved', 'rejected'
+        ];
+    }
+    
+    // ── COMPANY ──────────────────────────────────────────
+    match /companies/{companyId} {
+      allow read: if isAuth() && isActive();
+      allow write: if isAuth() && isActive() && isHR();
+    }
+    
+    // ── LOCATIONS ────────────────────────────────────────
+    match /locations/{locationId} {
+      allow read: if isAuth() && isActive();
+      allow write: if isAuth() && isActive() && isHR();
+    }
+
+    // ── COMPANY MANUAL DAYS OFF ─────────────────────────
+    match /companyDayOffs/{dayOffId} {
+      allow read: if isAuth() && isActive();
+      allow create, update: if isAuth() && isActive() && isHR()
+        && request.resource.data.keys().hasOnly([
+          'date', 'title', 'isActive', 'createdBy', 'createdAt'
+        ]);
+      allow delete: if isAuth() && isActive() && isHR();
+    }
+    
+    // ── USERS ────────────────────────────────────────────
+    match /users/{userId} {
+      allow read: if isAuth() && isActive() && (isOwner(userId) || isManager());
+      
+      allow update: if isAuth() && isActive() && (
+        // Owner updates
+        (isOwner(userId) && request.resource.data.diff(resource.data)
+             .affectedKeys().hasOnly([
+               'passwordChangedAt', 'photoURL', 'notificationTokens',
+               'permissionBalance', 'updatedAt', 'unreadNotifications'
+             ])) ||
+        // Manager updates to direct reports
+        (isManager() && resource.data.get('managerId', '') == uid() &&
+         request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+           'permissionBalance', 'leaveBalance', 'updatedAt', 'unreadNotifications'
+         ])) ||
+        // Anyone updating unreadNotifications (when sending a notification)
+        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['unreadNotifications']))
+      );
+      
+      // HR can do full write
+      allow write: if isAuth() && isActive() && isHR();
+    }
+    
+    // ── ATTENDANCE ───────────────────────────────────────
+    match /attendance/{attendanceId} {
+      allow read: if isAuth() && isActive() && (
+        isOwner(resource.data.userId) ||
+        isMyManager(resource.data.managerId) ||
+        isHR()
+      );
+      allow create: if isAuth() && isActive()
+        && isValidSelfCreate()
+        && request.resource.data.status in [
+          'present', 'late', 'late_quarter_day', 'late_half_day',
+          'late_full_day'
+        ]
+        && request.resource.data.isWithinGeofence == true
+        && request.resource.data.keys().hasOnly([
+          'userId', 'employeeId', 'employeeName', 'locationId', 'locationName',
+          'managerId', 'date', 'checkInTime', 'checkInLocation',
+          'localCheckInTime', 'isWithinGeofence', 'isLate', 'lateMinutes',
+          'salaryDeductionFraction', 'salaryDeductionAmount',
+          'salaryCurrency', 'salaryDeductionCode', 'salaryDeductionLabel',
+          'salaryDeductionApprovalStatus',
+          'deviceId', 'deviceLabel', 'biometricVerified', 'status'
+        ]);
+      allow update: if isAuth() && isActive() && (
+        (isOwner(resource.data.userId) &&
+         request.resource.data.diff(resource.data)
+           .affectedKeys().hasOnly([
+             'checkOutTime','localCheckOutTime','checkOutLocation',
+             'totalWorkHours', 'checkOutDeviceId', 'checkOutDeviceLabel',
+             'checkOutBiometricVerified',
+             'salaryDeductionFraction', 'salaryDeductionAmount',
+             'salaryCurrency', 'salaryDeductionCode', 'salaryDeductionLabel',
+             'salaryDeductionApprovalStatus', 'salaryDeductionDetectedAt'
+           ])) ||
+        (isHR() && request.resource.data.diff(resource.data)
+           .affectedKeys().hasOnly([
+             'salaryDeductionApprovalStatus',
+             'salaryDeductionReviewedBy',
+             'salaryDeductionReviewedAt'
+           ])) ||
+        isHR()
+      );
+      allow delete: if isAuth() && isActive() && isHR();
+    }
+    
+    // ── LEAVES ───────────────────────────────────────────
+    match /leaves/{leaveId} {
+      allow read: if isAuth() && isActive() && (
+        isOwner(resource.data.userId) ||
+        isMyManager(resource.data.managerId) ||
+        isHR()
+      );
+      allow create: if isAuth() && isActive()
+        && isValidSelfCreate()
+        && request.resource.data.status == 'pending'
+        && request.resource.data.leaveType in ['annual', 'sick', 'casual']
+        && request.resource.data.numberOfDays > 0
+        && request.resource.data.keys().hasOnly([
+          'userId', 'employeeId', 'employeeName', 'department', 'locationId',
+          'managerId', 'leaveType', 'startDate', 'endDate', 'numberOfDays',
+          'reason', 'attachmentUrl', 'status', 'submittedAt', 'isRead'
+        ]);
+      allow update: if isAuth() && isActive() && (
+        (isOwner(resource.data.userId) && resource.data.status == 'pending'
+         && request.resource.data.status == 'cancelled'
+         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])) ||
+        (isMyManager(resource.data.managerId) && isReviewUpdate()) ||
+        isHR()
+      );
+      allow delete: if isAuth() && isActive() && isHR();
+    }
+    
+    // ── PERMISSIONS (إذن) ─────────────────────────────────
+    match /permissions/{permissionId} {
+      allow read: if isAuth() && isActive() && (
+        isOwner(resource.data.userId) ||
+        isMyManager(resource.data.managerId) ||
+        isHR()
+      );
+      allow create: if isAuth() && isActive()
+        && isValidSelfCreate()
+        && request.resource.data.status in ['pending_hr', 'invalid_late']
+        && request.resource.data.permissionType in ['early_leave', 'late_arrival']
+        && request.resource.data.durationMinutes > 0
+        && request.resource.data.keys().hasOnly([
+          'userId', 'employeeId', 'employeeName', 'department', 'locationId',
+          'managerId', 'permissionType', 'requestDate', 'expectedTime',
+          'durationMinutes', 'reason', 'status', 'isExceedingQuota',
+          'isSubmittedAfterWorkStart', 'salaryDeductionFraction',
+          'salaryDeductionAmount', 'salaryCurrency', 'salaryDeductionCode',
+          'salaryDeductionLabel', 'monthKey', 'submittedAt', 'isRead'
+        ]);
+      allow update: if isAuth() && isActive() && (
+        (isOwner(resource.data.userId) &&
+         resource.data.status in ['pending_hr', 'pending_manager']
+         && request.resource.data.status == 'cancelled'
+         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])) ||
+        (isMyManager(resource.data.managerId) && isReviewUpdate()) ||
+        isHR()
+      );
+      allow delete: if isAuth() && isActive() && isHR();
+    }
+
+    // ── SUGGESTIONS (مقترحات) ───────────────────────────
+    match /suggestions/{suggestionId} {
+      allow read: if isAuth() && isActive() && (
+        isOwner(resource.data.userId) || canReviewSuggestions()
+      );
+      allow create: if isAuth() && isActive()
+        && request.resource.data.userId == uid()
+        && request.resource.data.employeeId == userDoc().employeeId
+        && request.resource.data.employeeName == userDoc().displayName
+        && request.resource.data.department == userDoc().department
+        && request.resource.data.status == 'new'
+        && request.resource.data.title is string
+        && request.resource.data.title.size() >= 3
+        && request.resource.data.body is string
+        && request.resource.data.body.size() >= 10
+        && request.resource.data.keys().hasOnly([
+          'userId', 'employeeId', 'employeeName', 'department',
+          'title', 'body', 'status', 'submittedAt'
+        ]);
+      allow update: if isAuth() && isActive() && canReviewSuggestions()
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['status', 'reviewedBy', 'reviewedAt'])
+        && request.resource.data.status == 'reviewed'
+        && request.resource.data.reviewedBy == uid();
+      allow delete: if isAuth() && isActive() && isSuperAdmin();
+    }
+    
+    // ── PERFORMANCE ───────────────────────────────────────
+    match /performance/{performanceId} {
+      allow read: if isAuth() && isActive() && (
+        isOwner(resource.data.userId) ||
+        isMyManager(resource.data.managerId) ||
+        isHR()
+      );
+      // Only managers/HR can create or update performance reviews
+      allow write: if isAuth() && isActive() && isManager()
+        && (isHR() || request.resource.data.managerId == uid());
+    }
+    
+    // ── NOTIFICATIONS ─────────────────────────────────────
+    match /notifications/{userId}/items/{notificationId} {
+      // Only the recipient can read their own notifications
+      allow read: if isAuth() && isActive() && uid() == userId;
+      // Managers can notify direct reports; HR can notify anyone; anyone can notify their manager.
+      allow create: if isAuth() && isActive() && (
+        isHR() ||
+        (isManager() && recipientDoc(userId).get('managerId', '') == uid()) ||
+        uid() == userId ||
+        userDoc().get('managerId', '') == userId ||
+        (request.resource.data.type == 'suggestion_new' &&
+         recipientDoc(userId).role in ['manager', 'super_admin', 'superAdmin', 'admin'])
+      );
+      // Only recipient can mark as read
+      allow update: if isAuth() && isActive() && uid() == userId
+          && request.resource.data.diff(resource.data)
+             .affectedKeys().hasOnly(['isRead']);
+      allow delete: if isAuth() && isActive() && uid() == userId;
+    }
+
+    match /announcements/{announcementId} {
+      allow read: if isAuth() && isActive();
+      allow create, update, delete: if isAuth() && isActive() && isHR();
+    }
+
+    match /auditLogs/{auditId} {
+      allow read: if isAuth() && isActive() && isHR();
+      allow create: if isAuth() && isActive() && request.resource.data.actorId == uid();
+      allow update, delete: if false;
+    }
+  }
+}

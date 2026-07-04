@@ -1,0 +1,73 @@
+import 'package:flutter/material.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:provider/provider.dart';
+import 'theme/theme.dart';
+import 'services/auth_service.dart';
+import 'navigation/router.dart';
+
+import 'services/notification_service.dart';
+import 'services/background_service.dart';
+import 'services/daily_reminder_service.dart';
+import 'package:intl/date_symbol_data_local.dart';
+import 'package:onesignal_flutter/onesignal_flutter.dart';
+
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await initializeDateFormatting('ar', null);
+
+  // 1. Initialize Firebase Core
+  // In a normal build, this will consume GoogleService JSONs from native platforms automatically.
+  try {
+    await Firebase.initializeApp();
+
+    // 2. Enable Firestore Offline Persistence
+    FirebaseFirestore.instance.settings = const Settings(
+      persistenceEnabled: true,
+      cacheSizeBytes: Settings.CACHE_SIZE_UNLIMITED,
+    );
+  } catch (e) {
+    debugPrint('Firebase initialization failed: $e');
+  }
+
+  // 3. Initialize Notification and Background Task Dispatcher
+  try {
+    await NotificationService.instance.initialize();
+    await DailyReminderService.instance.initializeTimezones();
+    await BackgroundService.initialize();
+    await BackgroundService.registerPeriodicTask();
+  } catch (e) {
+    debugPrint('Notification/Background service setup failed: $e');
+  }
+
+  // 4. Initialize OneSignal
+  OneSignal.Debug.setLogLevel(OSLogLevel.verbose);
+  OneSignal.initialize("b1f85662-d1d6-4629-969c-ed843350baed");
+  OneSignal.Notifications.requestPermission(true);
+
+  runApp(const MyApp());
+}
+
+class MyApp extends StatelessWidget {
+  const MyApp({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return MultiProvider(
+      providers: [
+        ChangeNotifierProvider<AuthService>(create: (_) => AuthService()),
+      ],
+      child: Builder(
+        builder: (context) {
+          final router = ZaWolfRouter.getRouter(context);
+          return MaterialApp.router(
+            title: 'Zawolf Hr',
+            debugShowCheckedModeBanner: false,
+            theme: ZaWolfTheme.darkTheme,
+            routerConfig: router,
+          );
+        },
+      ),
+    );
+  }
+}
