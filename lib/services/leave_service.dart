@@ -113,11 +113,26 @@ class LeaveService {
     if (!doc.exists) throw Exception('طلب الإجازة غير موجود');
     final leave = LeaveModel.fromFirestore(doc);
 
-    await docRef.update({
+    final batch = _db.batch();
+
+    batch.update(docRef, {
       'status': 'approved',
       'reviewedBy': reviewerId,
       'reviewedAt': FieldValue.serverTimestamp(),
     });
+
+    // Deduct leave balance
+    String balanceKey = leave.leaveType;
+    if (balanceKey == 'day_off') {
+      balanceKey = 'daysOff';
+    }
+
+    final userRef = _db.collection('users').doc(leave.userId);
+    batch.update(userRef, {
+      'leaveBalance.$balanceKey': FieldValue.increment(-leave.numberOfDays),
+    });
+
+    await batch.commit();
 
     await AuditLogService.instance.record(
       actorId: reviewerId,
