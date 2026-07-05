@@ -15,14 +15,30 @@ admin.initializeApp({
 
 const db = admin.firestore();
 
+// Helper: convert Firestore Timestamp to YYYY-MM-DD string in Cairo time
+function timestampToDateStr(ts) {
+  if (!ts) return null;
+  let date;
+  if (ts.toDate) {
+    date = ts.toDate(); // Firestore Timestamp
+  } else if (ts instanceof Date) {
+    date = ts;
+  } else if (typeof ts === 'string') {
+    return ts; // Already a string
+  } else {
+    return null;
+  }
+  const options = { timeZone: 'Africa/Cairo', year: 'numeric', month: '2-digit', day: '2-digit' };
+  return new Intl.DateTimeFormat('en-CA', options).format(date);
+}
+
 async function runDailyTasks() {
   console.log('Starting daily tasks...');
   
   // Get date in Egypt time (GMT+3)
   const options = { timeZone: 'Africa/Cairo', year: 'numeric', month: '2-digit', day: '2-digit' };
-  const formatter = new Intl.DateTimeFormat('en-CA', options); // en-CA gives YYYY-MM-DD
+  const formatter = new Intl.DateTimeFormat('en-CA', options);
   
-  // Create a Date object offset to Cairo time for getting the correct weekday
   const now = new Date();
   const todayStr = formatter.format(now);
   console.log(`Processing for date: ${todayStr}`);
@@ -47,11 +63,14 @@ async function runDailyTasks() {
   }
 
   // Fetch all approved leaves to check who is on vacation today
+  // CRITICAL: startDate/endDate are stored as Firestore Timestamps, not strings!
   const leavesSnap = await db.collection('leaves').where('status', '==', 'approved').get();
   const activeLeavesByUserId = {};
   leavesSnap.docs.forEach(doc => {
     const leave = doc.data();
-    if (leave.startDate <= todayStr && leave.endDate >= todayStr) {
+    const startStr = timestampToDateStr(leave.startDate);
+    const endStr = timestampToDateStr(leave.endDate);
+    if (startStr && endStr && startStr <= todayStr && endStr >= todayStr) {
       activeLeavesByUserId[leave.userId] = leave;
     }
   });
@@ -91,7 +110,19 @@ async function runDailyTasks() {
   let leavesCreated = 0;
   let updatesApplied = 0;
 
-  const batch = db.batch();
+  // Firestore batches have a 500 operation limit, so we chunk
+  let batch = db.batch();
+  let batchOps = 0;
+  const BATCH_LIMIT = 450; // stay safely under 500
+
+  async function commitIfNeeded() {
+    if (batchOps >= BATCH_LIMIT) {
+      await batch.commit();
+      console.log(`Committed batch of ${batchOps} operations.`);
+      batch = db.batch();
+      batchOps = 0;
+    }
+  }
 
   for (const userDoc of usersSnap.docs) {
     const user = userDoc.data();
@@ -117,11 +148,9 @@ async function runDailyTasks() {
 
     if (!attendanceSnap.exists) {
       if (isOffDay) {
-        // They didn't check in, but it's their day off. Skip completely!
         continue;
       }
 
-      // User did not check in. Are they on leave?
       if (activeLeavesByUserId[userId]) {
         // Create on-leave record
         batch.set(attendanceRef, {
@@ -146,6 +175,7 @@ async function runDailyTasks() {
           biometricVerified: false,
           status: 'on-leave',
         });
+        batchOps++;
         leavesCreated++;
       } else {
         // Create absent record
@@ -175,6 +205,7 @@ async function runDailyTasks() {
           biometricVerified: false,
           status: 'absent',
         });
+        batchOps++;
         absentsCreated++;
 
         // Notify HR
@@ -188,9 +219,11 @@ async function runDailyTasks() {
           isRead: false,
           createdAt: admin.firestore.FieldValue.serverTimestamp(),
         });
+        batchOps++;
         batch.update(userDoc.ref, {
           unreadNotifications: admin.firestore.FieldValue.increment(1)
         });
+        batchOps++;
       }
     } else {
       const log = attendanceSnap.data();
@@ -200,7 +233,6 @@ async function runDailyTasks() {
       if (log.isLate && log.salaryDeductionFraction > 0 && log.salaryDeductionCode !== 'absent') {
         const perm = approvedPermsByUserId[userId]?.['late_arrival'];
         if (perm) {
-           // Forgive the late deduction
            updates.isLate = false;
            updates.salaryDeductionFraction = perm.salaryDeductionFraction || 0;
            updates.salaryDeductionAmount = perm.salaryDeductionAmount || 0;
@@ -213,8 +245,6 @@ async function runDailyTasks() {
 
       // 2. Check if they forgot to checkout
       if (log.checkInTime && !log.checkOutTime) {
-        // Did they already have a deduction? If they had a forgiven late arrival, we might need to overwrite it.
-        // Or if they didn't, we apply missed checkout.
         const currentFraction = updates.salaryDeductionFraction !== undefined ? updates.salaryDeductionFraction : log.salaryDeductionFraction;
         
         if (currentFraction < 0.25) {
@@ -238,7 +268,6 @@ async function runDailyTasks() {
             salaryDeductionDetectedAt: admin.firestore.FieldValue.serverTimestamp(),
           });
 
-          // Notify HR
           const notifRef = db.collection('notifications').doc(userId).collection('items').doc();
           batch.set(notifRef, {
             notificationId: notifRef.id,
@@ -249,11 +278,12 @@ async function runDailyTasks() {
             isRead: false,
             createdAt: admin.firestore.FieldValue.serverTimestamp(),
           });
+          batchOps++;
           batch.update(userDoc.ref, {
             unreadNotifications: admin.firestore.FieldValue.increment(1)
           });
+          batchOps++;
         } else {
-          // They already have a deduction (e.g., late half day), just close the shift without extra deduction
           Object.assign(updates, {
             checkOutTime: admin.firestore.FieldValue.serverTimestamp(),
             checkOutLocation: log.checkInLocation,
@@ -278,17 +308,20 @@ async function runDailyTasks() {
 
       if (Object.keys(updates).length > 0) {
         batch.update(attendanceRef, updates);
+        batchOps++;
         updatesApplied++;
       }
     }
+
+    await commitIfNeeded();
   }
 
-  if (absentsCreated > 0 || leavesCreated > 0 || updatesApplied > 0) {
+  if (batchOps > 0) {
     await batch.commit();
-    console.log(`Successfully committed! Created ${absentsCreated} absences, ${leavesCreated} leaves, and updated ${updatesApplied} shifts.`);
-  } else {
-    console.log('No action required. All employees checked in and out properly with no unhandled penalties.');
+    console.log(`Final batch committed with ${batchOps} operations.`);
   }
+
+  console.log(`Done! Created ${absentsCreated} absences, ${leavesCreated} on-leave records, updated ${updatesApplied} shifts.`);
 }
 
 runDailyTasks()
