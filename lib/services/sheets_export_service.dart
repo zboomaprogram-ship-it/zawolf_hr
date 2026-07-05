@@ -246,6 +246,8 @@ class SheetsExportService {
         return 'إجازة مرضية';
       case 'casual':
         return 'إجازة عارضة';
+      case 'day_off':
+        return 'يوم إجازة';
       default:
         return type;
     }

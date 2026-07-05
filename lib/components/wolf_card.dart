@@ -31,15 +31,23 @@ class WolfCard extends StatelessWidget {
       margin: margin,
       padding: padding,
       decoration: BoxDecoration(
-        color: ZaWolfColors.surface01,
-        borderRadius: BorderRadius.circular(16),
+        color: ZaWolfColors.surface01.withValues(alpha: 0.92),
+        borderRadius: BorderRadius.circular(8),
         border: Border.all(
           color: hasBorderGlow
-              ? ZaWolfColors.primaryCyan.withValues(alpha: 0.3)
-              : ZaWolfColors.surface02,
-          width: hasBorderGlow ? 1.5 : 1.0,
+              ? ZaWolfColors.primaryCyan.withValues(alpha: 0.38)
+              : ZaWolfColors.surface03,
+          width: hasBorderGlow ? 1.2 : 1.0,
         ),
-        boxShadow: hasGlow ? [ZaWolfColors.wolfGlow] : null,
+        boxShadow: hasGlow
+            ? [ZaWolfColors.wolfGlow]
+            : [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.18),
+                  blurRadius: 18,
+                  offset: const Offset(0, 10),
+                ),
+              ],
       ),
       child: child,
     );
@@ -49,7 +57,7 @@ class WolfCard extends StatelessWidget {
         color: Colors.transparent,
         child: InkWell(
           onTap: onTap,
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(8),
           child: card,
         ),
       );

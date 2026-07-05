@@ -60,10 +60,15 @@ class GeofenceService {
     }
 
     // 2. Fetch employee's assigned location from Firestore
-    final locationDoc = await _db
-        .collection('locations')
-        .doc(employee.locationId)
-        .get();
+    final locationRef = _db.collection('locations').doc(employee.locationId);
+    DocumentSnapshot<Map<String, dynamic>> locationDoc;
+    try {
+      locationDoc = await locationRef.get();
+    } catch (_) {
+      locationDoc = await locationRef.get(
+        const GetOptions(source: Source.cache),
+      );
+    }
 
     if (!locationDoc.exists) {
       throw Exception('لم يتم العثور على الفرع المسند للموظف.');

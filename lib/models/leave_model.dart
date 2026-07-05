@@ -8,7 +8,7 @@ class LeaveModel {
   final String department;
   final String locationId;
   final String managerId;
-  final String leaveType; // 'annual' | 'sick' | 'casual'
+  final String leaveType; // 'annual' | 'sick' | 'casual' | 'day_off'
   final DateTime startDate;
   final DateTime endDate;
   final int numberOfDays;

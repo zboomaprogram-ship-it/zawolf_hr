@@ -130,21 +130,60 @@ class _ManagerDashboardScreenState extends State<ManagerDashboardScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                // Welcome Card
-                Text(
-                  'مرحباً، ${manager.displayName}',
-                  style: theme.textTheme.headlineMedium!.copyWith(
-                    color: Colors.white,
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: ZaWolfColors.surface01,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: ZaWolfColors.surface03),
                   ),
-                  textDirection: TextDirection.rtl,
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  'إدارة قسم ${manager.department} · ${manager.locationName}',
-                  style: theme.textTheme.bodyMedium!.copyWith(
-                    color: ZaWolfColors.textSecondary,
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 46,
+                        height: 46,
+                        decoration: BoxDecoration(
+                          color: ZaWolfColors.primaryCyan.withValues(
+                            alpha: 0.10,
+                          ),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: ZaWolfColors.primaryCyan.withValues(
+                              alpha: 0.24,
+                            ),
+                          ),
+                        ),
+                        child: const Icon(
+                          Icons.manage_accounts,
+                          color: ZaWolfColors.primaryCyan,
+                        ),
+                      ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            Text(
+                              'مرحباً، ${manager.displayName}',
+                              style: theme.textTheme.headlineSmall!.copyWith(
+                                color: Colors.white,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              textDirection: TextDirection.rtl,
+                            ),
+                            Text(
+                              'إدارة قسم ${manager.department} · ${manager.locationName}',
+                              style: theme.textTheme.bodyMedium,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              textDirection: TextDirection.rtl,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                   ),
-                  textDirection: TextDirection.rtl,
                 ),
                 const SizedBox(height: 20),
 
@@ -196,12 +235,12 @@ class _ManagerDashboardScreenState extends State<ManagerDashboardScreen> {
                     padding: const EdgeInsets.only(bottom: 20.0),
                     child: InkWell(
                       onTap: () => context.go('/manager/requests'),
-                      borderRadius: BorderRadius.circular(12),
+                      borderRadius: BorderRadius.circular(8),
                       child: Ink(
                         padding: const EdgeInsets.all(16),
                         decoration: BoxDecoration(
                           color: ZaWolfColors.warning.withValues(alpha: 0.1),
-                          borderRadius: BorderRadius.circular(12),
+                          borderRadius: BorderRadius.circular(8),
                           border: Border.all(
                             color: ZaWolfColors.warning.withValues(alpha: 0.4),
                           ),
@@ -358,7 +397,7 @@ class _ManagerDashboardScreenState extends State<ManagerDashboardScreen> {
                                 ),
                                 decoration: BoxDecoration(
                                   color: statusColor.withValues(alpha: 0.15),
-                                  borderRadius: BorderRadius.circular(12),
+                                  borderRadius: BorderRadius.circular(8),
                                 ),
                                 child: Text(
                                   statusText,
@@ -387,7 +426,7 @@ class _ManagerDashboardScreenState extends State<ManagerDashboardScreen> {
                                   ),
                                   const SizedBox(width: 12),
                                   CircleAvatar(
-                                    backgroundColor: ZaWolfColors.surface02,
+                                    backgroundColor: ZaWolfColors.surface03,
                                     child: Text(
                                       name.substring(0, 1),
                                       style: const TextStyle(
@@ -421,8 +460,8 @@ class _ManagerDashboardScreenState extends State<ManagerDashboardScreen> {
       padding: const EdgeInsets.symmetric(vertical: 12),
       decoration: BoxDecoration(
         color: ZaWolfColors.surface01,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: ZaWolfColors.surface02),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: ZaWolfColors.surface03),
       ),
       child: Column(
         children: [

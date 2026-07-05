@@ -66,8 +66,8 @@ class _WolfInputFieldState extends State<WolfInputField> {
               child: Text(
                 widget.labelText,
                 style: theme.textTheme.bodyMedium!.copyWith(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w500,
+                  color: ZaWolfColors.textSecondary,
+                  fontWeight: FontWeight.w600,
                 ),
                 overflow: TextOverflow.ellipsis,
               ),
@@ -80,7 +80,7 @@ class _WolfInputFieldState extends State<WolfInputField> {
                   style: theme.textTheme.bodySmall!.copyWith(
                     color: ZaWolfColors.textMuted,
                     fontSize: 10,
-                    fontWeight: FontWeight.bold,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
               ),
@@ -95,13 +95,13 @@ class _WolfInputFieldState extends State<WolfInputField> {
           },
           child: Container(
             decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(8),
               boxShadow: _isFocused
                   ? [
                       BoxShadow(
-                        color: ZaWolfColors.primaryCyan.withValues(alpha: 0.15),
-                        blurRadius: 8,
-                        offset: const Offset(0, 0),
+                        color: ZaWolfColors.primaryCyan.withValues(alpha: 0.12),
+                        blurRadius: 14,
+                        offset: const Offset(0, 8),
                       ),
                     ]
                   : null,

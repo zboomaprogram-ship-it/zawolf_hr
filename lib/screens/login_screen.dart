@@ -88,219 +88,192 @@ class _LoginScreenState extends State<LoginScreen> {
     final theme = Theme.of(context);
 
     return Scaffold(
-      body: Stack(
-        children: [
-          // Cybertech background grid simulation
-          Positioned.fill(
-            child: Opacity(
-              opacity: 0.05,
-              child: Image.asset(
-                'assets/images/wolf_head_geometric.png',
-                fit: BoxFit.cover,
-              ),
+      body: SafeArea(
+        child: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.symmetric(
+              horizontal: 24.0,
+              vertical: 18.0,
             ),
-          ),
-          SafeArea(
-            child: Center(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 24.0,
-                  vertical: 16.0,
-                ),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    // Pulsing Logo
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 430),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Image.asset(
+                    'assets/images/wolf_head_geometric.png',
+                    width: 78,
+                    height: 78,
+                  ),
+                  const SizedBox(height: 28),
+                  Text(
+                    'هل أنت مستعد لقيادة النظام؟',
+                    style: theme.textTheme.headlineMedium!.copyWith(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w700,
+                    ),
+                    textAlign: TextAlign.center,
+                    textDirection: TextDirection.rtl,
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'بوابة حضور وموارد بشرية مصممة للفرق التي تعمل بدقة.',
+                    style: theme.textTheme.bodyMedium!.copyWith(
+                      color: ZaWolfColors.textSecondary,
+                    ),
+                    textAlign: TextAlign.center,
+                    textDirection: TextDirection.rtl,
+                  ),
+                  const SizedBox(height: 32),
+
+                  if (_errorMessage != null) ...[
                     Container(
-                      width: 100,
-                      height: 100,
-                      decoration: const BoxDecoration(
-                        shape: BoxShape.circle,
-                        boxShadow: [
-                          BoxShadow(
-                            color: ZaWolfColors.primaryCyan,
-                            blurRadius: 15,
-                            spreadRadius: 1,
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: ZaWolfColors.error.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: ZaWolfColors.error.withValues(alpha: 0.45),
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(
+                            Icons.error_outline,
+                            color: ZaWolfColors.error,
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              _errorMessage!,
+                              style: theme.textTheme.bodyMedium!.copyWith(
+                                color: ZaWolfColors.error,
+                              ),
+                              textDirection: TextDirection.rtl,
+                            ),
                           ),
                         ],
                       ),
-                      child: ClipOval(
-                        child: Image.asset(
-                          'assets/images/wolf_head_geometric.png',
-                          fit: BoxFit.cover,
-                        ),
-                      ),
                     ),
-                    const SizedBox(height: 24),
-                    Text(
-                      'مرحباً بعودتك',
-                      style: theme.textTheme.displaySmall!.copyWith(
-                        color: Colors.white,
-                        fontFamily: 'Rajdhani',
-                        fontWeight: FontWeight.bold,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                    Text(
-                      'Welcome Back',
-                      style: theme.textTheme.bodyMedium!.copyWith(
-                        color: ZaWolfColors.textSecondary,
-                        fontSize: 12,
-                        letterSpacing: 1.0,
-                        fontWeight: FontWeight.w600,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 36),
+                    const SizedBox(height: 16),
+                  ],
 
-                    // Error message alert
-                    if (_errorMessage != null) ...[
-                      Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: ZaWolfColors.error.withValues(alpha: 0.15),
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(
-                            color: ZaWolfColors.error.withValues(alpha: 0.5),
+                  Container(
+                    padding: const EdgeInsets.all(20),
+                    decoration: BoxDecoration(
+                      color: ZaWolfColors.surface01,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: ZaWolfColors.surface03),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.26),
+                          blurRadius: 28,
+                          offset: const Offset(0, 18),
+                        ),
+                      ],
+                    ),
+                    child: Form(
+                      key: _formKey,
+                      child: Column(
+                        children: [
+                          WolfInputField(
+                            controller: _emailController,
+                            labelText: 'البريد الإلكتروني',
+                            hintText: 'user@zawolf.com',
+                            prefixIcon: Icons.alternate_email,
+                            keyboardType: TextInputType.emailAddress,
+                            textDirection: TextDirection.ltr,
+                            validator: (val) {
+                              if (val == null || val.isEmpty) {
+                                return 'يرجى إدخال البريد الإلكتروني';
+                              }
+                              return null;
+                            },
                           ),
-                        ),
-                        child: Row(
-                          children: [
-                            const Icon(
-                              Icons.error_outline,
-                              color: ZaWolfColors.error,
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Text(
-                                _errorMessage!,
-                                style: theme.textTheme.bodyMedium!.copyWith(
-                                  color: ZaWolfColors.error,
-                                ),
-                                textDirection: TextDirection.rtl,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                    ],
+                          const SizedBox(height: 18),
 
-                    // Login Form Panel
-                    Container(
-                      padding: const EdgeInsets.all(24),
-                      decoration: BoxDecoration(
-                        color: ZaWolfColors.surface01,
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: ZaWolfColors.surface02),
-                      ),
-                      child: Form(
-                        key: _formKey,
-                        child: Column(
-                          children: [
-                            // Email/Username Input
-                            WolfInputField(
-                              controller: _emailController,
-                              labelText: 'البريد الإلكتروني / اسم المستخدم',
-                              englishLabel: 'Email / Username',
-                              hintText: 'user@zawolf.com',
-                              prefixIcon: Icons.alternate_email,
-                              keyboardType: TextInputType.emailAddress,
-                              textDirection: TextDirection.ltr,
-                              validator: (val) {
-                                if (val == null || val.isEmpty) {
-                                  return 'يرجى إدخال البريد الإلكتروني';
-                                }
-                                return null;
-                              },
-                            ),
-                            const SizedBox(height: 20),
+                          WolfInputField(
+                            controller: _passwordController,
+                            labelText: 'كلمة المرور',
+                            hintText: '••••••••',
+                            prefixIcon: Icons.lock_outline,
+                            isPassword: true,
+                            textDirection: TextDirection.ltr,
+                            validator: (val) {
+                              if (val == null || val.isEmpty) {
+                                return 'يرجى إدخال كلمة المرور';
+                              }
+                              return null;
+                            },
+                          ),
+                          const SizedBox(height: 14),
 
-                            // Password Input
-                            WolfInputField(
-                              controller: _passwordController,
-                              labelText: 'كلمة المرور',
-                              englishLabel: 'Password',
-                              hintText: '••••••••',
-                              prefixIcon: Icons.lock_outline,
-                              isPassword: true,
-                              textDirection: TextDirection.ltr,
-                              validator: (val) {
-                                if (val == null || val.isEmpty) {
-                                  return 'يرجى إدخال كلمة المرور';
-                                }
-                                return null;
-                              },
-                            ),
-                            const SizedBox(height: 16),
-
-                            // Remember Me Checkbox
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Row(
-                                  children: [
-                                    SizedBox(
-                                      width: 24,
-                                      height: 24,
-                                      child: Checkbox(
-                                        value: _rememberMe,
-                                        activeColor: ZaWolfColors.primaryCyan,
-                                        onChanged: (val) {
-                                          setState(() {
-                                            _rememberMe = val ?? false;
-                                          });
-                                        },
-                                      ),
-                                    ),
-                                    const SizedBox(width: 8),
-                                    Text(
-                                      'تذكرني / Remember Me',
-                                      style: theme.textTheme.bodySmall!
-                                          .copyWith(
-                                            color: ZaWolfColors.textSecondary,
-                                          ),
-                                    ),
-                                  ],
-                                ),
-                                // Text indicating admin reset
-                                Text(
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Flexible(
+                                child: Text(
                                   'لا تملك حساباً؟ تواصل مع الإدارة',
                                   style: theme.textTheme.bodySmall!.copyWith(
                                     color: ZaWolfColors.textMuted,
-                                    fontSize: 9,
                                   ),
+                                  overflow: TextOverflow.ellipsis,
                                 ),
-                              ],
-                            ),
-                            const SizedBox(height: 28),
+                              ),
+                              Row(
+                                children: [
+                                  Text(
+                                    'تذكرني',
+                                    style: theme.textTheme.bodySmall!.copyWith(
+                                      color: ZaWolfColors.textSecondary,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  SizedBox(
+                                    width: 22,
+                                    height: 22,
+                                    child: Checkbox(
+                                      value: _rememberMe,
+                                      activeColor: ZaWolfColors.primaryCyan,
+                                      onChanged: (val) {
+                                        setState(() {
+                                          _rememberMe = val ?? false;
+                                        });
+                                      },
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(4),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 26),
 
-                            // Submit Button
-                            WolfButton(
-                              onPressed: _handleLogin,
-                              text: 'دخول',
-                              secondaryText: 'LOGIN',
-                              loading: _isLoading,
-                            ),
-                          ],
-                        ),
+                          WolfButton(
+                            onPressed: _handleLogin,
+                            text: 'نعم، دخول النظام',
+                            secondaryText: 'SIGN IN',
+                            loading: _isLoading,
+                          ),
+                        ],
                       ),
                     ),
-                    const SizedBox(height: 24),
-                    Text(
-                      'ZaWolf HR Ecosystem © 2026',
-                      style: theme.textTheme.bodySmall!.copyWith(
-                        color: ZaWolfColors.textMuted,
-                        fontSize: 10,
-                        letterSpacing: 1.5,
-                      ),
+                  ),
+                  const SizedBox(height: 24),
+                  Text(
+                    'ZaWolf HR',
+                    style: theme.textTheme.bodySmall!.copyWith(
+                      color: ZaWolfColors.textMuted,
+                      fontWeight: FontWeight.w600,
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ),
           ),
-        ],
+        ),
       ),
     );
   }

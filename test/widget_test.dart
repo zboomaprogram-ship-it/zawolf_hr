@@ -74,6 +74,27 @@ void main() {
       expect(at(17, 0).dayFraction, 1);
     });
 
+    test('supports company-configured late deduction windows', () {
+      const config = AttendancePolicyConfig(
+        graceMinutes: 20,
+        quarterDayUntilMinutes: 35,
+        halfDayUntilMinutes: 70,
+      );
+
+      AttendanceDeduction at(int hour, int minute) {
+        return config.evaluateLateArrival(
+          arrivalTime: DateTime(2026, 7, 4, hour, minute),
+        );
+      }
+
+      expect(at(9, 20).dayFraction, 0);
+      expect(at(9, 21).dayFraction, 0.25);
+      expect(at(9, 35).dayFraction, 0.25);
+      expect(at(9, 36).dayFraction, 0.5);
+      expect(at(10, 10).dayFraction, 0.5);
+      expect(at(10, 11).dayFraction, 1);
+    });
+
     test(
       'calculates deduction amount from monthly salary over 26 work days',
       () {

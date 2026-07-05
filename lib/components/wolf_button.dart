@@ -44,7 +44,7 @@ class WolfButton extends StatelessWidget {
       case WolfButtonVariant.primary:
         decoration = BoxDecoration(
           gradient: ZaWolfColors.primaryGradient,
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(8),
           boxShadow: loading
               ? null
               : [
@@ -59,7 +59,7 @@ class WolfButton extends StatelessWidget {
       case WolfButtonVariant.teal:
         decoration = BoxDecoration(
           gradient: ZaWolfColors.permissionGradient,
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(8),
           boxShadow: loading
               ? null
               : [
@@ -74,7 +74,7 @@ class WolfButton extends StatelessWidget {
       case WolfButtonVariant.purple:
         decoration = BoxDecoration(
           gradient: ZaWolfColors.dayoffGradient,
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(8),
           boxShadow: loading
               ? null
               : [
@@ -89,7 +89,7 @@ class WolfButton extends StatelessWidget {
       case WolfButtonVariant.danger:
         decoration = BoxDecoration(
           color: ZaWolfColors.error,
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(8),
           boxShadow: loading
               ? null
               : [
@@ -104,8 +104,8 @@ class WolfButton extends StatelessWidget {
       case WolfButtonVariant.outline:
         decoration = BoxDecoration(
           color: Colors.transparent,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: ZaWolfColors.surface02, width: 1.5),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: ZaWolfColors.surface03, width: 1.2),
         );
         textStyle = textStyle.copyWith(color: ZaWolfColors.textSecondary);
         subStyle = subStyle.copyWith(color: ZaWolfColors.textMuted);
@@ -120,7 +120,7 @@ class WolfButton extends StatelessWidget {
         color: Colors.transparent,
         child: InkWell(
           onTap: loading ? null : onPressed,
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(8),
           child: Center(
             child: loading
                 ? const SizedBox(
@@ -139,8 +139,16 @@ class WolfButton extends StatelessWidget {
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               Text(text!, style: textStyle),
-                              if (secondaryText != null)
-                                Text(secondaryText!, style: subStyle),
+                              if (secondaryText != null &&
+                                  secondaryText!.isNotEmpty)
+                                Text(
+                                  secondaryText!,
+                                  style: subStyle.copyWith(
+                                    color: subStyle.color?.withValues(
+                                      alpha: 0.55,
+                                    ),
+                                  ),
+                                ),
                             ],
                           ),
                         )

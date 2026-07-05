@@ -255,16 +255,16 @@ class NavigationWrapper extends StatelessWidget {
     return Scaffold(
       body: child,
       bottomNavigationBar: Container(
-        decoration: const BoxDecoration(
+        decoration: BoxDecoration(
           color: ZaWolfColors.surface01,
-          border: Border(
-            top: BorderSide(color: ZaWolfColors.borderGlow, width: 1.5),
+          border: const Border(
+            top: BorderSide(color: ZaWolfColors.surface03, width: 1),
           ),
           boxShadow: [
             BoxShadow(
-              color: Color(0x1F00D4FF),
-              blurRadius: 15,
-              offset: Offset(0, -2),
+              color: Colors.black.withValues(alpha: 0.32),
+              blurRadius: 24,
+              offset: const Offset(0, -10),
             ),
           ],
         ),
@@ -287,10 +287,26 @@ class NavigationWrapper extends StatelessWidget {
                     ? ZaWolfColors.primaryCyan
                     : ZaWolfColors.textSecondary;
 
-                Widget iconWidget = Icon(
-                  isSelected ? item.activeIcon : item.icon,
-                  color: accentColor,
-                  size: 26,
+                Widget iconWidget = AnimatedContainer(
+                  duration: const Duration(milliseconds: 180),
+                  width: 42,
+                  height: 34,
+                  decoration: BoxDecoration(
+                    color: isSelected
+                        ? ZaWolfColors.primaryCyan.withValues(alpha: 0.12)
+                        : Colors.transparent,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: isSelected
+                          ? ZaWolfColors.primaryCyan.withValues(alpha: 0.35)
+                          : Colors.transparent,
+                    ),
+                  ),
+                  child: Icon(
+                    isSelected ? item.activeIcon : item.icon,
+                    color: accentColor,
+                    size: 22,
+                  ),
                 );
 
                 // Show badge for notifications on Profile for employee, dashboard for manager/HR
@@ -331,14 +347,14 @@ class NavigationWrapper extends StatelessWidget {
                         context.go(item.path);
                       }
                     },
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(8),
                     child: Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 6.0),
+                      padding: const EdgeInsets.symmetric(vertical: 4.0),
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           iconWidget,
-                          const SizedBox(height: 4),
+                          const SizedBox(height: 3),
                           Text(
                             item.label,
                             style: theme.textTheme.bodySmall!.copyWith(
@@ -347,23 +363,6 @@ class NavigationWrapper extends StatelessWidget {
                               fontWeight: isSelected
                                   ? FontWeight.bold
                                   : FontWeight.normal,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          Text(
-                            item.englishLabel.toUpperCase(),
-                            style: theme.textTheme.bodySmall!.copyWith(
-                              color: isSelected
-                                  ? ZaWolfColors.primaryCyan.withValues(
-                                      alpha: 0.7,
-                                    )
-                                  : ZaWolfColors.textMuted,
-                              fontSize: 7,
-                              fontWeight: isSelected
-                                  ? FontWeight.bold
-                                  : FontWeight.normal,
-                              letterSpacing: 0.5,
                             ),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
@@ -391,7 +390,7 @@ class NavigationWrapper extends StatelessWidget {
       context: context,
       backgroundColor: ZaWolfColors.surface01,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(8)),
       ),
       builder: (sheetContext) {
         return SafeArea(
@@ -406,7 +405,7 @@ class NavigationWrapper extends StatelessWidget {
                     width: 44,
                     height: 4,
                     decoration: BoxDecoration(
-                      color: ZaWolfColors.surface02,
+                      color: ZaWolfColors.surface03,
                       borderRadius: BorderRadius.circular(4),
                     ),
                   ),

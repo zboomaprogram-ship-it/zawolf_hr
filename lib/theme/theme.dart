@@ -2,29 +2,32 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 class ZaWolfColors {
-  static const Color background = Color(0xFF07070F);
-  static const Color surface01 = Color(0xFF0F1020);
-  static const Color surface02 = Color(0xFF171830);
+  static const Color background = Color(0xFF050607);
+  static const Color surface01 = Color(0xFF101418);
+  static const Color surface02 = Color(0xFF1A2027);
+  static const Color surface03 = Color(0xFF222B34);
 
-  static const Color primaryCyan = Color(0xFF00D4FF);
-  static const Color primaryBlue = Color(0xFF0073FF);
+  static const Color primaryCyan = Color(0xFF45F0FF);
+  static const Color primaryBlue = Color(0xFF166C8C);
+  static const Color wolfGreen = Color(0xFF8FE388);
+  static const Color steel = Color(0xFF9AA9B5);
 
-  static const Color success = Color(0xFF00E676);
-  static const Color warning = Color(0xFFFFB300);
-  static const Color error = Color(0xFFFF3D3D);
+  static const Color success = Color(0xFF7DDC8A);
+  static const Color warning = Color(0xFFE4B55D);
+  static const Color error = Color(0xFFFF6B6B);
 
-  static const Color permissionTeal = Color(0xFF00BFA5);
-  static const Color dayoffPurple = Color(0xFF7C4DFF);
-  static const Color perfGold = Color(0xFFFFC107);
+  static const Color permissionTeal = Color(0xFF4FC3B2);
+  static const Color dayoffPurple = Color(0xFF7D8CFF);
+  static const Color perfGold = Color(0xFFE7C66A);
 
   static const Color textPrimary = Color(0xFFFFFFFF);
-  static const Color textSecondary = Color(0xFF8BA3C7);
-  static const Color textMuted = Color(0xFF4A5A74);
+  static const Color textSecondary = Color(0xFFA8B3BD);
+  static const Color textMuted = Color(0xFF64717D);
 
-  static const Color borderGlow = Color(0x2200D4FF); // 8% opacity
+  static const Color borderGlow = Color(0x2445F0FF);
 
   static const LinearGradient primaryGradient = LinearGradient(
-    colors: [primaryCyan, primaryBlue],
+    colors: [primaryCyan, Color(0xFF6AF2BC), primaryBlue],
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
   );
@@ -36,15 +39,15 @@ class ZaWolfColors {
   );
 
   static const LinearGradient dayoffGradient = LinearGradient(
-    colors: [dayoffPurple, Color(0xFF512DA8)],
+    colors: [dayoffPurple, Color(0xFF394166)],
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
   );
 
   static const BoxShadow wolfGlow = BoxShadow(
-    color: Color(0x2600D4FF), // 15% opacity primary cyan
-    blurRadius: 20,
-    offset: Offset(0, 0),
+    color: Color(0x1F45F0FF),
+    blurRadius: 24,
+    offset: Offset(0, 10),
   );
 }
 
@@ -58,77 +61,96 @@ class ZaWolfTheme {
       cardColor: ZaWolfColors.surface01,
       colorScheme: const ColorScheme.dark(
         primary: ZaWolfColors.primaryCyan,
-        secondary: ZaWolfColors.primaryBlue,
+        secondary: ZaWolfColors.wolfGreen,
         surface: ZaWolfColors.surface01,
         error: ZaWolfColors.error,
       ),
       textTheme: TextTheme(
-        displayLarge: GoogleFonts.rajdhani(
+        displayLarge: GoogleFonts.ibmPlexSansArabic(
           color: ZaWolfColors.textPrimary,
-          fontWeight: FontWeight.bold,
+          fontWeight: FontWeight.w700,
         ),
-        displayMedium: GoogleFonts.rajdhani(
+        displayMedium: GoogleFonts.ibmPlexSansArabic(
           color: ZaWolfColors.textPrimary,
-          fontWeight: FontWeight.bold,
+          fontWeight: FontWeight.w700,
         ),
-        displaySmall: GoogleFonts.rajdhani(
+        displaySmall: GoogleFonts.ibmPlexSansArabic(
           color: ZaWolfColors.textPrimary,
-          fontWeight: FontWeight.bold,
+          fontWeight: FontWeight.w700,
         ),
-        headlineLarge: GoogleFonts.rajdhani(
+        headlineLarge: GoogleFonts.ibmPlexSansArabic(
           color: ZaWolfColors.textPrimary,
-          fontWeight: FontWeight.bold,
+          fontWeight: FontWeight.w700,
         ),
-        headlineMedium: GoogleFonts.rajdhani(
+        headlineMedium: GoogleFonts.ibmPlexSansArabic(
+          color: ZaWolfColors.textPrimary,
+          fontWeight: FontWeight.w700,
+        ),
+        headlineSmall: GoogleFonts.ibmPlexSansArabic(
+          color: ZaWolfColors.textPrimary,
+          fontWeight: FontWeight.w700,
+        ),
+        titleLarge: GoogleFonts.ibmPlexSansArabic(
           color: ZaWolfColors.textPrimary,
           fontWeight: FontWeight.w600,
         ),
-        headlineSmall: GoogleFonts.rajdhani(
-          color: ZaWolfColors.textPrimary,
-          fontWeight: FontWeight.w600,
-        ),
-        titleLarge: GoogleFonts.inter(
-          color: ZaWolfColors.textPrimary,
-          fontWeight: FontWeight.w600,
-        ),
-        titleMedium: GoogleFonts.inter(
+        titleMedium: GoogleFonts.ibmPlexSansArabic(
           color: ZaWolfColors.textSecondary,
           fontWeight: FontWeight.w500,
         ),
-        bodyLarge: GoogleFonts.inter(color: ZaWolfColors.textPrimary),
-        bodyMedium: GoogleFonts.inter(color: ZaWolfColors.textSecondary),
-        bodySmall: GoogleFonts.inter(color: ZaWolfColors.textMuted),
+        bodyLarge: GoogleFonts.ibmPlexSansArabic(
+          color: ZaWolfColors.textPrimary,
+        ),
+        bodyMedium: GoogleFonts.ibmPlexSansArabic(
+          color: ZaWolfColors.textSecondary,
+        ),
+        bodySmall: GoogleFonts.ibmPlexSansArabic(color: ZaWolfColors.textMuted),
       ),
       appBarTheme: const AppBarTheme(
         backgroundColor: ZaWolfColors.background,
         elevation: 0,
         centerTitle: true,
         iconTheme: IconThemeData(color: ZaWolfColors.textPrimary),
+        surfaceTintColor: Colors.transparent,
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
-        fillColor: ZaWolfColors.surface01,
-        hintStyle: GoogleFonts.inter(color: ZaWolfColors.textMuted),
-        labelStyle: GoogleFonts.inter(color: ZaWolfColors.textSecondary),
+        fillColor: ZaWolfColors.surface02,
+        hintStyle: GoogleFonts.ibmPlexSansArabic(color: ZaWolfColors.textMuted),
+        labelStyle: GoogleFonts.ibmPlexSansArabic(
+          color: ZaWolfColors.textSecondary,
+        ),
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(8),
           borderSide: const BorderSide(color: ZaWolfColors.surface02),
         ),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: ZaWolfColors.surface02),
+          borderRadius: BorderRadius.circular(8),
+          borderSide: const BorderSide(color: ZaWolfColors.surface03),
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(8),
           borderSide: const BorderSide(
             color: ZaWolfColors.primaryCyan,
             width: 1.5,
           ),
         ),
         errorBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(8),
           borderSide: const BorderSide(color: ZaWolfColors.error),
         ),
+      ),
+      dividerTheme: const DividerThemeData(color: ZaWolfColors.surface03),
+      snackBarTheme: SnackBarThemeData(
+        backgroundColor: ZaWolfColors.surface02,
+        contentTextStyle: GoogleFonts.ibmPlexSansArabic(color: Colors.white),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      ),
+      dialogTheme: DialogThemeData(
+        backgroundColor: ZaWolfColors.surface01,
+        surfaceTintColor: Colors.transparent,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
       ),
     );
   }

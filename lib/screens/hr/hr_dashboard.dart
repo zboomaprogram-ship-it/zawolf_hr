@@ -85,21 +85,46 @@ class _HrDashboardScreenState extends State<HrDashboardScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // Welcome Header
-            Text(
-              'مرحباً، ${hrAdmin.displayName}',
-              style: theme.textTheme.headlineMedium!.copyWith(
-                color: Colors.white,
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: ZaWolfColors.surface01,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: ZaWolfColors.surface03),
               ),
-              textDirection: TextDirection.rtl,
-            ),
-            const SizedBox(height: 4),
-            Text(
-              'التحكم العام بالمنظومة · ${hrAdmin.locationName}',
-              style: theme.textTheme.bodyMedium!.copyWith(
-                color: ZaWolfColors.textSecondary,
+              child: Row(
+                children: [
+                  Image.asset(
+                    'assets/images/wolf_head_geometric.png',
+                    width: 46,
+                    height: 46,
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        Text(
+                          'مرحباً، ${hrAdmin.displayName}',
+                          style: theme.textTheme.headlineSmall!.copyWith(
+                            color: Colors.white,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          textDirection: TextDirection.rtl,
+                        ),
+                        Text(
+                          'التحكم العام بالمنظومة · ${hrAdmin.locationName}',
+                          style: theme.textTheme.bodyMedium,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          textDirection: TextDirection.rtl,
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
-              textDirection: TextDirection.rtl,
             ),
             const SizedBox(height: 24),
 
@@ -189,10 +214,14 @@ class _HrDashboardScreenState extends State<HrDashboardScreen> {
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: ZaWolfColors.surface01,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: ZaWolfColors.surface02),
-        boxShadow: const [
-          BoxShadow(color: ZaWolfColors.surface02, blurRadius: 4),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: ZaWolfColors.surface03),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.18),
+            blurRadius: 18,
+            offset: const Offset(0, 10),
+          ),
         ],
       ),
       child: Row(

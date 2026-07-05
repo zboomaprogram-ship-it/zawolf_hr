@@ -35,6 +35,7 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
     super.initState();
     _checkCurrentGeofence();
     _checkCompanyDayOff();
+    AttendanceService().syncPendingOfflineAttendance();
   }
 
   Future<void> _checkCurrentGeofence() async {
@@ -105,16 +106,11 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
       await attendanceService.handleCheckInOrCheckOut(employee);
       await Future.wait([_checkCurrentGeofence(), _checkCompanyDayOff()]);
 
-      final todayStr = DateFormat('yyyy-MM-dd').format(DateTime.now());
-      final snap = await FirebaseFirestore.instance
-          .collection('attendance')
-          .where('userId', isEqualTo: employee.uid)
-          .where('date', isEqualTo: todayStr)
-          .limit(1)
-          .get();
+      final log = await attendanceService.loadTodayAttendanceForDisplay(
+        employee.uid,
+      );
 
-      if (snap.docs.isNotEmpty && mounted) {
-        final log = AttendanceModel.fromFirestore(snap.docs.first);
+      if (log != null && mounted) {
         final isCheckOut = log.checkOutTime != null;
 
         showDialog(
@@ -126,6 +122,14 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
             locationName: log.locationName,
             status: log.status,
             lateMinutes: log.lateMinutes,
+          ),
+        );
+      } else if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'تم حفظ الحركة محلياً وستتم مزامنتها عند توفر الإنترنت.',
+            ),
           ),
         );
       }
@@ -180,7 +184,20 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Image.asset('assets/images/wolf_head_geometric.png', height: 40),
+        title: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Image.asset('assets/images/wolf_head_geometric.png', height: 28),
+            const SizedBox(width: 8),
+            Text(
+              'ZaWolf HR',
+              style: theme.textTheme.titleMedium!.copyWith(
+                color: Colors.white,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+        ),
         centerTitle: true,
       ),
       body: StreamBuilder<List<AttendanceModel>>(
@@ -224,6 +241,7 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
 
           return RefreshIndicator(
             onRefresh: () async {
+              await attendanceService.syncPendingOfflineAttendance();
               await Future.wait([
                 _checkCurrentGeofence(),
                 _checkCompanyDayOff(),
@@ -236,81 +254,107 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  // Greeting & Location Status
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'مرحباً، ${user.displayName}',
-                            style: theme.textTheme.headlineSmall!.copyWith(
-                              color: Colors.white,
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: ZaWolfColors.surface01,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: ZaWolfColors.surface03),
+                    ),
+                    child: Row(
+                      children: [
+                        InkWell(
+                          onTap: _checkingLocation
+                              ? null
+                              : _checkCurrentGeofence,
+                          borderRadius: BorderRadius.circular(8),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 8,
+                            ),
+                            decoration: BoxDecoration(
+                              color:
+                                  (_geofenceResult?.isWithinZone == true
+                                          ? ZaWolfColors.success
+                                          : ZaWolfColors.error)
+                                      .withValues(alpha: 0.10),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                color:
+                                    (_geofenceResult?.isWithinZone == true
+                                            ? ZaWolfColors.success
+                                            : ZaWolfColors.error)
+                                        .withValues(alpha: 0.25),
+                              ),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                if (_checkingLocation)
+                                  const SizedBox(
+                                    width: 14,
+                                    height: 14,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: ZaWolfColors.primaryCyan,
+                                    ),
+                                  )
+                                else
+                                  Icon(
+                                    _geofenceResult?.isWithinZone == true
+                                        ? Icons.location_on
+                                        : Icons.location_off,
+                                    size: 16,
+                                    color: _geofenceResult?.isWithinZone == true
+                                        ? ZaWolfColors.success
+                                        : ZaWolfColors.error,
+                                  ),
+                                const SizedBox(width: 6),
+                                Text(
+                                  _checkingLocation
+                                      ? 'جاري التحديد'
+                                      : _geofenceResult?.isWithinZone == true
+                                      ? 'داخل النطاق'
+                                      : 'خارج النطاق',
+                                  style: theme.textTheme.bodySmall!.copyWith(
+                                    color: _geofenceResult?.isWithinZone == true
+                                        ? ZaWolfColors.success
+                                        : ZaWolfColors.error,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
-                          Text(
-                            '${user.position} · ${user.department}',
-                            style: theme.textTheme.bodyMedium,
-                          ),
-                        ],
-                      ),
-
-                      // Geofence status label
-                      InkWell(
-                        onTap: _checkingLocation ? null : _checkCurrentGeofence,
-                        borderRadius: BorderRadius.circular(12),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 8,
-                          ),
-                          decoration: BoxDecoration(
-                            color: ZaWolfColors.surface01,
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: ZaWolfColors.surface02),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.end,
                             children: [
-                              if (_checkingLocation)
-                                const SizedBox(
-                                  width: 14,
-                                  height: 14,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    color: ZaWolfColors.primaryCyan,
-                                  ),
-                                )
-                              else
-                                Icon(
-                                  _geofenceResult?.isWithinZone == true
-                                      ? Icons.location_on
-                                      : Icons.location_off,
-                                  size: 16,
-                                  color: _geofenceResult?.isWithinZone == true
-                                      ? ZaWolfColors.success
-                                      : ZaWolfColors.error,
-                                ),
-                              const SizedBox(width: 6),
                               Text(
-                                _checkingLocation
-                                    ? 'جاري التحديد...'
-                                    : _geofenceResult?.isWithinZone == true
-                                    ? 'داخل النطاق'
-                                    : 'خارج النطاق',
-                                style: theme.textTheme.bodySmall!.copyWith(
-                                  color: _geofenceResult?.isWithinZone == true
-                                      ? ZaWolfColors.success
-                                      : ZaWolfColors.error,
-                                  fontWeight: FontWeight.bold,
+                                'مرحباً، ${user.displayName}',
+                                style: theme.textTheme.headlineSmall!.copyWith(
+                                  color: Colors.white,
+                                  fontSize: 22,
                                 ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                textDirection: TextDirection.rtl,
+                              ),
+                              Text(
+                                '${user.position} · ${user.department}',
+                                style: theme.textTheme.bodyMedium,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                textDirection: TextDirection.rtl,
                               ),
                             ],
                           ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                   const SizedBox(height: 24),
 
@@ -337,17 +381,20 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
                             height: 160,
                             decoration: BoxDecoration(
                               shape: BoxShape.circle,
+                              border: Border.all(
+                                color: Colors.white.withValues(alpha: 0.12),
+                              ),
                               gradient: actionDisabled && !hasCheckedIn
                                   ? const LinearGradient(
                                       colors: [
-                                        ZaWolfColors.surface02,
+                                        ZaWolfColors.surface03,
                                         ZaWolfColors.surface01,
                                       ],
                                     )
                                   : hasCheckedOut
                                   ? const LinearGradient(
                                       colors: [
-                                        ZaWolfColors.surface02,
+                                        ZaWolfColors.surface03,
                                         ZaWolfColors.surface01,
                                       ],
                                     )
@@ -368,8 +415,9 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
                                                     ? ZaWolfColors.error
                                                     : ZaWolfColors.primaryCyan)
                                                 .withValues(alpha: 0.35),
-                                        blurRadius: 20,
-                                        spreadRadius: 2,
+                                        blurRadius: 30,
+                                        spreadRadius: 1,
+                                        offset: const Offset(0, 14),
                                       ),
                                     ],
                             ),
@@ -505,7 +553,7 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
                               color: todayLog.isLate
                                   ? ZaWolfColors.warning.withValues(alpha: 0.2)
                                   : ZaWolfColors.success.withValues(alpha: 0.2),
-                              borderRadius: BorderRadius.circular(12),
+                              borderRadius: BorderRadius.circular(8),
                             ),
                             child: Text(
                               todayLog.isLate
@@ -531,7 +579,7 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
                         color: ZaWolfColors.error.withValues(alpha: 0.12),
-                        borderRadius: BorderRadius.circular(12),
+                        borderRadius: BorderRadius.circular(8),
                         border: Border.all(
                           color: ZaWolfColors.error.withValues(alpha: 0.4),
                         ),
@@ -650,8 +698,8 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
                           padding: const EdgeInsets.all(12),
                           decoration: BoxDecoration(
                             color: ZaWolfColors.surface01,
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: ZaWolfColors.surface02),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: ZaWolfColors.surface03),
                           ),
                           child: Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -735,12 +783,12 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
     return Expanded(
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(8),
         child: Container(
           padding: const EdgeInsets.symmetric(vertical: 16),
           decoration: BoxDecoration(
             color: ZaWolfColors.surface01,
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: BorderRadius.circular(8),
             border: Border.all(color: color.withValues(alpha: 0.15)),
           ),
           child: Column(
@@ -783,8 +831,8 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
           color: ZaWolfColors.surface01,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: ZaWolfColors.surface02),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: ZaWolfColors.surface03),
         ),
         child: Column(
           children: [

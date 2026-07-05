@@ -8,9 +8,11 @@ import '../../components/wolf_input_field.dart';
 import '../../services/auth_service.dart';
 import '../../services/permission_service.dart';
 import '../../services/leave_service.dart';
+import '../../services/complaint_service.dart';
 import '../../services/audit_log_service.dart';
 import '../../models/permission_model.dart';
 import '../../models/leave_model.dart';
+import '../../models/complaint_model.dart';
 import '../../models/user_model.dart';
 
 class EmployeeRequestsScreen extends StatefulWidget {
@@ -25,6 +27,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
   late TabController _tabController;
   final _formKeyPermission = GlobalKey<FormState>();
   final _formKeyLeave = GlobalKey<FormState>();
+  final _formKeyComplaint = GlobalKey<FormState>();
 
   // Permission form fields
   String _permissionType = 'early_leave'; // early_leave | late_arrival
@@ -33,11 +36,14 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
   final _permissionReasonController = TextEditingController();
 
   // Leave form fields
-  String _leaveType = 'annual'; // annual | sick | casual
+  String _leaveType = 'annual'; // annual | sick | casual | day_off
   DateTime _leaveStart = DateTime.now().add(const Duration(days: 1));
   DateTime _leaveEnd = DateTime.now().add(const Duration(days: 2));
   final _leaveReasonController = TextEditingController();
   String? _mockAttachmentUrl;
+
+  final _complaintTitleController = TextEditingController();
+  final _complaintBodyController = TextEditingController();
 
   bool _loading = false;
 
@@ -52,6 +58,8 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
     _tabController.dispose();
     _permissionReasonController.dispose();
     _leaveReasonController.dispose();
+    _complaintTitleController.dispose();
+    _complaintBodyController.dispose();
     super.dispose();
   }
 
@@ -204,6 +212,44 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
     }
   }
 
+  Future<void> _submitComplaint(UserModel employee) async {
+    if (!_formKeyComplaint.currentState!.validate()) return;
+
+    setState(() => _loading = true);
+    try {
+      await ComplaintService().submitComplaint(
+        employee: employee,
+        title: _complaintTitleController.text,
+        body: _complaintBodyController.text,
+      );
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            backgroundColor: ZaWolfColors.success,
+            content: Text('تم إرسال الشكوى بنجاح'),
+          ),
+        );
+        _complaintTitleController.clear();
+        _complaintBodyController.clear();
+        _tabController.animateTo(1);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: ZaWolfColors.error,
+            content: Text(
+              'فشل إرسال الشكوى: ${e.toString().replaceAll('Exception: ', '')}',
+            ),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
   // Cancel Request Action
   Future<void> _cancelRequest(String collectionPath, String docId) async {
     final actorId =
@@ -292,13 +338,14 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
           ),
           const SizedBox(height: 16),
           DefaultTabController(
-            length: 2,
+            length: 3,
             child: Column(
               children: [
                 TabBar(
                   tabs: const [
                     Tab(icon: Icon(Icons.access_time), text: 'إذن شخصي'),
                     Tab(icon: Icon(Icons.calendar_month), text: 'إجازة رسمية'),
+                    Tab(icon: Icon(Icons.report_problem), text: 'شكوى'),
                   ],
                   labelColor: ZaWolfColors.primaryCyan,
                   unselectedLabelColor: ZaWolfColors.textSecondary,
@@ -314,6 +361,8 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
 
                       // Sub-tab 2: Leave form
                       _buildLeaveForm(user, theme),
+
+                      _buildComplaintForm(user, theme),
                     ],
                   ),
                 ),
@@ -590,6 +639,16 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
                     },
                   ),
                 ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: ChoiceChip(
+                    label: const Center(child: Text('يوم إجازة')),
+                    selected: _leaveType == 'day_off',
+                    onSelected: (val) {
+                      if (val) setState(() => _leaveType = 'day_off');
+                    },
+                  ),
+                ),
               ],
             ),
             const SizedBox(height: 16),
@@ -666,15 +725,75 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
     );
   }
 
+  Widget _buildComplaintForm(UserModel user, ThemeData theme) {
+    return Form(
+      key: _formKeyComplaint,
+      child: SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: ZaWolfColors.warning.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: ZaWolfColors.warning.withValues(alpha: 0.3),
+                ),
+              ),
+              child: Text(
+                'سيتم إرسال الشكوى إلى HR والإدارة العليا للمراجعة.',
+                style: theme.textTheme.bodySmall!.copyWith(
+                  color: ZaWolfColors.warning,
+                  fontWeight: FontWeight.bold,
+                ),
+                textDirection: TextDirection.rtl,
+              ),
+            ),
+            const SizedBox(height: 16),
+            WolfInputField(
+              controller: _complaintTitleController,
+              labelText: 'عنوان الشكوى',
+              englishLabel: 'Complaint Title',
+              hintText: 'اكتب عنواناً واضحاً للشكوى...',
+              validator: (val) =>
+                  val == null || val.trim().length < 3 ? 'العنوان مطلوب' : null,
+            ),
+            const SizedBox(height: 16),
+            WolfInputField(
+              controller: _complaintBodyController,
+              labelText: 'تفاصيل الشكوى',
+              englishLabel: 'Details',
+              hintText: 'اكتب تفاصيل الشكوى بوضوح...',
+              maxLines: 4,
+              validator: (val) => val == null || val.trim().length < 10
+                  ? 'يرجى كتابة تفاصيل كافية'
+                  : null,
+            ),
+            const SizedBox(height: 20),
+            WolfButton(
+              onPressed: () => _submitComplaint(user),
+              text: 'إرسال الشكوى',
+              secondaryText: 'SUBMIT COMPLAINT',
+              variant: WolfButtonVariant.danger,
+              loading: _loading,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildHistoryConsole(UserModel user, ThemeData theme) {
     return DefaultTabController(
-      length: 2,
+      length: 3,
       child: Column(
         children: [
           TabBar(
             tabs: const [
               Tab(text: 'الإجازات'),
               Tab(text: 'الأذونات'),
+              Tab(text: 'الشكاوى'),
             ],
             labelColor: ZaWolfColors.primaryCyan,
             unselectedLabelColor: ZaWolfColors.textSecondary,
@@ -685,11 +804,70 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
               children: [
                 _buildLeavesHistory(user.uid, theme),
                 _buildPermissionsHistory(user.uid, theme),
+                _buildComplaintsHistory(user.uid, theme),
               ],
             ),
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildComplaintsHistory(String userId, ThemeData theme) {
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('complaints')
+          .where('userId', isEqualTo: userId)
+          .orderBy('submittedAt', descending: true)
+          .snapshots(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        final docs = snapshot.data?.docs ?? [];
+        if (docs.isEmpty) {
+          return _buildEmptyState('لا توجد شكاوى سابقة.');
+        }
+
+        return ListView.builder(
+          padding: const EdgeInsets.all(16),
+          itemCount: docs.length,
+          itemBuilder: (context, index) {
+            final complaint = ComplaintModel.fromFirestore(docs[index]);
+            return Container(
+              margin: const EdgeInsets.only(bottom: 12),
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: ZaWolfColors.surface01,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: ZaWolfColors.surface02),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Expanded(
+                        child: Text(
+                          complaint.title,
+                          style: theme.textTheme.titleMedium!.copyWith(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                      _buildStatusBadge(complaint.status),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  Text(complaint.body, style: theme.textTheme.bodyMedium),
+                ],
+              ),
+            );
+          },
+        );
+      },
     );
   }
 
@@ -775,8 +953,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
                       ),
                     ),
                   ],
-                  if (req.status == 'pending_hr' ||
-                      req.status == 'pending_manager') ...[
+                  if (req.status == 'pending') ...[
                     const SizedBox(height: 12),
                     WolfButton(
                       onPressed: () => _cancelRequest('leaves', req.leaveId),
@@ -877,7 +1054,8 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
                       ),
                     ),
                   ],
-                  if (req.status == 'pending') ...[
+                  if (req.status == 'pending_hr' ||
+                      req.status == 'pending_manager') ...[
                     const SizedBox(height: 12),
                     WolfButton(
                       onPressed: () =>
@@ -939,6 +1117,14 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
         color = Colors.grey;
         text = 'ملغي';
         break;
+      case 'reviewed':
+        color = ZaWolfColors.success;
+        text = 'تمت المراجعة';
+        break;
+      case 'closed':
+        color = Colors.grey;
+        text = 'مغلقة';
+        break;
       case 'pending':
       default:
         color = ZaWolfColors.warning;
@@ -972,6 +1158,8 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
         return 'مرضية';
       case 'casual':
         return 'عارضة';
+      case 'day_off':
+        return 'يوم إجازة';
       default:
         return type;
     }

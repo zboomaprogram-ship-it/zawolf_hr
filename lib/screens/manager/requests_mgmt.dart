@@ -6,8 +6,10 @@ import '../../services/auth_service.dart';
 import '../../services/leave_service.dart';
 import '../../services/permission_service.dart';
 import '../../services/attendance_service.dart';
+import '../../services/complaint_service.dart';
 import '../../models/employee_role.dart';
 import '../../models/attendance_model.dart';
+import '../../models/complaint_model.dart';
 import '../../models/leave_model.dart';
 import '../../models/permission_model.dart';
 import '../../models/user_model.dart';
@@ -30,11 +32,12 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen>
   final LeaveService _leaveService = LeaveService();
   final PermissionService _permissionService = PermissionService();
   final AttendanceService _attendanceService = AttendanceService();
+  final ComplaintService _complaintService = ComplaintService();
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
+    _tabController = TabController(length: 4, vsync: this);
   }
 
   @override
@@ -160,6 +163,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen>
             Tab(text: 'الإجازات'),
             Tab(text: 'الأذونات'),
             Tab(text: 'خصومات التأخير'),
+            Tab(text: 'الشكاوى'),
           ],
         ),
       ),
@@ -174,6 +178,8 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen>
 
           // ── TAB 3: SALARY DEDUCTIONS ──
           _buildSalaryDeductionsTab(manager, theme),
+
+          _buildComplaintsTab(manager, theme),
         ],
       ),
     );
@@ -445,6 +451,93 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen>
     );
   }
 
+  Widget _buildComplaintsTab(UserModel reviewer, ThemeData theme) {
+    final canReview =
+        reviewer.role == EmployeeRole.hrAdmin ||
+        reviewer.role == EmployeeRole.superAdmin;
+    if (!canReview) {
+      return _buildEmptyState('الشكاوى تظهر لمسؤول HR والإدارة العليا فقط');
+    }
+
+    return StreamBuilder<QuerySnapshot>(
+      stream: _db
+          .collection('complaints')
+          .where('status', isEqualTo: 'new')
+          .snapshots(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(
+            child: CircularProgressIndicator(color: ZaWolfColors.primaryCyan),
+          );
+        }
+
+        final docs = snapshot.data?.docs ?? [];
+        if (docs.isEmpty) {
+          return _buildEmptyState('لا توجد شكاوى جديدة');
+        }
+
+        return ListView.builder(
+          padding: const EdgeInsets.all(16),
+          itemCount: docs.length,
+          itemBuilder: (context, index) {
+            final complaint = ComplaintModel.fromFirestore(docs[index]);
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 16.0),
+              child: WolfCard(
+                hasBorderGlow: true,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildEmployeeHeader(
+                      complaint.employeeName,
+                      complaint.employeeId,
+                      complaint.department,
+                      theme,
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      complaint.title,
+                      style: theme.textTheme.titleMedium!.copyWith(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      complaint.body,
+                      style: const TextStyle(color: ZaWolfColors.textSecondary),
+                      textDirection: TextDirection.rtl,
+                    ),
+                    const SizedBox(height: 16),
+                    WolfButton(
+                      onPressed: () async {
+                        try {
+                          await _complaintService.markReviewed(
+                            complaint.complaintId,
+                            reviewer.uid,
+                          );
+                        } catch (e) {
+                          if (!context.mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('فشل تحديث الشكوى: $e')),
+                          );
+                        }
+                      },
+                      text: 'تمت المراجعة',
+                      secondaryText: 'MARK REVIEWED',
+                      height: 44,
+                      variant: WolfButtonVariant.outline,
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
   Widget _buildSalaryDeductionsTab(UserModel reviewer, ThemeData theme) {
     if (reviewer.role == EmployeeRole.manager) {
       return _buildEmptyState('خصومات الراتب تراجع من HR فقط');
@@ -627,6 +720,8 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen>
         return 'مرضية';
       case 'casual':
         return 'عارضة';
+      case 'day_off':
+        return 'يوم إجازة';
       default:
         return type;
     }

@@ -46,7 +46,7 @@ class LeaveService {
 
   // Submit leave request
   Future<void> submitLeaveRequest(LeaveModel req, UserModel employee) async {
-    if (!['annual', 'sick', 'casual'].contains(req.leaveType)) {
+    if (!['annual', 'sick', 'casual', 'day_off'].contains(req.leaveType)) {
       throw Exception('نوع الإجازة غير صحيح');
     }
 
@@ -92,14 +92,16 @@ class LeaveService {
 
     // 3. Notify manager
     if (req.managerId.isNotEmpty) {
-      await _createNotification(
-        recipientId: req.managerId,
-        type: 'leave_request_submitted',
-        title: 'طلب إجازة جديد 📝',
-        body:
-            'يطلب ${req.employeeName} إجازة (${req.leaveType}) لمدّة ${req.numberOfDays} يوم.',
-        data: {'leaveId': reqRef.id},
-      );
+      try {
+        await _createNotification(
+          recipientId: req.managerId,
+          type: 'leave_request_submitted',
+          title: 'طلب إجازة جديد 📝',
+          body:
+              'يطلب ${req.employeeName} إجازة (${req.leaveType}) لمدّة ${req.numberOfDays} يوم.',
+          data: {'leaveId': reqRef.id},
+        );
+      } catch (_) {}
     }
   }
 

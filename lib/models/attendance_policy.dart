@@ -21,6 +21,9 @@ class AttendancePolicy {
   static const String defaultEndTime = '17:00';
   static const List<int> saturdayToThursdayWorkDays = [6, 7, 1, 2, 3, 4];
   static const int defaultPayrollWorkDaysPerMonth = 26;
+  static const int defaultGraceMinutes = 15;
+  static const int defaultQuarterDayUntilMinutes = 30;
+  static const int defaultHalfDayUntilMinutes = 60;
 
   static DateTime parseTimeOnDate(DateTime date, String timeStr) {
     final parts = timeStr.split(':');
@@ -32,13 +35,16 @@ class AttendancePolicy {
   static AttendanceDeduction evaluateLateArrival({
     required DateTime arrivalTime,
     String startTime = defaultStartTime,
+    int graceMinutes = defaultGraceMinutes,
+    int quarterDayUntilMinutes = defaultQuarterDayUntilMinutes,
+    int halfDayUntilMinutes = defaultHalfDayUntilMinutes,
   }) {
     final shiftStart = parseTimeOnDate(arrivalTime, startTime);
     final lateMinutes = arrivalTime.isAfter(shiftStart)
         ? arrivalTime.difference(shiftStart).inMinutes
         : 0;
 
-    if (lateMinutes <= 15) {
+    if (lateMinutes <= graceMinutes) {
       return AttendanceDeduction(
         dayFraction: 0,
         code: 'none',
@@ -49,7 +55,7 @@ class AttendancePolicy {
       );
     }
 
-    if (lateMinutes <= 30) {
+    if (lateMinutes <= quarterDayUntilMinutes) {
       return AttendanceDeduction(
         dayFraction: 0.25,
         code: 'quarter_day',
@@ -60,7 +66,7 @@ class AttendancePolicy {
       );
     }
 
-    if (lateMinutes <= 60) {
+    if (lateMinutes <= halfDayUntilMinutes) {
       return AttendanceDeduction(
         dayFraction: 0.5,
         code: 'half_day',
@@ -88,5 +94,97 @@ class AttendancePolicy {
   }) {
     if (monthlySalary <= 0 || dayFraction <= 0) return 0;
     return (monthlySalary / payrollWorkDaysPerMonth) * dayFraction;
+  }
+}
+
+class AttendancePolicyConfig {
+  final String defaultStartTime;
+  final String defaultEndTime;
+  final int graceMinutes;
+  final int quarterDayUntilMinutes;
+  final int halfDayUntilMinutes;
+  final int payrollWorkDaysPerMonth;
+
+  const AttendancePolicyConfig({
+    this.defaultStartTime = AttendancePolicy.defaultStartTime,
+    this.defaultEndTime = AttendancePolicy.defaultEndTime,
+    this.graceMinutes = AttendancePolicy.defaultGraceMinutes,
+    this.quarterDayUntilMinutes =
+        AttendancePolicy.defaultQuarterDayUntilMinutes,
+    this.halfDayUntilMinutes = AttendancePolicy.defaultHalfDayUntilMinutes,
+    this.payrollWorkDaysPerMonth =
+        AttendancePolicy.defaultPayrollWorkDaysPerMonth,
+  });
+
+  factory AttendancePolicyConfig.fromMap(Map<String, dynamic>? map) {
+    if (map == null) return const AttendancePolicyConfig();
+
+    int readInt(String key, int fallback) {
+      final value = map[key];
+      if (value is num) return value.toInt();
+      return int.tryParse(value?.toString() ?? '') ?? fallback;
+    }
+
+    return AttendancePolicyConfig(
+      defaultStartTime:
+          map['defaultStartTime'] as String? ??
+          map['startTime'] as String? ??
+          AttendancePolicy.defaultStartTime,
+      defaultEndTime:
+          map['defaultEndTime'] as String? ??
+          map['endTime'] as String? ??
+          AttendancePolicy.defaultEndTime,
+      graceMinutes: readInt(
+        'graceMinutes',
+        AttendancePolicy.defaultGraceMinutes,
+      ),
+      quarterDayUntilMinutes: readInt(
+        'quarterDayUntilMinutes',
+        AttendancePolicy.defaultQuarterDayUntilMinutes,
+      ),
+      halfDayUntilMinutes: readInt(
+        'halfDayUntilMinutes',
+        AttendancePolicy.defaultHalfDayUntilMinutes,
+      ),
+      payrollWorkDaysPerMonth: readInt(
+        'payrollWorkDaysPerMonth',
+        AttendancePolicy.defaultPayrollWorkDaysPerMonth,
+      ),
+    );
+  }
+
+  Map<String, dynamic> toMap() {
+    return {
+      'defaultStartTime': defaultStartTime,
+      'defaultEndTime': defaultEndTime,
+      'graceMinutes': graceMinutes,
+      'quarterDayUntilMinutes': quarterDayUntilMinutes,
+      'halfDayUntilMinutes': halfDayUntilMinutes,
+      'payrollWorkDaysPerMonth': payrollWorkDaysPerMonth,
+    };
+  }
+
+  AttendanceDeduction evaluateLateArrival({
+    required DateTime arrivalTime,
+    String? employeeStartTime,
+  }) {
+    return AttendancePolicy.evaluateLateArrival(
+      arrivalTime: arrivalTime,
+      startTime: employeeStartTime ?? defaultStartTime,
+      graceMinutes: graceMinutes,
+      quarterDayUntilMinutes: quarterDayUntilMinutes,
+      halfDayUntilMinutes: halfDayUntilMinutes,
+    );
+  }
+
+  double calculateSalaryDeductionAmount({
+    required double monthlySalary,
+    required double dayFraction,
+  }) {
+    return AttendancePolicy.calculateSalaryDeductionAmount(
+      monthlySalary: monthlySalary,
+      dayFraction: dayFraction,
+      payrollWorkDaysPerMonth: payrollWorkDaysPerMonth,
+    );
   }
 }

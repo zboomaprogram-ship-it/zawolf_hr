@@ -4,9 +4,11 @@ import '../models/user_model.dart';
 import '../models/permission_model.dart';
 import '../models/attendance_policy.dart';
 import 'audit_log_service.dart';
+import 'attendance_policy_service.dart';
 
 class PermissionService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
+  final AttendancePolicyService _policyService = AttendancePolicyService();
 
   DateTime _parseTimeToday(String timeStr) {
     final now = DateTime.now();
@@ -24,6 +26,7 @@ class PermissionService {
   Future<void> submitPermission(PermissionModel req, UserModel employee) async {
     final now = DateTime.now();
     final monthKey = DateFormat('yyyy-MM').format(now);
+    final policyConfig = await _policyService.getPolicyConfig();
 
     // ── Rule 1: Validate quota (maximum 2 permissions OR 5 hours total) ──
     final monthlyDocs = await _db
@@ -46,15 +49,18 @@ class PermissionService {
     // ── Rule 2: Late arrival request must be submitted before work start ──
     bool isLateSubmission = false;
     if (req.permissionType == 'late_arrival') {
-      final workStartStr = employee.workSchedule.startTime ?? '09:00';
+      final workStartStr =
+          employee.workSchedule.startTime ?? policyConfig.defaultStartTime;
       final workStart = _parseTimeToday(workStartStr);
       isLateSubmission = now.isAfter(workStart);
     }
 
     final deduction = req.permissionType == 'late_arrival'
-        ? AttendancePolicy.evaluateLateArrival(
+        ? policyConfig.evaluateLateArrival(
             arrivalTime: _parseExpectedTimeToday(req.expectedTime),
-            startTime: employee.workSchedule.startTime ?? '09:00',
+            employeeStartTime:
+                employee.workSchedule.startTime ??
+                policyConfig.defaultStartTime,
           )
         : const AttendanceDeduction(
             dayFraction: 0,
@@ -64,11 +70,10 @@ class PermissionService {
             isLate: false,
             lateMinutes: 0,
           );
-    final salaryDeductionAmount =
-        AttendancePolicy.calculateSalaryDeductionAmount(
-          monthlySalary: employee.baseMonthlySalary,
-          dayFraction: deduction.dayFraction,
-        );
+    final salaryDeductionAmount = policyConfig.calculateSalaryDeductionAmount(
+      monthlySalary: employee.baseMonthlySalary,
+      dayFraction: deduction.dayFraction,
+    );
 
     final permRef = _db.collection('permissions').doc();
     final finalStatus = isLateSubmission ? 'invalid_late' : 'pending_hr';

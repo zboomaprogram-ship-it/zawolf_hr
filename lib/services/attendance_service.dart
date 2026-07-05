@@ -4,33 +4,36 @@ import '../models/user_model.dart';
 import '../models/attendance_model.dart';
 import '../models/attendance_policy.dart';
 import 'attendance_security_service.dart';
+import 'attendance_policy_service.dart';
 import 'audit_log_service.dart';
 import 'company_day_off_service.dart';
 import 'geofence_service.dart';
+import 'offline_attendance_queue_service.dart';
 
 class AttendanceService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
   final GeofenceService _geofenceService = GeofenceService();
   final AttendanceSecurityService _securityService =
       AttendanceSecurityService();
+  final AttendancePolicyService _policyService = AttendancePolicyService();
   final CompanyDayOffService _dayOffService = CompanyDayOffService();
+  final OfflineAttendanceQueueService _offlineQueue =
+      OfflineAttendanceQueueService.instance;
 
   // Handle employee Check-In or Check-Out
   Future<void> handleCheckInOrCheckOut(UserModel employee) async {
     final now = DateTime.now();
     final todayStr = DateFormat('yyyy-MM-dd').format(now);
+    final online = await _offlineQueue.isOnline();
+    final policyConfig = await _policyService.getPolicyConfig();
 
-    await _flagMissedCheckouts(employee, todayStr);
+    if (online) {
+      await _offlineQueue.syncPendingActions();
+      await _flagMissedCheckouts(employee, todayStr);
+    }
 
-    // Query today only, so an unclosed previous day never blocks a new day.
-    final existingLogs = await _db
-        .collection('attendance')
-        .where('userId', isEqualTo: employee.uid)
-        .where('date', isEqualTo: todayStr)
-        .limit(1)
-        .get();
-
-    final isCheckIn = existingLogs.docs.isEmpty;
+    final todayLookup = await _loadTodayAttendance(employee.uid, todayStr);
+    final isCheckIn = todayLookup.log == null;
     if (isCheckIn) {
       final dayOffStatus = await _dayOffService.getDayOffStatus(now);
       if (dayOffStatus.isDayOff) {
@@ -57,24 +60,59 @@ class AttendanceService {
     }
 
     final securityResult = await _securityService.verifyForAttendance();
-    await _ensureAttendanceDeviceBinding(employee, securityResult);
+    await _ensureAttendanceDeviceBinding(
+      employee,
+      securityResult,
+      allowOfflineFallback: !online,
+    );
 
-    if (existingLogs.docs.isEmpty) {
+    if (isCheckIn) {
       // ── CHECK-IN LOGIC ──
-      final companyStartTimeStr = employee.workSchedule.startTime ?? '09:00';
-      final deduction = AttendancePolicy.evaluateLateArrival(
+      final companyStartTimeStr =
+          employee.workSchedule.startTime ?? policyConfig.defaultStartTime;
+      final deduction = policyConfig.evaluateLateArrival(
         arrivalTime: now,
-        startTime: companyStartTimeStr,
+        employeeStartTime: companyStartTimeStr,
       );
-      final salaryDeductionAmount =
-          AttendancePolicy.calculateSalaryDeductionAmount(
-            monthlySalary: employee.baseMonthlySalary,
-            dayFraction: deduction.dayFraction,
-          );
+      final salaryDeductionAmount = policyConfig.calculateSalaryDeductionAmount(
+        monthlySalary: employee.baseMonthlySalary,
+        dayFraction: deduction.dayFraction,
+      );
 
       final logRef = _db
           .collection('attendance')
           .doc('${employee.uid}_$todayStr');
+      final offlineAction = OfflineAttendanceAction(
+        id: '${logRef.id}_checkIn',
+        type: OfflineAttendanceActionType.checkIn,
+        attendanceId: logRef.id,
+        userId: employee.uid,
+        employeeId: employee.employeeId,
+        employeeName: employee.displayName,
+        locationId: employee.locationId,
+        locationName: employee.locationName,
+        managerId: employee.managerId,
+        date: todayStr,
+        eventTime: now,
+        latitude: geoResult.position.latitude,
+        longitude: geoResult.position.longitude,
+        distanceMeters: geoResult.distanceMeters,
+        allowedRadius: geoResult.allowedRadius,
+        accuracyMeters: geoResult.accuracyMeters,
+        deviceId: securityResult.deviceId,
+        deviceLabel: securityResult.deviceLabel,
+        isLate: deduction.isLate,
+        lateMinutes: deduction.lateMinutes,
+        salaryDeductionFraction: deduction.dayFraction,
+        salaryDeductionAmount: salaryDeductionAmount,
+        salaryCurrency: employee.salaryCurrency,
+        salaryDeductionCode: deduction.code,
+        salaryDeductionLabel: deduction.arabicLabel,
+        salaryDeductionApprovalStatus: deduction.dayFraction > 0
+            ? 'pending_hr'
+            : 'none',
+        status: deduction.status,
+      );
       final attendanceLog = AttendanceModel(
         attendanceId: logRef.id,
         userId: employee.uid,
@@ -107,8 +145,12 @@ class AttendanceService {
         status: deduction.status,
       );
 
-      await logRef.set(attendanceLog.toFirestore());
-      if (deduction.dayFraction > 0) {
+      if (online) {
+        await logRef.set(attendanceLog.toFirestore());
+      } else {
+        await _offlineQueue.queue(offlineAction);
+      }
+      if (online && deduction.dayFraction > 0) {
         await _notifyRole(
           role: 'hr_admin',
           type: 'salary_deduction_pending',
@@ -120,8 +162,8 @@ class AttendanceService {
       }
     } else {
       // ── CHECK-OUT LOGIC ──
-      final checkInDoc = existingLogs.docs.first;
-      final checkInLog = AttendanceModel.fromFirestore(checkInDoc);
+      final checkInDoc = todayLookup.doc;
+      final checkInLog = todayLookup.log!;
 
       if (checkInLog.checkOutTime != null) {
         throw Exception('لقد قمت بتسجيل الانصراف بالفعل لهذا اليوم.');
@@ -135,53 +177,181 @@ class AttendanceService {
         reasonCode: 'early_checkout_quarter_day',
         reasonLabel: 'خصم ربع يوم - انصراف مبكر',
         now: now,
-        applies: _isEarlyCheckout(now, employee.workSchedule.endTime),
+        applies: _isEarlyCheckout(
+          now,
+          employee.workSchedule.endTime ?? policyConfig.defaultEndTime,
+        ),
+        payrollWorkDaysPerMonth: policyConfig.payrollWorkDaysPerMonth,
+      );
+      final offlineAction = OfflineAttendanceAction(
+        id: '${checkInLog.attendanceId}_checkOut',
+        type: OfflineAttendanceActionType.checkOut,
+        attendanceId: checkInLog.attendanceId,
+        userId: employee.uid,
+        employeeId: employee.employeeId,
+        employeeName: employee.displayName,
+        locationId: employee.locationId,
+        locationName: employee.locationName,
+        managerId: employee.managerId,
+        date: todayStr,
+        eventTime: now,
+        latitude: geoResult.position.latitude,
+        longitude: geoResult.position.longitude,
+        distanceMeters: geoResult.distanceMeters,
+        allowedRadius: geoResult.allowedRadius,
+        accuracyMeters: geoResult.accuracyMeters,
+        deviceId: securityResult.deviceId,
+        deviceLabel: securityResult.deviceLabel,
+        totalWorkHours: totalWorkHours,
+        isLate: checkInLog.isLate,
+        lateMinutes: checkInLog.lateMinutes,
+        salaryDeductionFraction: earlyCheckoutDeduction.patch.isEmpty
+            ? checkInLog.salaryDeductionFraction
+            : 0.25,
+        salaryDeductionAmount: earlyCheckoutDeduction.patch.isEmpty
+            ? checkInLog.salaryDeductionAmount
+            : earlyCheckoutDeduction.amount,
+        salaryCurrency: employee.salaryCurrency,
+        salaryDeductionCode: earlyCheckoutDeduction.patch.isEmpty
+            ? checkInLog.salaryDeductionCode
+            : 'early_checkout_quarter_day',
+        salaryDeductionLabel: earlyCheckoutDeduction.patch.isEmpty
+            ? checkInLog.salaryDeductionLabel
+            : earlyCheckoutDeduction.label,
+        salaryDeductionApprovalStatus: earlyCheckoutDeduction.patch.isEmpty
+            ? checkInLog.salaryDeductionApprovalStatus
+            : 'pending_hr',
+        status: checkInLog.status,
       );
 
-      await checkInDoc.reference.update({
-        'checkOutTime': Timestamp.fromDate(now),
-        'checkOutLocation': GeoPoint(
-          geoResult.position.latitude,
-          geoResult.position.longitude,
-        ),
-        'localCheckOutTime': Timestamp.fromDate(now),
-        'totalWorkHours': totalWorkHours,
-        'checkOutDeviceId': securityResult.deviceId,
-        'checkOutDeviceLabel': securityResult.deviceLabel,
-        'checkOutBiometricVerified':
-            securityResult.biometricOrDeviceCredentialVerified,
-        ...earlyCheckoutDeduction.patch,
-      });
+      if (online && checkInDoc != null) {
+        await checkInDoc.reference.update({
+          'checkOutTime': Timestamp.fromDate(now),
+          'checkOutLocation': GeoPoint(
+            geoResult.position.latitude,
+            geoResult.position.longitude,
+          ),
+          'localCheckOutTime': Timestamp.fromDate(now),
+          'totalWorkHours': totalWorkHours,
+          'checkOutDeviceId': securityResult.deviceId,
+          'checkOutDeviceLabel': securityResult.deviceLabel,
+          'checkOutBiometricVerified':
+              securityResult.biometricOrDeviceCredentialVerified,
+          ...earlyCheckoutDeduction.patch,
+        });
+      } else {
+        await _offlineQueue.queue(offlineAction);
+      }
 
-      if (earlyCheckoutDeduction.shouldNotify) {
+      if (online && earlyCheckoutDeduction.shouldNotify) {
         await _notifyRole(
           role: 'hr_admin',
           type: 'salary_deduction_pending',
           title: 'خصم انصراف مبكر بانتظار مراجعة HR',
           body:
               '${employee.displayName}: ${earlyCheckoutDeduction.label} (${earlyCheckoutDeduction.amount.toStringAsFixed(2)} ${employee.salaryCurrency}).',
-          data: {'attendanceId': checkInDoc.id},
+          data: {'attendanceId': checkInDoc?.id ?? checkInLog.attendanceId},
         );
       }
     }
   }
 
+  Future<void> syncPendingOfflineAttendance() {
+    return _offlineQueue.syncPendingActions();
+  }
+
+  Future<AttendanceModel?> loadTodayAttendanceForDisplay(String userId) async {
+    final todayStr = DateFormat('yyyy-MM-dd').format(DateTime.now());
+    return (await _loadTodayAttendance(userId, todayStr)).log;
+  }
+
+  Future<_TodayAttendanceLookup> _loadTodayAttendance(
+    String userId,
+    String todayStr,
+  ) async {
+    try {
+      final existingLogs = await _db
+          .collection('attendance')
+          .where('userId', isEqualTo: userId)
+          .where('date', isEqualTo: todayStr)
+          .limit(1)
+          .get();
+      if (existingLogs.docs.isNotEmpty) {
+        final doc = existingLogs.docs.first;
+        return _TodayAttendanceLookup(
+          doc: doc,
+          log: AttendanceModel.fromFirestore(doc),
+        );
+      }
+    } catch (_) {
+      try {
+        final cachedLogs = await _db
+            .collection('attendance')
+            .where('userId', isEqualTo: userId)
+            .where('date', isEqualTo: todayStr)
+            .limit(1)
+            .get(const GetOptions(source: Source.cache));
+        if (cachedLogs.docs.isNotEmpty) {
+          final doc = cachedLogs.docs.first;
+          return _TodayAttendanceLookup(
+            doc: doc,
+            log: AttendanceModel.fromFirestore(doc),
+          );
+        }
+      } catch (_) {}
+    }
+
+    final monthKey = todayStr.substring(0, 7);
+    final pending = await _offlineQueue.pendingLogsForMonth(
+      userId: userId,
+      monthKey: monthKey,
+    );
+    for (final log in pending) {
+      if (log.date == todayStr) {
+        return _TodayAttendanceLookup(log: log);
+      }
+    }
+    return const _TodayAttendanceLookup();
+  }
+
   Future<void> _ensureAttendanceDeviceBinding(
     UserModel employee,
-    AttendanceSecurityResult securityResult,
-  ) async {
+    AttendanceSecurityResult securityResult, {
+    required bool allowOfflineFallback,
+  }) async {
     final deviceId = securityResult.deviceId.trim();
     if (deviceId.isEmpty) {
       throw Exception('تعذر قراءة رقم الجهاز. أعد المحاولة أو تواصل مع HR.');
     }
 
+    final localOwner = await _offlineQueue.localDeviceOwner(deviceId);
+    if (localOwner != null && localOwner != employee.uid) {
+      throw Exception(
+        'هذا الجهاز مربوط محلياً بحساب موظف آخر. لا يمكن تسجيل حضور أكثر من حساب من نفس الجهاز.',
+      );
+    }
+
     final locallyRegisteredDevice =
         employee.registeredAttendanceDeviceId?.trim() ?? '';
     if (locallyRegisteredDevice.isNotEmpty) {
-      if (locallyRegisteredDevice == deviceId) return;
+      if (locallyRegisteredDevice == deviceId) {
+        await _offlineQueue.rememberLocalDeviceOwner(
+          deviceId: deviceId,
+          userId: employee.uid,
+        );
+        return;
+      }
       throw Exception(
         'هذا الحساب مربوط بجهاز حضور آخر. اطلب من HR إعادة ضبط جهاز الحضور قبل استخدام هذا الجهاز.',
       );
+    }
+
+    if (allowOfflineFallback && !await _offlineQueue.isOnline()) {
+      await _offlineQueue.rememberLocalDeviceOwner(
+        deviceId: deviceId,
+        userId: employee.uid,
+      );
+      return;
     }
 
     final userRef = _db.collection('users').doc(employee.uid);
@@ -189,51 +359,64 @@ class AttendanceService {
         .collection('attendanceDevices')
         .doc(AttendanceSecurityService.deviceDocumentId(deviceId));
 
-    await _db.runTransaction((transaction) async {
-      final userSnap = await transaction.get(userRef);
-      if (!userSnap.exists) {
-        throw Exception('لم يتم العثور على حساب الموظف.');
-      }
-
-      final userData = userSnap.data() ?? <String, dynamic>{};
-      final registeredDeviceId =
-          (userData['registeredAttendanceDeviceId'] as String?)?.trim() ?? '';
-
-      if (registeredDeviceId.isNotEmpty) {
-        if (registeredDeviceId != deviceId) {
-          throw Exception(
-            'هذا الحساب مربوط بجهاز حضور آخر. اطلب من HR إعادة ضبط جهاز الحضور قبل استخدام هذا الجهاز.',
-          );
+    try {
+      await _db.runTransaction((transaction) async {
+        final userSnap = await transaction.get(userRef);
+        if (!userSnap.exists) {
+          throw Exception('لم يتم العثور على حساب الموظف.');
         }
-        return;
-      }
 
-      final deviceSnap = await transaction.get(deviceRef);
-      if (deviceSnap.exists) {
-        final deviceData = deviceSnap.data() ?? <String, dynamic>{};
-        final boundUserId = deviceData['userId'] as String? ?? '';
-        if (boundUserId != employee.uid) {
-          throw Exception(
-            'هذا الجهاز مربوط بحساب موظف آخر. لا يمكن تسجيل حضور أكثر من حساب من نفس الجهاز.',
-          );
+        final userData = userSnap.data() ?? <String, dynamic>{};
+        final registeredDeviceId =
+            (userData['registeredAttendanceDeviceId'] as String?)?.trim() ?? '';
+
+        if (registeredDeviceId.isNotEmpty) {
+          if (registeredDeviceId != deviceId) {
+            throw Exception(
+              'هذا الحساب مربوط بجهاز حضور آخر. اطلب من HR إعادة ضبط جهاز الحضور قبل استخدام هذا الجهاز.',
+            );
+          }
+          return;
         }
-      } else {
-        transaction.set(deviceRef, {
-          'deviceId': deviceId,
-          'userId': employee.uid,
-          'employeeId': employee.employeeId,
-          'employeeName': employee.displayName,
-          'deviceLabel': securityResult.deviceLabel,
-          'registeredAt': FieldValue.serverTimestamp(),
+
+        final deviceSnap = await transaction.get(deviceRef);
+        if (deviceSnap.exists) {
+          final deviceData = deviceSnap.data() ?? <String, dynamic>{};
+          final boundUserId = deviceData['userId'] as String? ?? '';
+          if (boundUserId != employee.uid) {
+            throw Exception(
+              'هذا الجهاز مربوط بحساب موظف آخر. لا يمكن تسجيل حضور أكثر من حساب من نفس الجهاز.',
+            );
+          }
+        } else {
+          transaction.set(deviceRef, {
+            'deviceId': deviceId,
+            'userId': employee.uid,
+            'employeeId': employee.employeeId,
+            'employeeName': employee.displayName,
+            'deviceLabel': securityResult.deviceLabel,
+            'registeredAt': FieldValue.serverTimestamp(),
+          });
+        }
+
+        transaction.update(userRef, {
+          'registeredAttendanceDeviceId': deviceId,
+          'registeredAttendanceDeviceLabel': securityResult.deviceLabel,
+          'registeredAttendanceDeviceAt': FieldValue.serverTimestamp(),
         });
-      }
-
-      transaction.update(userRef, {
-        'registeredAttendanceDeviceId': deviceId,
-        'registeredAttendanceDeviceLabel': securityResult.deviceLabel,
-        'registeredAttendanceDeviceAt': FieldValue.serverTimestamp(),
       });
-    });
+
+      await _offlineQueue.rememberLocalDeviceOwner(
+        deviceId: deviceId,
+        userId: employee.uid,
+      );
+    } catch (e) {
+      if (!allowOfflineFallback) rethrow;
+      await _offlineQueue.rememberLocalDeviceOwner(
+        deviceId: deviceId,
+        userId: employee.uid,
+      );
+    }
   }
 
   bool _isEarlyCheckout(DateTime now, String? configuredEndTime) {
@@ -286,6 +469,8 @@ class AttendanceService {
     required String reasonLabel,
     required DateTime now,
     required bool applies,
+    int payrollWorkDaysPerMonth =
+        AttendancePolicy.defaultPayrollWorkDaysPerMonth,
   }) {
     if (!applies || currentLog.salaryDeductionFraction >= 0.25) {
       return const _DeductionPatch.empty();
@@ -294,6 +479,7 @@ class AttendanceService {
     final amount = AttendancePolicy.calculateSalaryDeductionAmount(
       monthlySalary: employee.baseMonthlySalary,
       dayFraction: 0.25,
+      payrollWorkDaysPerMonth: payrollWorkDaysPerMonth,
     );
 
     return _DeductionPatch(
@@ -324,17 +510,46 @@ class AttendanceService {
     final nextYear = month == 12 ? year + 1 : year;
     final nextMonthStr = '$nextYear-${nextMonth.toString().padLeft(2, '0')}-01';
 
-    return _db
+    final remoteStream = _db
         .collection('attendance')
         .where('userId', isEqualTo: userId)
         .where('date', isGreaterThanOrEqualTo: '$monthKey-01')
         .where('date', isLessThan: nextMonthStr)
-        .snapshots()
-        .map((snapshot) {
-          return snapshot.docs
-              .map((doc) => AttendanceModel.fromFirestore(doc))
-              .toList();
-        });
+        .snapshots();
+
+    return Stream.multi((controller) {
+      var remoteLogs = <AttendanceModel>[];
+
+      Future<void> emitMerged() async {
+        final pendingLogs = await _offlineQueue.pendingLogsForMonth(
+          userId: userId,
+          monthKey: monthKey,
+        );
+        final merged = <String, AttendanceModel>{
+          for (final log in remoteLogs) log.attendanceId: log,
+        };
+        for (final pending in pendingLogs) {
+          merged[pending.attendanceId] = pending;
+        }
+        final logs = merged.values.toList()
+          ..sort((a, b) => b.date.compareTo(a.date));
+        if (!controller.isClosed) controller.add(logs);
+      }
+
+      final remoteSub = remoteStream.listen((snapshot) {
+        remoteLogs = snapshot.docs
+            .map((doc) => AttendanceModel.fromFirestore(doc))
+            .toList();
+        emitMerged();
+      }, onError: controller.addError);
+      final pendingSub = _offlineQueue.changes.listen((_) => emitMerged());
+      emitMerged();
+
+      controller.onCancel = () async {
+        await remoteSub.cancel();
+        await pendingSub.cancel();
+      };
+    });
   }
 
   // Stream team's attendance records for manager
@@ -427,36 +642,40 @@ class AttendanceService {
     required String body,
     Map<String, dynamic>? data,
   }) async {
-    final targets = <String>{};
-    final roleSnap = await _db
-        .collection('users')
-        .where('role', isEqualTo: role)
-        .get();
-    targets.addAll(roleSnap.docs.map((doc) => doc.id));
-    final superSnap = await _db
-        .collection('users')
-        .where('role', isEqualTo: 'super_admin')
-        .get();
-    targets.addAll(superSnap.docs.map((doc) => doc.id));
+    try {
+      final targets = <String>{};
+      final roleSnap = await _db
+          .collection('users')
+          .where('role', isEqualTo: role)
+          .get();
+      targets.addAll(roleSnap.docs.map((doc) => doc.id));
+      final superSnap = await _db
+          .collection('users')
+          .where('role', isEqualTo: 'super_admin')
+          .get();
+      targets.addAll(superSnap.docs.map((doc) => doc.id));
 
-    for (final userId in targets) {
-      final notifRef = _db
-          .collection('notifications')
-          .doc(userId)
-          .collection('items')
-          .doc();
-      await notifRef.set({
-        'notificationId': notifRef.id,
-        'type': type,
-        'title': title,
-        'body': body,
-        'data': data ?? {},
-        'isRead': false,
-        'createdAt': FieldValue.serverTimestamp(),
-      });
-      await _db.collection('users').doc(userId).update({
-        'unreadNotifications': FieldValue.increment(1),
-      });
+      for (final userId in targets) {
+        final notifRef = _db
+            .collection('notifications')
+            .doc(userId)
+            .collection('items')
+            .doc();
+        await notifRef.set({
+          'notificationId': notifRef.id,
+          'type': type,
+          'title': title,
+          'body': body,
+          'data': data ?? {},
+          'isRead': false,
+          'createdAt': FieldValue.serverTimestamp(),
+        });
+        await _db.collection('users').doc(userId).update({
+          'unreadNotifications': FieldValue.increment(1),
+        });
+      }
+    } catch (_) {
+      // Notification delivery must never make attendance fail.
     }
   }
 }
@@ -479,4 +698,11 @@ class _DeductionPatch {
       shouldNotify = false,
       label = '',
       amount = 0;
+}
+
+class _TodayAttendanceLookup {
+  final QueryDocumentSnapshot<Map<String, dynamic>>? doc;
+  final AttendanceModel? log;
+
+  const _TodayAttendanceLookup({this.doc, this.log});
 }
