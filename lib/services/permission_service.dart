@@ -4,7 +4,6 @@ import '../models/user_model.dart';
 import '../models/permission_model.dart';
 import '../models/attendance_policy.dart';
 import 'audit_log_service.dart';
-import 'onesignal_service.dart';
 
 class PermissionService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
@@ -169,10 +168,7 @@ class PermissionService {
       throw Exception('طلب الإذن ليس في مرحلة موافقة المدير.');
     }
 
-    if (reviewerRole != 'manager' &&
-        reviewerRole != 'super_admin' &&
-        reviewerRole != 'admin' &&
-        reviewerRole != 'superAdmin') {
+    if (reviewerRole != 'manager' && reviewerRole != 'super_admin') {
       throw Exception('هذا الطلب ينتظر موافقة المدير.');
     }
 
@@ -243,11 +239,14 @@ class PermissionService {
       if (isHrStage) 'hrReviewedBy': reviewerId,
       if (isHrStage) 'hrReviewedAt': FieldValue.serverTimestamp(),
       if (isHrStage) 'hrReviewerComment': comment,
-      if (!isHrStage && reviewerRole == 'manager')
+      if (!isHrStage &&
+          (reviewerRole == 'manager' || reviewerRole == 'super_admin'))
         'managerReviewedBy': reviewerId,
-      if (!isHrStage && reviewerRole == 'manager')
+      if (!isHrStage &&
+          (reviewerRole == 'manager' || reviewerRole == 'super_admin'))
         'managerReviewedAt': FieldValue.serverTimestamp(),
-      if (!isHrStage && reviewerRole == 'manager')
+      if (!isHrStage &&
+          (reviewerRole == 'manager' || reviewerRole == 'super_admin'))
         'managerReviewerComment': comment,
     });
 
@@ -310,13 +309,6 @@ class PermissionService {
     await _db.collection('users').doc(recipientId).update({
       'unreadNotifications': FieldValue.increment(1),
     });
-
-    await OneSignalService.sendPushToUsers(
-      targetUids: [recipientId],
-      title: title,
-      body: body,
-      additionalData: data,
-    );
   }
 
   Future<void> _notifyRole({

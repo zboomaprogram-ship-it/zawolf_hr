@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../services/auth_service.dart';
+import '../../services/attendance_security_service.dart';
 import '../../models/employee_role.dart';
 import '../../models/user_model.dart';
 import '../../models/location_model.dart';
@@ -13,6 +14,51 @@ import '../../theme/theme.dart';
 import '../../components/wolf_card.dart';
 import '../../components/wolf_button.dart';
 import '../../components/wolf_input_field.dart';
+
+List<DropdownMenuItem<String>> _roleMenuItems({
+  required bool canUseSuperAdmin,
+  required bool includeEnglish,
+}) {
+  final items = <DropdownMenuItem<String>>[
+    DropdownMenuItem(
+      value: EmployeeRole.employee,
+      child: Align(
+        alignment: Alignment.centerRight,
+        child: Text(includeEnglish ? 'موظف (Employee)' : 'موظف'),
+      ),
+    ),
+    DropdownMenuItem(
+      value: EmployeeRole.manager,
+      child: Align(
+        alignment: Alignment.centerRight,
+        child: Text(includeEnglish ? 'مدير قسم (Manager)' : 'مدير قسم'),
+      ),
+    ),
+    DropdownMenuItem(
+      value: EmployeeRole.hrAdmin,
+      child: Align(
+        alignment: Alignment.centerRight,
+        child: Text(includeEnglish ? 'مسؤول HR (HR Admin)' : 'مسؤول HR'),
+      ),
+    ),
+  ];
+
+  if (canUseSuperAdmin) {
+    items.add(
+      DropdownMenuItem(
+        value: EmployeeRole.superAdmin,
+        child: Align(
+          alignment: Alignment.centerRight,
+          child: Text(
+            includeEnglish ? 'مالك النظام (Super Admin)' : 'مالك النظام',
+          ),
+        ),
+      ),
+    );
+  }
+
+  return items;
+}
 
 class EmployeeManagementScreen extends StatefulWidget {
   const EmployeeManagementScreen({super.key});
@@ -717,6 +763,9 @@ class _AddEmployeeDialogState extends State<AddEmployeeDialog> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final canUseSuperAdmin =
+        Provider.of<AuthService>(context, listen: false).currentUser?.role ==
+        EmployeeRole.superAdmin;
 
     return Dialog(
       backgroundColor: ZaWolfColors.surface01,
@@ -844,36 +893,10 @@ class _AddEmployeeDialogState extends State<AddEmployeeDialog> {
                     labelStyle: TextStyle(color: ZaWolfColors.primaryCyan),
                   ),
                   style: const TextStyle(color: Colors.white),
-                  items: const [
-                    DropdownMenuItem(
-                      value: 'employee',
-                      child: Align(
-                        alignment: Alignment.centerRight,
-                        child: Text('موظف (Employee)'),
-                      ),
-                    ),
-                    DropdownMenuItem(
-                      value: 'manager',
-                      child: Align(
-                        alignment: Alignment.centerRight,
-                        child: Text('مدير قسم (Manager)'),
-                      ),
-                    ),
-                    DropdownMenuItem(
-                      value: 'hr_admin',
-                      child: Align(
-                        alignment: Alignment.centerRight,
-                        child: Text('مسؤول HR (HR Admin)'),
-                      ),
-                    ),
-                    DropdownMenuItem(
-                      value: 'super_admin',
-                      child: Align(
-                        alignment: Alignment.centerRight,
-                        child: Text('مالك النظام (Super Admin)'),
-                      ),
-                    ),
-                  ],
+                  items: _roleMenuItems(
+                    canUseSuperAdmin: canUseSuperAdmin,
+                    includeEnglish: true,
+                  ),
                   onChanged: (val) {
                     if (val != null) {
                       setState(() {
@@ -1079,12 +1102,19 @@ class _EditEmployeeDialogState extends State<EditEmployeeDialog> {
     });
 
     try {
+      final canUseSuperAdmin =
+          Provider.of<AuthService>(context, listen: false).currentUser?.role ==
+          EmployeeRole.superAdmin;
+      final effectiveRole =
+          !canUseSuperAdmin && _selectedRole == EmployeeRole.superAdmin
+          ? EmployeeRole.employee
+          : _selectedRole;
       final updateData = {
         'displayName': _nameController.text.trim(),
         'employeeId': _codeController.text.trim(),
         'department': _departmentController.text.trim(),
         'position': _jobTitleController.text.trim(),
-        'role': _selectedRole,
+        'role': effectiveRole,
         'locationId': _selectedLocationId!,
         'locationName': _selectedLocationName!,
         'baseMonthlySalary': double.tryParse(_salaryController.text) ?? 0,
@@ -1116,9 +1146,90 @@ class _EditEmployeeDialogState extends State<EditEmployeeDialog> {
     }
   }
 
+  Future<void> _resetAttendanceDevice() async {
+    final deviceId = widget.employee.registeredAttendanceDeviceId;
+    if (deviceId == null || deviceId.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('لا يوجد جهاز حضور مسجل لهذا الحساب.')),
+      );
+      return;
+    }
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: ZaWolfColors.surface01,
+        title: const Text(
+          'إعادة ضبط جهاز الحضور',
+          style: TextStyle(color: Colors.white),
+        ),
+        content: Text(
+          'سيتم فك ربط جهاز ${widget.employee.displayName} الحالي، وبعدها يمكنه تسجيل الحضور من جهاز جديد بعد التحقق بالبصمة.',
+          style: const TextStyle(color: ZaWolfColors.textSecondary),
+          textDirection: TextDirection.rtl,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('إلغاء'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('تأكيد'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      final batch = _db.batch();
+      final userRef = _db.collection('users').doc(widget.employee.uid);
+      final deviceRef = _db
+          .collection('attendanceDevices')
+          .doc(AttendanceSecurityService.deviceDocumentId(deviceId));
+
+      batch.update(userRef, {
+        'registeredAttendanceDeviceId': FieldValue.delete(),
+        'registeredAttendanceDeviceLabel': FieldValue.delete(),
+        'registeredAttendanceDeviceAt': FieldValue.delete(),
+      });
+      batch.delete(deviceRef);
+      await batch.commit();
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('تمت إعادة ضبط جهاز الحضور بنجاح.')),
+      );
+      Navigator.pop(context);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('فشل إعادة الضبط: $e')));
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final canUseSuperAdmin =
+        Provider.of<AuthService>(context, listen: false).currentUser?.role ==
+        EmployeeRole.superAdmin;
+    final selectedRole =
+        !canUseSuperAdmin && _selectedRole == EmployeeRole.superAdmin
+        ? EmployeeRole.employee
+        : _selectedRole;
 
     return Dialog(
       backgroundColor: ZaWolfColors.surface01,
@@ -1210,43 +1321,17 @@ class _EditEmployeeDialogState extends State<EditEmployeeDialog> {
                 const SizedBox(height: 16),
 
                 DropdownButtonFormField<String>(
-                  initialValue: _selectedRole,
+                  initialValue: selectedRole,
                   dropdownColor: ZaWolfColors.surface01,
                   decoration: const InputDecoration(
                     labelText: 'الدور الصلاحيات (Role)',
                     labelStyle: TextStyle(color: ZaWolfColors.primaryCyan),
                   ),
                   style: const TextStyle(color: Colors.white),
-                  items: const [
-                    DropdownMenuItem(
-                      value: 'employee',
-                      child: Align(
-                        alignment: Alignment.centerRight,
-                        child: Text('موظف'),
-                      ),
-                    ),
-                    DropdownMenuItem(
-                      value: 'manager',
-                      child: Align(
-                        alignment: Alignment.centerRight,
-                        child: Text('مدير قسم'),
-                      ),
-                    ),
-                    DropdownMenuItem(
-                      value: 'hr_admin',
-                      child: Align(
-                        alignment: Alignment.centerRight,
-                        child: Text('مسؤول HR'),
-                      ),
-                    ),
-                    DropdownMenuItem(
-                      value: 'super_admin',
-                      child: Align(
-                        alignment: Alignment.centerRight,
-                        child: Text('مالك النظام'),
-                      ),
-                    ),
-                  ],
+                  items: _roleMenuItems(
+                    canUseSuperAdmin: canUseSuperAdmin,
+                    includeEnglish: false,
+                  ),
                   onChanged: (val) {
                     if (val != null) {
                       setState(() {
@@ -1329,6 +1414,63 @@ class _EditEmployeeDialogState extends State<EditEmployeeDialog> {
                       }
                     });
                   },
+                ),
+                const SizedBox(height: 24),
+
+                Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: ZaWolfColors.surface02.withValues(alpha: 0.45),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: ZaWolfColors.surface02),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Text(
+                        'جهاز الحضور المسجل',
+                        style: theme.textTheme.titleMedium!.copyWith(
+                          color: Colors.white,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        widget.employee.registeredAttendanceDeviceLabel ??
+                            'لم يتم ربط جهاز بعد',
+                        style: const TextStyle(
+                          color: ZaWolfColors.textSecondary,
+                        ),
+                      ),
+                      if (widget.employee.registeredAttendanceDeviceId !=
+                          null) ...[
+                        const SizedBox(height: 4),
+                        Text(
+                          widget.employee.registeredAttendanceDeviceId!,
+                          style: const TextStyle(
+                            color: ZaWolfColors.textMuted,
+                            fontSize: 12,
+                          ),
+                          textDirection: TextDirection.ltr,
+                        ),
+                      ],
+                      const SizedBox(height: 12),
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: TextButton.icon(
+                          onPressed:
+                              widget.employee.registeredAttendanceDeviceId ==
+                                  null
+                              ? null
+                              : _resetAttendanceDevice,
+                          icon: const Icon(Icons.phonelink_erase),
+                          label: const Text('إعادة ضبط الجهاز'),
+                          style: TextButton.styleFrom(
+                            foregroundColor: ZaWolfColors.primaryCyan,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
                 const SizedBox(height: 24),
 

@@ -2,7 +2,6 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../models/suggestion_model.dart';
 import '../models/user_model.dart';
-import 'onesignal_service.dart';
 
 class SuggestionService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
@@ -100,12 +99,5 @@ class SuggestionService {
       });
     }
     await batch.commit();
-
-    await OneSignalService.sendPushToUsers(
-      targetUids: targets.toList(),
-      title: title,
-      body: body,
-      additionalData: {'suggestionId': suggestionId},
-    );
   }
 }

@@ -282,8 +282,6 @@ class _AddLocationDialogState extends State<AddLocationDialog> {
 
   double _radius = 50.0;
   bool _useMap = false;
-  GoogleMapController? _mapController;
-  Marker? _marker;
   bool _isLoading = false;
 
   @override
@@ -299,19 +297,6 @@ class _AddLocationDialogState extends State<AddLocationDialog> {
       text: loc?.longitude.toString() ?? '31.2357',
     );
     _radius = loc?.geofenceRadiusMeters ?? 50.0;
-
-    // Set initial marker
-    _updateMarker(LatLng(loc?.latitude ?? 30.0444, loc?.longitude ?? 31.2357));
-  }
-
-  void _updateMarker(LatLng pos) {
-    setState(() {
-      _marker = Marker(
-        markerId: const MarkerId('selected_branch'),
-        position: pos,
-        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueCyan),
-      );
-    });
   }
 
   @override
@@ -320,8 +305,28 @@ class _AddLocationDialogState extends State<AddLocationDialog> {
     _addressController.dispose();
     _latController.dispose();
     _lngController.dispose();
-    _mapController?.dispose();
     super.dispose();
+  }
+
+  Future<void> _openFullScreenPicker() async {
+    final initialLatLng = LatLng(
+      double.tryParse(_latController.text) ?? 30.0444,
+      double.tryParse(_lngController.text) ?? 31.2357,
+    );
+
+    final selected = await Navigator.of(context).push<LatLng>(
+      MaterialPageRoute(
+        builder: (_) => FullScreenLocationPicker(
+          initialPosition: initialLatLng,
+          radiusMeters: _radius,
+        ),
+      ),
+    );
+
+    if (selected == null || !mounted) return;
+    _latController.text = selected.latitude.toStringAsFixed(7);
+    _lngController.text = selected.longitude.toStringAsFixed(7);
+    setState(() {});
   }
 
   Future<void> _submit() async {
@@ -517,71 +522,49 @@ class _AddLocationDialogState extends State<AddLocationDialog> {
                 const SizedBox(height: 8),
 
                 if (_useMap) ...[
-                  // Google Maps Widget
                   Container(
-                    height: MediaQuery.of(context).size.height * 0.48,
+                    padding: const EdgeInsets.all(14),
                     decoration: BoxDecoration(
                       borderRadius: BorderRadius.circular(12),
                       border: Border.all(color: ZaWolfColors.surface02),
+                      color: ZaWolfColors.surface02.withValues(alpha: 0.35),
                     ),
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(12),
-                      child: GoogleMap(
-                        initialCameraPosition: CameraPosition(
-                          target: initialLatLng,
-                          zoom: 14.0,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Row(
+                          children: [
+                            const Icon(
+                              Icons.location_on,
+                              color: ZaWolfColors.primaryCyan,
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                '${initialLatLng.latitude.toStringAsFixed(6)}, ${initialLatLng.longitude.toStringAsFixed(6)}',
+                                style: const TextStyle(color: Colors.white),
+                                textDirection: TextDirection.ltr,
+                              ),
+                            ),
+                          ],
                         ),
-                        markers: _marker != null ? {_marker!} : {},
-                        onMapCreated: (ctrl) {
-                          _mapController = ctrl;
-                        },
-                        onTap: (pos) {
-                          _updateMarker(pos);
-                          _latController.text = pos.latitude.toString();
-                          _lngController.text = pos.longitude.toString();
-                        },
-                        myLocationButtonEnabled: true,
-                        zoomControlsEnabled: true,
-                      ),
+                        const SizedBox(height: 12),
+                        WolfButton(
+                          onPressed: _openFullScreenPicker,
+                          text: 'فتح الخريطة بملء الشاشة',
+                          secondaryText: 'FULL SCREEN MAP',
+                        ),
+                      ],
                     ),
                   ),
                   const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          '* اضغط على الخريطة لتحديد مكان الفرع بدقة.',
-                          style: const TextStyle(
-                            color: ZaWolfColors.textMuted,
-                            fontSize: 11,
-                          ),
-                          textDirection: TextDirection.rtl,
-                        ),
-                      ),
-                      TextButton.icon(
-                        onPressed: () async {
-                          final bounds = await _mapController
-                              ?.getVisibleRegion();
-                          if (bounds == null) return;
-                          final center = LatLng(
-                            (bounds.northeast.latitude +
-                                    bounds.southwest.latitude) /
-                                2,
-                            (bounds.northeast.longitude +
-                                    bounds.southwest.longitude) /
-                                2,
-                          );
-                          _updateMarker(center);
-                          _latController.text = center.latitude.toString();
-                          _lngController.text = center.longitude.toString();
-                        },
-                        icon: const Icon(Icons.center_focus_strong),
-                        label: const Text('اختيار مركز الخريطة'),
-                        style: TextButton.styleFrom(
-                          foregroundColor: ZaWolfColors.primaryCyan,
-                        ),
-                      ),
-                    ],
+                  Text(
+                    '* افتح الخريطة، حرّكها بحرية، ثم اضغط حفظ الموقع.',
+                    style: const TextStyle(
+                      color: ZaWolfColors.textMuted,
+                      fontSize: 11,
+                    ),
+                    textDirection: TextDirection.rtl,
                   ),
                 ] else ...[
                   // Lat/Lng Manual Form Fields
@@ -659,6 +642,160 @@ class _AddLocationDialogState extends State<AddLocationDialog> {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+class FullScreenLocationPicker extends StatefulWidget {
+  final LatLng initialPosition;
+  final double radiusMeters;
+
+  const FullScreenLocationPicker({
+    super.key,
+    required this.initialPosition,
+    required this.radiusMeters,
+  });
+
+  @override
+  State<FullScreenLocationPicker> createState() =>
+      _FullScreenLocationPickerState();
+}
+
+class _FullScreenLocationPickerState extends State<FullScreenLocationPicker> {
+  GoogleMapController? _controller;
+  late LatLng _selectedPosition;
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedPosition = widget.initialPosition;
+  }
+
+  @override
+  void dispose() {
+    _controller?.dispose();
+    super.dispose();
+  }
+
+  Future<void> _pickVisibleCenter() async {
+    final bounds = await _controller?.getVisibleRegion();
+    if (bounds == null) return;
+    setState(() {
+      _selectedPosition = LatLng(
+        (bounds.northeast.latitude + bounds.southwest.latitude) / 2,
+        (bounds.northeast.longitude + bounds.southwest.longitude) / 2,
+      );
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final marker = Marker(
+      markerId: const MarkerId('selected_branch'),
+      position: _selectedPosition,
+      draggable: true,
+      icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueCyan),
+      onDragEnd: (position) {
+        setState(() {
+          _selectedPosition = position;
+        });
+      },
+    );
+
+    final circle = Circle(
+      circleId: const CircleId('branch_geofence'),
+      center: _selectedPosition,
+      radius: widget.radiusMeters,
+      strokeColor: ZaWolfColors.primaryCyan,
+      strokeWidth: 2,
+      fillColor: ZaWolfColors.primaryCyan.withValues(alpha: 0.16),
+    );
+
+    return Scaffold(
+      backgroundColor: ZaWolfColors.background,
+      appBar: AppBar(
+        title: const Text('تحديد موقع الفرع'),
+        actions: [
+          TextButton.icon(
+            onPressed: () => Navigator.pop(context, _selectedPosition),
+            icon: const Icon(Icons.check),
+            label: const Text('حفظ الموقع'),
+            style: TextButton.styleFrom(foregroundColor: Colors.white),
+          ),
+        ],
+      ),
+      body: Stack(
+        children: [
+          GoogleMap(
+            initialCameraPosition: CameraPosition(
+              target: widget.initialPosition,
+              zoom: 16,
+            ),
+            markers: {marker},
+            circles: {circle},
+            onMapCreated: (controller) {
+              _controller = controller;
+            },
+            onTap: (position) {
+              setState(() {
+                _selectedPosition = position;
+              });
+            },
+            myLocationButtonEnabled: true,
+            myLocationEnabled: true,
+            zoomControlsEnabled: true,
+            compassEnabled: true,
+            mapToolbarEnabled: true,
+          ),
+          Positioned(
+            left: 16,
+            right: 16,
+            bottom: 20 + MediaQuery.of(context).padding.bottom,
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: ZaWolfColors.surface01.withValues(alpha: 0.92),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: ZaWolfColors.surface02),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.all(14),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(
+                      '${_selectedPosition.latitude.toStringAsFixed(7)}, ${_selectedPosition.longitude.toStringAsFixed(7)}',
+                      style: const TextStyle(color: Colors.white),
+                      textDirection: TextDirection.ltr,
+                    ),
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            onPressed: _pickVisibleCenter,
+                            icon: const Icon(Icons.center_focus_strong),
+                            label: const Text('اختيار مركز الخريطة'),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: ElevatedButton.icon(
+                            onPressed: () =>
+                                Navigator.pop(context, _selectedPosition),
+                            icon: const Icon(Icons.check),
+                            label: const Text('حفظ'),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

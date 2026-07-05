@@ -7,7 +7,6 @@ import 'attendance_security_service.dart';
 import 'audit_log_service.dart';
 import 'company_day_off_service.dart';
 import 'geofence_service.dart';
-import 'onesignal_service.dart';
 
 class AttendanceService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
@@ -58,6 +57,7 @@ class AttendanceService {
     }
 
     final securityResult = await _securityService.verifyForAttendance();
+    await _ensureAttendanceDeviceBinding(employee, securityResult);
 
     if (existingLogs.docs.isEmpty) {
       // ── CHECK-IN LOGIC ──
@@ -164,6 +164,76 @@ class AttendanceService {
         );
       }
     }
+  }
+
+  Future<void> _ensureAttendanceDeviceBinding(
+    UserModel employee,
+    AttendanceSecurityResult securityResult,
+  ) async {
+    final deviceId = securityResult.deviceId.trim();
+    if (deviceId.isEmpty) {
+      throw Exception('تعذر قراءة رقم الجهاز. أعد المحاولة أو تواصل مع HR.');
+    }
+
+    final locallyRegisteredDevice =
+        employee.registeredAttendanceDeviceId?.trim() ?? '';
+    if (locallyRegisteredDevice.isNotEmpty) {
+      if (locallyRegisteredDevice == deviceId) return;
+      throw Exception(
+        'هذا الحساب مربوط بجهاز حضور آخر. اطلب من HR إعادة ضبط جهاز الحضور قبل استخدام هذا الجهاز.',
+      );
+    }
+
+    final userRef = _db.collection('users').doc(employee.uid);
+    final deviceRef = _db
+        .collection('attendanceDevices')
+        .doc(AttendanceSecurityService.deviceDocumentId(deviceId));
+
+    await _db.runTransaction((transaction) async {
+      final userSnap = await transaction.get(userRef);
+      if (!userSnap.exists) {
+        throw Exception('لم يتم العثور على حساب الموظف.');
+      }
+
+      final userData = userSnap.data() ?? <String, dynamic>{};
+      final registeredDeviceId =
+          (userData['registeredAttendanceDeviceId'] as String?)?.trim() ?? '';
+
+      if (registeredDeviceId.isNotEmpty) {
+        if (registeredDeviceId != deviceId) {
+          throw Exception(
+            'هذا الحساب مربوط بجهاز حضور آخر. اطلب من HR إعادة ضبط جهاز الحضور قبل استخدام هذا الجهاز.',
+          );
+        }
+        return;
+      }
+
+      final deviceSnap = await transaction.get(deviceRef);
+      if (deviceSnap.exists) {
+        final deviceData = deviceSnap.data() ?? <String, dynamic>{};
+        final boundUserId = deviceData['userId'] as String? ?? '';
+        if (boundUserId != employee.uid) {
+          throw Exception(
+            'هذا الجهاز مربوط بحساب موظف آخر. لا يمكن تسجيل حضور أكثر من حساب من نفس الجهاز.',
+          );
+        }
+      } else {
+        transaction.set(deviceRef, {
+          'deviceId': deviceId,
+          'userId': employee.uid,
+          'employeeId': employee.employeeId,
+          'employeeName': employee.displayName,
+          'deviceLabel': securityResult.deviceLabel,
+          'registeredAt': FieldValue.serverTimestamp(),
+        });
+      }
+
+      transaction.update(userRef, {
+        'registeredAttendanceDeviceId': deviceId,
+        'registeredAttendanceDeviceLabel': securityResult.deviceLabel,
+        'registeredAttendanceDeviceAt': FieldValue.serverTimestamp(),
+      });
+    });
   }
 
   bool _isEarlyCheckout(DateTime now, String? configuredEndTime) {
@@ -326,12 +396,12 @@ class AttendanceService {
             .doc(userId)
             .collection('items')
             .doc();
-        
-        final title = status == 'approved' 
-            ? 'تم اعتماد الخصم' 
+
+        final title = status == 'approved'
+            ? 'تم اعتماد الخصم'
             : 'تم إلغاء الخصم';
-        final body = status == 'approved' 
-            ? 'تم اعتماد خصم الحضور والانصراف الخاص بك.' 
+        final body = status == 'approved'
+            ? 'تم اعتماد خصم الحضور والانصراف الخاص بك.'
             : 'تم إلغاء خصم الحضور والانصراف الخاص بك.';
 
         await notifRef.set({
@@ -346,13 +416,6 @@ class AttendanceService {
         await _db.collection('users').doc(userId).update({
           'unreadNotifications': FieldValue.increment(1),
         });
-
-        await OneSignalService.sendPushToUsers(
-          targetUids: [userId],
-          title: title,
-          body: body,
-          additionalData: {'attendanceId': attendanceId},
-        );
       }
     }
   }
@@ -395,13 +458,6 @@ class AttendanceService {
         'unreadNotifications': FieldValue.increment(1),
       });
     }
-
-    await OneSignalService.sendPushToUsers(
-      targetUids: targets.toList(),
-      title: title,
-      body: body,
-      additionalData: data,
-    );
   }
 }
 

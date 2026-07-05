@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+import '../models/employee_role.dart';
 import '../services/auth_service.dart';
 import '../screens/splash_screen.dart';
 import '../screens/login_screen.dart';
@@ -46,9 +47,9 @@ class ZaWolfRouter {
         // 2. Authenticated users should be sent to their dashboard if they hit splash or login
         if (loggingIn || onSplash) {
           final role = authService.currentUser?.role;
-          if (role == 'super_admin') return '/hr/dashboard';
-          if (role == 'hr_admin') return '/hr/dashboard';
-          if (role == 'manager') return '/manager/dashboard';
+          if (role == EmployeeRole.superAdmin) return '/hr/dashboard';
+          if (role == EmployeeRole.hrAdmin) return '/hr/dashboard';
+          if (role == EmployeeRole.manager) return '/manager/dashboard';
           return '/employee/dashboard';
         }
 
@@ -57,19 +58,24 @@ class ZaWolfRouter {
         final goingToHr = state.matchedLocation.startsWith('/hr');
         final goingToManager = state.matchedLocation.startsWith('/manager');
 
-        if (role == 'super_admin') {
+        if (role == EmployeeRole.superAdmin) {
           return null;
         }
 
-        if (role == 'employee') {
+        if (role == EmployeeRole.employee) {
           // Employees cannot access manager or hr paths
           if (goingToHr || goingToManager) {
             return '/employee/dashboard';
           }
-        } else if (role == 'manager') {
+        } else if (role == EmployeeRole.manager) {
           // Managers cannot access hr paths
           if (goingToHr) {
             return '/manager/dashboard';
+          }
+        } else if (role == EmployeeRole.hrAdmin) {
+          // HR users cannot access manager-only paths.
+          if (goingToManager) {
+            return '/hr/dashboard';
           }
         }
 

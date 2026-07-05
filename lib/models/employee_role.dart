@@ -6,8 +6,7 @@ class EmployeeRole {
 
   static bool isSuperAdmin(String? role) => role == superAdmin;
   static bool isHr(String? role) => role == hrAdmin || role == superAdmin;
-  static bool isManager(String? role) =>
-      role == manager || role == hrAdmin || role == superAdmin;
+  static bool isManager(String? role) => role == manager || role == superAdmin;
 
   static String arabicLabel(String role) {
     switch (role) {

@@ -123,6 +123,9 @@ class UserModel {
   final DateTime? createdAt;
   final DateTime? updatedAt;
   final DateTime? passwordChangedAt;
+  final String? registeredAttendanceDeviceId;
+  final String? registeredAttendanceDeviceLabel;
+  final DateTime? registeredAttendanceDeviceAt;
   final String? initialPassword; // Local visual support on account creation
 
   UserModel({
@@ -150,6 +153,9 @@ class UserModel {
     this.createdAt,
     this.updatedAt,
     this.passwordChangedAt,
+    this.registeredAttendanceDeviceId,
+    this.registeredAttendanceDeviceLabel,
+    this.registeredAttendanceDeviceAt,
     this.initialPassword,
   });
 
@@ -190,6 +196,12 @@ class UserModel {
       createdAt: (data['createdAt'] as Timestamp?)?.toDate(),
       updatedAt: (data['updatedAt'] as Timestamp?)?.toDate(),
       passwordChangedAt: (data['passwordChangedAt'] as Timestamp?)?.toDate(),
+      registeredAttendanceDeviceId:
+          data['registeredAttendanceDeviceId'] as String?,
+      registeredAttendanceDeviceLabel:
+          data['registeredAttendanceDeviceLabel'] as String?,
+      registeredAttendanceDeviceAt:
+          (data['registeredAttendanceDeviceAt'] as Timestamp?)?.toDate(),
     );
   }
 
@@ -221,6 +233,14 @@ class UserModel {
       'updatedAt': FieldValue.serverTimestamp(),
       if (passwordChangedAt != null)
         'passwordChangedAt': Timestamp.fromDate(passwordChangedAt!),
+      if (registeredAttendanceDeviceId != null)
+        'registeredAttendanceDeviceId': registeredAttendanceDeviceId,
+      if (registeredAttendanceDeviceLabel != null)
+        'registeredAttendanceDeviceLabel': registeredAttendanceDeviceLabel,
+      if (registeredAttendanceDeviceAt != null)
+        'registeredAttendanceDeviceAt': Timestamp.fromDate(
+          registeredAttendanceDeviceAt!,
+        ),
     };
   }
 
@@ -249,6 +269,9 @@ class UserModel {
     DateTime? createdAt,
     DateTime? updatedAt,
     DateTime? passwordChangedAt,
+    String? registeredAttendanceDeviceId,
+    String? registeredAttendanceDeviceLabel,
+    DateTime? registeredAttendanceDeviceAt,
     String? initialPassword,
   }) {
     return UserModel(
@@ -276,6 +299,13 @@ class UserModel {
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       passwordChangedAt: passwordChangedAt ?? this.passwordChangedAt,
+      registeredAttendanceDeviceId:
+          registeredAttendanceDeviceId ?? this.registeredAttendanceDeviceId,
+      registeredAttendanceDeviceLabel:
+          registeredAttendanceDeviceLabel ??
+          this.registeredAttendanceDeviceLabel,
+      registeredAttendanceDeviceAt:
+          registeredAttendanceDeviceAt ?? this.registeredAttendanceDeviceAt,
       initialPassword: initialPassword ?? this.initialPassword,
     );
   }

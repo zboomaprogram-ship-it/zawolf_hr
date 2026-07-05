@@ -9,9 +9,10 @@ import 'package:intl/intl.dart' hide TextDirection;
 import '../models/company_day_off_model.dart';
 import 'notification_service.dart';
 
-/// Smart daily reminder IDs — using fixed IDs so we can always cancel/replace them.
+/// Smart daily reminder IDs — using fixed ranges so we can always cancel/replace them.
 const int kMorningCheckInReminderId = 9001;
 const int kCheckOutReminderId = 9002;
+const int kReminderScheduleDays = 30;
 
 /// Service responsible for scheduling and managing daily attendance reminders.
 /// Reminders are scheduled using TZ-aware local notifications and persist
@@ -34,7 +35,7 @@ class DailyReminderService {
   Future<void> scheduleForUser({
     required String userId,
     required String startTime, // "HH:mm" e.g. "09:00"
-    required String endTime,   // "HH:mm" e.g. "17:00"
+    required String endTime, // "HH:mm" e.g. "17:00"
   }) async {
     // Cancel any previous reminders first.
     await cancelAll();
@@ -55,43 +56,67 @@ class DailyReminderService {
       morningHour -= 1;
     }
 
-    await _scheduleSmartDailyNotification(
-      id: kMorningCheckInReminderId,
-      hour: morningHour,
-      minute: morningMin,
-      userId: userId,
-      checkType: 'check_in',
-      startTime: startTime,
-      endTime: endTime,
-    );
+    final now = DateTime.now();
+    for (var offset = 0; offset < kReminderScheduleDays; offset++) {
+      final day = DateTime(
+        now.year,
+        now.month,
+        now.day,
+      ).add(Duration(days: offset));
+      if (day.weekday == DateTime.friday || await _isCompanyDayOff(day)) {
+        continue;
+      }
 
-    // Checkout reminder: at shift end time
-    await _scheduleSmartDailyNotification(
-      id: kCheckOutReminderId,
-      hour: endHour,
-      minute: endMin,
-      userId: userId,
-      checkType: 'check_out',
-      startTime: startTime,
-      endTime: endTime,
-    );
+      await _scheduleSmartDailyNotification(
+        id: kMorningCheckInReminderId + offset,
+        date: day,
+        hour: morningHour,
+        minute: morningMin,
+        userId: userId,
+        checkType: 'check_in',
+        startTime: startTime,
+        endTime: endTime,
+      );
+
+      await _scheduleSmartDailyNotification(
+        id: kCheckOutReminderId + offset,
+        date: day,
+        hour: endHour,
+        minute: endMin,
+        userId: userId,
+        checkType: 'check_out',
+        startTime: startTime,
+        endTime: endTime,
+      );
+    }
 
     if (kDebugMode) {
-      print('DailyReminderService: Scheduled morning reminder at $morningHour:$morningMin');
-      print('DailyReminderService: Scheduled checkout reminder at $endHour:$endMin');
+      print(
+        'DailyReminderService: Scheduled morning reminder at $morningHour:$morningMin',
+      );
+      print(
+        'DailyReminderService: Scheduled checkout reminder at $endHour:$endMin',
+      );
     }
   }
 
   /// Cancels all daily reminders (call on logout).
   Future<void> cancelAll() async {
-    await NotificationService.instance.cancelNotification(kMorningCheckInReminderId);
-    await NotificationService.instance.cancelNotification(kCheckOutReminderId);
+    for (var offset = 0; offset < kReminderScheduleDays; offset++) {
+      await NotificationService.instance.cancelNotification(
+        kMorningCheckInReminderId + offset,
+      );
+      await NotificationService.instance.cancelNotification(
+        kCheckOutReminderId + offset,
+      );
+    }
   }
 
   /// Schedules a single smart daily notification.
   /// When it fires, it checks all conditions before showing.
   Future<void> _scheduleSmartDailyNotification({
     required int id,
+    required DateTime date,
     required int hour,
     required int minute,
     required String userId,
@@ -114,23 +139,21 @@ class DailyReminderService {
       presentBadge: true,
       presentSound: true,
     );
-    const details = NotificationDetails(android: androidDetails, iOS: iosDetails);
-
-    // Build the next occurrence of this time.
-    final now = tz.TZDateTime.now(tz.local);
-    var scheduled = tz.TZDateTime(
-      tz.local,
-      now.year, now.month, now.day,
-      hour, minute,
+    const details = NotificationDetails(
+      android: androidDetails,
+      iOS: iosDetails,
     );
-    // If that time has already passed today, schedule for tomorrow.
-    if (scheduled.isBefore(now)) {
-      scheduled = scheduled.add(const Duration(days: 1));
-    }
 
-    // Schedule daily repeat Mon–Sun, but suppress on Fridays via payload check.
-    // We store userId + checkType in the payload so the notification handler
-    // can run the smart check before displaying.
+    final scheduled = tz.TZDateTime(
+      tz.local,
+      date.year,
+      date.month,
+      date.day,
+      hour,
+      minute,
+    );
+    if (scheduled.isBefore(tz.TZDateTime.now(tz.local))) return;
+
     final payload = '$checkType|$userId|$startTime|$endTime';
 
     await plugin.zonedSchedule(
@@ -144,11 +167,23 @@ class DailyReminderService {
       scheduled,
       details,
       androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
-      matchDateTimeComponents: DateTimeComponents.time,
       uiLocalNotificationDateInterpretation:
           UILocalNotificationDateInterpretation.absoluteTime,
       payload: payload,
     );
+  }
+
+  Future<bool> _isCompanyDayOff(DateTime date) async {
+    try {
+      final dayOffKey = CompanyDayOffModel.keyFor(date);
+      final dayOffDoc = await _db
+          .collection('companyDayOffs')
+          .doc(dayOffKey)
+          .get();
+      return dayOffDoc.exists && dayOffDoc.data()?['isActive'] == true;
+    } catch (_) {
+      return false;
+    }
   }
 
   /// Called by the notification response handler when the user sees a daily reminder.
@@ -172,11 +207,18 @@ class DailyReminderService {
     // 2. Check company day off (applies to all employees)
     try {
       final dayOffKey = CompanyDayOffModel.keyFor(now);
-      final dayOffDoc = await _db.collection('companyDayOffs').doc(dayOffKey).get();
+      final dayOffDoc = await _db
+          .collection('companyDayOffs')
+          .doc(dayOffKey)
+          .get();
       if (dayOffDoc.exists) {
         final data = dayOffDoc.data()!;
         if (data['isActive'] == true) {
-          if (kDebugMode) print('DailyReminder: Suppressed — Company day off: ${data['title']}');
+          if (kDebugMode) {
+            print(
+              'DailyReminder: Suppressed — Company day off: ${data['title']}',
+            );
+          }
           return false;
         }
       }
@@ -203,12 +245,20 @@ class DailyReminderService {
 
         // Check if today falls within [startDate, endDate] (inclusive).
         final todayDate = DateTime(now.year, now.month, now.day);
-        final leaveStart = DateTime(startDate.year, startDate.month, startDate.day);
+        final leaveStart = DateTime(
+          startDate.year,
+          startDate.month,
+          startDate.day,
+        );
         final leaveEnd = DateTime(endDate.year, endDate.month, endDate.day);
 
         if (!todayDate.isBefore(leaveStart) && !todayDate.isAfter(leaveEnd)) {
           final leaveType = data['leaveType'] as String? ?? 'إجازة';
-          if (kDebugMode) print('DailyReminder: Suppressed — Employee on approved leave: $leaveType');
+          if (kDebugMode) {
+            print(
+              'DailyReminder: Suppressed — Employee on approved leave: $leaveType',
+            );
+          }
           return false;
         }
       }
@@ -229,13 +279,21 @@ class DailyReminderService {
 
         if (checkType == 'check_in' && permType == 'late_arrival') {
           // Employee has approved late arrival permission today — suppress morning reminder
-          if (kDebugMode) print('DailyReminder: Suppressed check-in — approved late_arrival permission');
+          if (kDebugMode) {
+            print(
+              'DailyReminder: Suppressed check-in — approved late_arrival permission',
+            );
+          }
           return false;
         }
 
         if (checkType == 'check_out' && permType == 'early_leave') {
           // Employee has approved early leave permission today — suppress checkout reminder
-          if (kDebugMode) print('DailyReminder: Suppressed check-out — approved early_leave permission');
+          if (kDebugMode) {
+            print(
+              'DailyReminder: Suppressed check-out — approved early_leave permission',
+            );
+          }
           return false;
         }
       }
@@ -251,7 +309,9 @@ class DailyReminderService {
             .limit(1)
             .get();
         if (attendanceSnap.docs.isNotEmpty) {
-          if (kDebugMode) print('DailyReminder: Suppressed check-in — already checked in');
+          if (kDebugMode) {
+            print('DailyReminder: Suppressed check-in — already checked in');
+          }
           return false;
         }
       } catch (_) {}
@@ -269,7 +329,11 @@ class DailyReminderService {
         if (attendanceSnap.docs.isNotEmpty) {
           final data = attendanceSnap.docs.first.data();
           if (data['checkOutTime'] != null) {
-            if (kDebugMode) print('DailyReminder: Suppressed check-out — already checked out');
+            if (kDebugMode) {
+              print(
+                'DailyReminder: Suppressed check-out — already checked out',
+              );
+            }
             return false;
           }
         }
@@ -307,10 +371,12 @@ class DailyReminderService {
       final h = parts[0];
       final m = parts[1];
       title = '⏰ تذكير بتسجيل الحضور';
-      body = 'موعد بدء الدوام الساعة $h:$m، لا تتأخر! سجِّل حضورك الآن لتجنب الخصم.';
+      body =
+          'موعد بدء الدوام الساعة $h:$m، لا تتأخر! سجِّل حضورك الآن لتجنب الخصم.';
     } else {
       title = '🚪 تذكير بتسجيل الانصراف';
-      body = 'انتهى وقت الدوام! لا تنسَ تسجيل انصرافك قبل المغادرة لتجنب خصم ربع يوم.';
+      body =
+          'انتهى وقت الدوام! لا تنسَ تسجيل انصرافك قبل المغادرة لتجنب خصم ربع يوم.';
     }
 
     await NotificationService.instance.showNotification(title, body);

@@ -10,7 +10,6 @@ import 'services/notification_service.dart';
 import 'services/background_service.dart';
 import 'services/daily_reminder_service.dart';
 import 'package:intl/date_symbol_data_local.dart';
-import 'package:onesignal_flutter/onesignal_flutter.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -39,11 +38,6 @@ void main() async {
   } catch (e) {
     debugPrint('Notification/Background service setup failed: $e');
   }
-
-  // 4. Initialize OneSignal
-  OneSignal.Debug.setLogLevel(OSLogLevel.verbose);
-  OneSignal.initialize("b1f85662-d1d6-4629-969c-ed843350baed");
-  OneSignal.Notifications.requestPermission(true);
 
   runApp(const MyApp());
 }

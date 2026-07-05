@@ -4,7 +4,6 @@ import '../../components/wolf_button.dart';
 import '../../components/wolf_input_field.dart';
 import '../../models/location_model.dart';
 import '../../theme/theme.dart';
-import '../../services/onesignal_service.dart';
 
 class AnnouncementsScreen extends StatefulWidget {
   const AnnouncementsScreen({super.key});
@@ -133,13 +132,6 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
       });
 
       await batch.commit();
-
-      final targetUids = users.map((doc) => doc.id).toList();
-      await OneSignalService.sendPushToUsers(
-        targetUids: targetUids,
-        title: '📢 إعلان إداري: $title',
-        body: body,
-      );
 
       _titleController.clear();
       _bodyController.clear();

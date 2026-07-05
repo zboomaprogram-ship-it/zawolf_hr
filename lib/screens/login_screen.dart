@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
+import '../models/employee_role.dart';
 import '../services/auth_service.dart';
 import '../theme/theme.dart';
 import '../components/wolf_button.dart';
@@ -59,9 +60,9 @@ class _LoginScreenState extends State<LoginScreen> {
 
       // Navigate based on role
       final role = user?.role;
-      if (role == 'hr_admin') {
+      if (role == EmployeeRole.superAdmin || role == EmployeeRole.hrAdmin) {
         context.go('/hr/dashboard');
-      } else if (role == 'manager') {
+      } else if (role == EmployeeRole.manager) {
         context.go('/manager/dashboard');
       } else {
         context.go('/employee/dashboard');

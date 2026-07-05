@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 import '../services/auth_service.dart';
 import '../services/permission_service.dart';
+import '../models/employee_role.dart';
 import '../theme/theme.dart';
 
 class SplashScreen extends StatefulWidget {
@@ -53,9 +54,9 @@ class _SplashScreenState extends State<SplashScreen>
 
       if (!mounted) return;
       final role = authService.currentUser?.role;
-      if (role == 'hr_admin') {
+      if (role == EmployeeRole.superAdmin || role == EmployeeRole.hrAdmin) {
         context.go('/hr/dashboard');
-      } else if (role == 'manager') {
+      } else if (role == EmployeeRole.manager) {
         context.go('/manager/dashboard');
       } else {
         context.go('/employee/dashboard');

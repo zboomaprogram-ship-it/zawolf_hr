@@ -25,6 +25,12 @@ class AttendanceSecurityService {
   }) : _localAuth = localAuth ?? LocalAuthentication(),
        _deviceInfo = deviceInfo ?? DeviceInfoPlugin();
 
+  static String deviceDocumentId(String deviceId) {
+    final trimmed = deviceId.trim();
+    if (trimmed.isEmpty) return 'unknown-device';
+    return trimmed.replaceAll('/', '_');
+  }
+
   Future<AttendanceSecurityResult> verifyForAttendance() async {
     final device = await _readDevice();
     final canAuthenticate =
