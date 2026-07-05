@@ -21,16 +21,20 @@ async function runDailyTasks() {
   // Get date in Egypt time (GMT+3)
   const options = { timeZone: 'Africa/Cairo', year: 'numeric', month: '2-digit', day: '2-digit' };
   const formatter = new Intl.DateTimeFormat('en-CA', options); // en-CA gives YYYY-MM-DD
-  const todayStr = formatter.format(new Date());
+  
+  // Create a Date object offset to Cairo time for getting the correct weekday
+  const now = new Date();
+  const todayStr = formatter.format(now);
   console.log(`Processing for date: ${todayStr}`);
 
-  // Check if today is Friday (Day 5 in JS Date if Sunday is 0, but let's use Intl to get weekday)
-  const weekdayOptions = { timeZone: 'Africa/Cairo', weekday: 'long' };
-  const weekdayStr = new Intl.DateTimeFormat('en-US', weekdayOptions).format(new Date());
-  if (weekdayStr === 'Friday') {
-    console.log('Today is Friday (Weekend). Skipping absence tracking.');
-    process.exit(0);
-  }
+  // Get JS Day 0-6 in Cairo time
+  const jsDayOptions = { timeZone: 'Africa/Cairo', weekday: 'short' };
+  const weekdayShort = new Intl.DateTimeFormat('en-US', jsDayOptions).format(now);
+  const weekdayMap = { 'Sun': 0, 'Mon': 1, 'Tue': 2, 'Wed': 3, 'Thu': 4, 'Fri': 5, 'Sat': 6 };
+  const jsDay = weekdayMap[weekdayShort];
+  
+  // Map JS Day to Dart's DateTime.weekday (1=Mon, 7=Sun)
+  const dartWeekday = jsDay === 0 ? 7 : jsDay;
 
   // Check if today is a company day off
   const dayOffSnap = await db.collection('companyDayOffs').doc(todayStr).get();
@@ -81,12 +85,30 @@ async function runDailyTasks() {
     const user = userDoc.data();
     const userId = userDoc.id;
 
+    // Check if today is a custom day off for the user
+    let isOffDay = false;
+    if (user.workSchedule && Array.isArray(user.workSchedule.workDays)) {
+      if (!user.workSchedule.workDays.includes(dartWeekday)) {
+        isOffDay = true;
+      }
+    } else {
+      // Default to Friday (5) off if no custom schedule
+      if (dartWeekday === 5) {
+        isOffDay = true;
+      }
+    }
+
     // Check attendance log for today
     const attendanceId = `${userId}_${todayStr}`;
     const attendanceRef = db.collection('attendance').doc(attendanceId);
     const attendanceSnap = await attendanceRef.get();
 
     if (!attendanceSnap.exists) {
+      if (isOffDay) {
+        // They didn't check in, but it's their day off. Skip completely!
+        continue;
+      }
+
       // User did not check in. Are they on leave?
       if (activeLeavesByUserId[userId]) {
         // Create on-leave record
