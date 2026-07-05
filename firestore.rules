@@ -43,9 +43,9 @@ service cloud.firestore {
     }
     function isValidSelfCreate() {
       return request.resource.data.userId == uid()
-        && request.resource.data.employeeId == userDoc().employeeId
-        && request.resource.data.employeeName == userDoc().displayName
-        && request.resource.data.locationId == userDoc().locationId
+        && request.resource.data.employeeId == userDoc().get('employeeId', '')
+        && request.resource.data.employeeName == userDoc().get('displayName', '')
+        && request.resource.data.locationId == userDoc().get('locationId', '')
         && validRequestManagerId();
     }
     function notificationKeysAreValid() {
@@ -63,6 +63,21 @@ service cloud.firestore {
         || isHR()
         || (isManagerRole() && recipientDoc(userId).get('managerId', '') == uid())
         || userDoc().get('managerId', '') == userId
+        || (
+          request.resource.data.type in [
+            'salary_deduction_pending',
+            'permission_pending_hr',
+            'complaint_new'
+          ]
+          && recipientDoc(userId).get('role', '') in ['hr_admin', 'super_admin']
+        )
+        || (
+          request.resource.data.type in [
+            'permission_pending_manager',
+            'leave_request_submitted'
+          ]
+          && userDoc().get('managerId', '') == userId
+        )
         || (
           request.resource.data.type == 'suggestion_new'
           && recipientDoc(userId).get('role', '') in ['manager', 'super_admin']
@@ -132,7 +147,9 @@ service cloud.firestore {
         'salaryDeductionFraction', 'salaryDeductionAmount',
         'salaryCurrency', 'salaryDeductionCode', 'salaryDeductionLabel',
         'salaryDeductionApprovalStatus',
-        'deviceId', 'deviceLabel', 'biometricVerified', 'status'
+        'deviceId', 'deviceLabel', 'biometricVerified', 'status',
+        'offlineCaptured', 'offlineCapturedAt', 'offlineDistanceMeters',
+        'offlineAllowedRadiusMeters', 'offlineAccuracyMeters'
       ]);
     }
     function attendanceCreateValues() {
@@ -142,7 +159,8 @@ service cloud.firestore {
       && request.resource.data.isWithinGeofence == true
       && request.resource.data.biometricVerified == true
       && request.resource.data.salaryDeductionApprovalStatus in ['none', 'pending_hr']
-      && request.resource.data.salaryDeductionFraction in [0, 0.25, 0.5, 1]
+      && request.resource.data.salaryDeductionFraction >= 0
+      && request.resource.data.salaryDeductionFraction <= 1
       && request.resource.data.salaryDeductionAmount >= 0
       && request.resource.data.lateMinutes >= 0;
     }
@@ -154,7 +172,10 @@ service cloud.firestore {
           'checkOutBiometricVerified',
           'salaryDeductionFraction', 'salaryDeductionAmount',
           'salaryCurrency', 'salaryDeductionCode', 'salaryDeductionLabel',
-          'salaryDeductionApprovalStatus', 'salaryDeductionDetectedAt'
+          'salaryDeductionApprovalStatus', 'salaryDeductionDetectedAt',
+          'offlineCheckoutCaptured', 'offlineCheckoutCapturedAt',
+          'offlineCheckoutDistanceMeters',
+          'offlineCheckoutAllowedRadiusMeters', 'offlineCheckoutAccuracyMeters'
         ]);
     }
     function attendanceOwnerCheckoutValues() {
@@ -168,7 +189,8 @@ service cloud.firestore {
             .hasAny(['totalWorkHours'])
           || request.resource.data.totalWorkHours >= 0
         )
-        && request.resource.data.salaryDeductionFraction in [0, 0.25, 0.5, 1]
+        && request.resource.data.salaryDeductionFraction >= 0
+        && request.resource.data.salaryDeductionFraction <= 1
         && request.resource.data.salaryDeductionAmount >= 0
         && request.resource.data.salaryDeductionApprovalStatus in [
           'none', 'pending_hr', 'approved', 'rejected'
@@ -272,8 +294,8 @@ service cloud.firestore {
           'deviceLabel', 'registeredAt'
         ])
         && request.resource.data.userId == uid()
-        && request.resource.data.employeeId == userDoc().employeeId
-        && request.resource.data.employeeName == userDoc().displayName
+        && request.resource.data.employeeId == userDoc().get('employeeId', '')
+        && request.resource.data.employeeName == userDoc().get('displayName', '')
         && request.resource.data.deviceId is string
         && request.resource.data.deviceId.size() > 0
         && request.resource.data.deviceLabel is string;
@@ -312,7 +334,7 @@ service cloud.firestore {
       allow create: if isAuth() && isActive()
         && isValidSelfCreate()
         && request.resource.data.status == 'pending'
-        && request.resource.data.leaveType in ['annual', 'sick', 'casual']
+        && request.resource.data.leaveType in ['annual', 'sick', 'casual', 'day_off']
         && request.resource.data.numberOfDays > 0
         && request.resource.data.keys().hasOnly([
           'userId', 'employeeId', 'employeeName', 'department', 'locationId',
@@ -370,9 +392,9 @@ service cloud.firestore {
       );
       allow create: if isAuth() && isActive()
         && request.resource.data.userId == uid()
-        && request.resource.data.employeeId == userDoc().employeeId
-        && request.resource.data.employeeName == userDoc().displayName
-        && request.resource.data.department == userDoc().department
+        && request.resource.data.employeeId == userDoc().get('employeeId', '')
+        && request.resource.data.employeeName == userDoc().get('displayName', '')
+        && request.resource.data.department == userDoc().get('department', '')
         && request.resource.data.status == 'new'
         && request.resource.data.title is string
         && request.resource.data.title.size() >= 3
@@ -386,6 +408,32 @@ service cloud.firestore {
         && request.resource.data.diff(resource.data).affectedKeys()
           .hasOnly(['status', 'reviewedBy', 'reviewedAt'])
         && request.resource.data.status == 'reviewed'
+        && request.resource.data.reviewedBy == uid();
+      allow delete: if isAuth() && isActive() && isSuperAdmin();
+    }
+
+    match /complaints/{complaintId} {
+      allow read: if isAuth() && isActive() && (
+        isOwner(resource.data.userId) || isHR()
+      );
+      allow create: if isAuth() && isActive()
+        && request.resource.data.userId == uid()
+        && request.resource.data.employeeId == userDoc().get('employeeId', '')
+        && request.resource.data.employeeName == userDoc().get('displayName', '')
+        && request.resource.data.department == userDoc().get('department', '')
+        && request.resource.data.status == 'new'
+        && request.resource.data.title is string
+        && request.resource.data.title.size() >= 3
+        && request.resource.data.body is string
+        && request.resource.data.body.size() >= 10
+        && request.resource.data.keys().hasOnly([
+          'userId', 'employeeId', 'employeeName', 'department',
+          'title', 'body', 'status', 'submittedAt'
+        ]);
+      allow update: if isAuth() && isActive() && isHR()
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['status', 'reviewedBy', 'reviewedAt'])
+        && request.resource.data.status in ['reviewed', 'closed']
         && request.resource.data.reviewedBy == uid();
       allow delete: if isAuth() && isActive() && isSuperAdmin();
     }
