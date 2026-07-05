@@ -24,6 +24,34 @@ async function runDailyTasks() {
   const todayStr = formatter.format(new Date());
   console.log(`Processing for date: ${todayStr}`);
 
+  // Check if today is Friday (Day 5 in JS Date if Sunday is 0, but let's use Intl to get weekday)
+  const weekdayOptions = { timeZone: 'Africa/Cairo', weekday: 'long' };
+  const weekdayStr = new Intl.DateTimeFormat('en-US', weekdayOptions).format(new Date());
+  if (weekdayStr === 'Friday') {
+    console.log('Today is Friday (Weekend). Skipping absence tracking.');
+    process.exit(0);
+  }
+
+  // Check if today is a company day off
+  const dayOffSnap = await db.collection('companyDayOffs').doc(todayStr).get();
+  if (dayOffSnap.exists) {
+    const dayOffData = dayOffSnap.data();
+    if (dayOffData.isActive) {
+      console.log(`Today is a company holiday: ${dayOffData.title}. Skipping absence tracking.`);
+      process.exit(0);
+    }
+  }
+
+  // Fetch all approved leaves to check who is on vacation today
+  const leavesSnap = await db.collection('leaves').where('status', '==', 'approved').get();
+  const activeLeavesByUserId = {};
+  leavesSnap.docs.forEach(doc => {
+    const leave = doc.data();
+    if (leave.startDate <= todayStr && leave.endDate >= todayStr) {
+      activeLeavesByUserId[leave.userId] = leave;
+    }
+  });
+
   // Fetch all active employees
   const usersSnap = await db.collection('users').where('isActive', '==', true).get();
   console.log(`Found ${usersSnap.size} active users.`);
@@ -44,6 +72,7 @@ async function runDailyTasks() {
   }
 
   let absentsCreated = 0;
+  let leavesCreated = 0;
   let checkoutsClosed = 0;
 
   const batch = db.batch();
@@ -58,52 +87,77 @@ async function runDailyTasks() {
     const attendanceSnap = await attendanceRef.get();
 
     if (!attendanceSnap.exists) {
-      // Create absent record
-      const salaryDeductionFraction = 1.0;
-      const baseSalary = user.baseMonthlySalary || 0;
-      const amount = (baseSalary / payrollWorkDaysPerMonth) * salaryDeductionFraction;
+      // User did not check in. Are they on leave?
+      if (activeLeavesByUserId[userId]) {
+        // Create on-leave record
+        batch.set(attendanceRef, {
+          userId: userId,
+          employeeId: user.employeeId || '',
+          employeeName: user.displayName || '',
+          locationId: user.locationId || '',
+          locationName: user.locationName || '',
+          managerId: user.managerId || '',
+          date: todayStr,
+          checkInTime: null,
+          checkInLocation: new admin.firestore.GeoPoint(0, 0),
+          isWithinGeofence: true,
+          isLate: false,
+          lateMinutes: 0,
+          salaryDeductionFraction: 0,
+          salaryDeductionAmount: 0,
+          salaryCurrency: user.salaryCurrency || 'EGP',
+          salaryDeductionCode: 'none',
+          salaryDeductionLabel: 'لا يوجد خصم',
+          salaryDeductionApprovalStatus: 'none',
+          biometricVerified: false,
+          status: 'on-leave',
+        });
+        leavesCreated++;
+      } else {
+        // Create absent record
+        const salaryDeductionFraction = 1.0;
+        const baseSalary = user.baseMonthlySalary || 0;
+        const amount = (baseSalary / payrollWorkDaysPerMonth) * salaryDeductionFraction;
 
-      const absentRecord = {
-        userId: userId,
-        employeeId: user.employeeId || '',
-        employeeName: user.displayName || '',
-        locationId: user.locationId || '',
-        locationName: user.locationName || '',
-        managerId: user.managerId || '',
-        date: todayStr,
-        checkInTime: null,
-        checkInLocation: new admin.firestore.GeoPoint(0, 0),
-        isWithinGeofence: true,
-        isLate: false,
-        lateMinutes: 0,
-        salaryDeductionFraction: salaryDeductionFraction,
-        salaryDeductionAmount: amount,
-        salaryCurrency: user.salaryCurrency || 'EGP',
-        salaryDeductionCode: 'absent',
-        salaryDeductionLabel: 'غياب',
-        salaryDeductionApprovalStatus: 'pending_hr',
-        biometricVerified: false,
-        status: 'absent',
-      };
+        batch.set(attendanceRef, {
+          userId: userId,
+          employeeId: user.employeeId || '',
+          employeeName: user.displayName || '',
+          locationId: user.locationId || '',
+          locationName: user.locationName || '',
+          managerId: user.managerId || '',
+          date: todayStr,
+          checkInTime: null,
+          checkInLocation: new admin.firestore.GeoPoint(0, 0),
+          isWithinGeofence: true,
+          isLate: false,
+          lateMinutes: 0,
+          salaryDeductionFraction: salaryDeductionFraction,
+          salaryDeductionAmount: amount,
+          salaryCurrency: user.salaryCurrency || 'EGP',
+          salaryDeductionCode: 'absent',
+          salaryDeductionLabel: 'غياب',
+          salaryDeductionApprovalStatus: 'pending_hr',
+          biometricVerified: false,
+          status: 'absent',
+        });
+        absentsCreated++;
 
-      batch.set(attendanceRef, absentRecord);
-      absentsCreated++;
-
-      // Notify HR
-      const notifRef = db.collection('notifications').doc(userId).collection('items').doc();
-      batch.set(notifRef, {
-        notificationId: notifRef.id,
-        type: 'salary_deduction_pending',
-        title: 'غياب بانتظار مراجعة HR',
-        body: `${user.displayName}: غياب عن يوم ${todayStr} (${amount.toFixed(2)} ${user.salaryCurrency || 'EGP'}).`,
-        data: { attendanceId: attendanceId },
-        isRead: false,
-        createdAt: admin.firestore.FieldValue.serverTimestamp(),
-      });
-      batch.update(userDoc.ref, {
-        unreadNotifications: admin.firestore.FieldValue.increment(1)
-      });
-
+        // Notify HR
+        const notifRef = db.collection('notifications').doc(userId).collection('items').doc();
+        batch.set(notifRef, {
+          notificationId: notifRef.id,
+          type: 'salary_deduction_pending',
+          title: 'غياب بانتظار مراجعة HR',
+          body: `${user.displayName}: غياب عن يوم ${todayStr} (${amount.toFixed(2)} ${user.salaryCurrency || 'EGP'}).`,
+          data: { attendanceId: attendanceId },
+          isRead: false,
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+        batch.update(userDoc.ref, {
+          unreadNotifications: admin.firestore.FieldValue.increment(1)
+        });
+      }
     } else {
       const log = attendanceSnap.data();
       
@@ -162,9 +216,9 @@ async function runDailyTasks() {
     }
   }
 
-  if (absentsCreated > 0 || checkoutsClosed > 0) {
+  if (absentsCreated > 0 || leavesCreated > 0 || checkoutsClosed > 0) {
     await batch.commit();
-    console.log(`Successfully committed! Created ${absentsCreated} absences and auto-closed ${checkoutsClosed} shifts.`);
+    console.log(`Successfully committed! Created ${absentsCreated} absences, ${leavesCreated} leaves, and auto-closed ${checkoutsClosed} shifts.`);
   } else {
     console.log('No action required. All employees checked in and out properly.');
   }
