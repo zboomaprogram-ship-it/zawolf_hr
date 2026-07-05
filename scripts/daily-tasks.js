@@ -56,6 +56,18 @@ async function runDailyTasks() {
     }
   });
 
+  // Fetch all approved permissions for today
+  const permsSnap = await db.collection('permissions')
+    .where('status', '==', 'approved')
+    .where('requestDate', '==', todayStr)
+    .get();
+  const approvedPermsByUserId = {};
+  permsSnap.docs.forEach(doc => {
+    const perm = doc.data();
+    if (!approvedPermsByUserId[perm.userId]) approvedPermsByUserId[perm.userId] = {};
+    approvedPermsByUserId[perm.userId][perm.permissionType] = perm;
+  });
+
   // Fetch all active employees
   const usersSnap = await db.collection('users').where('isActive', '==', true).get();
   console.log(`Found ${usersSnap.size} active users.`);
@@ -77,7 +89,7 @@ async function runDailyTasks() {
 
   let absentsCreated = 0;
   let leavesCreated = 0;
-  let checkoutsClosed = 0;
+  let updatesApplied = 0;
 
   const batch = db.batch();
 
@@ -182,15 +194,35 @@ async function runDailyTasks() {
       }
     } else {
       const log = attendanceSnap.data();
+      const updates = {};
       
-      // Check if they forgot to checkout
+      // 1. Handle late arrival forgiveness via permission
+      if (log.isLate && log.salaryDeductionFraction > 0 && log.salaryDeductionCode !== 'absent') {
+        const perm = approvedPermsByUserId[userId]?.['late_arrival'];
+        if (perm) {
+           // Forgive the late deduction
+           updates.isLate = false;
+           updates.salaryDeductionFraction = perm.salaryDeductionFraction || 0;
+           updates.salaryDeductionAmount = perm.salaryDeductionAmount || 0;
+           updates.salaryDeductionCode = perm.salaryDeductionCode || 'none';
+           updates.salaryDeductionLabel = 'مغفور بإذن (تأخير)';
+           updates.salaryDeductionApprovalStatus = (perm.salaryDeductionFraction || 0) > 0 ? 'pending_hr' : 'none';
+           updates.status = (perm.salaryDeductionFraction || 0) > 0 ? log.status : 'present';
+        }
+      }
+
+      // 2. Check if they forgot to checkout
       if (log.checkInTime && !log.checkOutTime) {
-        if (log.salaryDeductionFraction < 0.25) {
+        // Did they already have a deduction? If they had a forgiven late arrival, we might need to overwrite it.
+        // Or if they didn't, we apply missed checkout.
+        const currentFraction = updates.salaryDeductionFraction !== undefined ? updates.salaryDeductionFraction : log.salaryDeductionFraction;
+        
+        if (currentFraction < 0.25) {
           const salaryDeductionFraction = 0.25;
           const baseSalary = user.baseMonthlySalary || 0;
           const amount = (baseSalary / payrollWorkDaysPerMonth) * salaryDeductionFraction;
 
-          batch.update(attendanceRef, {
+          Object.assign(updates, {
             checkOutTime: admin.firestore.FieldValue.serverTimestamp(),
             checkOutLocation: log.checkInLocation,
             localCheckOutTime: admin.firestore.FieldValue.serverTimestamp(),
@@ -205,7 +237,6 @@ async function runDailyTasks() {
             salaryDeductionApprovalStatus: 'pending_hr',
             salaryDeductionDetectedAt: admin.firestore.FieldValue.serverTimestamp(),
           });
-          checkoutsClosed++;
 
           // Notify HR
           const notifRef = db.collection('notifications').doc(userId).collection('items').doc();
@@ -223,7 +254,7 @@ async function runDailyTasks() {
           });
         } else {
           // They already have a deduction (e.g., late half day), just close the shift without extra deduction
-          batch.update(attendanceRef, {
+          Object.assign(updates, {
             checkOutTime: admin.firestore.FieldValue.serverTimestamp(),
             checkOutLocation: log.checkInLocation,
             localCheckOutTime: admin.firestore.FieldValue.serverTimestamp(),
@@ -232,17 +263,31 @@ async function runDailyTasks() {
             checkOutDeviceLabel: 'System Auto Close',
             checkOutBiometricVerified: true,
           });
-          checkoutsClosed++;
         }
+      } else if (log.checkOutTime && log.salaryDeductionCode === 'early_checkout_quarter_day') {
+         // 3. Handle early checkout forgiveness via permission
+         const perm = approvedPermsByUserId[userId]?.['early_leave'];
+         if (perm) {
+           updates.salaryDeductionFraction = perm.salaryDeductionFraction || 0;
+           updates.salaryDeductionAmount = perm.salaryDeductionAmount || 0;
+           updates.salaryDeductionCode = perm.salaryDeductionCode || 'none';
+           updates.salaryDeductionLabel = 'مغفور بإذن (انصراف مبكر)';
+           updates.salaryDeductionApprovalStatus = (perm.salaryDeductionFraction || 0) > 0 ? 'pending_hr' : 'none';
+         }
+      }
+
+      if (Object.keys(updates).length > 0) {
+        batch.update(attendanceRef, updates);
+        updatesApplied++;
       }
     }
   }
 
-  if (absentsCreated > 0 || leavesCreated > 0 || checkoutsClosed > 0) {
+  if (absentsCreated > 0 || leavesCreated > 0 || updatesApplied > 0) {
     await batch.commit();
-    console.log(`Successfully committed! Created ${absentsCreated} absences, ${leavesCreated} leaves, and auto-closed ${checkoutsClosed} shifts.`);
+    console.log(`Successfully committed! Created ${absentsCreated} absences, ${leavesCreated} leaves, and updated ${updatesApplied} shifts.`);
   } else {
-    console.log('No action required. All employees checked in and out properly.');
+    console.log('No action required. All employees checked in and out properly with no unhandled penalties.');
   }
 }
 
