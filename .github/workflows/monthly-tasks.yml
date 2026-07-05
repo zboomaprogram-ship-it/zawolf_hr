@@ -1,0 +1,29 @@
+name: Monthly HR Tasks
+
+on:
+  schedule:
+    # Runs at 00:05 (12:05 AM) on the 1st of every month
+    - cron: '5 0 1 * *'
+  workflow_dispatch: # Allows manual trigger from UI
+
+jobs:
+  run-monthly-tasks:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Dependencies
+        working-directory: ./scripts
+        run: npm ci
+
+      - name: Run Monthly Tasks Script
+        working-directory: ./scripts
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: node monthly-tasks.js
