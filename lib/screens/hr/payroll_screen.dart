@@ -171,6 +171,12 @@ class _PayrollScreenState extends State<PayrollScreen> {
                               run.payrollId,
                               actor,
                             ),
+                      onLocked: actor == null
+                          ? null
+                          : () => _payrollService.markLocked(
+                              run.payrollId,
+                              actor,
+                            ),
                     ),
                   ),
                 ),
@@ -185,8 +191,13 @@ class _PayrollScreenState extends State<PayrollScreen> {
 class _PayrollCard extends StatelessWidget {
   final PayrollRunModel run;
   final VoidCallback? onReviewed;
+  final VoidCallback? onLocked;
 
-  const _PayrollCard({required this.run, required this.onReviewed});
+  const _PayrollCard({
+    required this.run,
+    required this.onReviewed,
+    required this.onLocked,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -235,6 +246,17 @@ class _PayrollCard extends StatelessWidget {
               onPressed: onReviewed,
               icon: const Icon(Icons.verified),
               label: const Text('اعتماد المراجعة'),
+            ),
+          ],
+          if (run.status == PayrollStatus.reviewed) ...[
+            const SizedBox(height: 12),
+            FilledButton.icon(
+              onPressed: onLocked,
+              style: FilledButton.styleFrom(
+                backgroundColor: ZaWolfColors.warning,
+              ),
+              icon: const Icon(Icons.lock),
+              label: const Text('إغلاق الراتب'),
             ),
           ],
         ],

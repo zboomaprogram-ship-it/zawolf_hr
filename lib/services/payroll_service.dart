@@ -168,6 +168,18 @@ class PayrollService {
     );
   }
 
+  Future<void> markLocked(String payrollId, UserModel locker) async {
+    await _db.collection('payrollRuns').doc(payrollId).update({
+      'status': PayrollStatus.locked,
+    });
+    await AuditLogService.instance.record(
+      actorId: locker.uid,
+      action: 'payroll_locked',
+      targetCollection: 'payrollRuns',
+      targetId: payrollId,
+    );
+  }
+
   List<PayrollRunModel> _runsFromSnapshot(QuerySnapshot snapshot) {
     final runs = snapshot.docs.map(PayrollRunModel.fromFirestore).toList();
     runs.sort((a, b) => a.employeeName.compareTo(b.employeeName));
