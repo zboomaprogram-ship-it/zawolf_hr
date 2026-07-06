@@ -93,11 +93,11 @@ class CheckInConfirmModal extends StatelessWidget {
                     const Divider(color: ZaWolfColors.surface01, height: 20),
                     _buildInfoRow(
                       'الحالة / Status',
-                      status == 'late'
+                      status.startsWith('late')
                           ? 'متأخر ($lateMinutes دقيقة)'
                           : 'في الميعاد (منضبط)',
                       theme,
-                      valueColor: status == 'late'
+                      valueColor: status.startsWith('late')
                           ? ZaWolfColors.warning
                           : ZaWolfColors.success,
                     ),
