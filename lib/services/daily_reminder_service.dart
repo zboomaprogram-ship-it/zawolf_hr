@@ -166,7 +166,7 @@ class DailyReminderService {
           : 'انتهى الدوام! لا تنسَ تسجيل انصرافك.',
       scheduled,
       details,
-      androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+      androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
       uiLocalNotificationDateInterpretation:
           UILocalNotificationDateInterpretation.absoluteTime,
       payload: payload,
