@@ -29,10 +29,21 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
   bool _actionLoading = false;
   CompanyDayOffStatus _dayOffStatus = const CompanyDayOffStatus.workDay();
   bool _checkingDayOff = false;
+  late Stream<List<AttendanceModel>> _attendanceStream;
 
   @override
   void initState() {
     super.initState();
+    final user = Provider.of<AuthService>(context, listen: false).currentUser;
+    final currentMonthKey = DateFormat('yyyy-MM').format(DateTime.now());
+    if (user != null) {
+      _attendanceStream = AttendanceService().watchMonthlyAttendance(
+        user.uid,
+        currentMonthKey,
+      );
+    } else {
+      _attendanceStream = const Stream.empty();
+    }
     _checkCurrentGeofence();
     _checkCompanyDayOff();
     AttendanceService().syncPendingOfflineAttendance();
@@ -201,10 +212,7 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
         centerTitle: true,
       ),
       body: StreamBuilder<List<AttendanceModel>>(
-        stream: attendanceService.watchMonthlyAttendance(
-          user.uid,
-          currentMonthKey,
-        ),
+        stream: _attendanceStream,
         builder: (context, snapshot) {
           final logs = snapshot.data ?? [];
           final todayLog = logs.firstWhere(
