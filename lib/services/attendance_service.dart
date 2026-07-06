@@ -285,15 +285,10 @@ class AttendanceService {
     String userId,
     String todayStr,
   ) async {
+    final attendanceId = '${userId}_$todayStr';
     try {
-      final existingLogs = await _db
-          .collection('attendance')
-          .where('userId', isEqualTo: userId)
-          .where('date', isEqualTo: todayStr)
-          .limit(1)
-          .get();
-      if (existingLogs.docs.isNotEmpty) {
-        final doc = existingLogs.docs.first;
+      final doc = await _db.collection('attendance').doc(attendanceId).get();
+      if (doc.exists) {
         return _TodayAttendanceLookup(
           doc: doc,
           log: AttendanceModel.fromFirestore(doc),
@@ -301,14 +296,11 @@ class AttendanceService {
       }
     } catch (_) {
       try {
-        final cachedLogs = await _db
+        final doc = await _db
             .collection('attendance')
-            .where('userId', isEqualTo: userId)
-            .where('date', isEqualTo: todayStr)
-            .limit(1)
+            .doc(attendanceId)
             .get(const GetOptions(source: Source.cache));
-        if (cachedLogs.docs.isNotEmpty) {
-          final doc = cachedLogs.docs.first;
+        if (doc.exists) {
           return _TodayAttendanceLookup(
             doc: doc,
             log: AttendanceModel.fromFirestore(doc),
@@ -728,7 +720,7 @@ class _DeductionPatch {
 }
 
 class _TodayAttendanceLookup {
-  final QueryDocumentSnapshot<Map<String, dynamic>>? doc;
+  final DocumentSnapshot<Map<String, dynamic>>? doc;
   final AttendanceModel? log;
 
   const _TodayAttendanceLookup({this.doc, this.log});

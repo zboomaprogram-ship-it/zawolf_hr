@@ -4,7 +4,9 @@ import 'package:go_router/go_router.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart' hide TextDirection;
 import '../../services/auth_service.dart';
+import '../../services/dashboard_attendance_summary_service.dart';
 import '../../theme/theme.dart';
+import '../../components/attendance_insights_card.dart';
 import '../../components/wolf_card.dart';
 
 class ManagerDashboardScreen extends StatefulWidget {
@@ -16,8 +18,11 @@ class ManagerDashboardScreen extends StatefulWidget {
 
 class _ManagerDashboardScreenState extends State<ManagerDashboardScreen> {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
+  final DashboardAttendanceSummaryService _summaryService =
+      DashboardAttendanceSummaryService();
   int _pendingCount = 0;
   bool _loadingRequests = true;
+  Future<DashboardAttendanceSummary>? _attendanceSummaryFuture;
 
   @override
   void initState() {
@@ -64,6 +69,14 @@ class _ManagerDashboardScreenState extends State<ManagerDashboardScreen> {
     }
   }
 
+  void _loadAttendanceSummary() {
+    final user = Provider.of<AuthService>(context, listen: false).currentUser;
+    if (user == null) return;
+    setState(() {
+      _attendanceSummaryFuture = _summaryService.loadForReviewer(user);
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final authService = Provider.of<AuthService>(context);
@@ -78,6 +91,8 @@ class _ManagerDashboardScreenState extends State<ManagerDashboardScreen> {
         ),
       );
     }
+
+    _attendanceSummaryFuture ??= _summaryService.loadForReviewer(manager);
 
     return Scaffold(
       appBar: AppBar(
@@ -101,27 +116,12 @@ class _ManagerDashboardScreenState extends State<ManagerDashboardScreen> {
             .where('date', isEqualTo: todayStr)
             .snapshots(),
         builder: (context, snapshot) {
-          int present = 0;
-          int lateCount = 0;
-          int absent = 0;
-          int onLeave = 0;
           List<Map<String, dynamic>> teamList = [];
 
           if (snapshot.hasData) {
             for (var doc in snapshot.data!.docs) {
               final data = doc.data() as Map<String, dynamic>;
-              final status = data['status'] as String? ?? 'present';
               teamList.add(data);
-
-              if (status == 'present') {
-                present++;
-              } else if (status == 'late') {
-                lateCount++;
-              } else if (status == 'absent') {
-                absent++;
-              } else if (status == 'on-leave') {
-                onLeave++;
-              }
             }
           }
 
@@ -187,45 +187,26 @@ class _ManagerDashboardScreenState extends State<ManagerDashboardScreen> {
                 ),
                 const SizedBox(height: 20),
 
-                // Live Summary Metric Cards
-                Row(
-                  children: [
-                    Expanded(
-                      child: _buildMetricCard(
-                        'حاضر',
-                        present.toString(),
-                        ZaWolfColors.success,
-                        theme,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: _buildMetricCard(
-                        'متأخر',
-                        lateCount.toString(),
-                        ZaWolfColors.warning,
-                        theme,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: _buildMetricCard(
-                        'غائب',
-                        absent.toString(),
-                        ZaWolfColors.error,
-                        theme,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: _buildMetricCard(
-                        'إجازة',
-                        onLeave.toString(),
-                        ZaWolfColors.primaryBlue,
-                        theme,
-                      ),
-                    ),
-                  ],
+                FutureBuilder<DashboardAttendanceSummary>(
+                  future: _attendanceSummaryFuture,
+                  builder: (context, summarySnapshot) {
+                    if (!summarySnapshot.hasData) {
+                      return const WolfCard(
+                        child: Center(
+                          child: Padding(
+                            padding: EdgeInsets.symmetric(vertical: 28),
+                            child: CircularProgressIndicator(
+                              color: ZaWolfColors.primaryCyan,
+                            ),
+                          ),
+                        ),
+                      );
+                    }
+                    return AttendanceInsightsCard(
+                      summary: summarySnapshot.data!,
+                      onRefresh: _loadAttendanceSummary,
+                    );
+                  },
                 ),
                 const SizedBox(height: 20),
 
@@ -474,36 +455,6 @@ class _ManagerDashboardScreenState extends State<ManagerDashboardScreen> {
             ),
           );
         },
-      ),
-    );
-  }
-
-  Widget _buildMetricCard(
-    String label,
-    String value,
-    Color color,
-    ThemeData theme,
-  ) {
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 12),
-      decoration: BoxDecoration(
-        color: ZaWolfColors.surface01,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: ZaWolfColors.surface03),
-      ),
-      child: Column(
-        children: [
-          Text(
-            value,
-            style: theme.textTheme.headlineMedium!.copyWith(
-              color: color,
-              fontWeight: FontWeight.bold,
-              fontFamily: 'JetBrains Mono',
-            ),
-          ),
-          const SizedBox(height: 2),
-          Text(label, style: theme.textTheme.bodySmall),
-        ],
       ),
     );
   }

@@ -3,7 +3,9 @@ import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../services/auth_service.dart';
+import '../../services/dashboard_attendance_summary_service.dart';
 import '../../theme/theme.dart';
+import '../../components/attendance_insights_card.dart';
 import '../../components/wolf_card.dart';
 
 class HrDashboardScreen extends StatefulWidget {
@@ -15,9 +17,12 @@ class HrDashboardScreen extends StatefulWidget {
 
 class _HrDashboardScreenState extends State<HrDashboardScreen> {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
+  final DashboardAttendanceSummaryService _summaryService =
+      DashboardAttendanceSummaryService();
   int _employeesCount = 0;
   int _locationsCount = 0;
   bool _loadingCounts = true;
+  Future<DashboardAttendanceSummary>? _attendanceSummaryFuture;
 
   @override
   void initState() {
@@ -48,6 +53,14 @@ class _HrDashboardScreenState extends State<HrDashboardScreen> {
     }
   }
 
+  void _loadAttendanceSummary() {
+    final user = Provider.of<AuthService>(context, listen: false).currentUser;
+    if (user == null) return;
+    setState(() {
+      _attendanceSummaryFuture = _summaryService.loadForReviewer(user);
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final authService = Provider.of<AuthService>(context);
@@ -61,6 +74,8 @@ class _HrDashboardScreenState extends State<HrDashboardScreen> {
         ),
       );
     }
+
+    _attendanceSummaryFuture ??= _summaryService.loadForReviewer(hrAdmin);
 
     return Scaffold(
       appBar: AppBar(
@@ -151,6 +166,29 @@ class _HrDashboardScreenState extends State<HrDashboardScreen> {
                   ),
                 ],
               ),
+            const SizedBox(height: 24),
+
+            FutureBuilder<DashboardAttendanceSummary>(
+              future: _attendanceSummaryFuture,
+              builder: (context, snapshot) {
+                if (!snapshot.hasData) {
+                  return const WolfCard(
+                    child: Center(
+                      child: Padding(
+                        padding: EdgeInsets.symmetric(vertical: 28),
+                        child: CircularProgressIndicator(
+                          color: ZaWolfColors.primaryCyan,
+                        ),
+                      ),
+                    ),
+                  );
+                }
+                return AttendanceInsightsCard(
+                  summary: snapshot.data!,
+                  onRefresh: _loadAttendanceSummary,
+                );
+              },
+            ),
             const SizedBox(height: 24),
 
             // HR Administrative Quick Actions Grid
