@@ -6,10 +6,12 @@ import 'audit_log_service.dart';
 class AutoScoresResult {
   final double attendanceScore;
   final double punctualityScore;
+  final double kpiScore;
 
   AutoScoresResult({
     required this.attendanceScore,
     required this.punctualityScore,
+    required this.kpiScore,
   });
 }
 
@@ -39,9 +41,14 @@ class PerformanceService {
     final logs = attendanceSnap.docs
         .map((doc) => AttendanceModel.fromFirestore(doc))
         .toList();
+    final kpiScore = await _loadKpiScore(userId, monthKey);
 
     if (logs.isEmpty) {
-      return AutoScoresResult(attendanceScore: 100.0, punctualityScore: 100.0);
+      return AutoScoresResult(
+        attendanceScore: 100.0,
+        punctualityScore: 100.0,
+        kpiScore: kpiScore,
+      );
     }
 
     int totalAbsents = 0;
@@ -67,7 +74,24 @@ class PerformanceService {
     return AutoScoresResult(
       attendanceScore: attendanceScore,
       punctualityScore: punctualityScore,
+      kpiScore: kpiScore,
     );
+  }
+
+  Future<double> _loadKpiScore(String userId, String monthKey) async {
+    try {
+      final snap = await _db
+          .collection('employeeKpis')
+          .where('userId', isEqualTo: userId)
+          .where('monthKey', isEqualTo: monthKey)
+          .limit(1)
+          .get();
+      if (snap.docs.isEmpty) return 80.0;
+      return (snap.docs.first.data()['overallProgress'] as num?)?.toDouble() ??
+          80.0;
+    } catch (_) {
+      return 80.0;
+    }
   }
 
   // Calculate overall grade letter based on weighted scores
@@ -118,14 +142,16 @@ class PerformanceService {
     );
 
     // Notify employee
-    await _createNotification(
-      recipientId: req.userId,
-      type: 'performance_published',
-      title: 'تم نشر تقييم الأداء الشهري 🏆',
-      body:
-          'قام مديرك المباشر بنشر تقييم أدائك لشهر ${req.monthKey}. التقييم العام: ${req.grade}',
-      data: {'performanceId': docId},
-    );
+    try {
+      await _createNotification(
+        recipientId: req.userId,
+        type: 'performance_published',
+        title: 'تم نشر تقييم الأداء الشهري 🏆',
+        body:
+            'قام مديرك المباشر بنشر تقييم أدائك لشهر ${req.monthKey}. التقييم العام: ${req.grade}',
+        data: {'performanceId': docId},
+      );
+    } catch (_) {}
   }
 
   // Stream current user's performance history

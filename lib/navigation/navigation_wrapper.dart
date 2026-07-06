@@ -42,6 +42,13 @@ class NavigationWrapper extends StatelessWidget {
           path: '/employee/requests',
         ),
         NavigationItem(
+          icon: Icons.task_alt_outlined,
+          activeIcon: Icons.task_alt,
+          label: 'مهامي',
+          englishLabel: 'Tasks',
+          path: '/employee/tasks',
+        ),
+        NavigationItem(
           icon: Icons.bar_chart_outlined,
           activeIcon: Icons.bar_chart,
           label: 'أدائي',
@@ -49,11 +56,39 @@ class NavigationWrapper extends StatelessWidget {
           path: '/employee/performance',
         ),
         NavigationItem(
+          icon: Icons.flag_outlined,
+          activeIcon: Icons.flag,
+          label: 'KPI',
+          englishLabel: 'Goals',
+          path: '/employee/kpi',
+        ),
+        NavigationItem(
+          icon: Icons.insights_outlined,
+          activeIcon: Icons.insights,
+          label: 'إنتاجيتي',
+          englishLabel: 'Productivity',
+          path: '/employee/productivity',
+        ),
+        NavigationItem(
           icon: Icons.person_outline,
           activeIcon: Icons.person,
           label: 'حسابي',
           englishLabel: 'Profile',
           path: '/employee/profile',
+        ),
+        NavigationItem(
+          icon: Icons.workspace_premium_outlined,
+          activeIcon: Icons.workspace_premium,
+          label: 'السجل',
+          englishLabel: 'Records',
+          path: '/employee/warnings-rewards',
+        ),
+        NavigationItem(
+          icon: Icons.payments_outlined,
+          activeIcon: Icons.payments,
+          label: 'راتبي',
+          englishLabel: 'Payroll',
+          path: '/employee/payroll',
         ),
         NavigationItem(
           icon: Icons.lightbulb_outline,
@@ -94,6 +129,13 @@ class NavigationWrapper extends StatelessWidget {
           path: '/manager/requests',
         ),
         NavigationItem(
+          icon: Icons.task_alt_outlined,
+          activeIcon: Icons.task_alt,
+          label: 'المهام',
+          englishLabel: 'Tasks',
+          path: '/manager/tasks',
+        ),
+        NavigationItem(
           icon: Icons.people_outline,
           activeIcon: Icons.people,
           label: 'فريقي',
@@ -108,11 +150,32 @@ class NavigationWrapper extends StatelessWidget {
           path: '/manager/performance',
         ),
         NavigationItem(
+          icon: Icons.flag_outlined,
+          activeIcon: Icons.flag,
+          label: 'KPI',
+          englishLabel: 'Goals',
+          path: '/manager/kpi',
+        ),
+        NavigationItem(
+          icon: Icons.leaderboard_outlined,
+          activeIcon: Icons.leaderboard,
+          label: 'الإنتاجية',
+          englishLabel: 'Ranking',
+          path: '/manager/productivity',
+        ),
+        NavigationItem(
           icon: Icons.lightbulb_outline,
           activeIcon: Icons.lightbulb,
           label: 'المقترحات',
           englishLabel: 'Suggestions',
           path: '/manager/suggestions',
+        ),
+        NavigationItem(
+          icon: Icons.workspace_premium_outlined,
+          activeIcon: Icons.workspace_premium,
+          label: 'السجلات',
+          englishLabel: 'Records',
+          path: '/manager/warnings-rewards',
         ),
       ];
     } else if (role == EmployeeRole.hrAdmin) {
@@ -160,6 +223,41 @@ class NavigationWrapper extends StatelessWidget {
           path: '/hr/reports',
         ),
         NavigationItem(
+          icon: Icons.payments_outlined,
+          activeIcon: Icons.payments,
+          label: 'الرواتب',
+          englishLabel: 'Payroll',
+          path: '/hr/payroll',
+        ),
+        NavigationItem(
+          icon: Icons.task_alt_outlined,
+          activeIcon: Icons.task_alt,
+          label: 'المهام',
+          englishLabel: 'Tasks',
+          path: '/hr/tasks',
+        ),
+        NavigationItem(
+          icon: Icons.flag_outlined,
+          activeIcon: Icons.flag,
+          label: 'KPI',
+          englishLabel: 'Goals',
+          path: '/hr/kpi',
+        ),
+        NavigationItem(
+          icon: Icons.leaderboard_outlined,
+          activeIcon: Icons.leaderboard,
+          label: 'الإنتاجية',
+          englishLabel: 'Ranking',
+          path: '/hr/productivity',
+        ),
+        NavigationItem(
+          icon: Icons.workspace_premium_outlined,
+          activeIcon: Icons.workspace_premium,
+          label: 'السجلات',
+          englishLabel: 'Records',
+          path: '/hr/warnings-rewards',
+        ),
+        NavigationItem(
           icon: Icons.campaign_outlined,
           activeIcon: Icons.campaign,
           label: 'الإعلانات',
@@ -205,11 +303,39 @@ class NavigationWrapper extends StatelessWidget {
           path: '/manager/requests',
         ),
         NavigationItem(
+          icon: Icons.task_alt_outlined,
+          activeIcon: Icons.task_alt,
+          label: 'المهام',
+          englishLabel: 'Tasks',
+          path: '/manager/tasks',
+        ),
+        NavigationItem(
+          icon: Icons.flag_outlined,
+          activeIcon: Icons.flag,
+          label: 'KPI',
+          englishLabel: 'Goals',
+          path: '/manager/kpi',
+        ),
+        NavigationItem(
+          icon: Icons.leaderboard_outlined,
+          activeIcon: Icons.leaderboard,
+          label: 'الإنتاجية',
+          englishLabel: 'Ranking',
+          path: '/manager/productivity',
+        ),
+        NavigationItem(
           icon: Icons.badge_outlined,
           activeIcon: Icons.badge,
           label: 'الموظفون',
           englishLabel: 'Employees',
           path: '/hr/employees',
+        ),
+        NavigationItem(
+          icon: Icons.payments_outlined,
+          activeIcon: Icons.payments,
+          label: 'الرواتب',
+          englishLabel: 'Payroll',
+          path: '/hr/payroll',
         ),
         NavigationItem(
           icon: Icons.add_location_alt_outlined,
@@ -231,6 +357,13 @@ class NavigationWrapper extends StatelessWidget {
           label: 'المقترحات',
           englishLabel: 'Suggestions',
           path: '/manager/suggestions',
+        ),
+        NavigationItem(
+          icon: Icons.workspace_premium_outlined,
+          activeIcon: Icons.workspace_premium,
+          label: 'السجلات',
+          englishLabel: 'Records',
+          path: '/manager/warnings-rewards',
         ),
       ];
     }
@@ -420,39 +553,47 @@ class NavigationWrapper extends StatelessWidget {
                   textAlign: TextAlign.right,
                 ),
                 const SizedBox(height: 8),
-                ...items.map((item) {
-                  final isSelected = item.path == matchedLocation;
-                  return ListTile(
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 8),
-                    leading: Icon(
-                      isSelected ? item.activeIcon : item.icon,
-                      color: isSelected
-                          ? ZaWolfColors.primaryCyan
-                          : ZaWolfColors.textSecondary,
+                const SizedBox(height: 8),
+                Flexible(
+                  child: SingleChildScrollView(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: items.map((item) {
+                        final isSelected = item.path == matchedLocation;
+                        return ListTile(
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+                          leading: Icon(
+                            isSelected ? item.activeIcon : item.icon,
+                            color: isSelected
+                                ? ZaWolfColors.primaryCyan
+                                : ZaWolfColors.textSecondary,
+                          ),
+                          title: Text(
+                            item.label,
+                            textAlign: TextAlign.right,
+                            style: TextStyle(
+                              color: isSelected
+                                  ? ZaWolfColors.primaryCyan
+                                  : Colors.white,
+                              fontWeight: isSelected
+                                  ? FontWeight.bold
+                                  : FontWeight.normal,
+                            ),
+                          ),
+                          subtitle: Text(
+                            item.englishLabel,
+                            textAlign: TextAlign.right,
+                            style: const TextStyle(color: ZaWolfColors.textMuted),
+                          ),
+                          onTap: () {
+                            Navigator.pop(sheetContext);
+                            if (!isSelected) context.go(item.path);
+                          },
+                        );
+                      }).toList(),
                     ),
-                    title: Text(
-                      item.label,
-                      textAlign: TextAlign.right,
-                      style: TextStyle(
-                        color: isSelected
-                            ? ZaWolfColors.primaryCyan
-                            : Colors.white,
-                        fontWeight: isSelected
-                            ? FontWeight.bold
-                            : FontWeight.normal,
-                      ),
-                    ),
-                    subtitle: Text(
-                      item.englishLabel,
-                      textAlign: TextAlign.right,
-                      style: const TextStyle(color: ZaWolfColors.textMuted),
-                    ),
-                    onTap: () {
-                      Navigator.pop(sheetContext);
-                      if (!isSelected) context.go(item.path);
-                    },
-                  );
-                }),
+                  ),
+                ),
               ],
             ),
           ),

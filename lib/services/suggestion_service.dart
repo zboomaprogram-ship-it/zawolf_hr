@@ -25,11 +25,13 @@ class SuggestionService {
       ).toFirestore(),
     );
 
-    await _notifyManagers(
-      title: 'مقترح جديد',
-      body: '${employee.displayName} أرسل مقترحاً: ${title.trim()}',
-      suggestionId: ref.id,
-    );
+    try {
+      await _notifyManagers(
+        title: 'مقترح جديد',
+        body: '${employee.displayName} أرسل مقترحاً: ${title.trim()}',
+        suggestionId: ref.id,
+      );
+    } catch (_) {}
   }
 
   Stream<List<SuggestionModel>> watchMySuggestions(String userId) {
@@ -77,6 +79,8 @@ class SuggestionService {
           .get();
       targets.addAll(snap.docs.map((doc) => doc.id));
     }
+
+    if (targets.isEmpty) return;
 
     final batch = _db.batch();
     for (final userId in targets) {

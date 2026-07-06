@@ -19,6 +19,15 @@ async function runMonthlyTasks() {
   console.log('Starting monthly tasks...');
   
   // Get current month string in Egypt time (GMT+3)
+  const dateOptions = { timeZone: 'Africa/Cairo', year: 'numeric', month: '2-digit', day: '2-digit' };
+  const dateParts = new Intl.DateTimeFormat('en-CA', dateOptions).formatToParts(new Date());
+  const day = dateParts.find(p => p.type === 'day').value;
+  const isManualRun = process.env.GITHUB_EVENT_NAME === 'workflow_dispatch';
+  if (!isManualRun && day !== '01') {
+    console.log(`Cairo date is day ${day}; monthly reset only runs on day 01. Exiting.`);
+    return;
+  }
+
   const options = { timeZone: 'Africa/Cairo', year: 'numeric', month: '2-digit' };
   const formatter = new Intl.DateTimeFormat('en-CA', options); // en-CA gives YYYY-MM
   const parts = formatter.formatToParts(new Date());
@@ -33,7 +42,18 @@ async function runMonthlyTasks() {
   console.log(`Found ${usersSnap.size} active users.`);
 
   let resetCount = 0;
-  const batch = db.batch();
+  let batch = db.batch();
+  let batchOps = 0;
+  const BATCH_LIMIT = 450;
+
+  async function commitIfNeeded() {
+    if (batchOps >= BATCH_LIMIT) {
+      await batch.commit();
+      console.log(`Committed batch of ${batchOps} operations.`);
+      batch = db.batch();
+      batchOps = 0;
+    }
+  }
 
   for (const userDoc of usersSnap.docs) {
     const user = userDoc.data();
@@ -47,6 +67,8 @@ async function runMonthlyTasks() {
         'updatedAt': admin.firestore.FieldValue.serverTimestamp(),
       });
       resetCount++;
+      batchOps++;
+      await commitIfNeeded();
     } else if (!user.permissionBalance) {
       batch.update(userDoc.ref, {
         'permissionBalance.usedThisMonth': 0,
@@ -55,10 +77,12 @@ async function runMonthlyTasks() {
         'updatedAt': admin.firestore.FieldValue.serverTimestamp(),
       });
       resetCount++;
+      batchOps++;
+      await commitIfNeeded();
     }
   }
 
-  if (resetCount > 0) {
+  if (batchOps > 0) {
     await batch.commit();
     console.log(`Successfully committed! Reset permission quotas for ${resetCount} employees.`);
   } else {

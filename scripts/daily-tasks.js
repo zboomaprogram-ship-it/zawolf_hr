@@ -91,6 +91,22 @@ async function runDailyTasks() {
   const usersSnap = await db.collection('users').where('isActive', '==', true).get();
   console.log(`Found ${usersSnap.size} active users.`);
 
+  // Review notifications should go to HR/super admins, not the employee who was deducted.
+  const reviewerIds = new Set();
+  const hrSnap = await db
+    .collection('users')
+    .where('role', '==', 'hr_admin')
+    .where('isActive', '==', true)
+    .get();
+  hrSnap.docs.forEach(doc => reviewerIds.add(doc.id));
+  const superSnap = await db
+    .collection('users')
+    .where('role', '==', 'super_admin')
+    .where('isActive', '==', true)
+    .get();
+  superSnap.docs.forEach(doc => reviewerIds.add(doc.id));
+  console.log(`Found ${reviewerIds.size} HR/super-admin reviewers for deduction notifications.`);
+
   // Load policy for payrollWorkDaysPerMonth
   let payrollWorkDaysPerMonth = 26;
   try {
@@ -122,6 +138,68 @@ async function runDailyTasks() {
       batch = db.batch();
       batchOps = 0;
     }
+  }
+
+  async function notifyReviewers(type, title, body, data) {
+    for (const reviewerId of reviewerIds) {
+      const notifRef = db.collection('notifications').doc(reviewerId).collection('items').doc();
+      batch.set(notifRef, {
+        notificationId: notifRef.id,
+        type,
+        title,
+        body,
+        data: data || {},
+        isRead: false,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+      batchOps++;
+      batch.update(db.collection('users').doc(reviewerId), {
+        unreadNotifications: admin.firestore.FieldValue.increment(1)
+      });
+      batchOps++;
+      await commitIfNeeded();
+    }
+  }
+
+  async function markOverdueTasks() {
+    const overdueSnap = await db
+      .collection('tasks')
+      .where('status', 'in', ['new', 'in_progress'])
+      .where('dueDate', '<', admin.firestore.Timestamp.fromDate(now))
+      .get();
+
+    let overdueTasks = 0;
+    for (const taskDoc of overdueSnap.docs) {
+      const task = taskDoc.data();
+      const assigneeId = task.assigneeId;
+      batch.update(taskDoc.ref, {
+        status: 'late',
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+      batchOps++;
+      overdueTasks++;
+
+      if (assigneeId) {
+        const notifRef = db.collection('notifications').doc(assigneeId).collection('items').doc();
+        batch.set(notifRef, {
+          notificationId: notifRef.id,
+          type: 'task_overdue',
+          title: 'مهمة متأخرة',
+          body: `المهمة "${task.title || ''}" تجاوزت آخر موعد للتنفيذ.`,
+          data: { taskId: taskDoc.id },
+          isRead: false,
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+        batchOps++;
+        batch.update(db.collection('users').doc(assigneeId), {
+          unreadNotifications: admin.firestore.FieldValue.increment(1)
+        });
+        batchOps++;
+      }
+
+      await commitIfNeeded();
+    }
+    console.log(`Marked ${overdueTasks} overdue tasks.`);
   }
 
   for (const userDoc of usersSnap.docs) {
@@ -208,22 +286,12 @@ async function runDailyTasks() {
         batchOps++;
         absentsCreated++;
 
-        // Notify HR
-        const notifRef = db.collection('notifications').doc(userId).collection('items').doc();
-        batch.set(notifRef, {
-          notificationId: notifRef.id,
-          type: 'salary_deduction_pending',
-          title: 'غياب بانتظار مراجعة HR',
-          body: `${user.displayName}: غياب عن يوم ${todayStr} (${amount.toFixed(2)} ${user.salaryCurrency || 'EGP'}).`,
-          data: { attendanceId: attendanceId },
-          isRead: false,
-          createdAt: admin.firestore.FieldValue.serverTimestamp(),
-        });
-        batchOps++;
-        batch.update(userDoc.ref, {
-          unreadNotifications: admin.firestore.FieldValue.increment(1)
-        });
-        batchOps++;
+        await notifyReviewers(
+          'salary_deduction_pending',
+          'غياب بانتظار مراجعة HR',
+          `${user.displayName}: غياب عن يوم ${todayStr} (${amount.toFixed(2)} ${user.salaryCurrency || 'EGP'}).`,
+          { attendanceId: attendanceId }
+        );
       }
     } else {
       const log = attendanceSnap.data();
@@ -259,7 +327,7 @@ async function runDailyTasks() {
             totalWorkHours: 0,
             checkOutDeviceId: log.deviceId || 'system_auto_close',
             checkOutDeviceLabel: 'System Auto Close',
-            checkOutBiometricVerified: true,
+            checkOutBiometricVerified: false,
             salaryDeductionFraction: salaryDeductionFraction,
             salaryDeductionAmount: amount,
             salaryDeductionCode: 'missed_checkout_quarter_day',
@@ -268,21 +336,12 @@ async function runDailyTasks() {
             salaryDeductionDetectedAt: admin.firestore.FieldValue.serverTimestamp(),
           });
 
-          const notifRef = db.collection('notifications').doc(userId).collection('items').doc();
-          batch.set(notifRef, {
-            notificationId: notifRef.id,
-            type: 'salary_deduction_pending',
-            title: 'خصم عدم تسجيل انصراف بانتظار مراجعة HR',
-            body: `${user.displayName}: خصم ربع يوم - عدم تسجيل الانصراف عن يوم ${todayStr} (${amount.toFixed(2)} ${user.salaryCurrency || 'EGP'}).`,
-            data: { attendanceId: attendanceId },
-            isRead: false,
-            createdAt: admin.firestore.FieldValue.serverTimestamp(),
-          });
-          batchOps++;
-          batch.update(userDoc.ref, {
-            unreadNotifications: admin.firestore.FieldValue.increment(1)
-          });
-          batchOps++;
+          await notifyReviewers(
+            'salary_deduction_pending',
+            'خصم عدم تسجيل انصراف بانتظار مراجعة HR',
+            `${user.displayName}: خصم ربع يوم - عدم تسجيل الانصراف عن يوم ${todayStr} (${amount.toFixed(2)} ${user.salaryCurrency || 'EGP'}).`,
+            { attendanceId: attendanceId }
+          );
         } else {
           Object.assign(updates, {
             checkOutTime: admin.firestore.FieldValue.serverTimestamp(),
@@ -291,7 +350,7 @@ async function runDailyTasks() {
             totalWorkHours: 0,
             checkOutDeviceId: log.deviceId || 'system_auto_close',
             checkOutDeviceLabel: 'System Auto Close',
-            checkOutBiometricVerified: true,
+            checkOutBiometricVerified: false,
           });
         }
       } else if (log.checkOutTime && log.salaryDeductionCode === 'early_checkout_quarter_day') {
@@ -315,6 +374,8 @@ async function runDailyTasks() {
 
     await commitIfNeeded();
   }
+
+  await markOverdueTasks();
 
   if (batchOps > 0) {
     await batch.commit();

@@ -109,13 +109,15 @@ class PermissionService {
     // ── Triggers notifications (No functions, direct Firestore write) ──
     if (isLateSubmission) {
       // Notify employee of auto-rejection
-      await _createNotification(
-        recipientId: req.userId,
-        type: 'permission_invalid_late',
-        title: 'طلب إذن غير مقبول ❌',
-        body:
-            'لا يُعتد بطلب تأخير الحضور المقدَّم بعد بداية وقت العمل الرسمي وفق اللائحة.',
-      );
+      try {
+        await _createNotification(
+          recipientId: req.userId,
+          type: 'permission_invalid_late',
+          title: 'طلب إذن غير مقبول ❌',
+          body:
+              'لا يُعتد بطلب تأخير الحضور المقدَّم بعد بداية وقت العمل الرسمي وفق اللائحة.',
+        );
+      } catch (_) {}
     } else {
       await _notifyRole(
         role: 'hr_admin',
@@ -158,13 +160,16 @@ class PermissionService {
       );
 
       if (perm.managerId.isNotEmpty) {
-        await _createNotification(
-          recipientId: perm.managerId,
-          type: 'permission_pending_manager',
-          title: 'طلب إذن بانتظار موافقتك',
-          body: '${perm.employeeName} حصل على موافقة HR وينتظر قرارك النهائي.',
-          data: {'permissionId': permissionId},
-        );
+        try {
+          await _createNotification(
+            recipientId: perm.managerId,
+            type: 'permission_pending_manager',
+            title: 'طلب إذن بانتظار موافقتك',
+            body:
+                '${perm.employeeName} حصل على موافقة HR وينتظر قرارك النهائي.',
+            data: {'permissionId': permissionId},
+          );
+        } catch (_) {}
       }
       return;
     }
@@ -212,12 +217,14 @@ class PermissionService {
     );
 
     // 3. Notify employee
-    await _createNotification(
-      recipientId: perm.userId,
-      type: 'permission_approved',
-      title: 'تم قبول طلب الإذن ✅',
-      body: 'تمت موافقة HR والمدير على طلب إذنك ليوم ${perm.requestDate}.',
-    );
+    try {
+      await _createNotification(
+        recipientId: perm.userId,
+        type: 'permission_approved',
+        title: 'تم قبول طلب الإذن ✅',
+        body: 'تمت موافقة HR والمدير على طلب إذنك ليوم ${perm.requestDate}.',
+      );
+    } catch (_) {}
   }
 
   // Manager/HR rejects permission
@@ -264,13 +271,15 @@ class PermissionService {
     );
 
     // Notify employee
-    await _createNotification(
-      recipientId: perm.userId,
-      type: 'permission_rejected',
-      title: 'تم رفض طلب الإذن ❌',
-      body:
-          'تم رفض طلب إذنك ليوم ${perm.requestDate} من ${isHrStage ? "HR" : "المدير"}. السبب: $comment',
-    );
+    try {
+      await _createNotification(
+        recipientId: perm.userId,
+        type: 'permission_rejected',
+        title: 'تم رفض طلب الإذن ❌',
+        body:
+            'تم رفض طلب إذنك ليوم ${perm.requestDate} من ${isHrStage ? "HR" : "المدير"}. السبب: $comment',
+      );
+    } catch (_) {}
   }
 
   // Reset monthly balance client-side
@@ -323,31 +332,30 @@ class PermissionService {
     required String body,
     Map<String, dynamic>? data,
   }) async {
-    final snap = await _db
-        .collection('users')
-        .where('role', isEqualTo: role)
-        .get();
-    for (final doc in snap.docs) {
-      await _createNotification(
-        recipientId: doc.id,
-        type: type,
-        title: title,
-        body: body,
-        data: data,
-      );
-    }
-    final superSnap = await _db
-        .collection('users')
-        .where('role', isEqualTo: 'super_admin')
-        .get();
-    for (final doc in superSnap.docs) {
-      await _createNotification(
-        recipientId: doc.id,
-        type: type,
-        title: title,
-        body: body,
-        data: data,
-      );
+    try {
+      final targets = <String>{};
+      final snap = await _db
+          .collection('users')
+          .where('role', isEqualTo: role)
+          .get();
+      targets.addAll(snap.docs.map((doc) => doc.id));
+      final superSnap = await _db
+          .collection('users')
+          .where('role', isEqualTo: 'super_admin')
+          .get();
+      targets.addAll(superSnap.docs.map((doc) => doc.id));
+
+      for (final userId in targets) {
+        await _createNotification(
+          recipientId: userId,
+          type: type,
+          title: title,
+          body: body,
+          data: data,
+        );
+      }
+    } catch (_) {
+      // Notification delivery must not block the permission request flow.
     }
   }
 }

@@ -66,6 +66,39 @@ Each item should include:
 }
 ```
 
+## GitHub Actions Automation
+
+Cloud Functions are not required for the current scheduled HR tasks. GitHub
+Actions runs the Node scripts in `scripts/` using Firebase Admin SDK:
+
+- `.github/workflows/daily-tasks.yml`: runs daily at 11:55 PM Egypt time to
+  mark absences, auto-close missed checkouts, mark overdue tasks, and create HR
+  review notifications.
+- `.github/workflows/monthly-tasks.yml`: runs at 12:05 AM Egypt time and the
+  script only resets permission balances when the Cairo date is day `01`.
+
+Create one GitHub repository secret:
+
+```text
+FIREBASE_SERVICE_ACCOUNT
+```
+
+Its value must be the full Firebase service-account JSON for the project. Keep
+repo access tight and rotate the key immediately if it is ever exposed.
+
+## V2 Productivity Core
+
+The first V2 module is task management:
+
+- Employees can view their assigned tasks and update status.
+- Managers can assign tasks to their direct team and review completed work.
+- HR/super admin can manage task assignments across the company.
+- The daily GitHub Action marks overdue tasks as `late`.
+
+Task notifications are stored in Firestore like the rest of the app
+notifications. If OneSignal push is enabled for production, use these same
+notification documents/events as the source for the OneSignal sender.
+
 ## Production Checklist
 
 - Deploy `firestore.rules` and `firestore.indexes.json` after review.

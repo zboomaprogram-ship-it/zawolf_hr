@@ -2,6 +2,17 @@ const { initializeApp, applicationDefault } = require('firebase-admin/app');
 const { getAuth } = require('firebase-admin/auth');
 const { getFirestore, FieldValue } = require('firebase-admin/firestore');
 
+function currentCairoMonthKey() {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Africa/Cairo',
+    year: 'numeric',
+    month: '2-digit',
+  }).formatToParts(new Date());
+  const year = parts.find(part => part.type === 'year').value;
+  const month = parts.find(part => part.type === 'month').value;
+  return `${year}-${month}`;
+}
+
 // Initialize the app
 initializeApp({
   projectId: "zawolf-hr-system-60317",
@@ -57,8 +68,15 @@ async function createHRAdmin() {
       permissionBalance: {
         usedThisMonth: 0,
         usedHoursThisMonth: 0,
-        lastResetMonth: "2026-07"
-      }
+        lastResetMonth: currentCairoMonthKey()
+      },
+      workSchedule: {
+        startTime: "09:00",
+        endTime: "17:00",
+        workDays: [6, 7, 1, 2, 3, 4]
+      },
+      createdAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp()
     });
 
     console.log("Successfully created user document in Firestore.");

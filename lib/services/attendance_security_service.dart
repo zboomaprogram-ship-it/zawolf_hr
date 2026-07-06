@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:local_auth/local_auth.dart';
+import 'package:flutter/services.dart';
 
 class AttendanceSecurityResult {
   final String deviceId;
@@ -43,11 +44,21 @@ class AttendanceSecurityService {
       );
     }
 
-    final verified = await _localAuth.authenticate(
-      localizedReason: 'تحقق من هويتك لتسجيل الحضور أو الانصراف',
-      biometricOnly: false,
-      persistAcrossBackgrounding: true,
-    );
+    bool verified = false;
+    try {
+      verified = await _localAuth.authenticate(
+        localizedReason: 'تحقق من هويتك لتسجيل الحضور أو الانصراف',
+        options: const AuthenticationOptions(
+          biometricOnly: false,
+          stickyAuth: true,
+        ),
+      );
+    } on PlatformException catch (e) {
+      if (e.code == 'NotEnrolled' || e.code == 'noCredentialsSet') {
+        throw Exception('يجب تفعيل قفل الشاشة (بصمة أو كلمة مرور) في إعدادات الهاتف قبل تسجيل الحضور.');
+      }
+      throw Exception('خطأ في المصادقة: ${e.message ?? e.code}');
+    }
 
     if (!verified) {
       throw Exception('فشل التحقق من هوية الجهاز.');

@@ -3,6 +3,7 @@ import '../models/attendance_model.dart';
 import '../models/leave_model.dart';
 import '../models/permission_model.dart';
 import '../models/performance_model.dart';
+import '../models/payroll_run_model.dart';
 
 class SheetsExportService {
   Future<String> exportAttendanceToSheet(
@@ -158,6 +159,42 @@ class SheetsExportService {
           evaluation.overallScore,
           evaluation.grade,
           evaluation.comments ?? '-',
+        ],
+      ),
+    ];
+
+    return _toCsv(rows);
+  }
+
+  Future<String> exportPayrollToSheet(
+    String exportName,
+    List<PayrollRunModel> runs,
+  ) async {
+    final rows = <List<Object?>>[
+      [
+        'الكود التعريفي (ID)',
+        'اسم الموظف (Employee)',
+        'القسم (Department)',
+        'الشهر (Month)',
+        'الراتب الأساسي',
+        'خصومات الحضور',
+        'المكافآت',
+        'صافي الراتب',
+        'العملة',
+        'الحالة',
+      ],
+      ...runs.map(
+        (run) => [
+          run.employeeId,
+          run.employeeName,
+          run.department,
+          run.monthKey,
+          run.baseSalary.toStringAsFixed(2),
+          run.attendanceDeductions.toStringAsFixed(2),
+          run.rewardsBonus.toStringAsFixed(2),
+          run.netSalary.toStringAsFixed(2),
+          run.currency,
+          PayrollStatus.arabicLabel(run.status),
         ],
       ),
     ];

@@ -81,6 +81,31 @@ service cloud.firestore {
         || (
           request.resource.data.type == 'suggestion_new'
           && recipientDoc(userId).get('role', '') in ['manager', 'super_admin']
+        )
+        || (
+          request.resource.data.type in [
+            'task_assigned', 'task_reviewed', 'task_overdue'
+          ]
+          && (
+            uid() == userId ||
+            isHR() ||
+            (isManagerRole() && recipientDoc(userId).get('managerId', '') == uid())
+          )
+        )
+        || (
+          request.resource.data.type in ['kpi_assigned', 'kpi_progress_updated']
+          && (
+            uid() == userId ||
+            isHR() ||
+            (isManagerRole() && recipientDoc(userId).get('managerId', '') == uid())
+          )
+        )
+        || (
+          request.resource.data.type == 'warning_reward_created'
+          && (
+            isHR() ||
+            (isManagerRole() && recipientDoc(userId).get('managerId', '') == uid())
+          )
         );
     }
     function canIncrementUnreadOnly() {
@@ -242,6 +267,176 @@ service cloud.firestore {
         && request.resource.data.status in ['approved', 'rejected']
         && request.resource.data.reviewedBy == uid()
         && request.resource.data.managerReviewedBy == uid();
+    }
+    function taskCreateKeys() {
+      return request.resource.data.keys().hasOnly([
+        'title', 'description', 'assigneeId', 'assigneeName',
+        'assigneeEmployeeId', 'department', 'managerId', 'createdBy',
+        'createdByName', 'priority', 'status', 'dueDate', 'createdAt',
+        'updatedAt', 'isRead'
+      ]);
+    }
+    function taskCreateValues() {
+      return request.resource.data.title is string
+        && request.resource.data.title.size() >= 3
+        && request.resource.data.assigneeId is string
+        && request.resource.data.createdBy == uid()
+        && request.resource.data.priority in ['low', 'medium', 'high', 'urgent']
+        && request.resource.data.status == 'new'
+        && request.resource.data.isRead == false
+        && (
+          isHR() ||
+          (
+            isManagerRole()
+            && request.resource.data.managerId == uid()
+            && recipientDoc(request.resource.data.assigneeId).get('managerId', '') == uid()
+          )
+        );
+    }
+    function taskOwnerStatusUpdate() {
+      return isOwner(resource.data.assigneeId)
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['status', 'isRead', 'updatedAt', 'completedAt'])
+        && request.resource.data.status in ['in_progress', 'done']
+        && request.resource.data.isRead == true;
+    }
+    function taskReviewerUpdate() {
+      return (
+          isHR() ||
+          (isManagerRole() && resource.data.managerId == uid())
+        )
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly([
+            'status', 'qualityScore', 'managerComment', 'updatedAt'
+          ])
+        && (
+          (
+            request.resource.data.diff(resource.data).affectedKeys()
+              .hasOnly(['status', 'updatedAt'])
+            && request.resource.data.status == 'cancelled'
+          )
+          ||
+          (
+            request.resource.data.diff(resource.data).affectedKeys()
+              .hasOnly(['qualityScore', 'managerComment', 'updatedAt'])
+            && resource.data.status == 'done'
+            && request.resource.data.qualityScore >= 0
+            && request.resource.data.qualityScore <= 100
+          )
+        );
+    }
+    function kpiTemplateCreateKeys() {
+      return request.resource.data.keys().hasOnly([
+        'title', 'department', 'createdBy', 'createdByName',
+        'isActive', 'metrics', 'createdAt'
+      ]);
+    }
+    function employeeKpiCreateKeys() {
+      return request.resource.data.keys().hasOnly([
+        'templateId', 'userId', 'employeeId', 'employeeName',
+        'department', 'managerId', 'monthKey', 'status', 'metrics',
+        'overallProgress', 'createdBy', 'createdAt', 'updatedAt'
+      ]);
+    }
+    function canManageEmployeeKpiFor(userId, managerId) {
+      return isHR()
+        || (
+          isManagerRole()
+          && managerId == uid()
+          && recipientDoc(userId).get('managerId', '') == uid()
+        );
+    }
+    function employeeKpiCreateValues() {
+      return request.resource.data.userId is string
+        && request.resource.data.monthKey is string
+        && request.resource.data.status == 'active'
+        && request.resource.data.overallProgress == 0
+        && request.resource.data.createdBy == uid()
+        && canManageEmployeeKpiFor(
+          request.resource.data.userId,
+          request.resource.data.managerId
+        );
+    }
+    function employeeKpiProgressUpdate() {
+      return canManageEmployeeKpiFor(resource.data.userId, resource.data.managerId)
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['metrics', 'overallProgress', 'updatedAt'])
+        && request.resource.data.overallProgress >= 0
+        && request.resource.data.overallProgress <= 100;
+    }
+    function productivityScoreKeys() {
+      return request.resource.data.keys().hasOnly([
+        'userId', 'employeeId', 'employeeName', 'department', 'managerId',
+        'monthKey', 'attendanceScore', 'punctualityScore',
+        'taskCompletionScore', 'taskQualityScore', 'kpiScore',
+        'overallScore', 'completedTasks', 'totalTasks', 'overdueTasks',
+        'absentDays', 'lateDays', 'calculatedAt'
+      ]);
+    }
+    function productivityScoreValues() {
+      return request.resource.data.userId is string
+        && request.resource.data.monthKey is string
+        && request.resource.data.overallScore >= 0
+        && request.resource.data.overallScore <= 100
+        && canManageEmployeeKpiFor(
+          request.resource.data.userId,
+          request.resource.data.managerId
+        );
+    }
+    function warningRewardKeys() {
+      return request.resource.data.keys().hasOnly([
+        'userId', 'employeeId', 'employeeName', 'department', 'managerId',
+        'type', 'status', 'title', 'description', 'createdBy',
+        'createdByName', 'source', 'monthKey', 'productivityScore',
+        'amount', 'currency', 'createdAt', 'acknowledgedAt'
+      ]);
+    }
+    function warningRewardCreateValues() {
+      return request.resource.data.userId is string
+        && request.resource.data.createdBy == uid()
+        && request.resource.data.type in [
+          'warning', 'reward', 'bonus_recommendation', 'follow_up'
+        ]
+        && request.resource.data.status in ['suggested', 'issued']
+        && request.resource.data.title is string
+        && request.resource.data.title.size() >= 3
+        && request.resource.data.get('amount', 0) >= 0
+        && canManageEmployeeKpiFor(
+          request.resource.data.userId,
+          request.resource.data.managerId
+        );
+    }
+    function warningRewardManagerUpdate() {
+      return canManageEmployeeKpiFor(resource.data.userId, resource.data.managerId)
+        && resource.data.status == 'suggested'
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['status'])
+        && request.resource.data.status in ['issued', 'dismissed'];
+    }
+    function warningRewardOwnerAcknowledge() {
+      return isOwner(resource.data.userId)
+        && resource.data.status == 'issued'
+        && request.resource.data.diff(resource.data).affectedKeys()
+        .hasOnly(['status', 'acknowledgedAt'])
+        && request.resource.data.status == 'acknowledged';
+    }
+    function payrollRunKeys() {
+      return request.resource.data.keys().hasOnly([
+        'userId', 'employeeId', 'employeeName', 'department', 'managerId',
+        'monthKey', 'currency', 'baseSalary', 'attendanceDeductions',
+        'rewardsBonus', 'netSalary', 'approvedDeductionCount',
+        'bonusRecordCount', 'status', 'calculatedAt', 'calculatedBy',
+        'reviewedBy', 'reviewedAt'
+      ]);
+    }
+    function payrollRunValues() {
+      return request.resource.data.userId is string
+        && request.resource.data.monthKey is string
+        && request.resource.data.baseSalary >= 0
+        && request.resource.data.attendanceDeductions >= 0
+        && request.resource.data.rewardsBonus >= 0
+        && request.resource.data.netSalary >= 0
+        && request.resource.data.status in ['draft', 'reviewed', 'locked'];
     }
 
     match /companies/{companyId} {
@@ -435,6 +630,93 @@ service cloud.firestore {
           .hasOnly(['status', 'reviewedBy', 'reviewedAt'])
         && request.resource.data.status in ['reviewed', 'closed']
         && request.resource.data.reviewedBy == uid();
+      allow delete: if isAuth() && isActive() && isSuperAdmin();
+    }
+
+    match /tasks/{taskId} {
+      allow read: if isAuth() && isActive() && (
+        isOwner(resource.data.assigneeId) ||
+        isMyManager(resource.data.managerId) ||
+        isHR()
+      );
+      allow create: if isAuth() && isActive()
+        && taskCreateKeys()
+        && taskCreateValues();
+      allow update: if isAuth() && isActive() && (
+        taskOwnerStatusUpdate() ||
+        taskReviewerUpdate() ||
+        isSuperAdmin()
+      );
+      allow delete: if isAuth() && isActive() && isSuperAdmin();
+    }
+
+    match /kpiTemplates/{templateId} {
+      allow read: if isAuth() && isActive();
+      allow create: if isAuth() && isActive()
+        && isManagerOrAbove()
+        && kpiTemplateCreateKeys()
+        && request.resource.data.createdBy == uid()
+        && request.resource.data.title is string
+        && request.resource.data.title.size() >= 3
+        && request.resource.data.department is string
+        && request.resource.data.department.size() > 0
+        && request.resource.data.isActive == true;
+      allow update: if isAuth() && isActive() && isHR();
+      allow delete: if isAuth() && isActive() && isSuperAdmin();
+    }
+
+    match /employeeKpis/{employeeKpiId} {
+      allow read: if isAuth() && isActive() && (
+        isOwner(resource.data.userId) ||
+        isMyManager(resource.data.managerId) ||
+        isHR()
+      );
+      allow create: if isAuth() && isActive()
+        && employeeKpiCreateKeys()
+        && employeeKpiCreateValues();
+      allow update: if isAuth() && isActive() && (
+        employeeKpiProgressUpdate() ||
+        isSuperAdmin()
+      );
+      allow delete: if isAuth() && isActive() && isSuperAdmin();
+    }
+
+    match /productivityScores/{scoreId} {
+      allow read: if isAuth() && isActive() && (
+        isOwner(resource.data.userId) ||
+        isMyManager(resource.data.managerId) ||
+        isHR()
+      );
+      allow create, update: if isAuth() && isActive()
+        && productivityScoreKeys()
+        && productivityScoreValues();
+      allow delete: if isAuth() && isActive() && isSuperAdmin();
+    }
+
+    match /warningsRewards/{recordId} {
+      allow read: if isAuth() && isActive() && (
+        isOwner(resource.data.userId) ||
+        isMyManager(resource.data.managerId) ||
+        isHR()
+      );
+      allow create: if isAuth() && isActive()
+        && warningRewardKeys()
+        && warningRewardCreateValues();
+      allow update: if isAuth() && isActive() && (
+        warningRewardManagerUpdate() ||
+        warningRewardOwnerAcknowledge() ||
+        isSuperAdmin()
+      );
+      allow delete: if isAuth() && isActive() && isSuperAdmin();
+    }
+
+    match /payrollRuns/{payrollId} {
+      allow read: if isAuth() && isActive() && (
+        isOwner(resource.data.userId) || isHR()
+      );
+      allow create, update: if isAuth() && isActive() && isHR()
+        && payrollRunKeys()
+        && payrollRunValues();
       allow delete: if isAuth() && isActive() && isSuperAdmin();
     }
 

@@ -2,7 +2,12 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zawolf_hr/models/attendance_model.dart';
 import 'package:zawolf_hr/models/attendance_policy.dart';
+import 'package:zawolf_hr/models/kpi_model.dart';
 import 'package:zawolf_hr/models/leave_model.dart';
+import 'package:zawolf_hr/models/payroll_run_model.dart';
+import 'package:zawolf_hr/models/productivity_score_model.dart';
+import 'package:zawolf_hr/models/task_model.dart';
+import 'package:zawolf_hr/models/warning_reward_model.dart';
 import 'package:zawolf_hr/services/sheets_export_service.dart';
 
 void main() {
@@ -121,5 +126,118 @@ void main() {
         );
       },
     );
+  });
+
+  group('TaskModel helpers', () {
+    test('translates priorities and statuses for Arabic UI', () {
+      expect(TaskPriority.arabicLabel(TaskPriority.urgent), 'عاجلة');
+      expect(TaskPriority.arabicLabel(TaskPriority.low), 'منخفضة');
+      expect(TaskStatus.arabicLabel(TaskStatus.newTask), 'جديدة');
+      expect(TaskStatus.arabicLabel(TaskStatus.inProgress), 'قيد التنفيذ');
+      expect(TaskStatus.arabicLabel(TaskStatus.done), 'مكتملة');
+    });
+  });
+
+  group('KPI progress', () {
+    test('calculates weighted monthly KPI progress', () {
+      final metrics = [
+        const EmployeeKpiMetric(
+          name: 'Calls',
+          unit: 'call',
+          target: 100,
+          actual: 80,
+          weight: 1,
+        ),
+        const EmployeeKpiMetric(
+          name: 'Deals',
+          unit: 'deal',
+          target: 10,
+          actual: 10,
+          weight: 2,
+        ),
+      ];
+
+      expect(
+        EmployeeKpiModel.calculateProgress(metrics).toStringAsFixed(1),
+        '93.3',
+      );
+    });
+
+    test('caps KPI progress at 100 for overall score', () {
+      final metrics = [
+        const EmployeeKpiMetric(
+          name: 'Revenue',
+          unit: 'EGP',
+          target: 1000,
+          actual: 2000,
+          weight: 1,
+        ),
+      ];
+
+      expect(EmployeeKpiModel.calculateProgress(metrics), 100);
+    });
+  });
+
+  group('Productivity score', () {
+    test('calculates weighted productivity score', () {
+      final score = ProductivityScoreModel.calculateOverall(
+        attendanceScore: 90,
+        punctualityScore: 80,
+        taskCompletionScore: 70,
+        taskQualityScore: 100,
+        kpiScore: 75,
+      );
+
+      expect(score, 82);
+    });
+
+    test('clamps productivity score to 100', () {
+      final score = ProductivityScoreModel.calculateOverall(
+        attendanceScore: 120,
+        punctualityScore: 100,
+        taskCompletionScore: 100,
+        taskQualityScore: 100,
+        kpiScore: 100,
+      );
+
+      expect(score, 100);
+    });
+  });
+
+  group('Warnings and rewards helpers', () {
+    test('translates record types and statuses', () {
+      expect(WarningRewardType.arabicLabel(WarningRewardType.warning), 'إنذار');
+      expect(WarningRewardType.arabicLabel(WarningRewardType.reward), 'مكافأة');
+      expect(
+        WarningRewardStatus.arabicLabel(WarningRewardStatus.suggested),
+        'مقترح',
+      );
+      expect(
+        WarningRewardStatus.arabicLabel(WarningRewardStatus.acknowledged),
+        'تم الاطلاع',
+      );
+    });
+  });
+
+  group('Payroll helpers', () {
+    test('calculates net salary from base deductions and rewards', () {
+      final netSalary = PayrollRunModel.calculateNetSalary(
+        baseSalary: 10000,
+        deductions: 1500,
+        bonus: 500,
+      );
+
+      expect(netSalary, 9000);
+    });
+
+    test('does not allow negative net salary', () {
+      final netSalary = PayrollRunModel.calculateNetSalary(
+        baseSalary: 1000,
+        deductions: 2500,
+        bonus: 0,
+      );
+
+      expect(netSalary, 0);
+    });
   });
 }

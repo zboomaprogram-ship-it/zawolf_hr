@@ -147,12 +147,14 @@ class LeaveService {
     );
 
     // 3. Notify employee
-    await _createNotification(
-      recipientId: leave.userId,
-      type: 'leave_approved',
-      title: 'تم قبول طلب الإجازة ✅',
-      body: 'تمت الموافقة على طلب إجازتك لمدّة ${leave.numberOfDays} يوم.',
-    );
+    try {
+      await _createNotification(
+        recipientId: leave.userId,
+        type: 'leave_approved',
+        title: 'تم قبول طلب الإجازة ✅',
+        body: 'تمت الموافقة على طلب إجازتك لمدّة ${leave.numberOfDays} يوم.',
+      );
+    } catch (_) {}
   }
 
   // Reject Leave
@@ -183,12 +185,14 @@ class LeaveService {
     );
 
     // Notify employee
-    await _createNotification(
-      recipientId: leave.userId,
-      type: 'leave_rejected',
-      title: 'تم رفض طلب الإجازة ❌',
-      body: 'تم رفض طلب إجازتك. السبب: $comment',
-    );
+    try {
+      await _createNotification(
+        recipientId: leave.userId,
+        type: 'leave_rejected',
+        title: 'تم رفض طلب الإجازة ❌',
+        body: 'تم رفض طلب إجازتك. السبب: $comment',
+      );
+    } catch (_) {}
   }
 
   // Private Helper to create notification records

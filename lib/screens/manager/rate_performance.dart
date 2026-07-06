@@ -31,6 +31,7 @@ class _RatePerformanceScreenState extends State<RatePerformanceScreen> {
   // Scoring parameters
   double _autoAttendance = 100.0;
   double _autoPunctuality = 100.0;
+  double _autoKpi = 80.0;
   double _quality = 80.0;
   double _teamwork = 80.0;
   double _commitment = 80.0;
@@ -96,6 +97,7 @@ class _RatePerformanceScreenState extends State<RatePerformanceScreen> {
       setState(() {
         _autoAttendance = scores.attendanceScore;
         _autoPunctuality = scores.punctualityScore;
+        _autoKpi = scores.kpiScore;
         _loadingAutoScores = false;
       });
     } catch (e) {
@@ -108,10 +110,11 @@ class _RatePerformanceScreenState extends State<RatePerformanceScreen> {
   double get _overallScore =>
       (_autoAttendance +
           _autoPunctuality +
+          _autoKpi +
           _quality +
           _teamwork +
           _commitment) /
-      5.0;
+      6.0;
 
   String get _gradeLetter =>
       _performanceService.calculateGradeLetter(_overallScore);
@@ -325,6 +328,12 @@ class _RatePerformanceScreenState extends State<RatePerformanceScreen> {
                       'الالتزام بالمواعيد (Punctuality)',
                       _autoPunctuality,
                       ZaWolfColors.warning,
+                    ),
+                    const SizedBox(height: 16),
+                    _buildDisabledSlider(
+                      'إنجاز أهداف KPI',
+                      _autoKpi,
+                      ZaWolfColors.perfGold,
                     ),
                   ],
                   const SizedBox(height: 24),
