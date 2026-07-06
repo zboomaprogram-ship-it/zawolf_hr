@@ -48,10 +48,8 @@ class AttendanceSecurityService {
     try {
       verified = await _localAuth.authenticate(
         localizedReason: 'تحقق من هويتك لتسجيل الحضور أو الانصراف',
-        options: const AuthenticationOptions(
-          biometricOnly: false,
-          stickyAuth: true,
-        ),
+        biometricOnly: false,
+        persistAcrossBackgrounding: true,
       );
     } on PlatformException catch (e) {
       if (e.code == 'NotEnrolled' || e.code == 'noCredentialsSet') {
