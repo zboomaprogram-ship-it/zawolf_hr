@@ -51,11 +51,12 @@ class AttendanceSecurityService {
         biometricOnly: false,
         persistAcrossBackgrounding: true,
       );
-    } on PlatformException catch (e) {
-      if (e.code == 'NotEnrolled' || e.code == 'noCredentialsSet') {
+    } catch (e) {
+      final errorStr = e.toString();
+      if (errorStr.contains('NotEnrolled') || errorStr.contains('noCredentialsSet')) {
         throw Exception('يجب تفعيل قفل الشاشة (بصمة أو كلمة مرور) في إعدادات الهاتف قبل تسجيل الحضور.');
       }
-      throw Exception('خطأ في المصادقة: ${e.message ?? e.code}');
+      throw Exception('خطأ في المصادقة: $errorStr');
     }
 
     if (!verified) {

@@ -104,6 +104,7 @@ class NotificationService {
     stopListening();
     _notifiedIds.clear();
 
+    bool isInitial = true;
     _notifSubscription = FirebaseFirestore.instance
         .collection('notifications')
         .doc(userId)
@@ -111,6 +112,13 @@ class NotificationService {
         .where('isRead', isEqualTo: false)
         .snapshots()
         .listen((snapshot) {
+          if (isInitial) {
+            isInitial = false;
+            for (var doc in snapshot.docs) {
+              _notifiedIds.add(doc.id);
+            }
+            return;
+          }
           for (var change in snapshot.docChanges) {
             if (change.type == DocumentChangeType.added) {
               final data = change.doc.data();
