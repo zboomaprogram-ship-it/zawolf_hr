@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:typed_data';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
+import 'package:zawolf_hr/models/employee_role.dart';
 import '../models/user_model.dart';
 import '../models/leave_model.dart';
 import 'audit_log_service.dart';
@@ -54,7 +55,7 @@ class LeaveService {
     final overlaps = await _db
         .collection('leaves')
         .where('userId', isEqualTo: req.userId)
-        .where('status', whereIn: ['approved', 'pending'])
+        .where('status', whereIn: ['approved', 'pending_hr', 'pending_manager'])
         .get();
 
     for (final doc in overlaps.docs) {
@@ -84,7 +85,7 @@ class LeaveService {
       numberOfDays: req.numberOfDays,
       reason: req.reason,
       attachmentUrl: req.attachmentUrl,
-      status: 'pending',
+      status: 'pending_hr',
       submittedAt: DateTime.now(),
     );
 
@@ -106,7 +107,11 @@ class LeaveService {
   }
 
   // Approve Leave
-  Future<void> approveLeave(String leaveId, String reviewerId) async {
+  Future<void> approveLeave(
+    String leaveId,
+    String reviewerId,
+    String role,
+  ) async {
     final docRef = _db.collection('leaves').doc(leaveId);
     final doc = await docRef.get();
 
@@ -115,22 +120,40 @@ class LeaveService {
 
     final batch = _db.batch();
 
+    String nextStatus;
+    bool isFinalApproval = false;
+
+    if (role == EmployeeRole.hrAdmin || role == EmployeeRole.superAdmin) {
+      if (leave.status == 'pending_hr') {
+        nextStatus = 'pending_manager';
+      } else {
+        nextStatus = 'approved';
+        isFinalApproval = true;
+      }
+    } else {
+      // Manager
+      nextStatus = 'approved';
+      isFinalApproval = true;
+    }
+
     batch.update(docRef, {
-      'status': 'approved',
+      'status': nextStatus,
       'reviewedBy': reviewerId,
       'reviewedAt': FieldValue.serverTimestamp(),
     });
 
-    // Deduct leave balance
-    String balanceKey = leave.leaveType;
-    if (balanceKey == 'day_off') {
-      balanceKey = 'daysOff';
-    }
+    if (isFinalApproval) {
+      // Deduct leave balance
+      String balanceKey = leave.leaveType;
+      if (balanceKey == 'day_off') {
+        balanceKey = 'daysOff';
+      }
 
-    final userRef = _db.collection('users').doc(leave.userId);
-    batch.update(userRef, {
-      'leaveBalance.$balanceKey': FieldValue.increment(-leave.numberOfDays),
-    });
+      final userRef = _db.collection('users').doc(leave.userId);
+      batch.update(userRef, {
+        'leaveBalance.$balanceKey': FieldValue.increment(-leave.numberOfDays),
+      });
+    }
 
     await batch.commit();
 

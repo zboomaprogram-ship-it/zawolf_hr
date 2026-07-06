@@ -5,6 +5,7 @@ import '../services/auth_service.dart';
 import '../services/permission_service.dart';
 import '../models/employee_role.dart';
 import '../theme/theme.dart';
+import '../services/notification_service.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -54,6 +55,14 @@ class _SplashScreenState extends State<SplashScreen>
 
       if (!mounted) return;
       final role = authService.currentUser?.role;
+      
+      final initialRoute = NotificationService.instance.initialRoute;
+      if (initialRoute != null && initialRoute.isNotEmpty) {
+        NotificationService.instance.initialRoute = null; // consume it
+        context.go(initialRoute);
+        return;
+      }
+
       if (role == EmployeeRole.superAdmin || role == EmployeeRole.hrAdmin) {
         context.go('/hr/dashboard');
       } else if (role == EmployeeRole.manager) {

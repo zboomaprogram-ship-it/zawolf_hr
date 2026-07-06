@@ -236,7 +236,7 @@ class _PayrollCard extends StatelessWidget {
           ),
           const SizedBox(height: 12),
           Text(
-            'أساسي ${run.baseSalary.toStringAsFixed(2)} - خصم ${run.attendanceDeductions.toStringAsFixed(2)} + مكافأة ${run.rewardsBonus.toStringAsFixed(2)}',
+            'أساسي ${run.baseSalary.toStringAsFixed(2)} - خصم ${run.attendanceDeductions.toStringAsFixed(2)} - سلف ${run.advances.toStringAsFixed(2)} + مكافأة ${run.rewardsBonus.toStringAsFixed(2)}',
             textDirection: TextDirection.rtl,
             style: theme.textTheme.bodyMedium,
           ),

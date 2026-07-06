@@ -1,12 +1,16 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:csv/csv.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
 import '../../services/auth_service.dart';
 import '../../services/attendance_security_service.dart';
+import '../../services/sheets_export_service.dart';
 import '../../models/employee_role.dart';
 import '../../models/user_model.dart';
 import '../../models/location_model.dart';
@@ -14,6 +18,9 @@ import '../../theme/theme.dart';
 import '../../components/wolf_card.dart';
 import '../../components/wolf_button.dart';
 import '../../components/wolf_input_field.dart';
+import '../../components/dynamic_dropdown.dart';
+import '../../services/department_service.dart';
+import '../../services/job_title_service.dart';
 
 List<DropdownMenuItem<String>> _roleMenuItems({
   required bool canUseSuperAdmin,
@@ -71,7 +78,13 @@ class EmployeeManagementScreen extends StatefulWidget {
 class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
   String _searchQuery = '';
+  String? _filterRole;
+  String? _filterDepartment;
+  String? _filterLocation;
+  String? _filterJobTitle;
   bool _bulkImporting = false;
+  int _importProgress = 0;
+  int _importTotal = 0;
 
   void _showAddEmployeeDialog() {
     showDialog(
@@ -83,7 +96,243 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
     );
   }
 
-  Future<void> _importEmployeesCsv() async {
+  void _showBulkImportSheet() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: ZaWolfColors.surface01,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setSheetState) {
+            return Padding(
+              padding: EdgeInsets.only(
+                left: 20,
+                right: 20,
+                top: 20,
+                bottom: MediaQuery.of(context).viewInsets.bottom + 20,
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  // Handle bar
+                  Center(
+                    child: Container(
+                      width: 40,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: ZaWolfColors.surface03,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'استيراد جماعي للموظفين',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                    ),
+                    textAlign: TextAlign.right,
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'قم بتحميل النموذج ← تعبئته في Google Sheets ← ثم ارفعه هنا.',
+                    style: TextStyle(
+                      color: ZaWolfColors.textSecondary,
+                      fontSize: 13,
+                    ),
+                    textAlign: TextAlign.right,
+                  ),
+                  const SizedBox(height: 20),
+
+                  // Step 1: Download Template
+                  WolfCard(
+                    padding: const EdgeInsets.all(14),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: WolfButton(
+                            onPressed: () => _downloadTemplate(),
+                            text: 'تحميل النموذج',
+                            secondaryText: 'CSV TEMPLATE',
+                            height: 42,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        const Expanded(
+                          flex: 2,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              Text(
+                                '① حمّل النموذج',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 14,
+                                ),
+                              ),
+                              Text(
+                                'افتحه في Google Sheets واملأ بيانات الموظفين',
+                                style: TextStyle(
+                                  color: ZaWolfColors.textMuted,
+                                  fontSize: 11,
+                                ),
+                                textAlign: TextAlign.right,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+
+                  // Step 2: Upload CSV
+                  WolfCard(
+                    padding: const EdgeInsets.all(14),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: WolfButton(
+                            onPressed: _bulkImporting
+                                ? null
+                                : () async {
+                                    final nav = Navigator.of(context);
+                                    await _importEmployeesCsv(setSheetState);
+                                    if (mounted) nav.pop();
+                                  },
+                            text: 'رفع الملف',
+                            secondaryText: 'UPLOAD CSV',
+                            variant: WolfButtonVariant.teal,
+                            height: 42,
+                            loading: _bulkImporting,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        const Expanded(
+                          flex: 2,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              Text(
+                                '② ارفع الملف المعبأ',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 14,
+                                ),
+                              ),
+                              Text(
+                                'سيتم إنشاء حسابات تلقائياً بكلمة مرور: ZW@0000',
+                                style: TextStyle(
+                                  color: ZaWolfColors.textMuted,
+                                  fontSize: 11,
+                                ),
+                                textAlign: TextAlign.right,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  // Progress indicator
+                  if (_bulkImporting) ...[
+                    const SizedBox(height: 16),
+                    LinearProgressIndicator(
+                      value: _importTotal > 0
+                          ? _importProgress / _importTotal
+                          : null,
+                      backgroundColor: ZaWolfColors.surface02,
+                      valueColor: const AlwaysStoppedAnimation(
+                        ZaWolfColors.primaryCyan,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'جاري الإنشاء: $_importProgress / $_importTotal',
+                      style: const TextStyle(
+                        color: ZaWolfColors.primaryCyan,
+                        fontSize: 12,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
+
+                  const SizedBox(height: 12),
+
+                  // Info
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: ZaWolfColors.primaryCyan.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: ZaWolfColors.primaryCyan.withValues(alpha: 0.2),
+                      ),
+                    ),
+                    child: const Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            'الأعمدة المطلوبة: email, displayName, employeeId\nاختياري: role, department, position, locationId, locationName, baseMonthlySalary, salaryCurrency, managerId, managerName',
+                            style: TextStyle(
+                              color: ZaWolfColors.textSecondary,
+                              fontSize: 10,
+                            ),
+                            textAlign: TextAlign.right,
+                          ),
+                        ),
+                        SizedBox(width: 8),
+                        Icon(
+                          Icons.info_outline,
+                          color: ZaWolfColors.primaryCyan,
+                          size: 18,
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _downloadTemplate() async {
+    try {
+      final template = SheetsExportService().generateImportTemplate();
+      final dir = await getTemporaryDirectory();
+      final file = File('${dir.path}/employee_template.csv');
+      await file.writeAsBytes([0xEF, 0xBB, 0xBF, ...utf8.encode(template)]);
+
+      await SharePlus.instance.share(
+        ShareParams(
+          files: [XFile(file.path, mimeType: 'text/csv')],
+          subject: 'employee_template',
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: ZaWolfColors.error,
+          content: Text('فشل تحميل النموذج: $e'),
+        ),
+      );
+    }
+  }
+
+  Future<void> _importEmployeesCsv(StateSetter setSheetState) async {
     final authService = Provider.of<AuthService>(context, listen: false);
     final result = await FilePicker.pickFiles(
       type: FileType.custom,
@@ -93,34 +342,82 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
     if (result == null || result.files.single.bytes == null) return;
 
     setState(() => _bulkImporting = true);
+    setSheetState(() {});
     try {
       final csvText = utf8.decode(result.files.single.bytes!);
-      final rows = const CsvToListConverter(eol: '\n').convert(csvText);
+      final rows = const CsvToListConverter(
+        eol: '\n',
+        shouldParseNumbers: false,
+      ).convert(csvText);
       if (rows.length < 2) {
         throw Exception('الملف لا يحتوي على بيانات موظفين.');
       }
 
-      final headers = rows.first.map((cell) => '$cell'.trim()).toList();
+      final headers = rows.first
+          .map((cell) => '$cell'.replaceFirst('\ufeff', '').trim())
+          .toList();
+      for (final requiredHeader in ['email', 'displayName', 'employeeId']) {
+        if (!headers.contains(requiredHeader)) {
+          throw Exception(
+            'النموذج لا يحتوي على العمود المطلوب: $requiredHeader',
+          );
+        }
+      }
       String value(List<dynamic> row, String key) {
         final index = headers.indexOf(key);
         if (index < 0 || index >= row.length) return '';
         return '${row[index]}'.trim();
       }
 
+      final dataRows = rows
+          .skip(1)
+          .where((row) => !row.every((cell) => '$cell'.trim().isEmpty))
+          .toList();
+      setState(() {
+        _importTotal = dataRows.length;
+        _importProgress = 0;
+      });
+      setSheetState(() {});
+
       int created = 0;
-      for (final row in rows.skip(1)) {
-        if (row.every((cell) => '$cell'.trim().isEmpty)) continue;
+      for (var i = 0; i < dataRows.length; i++) {
+        final row = dataRows[i];
+        final rowNumber = i + 2;
+        final email = value(row, 'email');
+        final displayName = value(row, 'displayName');
+        final employeeId = value(row, 'employeeId');
+        if (email.isEmpty || displayName.isEmpty || employeeId.isEmpty) {
+          throw Exception(
+            'الصف $rowNumber ناقص: email, displayName, employeeId مطلوبة.',
+          );
+        }
+        final role = value(row, 'role').isEmpty
+            ? EmployeeRole.employee
+            : value(row, 'role');
+        const allowedRoles = [
+          EmployeeRole.employee,
+          EmployeeRole.manager,
+          EmployeeRole.hrAdmin,
+          EmployeeRole.superAdmin,
+        ];
+        if (!allowedRoles.contains(role)) {
+          throw Exception('الصف $rowNumber يحتوي على دور غير صحيح: $role');
+        }
+        if (role == EmployeeRole.superAdmin &&
+            authService.currentUser?.role != EmployeeRole.superAdmin) {
+          throw Exception(
+            'لا يمكن لمسؤول HR إنشاء حساب مالك النظام من الاستيراد.',
+          );
+        }
         final locationId = value(row, 'locationId');
         final locationName = value(row, 'locationName');
         final monthlySalary =
             double.tryParse(value(row, 'baseMonthlySalary')) ?? 0;
         await authService.createEmployeeAccount(
-          email: value(row, 'email'),
-          displayName: value(row, 'displayName'),
-          role: value(row, 'role').isEmpty
-              ? EmployeeRole.employee
-              : value(row, 'role'),
-          employeeId: value(row, 'employeeId'),
+          email: email,
+          displayName: displayName,
+          role: role,
+          employeeId: employeeId,
           department: value(row, 'department'),
           position: value(row, 'position'),
           locationId: locationId,
@@ -137,11 +434,17 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
               : value(row, 'managerName'),
         );
         created++;
+        setState(() => _importProgress = created);
+        setSheetState(() {});
       }
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('تم إنشاء $created حساب. كلمة المرور: ZW@0000')),
+        SnackBar(
+          content: Text(
+            'تم إنشاء $created حساب بنجاح. كلمة المرور الافتراضية: ZW@0000',
+          ),
+        ),
       );
     } catch (e) {
       if (!mounted) return;
@@ -152,7 +455,13 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
         ),
       );
     } finally {
-      if (mounted) setState(() => _bulkImporting = false);
+      if (mounted) {
+        setState(() {
+          _bulkImporting = false;
+          _importProgress = 0;
+          _importTotal = 0;
+        });
+      }
     }
   }
 
@@ -168,15 +477,9 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
         ),
         actions: [
           IconButton(
-            tooltip: 'رفع ملف CSV',
-            onPressed: _bulkImporting ? null : _importEmployeesCsv,
-            icon: _bulkImporting
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.upload_file),
+            tooltip: 'استيراد جماعي',
+            onPressed: _showBulkImportSheet,
+            icon: const Icon(Icons.upload_file),
           ),
         ],
       ),
@@ -212,6 +515,48 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
             ),
           ),
 
+          // Filters Row
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16.0),
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  _buildFilterChip(
+                    label:
+                        'الدور: ${_filterRole != null ? _translateRole(_filterRole!) : "الكل"}',
+                    onTap: _showRoleFilterSheet,
+                    isActive: _filterRole != null,
+                    onClear: () => setState(() => _filterRole = null),
+                  ),
+                  const SizedBox(width: 8),
+                  _buildFilterChip(
+                    label: 'القسم: ${_filterDepartment ?? "الكل"}',
+                    onTap: _showDepartmentFilterSheet,
+                    isActive: _filterDepartment != null,
+                    onClear: () => setState(() => _filterDepartment = null),
+                  ),
+                  const SizedBox(width: 8),
+                  _buildFilterChip(
+                    label: 'المسمى: ${_filterJobTitle ?? "الكل"}',
+                    onTap: _showJobTitleFilterSheet,
+                    isActive: _filterJobTitle != null,
+                    onClear: () => setState(() => _filterJobTitle = null),
+                  ),
+                  const SizedBox(width: 8),
+                  _buildFilterChip(
+                    label:
+                        'الفرع: ${_filterLocation != null ? "محدد" : "الكل"}',
+                    onTap: _showLocationFilterSheet,
+                    isActive: _filterLocation != null,
+                    onClear: () => setState(() => _filterLocation = null),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+
           // Real-time Employee List
           Expanded(
             child: StreamBuilder<QuerySnapshot>(
@@ -231,14 +576,37 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
                 final employees = docs
                     .map((doc) => UserModel.fromFirestore(doc))
                     .where((user) {
+                      if (_filterRole != null &&
+                          _filterRole!.isNotEmpty &&
+                          user.role != _filterRole) {
+                        return false;
+                      }
+                      if (_filterDepartment != null &&
+                          _filterDepartment!.isNotEmpty &&
+                          user.department != _filterDepartment) {
+                        return false;
+                      }
+                      if (_filterLocation != null &&
+                          _filterLocation!.isNotEmpty &&
+                          user.locationId != _filterLocation) {
+                        return false;
+                      }
+                      if (_filterJobTitle != null &&
+                          _filterJobTitle!.isNotEmpty &&
+                          user.position != _filterJobTitle) {
+                        return false;
+                      }
+
                       if (_searchQuery.isEmpty) return true;
-                      return user.displayName.toLowerCase().contains(
-                            _searchQuery,
-                          ) ||
-                          user.employeeId.toLowerCase().contains(
-                            _searchQuery,
-                          ) ||
-                          user.email.toLowerCase().contains(_searchQuery);
+
+                      final q = _searchQuery;
+                      return user.displayName.toLowerCase().contains(q) ||
+                          user.employeeId.toLowerCase().contains(q) ||
+                          user.email.toLowerCase().contains(q) ||
+                          user.role.toLowerCase().contains(q) ||
+                          user.department.toLowerCase().contains(q) ||
+                          user.locationName.toLowerCase().contains(q) ||
+                          user.position.toLowerCase().contains(q);
                     })
                     .toList();
 
@@ -267,185 +635,167 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
                   itemCount: employees.length,
                   itemBuilder: (context, index) {
                     final emp = employees[index];
+                    final roleColor = _getRoleColor(emp.role);
                     return Padding(
                       padding: const EdgeInsets.only(bottom: 12.0),
                       key: ValueKey(emp.uid),
                       child: WolfCard(
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        onTap: () {
+                          showDialog(
+                            context: context,
+                            builder: (context) =>
+                                EditEmployeeDialog(employee: emp),
+                          );
+                        },
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
-                            // Role Badge Tag and Deactivation Switch
-                            Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
+                            // ── Header: Avatar + Name + Role Badge ──
+                            Row(
                               children: [
-                                Row(
-                                  children: [
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 10,
-                                        vertical: 4,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: _getRoleColor(
-                                          emp.role,
-                                        ).withValues(alpha: 0.15),
-                                        borderRadius: BorderRadius.circular(8),
-                                      ),
-                                      child: Text(
-                                        _translateRole(emp.role),
-                                        style: TextStyle(
-                                          color: _getRoleColor(emp.role),
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 11,
-                                        ),
-                                      ),
+                                // Role badge (left)
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 10,
+                                    vertical: 4,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: roleColor.withValues(alpha: 0.15),
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Text(
+                                    _translateRole(emp.role),
+                                    style: TextStyle(
+                                      color: roleColor,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 11,
                                     ),
-                                    const SizedBox(width: 8),
-                                    IconButton(
-                                      padding: EdgeInsets.zero,
-                                      constraints: const BoxConstraints(),
-                                      icon: const Icon(
-                                        Icons.edit_outlined,
-                                        color: ZaWolfColors.primaryCyan,
-                                        size: 20,
-                                      ),
-                                      onPressed: () {
-                                        showDialog(
-                                          context: context,
-                                          builder: (context) =>
-                                              EditEmployeeDialog(employee: emp),
-                                        );
-                                      },
-                                    ),
-                                    const SizedBox(width: 8),
-                                    IconButton(
-                                      padding: EdgeInsets.zero,
-                                      constraints: const BoxConstraints(),
-                                      icon: const Icon(
-                                        Icons.delete_outline,
-                                        color: ZaWolfColors.error,
-                                        size: 20,
-                                      ),
-                                      onPressed: () async {
-                                        final confirm = await showDialog<bool>(
-                                          context: context,
-                                          builder: (context) => AlertDialog(
-                                            backgroundColor:
-                                                ZaWolfColors.surface01,
-                                            title: const Text(
-                                              'حذف الحساب؟',
-                                              style: TextStyle(
-                                                color: Colors.white,
-                                              ),
-                                            ),
-                                            content: Text(
-                                              'هل تريد بالتأكيد حذف حساب الموظف ${emp.displayName} بشكل نهائي؟\n\nتنبيه: سيتم مسح بياناته من التطبيق، ولكن يجب عليك حذف بريده الإلكتروني يدوياً من Firebase Console.',
-                                              style: const TextStyle(
-                                                color:
-                                                    ZaWolfColors.textSecondary,
-                                              ),
-                                              textDirection: TextDirection.rtl,
-                                            ),
-                                            actions: [
-                                              TextButton(
-                                                onPressed: () => Navigator.pop(
-                                                  context,
-                                                  false,
-                                                ),
-                                                child: const Text(
-                                                  'إلغاء',
-                                                  style: TextStyle(
-                                                    color: ZaWolfColors
-                                                        .textSecondary,
-                                                  ),
-                                                ),
-                                              ),
-                                              TextButton(
-                                                onPressed: () => Navigator.pop(
-                                                  context,
-                                                  true,
-                                                ),
-                                                child: const Text(
-                                                  'حذف',
-                                                  style: TextStyle(
-                                                    color: ZaWolfColors.error,
-                                                  ),
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        );
-                                        if (confirm == true) {
-                                          await _db
-                                              .collection('users')
-                                              .doc(emp.uid)
-                                              .delete();
-                                        }
-                                      },
-                                    ),
-                                  ],
+                                  ),
                                 ),
-                                const SizedBox(height: 8),
-                                InkWell(
-                                  onTap: () async {
-                                    final confirm = await showDialog<bool>(
-                                      context: context,
-                                      builder: (context) => AlertDialog(
-                                        backgroundColor: ZaWolfColors.surface01,
-                                        title: Text(
-                                          emp.isActive
-                                              ? 'تعطيل الحساب؟'
-                                              : 'تفعيل الحساب؟',
-                                          style: const TextStyle(
-                                            color: Colors.white,
-                                          ),
-                                        ),
-                                        content: Text(
-                                          emp.isActive
-                                              ? 'هل تريد بالتأكيد تعطيل حساب الموظف ${emp.displayName}؟ لن يتمكن من تسجيل الدخول.'
-                                              : 'هل تريد تفعيل حساب الموظف ${emp.displayName}؟',
+                                const Spacer(),
+                                // Name + Position (right)
+                                Flexible(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.end,
+                                    children: [
+                                      Text(
+                                        emp.displayName,
+                                        style: theme.textTheme.titleMedium!
+                                            .copyWith(
+                                              color: Colors.white,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                      if (emp.position.isNotEmpty)
+                                        Text(
+                                          emp.position,
                                           style: const TextStyle(
                                             color: ZaWolfColors.textSecondary,
+                                            fontSize: 12,
                                           ),
+                                          overflow: TextOverflow.ellipsis,
                                         ),
-                                        actions: [
-                                          TextButton(
-                                            onPressed: () =>
-                                                Navigator.pop(context, false),
-                                            child: const Text(
-                                              'إلغاء',
-                                              style: TextStyle(
-                                                color:
-                                                    ZaWolfColors.textSecondary,
-                                              ),
-                                            ),
-                                          ),
-                                          TextButton(
-                                            onPressed: () =>
-                                                Navigator.pop(context, true),
-                                            child: Text(
-                                              emp.isActive ? 'تعطيل' : 'تفعيل',
-                                              style: TextStyle(
-                                                color: emp.isActive
-                                                    ? ZaWolfColors.error
-                                                    : ZaWolfColors.success,
-                                              ),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    );
-                                    if (confirm == true) {
-                                      await _db
-                                          .collection('users')
-                                          .doc(emp.uid)
-                                          .update({'isActive': !emp.isActive});
-                                    }
-                                  },
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                // Avatar (far right)
+                                CircleAvatar(
+                                  radius: 22,
+                                  backgroundColor: roleColor.withValues(
+                                    alpha: 0.15,
+                                  ),
+                                  child: Text(
+                                    emp.displayName.isNotEmpty
+                                        ? emp.displayName[0].toUpperCase()
+                                        : '?',
+                                    style: TextStyle(
+                                      color: roleColor,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 18,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+
+                            // ── Divider ──
+                            Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 10),
+                              child: Divider(
+                                color: ZaWolfColors.surface03.withValues(
+                                  alpha: 0.6,
+                                ),
+                                height: 1,
+                              ),
+                            ),
+
+                            // ── Info Grid ──
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: _buildInfoItem(
+                                    icon: Icons.badge_outlined,
+                                    label: 'الكود',
+                                    value: emp.employeeId,
+                                  ),
+                                ),
+                                Expanded(
+                                  child: _buildInfoItem(
+                                    icon: Icons.business_outlined,
+                                    label: 'القسم',
+                                    value: emp.department.isNotEmpty
+                                        ? emp.department
+                                        : '—',
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: _buildInfoItem(
+                                    icon: Icons.location_on_outlined,
+                                    label: 'الفرع',
+                                    value: emp.locationName.isNotEmpty
+                                        ? emp.locationName
+                                        : '—',
+                                  ),
+                                ),
+                                Expanded(
+                                  child: _buildInfoItem(
+                                    icon: Icons.person_outline,
+                                    label: 'المدير',
+                                    value: emp.managerName ?? '—',
+                                  ),
+                                ),
+                              ],
+                            ),
+
+                            // ── Divider ──
+                            Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 10),
+                              child: Divider(
+                                color: ZaWolfColors.surface03.withValues(
+                                  alpha: 0.6,
+                                ),
+                                height: 1,
+                              ),
+                            ),
+
+                            // ── Footer: Status + Actions ──
+                            Row(
+                              children: [
+                                // Status badge
+                                InkWell(
+                                  onTap: () => _toggleActiveStatus(emp),
+                                  borderRadius: BorderRadius.circular(6),
                                   child: Container(
                                     padding: const EdgeInsets.symmetric(
                                       horizontal: 8,
-                                      vertical: 2,
+                                      vertical: 3,
                                     ),
                                     decoration: BoxDecoration(
                                       color: emp.isActive
@@ -485,7 +835,7 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
                                             color: emp.isActive
                                                 ? ZaWolfColors.success
                                                 : ZaWolfColors.error,
-                                            fontSize: 9,
+                                            fontSize: 10,
                                             fontWeight: FontWeight.bold,
                                           ),
                                         ),
@@ -493,54 +843,39 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
                                     ),
                                   ),
                                 ),
+                                const Spacer(),
+                                // Edit button
+                                IconButton(
+                                  padding: EdgeInsets.zero,
+                                  constraints: const BoxConstraints(),
+                                  tooltip: 'تعديل',
+                                  icon: const Icon(
+                                    Icons.edit_outlined,
+                                    color: ZaWolfColors.primaryCyan,
+                                    size: 20,
+                                  ),
+                                  onPressed: () {
+                                    showDialog(
+                                      context: context,
+                                      builder: (context) =>
+                                          EditEmployeeDialog(employee: emp),
+                                    );
+                                  },
+                                ),
+                                const SizedBox(width: 16),
+                                // Delete button
+                                IconButton(
+                                  padding: EdgeInsets.zero,
+                                  constraints: const BoxConstraints(),
+                                  tooltip: 'حذف',
+                                  icon: const Icon(
+                                    Icons.delete_outline,
+                                    color: ZaWolfColors.error,
+                                    size: 20,
+                                  ),
+                                  onPressed: () => _confirmDeleteEmployee(emp),
+                                ),
                               ],
-                            ),
-
-                            // Name & Branch Information
-                            Expanded(
-                              child: Row(
-                                mainAxisAlignment: MainAxisAlignment.end,
-                                children: [
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.end,
-                                      children: [
-                                        Text(
-                                          emp.displayName,
-                                          style: theme.textTheme.titleMedium!
-                                              .copyWith(
-                                                color: Colors.white,
-                                                fontWeight: FontWeight.bold,
-                                              ),
-                                        ),
-                                        Text(
-                                          'كود: ${emp.employeeId} · ${emp.position} · ${emp.locationName}',
-                                          style: theme.textTheme.bodySmall,
-                                        ),
-                                        Text(
-                                          'الأذونات المستخدمة: ${emp.permissionBalance.usedThisMonth}',
-                                          style: theme.textTheme.bodySmall!
-                                              .copyWith(
-                                                color: ZaWolfColors.textMuted,
-                                                fontSize: 10,
-                                              ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                  const SizedBox(width: 12),
-                                  CircleAvatar(
-                                    backgroundColor: ZaWolfColors.surface02,
-                                    child: Text(
-                                      emp.displayName.substring(0, 1),
-                                      style: const TextStyle(
-                                        color: ZaWolfColors.primaryCyan,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
                             ),
                           ],
                         ),
@@ -554,6 +889,119 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
         ],
       ),
     );
+  }
+
+  Widget _buildInfoItem({
+    required IconData icon,
+    required String label,
+    required String value,
+  }) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text(
+                label,
+                style: const TextStyle(
+                  color: ZaWolfColors.textMuted,
+                  fontSize: 10,
+                ),
+              ),
+              Text(
+                value,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                ),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 6),
+        Icon(icon, color: ZaWolfColors.primaryCyan, size: 16),
+      ],
+    );
+  }
+
+  Future<void> _toggleActiveStatus(UserModel emp) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: ZaWolfColors.surface01,
+        title: Text(
+          emp.isActive ? 'تعطيل الحساب؟' : 'تفعيل الحساب؟',
+          style: const TextStyle(color: Colors.white),
+        ),
+        content: Text(
+          emp.isActive
+              ? 'هل تريد بالتأكيد تعطيل حساب الموظف ${emp.displayName}؟ لن يتمكن من تسجيل الدخول.'
+              : 'هل تريد تفعيل حساب الموظف ${emp.displayName}؟',
+          style: const TextStyle(color: ZaWolfColors.textSecondary),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text(
+              'إلغاء',
+              style: TextStyle(color: ZaWolfColors.textSecondary),
+            ),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: Text(
+              emp.isActive ? 'تعطيل' : 'تفعيل',
+              style: TextStyle(
+                color: emp.isActive ? ZaWolfColors.error : ZaWolfColors.success,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (confirm == true) {
+      await _db.collection('users').doc(emp.uid).update({
+        'isActive': !emp.isActive,
+      });
+    }
+  }
+
+  Future<void> _confirmDeleteEmployee(UserModel emp) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: ZaWolfColors.surface01,
+        title: const Text('حذف الحساب؟', style: TextStyle(color: Colors.white)),
+        content: Text(
+          'هل تريد بالتأكيد حذف حساب الموظف ${emp.displayName} بشكل نهائي؟\n\nتنبيه: سيتم مسح بياناته من التطبيق، ولكن يجب عليك حذف بريده الإلكتروني يدوياً من Firebase Console.',
+          style: const TextStyle(color: ZaWolfColors.textSecondary),
+          textDirection: TextDirection.rtl,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text(
+              'إلغاء',
+              style: TextStyle(color: ZaWolfColors.textSecondary),
+            ),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text(
+              'حذف',
+              style: TextStyle(color: ZaWolfColors.error),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (confirm == true) {
+      await _db.collection('users').doc(emp.uid).delete();
+    }
   }
 
   Color _getRoleColor(String role) {
@@ -572,6 +1020,199 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
   String _translateRole(String role) {
     return EmployeeRole.arabicLabel(role);
   }
+
+  Widget _buildFilterChip({
+    required String label,
+    required VoidCallback onTap,
+    required bool isActive,
+    required VoidCallback onClear,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(20),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color: isActive
+              ? ZaWolfColors.primaryCyan.withValues(alpha: 0.15)
+              : ZaWolfColors.surface01,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: isActive ? ZaWolfColors.primaryCyan : ZaWolfColors.surface02,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              label,
+              style: TextStyle(
+                color: isActive
+                    ? ZaWolfColors.primaryCyan
+                    : ZaWolfColors.textSecondary,
+                fontSize: 12,
+                fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
+              ),
+            ),
+            if (isActive) ...[
+              const SizedBox(width: 4),
+              GestureDetector(
+                onTap: onClear,
+                child: const Icon(
+                  Icons.close,
+                  size: 14,
+                  color: ZaWolfColors.primaryCyan,
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showRoleFilterSheet() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: ZaWolfColors.surface01,
+      builder: (context) {
+        return ListView(
+          shrinkWrap: true,
+          children: [
+            ListTile(
+              title: const Text('الكل', style: TextStyle(color: Colors.white)),
+              onTap: () {
+                setState(() => _filterRole = null);
+                Navigator.pop(context);
+              },
+            ),
+            ...[
+              EmployeeRole.employee,
+              EmployeeRole.manager,
+              EmployeeRole.hrAdmin,
+              EmployeeRole.superAdmin,
+            ].map((role) {
+              return ListTile(
+                title: Text(
+                  _translateRole(role),
+                  style: const TextStyle(color: Colors.white),
+                ),
+                onTap: () {
+                  setState(() => _filterRole = role);
+                  Navigator.pop(context);
+                },
+              );
+            }),
+          ],
+        );
+      },
+    );
+  }
+
+  void _showDepartmentFilterSheet() async {
+    final snap = await _db.collection('departments').get();
+    if (!mounted) return;
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: ZaWolfColors.surface01,
+      builder: (context) {
+        return ListView(
+          shrinkWrap: true,
+          children: [
+            ListTile(
+              title: const Text('الكل', style: TextStyle(color: Colors.white)),
+              onTap: () {
+                setState(() => _filterDepartment = null);
+                Navigator.pop(context);
+              },
+            ),
+            ...snap.docs.map((doc) {
+              final dept = doc.data()['name'] as String;
+              return ListTile(
+                title: Text(dept, style: const TextStyle(color: Colors.white)),
+                onTap: () {
+                  setState(() => _filterDepartment = dept);
+                  Navigator.pop(context);
+                },
+              );
+            }),
+          ],
+        );
+      },
+    );
+  }
+
+  void _showJobTitleFilterSheet() async {
+    final snap = await _db.collection('job_titles').get();
+    if (!mounted) return;
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: ZaWolfColors.surface01,
+      builder: (context) {
+        return ListView(
+          shrinkWrap: true,
+          children: [
+            ListTile(
+              title: const Text('الكل', style: TextStyle(color: Colors.white)),
+              onTap: () {
+                setState(() => _filterJobTitle = null);
+                Navigator.pop(context);
+              },
+            ),
+            ...snap.docs.map((doc) {
+              final title = doc.data()['name'] as String;
+              return ListTile(
+                title: Text(title, style: const TextStyle(color: Colors.white)),
+                onTap: () {
+                  setState(() => _filterJobTitle = title);
+                  Navigator.pop(context);
+                },
+              );
+            }),
+          ],
+        );
+      },
+    );
+  }
+
+  void _showLocationFilterSheet() async {
+    final snap = await _db
+        .collection('locations')
+        .where('isActive', isEqualTo: true)
+        .get();
+    if (!mounted) return;
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: ZaWolfColors.surface01,
+      builder: (context) {
+        return ListView(
+          shrinkWrap: true,
+          children: [
+            ListTile(
+              title: const Text('الكل', style: TextStyle(color: Colors.white)),
+              onTap: () {
+                setState(() => _filterLocation = null);
+                Navigator.pop(context);
+              },
+            ),
+            ...snap.docs.map((doc) {
+              final loc = LocationModel.fromFirestore(doc);
+              return ListTile(
+                title: Text(
+                  loc.name,
+                  style: const TextStyle(color: Colors.white),
+                ),
+                onTap: () {
+                  setState(() => _filterLocation = loc.locationId);
+                  Navigator.pop(context);
+                },
+              );
+            }),
+          ],
+        );
+      },
+    );
+  }
 }
 
 class AddEmployeeDialog extends StatefulWidget {
@@ -588,11 +1229,12 @@ class _AddEmployeeDialogState extends State<AddEmployeeDialog> {
   final _nameController = TextEditingController();
   final _emailController = TextEditingController();
   final _jobTitleController = TextEditingController();
-  final _departmentController = TextEditingController();
   final _codeController = TextEditingController();
   final _salaryController = TextEditingController(text: '0');
+  final _daysOffController = TextEditingController(text: '21');
 
   String _selectedRole = 'employee';
+  String? _selectedDepartment;
   String? _selectedLocationId;
   String? _selectedLocationName;
   String? _selectedManagerId;
@@ -635,9 +1277,9 @@ class _AddEmployeeDialogState extends State<AddEmployeeDialog> {
     _nameController.dispose();
     _emailController.dispose();
     _jobTitleController.dispose();
-    _departmentController.dispose();
     _codeController.dispose();
     _salaryController.dispose();
+    _daysOffController.dispose();
     super.dispose();
   }
 
@@ -661,12 +1303,13 @@ class _AddEmployeeDialogState extends State<AddEmployeeDialog> {
         email: _emailController.text.trim(),
         displayName: _nameController.text.trim(),
         employeeId: _codeController.text.trim(),
-        department: _departmentController.text.trim(),
+        department: _selectedDepartment ?? 'General',
         position: _jobTitleController.text.trim(),
         role: _selectedRole,
         locationId: _selectedLocationId!,
         locationName: _selectedLocationName!,
         baseMonthlySalary: double.tryParse(_salaryController.text) ?? 0,
+        daysOffBalance: int.tryParse(_daysOffController.text) ?? 21,
         managerId: _selectedManagerId,
         managerName: _selectedManagerName,
       );
@@ -842,25 +1485,35 @@ class _AddEmployeeDialogState extends State<AddEmployeeDialog> {
                 const SizedBox(height: 16),
 
                 // Job Title
-                WolfInputField(
-                  controller: _jobTitleController,
-                  labelText: 'المسمى الوظيفي',
-                  englishLabel: 'Job Title',
-                  hintText: 'مهندس برمجيات أول',
-                  validator: (val) => val == null || val.isEmpty
-                      ? 'المسمى الوظيفي مطلوب'
+                DynamicDropdown(
+                  label: 'المسمى الوظيفي',
+                  actionLabel: 'مسمى جديد',
+                  dialogTitle: 'إضافة مسمى وظيفي جديد',
+                  initialValue: _jobTitleController.text.isNotEmpty
+                      ? _jobTitleController.text
                       : null,
+                  onChanged: (val) {
+                    if (val != null) _jobTitleController.text = val;
+                  },
+                  stream: JobTitleService.instance.watchJobTitles(),
+                  onAdd: JobTitleService.instance.addJobTitle,
+                  onInit: JobTitleService.instance.bootstrapJobTitlesIfNeeded,
                 ),
                 const SizedBox(height: 16),
 
                 // Department
-                WolfInputField(
-                  controller: _departmentController,
-                  labelText: 'القسم الرئيسي',
-                  englishLabel: 'Department',
-                  hintText: 'تطوير البرمجيات',
-                  validator: (val) =>
-                      val == null || val.isEmpty ? 'القسم مطلوب' : null,
+                DynamicDropdown(
+                  label: 'القسم / الإدارة',
+                  actionLabel: 'قسم جديد',
+                  dialogTitle: 'إضافة قسم جديد',
+                  initialValue: _selectedDepartment,
+                  onChanged: (val) {
+                    _selectedDepartment = val;
+                  },
+                  stream: DepartmentService.instance.watchDepartments(),
+                  onAdd: DepartmentService.instance.addDepartment,
+                  onInit:
+                      DepartmentService.instance.bootstrapDepartmentsIfNeeded,
                 ),
                 const SizedBox(height: 16),
 
@@ -879,6 +1532,23 @@ class _AddEmployeeDialogState extends State<AddEmployeeDialog> {
                     if (double.tryParse(val) == null) {
                       return 'قيمة الراتب غير صالحة';
                     }
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 16),
+
+                // Days Off Limit
+                WolfInputField(
+                  controller: _daysOffController,
+                  labelText: 'رصيد العطلات (بالأيام)',
+                  englishLabel: 'Days Off Balance',
+                  hintText: '21',
+                  keyboardType: TextInputType.number,
+                  validator: (val) {
+                    if (val == null || val.trim().isEmpty) {
+                      return 'الرصيد مطلوب';
+                    }
+                    if (int.tryParse(val) == null) return 'قيمة غير صالحة';
                     return null;
                   },
                 ),
@@ -1021,10 +1691,11 @@ class _EditEmployeeDialogState extends State<EditEmployeeDialog> {
 
   late final TextEditingController _nameController;
   late final TextEditingController _jobTitleController;
-  late final TextEditingController _departmentController;
   late final TextEditingController _codeController;
   late final TextEditingController _salaryController;
+  late final TextEditingController _daysOffController;
 
+  String? _selectedDepartment;
   late String _selectedRole;
   String? _selectedLocationId;
   String? _selectedLocationName;
@@ -1041,11 +1712,14 @@ class _EditEmployeeDialogState extends State<EditEmployeeDialog> {
     final emp = widget.employee;
     _nameController = TextEditingController(text: emp.displayName);
     _jobTitleController = TextEditingController(text: emp.position);
-    _departmentController = TextEditingController(text: emp.department);
     _codeController = TextEditingController(text: emp.employeeId);
     _salaryController = TextEditingController(
-      text: emp.baseMonthlySalary.toStringAsFixed(2),
+      text: emp.baseMonthlySalary.toStringAsFixed(0),
     );
+    _daysOffController = TextEditingController(
+      text: emp.leaveBalance.daysOff.toString(),
+    );
+    _selectedDepartment = emp.department;
 
     _selectedRole = emp.role;
     _selectedLocationId = emp.locationId;
@@ -1082,9 +1756,9 @@ class _EditEmployeeDialogState extends State<EditEmployeeDialog> {
   void dispose() {
     _nameController.dispose();
     _jobTitleController.dispose();
-    _departmentController.dispose();
     _codeController.dispose();
     _salaryController.dispose();
+    _daysOffController.dispose();
     super.dispose();
   }
 
@@ -1112,13 +1786,16 @@ class _EditEmployeeDialogState extends State<EditEmployeeDialog> {
       final updateData = {
         'displayName': _nameController.text.trim(),
         'employeeId': _codeController.text.trim(),
-        'department': _departmentController.text.trim(),
+        'department': _selectedDepartment ?? widget.employee.department,
         'position': _jobTitleController.text.trim(),
         'role': effectiveRole,
         'locationId': _selectedLocationId!,
         'locationName': _selectedLocationName!,
         'baseMonthlySalary': double.tryParse(_salaryController.text) ?? 0,
         'salaryCurrency': widget.employee.salaryCurrency,
+        'leaveBalance.daysOff':
+            int.tryParse(_daysOffController.text) ??
+            widget.employee.leaveBalance.daysOff,
         'managerId': _selectedManagerId,
         'managerName': _selectedManagerName,
       };
@@ -1285,20 +1962,35 @@ class _EditEmployeeDialogState extends State<EditEmployeeDialog> {
                 ),
                 const SizedBox(height: 16),
 
-                WolfInputField(
-                  controller: _jobTitleController,
-                  labelText: 'المسمى الوظيفي',
-                  validator: (val) => val == null || val.isEmpty
-                      ? 'المسمى الوظيفي مطلوب'
+                DynamicDropdown(
+                  label: 'المسمى الوظيفي',
+                  actionLabel: 'مسمى جديد',
+                  dialogTitle: 'إضافة مسمى وظيفي جديد',
+                  initialValue: _jobTitleController.text.isNotEmpty
+                      ? _jobTitleController.text
                       : null,
+                  onChanged: (val) {
+                    if (val != null) _jobTitleController.text = val;
+                  },
+                  stream: JobTitleService.instance.watchJobTitles(),
+                  onAdd: JobTitleService.instance.addJobTitle,
+                  onInit: JobTitleService.instance.bootstrapJobTitlesIfNeeded,
                 ),
                 const SizedBox(height: 16),
 
-                WolfInputField(
-                  controller: _departmentController,
-                  labelText: 'القسم الرئيسي',
-                  validator: (val) =>
-                      val == null || val.isEmpty ? 'القسم مطلوب' : null,
+                DynamicDropdown(
+                  label: 'القسم / الإدارة',
+                  actionLabel: 'قسم جديد',
+                  dialogTitle: 'إضافة قسم جديد',
+                  initialValue:
+                      _selectedDepartment ?? widget.employee.department,
+                  onChanged: (val) {
+                    _selectedDepartment = val;
+                  },
+                  stream: DepartmentService.instance.watchDepartments(),
+                  onAdd: DepartmentService.instance.addDepartment,
+                  onInit:
+                      DepartmentService.instance.bootstrapDepartmentsIfNeeded,
                 ),
                 const SizedBox(height: 16),
 
@@ -1315,6 +2007,20 @@ class _EditEmployeeDialogState extends State<EditEmployeeDialog> {
                     if (double.tryParse(val) == null) {
                       return 'قيمة الراتب غير صالحة';
                     }
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 16),
+
+                WolfInputField(
+                  controller: _daysOffController,
+                  labelText: 'رصيد العطلات (بالأيام)',
+                  keyboardType: TextInputType.number,
+                  validator: (val) {
+                    if (val == null || val.trim().isEmpty) {
+                      return 'الرصيد مطلوب';
+                    }
+                    if (int.tryParse(val) == null) return 'قيمة غير صالحة';
                     return null;
                   },
                 ),

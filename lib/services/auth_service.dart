@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
 import '../models/user_model.dart';
+import '../models/employee_role.dart';
 import 'audit_log_service.dart';
 import 'notification_service.dart';
 import 'daily_reminder_service.dart';
@@ -152,6 +153,7 @@ class AuthService with ChangeNotifier {
     required String locationName,
     required double baseMonthlySalary,
     String salaryCurrency = 'EGP',
+    int daysOffBalance = 21,
     String? managerId,
     String? managerName,
   }) async {
@@ -159,6 +161,28 @@ class AuthService with ChangeNotifier {
     FirebaseApp? tempApp;
 
     try {
+      const allowedRoles = [
+        EmployeeRole.employee,
+        EmployeeRole.manager,
+        EmployeeRole.hrAdmin,
+        EmployeeRole.superAdmin,
+      ];
+      if (!allowedRoles.contains(role)) {
+        throw Exception('Invalid employee role');
+      }
+      if (role == EmployeeRole.superAdmin &&
+          _currentUser?.role != EmployeeRole.superAdmin) {
+        throw Exception('Only super admin can create super admin accounts');
+      }
+      if (email.trim().isEmpty ||
+          displayName.trim().isEmpty ||
+          employeeId.trim().isEmpty) {
+        throw Exception('Email, name, and employee ID are required');
+      }
+      if (baseMonthlySalary < 0) {
+        throw Exception('Base monthly salary cannot be negative');
+      }
+
       // 1. Create a secondary temporary FirebaseApp
       tempApp = await Firebase.initializeApp(
         name: 'TempUserCreation_${DateTime.now().millisecondsSinceEpoch}',
@@ -169,7 +193,7 @@ class AuthService with ChangeNotifier {
 
       // 2. Create the user credential inside the secondary app
       final userCred = await tempAuth.createUserWithEmailAndPassword(
-        email: email,
+        email: email.trim(),
         password: initialPassword,
       );
 
@@ -178,12 +202,12 @@ class AuthService with ChangeNotifier {
       // 3. Create the Firestore user profile document
       final userModel = UserModel(
         uid: uid,
-        email: email,
-        displayName: displayName,
+        email: email.trim(),
+        displayName: displayName.trim(),
         role: role,
-        employeeId: employeeId,
-        department: department,
-        position: position,
+        employeeId: employeeId.trim(),
+        department: department.trim(),
+        position: position.trim(),
         locationId: locationId,
         locationName: locationName,
         baseMonthlySalary: baseMonthlySalary,
@@ -199,7 +223,7 @@ class AuthService with ChangeNotifier {
           annual: 21,
           sick: 14,
           casual: 7,
-          daysOff: 21,
+          daysOff: daysOffBalance,
         ),
         permissionBalance: PermissionBalance(
           usedThisMonth: 0,

@@ -13,9 +13,12 @@ import '../../models/complaint_model.dart';
 import '../../models/leave_model.dart';
 import '../../models/permission_model.dart';
 import '../../models/user_model.dart';
+import '../../models/advance_model.dart';
+import '../../services/advance_service.dart';
 import '../../theme/theme.dart';
 import '../../components/wolf_card.dart';
 import '../../components/wolf_button.dart';
+import '../shared/requests_log_screen.dart';
 
 class RequestsManagementScreen extends StatefulWidget {
   const RequestsManagementScreen({super.key});
@@ -33,11 +36,12 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen>
   final PermissionService _permissionService = PermissionService();
   final AttendanceService _attendanceService = AttendanceService();
   final ComplaintService _complaintService = ComplaintService();
+  final AdvanceService _advanceService = AdvanceService();
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 4, vsync: this);
+    _tabController = TabController(length: 5, vsync: this);
   }
 
   @override
@@ -48,7 +52,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen>
 
   Future<void> _showRejectionDialog({
     required String requestId,
-    required String type, // 'leave' | 'permission'
+    required String type, // 'leave' | 'permission' | 'advance'
   }) async {
     final commentController = TextEditingController();
     final formKey = GlobalKey<FormState>();
@@ -107,6 +111,13 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen>
                       reviewerId,
                       commentController.text.trim(),
                     );
+                  } else if (type == 'advance') {
+                    await _advanceService.updateAdvanceStatus(
+                      advanceId: requestId,
+                      status: 'rejected',
+                      reviewerId: reviewerId,
+                      comment: commentController.text.trim(),
+                    );
                   }
 
                   if (context.mounted) {
@@ -154,14 +165,28 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen>
           'طلبات الموافقة المعلقة',
           style: theme.textTheme.headlineMedium,
         ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.history_toggle_off, color: ZaWolfColors.primaryCyan),
+            tooltip: 'سجل طلبات الشهر الحالي',
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const RequestsLogScreen()),
+              );
+            },
+          ),
+        ],
         bottom: TabBar(
           controller: _tabController,
           labelColor: ZaWolfColors.primaryCyan,
           unselectedLabelColor: ZaWolfColors.textSecondary,
           indicatorColor: ZaWolfColors.primaryCyan,
+          isScrollable: true,
           tabs: const [
             Tab(text: 'الإجازات'),
             Tab(text: 'الأذونات'),
+            Tab(text: 'السلف'),
             Tab(text: 'خصومات التأخير'),
             Tab(text: 'الشكاوى'),
           ],
@@ -176,7 +201,10 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen>
           // ── TAB 2: PERMISSIONS ──
           _buildPermissionsTab(manager, theme),
 
-          // ── TAB 3: SALARY DEDUCTIONS ──
+          // ── TAB 3: ADVANCES ──
+          _buildAdvancesTab(manager, theme),
+
+          // ── TAB 4: SALARY DEDUCTIONS ──
           _buildSalaryDeductionsTab(manager, theme),
 
           _buildComplaintsTab(manager, theme),
@@ -190,11 +218,15 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen>
     String reviewerId,
     String role,
   ) {
-    var query = _db
-        .collection(collection)
-        .where('status', isEqualTo: 'pending');
-    if (role != EmployeeRole.superAdmin) {
-      query = query.where('managerId', isEqualTo: reviewerId);
+    var query = _db.collection(collection) as Query<Map<String, dynamic>>;
+    if (role == EmployeeRole.manager) {
+      query = query
+          .where('status', isEqualTo: 'pending_manager')
+          .where('managerId', isEqualTo: reviewerId);
+    } else if (role == EmployeeRole.superAdmin) {
+      query = query.where('status', whereIn: ['pending_hr', 'pending_manager']);
+    } else {
+      query = query.where('status', isEqualTo: 'pending_hr');
     }
     return query.snapshots();
   }
@@ -249,6 +281,27 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen>
                           color: ZaWolfColors.textSecondary,
                         ),
                       ),
+                    if (leave.attachmentUrl != null && leave.attachmentUrl!.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          const Icon(Icons.link, color: ZaWolfColors.primaryCyan, size: 16),
+                          const SizedBox(width: 4),
+                          Expanded(
+                            child: Text(
+                              leave.attachmentUrl!,
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: ZaWolfColors.primaryCyan,
+                                decoration: TextDecoration.underline,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              textDirection: TextDirection.ltr,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
                     const SizedBox(height: 16),
                     _buildApprovalActions(
                       onApprove: () async {
@@ -256,6 +309,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen>
                           await _leaveService.approveLeave(
                             leave.leaveId,
                             reviewer.uid,
+                            reviewer.role,
                           );
                         } catch (e) {
                           if (!context.mounted) return;
@@ -268,6 +322,13 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen>
                         requestId: leave.leaveId,
                         type: 'leave',
                       ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      leave.status == 'pending_hr'
+                          ? 'المرحلة الحالية: مراجعة HR'
+                          : 'المرحلة الحالية: موافقة المدير النهائية',
+                      style: const TextStyle(color: ZaWolfColors.primaryCyan),
                     ),
                   ],
                 ),
@@ -441,6 +502,97 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen>
                           type: 'permission',
                         ),
                       ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildAdvancesTab(UserModel reviewer, ThemeData theme) {
+    return StreamBuilder<QuerySnapshot>(
+      stream: _pendingStream('advances', reviewer.uid, reviewer.role),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(
+            child: CircularProgressIndicator(color: ZaWolfColors.primaryCyan),
+          );
+        }
+
+        final docs = snapshot.data?.docs ?? [];
+        if (docs.isEmpty) {
+          return _buildEmptyState('لا توجد طلبات سلفة معلقة');
+        }
+
+        return ListView.builder(
+          padding: const EdgeInsets.all(16),
+          itemCount: docs.length,
+          itemBuilder: (context, index) {
+            final advance = AdvanceModel.fromFirestore(docs[index]);
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 16.0),
+              child: WolfCard(
+                hasBorderGlow: true,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildEmployeeHeader(
+                      advance.employeeName,
+                      advance.employeeId,
+                      advance.department,
+                      theme,
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      'المبلغ المطلوب: ${advance.amount} جنيه',
+                      style: theme.textTheme.titleMedium!.copyWith(
+                        color: Colors.white,
+                      ),
+                    ),
+                    if (advance.reason != null && advance.reason!.isNotEmpty)
+                      Text(
+                        'السبب: ${advance.reason}',
+                        style: const TextStyle(
+                          color: ZaWolfColors.textSecondary,
+                        ),
+                      ),
+                    const SizedBox(height: 16),
+                    _buildApprovalActions(
+                      onApprove: () async {
+                        try {
+                          String nextStatus;
+                          if (reviewer.role == EmployeeRole.hrAdmin || reviewer.role == EmployeeRole.superAdmin) {
+                            nextStatus = advance.status == 'pending_hr' ? 'pending_manager' : 'approved';
+                          } else {
+                            nextStatus = 'approved';
+                          }
+                          await _advanceService.updateAdvanceStatus(
+                            advanceId: advance.advanceId,
+                            status: nextStatus,
+                            reviewerId: reviewer.uid,
+                          );
+                        } catch (e) {
+                          if (!context.mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('فشل الموافقة: $e')),
+                          );
+                        }
+                      },
+                      onReject: () => _showRejectionDialog(
+                        requestId: advance.advanceId,
+                        type: 'advance',
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      advance.status == 'pending_hr'
+                          ? 'المرحلة الحالية: مراجعة HR'
+                          : 'المرحلة الحالية: موافقة المدير النهائية',
+                      style: const TextStyle(color: ZaWolfColors.primaryCyan),
+                    ),
                   ],
                 ),
               ),
@@ -722,6 +874,8 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen>
         return 'عارضة';
       case 'day_off':
         return 'يوم إجازة';
+      case 'wfh':
+        return 'عمل من المنزل';
       default:
         return type;
     }

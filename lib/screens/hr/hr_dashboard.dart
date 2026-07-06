@@ -169,6 +169,13 @@ class _HrDashboardScreenState extends State<HrDashboardScreen> {
               childAspectRatio: 1.3,
               children: [
                 _buildHRActionCard(
+                  'إدارة الطلبات',
+                  'مراجعة الإجازات، الأذونات، والسلف',
+                  Icons.assignment_turned_in_outlined,
+                  () => context.go('/hr/requests'),
+                  theme,
+                ),
+                _buildHRActionCard(
                   'إدارة الموظفين',
                   'إضافة موظف وتعديل بياناته وصلاحياته',
                   Icons.person_add_alt_1,

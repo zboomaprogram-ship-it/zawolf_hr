@@ -15,6 +15,7 @@ class WolfInputField extends StatefulWidget {
   final TextDirection? textDirection;
   final int maxLines;
   final ValueChanged<String>? onChanged;
+  final ValueChanged<String>? onSubmitted;
 
   const WolfInputField({
     super.key,
@@ -31,6 +32,7 @@ class WolfInputField extends StatefulWidget {
     this.textDirection,
     this.maxLines = 1,
     this.onChanged,
+    this.onSubmitted,
   });
 
   @override
@@ -113,6 +115,7 @@ class _WolfInputFieldState extends State<WolfInputField> {
               readOnly: widget.readOnly,
               onTap: widget.onTap,
               onChanged: widget.onChanged,
+              onFieldSubmitted: widget.onSubmitted,
               maxLines: widget.isPassword ? 1 : widget.maxLines,
               textDirection: widget.textDirection ?? TextDirection.rtl,
               style: theme.textTheme.bodyLarge,

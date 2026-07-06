@@ -107,10 +107,11 @@ class EmployeeTasksScreen extends StatelessWidget {
                           userId: user.uid,
                           status: TaskStatus.inProgress,
                         ),
-                        onDone: () => taskService.updateMyTaskStatus(
+                        onDone: () => _showCompleteDialog(
+                          context: context,
                           taskId: task.taskId,
                           userId: user.uid,
-                          status: TaskStatus.done,
+                          taskService: taskService,
                         ),
                       ),
                     ),
@@ -119,6 +120,63 @@ class EmployeeTasksScreen extends StatelessWidget {
             ),
           );
         },
+      ),
+    );
+  }
+
+  Future<void> _showCompleteDialog({
+    required BuildContext context,
+    required String taskId,
+    required String userId,
+    required TaskService taskService,
+  }) async {
+    final linkController = TextEditingController();
+
+    await showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: ZaWolfColors.surface01,
+        title: const Text('إتمام المهمة', textDirection: TextDirection.rtl),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              'هل تريد إرفاق رابط للمهمة؟ (جوجل درايف / دروب بوكس / الخ)',
+              textDirection: TextDirection.rtl,
+              style: TextStyle(color: ZaWolfColors.textSecondary),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: linkController,
+              textDirection: TextDirection.ltr,
+              style: const TextStyle(color: Colors.white),
+              decoration: const InputDecoration(
+                hintText: 'https://...',
+                labelText: 'رابط المرفق (اختياري)',
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('إلغاء'),
+          ),
+          FilledButton(
+            onPressed: () async {
+              Navigator.pop(ctx);
+              await taskService.updateMyTaskStatus(
+                taskId: taskId,
+                userId: userId,
+                status: TaskStatus.done,
+                attachmentUrl: linkController.text.trim().isNotEmpty
+                    ? linkController.text.trim()
+                    : null,
+              );
+            },
+            child: const Text('تأكيد الإتمام'),
+          ),
+        ],
       ),
     );
   }
@@ -194,6 +252,35 @@ class _EmployeeTaskCard extends StatelessWidget {
                 color: ZaWolfColors.perfGold,
               ),
               textDirection: TextDirection.rtl,
+            ),
+          ],
+          if (task.attachmentUrl != null && task.attachmentUrl!.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                Expanded(
+                  child: Text(
+                    task.attachmentUrl!,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: ZaWolfColors.primaryCyan,
+                      decoration: TextDecoration.underline,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    textDirection: TextDirection.ltr,
+                    textAlign: TextAlign.right,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                const Icon(Icons.link, color: ZaWolfColors.primaryCyan, size: 16),
+                const SizedBox(width: 4),
+                Text(
+                  'المرفق:',
+                  style: theme.textTheme.bodySmall,
+                  textDirection: TextDirection.rtl,
+                ),
+              ],
             ),
           ],
           if (task.status != TaskStatus.done &&

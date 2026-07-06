@@ -4,6 +4,8 @@ import '../models/leave_model.dart';
 import '../models/permission_model.dart';
 import '../models/performance_model.dart';
 import '../models/payroll_run_model.dart';
+import '../models/user_model.dart';
+import '../models/employee_role.dart';
 
 class SheetsExportService {
   Future<String> exportAttendanceToSheet(
@@ -178,6 +180,7 @@ class SheetsExportService {
         'الشهر (Month)',
         'الراتب الأساسي',
         'خصومات الحضور',
+        'السلف',
         'المكافآت',
         'صافي الراتب',
         'العملة',
@@ -191,6 +194,7 @@ class SheetsExportService {
           run.monthKey,
           run.baseSalary.toStringAsFixed(2),
           run.attendanceDeductions.toStringAsFixed(2),
+          run.advances.toStringAsFixed(2),
           run.rewardsBonus.toStringAsFixed(2),
           run.netSalary.toStringAsFixed(2),
           run.currency,
@@ -200,6 +204,92 @@ class SheetsExportService {
     ];
 
     return _toCsv(rows);
+  }
+
+  Future<String> exportEmployeesToSheet(
+    String exportName,
+    List<UserModel> employees,
+  ) async {
+    final rows = <List<Object?>>[
+      [
+        'الكود التعريفي (Employee ID)',
+        'الاسم (Name)',
+        'البريد الإلكتروني (Email)',
+        'الدور (Role)',
+        'المسمى الوظيفي (Position)',
+        'القسم (Department)',
+        'الفرع (Location)',
+        'المدير المباشر (Manager)',
+        'الراتب الأساسي (Base Salary)',
+        'العملة (Currency)',
+        'رصيد الإجازات السنوية',
+        'رصيد الإجازات المرضية',
+        'رصيد الإجازات العارضة',
+        'رصيد أيام العطلات',
+        'الأذونات المستخدمة هذا الشهر',
+        'الحالة (Status)',
+        'تاريخ الانضمام',
+        'جهاز الحضور',
+      ],
+      ...employees.map(
+        (emp) => [
+          emp.employeeId,
+          emp.displayName,
+          emp.email,
+          EmployeeRole.arabicLabel(emp.role),
+          emp.position,
+          emp.department,
+          emp.locationName,
+          emp.managerName ?? '-',
+          emp.baseMonthlySalary.toStringAsFixed(2),
+          emp.salaryCurrency,
+          emp.leaveBalance.annual,
+          emp.leaveBalance.sick,
+          emp.leaveBalance.casual,
+          emp.leaveBalance.daysOff,
+          emp.permissionBalance.usedThisMonth,
+          emp.isActive ? 'نشط' : 'معطل',
+          emp.joinDate != null
+              ? DateFormat('yyyy-MM-dd').format(emp.joinDate!)
+              : '-',
+          emp.registeredAttendanceDeviceLabel ?? 'لم يتم الربط',
+        ],
+      ),
+    ];
+
+    return _toCsv(rows);
+  }
+
+  String generateImportTemplate() {
+    final headers = [
+      'email',
+      'displayName',
+      'employeeId',
+      'role',
+      'department',
+      'position',
+      'locationId',
+      'locationName',
+      'baseMonthlySalary',
+      'salaryCurrency',
+      'managerId',
+      'managerName',
+    ];
+    final exampleRow = [
+      'ahmed@company.com',
+      'أحمد محمد',
+      'EMP-001',
+      'employee',
+      'البرمجة',
+      'مطور',
+      '',
+      'القاهرة',
+      '5000',
+      'EGP',
+      '',
+      '',
+    ];
+    return '${headers.join(',')}\n${exampleRow.join(',')}';
   }
 
   String _toCsv(List<List<Object?>> rows) {

@@ -5,6 +5,7 @@ import '../models/employee_role.dart';
 import '../models/payroll_run_model.dart';
 import '../models/user_model.dart';
 import '../models/warning_reward_model.dart';
+import '../models/advance_model.dart';
 import 'audit_log_service.dart';
 
 class PayrollService {
@@ -44,15 +45,25 @@ class PayrollService {
           .where('userId', isEqualTo: employee.uid)
           .where('monthKey', isEqualTo: monthKey)
           .get(),
+      _db
+          .collection('advances')
+          .where('userId', isEqualTo: employee.uid)
+          .where('monthKey', isEqualTo: monthKey)
+          .get(),
     ]);
 
     final attendanceSnap = results[0];
     final rewardSnap = results[1];
+    final advanceSnap = results[2];
+    
     final attendance = attendanceSnap.docs
         .map((doc) => AttendanceModel.fromFirestore(doc))
         .toList();
     final rewards = rewardSnap.docs
         .map((doc) => WarningRewardModel.fromFirestore(doc))
+        .toList();
+    final advanceRecords = advanceSnap.docs
+        .map((doc) => AdvanceModel.fromFirestore(doc))
         .toList();
 
     final approvedDeductions = attendance.where(
@@ -79,10 +90,19 @@ class PayrollService {
       (total, record) => total + record.amount,
     );
 
+    final approvedAdvances = advanceRecords.where(
+      (record) => record.status == 'approved',
+    );
+    final advanceTotal = approvedAdvances.fold<double>(
+      0,
+      (total, record) => total + record.amount,
+    );
+
     final netSalary = PayrollRunModel.calculateNetSalary(
       baseSalary: employee.baseMonthlySalary,
       deductions: deductionTotal,
       bonus: bonusTotal,
+      advances: advanceTotal,
     );
 
     return PayrollRunModel(
@@ -97,9 +117,11 @@ class PayrollService {
       baseSalary: employee.baseMonthlySalary,
       attendanceDeductions: deductionTotal,
       rewardsBonus: bonusTotal,
+      advances: advanceTotal,
       netSalary: netSalary,
       approvedDeductionCount: approvedDeductions.length,
       bonusRecordCount: issuedBonusRecords.length,
+      advanceRecordCount: approvedAdvances.length,
       status: PayrollStatus.draft,
       calculatedBy: actorId,
     );

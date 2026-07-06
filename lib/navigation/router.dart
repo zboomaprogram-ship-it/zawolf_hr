@@ -32,6 +32,8 @@ import '../screens/hr/employee_mgmt.dart';
 import '../screens/hr/announcements.dart';
 import '../screens/hr/sheets_export_screen.dart';
 import '../screens/manager/rate_performance.dart';
+import '../screens/smart_assistant_screen.dart';
+import '../screens/hr/department_performance_screen.dart';
 
 class ZaWolfRouter {
   static GoRouter getRouter(BuildContext context) {
@@ -148,6 +150,10 @@ class ZaWolfRouter {
               path: '/employee/payroll',
               builder: (context, state) => const EmployeePayrollScreen(),
             ),
+            GoRoute(
+              path: '/assistant',
+              builder: (context, state) => const SmartAssistantScreen(),
+            ),
             // Manager Routes
             GoRoute(
               path: '/manager/dashboard',
@@ -178,6 +184,10 @@ class ZaWolfRouter {
               builder: (context, state) => const ProductivityRankingScreen(),
             ),
             GoRoute(
+              path: '/manager/departments',
+              builder: (context, state) => const DepartmentPerformanceScreen(),
+            ),
+            GoRoute(
               path: '/manager/suggestions',
               builder: (context, state) => const SuggestionsManagementScreen(),
             ),
@@ -190,6 +200,10 @@ class ZaWolfRouter {
             GoRoute(
               path: '/hr/dashboard',
               builder: (context, state) => const HrDashboardScreen(),
+            ),
+            GoRoute(
+              path: '/hr/requests',
+              builder: (context, state) => const RequestsManagementScreen(),
             ),
             GoRoute(
               path: '/hr/employees',
@@ -218,6 +232,10 @@ class ZaWolfRouter {
             GoRoute(
               path: '/hr/productivity',
               builder: (context, state) => const ProductivityRankingScreen(),
+            ),
+            GoRoute(
+              path: '/hr/departments',
+              builder: (context, state) => const DepartmentPerformanceScreen(),
             ),
             GoRoute(
               path: '/hr/warnings-rewards',

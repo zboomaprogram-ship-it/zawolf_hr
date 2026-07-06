@@ -191,7 +191,6 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
     }
 
     final todayStr = DateFormat('yyyy-MM-dd').format(DateTime.now());
-    final currentMonthKey = DateFormat('yyyy-MM').format(DateTime.now());
 
     return Scaffold(
       appBar: AppBar(

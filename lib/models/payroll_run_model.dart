@@ -29,9 +29,11 @@ class PayrollRunModel {
   final double baseSalary;
   final double attendanceDeductions;
   final double rewardsBonus;
+  final double advances;
   final double netSalary;
   final int approvedDeductionCount;
   final int bonusRecordCount;
+  final int advanceRecordCount;
   final String status;
   final DateTime? calculatedAt;
   final String calculatedBy;
@@ -50,9 +52,11 @@ class PayrollRunModel {
     required this.baseSalary,
     required this.attendanceDeductions,
     required this.rewardsBonus,
+    required this.advances,
     required this.netSalary,
     required this.approvedDeductionCount,
     required this.bonusRecordCount,
+    required this.advanceRecordCount,
     required this.status,
     required this.calculatedBy,
     this.calculatedAt,
@@ -75,9 +79,11 @@ class PayrollRunModel {
       attendanceDeductions:
           (data['attendanceDeductions'] as num?)?.toDouble() ?? 0,
       rewardsBonus: (data['rewardsBonus'] as num?)?.toDouble() ?? 0,
+      advances: (data['advances'] as num?)?.toDouble() ?? 0,
       netSalary: (data['netSalary'] as num?)?.toDouble() ?? 0,
       approvedDeductionCount: data['approvedDeductionCount'] as int? ?? 0,
       bonusRecordCount: data['bonusRecordCount'] as int? ?? 0,
+      advanceRecordCount: data['advanceRecordCount'] as int? ?? 0,
       status: data['status'] as String? ?? PayrollStatus.draft,
       calculatedBy: data['calculatedBy'] as String? ?? '',
       calculatedAt: (data['calculatedAt'] as Timestamp?)?.toDate(),
@@ -98,9 +104,11 @@ class PayrollRunModel {
       'baseSalary': baseSalary,
       'attendanceDeductions': attendanceDeductions,
       'rewardsBonus': rewardsBonus,
+      'advances': advances,
       'netSalary': netSalary,
       'approvedDeductionCount': approvedDeductionCount,
       'bonusRecordCount': bonusRecordCount,
+      'advanceRecordCount': advanceRecordCount,
       'status': status,
       'calculatedBy': calculatedBy,
       'calculatedAt': calculatedAt == null
@@ -115,8 +123,9 @@ class PayrollRunModel {
     required double baseSalary,
     required double deductions,
     required double bonus,
+    required double advances,
   }) {
-    final value = baseSalary - deductions + bonus;
+    final value = baseSalary - deductions + bonus - advances;
     return value < 0 ? 0 : value;
   }
 }

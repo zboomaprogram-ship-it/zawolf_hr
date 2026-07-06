@@ -73,6 +73,14 @@
       ]
     },
     {
+      "collectionGroup": "advances",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "userId", "order": "ASCENDING" },
+        { "fieldPath": "submittedAt", "order": "DESCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "daysoff",
       "queryScope": "COLLECTION",
       "fields": [
@@ -94,6 +102,70 @@
       "fields": [
         { "fieldPath": "managerId", "order": "ASCENDING" },
         { "fieldPath": "status", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "advances",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "managerId", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "advances",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "userId", "order": "ASCENDING" },
+        { "fieldPath": "monthKey", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "leaves",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "userId", "order": "ASCENDING" },
+        { "fieldPath": "reviewedAt", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "leaves",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "managerId", "order": "ASCENDING" },
+        { "fieldPath": "reviewedAt", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "permissions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "userId", "order": "ASCENDING" },
+        { "fieldPath": "reviewedAt", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "permissions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "managerId", "order": "ASCENDING" },
+        { "fieldPath": "reviewedAt", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "advances",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "userId", "order": "ASCENDING" },
+        { "fieldPath": "reviewedAt", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "advances",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "managerId", "order": "ASCENDING" },
+        { "fieldPath": "reviewedAt", "order": "ASCENDING" }
       ]
     },
     {

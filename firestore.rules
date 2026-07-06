@@ -232,10 +232,39 @@ service cloud.firestore {
         && request.resource.data.salaryDeductionApprovalStatus in ['approved', 'rejected']
         && request.resource.data.salaryDeductionReviewedBy == uid();
     }
+    function leaveHrReview() {
+      return isHR()
+        && resource.data.status == 'pending_hr'
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['status', 'reviewedBy', 'reviewedAt', 'reviewerComment', 'isRead'])
+        && request.resource.data.status in ['pending_manager', 'approved', 'rejected']
+        && request.resource.data.reviewedBy == uid();
+    }
     function leaveManagerReview() {
-      return isManagerRole()
-        && isMyManager(resource.data.managerId)
-        && resource.data.status == 'pending'
+      return (
+          (isManagerRole() && isMyManager(resource.data.managerId)) ||
+          isSuperAdmin()
+        )
+        && resource.data.status == 'pending_manager'
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['status', 'reviewedBy', 'reviewedAt', 'reviewerComment', 'isRead'])
+        && request.resource.data.status in ['approved', 'rejected']
+        && request.resource.data.reviewedBy == uid();
+    }
+    function advanceHrReview() {
+      return isHR()
+        && resource.data.status == 'pending_hr'
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['status', 'reviewedBy', 'reviewedAt', 'reviewerComment', 'isRead'])
+        && request.resource.data.status in ['pending_manager', 'approved', 'rejected']
+        && request.resource.data.reviewedBy == uid();
+    }
+    function advanceManagerReview() {
+      return (
+          (isManagerRole() && isMyManager(resource.data.managerId)) ||
+          isSuperAdmin()
+        )
+        && resource.data.status == 'pending_manager'
         && request.resource.data.diff(resource.data).affectedKeys()
           .hasOnly(['status', 'reviewedBy', 'reviewedAt', 'reviewerComment', 'isRead'])
         && request.resource.data.status in ['approved', 'rejected']
@@ -296,7 +325,7 @@ service cloud.firestore {
     function taskOwnerStatusUpdate() {
       return isOwner(resource.data.assigneeId)
         && request.resource.data.diff(resource.data).affectedKeys()
-          .hasOnly(['status', 'isRead', 'updatedAt', 'completedAt'])
+          .hasOnly(['status', 'isRead', 'updatedAt', 'completedAt', 'attachmentUrl'])
         && request.resource.data.status in ['in_progress', 'done']
         && request.resource.data.isRead == true;
     }
@@ -424,9 +453,9 @@ service cloud.firestore {
       return request.resource.data.keys().hasOnly([
         'userId', 'employeeId', 'employeeName', 'department', 'managerId',
         'monthKey', 'currency', 'baseSalary', 'attendanceDeductions',
-        'rewardsBonus', 'netSalary', 'approvedDeductionCount',
-        'bonusRecordCount', 'status', 'calculatedAt', 'calculatedBy',
-        'reviewedBy', 'reviewedAt'
+        'rewardsBonus', 'advances', 'netSalary', 'approvedDeductionCount',
+        'bonusRecordCount', 'advanceRecordCount', 'status', 'calculatedAt',
+        'calculatedBy', 'reviewedBy', 'reviewedAt'
       ]);
     }
     function payrollRunValues() {
@@ -435,6 +464,7 @@ service cloud.firestore {
         && request.resource.data.baseSalary >= 0
         && request.resource.data.attendanceDeductions >= 0
         && request.resource.data.rewardsBonus >= 0
+        && request.resource.data.advances >= 0
         && request.resource.data.netSalary >= 0
         && request.resource.data.status in ['draft', 'reviewed', 'locked'];
     }
@@ -520,6 +550,16 @@ service cloud.firestore {
       allow delete: if isAuth() && isActive() && isHR();
     }
 
+    match /departments/{deptId} {
+      allow read: if isAuth() && isActive();
+      allow create, update, delete: if isAuth() && isActive() && isHR();
+    }
+
+    match /job_titles/{jobTitleId} {
+      allow read: if isAuth() && isActive();
+      allow create, update, delete: if isAuth() && isActive() && isHR();
+    }
+
     match /leaves/{leaveId} {
       allow read: if isAuth() && isActive() && (
         isOwner(resource.data.userId) ||
@@ -528,7 +568,7 @@ service cloud.firestore {
       );
       allow create: if isAuth() && isActive()
         && isValidSelfCreate()
-        && request.resource.data.status == 'pending'
+        && request.resource.data.status == 'pending_hr'
         && request.resource.data.leaveType in ['annual', 'sick', 'casual', 'day_off']
         && request.resource.data.numberOfDays > 0
         && request.resource.data.keys().hasOnly([
@@ -539,12 +579,13 @@ service cloud.firestore {
       allow update: if isAuth() && isActive() && (
         (
           isOwner(resource.data.userId)
-          && resource.data.status == 'pending'
+          && resource.data.status == 'pending_hr'
           && request.resource.data.status == 'cancelled'
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
         ) ||
+        leaveHrReview() ||
         leaveManagerReview() ||
-        isHR()
+        isSuperAdmin()
       );
       allow delete: if isAuth() && isActive() && isHR();
     }
@@ -577,6 +618,34 @@ service cloud.firestore {
         ) ||
         permissionHrReview() ||
         permissionManagerReview()
+      );
+      allow delete: if isAuth() && isActive() && isHR();
+    }
+
+    match /advances/{advanceId} {
+      allow read: if isAuth() && isActive() && (
+        isOwner(resource.data.userId) ||
+        isMyManager(resource.data.managerId) ||
+        isHR()
+      );
+      allow create: if isAuth() && isActive()
+        && isValidSelfCreate()
+        && request.resource.data.status == 'pending_hr'
+        && request.resource.data.amount > 0
+        && request.resource.data.keys().hasOnly([
+          'userId', 'employeeId', 'employeeName', 'department', 'locationId',
+          'managerId', 'amount', 'reason', 'status', 'monthKey', 'submittedAt', 'isRead'
+        ]);
+      allow update: if isAuth() && isActive() && (
+        (
+          isOwner(resource.data.userId)
+          && resource.data.status == 'pending_hr'
+          && request.resource.data.status == 'cancelled'
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
+        ) ||
+        advanceHrReview() ||
+        advanceManagerReview() ||
+        isSuperAdmin()
       );
       allow delete: if isAuth() && isActive() && isHR();
     }

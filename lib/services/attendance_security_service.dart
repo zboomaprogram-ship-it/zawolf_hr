@@ -2,7 +2,6 @@ import 'dart:io';
 
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:local_auth/local_auth.dart';
-import 'package:flutter/services.dart';
 
 class AttendanceSecurityResult {
   final String deviceId;

@@ -62,6 +62,7 @@ class EmployeeTaskModel {
   final DateTime? completedAt;
   final int? qualityScore;
   final String? managerComment;
+  final String? attachmentUrl;
   final bool isRead;
 
   EmployeeTaskModel({
@@ -83,6 +84,7 @@ class EmployeeTaskModel {
     this.completedAt,
     this.qualityScore,
     this.managerComment,
+    this.attachmentUrl,
     this.isRead = false,
   });
 
@@ -107,6 +109,7 @@ class EmployeeTaskModel {
       completedAt: (data['completedAt'] as Timestamp?)?.toDate(),
       qualityScore: data['qualityScore'] as int?,
       managerComment: data['managerComment'] as String?,
+      attachmentUrl: data['attachmentUrl'] as String?,
       isRead: data['isRead'] as bool? ?? false,
     );
   }
@@ -134,6 +137,7 @@ class EmployeeTaskModel {
       if (completedAt != null) 'completedAt': Timestamp.fromDate(completedAt!),
       if (qualityScore != null) 'qualityScore': qualityScore,
       if (managerComment != null) 'managerComment': managerComment,
+      if (attachmentUrl != null) 'attachmentUrl': attachmentUrl,
       'isRead': isRead,
     };
   }

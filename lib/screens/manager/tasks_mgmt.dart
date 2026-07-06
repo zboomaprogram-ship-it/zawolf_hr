@@ -255,6 +255,35 @@ class _ManagerTaskCard extends StatelessWidget {
             const SizedBox(height: 10),
             Text(task.description, textDirection: TextDirection.rtl),
           ],
+          if (task.attachmentUrl != null && task.attachmentUrl!.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                Expanded(
+                  child: Text(
+                    task.attachmentUrl!,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: ZaWolfColors.primaryCyan,
+                      decoration: TextDecoration.underline,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    textDirection: TextDirection.ltr,
+                    textAlign: TextAlign.right,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                const Icon(Icons.link, color: ZaWolfColors.primaryCyan, size: 16),
+                const SizedBox(width: 4),
+                Text(
+                  'المرفق من الموظف:',
+                  style: theme.textTheme.bodySmall,
+                  textDirection: TextDirection.rtl,
+                ),
+              ],
+            ),
+          ],
           const SizedBox(height: 12),
           Wrap(
             spacing: 8,

@@ -10,10 +10,13 @@ import '../../services/permission_service.dart';
 import '../../services/leave_service.dart';
 import '../../services/complaint_service.dart';
 import '../../services/audit_log_service.dart';
+import '../../services/advance_service.dart';
 import '../../models/permission_model.dart';
 import '../../models/leave_model.dart';
+import '../../models/advance_model.dart';
 import '../../models/complaint_model.dart';
 import '../../models/user_model.dart';
+import '../shared/requests_log_screen.dart';
 
 class EmployeeRequestsScreen extends StatefulWidget {
   const EmployeeRequestsScreen({super.key});
@@ -40,7 +43,12 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
   DateTime _leaveStart = DateTime.now().add(const Duration(days: 1));
   DateTime _leaveEnd = DateTime.now().add(const Duration(days: 2));
   final _leaveReasonController = TextEditingController();
-  String? _mockAttachmentUrl;
+  String? _attachmentUrl;
+
+  // Advance form fields
+  final _formKeyAdvance = GlobalKey<FormState>();
+  final _advanceAmountController = TextEditingController();
+  final _advanceReasonController = TextEditingController();
 
   final _complaintTitleController = TextEditingController();
   final _complaintBodyController = TextEditingController();
@@ -58,6 +66,8 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
     _tabController.dispose();
     _permissionReasonController.dispose();
     _leaveReasonController.dispose();
+    _advanceAmountController.dispose();
+    _advanceReasonController.dispose();
     _complaintTitleController.dispose();
     _complaintBodyController.dispose();
     super.dispose();
@@ -179,7 +189,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
         endDate: _leaveEnd,
         numberOfDays: days,
         reason: _leaveReasonController.text.trim(),
-        attachmentUrl: _mockAttachmentUrl,
+        attachmentUrl: _attachmentUrl,
         status: 'pending',
       );
 
@@ -193,7 +203,60 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
           ),
         );
         _leaveReasonController.clear();
-        setState(() => _mockAttachmentUrl = null);
+        setState(() => _attachmentUrl = null);
+        _tabController.animateTo(1);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: ZaWolfColors.error,
+            content: Text(
+              'فشل التقديم: ${e.toString().replaceAll('Exception: ', '')}',
+            ),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _submitAdvance(UserModel employee) async {
+    if (!_formKeyAdvance.currentState!.validate()) return;
+
+    setState(() => _loading = true);
+    final service = AdvanceService();
+
+    try {
+      final now = DateTime.now();
+      final monthKey = DateFormat('yyyy-MM').format(now);
+      
+      final req = AdvanceModel(
+        advanceId: '',
+        userId: employee.uid,
+        employeeId: employee.employeeId,
+        employeeName: employee.displayName,
+        department: employee.department,
+        locationId: employee.locationId,
+        managerId: employee.managerId ?? '',
+        amount: double.parse(_advanceAmountController.text),
+        reason: _advanceReasonController.text.trim(),
+        status: 'pending',
+        monthKey: monthKey,
+      );
+
+      await service.submitAdvanceRequest(req, employee);
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            backgroundColor: ZaWolfColors.success,
+            content: Text('تم تقديم طلب السلفة بنجاح'),
+          ),
+        );
+        _advanceAmountController.clear();
+        _advanceReasonController.clear();
         _tabController.animateTo(1);
       }
     } catch (e) {
@@ -297,6 +360,18 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
             'إدارة الطلبات',
             style: TextStyle(fontWeight: FontWeight.bold),
           ),
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.history_toggle_off, color: ZaWolfColors.primaryCyan),
+              tooltip: 'سجل الطلبات المقبولة والمرفوضة',
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const RequestsLogScreen()),
+                );
+              },
+            ),
+          ],
           bottom: TabBar(
             controller: _tabController,
             tabs: const [
@@ -338,13 +413,15 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
           ),
           const SizedBox(height: 16),
           DefaultTabController(
-            length: 3,
+            length: 4,
             child: Column(
               children: [
                 TabBar(
+                  isScrollable: true,
                   tabs: const [
                     Tab(icon: Icon(Icons.access_time), text: 'إذن شخصي'),
                     Tab(icon: Icon(Icons.calendar_month), text: 'إجازة رسمية'),
+                    Tab(icon: Icon(Icons.payments), text: 'سلفة مالية'),
                     Tab(icon: Icon(Icons.report_problem), text: 'شكوى'),
                   ],
                   labelColor: ZaWolfColors.primaryCyan,
@@ -362,6 +439,10 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
                       // Sub-tab 2: Leave form
                       _buildLeaveForm(user, theme),
 
+                      // Sub-tab 3: Advance form
+                      _buildAdvanceForm(user, theme),
+
+                      // Sub-tab 4: Complaint form
                       _buildComplaintForm(user, theme),
                     ],
                   ),
@@ -649,6 +730,16 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
                     },
                   ),
                 ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: ChoiceChip(
+                    label: const Center(child: Text('عمل من المنزل')),
+                    selected: _leaveType == 'wfh',
+                    onSelected: (val) {
+                      if (val) setState(() => _leaveType = 'wfh');
+                    },
+                  ),
+                ),
               ],
             ),
             const SizedBox(height: 16),
@@ -697,26 +788,86 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
             ),
             const SizedBox(height: 12),
 
-            // Medical attachment URL input instead of Storage upload
-            if (_leaveType == 'sick') ...[
-              WolfInputField(
-                labelText: 'رابط التقرير الطبي (جوجل درايف / دروب بوكس)',
-                englishLabel: 'Medical Certificate Link',
-                hintText: 'https://drive.google.com/...',
-                textDirection: TextDirection.ltr,
-                onChanged: (val) {
-                  setState(() {
-                    _mockAttachmentUrl = val.trim();
-                  });
-                },
-              ),
-              const SizedBox(height: 16),
-            ],
+            // Attachment URL input
+            WolfInputField(
+              labelText: 'رابط المرفق (جوجل درايف / الخ) - اختياري',
+              englishLabel: 'Attachment Link (Optional)',
+              hintText: 'https://...',
+              textDirection: TextDirection.ltr,
+              onChanged: (val) {
+                setState(() {
+                  _attachmentUrl = val.trim();
+                });
+              },
+            ),
+            const SizedBox(height: 16),
 
             WolfButton(
               onPressed: () => _submitLeave(user),
               text: 'تقديم طلب إجازة',
               secondaryText: 'SUBMIT LEAVE REQUEST',
+              loading: _loading,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAdvanceForm(UserModel user, ThemeData theme) {
+    return Form(
+      key: _formKeyAdvance,
+      child: SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: ZaWolfColors.warning.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: ZaWolfColors.warning.withValues(alpha: 0.3),
+                ),
+              ),
+              child: Text(
+                'سيتم خصم مبلغ السلفة من راتب الشهر الحالي بعد موافقة الإدارة.',
+                style: theme.textTheme.bodySmall!.copyWith(
+                  color: ZaWolfColors.warning,
+                  fontWeight: FontWeight.bold,
+                ),
+                textDirection: TextDirection.rtl,
+              ),
+            ),
+            const SizedBox(height: 16),
+            WolfInputField(
+              controller: _advanceAmountController,
+              labelText: 'المبلغ المطلوب (${user.salaryCurrency})',
+              englishLabel: 'Amount',
+              hintText: 'مثال: 500',
+              keyboardType: TextInputType.number,
+              validator: (val) {
+                if (val == null || val.isEmpty) return 'المبلغ مطلوب';
+                final amt = double.tryParse(val);
+                if (amt == null || amt <= 0) return 'مبلغ غير صحيح';
+                if (amt > user.baseMonthlySalary) return 'المبلغ يتجاوز الراتب الأساسي';
+                return null;
+              },
+            ),
+            const SizedBox(height: 16),
+            WolfInputField(
+              controller: _advanceReasonController,
+              labelText: 'سبب طلب السلفة (اختياري)',
+              englishLabel: 'Reason',
+              hintText: 'تفاصيل إضافية...',
+              maxLines: 2,
+            ),
+            const SizedBox(height: 20),
+            WolfButton(
+              onPressed: () => _submitAdvance(user),
+              text: 'تقديم طلب سلفة',
+              secondaryText: 'SUBMIT ADVANCE REQUEST',
+              variant: WolfButtonVariant.primary,
               loading: _loading,
             ),
           ],
@@ -786,13 +937,15 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
 
   Widget _buildHistoryConsole(UserModel user, ThemeData theme) {
     return DefaultTabController(
-      length: 3,
+      length: 4,
       child: Column(
         children: [
           TabBar(
+            isScrollable: true,
             tabs: const [
               Tab(text: 'الإجازات'),
               Tab(text: 'الأذونات'),
+              Tab(text: 'السلف'),
               Tab(text: 'الشكاوى'),
             ],
             labelColor: ZaWolfColors.primaryCyan,
@@ -804,12 +957,107 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
               children: [
                 _buildLeavesHistory(user.uid, theme),
                 _buildPermissionsHistory(user.uid, theme),
+                _buildAdvancesHistory(user.uid, theme),
                 _buildComplaintsHistory(user.uid, theme),
               ],
             ),
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildAdvancesHistory(String userId, ThemeData theme) {
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('advances')
+          .where('userId', isEqualTo: userId)
+          .orderBy('submittedAt', descending: true)
+          .snapshots(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        final docs = snapshot.data?.docs ?? [];
+        if (docs.isEmpty) {
+          return _buildEmptyState('لا توجد طلبات سلفة سابقة.');
+        }
+
+        return ListView.builder(
+          padding: const EdgeInsets.all(16),
+          itemCount: docs.length,
+          itemBuilder: (context, index) {
+            final doc = docs[index];
+            final req = AdvanceModel.fromFirestore(doc);
+
+            return Container(
+              margin: const EdgeInsets.only(bottom: 12),
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: ZaWolfColors.surface01,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: ZaWolfColors.surface02),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Row(
+                        children: [
+                          const Icon(
+                            Icons.payments,
+                            color: ZaWolfColors.primaryCyan,
+                            size: 20,
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            'سلفة: ${req.amount} جنيه',
+                            style: theme.textTheme.titleMedium!.copyWith(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+                      _buildStatusBadge(req.status),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  if (req.reason != null && req.reason!.isNotEmpty) ...[
+                    Text(
+                      'السبب: ${req.reason}',
+                      style: theme.textTheme.bodySmall,
+                    ),
+                    const SizedBox(height: 8),
+                  ],
+                  if (req.reviewerComment != null &&
+                      req.reviewerComment!.isNotEmpty) ...[
+                    Text(
+                      'تعليق الإدارة: ${req.reviewerComment}',
+                      style: theme.textTheme.bodySmall!.copyWith(
+                        color: ZaWolfColors.warning,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                  ],
+                  if (req.status == 'pending') ...[
+                    const SizedBox(height: 12),
+                    WolfButton(
+                      onPressed: () => _cancelRequest('advances', req.advanceId),
+                      text: 'إلغاء الطلب',
+                      secondaryText: 'CANCEL REQUEST',
+                      variant: WolfButtonVariant.outline,
+                      height: 40,
+                    ),
+                  ],
+                ],
+              ),
+            );
+          },
+        );
+      },
     );
   }
 
@@ -941,6 +1189,27 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
                     Text(
                       'السبب: ${req.reason}',
                       style: theme.textTheme.bodySmall,
+                    ),
+                  ],
+                  if (req.attachmentUrl != null && req.attachmentUrl!.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        const Icon(Icons.link, color: ZaWolfColors.primaryCyan, size: 16),
+                        const SizedBox(width: 4),
+                        Expanded(
+                          child: Text(
+                            req.attachmentUrl!,
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: ZaWolfColors.primaryCyan,
+                              decoration: TextDecoration.underline,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            textDirection: TextDirection.ltr,
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                   if (req.reviewerComment != null &&

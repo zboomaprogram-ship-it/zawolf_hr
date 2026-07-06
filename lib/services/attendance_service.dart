@@ -41,10 +41,26 @@ class AttendanceService {
       }
     }
 
+    // Check if employee has an approved WFH request today
+    final wfhQuery = await _db
+        .collection('leaves')
+        .where('userId', isEqualTo: employee.uid)
+        .where('leaveType', isEqualTo: 'wfh')
+        .where('status', isEqualTo: 'approved')
+        .where('startDate', isLessThanOrEqualTo: Timestamp.fromDate(now))
+        .get();
+
+    final hasWfhToday = wfhQuery.docs.any((doc) {
+      final data = doc.data();
+      final end = (data['endDate'] as Timestamp).toDate();
+      // If now is before end of that day (23:59)
+      return now.isBefore(end.add(const Duration(days: 1)));
+    });
+
     // 1. Validate employee position against assigned branch's geofence
     final geoResult = await _geofenceService.validateCheckIn(employee);
 
-    if (!geoResult.isWithinZone) {
+    if (!geoResult.isWithinZone && !hasWfhToday) {
       throw Exception(
         '🐺 أنت خارج نطاق العمل المسموح به لفرع (${geoResult.locationName}).\n'
         'المسافة الحالية: ${geoResult.distanceMeters.toInt()} متر.\n'
@@ -53,7 +69,7 @@ class AttendanceService {
     }
 
     // Check if spoofing app is used
-    if (geoResult.isMocked) {
+    if (geoResult.isMocked && !hasWfhToday) {
       throw Exception(
         'عذراً، تم الكشف عن استخدام تطبيق لتزييف الموقع الجغرافي (Mock GPS).',
       );
@@ -128,7 +144,7 @@ class AttendanceService {
           geoResult.position.longitude,
         ),
         localCheckInTime: now,
-        isWithinGeofence: true,
+        isWithinGeofence: geoResult.isWithinZone || hasWfhToday,
         isLate: deduction.isLate,
         lateMinutes: deduction.lateMinutes,
         salaryDeductionFraction: deduction.dayFraction,
@@ -325,10 +341,19 @@ class AttendanceService {
     }
 
     final localOwner = await _offlineQueue.localDeviceOwner(deviceId);
-    if (localOwner != null && localOwner != employee.uid) {
-      throw Exception(
-        'هذا الجهاز مربوط محلياً بحساب موظف آخر. لا يمكن تسجيل حضور أكثر من حساب من نفس الجهاز.',
+    final isOnline = await _offlineQueue.isOnline();
+
+    if (allowOfflineFallback && !isOnline) {
+      if (localOwner != null && localOwner != employee.uid) {
+        throw Exception(
+          'هذا الجهاز مربوط محلياً بحساب موظف آخر. اتصل بالإنترنت للتحقق أو اطلب من HR إعادة الضبط.',
+        );
+      }
+      await _offlineQueue.rememberLocalDeviceOwner(
+        deviceId: deviceId,
+        userId: employee.uid,
       );
+      return;
     }
 
     final locallyRegisteredDevice =
@@ -344,14 +369,6 @@ class AttendanceService {
       throw Exception(
         'هذا الحساب مربوط بجهاز حضور آخر. اطلب من HR إعادة ضبط جهاز الحضور قبل استخدام هذا الجهاز.',
       );
-    }
-
-    if (allowOfflineFallback && !await _offlineQueue.isOnline()) {
-      await _offlineQueue.rememberLocalDeviceOwner(
-        deviceId: deviceId,
-        userId: employee.uid,
-      );
-      return;
     }
 
     final userRef = _db.collection('users').doc(employee.uid);
@@ -411,7 +428,17 @@ class AttendanceService {
         userId: employee.uid,
       );
     } catch (e) {
+      if (e is Exception && e.toString().contains('مربوط')) {
+        rethrow;
+      }
       if (!allowOfflineFallback) rethrow;
+
+      if (localOwner != null && localOwner != employee.uid) {
+        throw Exception(
+          'هذا الجهاز مربوط محلياً بحساب موظف آخر. اتصل بالإنترنت للتحقق أو اطلب من HR إعادة الضبط.',
+        );
+      }
+
       await _offlineQueue.rememberLocalDeviceOwner(
         deviceId: deviceId,
         userId: employee.uid,

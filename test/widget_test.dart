@@ -225,6 +225,7 @@ void main() {
         baseSalary: 10000,
         deductions: 1500,
         bonus: 500,
+        advances: 0,
       );
 
       expect(netSalary, 9000);
@@ -235,9 +236,21 @@ void main() {
         baseSalary: 1000,
         deductions: 2500,
         bonus: 0,
+        advances: 0,
       );
 
       expect(netSalary, 0);
+    });
+
+    test('subtracts approved advances from net salary', () {
+      final netSalary = PayrollRunModel.calculateNetSalary(
+        baseSalary: 10000,
+        deductions: 1000,
+        bonus: 500,
+        advances: 2000,
+      );
+
+      expect(netSalary, 7500);
     });
   });
 }

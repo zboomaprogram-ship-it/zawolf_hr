@@ -97,6 +97,7 @@ class TaskService {
     required String taskId,
     required String userId,
     required String status,
+    String? attachmentUrl,
   }) async {
     if (![TaskStatus.inProgress, TaskStatus.done].contains(status)) {
       throw Exception('حالة المهمة غير صحيحة');
@@ -105,6 +106,7 @@ class TaskService {
       'status': status,
       'isRead': true,
       'updatedAt': FieldValue.serverTimestamp(),
+      if (attachmentUrl != null) 'attachmentUrl': attachmentUrl,
       if (status == TaskStatus.done)
         'completedAt': FieldValue.serverTimestamp(),
     };

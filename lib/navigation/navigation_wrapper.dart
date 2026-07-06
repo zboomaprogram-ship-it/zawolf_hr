@@ -5,10 +5,40 @@ import '../services/auth_service.dart';
 import '../models/employee_role.dart';
 import '../theme/theme.dart';
 
-class NavigationWrapper extends StatelessWidget {
+import 'package:badges/badges.dart' as badges;
+import '../services/notification_service.dart';
+import '../services/pending_requests_service.dart';
+import 'dart:async';
+
+class NavigationWrapper extends StatefulWidget {
   final Widget child;
 
   const NavigationWrapper({super.key, required this.child});
+
+  @override
+  State<NavigationWrapper> createState() => _NavigationWrapperState();
+}
+
+class _NavigationWrapperState extends State<NavigationWrapper> {
+  StreamSubscription<String>? _notifTapSub;
+  String? _currentUserUid;
+
+  @override
+  void initState() {
+    super.initState();
+    _notifTapSub = NotificationService.instance.onNotificationTap.listen((route) {
+      if (mounted && route.isNotEmpty) {
+        context.go(route);
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _notifTapSub?.cancel();
+    PendingRequestsService.instance.stopListening();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -17,7 +47,18 @@ class NavigationWrapper extends StatelessWidget {
     final theme = Theme.of(context);
 
     if (user == null) {
-      return child; // Fallback
+      return widget.child; // Fallback
+    }
+
+    if (_currentUserUid != user.uid) {
+      _currentUserUid = user.uid;
+      if (user.role == EmployeeRole.manager || 
+          user.role == EmployeeRole.hrAdmin || 
+          user.role == EmployeeRole.superAdmin) {
+        PendingRequestsService.instance.startListening(user);
+      } else {
+        PendingRequestsService.instance.stopListening();
+      }
     }
 
     final String matchedLocation = GoRouterState.of(context).matchedLocation;
@@ -164,6 +205,13 @@ class NavigationWrapper extends StatelessWidget {
           path: '/manager/productivity',
         ),
         NavigationItem(
+          icon: Icons.domain_outlined,
+          activeIcon: Icons.domain,
+          label: 'الأقسام',
+          englishLabel: 'Departments',
+          path: '/manager/departments',
+        ),
+        NavigationItem(
           icon: Icons.lightbulb_outline,
           activeIcon: Icons.lightbulb,
           label: 'المقترحات',
@@ -176,6 +224,13 @@ class NavigationWrapper extends StatelessWidget {
           label: 'السجلات',
           englishLabel: 'Records',
           path: '/manager/warnings-rewards',
+        ),
+        NavigationItem(
+          icon: Icons.support_agent_outlined,
+          activeIcon: Icons.support_agent,
+          label: 'المساعد',
+          englishLabel: 'Assistant',
+          path: '/assistant',
         ),
       ];
     } else if (role == EmployeeRole.hrAdmin) {
@@ -251,6 +306,13 @@ class NavigationWrapper extends StatelessWidget {
           path: '/hr/productivity',
         ),
         NavigationItem(
+          icon: Icons.domain_outlined,
+          activeIcon: Icons.domain,
+          label: 'الأقسام',
+          englishLabel: 'Departments',
+          path: '/hr/departments',
+        ),
+        NavigationItem(
           icon: Icons.workspace_premium_outlined,
           activeIcon: Icons.workspace_premium,
           label: 'السجلات',
@@ -270,6 +332,13 @@ class NavigationWrapper extends StatelessWidget {
           label: 'أيام العطلة',
           englishLabel: 'Days Off',
           path: '/hr/day-offs',
+        ),
+        NavigationItem(
+          icon: Icons.support_agent_outlined,
+          activeIcon: Icons.support_agent,
+          label: 'المساعد',
+          englishLabel: 'Assistant',
+          path: '/assistant',
         ),
       ];
     } else if (role == EmployeeRole.superAdmin) {
@@ -324,6 +393,13 @@ class NavigationWrapper extends StatelessWidget {
           path: '/manager/productivity',
         ),
         NavigationItem(
+          icon: Icons.domain_outlined,
+          activeIcon: Icons.domain,
+          label: 'الأقسام',
+          englishLabel: 'Departments',
+          path: '/hr/departments',
+        ),
+        NavigationItem(
           icon: Icons.badge_outlined,
           activeIcon: Icons.badge,
           label: 'الموظفون',
@@ -365,6 +441,13 @@ class NavigationWrapper extends StatelessWidget {
           englishLabel: 'Records',
           path: '/manager/warnings-rewards',
         ),
+        NavigationItem(
+          icon: Icons.support_agent_outlined,
+          activeIcon: Icons.support_agent,
+          label: 'المساعد',
+          englishLabel: 'Assistant',
+          path: '/assistant',
+        ),
       ];
     }
 
@@ -386,7 +469,7 @@ class NavigationWrapper extends StatelessWidget {
         : <NavigationItem>[];
 
     return Scaffold(
-      body: child,
+      body: widget.child,
       bottomNavigationBar: Container(
         decoration: BoxDecoration(
           color: ZaWolfColors.surface01,
@@ -444,16 +527,16 @@ class NavigationWrapper extends StatelessWidget {
 
                 // Show badge for notifications on Profile for employee, dashboard for manager/HR
                 final unreadCount = user.unreadNotifications;
-                final showBadge =
+                final showUnreadBadge =
                     unreadCount > 0 &&
                     ((role == 'employee' && item.path == '/employee/profile') ||
                         (role == 'manager' &&
                             item.path == '/manager/dashboard') ||
                         (role == 'hr_admin' && item.path == '/hr/dashboard'));
 
-                if (showBadge) {
-                  iconWidget = Badge(
-                    label: Text(
+                if (showUnreadBadge) {
+                  iconWidget = badges.Badge(
+                    badgeContent: Text(
                       '$unreadCount',
                       style: const TextStyle(
                         color: Colors.white,
@@ -461,7 +544,37 @@ class NavigationWrapper extends StatelessWidget {
                         fontWeight: FontWeight.bold,
                       ),
                     ),
-                    backgroundColor: ZaWolfColors.error,
+                    badgeStyle: const badges.BadgeStyle(
+                      badgeColor: ZaWolfColors.error,
+                    ),
+                    child: iconWidget,
+                  );
+                }
+
+                // Show badge for pending requests on manager/HR requests tabs
+                final isRequestsTab = item.path == '/manager/requests' || item.path == '/hr/requests';
+                if (isRequestsTab && (role == EmployeeRole.manager || role == EmployeeRole.hrAdmin || role == EmployeeRole.superAdmin)) {
+                  iconWidget = ValueListenableBuilder<int>(
+                    valueListenable: PendingRequestsService.instance.pendingCount,
+                    builder: (context, count, child) {
+                      if (count > 0) {
+                        return badges.Badge(
+                          badgeContent: Text(
+                            '$count',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          badgeStyle: const badges.BadgeStyle(
+                            badgeColor: ZaWolfColors.error,
+                          ),
+                          child: child!,
+                        );
+                      }
+                      return child!;
+                    },
                     child: iconWidget,
                   );
                 }
