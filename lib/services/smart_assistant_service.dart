@@ -326,19 +326,34 @@ class SmartAssistantService {
   }
 
   Future<List<UserModel>> _scopedEmployees(UserModel user) async {
-    Query<Map<String, dynamic>> query = _db
-        .collection('users')
-        .where('isActive', isEqualTo: true);
     if (user.role == EmployeeRole.manager) {
-      query = query.where('managerId', isEqualTo: user.uid);
+      final modernSnap = await _db
+          .collection('users')
+          .where('managerIds', arrayContains: user.uid)
+          .get();
+      final legacySnap = await _db
+          .collection('users')
+          .where('managerId', isEqualTo: user.uid)
+          .get();
+      final byId = <String, UserModel>{};
+      for (final doc in [...modernSnap.docs, ...legacySnap.docs]) {
+        final employee = UserModel.fromFirestore(doc);
+        if (employee.isActive &&
+            employee.role != EmployeeRole.superAdmin &&
+            (employee.managerIds.contains(user.uid) ||
+                employee.managerId == user.uid)) {
+          byId[employee.uid] = employee;
+        }
+      }
+      return byId.values.toList();
     }
-    final snap = await query.get();
+    final snap = await _db
+        .collection('users')
+        .where('isActive', isEqualTo: true)
+        .get();
     return snap.docs.map(UserModel.fromFirestore).where((employee) {
       if (employee.role == EmployeeRole.superAdmin) {
         return false;
-      }
-      if (user.role == EmployeeRole.manager) {
-        return employee.managerId == user.uid;
       }
       return true;
     }).toList();

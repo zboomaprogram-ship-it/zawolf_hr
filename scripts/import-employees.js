@@ -1,0 +1,240 @@
+const fs = require('fs');
+const path = require('path');
+const admin = require('firebase-admin');
+
+const initialPassword = process.env.INITIAL_EMPLOYEE_PASSWORD || 'ZW@0000';
+const csvPath = process.env.IMPORT_CSV_PATH || '../zawolf_employee_accounts_import.csv';
+const dryRun = process.env.DRY_RUN !== 'false';
+
+let db;
+let auth;
+if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+  let serviceAccount;
+  try {
+    serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+  } catch (_) {
+    console.error('FIREBASE_SERVICE_ACCOUNT is invalid JSON.');
+    process.exit(1);
+  }
+
+  admin.initializeApp({
+    credential: admin.credential.cert(serviceAccount),
+  });
+  db = admin.firestore();
+  auth = admin.auth();
+} else if (!dryRun) {
+  console.error('FIREBASE_SERVICE_ACCOUNT is required when DRY_RUN=false.');
+  process.exit(1);
+}
+
+function currentCairoMonthKey() {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Africa/Cairo',
+    year: 'numeric',
+    month: '2-digit',
+  }).formatToParts(new Date());
+  return `${parts.find((p) => p.type === 'year').value}-${parts.find((p) => p.type === 'month').value}`;
+}
+
+function parseCsv(text) {
+  const rows = [];
+  let row = [];
+  let cell = '';
+  let quoted = false;
+  const input = text.replace(/^\uFEFF/, '');
+  for (let i = 0; i < input.length; i++) {
+    const char = input[i];
+    const next = input[i + 1];
+    if (quoted) {
+      if (char === '"' && next === '"') {
+        cell += '"';
+        i++;
+      } else if (char === '"') {
+        quoted = false;
+      } else {
+        cell += char;
+      }
+    } else if (char === '"') {
+      quoted = true;
+    } else if (char === ',') {
+      row.push(cell);
+      cell = '';
+    } else if (char === '\n') {
+      row.push(cell);
+      rows.push(row);
+      row = [];
+      cell = '';
+    } else if (char !== '\r') {
+      cell += char;
+    }
+  }
+  if (cell.length || row.length) {
+    row.push(cell);
+    rows.push(row);
+  }
+  return rows;
+}
+
+function normalizeRole(role) {
+  const value = String(role || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+  if (['hr', 'hradmin', 'hr_admin'].includes(value)) return 'hr_admin';
+  if (['super', 'superadmin', 'super_admin', 'ceo', 'owner'].includes(value)) {
+    return 'super_admin';
+  }
+  if (['manager', 'manger'].includes(value)) return 'manager';
+  return 'employee';
+}
+
+function canBeSupervisor(role) {
+  return ['manager', 'hr_admin', 'super_admin'].includes(role);
+}
+
+function splitList(value) {
+  return String(value || '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+async function getOrCreateAuthUser(row) {
+  if (dryRun && !auth) {
+    return { uid: `dry_${row.employeeId}`, email: row.email };
+  }
+  try {
+    return await auth.getUserByEmail(row.email);
+  } catch (error) {
+    if (error.code !== 'auth/user-not-found') throw error;
+    if (dryRun) {
+      return { uid: `dry_${row.employeeId}`, email: row.email };
+    }
+    return auth.createUser({
+      email: row.email,
+      password: initialPassword,
+      displayName: row.displayName,
+      disabled: false,
+    });
+  }
+}
+
+function buildUserDoc(row, userRecord, supervisors) {
+  const primary = supervisors[0];
+  return {
+    uid: userRecord.uid,
+    email: row.email,
+    displayName: row.displayName,
+    role: row.role,
+    employeeId: row.employeeId,
+    department: row.department,
+    position: row.position,
+    locationId: row.locationId,
+    locationName: row.locationName,
+    baseMonthlySalary: Number(row.baseMonthlySalary || 0),
+    salaryCurrency: row.salaryCurrency || 'EGP',
+    managerId: primary?.uid || null,
+    managerName: primary?.displayName || null,
+    managerIds: supervisors.map((item) => item.uid),
+    managerNames: supervisors.map((item) => item.displayName),
+    managerCodes: supervisors.map((item) => item.employeeId),
+    isActive: true,
+    leaveBalance: { annual: 21, sick: 14, casual: 7, daysOff: 21 },
+    permissionBalance: {
+      usedThisMonth: 0,
+      usedHoursThisMonth: 0,
+      lastResetMonth: currentCairoMonthKey(),
+    },
+    workSchedule: {
+      startTime: '09:00',
+      endTime: '17:00',
+      workDays: [6, 7, 1, 2, 3, 4],
+    },
+    notificationTokens: [],
+    unreadNotifications: 0,
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+  };
+}
+
+async function main() {
+  const absoluteCsvPath = path.resolve(__dirname, csvPath);
+  const text = fs.readFileSync(absoluteCsvPath, 'utf8');
+  const rows = parseCsv(text);
+  const headers = rows.shift().map((header) => header.trim());
+  const records = rows
+    .filter((row) => row.some((cell) => String(cell).trim()))
+    .map((row) => {
+      const data = Object.fromEntries(headers.map((header, index) => [header, row[index] || '']));
+      return {
+        email: data.email.trim(),
+        displayName: data.displayName.trim(),
+        employeeId: data.employeeId.trim(),
+        role: normalizeRole(data.role),
+        department: data.department.trim(),
+        position: data.position.trim(),
+        locationId: data.locationId.trim(),
+        locationName: data.locationName.trim() || data.locationId.trim(),
+        baseMonthlySalary: data.baseMonthlySalary.trim(),
+        salaryCurrency: data.salaryCurrency.trim() || 'EGP',
+        managerCodes: splitList(data.managerCodes),
+      };
+    });
+
+  const byCode = new Map();
+  let createdAuth = 0;
+  let existingAuth = 0;
+
+  for (const record of records) {
+    if (!record.email || !record.displayName || !record.employeeId) {
+      throw new Error(`Missing required data for row: ${JSON.stringify(record)}`);
+    }
+    const before = dryRun ? null : await auth.getUserByEmail(record.email).catch(() => null);
+    const userRecord = await getOrCreateAuthUser(record);
+    if (before) existingAuth++;
+    else createdAuth++;
+    byCode.set(record.employeeId.toLowerCase(), {
+      uid: userRecord.uid,
+      displayName: record.displayName,
+      employeeId: record.employeeId,
+      role: record.role,
+    });
+    record.uid = userRecord.uid;
+  }
+
+  let writtenDocs = 0;
+  for (const record of records) {
+    const supervisors = record.managerCodes.map((code) => {
+      const supervisor = byCode.get(code.toLowerCase());
+      if (!supervisor) {
+        throw new Error(`Supervisor code not found for ${record.employeeId}: ${code}`);
+      }
+      if (!canBeSupervisor(supervisor.role)) {
+        throw new Error(`Supervisor code ${code} belongs to a non-supervisor role.`);
+      }
+      return supervisor;
+    });
+    const doc = buildUserDoc(record, { uid: record.uid, email: record.email }, supervisors);
+    if (!dryRun) {
+      await db.collection('users').doc(record.uid).set(doc, { merge: true });
+    }
+    writtenDocs++;
+  }
+
+  console.log(
+    JSON.stringify(
+      {
+        dryRun,
+        accounts: records.length,
+        createdAuth,
+        existingAuth,
+        writtenDocs,
+        csv: absoluteCsvPath,
+      },
+      null,
+      2,
+    ),
+  );
+}
+
+main().catch((error) => {
+  console.error(error);
+  process.exit(1);
+});

@@ -275,6 +275,7 @@ class SheetsExportService {
       'managerId',
       'managerName',
       'managerEmail',
+      'managerCodes',
     ];
     final exampleRows = [
       [
@@ -288,6 +289,7 @@ class SheetsExportService {
         'القاهرة',
         '12000',
         'EGP',
+        '',
         '',
         '',
         '',
@@ -306,6 +308,7 @@ class SheetsExportService {
         '',
         '',
         'marketing.manager@company.com',
+        'MKT-MGR-001',
       ],
     ];
     return _toCsv([headers, ...exampleRows]);

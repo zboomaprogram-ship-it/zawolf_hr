@@ -143,17 +143,34 @@ class DashboardAttendanceSummaryService {
     UserModel reviewer,
     bool managerScope,
   ) async {
-    Query<Map<String, dynamic>> query = _db
-        .collection('users')
-        .where('isActive', isEqualTo: true);
     if (managerScope) {
-      query = query.where('managerId', isEqualTo: reviewer.uid);
+      final modernSnap = await _db
+          .collection('users')
+          .where('managerIds', arrayContains: reviewer.uid)
+          .get();
+      final legacySnap = await _db
+          .collection('users')
+          .where('managerId', isEqualTo: reviewer.uid)
+          .get();
+      final byId = <String, UserModel>{};
+      for (final doc in [...modernSnap.docs, ...legacySnap.docs]) {
+        final employee = UserModel.fromFirestore(doc);
+        if (employee.isActive &&
+            employee.role != EmployeeRole.superAdmin &&
+            (employee.managerIds.contains(reviewer.uid) ||
+                employee.managerId == reviewer.uid)) {
+          byId[employee.uid] = employee;
+        }
+      }
+      return byId.values.toList();
     }
 
-    final snap = await query.get();
+    final snap = await _db
+        .collection('users')
+        .where('isActive', isEqualTo: true)
+        .get();
     return snap.docs.map(UserModel.fromFirestore).where((employee) {
       if (employee.role == EmployeeRole.superAdmin) return false;
-      if (managerScope) return employee.managerId == reviewer.uid;
       return true;
     }).toList();
   }

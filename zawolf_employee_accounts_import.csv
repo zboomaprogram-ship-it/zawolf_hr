@@ -1,0 +1,64 @@
+﻿email,displayName,employeeId,role,department,position,locationId,locationName,baseMonthlySalary,salaryCurrency,managerId,managerName,managerEmail,managerCodes
+ceo-100@seg.com,سامي المتولي المتولي,CEO-100,super_admin,CEO,CEO,SEG,SEG,0,EGP,,,,
+hr-200@seg.com,شيماء صبري عبدالعزيز,HR-200,hr_admin,Human Resources,HR,SEG,SEG,0,EGP,,,,CEO-100
+hr-201@zawolf.com,فاتن مجدي ماهر,HR-201,hr_admin,Human Resources,HR,Zawolf,Zawolf,0,EGP,,,,CEO-100
+rd-700@seg.com,عمر طارق محمد عبدالهادي,R&D-700,employee,Research and Development,R&D Engineer,SEG,SEG,0,EGP,,,,CEO-100
+mkt-608@seg.com,على محمد ابراهيم,MKT-608,employee,In-House Marketing,Public Relations,SEG,SEG,0,EGP,,,,CEO-100
+rd-701@seg.com,عمر فتحي محمود,R&D-701,employee,Research and Development,R&D Engineer,SEG,SEG,0,EGP,,,,CEO-100
+rd-702@seg.com,عبدالله لمعي محمد,R&D-702,employee,Research and Development,Project Manager,SEG,SEG,0,EGP,,,,CEO-100
+l-800@seg.com,محمد احمد بهجت عبدالسلام,L-800,employee,Legal Affairs,Legal Counsel,SEG,SEG,0,EGP,,,,CEO-100
+prg-1108@seg.com,سالم فتحي سليم شريف,PRG-1108,employee,Programming,Data Analyst,SEG,SEG,0,EGP,,,,CEO-100
+prg-1109@seg.com,مريم محمد مصطفي,PRG-1109,employee,Programming,Data Analyst,SEG,SEG,0,EGP,,,,CEO-100
+prg-1110@seg.com,رنا حسن,PRG-1110,employee,AI,AI,SEG,SEG,0,EGP,,,,CEO-100
+prg-1112@seg.com,على نبيل علي محمد,PRG-1112,employee,AI,AI,SEG,SEG,0,EGP,,,,CEO-100
+acc-300@seg.com,مصطفي رضا الشربيني ابراهيم,ACC-300,manager,Accounting,Accounting Manager,SEG,SEG,0,EGP,,,,CEO-100
+acc-301@seg.com,حازم ايمن على سيد احمد الميناوى,ACC-301,employee,Accounting,Accountant,SEG,SEG,0,EGP,,,,ACC-300
+acc-302a@seg.com,احمد محمد الهادي حسين,ACC-302,employee,Accounting,Accountant,SEG,SEG,0,EGP,,,,ACC-300
+acc-302b@seg.com,هدي احمد موسي عبد الفتاح النادي,ACC-302B,employee,Accounting,Accountant,SEG,SEG,0,EGP,,,,ACC-300
+it-400@seg.com,محمود ابوالمجد ابراهيم,IT-400,manager,IT,IT Manager,SEG,SEG,0,EGP,,,,CEO-100
+it-401@seg.com,احمد محمد العراقي الموجي,IT-401,employee,IT,IT Team Leader,SEG,SEG,0,EGP,,,,IT-400
+it-403@seg.com,محمود ابراهيم محمد,IT-403,employee,IT,IT Specialist,SEG,SEG,0,EGP,,,,IT-400
+cs-503@seg.com,فيروز جمال السيد احمد,CS-503,employee,Account Management,Account Manager,SEG,SEG,0,EGP,,,,IT-400
+mkt-600@seg.com,اشرف عبد الرازق,MKT-600,manager,In-House Marketing,Marketing Manager,SEG,SEG,0,EGP,,,,COO-1300
+mkt-601@seg.com,أحمد محمد عوض سليمان,MKT-601,employee,In-House Marketing,Content Creator,SEG,SEG,0,EGP,,,,"MKT-600, COO-1300"
+mkt-602@seg.com,عبدالرحمن عماد حمدي,MKT-602,employee,In-House Marketing,Content Creator,SEG,SEG,0,EGP,,,,"MKT-600, COO-1300"
+mkt-603@seg.com,فؤاد رجب فؤاد,MKT-603,employee,In-House Marketing,Video Editor,SEG,SEG,0,EGP,,,,"MKT-600, COO-1300"
+mkt-604@seg.com,السيد خالد مصطفى,MKT-604,employee,In-House Marketing,Video Editor,SEG,SEG,0,EGP,,,,"MKT-600, COO-1300"
+mkt-605@seg.com,صالح علي المصري,MKT-605,employee,In-House Marketing,Graphic Designer,SEG,SEG,0,EGP,,,,"MKT-600, COO-1300"
+mkt-606@seg.com,خليل محمد خليل,MKT-606,employee,In-House Marketing,Lead Generation,SEG,SEG,0,EGP,,,,"MKT-600, COO-1300"
+bd-1200@seg.com,ميرنا إبراهيم مناويل معوض,BD-1200,manager,BD,SDR,SEG,SEG,0,EGP,,,,COO-1300
+bd-1201@seg.com,الاء السيد محمد عبد الحي,BD-1201,employee,BD,SDR,SEG,SEG,0,EGP,,,,"BD-1200, COO-1300"
+bd-1202@seg.com,عمر مجدى علي,BD-1202,employee,BD,BD,SEG,SEG,0,EGP,,,,"BD-1200, COO-1300"
+bd-1203@seg.com,الاء السيد حسن,BD-1203,employee,BD,SDR,SEG,SEG,0,EGP,,,,"BD-1200, COO-1300"
+bd-1204@seg.com,ندي حمدي عبده أحمد,BD-1204,employee,BD,SDR,SEG,SEG,0,EGP,,,,"BD-1200, COO-1300"
+bd-1205@seg.com,مازن محمد ابراهيم ملح,BD-1205,employee,BD,BD,SEG,SEG,0,EGP,,,,"BD-1200, COO-1300"
+bd-1206@seg.com,يارا اكرم,BD-1206,employee,BD,BD,SEG,SEG,0,EGP,,,,"BD-1200, COO-1300"
+bd-1207@seg.com,امل ابراهيم حجازي,BD-1207,employee,BD,SDR,SEG,SEG,0,EGP,,,,"BD-1200, COO-1300"
+bd-1208@seg.com,ايه رضا عبد الحميد,BD-1208,employee,BD,SDR,SEG,SEG,0,EGP,,,,"BD-1200, COO-1300"
+bd-1209@seg.com,هناء عبدالرحمن عوض,BD-1209,employee,BD,SDR,SEG,SEG,0,EGP,,,,"BD-1200, COO-1300"
+bd-1210@seg.com,حنين محمد عبد العال,BD-1210,employee,BD,SDR,SEG,SEG,0,EGP,,,,"BD-1200, COO-1300"
+coo-1300@zawolf.com,محمد منير جمال,COO-1300,super_admin,General Manager,GM,Zawolf,Zawolf,0,EGP,,,,
+km-1400@zawolf.com,فريد يوسف,KM-1400,manager,Kitchen Marketing,Creative Director,Zawolf,Zawolf,0,EGP,,,,COO-1300
+km-1414@zawolf.com,عصام عادل شوقي محمود الغنام,KM-1414,employee,Kitchen Marketing,Video Editor,Zawolf,Zawolf,0,EGP,,,,"KM-1400, COO-1300"
+km-1408@zawolf.com,احمد امين حميد,KM-1408,employee,Kitchen Marketing,Graphic Designer,Zawolf,Zawolf,0,EGP,,,,"KM-1400, COO-1300"
+km-1409@zawolf.com,نوران وليد عبدالرحيم,KM-1409,employee,Kitchen Marketing,Graphic Designer,Zawolf,Zawolf,0,EGP,,,,"KM-1400, COO-1300"
+km-1402@zawolf.com,ايه عادل البنداري,KM-1402,employee,Kitchen Marketing,SEO,Zawolf,Zawolf,0,EGP,,,,COO-1300
+km-1401@zawolf.com,جمال الدين محسن محمد,KM-1401,employee,Kitchen Marketing,SEO,Zawolf,Zawolf,0,EGP,,,,COO-1300
+km-1403@zawolf.com,رينال اشرف حجي,KM-1403,employee,Kitchen Marketing,Social Media,Zawolf,Zawolf,0,EGP,,,,COO-1300
+km-1404@zawolf.com,محمود علام محمود محمد,KM-1404,employee,Kitchen Marketing,Media Buyer,Zawolf,Zawolf,0,EGP,,,,COO-1300
+km-1405@zawolf.com,احمد رضا المسلماني,KM-1405,employee,Kitchen Marketing,Media Buyer,Zawolf,Zawolf,0,EGP,,,,COO-1300
+km-1406@zawolf.com,محمد خالد جمال,KM-1406,employee,Kitchen Marketing,Media Buyer,Zawolf,Zawolf,0,EGP,,,,COO-1300
+km-1407@zawolf.com,ناديه علاء صافيه,KM-1407,employee,Kitchen Marketing,UI/UX Designer,Zawolf,Zawolf,0,EGP,,,,COO-1300
+km-1410@zawolf.com,شيماء محمد حسن,KM-1410,employee,Kitchen Marketing,Social Media,Zawolf,Zawolf,0,EGP,,,,COO-1300
+prg-1113@zawolf.com,مريت كمال شوقي,PRG-1113,employee,Programming,Salla and Zed,Zawolf,Zawolf,0,EGP,,,,COO-1300
+cs-506a@zawolf.com,ريهام رفيق رجائي,CS-506,employee,Account Management,Accounts Manager,Zawolf,Zawolf,0,EGP,,,,COO-1300
+cs-507a@zawolf.com,دينا محمد سعد,CS-507,employee,Account Management,Accounts Manager,Zawolf,Zawolf,0,EGP,,,,COO-1300
+cs-506b@zawolf.com,روينا السيد عبد الرحمن,CS-506B,employee,Account Management,Accounts Manager,Zawolf,Zawolf,0,EGP,,,,COO-1300
+prg-1114@zawolf.com,عمر محمود جوده,PRG-1114,employee,Programming,Mobile Application,Zawolf,Zawolf,0,EGP,,,,COO-1300
+prg-1115@zawolf.com,ندي محمد شلبي منصور,PRG-1115,employee,Programming,WordPress,Zawolf,Zawolf,0,EGP,,,,COO-1300
+prg-1116@zawolf.com,نورهان عمر عبد اللطيف,PRG-1116,employee,Programming,WordPress,Zawolf,Zawolf,0,EGP,,,,COO-1300
+km-1411@zawolf.com,حنان محمد اسماعيل سيف الدين,KM-1411,employee,Kitchen Marketing,Operation Specialist,Zawolf,Zawolf,0,EGP,,,,COO-1300
+km-1412@zawolf.com,اسراء عماد مصطفي مصطفي,KM-1412,employee,Kitchen Marketing,SEO Specialist,Zawolf,Zawolf,0,EGP,,,,COO-1300
+km-1413@zawolf.com,اسراء محمد عبد الحليم,KM-1413,employee,Kitchen Marketing,SEO Specialist,Zawolf,Zawolf,0,EGP,,,,COO-1300
+cs-507b@zawolf.com,أسماء حامد عبده عطيه,CS-507B,employee,Account Management,Accounts Manager,Zawolf,Zawolf,0,EGP,,,,COO-1300
+cs-508@zawolf.com,ياسمين رضا السيد,CS-508,employee,Account Management,Accounts Manager,Zawolf,Zawolf,0,EGP,,,,COO-1300

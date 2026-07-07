@@ -159,6 +159,9 @@ class AuthService with ChangeNotifier {
     int daysOffBalance = 21,
     String? managerId,
     String? managerName,
+    List<String> managerIds = const [],
+    List<String> managerNames = const [],
+    List<String> managerCodes = const [],
   }) async {
     const initialPassword = 'ZW@0000';
     FirebaseApp? tempApp;
@@ -217,6 +220,9 @@ class AuthService with ChangeNotifier {
         salaryCurrency: salaryCurrency,
         managerId: managerId,
         managerName: managerName,
+        managerIds: managerIds,
+        managerNames: managerNames,
+        managerCodes: managerCodes,
         workSchedule: WorkSchedule(
           startTime: AttendancePolicy.defaultStartTime,
           endTime: AttendancePolicy.defaultEndTime,

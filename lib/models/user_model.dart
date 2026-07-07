@@ -113,6 +113,9 @@ class UserModel {
   final String salaryCurrency;
   final String? managerId;
   final String? managerName;
+  final List<String> managerIds;
+  final List<String> managerNames;
+  final List<String> managerCodes;
   final bool isActive;
   final DateTime? joinDate;
   final WorkSchedule workSchedule;
@@ -143,6 +146,9 @@ class UserModel {
     this.salaryCurrency = 'EGP',
     this.managerId,
     this.managerName,
+    this.managerIds = const [],
+    this.managerNames = const [],
+    this.managerCodes = const [],
     this.isActive = true,
     this.joinDate,
     required this.workSchedule,
@@ -176,6 +182,25 @@ class UserModel {
       salaryCurrency: data['salaryCurrency'] as String? ?? 'EGP',
       managerId: data['managerId'] as String?,
       managerName: data['managerName'] as String?,
+      managerIds:
+          (data['managerIds'] as List<dynamic>?)
+              ?.map((e) => e as String)
+              .toList() ??
+          ((data['managerId'] as String?) == null
+              ? const []
+              : [data['managerId'] as String]),
+      managerNames:
+          (data['managerNames'] as List<dynamic>?)
+              ?.map((e) => e as String)
+              .toList() ??
+          ((data['managerName'] as String?) == null
+              ? const []
+              : [data['managerName'] as String]),
+      managerCodes:
+          (data['managerCodes'] as List<dynamic>?)
+              ?.map((e) => e as String)
+              .toList() ??
+          const [],
       isActive: data['isActive'] as bool? ?? true,
       joinDate: (data['joinDate'] as Timestamp?)?.toDate(),
       workSchedule: WorkSchedule.fromMap(
@@ -220,6 +245,9 @@ class UserModel {
       'salaryCurrency': salaryCurrency,
       if (managerId != null) 'managerId': managerId,
       if (managerName != null) 'managerName': managerName,
+      if (managerIds.isNotEmpty) 'managerIds': managerIds,
+      if (managerNames.isNotEmpty) 'managerNames': managerNames,
+      if (managerCodes.isNotEmpty) 'managerCodes': managerCodes,
       'isActive': isActive,
       if (joinDate != null) 'joinDate': Timestamp.fromDate(joinDate!),
       'workSchedule': workSchedule.toMap(),
@@ -259,6 +287,9 @@ class UserModel {
     String? salaryCurrency,
     String? managerId,
     String? managerName,
+    List<String>? managerIds,
+    List<String>? managerNames,
+    List<String>? managerCodes,
     bool? isActive,
     DateTime? joinDate,
     WorkSchedule? workSchedule,
@@ -289,6 +320,9 @@ class UserModel {
       salaryCurrency: salaryCurrency ?? this.salaryCurrency,
       managerId: managerId ?? this.managerId,
       managerName: managerName ?? this.managerName,
+      managerIds: managerIds ?? this.managerIds,
+      managerNames: managerNames ?? this.managerNames,
+      managerCodes: managerCodes ?? this.managerCodes,
       isActive: isActive ?? this.isActive,
       joinDate: joinDate ?? this.joinDate,
       workSchedule: workSchedule ?? this.workSchedule,

@@ -67,6 +67,26 @@ List<DropdownMenuItem<String>> _roleMenuItems({
   return items;
 }
 
+class _SupervisorRef {
+  final String uid;
+  final String name;
+  final String code;
+
+  const _SupervisorRef({
+    required this.uid,
+    required this.name,
+    required this.code,
+  });
+
+  factory _SupervisorRef.fromUser(UserModel user) {
+    return _SupervisorRef(
+      uid: user.uid,
+      name: user.displayName,
+      code: user.employeeId,
+    );
+  }
+}
+
 class EmployeeManagementScreen extends StatefulWidget {
   const EmployeeManagementScreen({super.key});
 
@@ -282,7 +302,7 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
                       children: [
                         Expanded(
                           child: Text(
-                            'الأعمدة المطلوبة: email, displayName, employeeId\nاختياري: role, department, position, locationId, locationName, baseMonthlySalary, salaryCurrency, managerId, managerName, managerEmail\nلإنشاء فريق كامل: ضع المدير أولاً ثم اكتب إيميله في managerEmail للموظفين.',
+                            'الأعمدة المطلوبة: email, displayName, employeeId\nاختياري: role, department, position, locationId, locationName, baseMonthlySalary, salaryCurrency, managerId, managerName, managerEmail, managerCodes\nيمكن كتابة أكثر من مسؤول بالكود مثل: MKT-600, COO-1300.',
                             style: TextStyle(
                               color: ZaWolfColors.textSecondary,
                               fontSize: 10,
@@ -356,17 +376,36 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
       final headers = rows.first
           .map((cell) => '$cell'.replaceFirst('\ufeff', '').trim())
           .toList();
+      final headerLookup = <String, int>{};
+      for (var i = 0; i < headers.length; i++) {
+        headerLookup[_normalizeImportHeader(headers[i])] = i;
+      }
+
+      String value(
+        List<dynamic> row,
+        String key, [
+        List<String> aliases = const [],
+      ]) {
+        final keys = [key, ...aliases].map(_normalizeImportHeader);
+        final index = keys
+            .map((candidate) => headerLookup[candidate])
+            .whereType<int>()
+            .firstOrNull;
+        if (index == null || index >= row.length) return '';
+        return '${row[index]}'.trim();
+      }
+
       for (final requiredHeader in ['email', 'displayName', 'employeeId']) {
-        if (!headers.contains(requiredHeader)) {
+        final hasHeader = [
+          requiredHeader,
+          if (requiredHeader == 'displayName') 'Name',
+          if (requiredHeader == 'employeeId') 'Code',
+        ].map(_normalizeImportHeader).any(headerLookup.containsKey);
+        if (!hasHeader) {
           throw Exception(
             'النموذج لا يحتوي على العمود المطلوب: $requiredHeader',
           );
         }
-      }
-      String value(List<dynamic> row, String key) {
-        final index = headers.indexOf(key);
-        if (index < 0 || index >= row.length) return '';
-        return '${row[index]}'.trim();
       }
 
       final dataRows = rows
@@ -381,20 +420,21 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
 
       int created = 0;
       final managerByEmail = <String, UserModel>{};
+      final supervisorByCode = <String, _SupervisorRef>{};
       for (var i = 0; i < dataRows.length; i++) {
         final row = dataRows[i];
         final rowNumber = i + 2;
-        final email = value(row, 'email');
-        final displayName = value(row, 'displayName');
-        final employeeId = value(row, 'employeeId');
+        final email = value(row, 'email', ['Email']);
+        final displayName = value(row, 'displayName', ['Name']);
+        final employeeId = value(row, 'employeeId', ['Code']);
         if (email.isEmpty || displayName.isEmpty || employeeId.isEmpty) {
           throw Exception(
             'الصف $rowNumber ناقص: email, displayName, employeeId مطلوبة.',
           );
         }
-        final role = value(row, 'role').isEmpty
+        final role = value(row, 'role', ['Role']).isEmpty
             ? EmployeeRole.employee
-            : value(row, 'role');
+            : _normalizeImportRole(value(row, 'role', ['Role']));
         const allowedRoles = [
           EmployeeRole.employee,
           EmployeeRole.manager,
@@ -410,29 +450,65 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
             'لا يمكن لمسؤول HR إنشاء حساب مالك النظام من الاستيراد.',
           );
         }
-        final locationId = value(row, 'locationId');
+        final locationId = value(row, 'locationId', ['Location ID']);
         final locationName = value(row, 'locationName');
         final monthlySalary =
-            double.tryParse(value(row, 'baseMonthlySalary')) ?? 0;
+            double.tryParse(value(row, 'baseMonthlySalary', ['Salary'])) ?? 0;
         final managerEmail = value(row, 'managerEmail').toLowerCase();
+        final managerCodes = _splitImportList(
+          value(row, 'managerCodes', ['managerCode', 'Manager Code']),
+        );
         var managerId = value(row, 'managerId').isEmpty
             ? null
             : value(row, 'managerId');
         var managerName = value(row, 'managerName').isEmpty
             ? null
             : value(row, 'managerName');
+        var resolvedSupervisorIds = <String>[];
+        var resolvedSupervisorNames = <String>[];
+        var resolvedSupervisorCodes = <String>[];
+
+        if (managerCodes.isNotEmpty) {
+          final supervisors = <_SupervisorRef>[];
+          for (final managerCode in managerCodes) {
+            final normalizedCode = managerCode.toLowerCase();
+            final supervisor =
+                supervisorByCode[normalizedCode] ??
+                await _findSupervisorByCode(managerCode);
+            if (supervisor == null) {
+              throw Exception(
+                'الصف $rowNumber: لم يتم العثور على مسؤول بالكود $managerCode. ضع صف المسؤول قبل الموظف أو تأكد من أن الكود موجود مسبقاً.',
+              );
+            }
+            supervisorByCode[normalizedCode] = supervisor;
+            supervisors.add(supervisor);
+          }
+          resolvedSupervisorIds = supervisors.map((item) => item.uid).toList();
+          resolvedSupervisorNames = supervisors
+              .map((item) => item.name)
+              .toList();
+          resolvedSupervisorCodes = supervisors
+              .map((item) => item.code)
+              .toList();
+          managerId ??= resolvedSupervisorIds.firstOrNull;
+          managerName ??= resolvedSupervisorNames.firstOrNull;
+        }
+
         if (managerEmail.isNotEmpty && managerId == null) {
           final manager =
               managerByEmail[managerEmail] ??
-              await _findManagerByEmail(managerEmail);
+              await _findSupervisorByEmail(managerEmail);
           if (manager == null) {
             throw Exception(
-              'الصف $rowNumber: لم يتم العثور على مدير بالإيميل $managerEmail. ضع صف المدير قبل موظفيه أو تأكد من أن المدير موجود مسبقاً.',
+              'الصف $rowNumber: لم يتم العثور على مسؤول بالإيميل $managerEmail. ضع صف المسؤول قبل الموظف أو تأكد من أنه موجود مسبقاً.',
             );
           }
           managerByEmail[managerEmail] = manager;
           managerId = manager.uid;
           managerName = manager.displayName;
+          resolvedSupervisorIds = [manager.uid];
+          resolvedSupervisorNames = [manager.displayName];
+          resolvedSupervisorCodes = [manager.employeeId];
         }
 
         final createdUser = await authService.createEmployeeAccount(
@@ -440,19 +516,25 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
           displayName: displayName,
           role: role,
           employeeId: employeeId,
-          department: value(row, 'department'),
-          position: value(row, 'position'),
+          department: value(row, 'department', ['Department']),
+          position: value(row, 'position', ['Position']),
           locationId: locationId,
           locationName: locationName,
           baseMonthlySalary: monthlySalary,
-          salaryCurrency: value(row, 'salaryCurrency').isEmpty
+          salaryCurrency: value(row, 'salaryCurrency', ['Currency']).isEmpty
               ? 'EGP'
-              : value(row, 'salaryCurrency'),
+              : value(row, 'salaryCurrency', ['Currency']),
           managerId: managerId,
           managerName: managerName,
+          managerIds: resolvedSupervisorIds,
+          managerNames: resolvedSupervisorNames,
+          managerCodes: resolvedSupervisorCodes,
         );
-        if (role == EmployeeRole.manager) {
+        if (_canBeSupervisor(role)) {
           managerByEmail[email.toLowerCase()] = createdUser;
+          supervisorByCode[employeeId.toLowerCase()] = _SupervisorRef.fromUser(
+            createdUser,
+          );
         }
         created++;
         setState(() => _importProgress = created);
@@ -486,7 +568,7 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
     }
   }
 
-  Future<UserModel?> _findManagerByEmail(String email) async {
+  Future<UserModel?> _findSupervisorByEmail(String email) async {
     final snap = await _db
         .collection('users')
         .where('email', isEqualTo: email)
@@ -494,8 +576,59 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
         .get();
     if (snap.docs.isEmpty) return null;
     final user = UserModel.fromFirestore(snap.docs.first);
-    if (user.role != EmployeeRole.manager) return null;
+    if (!_canBeSupervisor(user.role)) return null;
     return user;
+  }
+
+  Future<_SupervisorRef?> _findSupervisorByCode(String code) async {
+    final snap = await _db
+        .collection('users')
+        .where('employeeId', isEqualTo: code)
+        .limit(1)
+        .get();
+    if (snap.docs.isEmpty) return null;
+    final user = UserModel.fromFirestore(snap.docs.first);
+    if (!_canBeSupervisor(user.role)) return null;
+    return _SupervisorRef.fromUser(user);
+  }
+
+  static String _normalizeImportHeader(String value) {
+    return value.toLowerCase().replaceAll(RegExp(r'[\s_]+'), '');
+  }
+
+  static String _normalizeImportRole(String value) {
+    final role = value.trim().toLowerCase().replaceAll('-', '_');
+    switch (role) {
+      case 'hr':
+      case 'hradmin':
+      case 'hr_admin':
+        return EmployeeRole.hrAdmin;
+      case 'super':
+      case 'superadmin':
+      case 'super_admin':
+      case 'ceo':
+      case 'owner':
+        return EmployeeRole.superAdmin;
+      case 'manager':
+      case 'manger':
+        return EmployeeRole.manager;
+      default:
+        return EmployeeRole.employee;
+    }
+  }
+
+  static List<String> _splitImportList(String value) {
+    return value
+        .split(',')
+        .map((item) => item.trim())
+        .where((item) => item.isNotEmpty)
+        .toList();
+  }
+
+  static bool _canBeSupervisor(String role) {
+    return role == EmployeeRole.manager ||
+        role == EmployeeRole.hrAdmin ||
+        role == EmployeeRole.superAdmin;
   }
 
   @override
