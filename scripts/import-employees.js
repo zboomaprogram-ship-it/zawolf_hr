@@ -103,6 +103,19 @@ async function getOrCreateAuthUser(row) {
   try {
     return await auth.getUserByEmail(row.email);
   } catch (error) {
+    if (
+      error.code === 'auth/internal-error' &&
+      String(error.message || '').includes('identitytoolkit.googleapis.com')
+    ) {
+      throw new Error(
+        [
+          'Firebase Auth API is disabled for this Firebase project.',
+          'Enable Identity Toolkit API, then rerun this workflow:',
+          'https://console.developers.google.com/apis/api/identitytoolkit.googleapis.com/overview?project=658276952100',
+          'Also make sure Firebase Authentication is enabled and Email/Password sign-in is turned on.',
+        ].join('\n'),
+      );
+    }
     if (error.code !== 'auth/user-not-found') throw error;
     if (dryRun) {
       return { uid: `dry_${row.employeeId}`, email: row.email };
