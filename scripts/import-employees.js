@@ -20,6 +20,8 @@ if (process.env.FIREBASE_SERVICE_ACCOUNT) {
   admin.initializeApp({
     credential: admin.credential.cert(serviceAccount),
   });
+  console.log(`Using Firebase service account: ${serviceAccount.client_email}`);
+  console.log(`Firebase project id: ${serviceAccount.project_id}`);
   db = admin.firestore();
   auth = admin.auth();
 } else if (!dryRun) {
