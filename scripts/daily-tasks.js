@@ -1,4 +1,5 @@
 const admin = require('firebase-admin');
+const { isOneSignalConfigured, sendPushToUsers } = require('./onesignal');
 
 // 1. Initialize Firebase Admin
 let serviceAccount;
@@ -34,6 +35,7 @@ function timestampToDateStr(ts) {
 
 async function runDailyTasks() {
   console.log('Starting daily tasks...');
+  console.log(`OneSignal push sender: ${isOneSignalConfigured() ? 'configured' : 'not configured'}`);
   
   // Get date in Egypt time (GMT+3)
   const options = { timeZone: 'Africa/Cairo', year: 'numeric', month: '2-digit', day: '2-digit' };
@@ -141,6 +143,7 @@ async function runDailyTasks() {
   }
 
   async function notifyReviewers(type, title, body, data) {
+    const pushUserIds = [...reviewerIds];
     for (const reviewerId of reviewerIds) {
       const notifRef = db.collection('notifications').doc(reviewerId).collection('items').doc();
       batch.set(notifRef, {
@@ -158,6 +161,18 @@ async function runDailyTasks() {
       });
       batchOps++;
       await commitIfNeeded();
+    }
+    await sendPushSafely(pushUserIds, title, body, { type, ...(data || {}) });
+  }
+
+  async function sendPushSafely(userIds, title, body, data) {
+    try {
+      const result = await sendPushToUsers(userIds, title, body, data);
+      if (result.sent) {
+        console.log(`Sent OneSignal push to ${userIds.length} user(s): ${title}`);
+      }
+    } catch (e) {
+      console.warn('OneSignal push failed, Firestore notification was still created.', e.message);
     }
   }
 
@@ -180,12 +195,14 @@ async function runDailyTasks() {
       overdueTasks++;
 
       if (assigneeId) {
+        const title = 'مهمة متأخرة';
+        const body = `المهمة "${task.title || ''}" تجاوزت آخر موعد للتنفيذ.`;
         const notifRef = db.collection('notifications').doc(assigneeId).collection('items').doc();
         batch.set(notifRef, {
           notificationId: notifRef.id,
           type: 'task_overdue',
-          title: 'مهمة متأخرة',
-          body: `المهمة "${task.title || ''}" تجاوزت آخر موعد للتنفيذ.`,
+          title,
+          body,
           data: { taskId: taskDoc.id },
           isRead: false,
           createdAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -195,6 +212,10 @@ async function runDailyTasks() {
           unreadNotifications: admin.firestore.FieldValue.increment(1)
         });
         batchOps++;
+        await sendPushSafely([assigneeId], title, body, {
+          type: 'task_overdue',
+          taskId: taskDoc.id,
+        });
       }
 
       await commitIfNeeded();

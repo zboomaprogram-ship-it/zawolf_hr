@@ -19,6 +19,13 @@ flutter test
 firebase deploy --only firestore:rules --dry-run
 ```
 
+## Docs
+
+- Arabic user manual for employee, manager, HR, and super admin:
+  `docs/user_manual_ar.md`
+- Google Sheets setup notes: `docs/google_sheets_setup.md`
+- Role and permission reference: `docs/roles_permissions.md`
+
 ## Admin Bootstrap
 
 Use application default Firebase credentials, then provide admin credentials via
@@ -34,17 +41,34 @@ node scripts/create_admin.js
 
 ## Notifications Without Cloud Functions
 
-The app uses Firestore notification documents plus local notifications:
+The app uses Firestore notification documents, local notifications, and optional
+OneSignal push:
 
 - App open/logged in: realtime Firestore listener shows local notification
   banners.
 - App in background: Android background polling checks unread Firestore
   notifications about every 15 minutes when the OS allows it.
-- App fully killed/offline: notifications may wait until the app opens again.
+- App fully killed/offline: OneSignal can deliver push notifications if the app
+  was built with `ONESIGNAL_APP_ID` and the user has logged in at least once.
 
-This is the best no-server/no-Cloud-Functions setup. True instant push while the
-app is killed requires a trusted sender such as Cloud Functions, your own backend,
-or manual Firebase Console campaigns.
+This is still a no-Cloud-Functions setup. GitHub Actions sends scheduled push
+notifications through OneSignal for daily HR tasks. Instant push for every
+in-app event still needs a trusted sender to call the OneSignal REST API at the
+moment the event happens.
+
+Build the app with:
+
+```bash
+flutter build ipa --release --dart-define=ONESIGNAL_APP_ID=your-onesignal-app-id
+```
+
+GitHub repository secrets for scheduled OneSignal pushes:
+
+```text
+FIREBASE_SERVICE_ACCOUNT
+ONESIGNAL_APP_ID
+ONESIGNAL_REST_API_KEY
+```
 
 Notification documents are written under:
 

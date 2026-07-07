@@ -8,6 +8,7 @@ import '../models/employee_role.dart';
 import 'audit_log_service.dart';
 import 'notification_service.dart';
 import 'daily_reminder_service.dart';
+import 'onesignal_service.dart';
 import '../models/attendance_policy.dart';
 
 class AuthService with ChangeNotifier {
@@ -34,12 +35,14 @@ class AuthService with ChangeNotifier {
         _currentUser = null;
         _loading = false;
         NotificationService.instance.stopListening();
+        await OneSignalService.instance.logout();
         await DailyReminderService.instance.cancelAll();
         notifyListeners();
       } else {
         await fetchUserData(user.uid);
         if (_currentUser != null) {
           NotificationService.instance.startListening(user.uid);
+          await OneSignalService.instance.login(user.uid);
           // Schedule smart daily reminders based on employee's work schedule
           final startTime = _currentUser!.workSchedule.startTime ?? '09:00';
           final endTime = _currentUser!.workSchedule.endTime ?? '17:00';

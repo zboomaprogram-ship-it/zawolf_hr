@@ -365,6 +365,39 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
                   ),
                   const SizedBox(height: 24),
 
+                  if (_locationError != null) ...[
+                    WolfCard(
+                      child: Row(
+                        children: [
+                          TextButton.icon(
+                            onPressed: _checkingLocation
+                                ? null
+                                : _checkCurrentGeofence,
+                            icon: const Icon(Icons.refresh),
+                            label: const Text('تحديث'),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              _locationError!,
+                              style: const TextStyle(
+                                color: ZaWolfColors.warning,
+                                fontWeight: FontWeight.bold,
+                              ),
+                              textDirection: TextDirection.rtl,
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          const Icon(
+                            Icons.location_disabled_outlined,
+                            color: ZaWolfColors.warning,
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                  ],
+
                   // Circular Pulsing Action Button
                   Center(
                     child: Stack(

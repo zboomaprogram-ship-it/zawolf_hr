@@ -20,7 +20,9 @@ workflows:
           find . -name "Podfile" -execdir pod install \;
       - name: Build iOS App
         script: |
-          flutter build ipa --release --export-options-plist=/Users/builder/export_options.plist
+          flutter build ipa --release \
+            --dart-define=ONESIGNAL_APP_ID=$ONESIGNAL_APP_ID \
+            --export-options-plist=/Users/builder/export_options.plist
     artifacts:
       - build/ios/ipa/*.ipa
       - /tmp/xcodebuild_logs/*.log

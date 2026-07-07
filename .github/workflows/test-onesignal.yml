@@ -1,0 +1,45 @@
+name: Test OneSignal Notification
+
+on:
+  workflow_dispatch:
+    inputs:
+      user_id:
+        description: Firebase user id for a user who opened the app and logged in once
+        required: true
+        type: string
+      title:
+        description: Notification title
+        required: false
+        default: اختبار إشعارات ZaWolf
+        type: string
+      body:
+        description: Notification body
+        required: false
+        default: هذا إشعار اختبار للتأكد من أن OneSignal يعمل بشكل صحيح.
+        type: string
+
+jobs:
+  send-test-notification:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Dependencies
+        working-directory: ./scripts
+        run: npm ci
+
+      - name: Send OneSignal Test Push
+        working-directory: ./scripts
+        env:
+          ONESIGNAL_APP_ID: ${{ secrets.ONESIGNAL_APP_ID }}
+          ONESIGNAL_REST_API_KEY: ${{ secrets.ONESIGNAL_REST_API_KEY }}
+          TEST_ONESIGNAL_USER_ID: ${{ inputs.user_id }}
+          TEST_ONESIGNAL_TITLE: ${{ inputs.title }}
+          TEST_ONESIGNAL_BODY: ${{ inputs.body }}
+        run: node test-onesignal.js

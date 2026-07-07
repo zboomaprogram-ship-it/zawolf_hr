@@ -274,22 +274,41 @@ class SheetsExportService {
       'salaryCurrency',
       'managerId',
       'managerName',
+      'managerEmail',
     ];
-    final exampleRow = [
-      'ahmed@company.com',
-      'أحمد محمد',
-      'EMP-001',
-      'employee',
-      'البرمجة',
-      'مطور',
-      '',
-      'القاهرة',
-      '5000',
-      'EGP',
-      '',
-      '',
+    final exampleRows = [
+      [
+        'marketing.manager@company.com',
+        'مدير التسويق',
+        'MKT-MGR-001',
+        'manager',
+        'التسويق',
+        'Marketing Manager',
+        '',
+        'القاهرة',
+        '12000',
+        'EGP',
+        '',
+        '',
+        '',
+      ],
+      [
+        'marketing.employee1@company.com',
+        'موظف تسويق 1',
+        'MKT-EMP-001',
+        'employee',
+        'التسويق',
+        'Marketing Specialist',
+        '',
+        'القاهرة',
+        '6000',
+        'EGP',
+        '',
+        '',
+        'marketing.manager@company.com',
+      ],
     ];
-    return '${headers.join(',')}\n${exampleRow.join(',')}';
+    return _toCsv([headers, ...exampleRows]);
   }
 
   String _toCsv(List<List<Object?>> rows) {

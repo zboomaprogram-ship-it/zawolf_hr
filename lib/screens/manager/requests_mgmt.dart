@@ -167,12 +167,17 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen>
         ),
         actions: [
           IconButton(
-            icon: const Icon(Icons.history_toggle_off, color: ZaWolfColors.primaryCyan),
+            icon: const Icon(
+              Icons.history_toggle_off,
+              color: ZaWolfColors.primaryCyan,
+            ),
             tooltip: 'سجل طلبات الشهر الحالي',
             onPressed: () {
               Navigator.push(
                 context,
-                MaterialPageRoute(builder: (context) => const RequestsLogScreen()),
+                MaterialPageRoute(
+                  builder: (context) => const RequestsLogScreen(),
+                ),
               );
             },
           ),
@@ -271,6 +276,11 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen>
                         color: Colors.white,
                       ),
                     ),
+                    _buildRequestDateLine(
+                      label: 'تاريخ تقديم الطلب',
+                      date: leave.submittedAt,
+                      fallback: leave.startDate,
+                    ),
                     Text(
                       'الفترة: ${DateFormat('yyyy-MM-dd').format(leave.startDate)} إلى ${DateFormat('yyyy-MM-dd').format(leave.endDate)} (${leave.numberOfDays} يوم)',
                     ),
@@ -281,11 +291,16 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen>
                           color: ZaWolfColors.textSecondary,
                         ),
                       ),
-                    if (leave.attachmentUrl != null && leave.attachmentUrl!.isNotEmpty) ...[
+                    if (leave.attachmentUrl != null &&
+                        leave.attachmentUrl!.isNotEmpty) ...[
                       const SizedBox(height: 8),
                       Row(
                         children: [
-                          const Icon(Icons.link, color: ZaWolfColors.primaryCyan, size: 16),
+                          const Icon(
+                            Icons.link,
+                            color: ZaWolfColors.primaryCyan,
+                            size: 16,
+                          ),
                           const SizedBox(width: 4),
                           Expanded(
                             child: Text(
@@ -440,6 +455,11 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen>
                         color: Colors.white,
                       ),
                     ),
+                    _buildRequestDateLine(
+                      label: 'تاريخ تقديم الطلب',
+                      date: perm.submittedAt,
+                      fallback: _parseDateKey(perm.requestDate),
+                    ),
                     Text(
                       'التاريخ: ${perm.requestDate} · الوقت المتوقع: ${perm.expectedTime} · المدة: ${perm.durationMinutes} دقيقة',
                     ),
@@ -552,6 +572,10 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen>
                         color: Colors.white,
                       ),
                     ),
+                    _buildRequestDateLine(
+                      label: 'تاريخ تقديم الطلب',
+                      date: advance.submittedAt,
+                    ),
                     if (advance.reason != null && advance.reason!.isNotEmpty)
                       Text(
                         'السبب: ${advance.reason}',
@@ -564,8 +588,11 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen>
                       onApprove: () async {
                         try {
                           String nextStatus;
-                          if (reviewer.role == EmployeeRole.hrAdmin || reviewer.role == EmployeeRole.superAdmin) {
-                            nextStatus = advance.status == 'pending_hr' ? 'pending_manager' : 'approved';
+                          if (reviewer.role == EmployeeRole.hrAdmin ||
+                              reviewer.role == EmployeeRole.superAdmin) {
+                            nextStatus = advance.status == 'pending_hr'
+                                ? 'pending_manager'
+                                : 'approved';
                           } else {
                             nextStatus = 'approved';
                           }
@@ -654,6 +681,10 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen>
                         fontWeight: FontWeight.bold,
                       ),
                     ),
+                    _buildRequestDateLine(
+                      label: 'تاريخ تقديم الشكوى',
+                      date: complaint.submittedAt,
+                    ),
                     const SizedBox(height: 8),
                     Text(
                       complaint.body,
@@ -735,6 +766,10 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen>
                       style: theme.textTheme.titleMedium!.copyWith(
                         color: Colors.white,
                       ),
+                    ),
+                    _buildRequestDateLine(
+                      label: 'يوم وتاريخ الحضور',
+                      date: _parseDateKey(attendance.date),
                     ),
                     Text(
                       'التاريخ: ${attendance.date}'
@@ -849,6 +884,46 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen>
         ),
       ],
     );
+  }
+
+  Widget _buildRequestDateLine({
+    required String label,
+    DateTime? date,
+    DateTime? fallback,
+  }) {
+    final effectiveDate = date ?? fallback;
+    if (effectiveDate == null) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(top: 6, bottom: 4),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.end,
+        children: [
+          Text(
+            '$label: ${DateFormat('EEEE yyyy/MM/dd - hh:mm a', 'ar').format(effectiveDate)}',
+            style: const TextStyle(
+              color: ZaWolfColors.textSecondary,
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+            ),
+            textDirection: TextDirection.rtl,
+          ),
+          const SizedBox(width: 6),
+          const Icon(
+            Icons.calendar_month_outlined,
+            size: 15,
+            color: ZaWolfColors.primaryCyan,
+          ),
+        ],
+      ),
+    );
+  }
+
+  DateTime? _parseDateKey(String value) {
+    try {
+      return DateFormat('yyyy-MM-dd').parseStrict(value);
+    } catch (_) {
+      return null;
+    }
   }
 
   Widget _buildEmptyState(String text) {

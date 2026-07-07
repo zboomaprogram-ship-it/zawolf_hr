@@ -9,6 +9,7 @@ import 'navigation/router.dart';
 import 'services/notification_service.dart';
 import 'services/background_service.dart';
 import 'services/daily_reminder_service.dart';
+import 'services/onesignal_service.dart';
 import 'package:intl/date_symbol_data_local.dart';
 
 void main() async {
@@ -32,6 +33,7 @@ void main() async {
   // 3. Initialize Notification and Background Task Dispatcher
   try {
     await NotificationService.instance.initialize();
+    await OneSignalService.instance.initialize();
     await DailyReminderService.instance.initializeTimezones();
     await BackgroundService.initialize();
     await BackgroundService.registerPeriodicTask();

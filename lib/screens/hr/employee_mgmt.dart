@@ -282,7 +282,7 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
                       children: [
                         Expanded(
                           child: Text(
-                            'الأعمدة المطلوبة: email, displayName, employeeId\nاختياري: role, department, position, locationId, locationName, baseMonthlySalary, salaryCurrency, managerId, managerName',
+                            'الأعمدة المطلوبة: email, displayName, employeeId\nاختياري: role, department, position, locationId, locationName, baseMonthlySalary, salaryCurrency, managerId, managerName, managerEmail\nلإنشاء فريق كامل: ضع المدير أولاً ثم اكتب إيميله في managerEmail للموظفين.',
                             style: TextStyle(
                               color: ZaWolfColors.textSecondary,
                               fontSize: 10,
@@ -380,6 +380,7 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
       setSheetState(() {});
 
       int created = 0;
+      final managerByEmail = <String, UserModel>{};
       for (var i = 0; i < dataRows.length; i++) {
         final row = dataRows[i];
         final rowNumber = i + 2;
@@ -413,7 +414,28 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
         final locationName = value(row, 'locationName');
         final monthlySalary =
             double.tryParse(value(row, 'baseMonthlySalary')) ?? 0;
-        await authService.createEmployeeAccount(
+        final managerEmail = value(row, 'managerEmail').toLowerCase();
+        var managerId = value(row, 'managerId').isEmpty
+            ? null
+            : value(row, 'managerId');
+        var managerName = value(row, 'managerName').isEmpty
+            ? null
+            : value(row, 'managerName');
+        if (managerEmail.isNotEmpty && managerId == null) {
+          final manager =
+              managerByEmail[managerEmail] ??
+              await _findManagerByEmail(managerEmail);
+          if (manager == null) {
+            throw Exception(
+              'الصف $rowNumber: لم يتم العثور على مدير بالإيميل $managerEmail. ضع صف المدير قبل موظفيه أو تأكد من أن المدير موجود مسبقاً.',
+            );
+          }
+          managerByEmail[managerEmail] = manager;
+          managerId = manager.uid;
+          managerName = manager.displayName;
+        }
+
+        final createdUser = await authService.createEmployeeAccount(
           email: email,
           displayName: displayName,
           role: role,
@@ -426,13 +448,12 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
           salaryCurrency: value(row, 'salaryCurrency').isEmpty
               ? 'EGP'
               : value(row, 'salaryCurrency'),
-          managerId: value(row, 'managerId').isEmpty
-              ? null
-              : value(row, 'managerId'),
-          managerName: value(row, 'managerName').isEmpty
-              ? null
-              : value(row, 'managerName'),
+          managerId: managerId,
+          managerName: managerName,
         );
+        if (role == EmployeeRole.manager) {
+          managerByEmail[email.toLowerCase()] = createdUser;
+        }
         created++;
         setState(() => _importProgress = created);
         setSheetState(() {});
@@ -463,6 +484,18 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
         });
       }
     }
+  }
+
+  Future<UserModel?> _findManagerByEmail(String email) async {
+    final snap = await _db
+        .collection('users')
+        .where('email', isEqualTo: email)
+        .limit(1)
+        .get();
+    if (snap.docs.isEmpty) return null;
+    final user = UserModel.fromFirestore(snap.docs.first);
+    if (user.role != EmployeeRole.manager) return null;
+    return user;
   }
 
   @override
