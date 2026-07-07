@@ -116,6 +116,19 @@ async function getOrCreateAuthUser(row) {
         ].join('\n'),
       );
     }
+    if (error.code === 'auth/insufficient-permission') {
+      throw new Error(
+        [
+          'The FIREBASE_SERVICE_ACCOUNT secret is valid, but it cannot manage Firebase Authentication users.',
+          'Fix it in Google Cloud IAM:',
+          '1. Open Google Cloud Console -> IAM.',
+          '2. Find the service account email from your FIREBASE_SERVICE_ACCOUNT JSON client_email.',
+          '3. Grant it Firebase Authentication Admin.',
+          '4. Also keep Firestore access, for example Cloud Datastore User or Firebase Admin, so user documents can be written.',
+          '5. Wait a few minutes, then rerun this workflow with dry_run=false.',
+        ].join('\n'),
+      );
+    }
     if (error.code !== 'auth/user-not-found') throw error;
     if (dryRun) {
       return { uid: `dry_${row.employeeId}`, email: row.email };
