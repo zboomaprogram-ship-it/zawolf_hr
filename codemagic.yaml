@@ -23,8 +23,7 @@ workflows:
       - name: Build iOS App
         script: |
           flutter build ipa --release \
-            --dart-define=ONESIGNAL_APP_ID=$ONESIGNAL_APP_ID \
-            --export-options-plist=/Users/builder/export_options.plist
+            --dart-define=ONESIGNAL_APP_ID=$ONESIGNAL_APP_ID
     artifacts:
       - build/ios/ipa/*.ipa
       - /tmp/xcodebuild_logs/*.log
