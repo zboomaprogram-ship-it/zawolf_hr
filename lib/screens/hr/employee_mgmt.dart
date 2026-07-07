@@ -1424,13 +1424,33 @@ class _AddEmployeeDialogState extends State<AddEmployeeDialog> {
           .get();
       final mgrSnap = await _db
           .collection('users')
-          .where('role', isEqualTo: 'manager')
+          .where(
+            'role',
+            whereIn: [
+              EmployeeRole.manager,
+              EmployeeRole.hrAdmin,
+              EmployeeRole.superAdmin,
+            ],
+          )
           .get();
 
       setState(() {
         _locations = locSnap.docs
             .map((doc) => LocationModel.fromFirestore(doc))
             .toList();
+        if (_selectedLocationId != null &&
+            _selectedLocationId!.isNotEmpty &&
+            !_locations.any((loc) => loc.locationId == _selectedLocationId)) {
+          _locations.add(
+            LocationModel(
+              locationId: _selectedLocationId!,
+              name: _selectedLocationName ?? _selectedLocationId!,
+              address: '',
+              latitude: 0,
+              longitude: 0,
+            ),
+          );
+        }
         _managers = mgrSnap.docs
             .map((doc) => UserModel.fromFirestore(doc))
             .toList();
@@ -1904,16 +1924,47 @@ class _EditEmployeeDialogState extends State<EditEmployeeDialog> {
           .get();
       final mgrSnap = await _db
           .collection('users')
-          .where('role', isEqualTo: 'manager')
+          .where(
+            'role',
+            whereIn: [
+              EmployeeRole.manager,
+              EmployeeRole.hrAdmin,
+              EmployeeRole.superAdmin,
+            ],
+          )
           .get();
 
       setState(() {
         _locations = locSnap.docs
             .map((doc) => LocationModel.fromFirestore(doc))
             .toList();
+        if (_selectedLocationId != null &&
+            _selectedLocationId!.isNotEmpty &&
+            !_locations.any((loc) => loc.locationId == _selectedLocationId)) {
+          _locations.add(
+            LocationModel(
+              locationId: _selectedLocationId!,
+              name: _selectedLocationName ?? _selectedLocationId!,
+              address: '',
+              latitude: 0,
+              longitude: 0,
+            ),
+          );
+        }
         _managers = mgrSnap.docs
             .map((doc) => UserModel.fromFirestore(doc))
             .toList();
+        if (_selectedManagerId != null &&
+            _selectedManagerId!.isNotEmpty &&
+            !_managers.any((mgr) => mgr.uid == _selectedManagerId)) {
+          _managers.add(
+            widget.employee.copyWith(
+              uid: _selectedManagerId,
+              displayName: _selectedManagerName ?? 'المدير الحالي',
+              role: EmployeeRole.manager,
+            ),
+          );
+        }
       });
     } catch (_) {}
   }
@@ -1946,8 +1997,8 @@ class _EditEmployeeDialogState extends State<EditEmployeeDialog> {
           Provider.of<AuthService>(context, listen: false).currentUser?.role ==
           EmployeeRole.superAdmin;
       final effectiveRole =
-          !canUseSuperAdmin && _selectedRole == EmployeeRole.superAdmin
-          ? EmployeeRole.employee
+          !canUseSuperAdmin && widget.employee.role == EmployeeRole.superAdmin
+          ? widget.employee.role
           : _selectedRole;
       final updateData = {
         'displayName': _nameController.text.trim(),
@@ -2069,10 +2120,9 @@ class _EditEmployeeDialogState extends State<EditEmployeeDialog> {
     final canUseSuperAdmin =
         Provider.of<AuthService>(context, listen: false).currentUser?.role ==
         EmployeeRole.superAdmin;
-    final selectedRole =
-        !canUseSuperAdmin && _selectedRole == EmployeeRole.superAdmin
-        ? EmployeeRole.employee
-        : _selectedRole;
+    final selectedRole = _selectedRole;
+    final canEditRole =
+        canUseSuperAdmin || widget.employee.role != EmployeeRole.superAdmin;
 
     return Dialog(
       backgroundColor: ZaWolfColors.surface01,
@@ -2201,16 +2251,20 @@ class _EditEmployeeDialogState extends State<EditEmployeeDialog> {
                   ),
                   style: const TextStyle(color: Colors.white),
                   items: _roleMenuItems(
-                    canUseSuperAdmin: canUseSuperAdmin,
+                    canUseSuperAdmin:
+                        canUseSuperAdmin ||
+                        widget.employee.role == EmployeeRole.superAdmin,
                     includeEnglish: false,
                   ),
-                  onChanged: (val) {
-                    if (val != null) {
-                      setState(() {
-                        _selectedRole = val;
-                      });
-                    }
-                  },
+                  onChanged: canEditRole
+                      ? (val) {
+                          if (val != null) {
+                            setState(() {
+                              _selectedRole = val;
+                            });
+                          }
+                        }
+                      : null,
                 ),
                 const SizedBox(height: 16),
 

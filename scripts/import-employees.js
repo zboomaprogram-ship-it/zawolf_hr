@@ -195,6 +195,73 @@ function buildUserDoc(row, userRecord, supervisors) {
   };
 }
 
+async function seedReferenceData(records) {
+  if (dryRun || !db) return;
+
+  const departments = [...new Set(records.map((row) => row.department).filter(Boolean))];
+  const jobTitles = [...new Set(records.map((row) => row.position).filter(Boolean))];
+  const locations = [
+    ...new Map(
+      records
+        .filter((row) => row.locationId)
+        .map((row) => [
+          row.locationId,
+          {
+            locationId: row.locationId,
+            name: row.locationName || row.locationId,
+          },
+        ]),
+    ).values(),
+  ];
+
+  for (const name of departments) {
+    const existing = await db
+      .collection('departments')
+      .where('name', '==', name)
+      .limit(1)
+      .get();
+    if (existing.empty) {
+      await db.collection('departments').add({
+        name,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+    }
+  }
+
+  for (const name of jobTitles) {
+    const existing = await db
+      .collection('job_titles')
+      .where('name', '==', name)
+      .limit(1)
+      .get();
+    if (existing.empty) {
+      await db.collection('job_titles').add({
+        name,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+    }
+  }
+
+  for (const location of locations) {
+    const ref = db.collection('locations').doc(location.locationId);
+    const existing = await ref.get();
+    if (!existing.exists) {
+      await ref.set({
+        companyId: 'zawolf',
+        name: location.name,
+        address: location.name,
+        latitude: 0,
+        longitude: 0,
+        geofenceRadiusMeters: 50,
+        isActive: true,
+        employeeCount: 0,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+    }
+  }
+}
+
 async function main() {
   const absoluteCsvPath = path.resolve(__dirname, csvPath);
   const text = fs.readFileSync(absoluteCsvPath, 'utf8');
@@ -222,6 +289,8 @@ async function main() {
   const byCode = new Map();
   let createdAuth = 0;
   let existingAuth = 0;
+
+  await seedReferenceData(records);
 
   for (const record of records) {
     if (!record.email || !record.displayName || !record.employeeId) {
@@ -267,6 +336,7 @@ async function main() {
         createdAuth,
         existingAuth,
         writtenDocs,
+        seededReferenceData: !dryRun,
         csv: absoluteCsvPath,
       },
       null,
