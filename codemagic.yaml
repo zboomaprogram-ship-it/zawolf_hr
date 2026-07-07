@@ -4,6 +4,8 @@ workflows:
     max_build_duration: 120
     instance_type: mac_mini_m2
     environment:
+      groups:
+        - production
       flutter: default
       xcode: latest
       cocoapods: default
@@ -26,10 +28,3 @@ workflows:
     artifacts:
       - build/ios/ipa/*.ipa
       - /tmp/xcodebuild_logs/*.log
-    publishing:
-      email:
-        recipients:
-          - $CM_BUILD_USER_EMAIL
-        notify:
-          success: true
-          failure: true
