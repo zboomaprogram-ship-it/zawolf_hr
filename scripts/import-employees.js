@@ -5,6 +5,8 @@ const admin = require('firebase-admin');
 const initialPassword = process.env.INITIAL_EMPLOYEE_PASSWORD || 'ZW@0000';
 const csvPath = process.env.IMPORT_CSV_PATH || '../zawolf_employee_accounts_import.csv';
 const dryRun = process.env.DRY_RUN !== 'false';
+const expectedProjectId =
+  process.env.EXPECTED_FIREBASE_PROJECT_ID || 'zawolf-hr-system-60317';
 
 let db;
 let auth;
@@ -22,6 +24,17 @@ if (process.env.FIREBASE_SERVICE_ACCOUNT) {
   });
   console.log(`Using Firebase service account: ${serviceAccount.client_email}`);
   console.log(`Firebase project id: ${serviceAccount.project_id}`);
+  if (serviceAccount.project_id !== expectedProjectId) {
+    console.error(
+      [
+        `Wrong Firebase project in FIREBASE_SERVICE_ACCOUNT.`,
+        `Expected: ${expectedProjectId}`,
+        `Actual: ${serviceAccount.project_id}`,
+        `Replace the GitHub secret with a service account JSON from the correct Firebase project.`,
+      ].join('\n'),
+    );
+    process.exit(1);
+  }
   db = admin.firestore();
   auth = admin.auth();
 } else if (!dryRun) {
