@@ -77,7 +77,8 @@ service cloud.firestore {
           request.resource.data.type in [
             'salary_deduction_pending',
             'permission_pending_hr',
-            'complaint_new'
+            'complaint_new',
+            'attendance_security_review'
           ]
           && recipientDoc(userId).get('role', '') in ['hr_admin', 'super_admin']
         )
@@ -206,7 +207,12 @@ service cloud.firestore {
         'salaryDeductionApprovalStatus',
         'deviceId', 'deviceLabel', 'biometricVerified', 'status',
         'offlineCaptured', 'offlineCapturedAt', 'offlineDistanceMeters',
-        'offlineAllowedRadiusMeters', 'offlineAccuracyMeters'
+        'offlineAllowedRadiusMeters', 'offlineAccuracyMeters',
+        'securityReviewStatus', 'securityReviewedBy', 'securityReviewedAt',
+        'locationRiskLevel', 'locationRiskReasons', 'locationRiskMessage',
+        'locationAccuracyMeters', 'locationDistanceMeters',
+        'locationAllowedRadiusMeters', 'locationMocked',
+        'locationCapturedOffline'
       ]);
     }
     function attendanceCreateValues() {
@@ -215,6 +221,12 @@ service cloud.firestore {
       ]
       && request.resource.data.isWithinGeofence == true
       && request.resource.data.biometricVerified == true
+      && request.resource.data.get('locationMocked', false) == false
+      && request.resource.data.get('securityReviewStatus', 'none') in ['none', 'pending_hr']
+      && request.resource.data.get('locationRiskLevel', 'low') in ['low', 'medium', 'high']
+      && request.resource.data.get('locationAccuracyMeters', 0) >= 0
+      && request.resource.data.get('locationDistanceMeters', 0) >= 0
+      && request.resource.data.get('locationAllowedRadiusMeters', 0) >= 0
       && request.resource.data.salaryDeductionApprovalStatus in ['none', 'pending_hr']
       && request.resource.data.salaryDeductionFraction >= 0
       && request.resource.data.salaryDeductionFraction <= 1
@@ -232,7 +244,13 @@ service cloud.firestore {
           'salaryDeductionApprovalStatus', 'salaryDeductionDetectedAt',
           'offlineCheckoutCaptured', 'offlineCheckoutCapturedAt',
           'offlineCheckoutDistanceMeters',
-          'offlineCheckoutAllowedRadiusMeters', 'offlineCheckoutAccuracyMeters'
+          'offlineCheckoutAllowedRadiusMeters', 'offlineCheckoutAccuracyMeters',
+          'checkoutSecurityReviewStatus',
+          'checkoutLocationRiskLevel', 'checkoutLocationRiskReasons',
+          'checkoutLocationRiskMessage', 'checkoutLocationAccuracyMeters',
+          'checkoutLocationDistanceMeters',
+          'checkoutLocationAllowedRadiusMeters', 'checkoutLocationMocked',
+          'checkoutLocationCapturedOffline'
         ]);
     }
     function attendanceOwnerCheckoutValues() {
@@ -246,6 +264,12 @@ service cloud.firestore {
             .hasAny(['totalWorkHours'])
           || request.resource.data.totalWorkHours >= 0
         )
+        && request.resource.data.get('checkoutLocationMocked', false) == false
+        && request.resource.data.get('checkoutSecurityReviewStatus', 'none') in ['none', 'pending_hr']
+        && request.resource.data.get('checkoutLocationRiskLevel', 'low') in ['low', 'medium', 'high']
+        && request.resource.data.get('checkoutLocationAccuracyMeters', 0) >= 0
+        && request.resource.data.get('checkoutLocationDistanceMeters', 0) >= 0
+        && request.resource.data.get('checkoutLocationAllowedRadiusMeters', 0) >= 0
         && request.resource.data.salaryDeductionFraction >= 0
         && request.resource.data.salaryDeductionFraction <= 1
         && request.resource.data.salaryDeductionAmount >= 0
@@ -263,6 +287,30 @@ service cloud.firestore {
         && resource.data.salaryDeductionApprovalStatus == 'pending_hr'
         && request.resource.data.salaryDeductionApprovalStatus in ['approved', 'rejected']
         && request.resource.data.salaryDeductionReviewedBy == uid();
+    }
+    function attendanceHrSecurityReview() {
+      return request.resource.data.diff(resource.data).affectedKeys()
+        .hasOnly([
+          'securityReviewStatus',
+          'securityReviewedBy',
+          'securityReviewedAt',
+          'checkoutSecurityReviewStatus',
+          'checkoutSecurityReviewedBy',
+          'checkoutSecurityReviewedAt'
+        ])
+        && (
+          (
+            resource.data.get('securityReviewStatus', 'none') == 'pending_hr'
+            && request.resource.data.get('securityReviewStatus', 'none') in ['approved', 'rejected']
+            && request.resource.data.get('securityReviewedBy', '') == uid()
+          )
+          ||
+          (
+            resource.data.get('checkoutSecurityReviewStatus', 'none') == 'pending_hr'
+            && request.resource.data.get('checkoutSecurityReviewStatus', 'none') in ['approved', 'rejected']
+            && request.resource.data.get('checkoutSecurityReviewedBy', '') == uid()
+          )
+        );
     }
     function leaveHrReview() {
       return isHR()
@@ -592,6 +640,7 @@ service cloud.firestore {
           && attendanceOwnerCheckoutValues()
         ) ||
         (isHR() && attendanceHrDeductionReview()) ||
+        (isHR() && attendanceHrSecurityReview()) ||
         isSuperAdmin()
       );
       allow delete: if isAuth() && isActive() && isHR();

@@ -34,6 +34,7 @@ void main() async {
           ? AppleProvider.appAttestWithDeviceCheckFallback
           : AppleProvider.debug,
     );
+    await FirebaseAppCheck.instance.setTokenAutoRefreshEnabled(true);
 
     // 2. Enable Firestore Offline Persistence
     FirebaseFirestore.instance.settings = const Settings(

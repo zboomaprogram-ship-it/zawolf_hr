@@ -38,6 +38,10 @@ class OfflineAttendanceAction {
   final String salaryDeductionCode;
   final String salaryDeductionLabel;
   final String salaryDeductionApprovalStatus;
+  final String securityReviewStatus;
+  final String locationRiskLevel;
+  final List<String> locationRiskReasons;
+  final String? locationRiskMessage;
   final String status;
 
   const OfflineAttendanceAction({
@@ -68,6 +72,10 @@ class OfflineAttendanceAction {
     required this.salaryDeductionCode,
     required this.salaryDeductionLabel,
     required this.salaryDeductionApprovalStatus,
+    this.securityReviewStatus = 'none',
+    this.locationRiskLevel = 'low',
+    this.locationRiskReasons = const [],
+    this.locationRiskMessage,
     required this.status,
   });
 
@@ -106,6 +114,14 @@ class OfflineAttendanceAction {
           json['salaryDeductionLabel'] as String? ?? 'لا يوجد خصم',
       salaryDeductionApprovalStatus:
           json['salaryDeductionApprovalStatus'] as String? ?? 'none',
+      securityReviewStatus: json['securityReviewStatus'] as String? ?? 'none',
+      locationRiskLevel: json['locationRiskLevel'] as String? ?? 'low',
+      locationRiskReasons:
+          (json['locationRiskReasons'] as List<dynamic>?)
+              ?.map((item) => item.toString())
+              .toList() ??
+          const [],
+      locationRiskMessage: json['locationRiskMessage'] as String?,
       status: json['status'] as String? ?? 'present',
     );
   }
@@ -141,6 +157,11 @@ class OfflineAttendanceAction {
       'salaryDeductionCode': salaryDeductionCode,
       'salaryDeductionLabel': salaryDeductionLabel,
       'salaryDeductionApprovalStatus': salaryDeductionApprovalStatus,
+      'securityReviewStatus': securityReviewStatus,
+      'locationRiskLevel': locationRiskLevel,
+      'locationRiskReasons': locationRiskReasons,
+      if (locationRiskMessage != null)
+        'locationRiskMessage': locationRiskMessage,
       'status': status,
     };
   }
@@ -175,6 +196,16 @@ class OfflineAttendanceAction {
       'offlineDistanceMeters': distanceMeters,
       'offlineAllowedRadiusMeters': allowedRadius,
       'offlineAccuracyMeters': accuracyMeters,
+      'securityReviewStatus': securityReviewStatus,
+      'locationRiskLevel': locationRiskLevel,
+      'locationRiskReasons': locationRiskReasons,
+      if (locationRiskMessage != null)
+        'locationRiskMessage': locationRiskMessage,
+      'locationAccuracyMeters': accuracyMeters,
+      'locationDistanceMeters': distanceMeters,
+      'locationAllowedRadiusMeters': allowedRadius,
+      'locationMocked': false,
+      'locationCapturedOffline': true,
     };
   }
 
@@ -192,6 +223,16 @@ class OfflineAttendanceAction {
       'offlineCheckoutDistanceMeters': distanceMeters,
       'offlineCheckoutAllowedRadiusMeters': allowedRadius,
       'offlineCheckoutAccuracyMeters': accuracyMeters,
+      'checkoutSecurityReviewStatus': securityReviewStatus,
+      'checkoutLocationRiskLevel': locationRiskLevel,
+      'checkoutLocationRiskReasons': locationRiskReasons,
+      if (locationRiskMessage != null)
+        'checkoutLocationRiskMessage': locationRiskMessage,
+      'checkoutLocationAccuracyMeters': accuracyMeters,
+      'checkoutLocationDistanceMeters': distanceMeters,
+      'checkoutLocationAllowedRadiusMeters': allowedRadius,
+      'checkoutLocationMocked': false,
+      'checkoutLocationCapturedOffline': true,
       if (salaryDeductionFraction > 0) ...{
         'salaryDeductionFraction': salaryDeductionFraction,
         'salaryDeductionAmount': salaryDeductionAmount,
@@ -244,6 +285,14 @@ class OfflineAttendanceAction {
         deviceLabel: existing.deviceLabel,
         biometricVerified: true,
         totalWorkHours: totalWorkHours,
+        securityReviewStatus: securityReviewStatus,
+        locationRiskLevel: locationRiskLevel,
+        locationRiskReasons: locationRiskReasons,
+        locationRiskMessage: locationRiskMessage,
+        locationAccuracyMeters: accuracyMeters,
+        locationDistanceMeters: distanceMeters,
+        locationAllowedRadiusMeters: allowedRadius,
+        locationCapturedOffline: true,
         status: existing.status,
       );
     }
@@ -272,6 +321,14 @@ class OfflineAttendanceAction {
       deviceId: deviceId,
       deviceLabel: deviceLabel,
       biometricVerified: true,
+      securityReviewStatus: securityReviewStatus,
+      locationRiskLevel: locationRiskLevel,
+      locationRiskReasons: locationRiskReasons,
+      locationRiskMessage: locationRiskMessage,
+      locationAccuracyMeters: accuracyMeters,
+      locationDistanceMeters: distanceMeters,
+      locationAllowedRadiusMeters: allowedRadius,
+      locationCapturedOffline: true,
       status: status,
     );
   }
@@ -374,6 +431,7 @@ class OfflineAttendanceQueueService {
       final existing = await ref.get();
       if (!existing.exists) {
         await ref.set(action.toCheckInFirestore());
+        await _notifySecurityReviewIfNeeded(action);
       }
       return;
     }
@@ -383,6 +441,51 @@ class OfflineAttendanceQueueService {
       throw StateError('Cannot sync checkout before check-in.');
     }
     await ref.update(action.toCheckOutFirestore());
+    await _notifySecurityReviewIfNeeded(action);
+  }
+
+  Future<void> _notifySecurityReviewIfNeeded(
+    OfflineAttendanceAction action,
+  ) async {
+    if (action.securityReviewStatus != 'pending_hr') return;
+    try {
+      final targets = <String>{};
+      final hrSnap = await _db
+          .collection('users')
+          .where('role', isEqualTo: 'hr_admin')
+          .get();
+      targets.addAll(hrSnap.docs.map((doc) => doc.id));
+      final superSnap = await _db
+          .collection('users')
+          .where('role', isEqualTo: 'super_admin')
+          .get();
+      targets.addAll(superSnap.docs.map((doc) => doc.id));
+
+      for (final userId in targets) {
+        final notifRef = _db
+            .collection('notifications')
+            .doc(userId)
+            .collection('items')
+            .doc();
+        await notifRef.set({
+          'notificationId': notifRef.id,
+          'type': 'attendance_security_review',
+          'title': action.type == OfflineAttendanceActionType.checkOut
+              ? 'انصراف يحتاج مراجعة أمنية'
+              : 'حضور يحتاج مراجعة أمنية',
+          'body':
+              '${action.employeeName}: ${action.locationRiskMessage ?? 'تم تسجيل حركة حضور بمؤشرات موقع غير معتادة.'}',
+          'data': {'attendanceId': action.attendanceId},
+          'isRead': false,
+          'createdAt': FieldValue.serverTimestamp(),
+        });
+        await _db.collection('users').doc(userId).update({
+          'unreadNotifications': FieldValue.increment(1),
+        });
+      }
+    } catch (_) {
+      // Security review notification must not block offline attendance sync.
+    }
   }
 
   Future<void> _ensureDeviceBinding(OfflineAttendanceAction action) async {

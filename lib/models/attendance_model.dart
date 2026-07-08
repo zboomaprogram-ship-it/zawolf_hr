@@ -30,6 +30,15 @@ class AttendanceModel {
   final String? deviceLabel;
   final bool biometricVerified;
   final double? totalWorkHours;
+  final String securityReviewStatus;
+  final String locationRiskLevel;
+  final List<String> locationRiskReasons;
+  final String? locationRiskMessage;
+  final double? locationAccuracyMeters;
+  final double? locationDistanceMeters;
+  final double? locationAllowedRadiusMeters;
+  final bool locationMocked;
+  final bool locationCapturedOffline;
   final String
   status; // 'present' | 'late' | 'absent' | 'half-day' | 'on-leave'
 
@@ -63,6 +72,15 @@ class AttendanceModel {
     this.deviceLabel,
     this.biometricVerified = false,
     this.totalWorkHours,
+    this.securityReviewStatus = 'none',
+    this.locationRiskLevel = 'low',
+    this.locationRiskReasons = const [],
+    this.locationRiskMessage,
+    this.locationAccuracyMeters,
+    this.locationDistanceMeters,
+    this.locationAllowedRadiusMeters,
+    this.locationMocked = false,
+    this.locationCapturedOffline = false,
     required this.status,
   });
 
@@ -104,6 +122,23 @@ class AttendanceModel {
       deviceLabel: data['deviceLabel'] as String?,
       biometricVerified: data['biometricVerified'] as bool? ?? false,
       totalWorkHours: (data['totalWorkHours'] as num?)?.toDouble(),
+      securityReviewStatus: data['securityReviewStatus'] as String? ?? 'none',
+      locationRiskLevel: data['locationRiskLevel'] as String? ?? 'low',
+      locationRiskReasons:
+          (data['locationRiskReasons'] as List<dynamic>?)
+              ?.map((item) => item.toString())
+              .toList() ??
+          const [],
+      locationRiskMessage: data['locationRiskMessage'] as String?,
+      locationAccuracyMeters: (data['locationAccuracyMeters'] as num?)
+          ?.toDouble(),
+      locationDistanceMeters: (data['locationDistanceMeters'] as num?)
+          ?.toDouble(),
+      locationAllowedRadiusMeters: (data['locationAllowedRadiusMeters'] as num?)
+          ?.toDouble(),
+      locationMocked: data['locationMocked'] as bool? ?? false,
+      locationCapturedOffline:
+          data['locationCapturedOffline'] as bool? ?? false,
       status: data['status'] as String? ?? 'present',
     );
   }
@@ -147,6 +182,19 @@ class AttendanceModel {
       if (deviceLabel != null) 'deviceLabel': deviceLabel,
       'biometricVerified': biometricVerified,
       if (totalWorkHours != null) 'totalWorkHours': totalWorkHours,
+      'securityReviewStatus': securityReviewStatus,
+      'locationRiskLevel': locationRiskLevel,
+      'locationRiskReasons': locationRiskReasons,
+      if (locationRiskMessage != null)
+        'locationRiskMessage': locationRiskMessage,
+      if (locationAccuracyMeters != null)
+        'locationAccuracyMeters': locationAccuracyMeters,
+      if (locationDistanceMeters != null)
+        'locationDistanceMeters': locationDistanceMeters,
+      if (locationAllowedRadiusMeters != null)
+        'locationAllowedRadiusMeters': locationAllowedRadiusMeters,
+      'locationMocked': locationMocked,
+      'locationCapturedOffline': locationCapturedOffline,
       'status': status,
     };
   }

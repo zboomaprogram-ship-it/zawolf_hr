@@ -74,6 +74,14 @@ class AttendanceService {
         'عذراً، تم الكشف عن استخدام تطبيق لتزييف الموقع الجغرافي (Mock GPS).',
       );
     }
+    final locationRisk = _assessLocationRisk(
+      geoResult,
+      capturedOffline: !online,
+      bypassedByWfh: hasWfhToday,
+    );
+    if (locationRisk.blocked) {
+      throw Exception(locationRisk.message);
+    }
 
     final securityResult = await _securityService.verifyForAttendance();
     await _ensureAttendanceDeviceBinding(
@@ -127,6 +135,10 @@ class AttendanceService {
         salaryDeductionApprovalStatus: deduction.dayFraction > 0
             ? 'pending_hr'
             : 'none',
+        securityReviewStatus: locationRisk.securityReviewStatus,
+        locationRiskLevel: locationRisk.level,
+        locationRiskReasons: locationRisk.reasons,
+        locationRiskMessage: locationRisk.message,
         status: deduction.status,
       );
       final attendanceLog = AttendanceModel(
@@ -158,6 +170,15 @@ class AttendanceService {
         deviceId: securityResult.deviceId,
         deviceLabel: securityResult.deviceLabel,
         biometricVerified: securityResult.biometricOrDeviceCredentialVerified,
+        securityReviewStatus: locationRisk.securityReviewStatus,
+        locationRiskLevel: locationRisk.level,
+        locationRiskReasons: locationRisk.reasons,
+        locationRiskMessage: locationRisk.message,
+        locationAccuracyMeters: geoResult.accuracyMeters,
+        locationDistanceMeters: geoResult.distanceMeters,
+        locationAllowedRadiusMeters: geoResult.allowedRadius,
+        locationMocked: geoResult.isMocked,
+        locationCapturedOffline: !online,
         status: deduction.status,
       );
 
@@ -174,6 +195,14 @@ class AttendanceService {
           body:
               '${employee.displayName}: ${deduction.arabicLabel} (${salaryDeductionAmount.toStringAsFixed(2)} ${employee.salaryCurrency}).',
           data: {'attendanceId': logRef.id},
+        );
+      }
+      if (online && locationRisk.requiresReview) {
+        await _notifyLocationSecurityReview(
+          employee: employee,
+          attendanceId: logRef.id,
+          risk: locationRisk,
+          isCheckOut: false,
         );
       }
     } else {
@@ -237,6 +266,10 @@ class AttendanceService {
         salaryDeductionApprovalStatus: earlyCheckoutDeduction.patch.isEmpty
             ? checkInLog.salaryDeductionApprovalStatus
             : 'pending_hr',
+        securityReviewStatus: locationRisk.securityReviewStatus,
+        locationRiskLevel: locationRisk.level,
+        locationRiskReasons: locationRisk.reasons,
+        locationRiskMessage: locationRisk.message,
         status: checkInLog.status,
       );
 
@@ -253,6 +286,7 @@ class AttendanceService {
           'checkOutDeviceLabel': securityResult.deviceLabel,
           'checkOutBiometricVerified':
               securityResult.biometricOrDeviceCredentialVerified,
+          ...locationRisk.toCheckoutFirestorePatch(geoResult),
           ...earlyCheckoutDeduction.patch,
         });
       } else {
@@ -269,11 +303,100 @@ class AttendanceService {
           data: {'attendanceId': checkInDoc?.id ?? checkInLog.attendanceId},
         );
       }
+      if (online && locationRisk.requiresReview) {
+        await _notifyLocationSecurityReview(
+          employee: employee,
+          attendanceId: checkInDoc?.id ?? checkInLog.attendanceId,
+          risk: locationRisk,
+          isCheckOut: true,
+        );
+      }
     }
   }
 
   Future<void> syncPendingOfflineAttendance() {
     return _offlineQueue.syncPendingActions();
+  }
+
+  _LocationRiskAssessment _assessLocationRisk(
+    GeofenceResult geoResult, {
+    required bool capturedOffline,
+    required bool bypassedByWfh,
+  }) {
+    if (bypassedByWfh) {
+      return const _LocationRiskAssessment.clean();
+    }
+
+    final reasons = <String>[];
+    final messages = <String>[];
+
+    if (geoResult.isMocked) {
+      return const _LocationRiskAssessment.blocked(
+        message: 'تم رفض العملية بسبب اكتشاف موقع وهمي أو Mock GPS.',
+        reasons: ['mock_location'],
+      );
+    }
+
+    if (geoResult.accuracyMeters > 80) {
+      return _LocationRiskAssessment.blocked(
+        message:
+            'دقة الموقع ضعيفة جداً (${geoResult.accuracyMeters.toStringAsFixed(0)} متر). انتقل لمكان مفتوح وفعّل GPS ثم أعد المحاولة.',
+        reasons: const ['very_poor_accuracy'],
+      );
+    }
+
+    if (geoResult.accuracyMeters > 35) {
+      reasons.add('weak_accuracy');
+      messages.add(
+        'دقة الموقع ضعيفة: ${geoResult.accuracyMeters.toStringAsFixed(0)} متر',
+      );
+    }
+
+    final distanceToEdge = geoResult.allowedRadius - geoResult.distanceMeters;
+    final edgeTolerance = geoResult.accuracyMeters.clamp(15, 50).toDouble();
+    if (geoResult.isWithinZone &&
+        distanceToEdge >= 0 &&
+        distanceToEdge < edgeTolerance) {
+      reasons.add('near_geofence_edge');
+      messages.add(
+        'الموقع قريب من حدود الفرع: ${distanceToEdge.toStringAsFixed(0)} متر من الحد',
+      );
+    }
+
+    if (capturedOffline) {
+      reasons.add('offline_capture');
+      messages.add('تم تسجيل الحركة بدون اتصال وسيتم مراجعتها بعد المزامنة');
+    }
+
+    if (reasons.isEmpty) {
+      return const _LocationRiskAssessment.clean();
+    }
+
+    final highRisk =
+        reasons.contains('weak_accuracy') ||
+        reasons.contains('offline_capture');
+    return _LocationRiskAssessment.review(
+      level: highRisk ? 'high' : 'medium',
+      reasons: reasons,
+      message: messages.join('، '),
+    );
+  }
+
+  Future<void> _notifyLocationSecurityReview({
+    required UserModel employee,
+    required String attendanceId,
+    required _LocationRiskAssessment risk,
+    required bool isCheckOut,
+  }) {
+    return _notifyRole(
+      role: 'hr_admin',
+      type: 'attendance_security_review',
+      title: isCheckOut
+          ? 'انصراف يحتاج مراجعة أمنية'
+          : 'حضور يحتاج مراجعة أمنية',
+      body: '${employee.displayName}: ${risk.message}',
+      data: {'attendanceId': attendanceId},
+    );
   }
 
   Future<AttendanceModel?> loadTodayAttendanceForDisplay(String userId) async {
@@ -734,6 +857,70 @@ class _DeductionPatch {
       shouldNotify = false,
       label = '',
       amount = 0;
+}
+
+class _LocationRiskAssessment {
+  final bool blocked;
+  final String level;
+  final List<String> reasons;
+  final String message;
+  final String securityReviewStatus;
+
+  bool get requiresReview => securityReviewStatus == 'pending_hr';
+
+  const _LocationRiskAssessment._({
+    required this.blocked,
+    required this.level,
+    required this.reasons,
+    required this.message,
+    required this.securityReviewStatus,
+  });
+
+  const _LocationRiskAssessment.clean()
+    : this._(
+        blocked: false,
+        level: 'low',
+        reasons: const [],
+        message: '',
+        securityReviewStatus: 'none',
+      );
+
+  const _LocationRiskAssessment.blocked({
+    required String message,
+    required List<String> reasons,
+  }) : this._(
+         blocked: true,
+         level: 'blocked',
+         reasons: reasons,
+         message: message,
+         securityReviewStatus: 'blocked',
+       );
+
+  const _LocationRiskAssessment.review({
+    required String level,
+    required List<String> reasons,
+    required String message,
+  }) : this._(
+         blocked: false,
+         level: level,
+         reasons: reasons,
+         message: message,
+         securityReviewStatus: 'pending_hr',
+       );
+
+  Map<String, dynamic> toCheckoutFirestorePatch(GeofenceResult geoResult) {
+    return {
+      'checkoutSecurityReviewStatus': securityReviewStatus,
+      'checkoutLocationRiskLevel': level,
+      'checkoutLocationRiskReasons': reasons,
+      if (message.isNotEmpty) 'checkoutLocationRiskMessage': message,
+      'checkoutLocationAccuracyMeters': geoResult.accuracyMeters,
+      'checkoutLocationDistanceMeters': geoResult.distanceMeters,
+      'checkoutLocationAllowedRadiusMeters': geoResult.allowedRadius,
+      'checkoutLocationMocked': geoResult.isMocked,
+      'checkoutLocationCapturedOffline': false,
+    };
+  }
 }
 
 class _TodayAttendanceLookup {
