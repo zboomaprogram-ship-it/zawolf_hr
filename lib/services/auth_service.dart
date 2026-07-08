@@ -198,9 +198,9 @@ class AuthService with ChangeNotifier {
       if (!allowedRoles.contains(role)) {
         throw Exception('Invalid employee role');
       }
-      if (role == EmployeeRole.superAdmin &&
+      if ((role == EmployeeRole.superAdmin || role == EmployeeRole.hrAdmin) &&
           _currentUser?.role != EmployeeRole.superAdmin) {
-        throw Exception('Only super admin can create super admin accounts');
+        throw Exception('Only super admin can create admin accounts');
       }
       if (email.trim().isEmpty ||
           displayName.trim().isEmpty ||

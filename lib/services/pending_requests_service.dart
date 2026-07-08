@@ -6,7 +6,8 @@ import '../models/employee_role.dart';
 
 class PendingRequestsService {
   PendingRequestsService._internal();
-  static final PendingRequestsService instance = PendingRequestsService._internal();
+  static final PendingRequestsService instance =
+      PendingRequestsService._internal();
 
   final FirebaseFirestore _db = FirebaseFirestore.instance;
 
@@ -36,50 +37,85 @@ class PendingRequestsService {
     // 1. Leaves
     Query<Map<String, dynamic>> leavesQuery = _db.collection('leaves');
     if (reviewer.role == EmployeeRole.manager) {
-      leavesQuery = leavesQuery.where('managerId', isEqualTo: reviewer.uid)
-                               .where('status', isEqualTo: targetStatus);
+      leavesQuery = leavesQuery
+          .where('managerId', isEqualTo: reviewer.uid)
+          .where('status', isEqualTo: targetStatus);
     } else if (reviewer.role == EmployeeRole.hrAdmin) {
       leavesQuery = leavesQuery.where('status', isEqualTo: targetStatus);
     } else if (reviewer.role == EmployeeRole.superAdmin) {
-      leavesQuery = leavesQuery.where('status', whereIn: ['pending_hr', 'pending_manager']);
+      leavesQuery = leavesQuery.where(
+        'status',
+        whereIn: ['pending_hr', 'pending_manager'],
+      );
     }
 
-    _leavesSub = leavesQuery.snapshots().listen((snap) {
-      _leavesCount = snap.docs.length;
-      _updateCount();
-    });
+    _leavesSub = leavesQuery.snapshots().listen(
+      (snap) {
+        _leavesCount = snap.docs.length;
+        _updateCount();
+      },
+      onError: (_) {
+        _leavesCount = 0;
+        _updateCount();
+      },
+    );
 
     // 2. Permissions
-    Query<Map<String, dynamic>> permissionsQuery = _db.collection('permissions');
+    Query<Map<String, dynamic>> permissionsQuery = _db.collection(
+      'permissions',
+    );
     if (reviewer.role == EmployeeRole.manager) {
-      permissionsQuery = permissionsQuery.where('managerId', isEqualTo: reviewer.uid)
-                                         .where('status', isEqualTo: targetStatus);
+      permissionsQuery = permissionsQuery
+          .where('managerId', isEqualTo: reviewer.uid)
+          .where('status', isEqualTo: targetStatus);
     } else if (reviewer.role == EmployeeRole.hrAdmin) {
-      permissionsQuery = permissionsQuery.where('status', isEqualTo: targetStatus);
+      permissionsQuery = permissionsQuery.where(
+        'status',
+        isEqualTo: targetStatus,
+      );
     } else if (reviewer.role == EmployeeRole.superAdmin) {
-      permissionsQuery = permissionsQuery.where('status', whereIn: ['pending_hr', 'pending_manager']);
+      permissionsQuery = permissionsQuery.where(
+        'status',
+        whereIn: ['pending_hr', 'pending_manager'],
+      );
     }
 
-    _permissionsSub = permissionsQuery.snapshots().listen((snap) {
-      _permissionsCount = snap.docs.length;
-      _updateCount();
-    });
+    _permissionsSub = permissionsQuery.snapshots().listen(
+      (snap) {
+        _permissionsCount = snap.docs.length;
+        _updateCount();
+      },
+      onError: (_) {
+        _permissionsCount = 0;
+        _updateCount();
+      },
+    );
 
     // 3. Advances
     Query<Map<String, dynamic>> advancesQuery = _db.collection('advances');
     if (reviewer.role == EmployeeRole.manager) {
-      advancesQuery = advancesQuery.where('managerId', isEqualTo: reviewer.uid)
-                                   .where('status', isEqualTo: targetStatus);
+      advancesQuery = advancesQuery
+          .where('managerId', isEqualTo: reviewer.uid)
+          .where('status', isEqualTo: targetStatus);
     } else if (reviewer.role == EmployeeRole.hrAdmin) {
       advancesQuery = advancesQuery.where('status', isEqualTo: targetStatus);
     } else if (reviewer.role == EmployeeRole.superAdmin) {
-      advancesQuery = advancesQuery.where('status', whereIn: ['pending_hr', 'pending_manager']);
+      advancesQuery = advancesQuery.where(
+        'status',
+        whereIn: ['pending_hr', 'pending_manager'],
+      );
     }
 
-    _advancesSub = advancesQuery.snapshots().listen((snap) {
-      _advancesCount = snap.docs.length;
-      _updateCount();
-    });
+    _advancesSub = advancesQuery.snapshots().listen(
+      (snap) {
+        _advancesCount = snap.docs.length;
+        _updateCount();
+      },
+      onError: (_) {
+        _advancesCount = 0;
+        _updateCount();
+      },
+    );
   }
 
   void _updateCount() {

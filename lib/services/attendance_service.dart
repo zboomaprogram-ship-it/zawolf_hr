@@ -334,11 +334,24 @@ class AttendanceService {
 
     final localOwner = await _offlineQueue.localDeviceOwner(deviceId);
     final isOnline = await _offlineQueue.isOnline();
+    final locallyRegisteredDevice =
+        employee.registeredAttendanceDeviceId?.trim() ?? '';
 
     if (allowOfflineFallback && !isOnline) {
       if (localOwner != null && localOwner != employee.uid) {
         throw Exception(
           'هذا الجهاز مربوط محلياً بحساب موظف آخر. اتصل بالإنترنت للتحقق أو اطلب من HR إعادة الضبط.',
+        );
+      }
+      if (locallyRegisteredDevice.isEmpty && localOwner == null) {
+        throw Exception(
+          'لأمان تسجيل الحضور، يجب تسجيل أول حضور مرة واحدة وأنت متصل بالإنترنت لربط الحساب بهذا الجهاز.',
+        );
+      }
+      if (locallyRegisteredDevice.isNotEmpty &&
+          locallyRegisteredDevice != deviceId) {
+        throw Exception(
+          'هذا الحساب مربوط بجهاز حضور آخر. اتصل بالإنترنت أو اطلب من HR إعادة ضبط جهاز الحضور.',
         );
       }
       await _offlineQueue.rememberLocalDeviceOwner(
@@ -348,8 +361,6 @@ class AttendanceService {
       return;
     }
 
-    final locallyRegisteredDevice =
-        employee.registeredAttendanceDeviceId?.trim() ?? '';
     if (locallyRegisteredDevice.isNotEmpty) {
       if (locallyRegisteredDevice == deviceId) {
         await _offlineQueue.rememberLocalDeviceOwner(

@@ -26,7 +26,9 @@ class _NavigationWrapperState extends State<NavigationWrapper> {
   @override
   void initState() {
     super.initState();
-    _notifTapSub = NotificationService.instance.onNotificationTap.listen((route) {
+    _notifTapSub = NotificationService.instance.onNotificationTap.listen((
+      route,
+    ) {
       if (mounted && route.isNotEmpty) {
         context.go(route);
       }
@@ -47,13 +49,21 @@ class _NavigationWrapperState extends State<NavigationWrapper> {
     final theme = Theme.of(context);
 
     if (user == null) {
-      return widget.child; // Fallback
+      if (_currentUserUid != null) {
+        _currentUserUid = null;
+        PendingRequestsService.instance.stopListening();
+      }
+      return const Scaffold(
+        body: Center(
+          child: CircularProgressIndicator(color: ZaWolfColors.primaryCyan),
+        ),
+      );
     }
 
     if (_currentUserUid != user.uid) {
       _currentUserUid = user.uid;
-      if (user.role == EmployeeRole.manager || 
-          user.role == EmployeeRole.hrAdmin || 
+      if (user.role == EmployeeRole.manager ||
+          user.role == EmployeeRole.hrAdmin ||
           user.role == EmployeeRole.superAdmin) {
         PendingRequestsService.instance.startListening(user);
       } else {
@@ -552,10 +562,16 @@ class _NavigationWrapperState extends State<NavigationWrapper> {
                 }
 
                 // Show badge for pending requests on manager/HR requests tabs
-                final isRequestsTab = item.path == '/manager/requests' || item.path == '/hr/requests';
-                if (isRequestsTab && (role == EmployeeRole.manager || role == EmployeeRole.hrAdmin || role == EmployeeRole.superAdmin)) {
+                final isRequestsTab =
+                    item.path == '/manager/requests' ||
+                    item.path == '/hr/requests';
+                if (isRequestsTab &&
+                    (role == EmployeeRole.manager ||
+                        role == EmployeeRole.hrAdmin ||
+                        role == EmployeeRole.superAdmin)) {
                   iconWidget = ValueListenableBuilder<int>(
-                    valueListenable: PendingRequestsService.instance.pendingCount,
+                    valueListenable:
+                        PendingRequestsService.instance.pendingCount,
                     builder: (context, count, child) {
                       if (count > 0) {
                         return badges.Badge(
@@ -674,7 +690,9 @@ class _NavigationWrapperState extends State<NavigationWrapper> {
                       children: items.map((item) {
                         final isSelected = item.path == matchedLocation;
                         return ListTile(
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                          ),
                           leading: Icon(
                             isSelected ? item.activeIcon : item.icon,
                             color: isSelected
@@ -696,7 +714,9 @@ class _NavigationWrapperState extends State<NavigationWrapper> {
                           subtitle: Text(
                             item.englishLabel,
                             textAlign: TextAlign.right,
-                            style: const TextStyle(color: ZaWolfColors.textMuted),
+                            style: const TextStyle(
+                              color: ZaWolfColors.textMuted,
+                            ),
                           ),
                           onTap: () {
                             Navigator.pop(sheetContext);

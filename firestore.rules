@@ -27,6 +27,16 @@ service cloud.firestore {
     }
     function isOwner(docUserId) { return uid() == docUserId; }
     function isMyManager(managerId) { return managerId is string && uid() == managerId; }
+    function isAssignedManagerFor(userData) {
+      return isManagerRole()
+        && (
+          userData.get('managerId', '') == uid()
+          || uid() in userData.get('managerIds', [])
+        );
+    }
+    function isAssignedManagerForUser(userId) {
+      return isAssignedManagerFor(recipientDoc(userId));
+    }
     function recipientDoc(userId) {
       return get(userPath(userId)).data;
     }
@@ -161,11 +171,30 @@ service cloud.firestore {
     function hrCanWriteUser() {
       return isHRRole()
         && resource.data.get('role', '') != 'super_admin'
-        && request.resource.data.get('role', '') in ['employee', 'manager', 'hr_admin'];
+        && request.resource.data.get('role', '') in ['employee', 'manager']
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'displayName', 'employeeId', 'department', 'position', 'role',
+          'locationId', 'locationName', 'baseMonthlySalary', 'salaryCurrency',
+          'leaveBalance', 'leaveBalance.daysOff',
+          'managerId', 'managerName', 'managerIds', 'managerNames',
+          'managerCodes', 'isActive', 'workSchedule', 'updatedAt',
+          'registeredAttendanceDeviceId',
+          'registeredAttendanceDeviceLabel',
+          'registeredAttendanceDeviceAt'
+        ]);
     }
     function hrCanCreateUser() {
       return isHRRole()
-        && request.resource.data.get('role', '') in ['employee', 'manager', 'hr_admin'];
+        && request.resource.data.get('role', '') in ['employee', 'manager']
+        && request.resource.data.keys().hasOnly([
+          'email', 'displayName', 'photoURL', 'role', 'employeeId',
+          'department', 'position', 'locationId', 'locationName',
+          'baseMonthlySalary', 'salaryCurrency', 'managerId', 'managerName',
+          'managerIds', 'managerNames', 'managerCodes', 'isActive',
+          'joinDate', 'workSchedule', 'leaveBalance', 'permissionBalance',
+          'notificationTokens', 'unreadNotifications', 'createdAt',
+          'updatedAt', 'passwordChangedAt'
+        ]);
     }
     function attendanceCreateKeys() {
       return request.resource.data.keys().hasOnly([
@@ -507,7 +536,7 @@ service cloud.firestore {
 
     match /users/{userId} {
       allow read: if isAuth() && isActive() && (
-        isOwner(userId) || isManagerOrAbove()
+        isOwner(userId) || isHR() || isAssignedManagerFor(resource.data)
       );
       allow update: if isAuth() && isActive() && (
         (isOwner(userId) && ownerProfileUpdate()) ||
@@ -549,6 +578,7 @@ service cloud.firestore {
       allow read: if isAuth() && isActive() && (
         isOwner(resource.data.userId) ||
         isMyManager(resource.data.managerId) ||
+        isAssignedManagerForUser(resource.data.userId) ||
         isHR()
       );
       allow create: if isAuth() && isActive()

@@ -149,13 +149,26 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
 
       if (log != null && mounted) {
         final isCheckOut = log.checkOutTime != null;
+        final confirmationTime = isCheckOut
+            ? log.checkOutTime
+            : log.checkInTime;
+        if (confirmationTime == null) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'تم حفظ الحركة محلياً وستتم مزامنتها عند توفر الإنترنت.',
+              ),
+            ),
+          );
+          return;
+        }
 
         showDialog(
           context: context,
           barrierDismissible: false,
           builder: (context) => CheckInConfirmModal(
             isCheckOut: isCheckOut,
-            time: isCheckOut ? log.checkOutTime! : log.checkInTime!,
+            time: confirmationTime,
             locationName: log.locationName,
             status: log.status,
             lateMinutes: log.lateMinutes,
@@ -227,10 +240,15 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
             const SizedBox(width: 8),
             Text(
               'ZaWolf HR',
-              style: theme.textTheme.titleMedium!.copyWith(
-                color: Colors.white,
-                fontWeight: FontWeight.w700,
-              ),
+              style:
+                  theme.textTheme.titleMedium?.copyWith(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w700,
+                  ) ??
+                  const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w700,
+                  ),
             ),
           ],
         ),
@@ -258,10 +276,12 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
             ),
           );
 
-          final bool hasCheckedIn = todayLog.attendanceId.isNotEmpty;
-          final bool hasCheckedOut = todayLog.checkOutTime != null;
+          final bool hasTodayRecord = todayLog.attendanceId.isNotEmpty;
+          final bool hasCheckedIn = todayLog.checkInTime != null;
+          final bool hasCheckedOut =
+              hasCheckedIn && todayLog.checkOutTime != null;
           final bool checkInDisabledForDayOff =
-              !hasCheckedIn && _dayOffStatus.isDayOff;
+              !hasTodayRecord && _dayOffStatus.isDayOff;
           final bool actionDisabled =
               _actionLoading || hasCheckedOut || checkInDisabledForDayOff;
 
@@ -377,12 +397,23 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
                                       : _geofenceResult?.isWithinZone == true
                                       ? 'داخل النطاق'
                                       : 'خارج النطاق',
-                                  style: theme.textTheme.bodySmall!.copyWith(
-                                    color: _geofenceResult?.isWithinZone == true
-                                        ? ZaWolfColors.success
-                                        : ZaWolfColors.error,
-                                    fontWeight: FontWeight.w700,
-                                  ),
+                                  style:
+                                      theme.textTheme.bodySmall?.copyWith(
+                                        color:
+                                            _geofenceResult?.isWithinZone ==
+                                                true
+                                            ? ZaWolfColors.success
+                                            : ZaWolfColors.error,
+                                        fontWeight: FontWeight.w700,
+                                      ) ??
+                                      TextStyle(
+                                        color:
+                                            _geofenceResult?.isWithinZone ==
+                                                true
+                                            ? ZaWolfColors.success
+                                            : ZaWolfColors.error,
+                                        fontWeight: FontWeight.w700,
+                                      ),
                                 ),
                               ],
                             ),
@@ -395,10 +426,15 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
                             children: [
                               Text(
                                 'مرحباً، ${user.displayName}',
-                                style: theme.textTheme.headlineSmall!.copyWith(
-                                  color: Colors.white,
-                                  fontSize: 22,
-                                ),
+                                style:
+                                    theme.textTheme.headlineSmall?.copyWith(
+                                      color: Colors.white,
+                                      fontSize: 22,
+                                    ) ??
+                                    const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 22,
+                                    ),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 textDirection: TextDirection.rtl,
@@ -543,8 +579,13 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
                                             : hasCheckedIn
                                             ? 'تسجيل انصراف'
                                             : 'تسجيل حضور',
-                                        style: theme.textTheme.titleMedium!
-                                            .copyWith(
+                                        style:
+                                            theme.textTheme.titleMedium
+                                                ?.copyWith(
+                                                  color: Colors.white,
+                                                  fontWeight: FontWeight.bold,
+                                                ) ??
+                                            const TextStyle(
                                               color: Colors.white,
                                               fontWeight: FontWeight.bold,
                                             ),
@@ -557,8 +598,13 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
                                             : hasCheckedIn
                                             ? 'CHECK OUT'
                                             : 'CHECK IN',
-                                        style: theme.textTheme.bodySmall!
-                                            .copyWith(
+                                        style:
+                                            theme.textTheme.bodySmall?.copyWith(
+                                              color: Colors.white70,
+                                              fontSize: 9,
+                                              fontWeight: FontWeight.bold,
+                                            ) ??
+                                            const TextStyle(
                                               color: Colors.white70,
                                               fontSize: 9,
                                               fontWeight: FontWeight.bold,
@@ -591,12 +637,19 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
                               _checkingDayOff
                                   ? 'جاري التحقق من أيام العطلات...'
                                   : 'تسجيل الحضور متوقف اليوم: ${_dayOffStatus.reason}',
-                              style: theme.textTheme.bodyMedium!.copyWith(
-                                color: _checkingDayOff
-                                    ? ZaWolfColors.textSecondary
-                                    : ZaWolfColors.warning,
-                                fontWeight: FontWeight.bold,
-                              ),
+                              style:
+                                  theme.textTheme.bodyMedium?.copyWith(
+                                    color: _checkingDayOff
+                                        ? ZaWolfColors.textSecondary
+                                        : ZaWolfColors.warning,
+                                    fontWeight: FontWeight.bold,
+                                  ) ??
+                                  TextStyle(
+                                    color: _checkingDayOff
+                                        ? ZaWolfColors.textSecondary
+                                        : ZaWolfColors.warning,
+                                    fontWeight: FontWeight.bold,
+                                  ),
                               textDirection: TextDirection.rtl,
                             ),
                           ),
@@ -612,31 +665,56 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'حضور اليوم: ${DateFormat('hh:mm a').format(todayLog.checkInTime!)}',
-                                style: theme.textTheme.bodyMedium!.copyWith(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                              if (todayLog.checkOutTime != null)
+                          if (todayLog.checkInTime case final checkInTime?)
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
                                 Text(
-                                  'انصراف اليوم: ${DateFormat('hh:mm a').format(todayLog.checkOutTime!)}',
-                                  style: theme.textTheme.bodyMedium!.copyWith(
-                                    color: Colors.white,
+                                  'حضور اليوم: ${DateFormat('hh:mm a').format(checkInTime)}',
+                                  style:
+                                      theme.textTheme.bodyMedium?.copyWith(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.bold,
+                                      ) ??
+                                      const TextStyle(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                ),
+                                if (todayLog.checkOutTime
+                                    case final checkOutTime?)
+                                  Text(
+                                    'انصراف اليوم: ${DateFormat('hh:mm a').format(checkOutTime)}',
+                                    style:
+                                        theme.textTheme.bodyMedium?.copyWith(
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.bold,
+                                        ) ??
+                                        const TextStyle(
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                  )
+                                else
+                                  Text(
+                                    'قيد العمل في فرع (${todayLog.locationName})',
+                                    style: theme.textTheme.bodySmall,
+                                  ),
+                              ],
+                            )
+                          else
+                            Text(
+                              'لم يتم تسجيل وقت حضور صالح لهذا اليوم.',
+                              style:
+                                  theme.textTheme.bodyMedium?.copyWith(
+                                    color: ZaWolfColors.warning,
+                                    fontWeight: FontWeight.bold,
+                                  ) ??
+                                  const TextStyle(
+                                    color: ZaWolfColors.warning,
                                     fontWeight: FontWeight.bold,
                                   ),
-                                )
-                              else
-                                Text(
-                                  'قيد العمل في فرع (${todayLog.locationName})',
-                                  style: theme.textTheme.bodySmall,
-                                ),
-                            ],
-                          ),
+                            ),
                           Container(
                             padding: const EdgeInsets.symmetric(
                               horizontal: 10,
@@ -687,9 +765,11 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
                           Expanded(
                             child: Text(
                               _locationError!,
-                              style: theme.textTheme.bodySmall!.copyWith(
-                                color: ZaWolfColors.error,
-                              ),
+                              style:
+                                  theme.textTheme.bodySmall?.copyWith(
+                                    color: ZaWolfColors.error,
+                                  ) ??
+                                  const TextStyle(color: ZaWolfColors.error),
                             ),
                           ),
                         ],
@@ -748,10 +828,15 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
                   // Recent Activity Feed
                   Text(
                     'النشاط الأخير (هذا الشهر)',
-                    style: theme.textTheme.titleMedium!.copyWith(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                    ),
+                    style:
+                        theme.textTheme.titleMedium?.copyWith(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                        ) ??
+                        const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                        ),
                   ),
                   const SizedBox(height: 12),
                   if (logs.isEmpty)
@@ -785,6 +870,14 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
                           'EEEE dd MMM',
                           'ar',
                         ).format(dateParsed);
+                        final checkInTime = log.checkInTime;
+                        final checkOutTime = log.checkOutTime;
+                        final checkInText = checkInTime == null
+                            ? 'لم يسجل حضور'
+                            : 'حضور: ${DateFormat('hh:mm a').format(checkInTime)}';
+                        final checkOutText = checkOutTime == null
+                            ? null
+                            : 'انصراف: ${DateFormat('hh:mm a').format(checkOutTime)}';
 
                         return Container(
                           margin: const EdgeInsets.only(bottom: 12),
@@ -802,20 +895,23 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
                                 children: [
                                   Text(
                                     formatDay,
-                                    style: theme.textTheme.bodyMedium!.copyWith(
-                                      color: Colors.white,
-                                      fontWeight: FontWeight.bold,
-                                    ),
+                                    style:
+                                        theme.textTheme.bodyMedium?.copyWith(
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.bold,
+                                        ) ??
+                                        const TextStyle(
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.bold,
+                                        ),
                                   ),
                                   Text(
-                                    log.checkInTime != null
-                                        ? 'حضور: ${DateFormat('hh:mm a').format(log.checkInTime!)}'
-                                        : 'لم يسجل حضور',
+                                    checkInText,
                                     style: theme.textTheme.bodySmall,
                                   ),
-                                  if (log.checkOutTime != null)
+                                  if (checkOutText != null)
                                     Text(
-                                      'انصراف: ${DateFormat('hh:mm a').format(log.checkOutTime!)}',
+                                      checkOutText,
                                       style: theme.textTheme.bodySmall,
                                     ),
                                 ],
@@ -890,20 +986,33 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
               const SizedBox(height: 8),
               Text(
                 label,
-                style: theme.textTheme.bodyMedium!.copyWith(
-                  color: Colors.white,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 13,
-                ),
+                style:
+                    theme.textTheme.bodyMedium?.copyWith(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 13,
+                    ) ??
+                    const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 13,
+                    ),
               ),
               Text(
                 subtitle.toUpperCase(),
-                style: theme.textTheme.bodySmall!.copyWith(
-                  color: ZaWolfColors.textMuted,
-                  fontSize: 8,
-                  fontWeight: FontWeight.bold,
-                  letterSpacing: 0.5,
-                ),
+                style:
+                    theme.textTheme.bodySmall?.copyWith(
+                      color: ZaWolfColors.textMuted,
+                      fontSize: 8,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 0.5,
+                    ) ??
+                    const TextStyle(
+                      color: ZaWolfColors.textMuted,
+                      fontSize: 8,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 0.5,
+                    ),
               ),
             ],
           ),
@@ -931,27 +1040,40 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
           children: [
             Text(
               value,
-              style: theme.textTheme.titleLarge!.copyWith(
-                color: color ?? ZaWolfColors.primaryCyan,
-                fontWeight: FontWeight.bold,
-              ),
+              style:
+                  theme.textTheme.titleLarge?.copyWith(
+                    color: color ?? ZaWolfColors.primaryCyan,
+                    fontWeight: FontWeight.bold,
+                  ) ??
+                  TextStyle(
+                    color: color ?? ZaWolfColors.primaryCyan,
+                    fontWeight: FontWeight.bold,
+                  ),
             ),
             const SizedBox(height: 4),
             Text(
               label,
-              style: theme.textTheme.bodySmall!.copyWith(
-                color: Colors.white70,
-                fontSize: 11,
-              ),
+              style:
+                  theme.textTheme.bodySmall?.copyWith(
+                    color: Colors.white70,
+                    fontSize: 11,
+                  ) ??
+                  const TextStyle(color: Colors.white70, fontSize: 11),
               textAlign: TextAlign.center,
             ),
             Text(
               englishLabel.toUpperCase(),
-              style: theme.textTheme.bodySmall!.copyWith(
-                color: ZaWolfColors.textMuted,
-                fontSize: 7,
-                fontWeight: FontWeight.bold,
-              ),
+              style:
+                  theme.textTheme.bodySmall?.copyWith(
+                    color: ZaWolfColors.textMuted,
+                    fontSize: 7,
+                    fontWeight: FontWeight.bold,
+                  ) ??
+                  const TextStyle(
+                    color: ZaWolfColors.textMuted,
+                    fontSize: 7,
+                    fontWeight: FontWeight.bold,
+                  ),
               textAlign: TextAlign.center,
             ),
           ],

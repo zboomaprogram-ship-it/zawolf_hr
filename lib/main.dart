@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_app_check/firebase_app_check.dart';
 import 'package:provider/provider.dart';
 import 'theme/theme.dart';
 import 'services/auth_service.dart';
@@ -20,6 +22,18 @@ void main() async {
   // In a normal build, this will consume GoogleService JSONs from native platforms automatically.
   try {
     await Firebase.initializeApp();
+    const forceDebugAppCheck = bool.fromEnvironment(
+      'APP_CHECK_DEBUG',
+      defaultValue: false,
+    );
+    await FirebaseAppCheck.instance.activate(
+      androidProvider: kReleaseMode && !forceDebugAppCheck
+          ? AndroidProvider.playIntegrity
+          : AndroidProvider.debug,
+      appleProvider: kReleaseMode && !forceDebugAppCheck
+          ? AppleProvider.appAttestWithDeviceCheckFallback
+          : AppleProvider.debug,
+    );
 
     // 2. Enable Firestore Offline Persistence
     FirebaseFirestore.instance.settings = const Settings(

@@ -387,9 +387,6 @@ class OfflineAttendanceQueueService {
 
   Future<void> _ensureDeviceBinding(OfflineAttendanceAction action) async {
     final userRef = _db.collection('users').doc(action.userId);
-    final deviceRef = _db
-        .collection('attendanceDevices')
-        .doc(AttendanceSecurityService.deviceDocumentId(action.deviceId));
 
     await _db.runTransaction((transaction) async {
       final userSnap = await transaction.get(userRef);
@@ -406,28 +403,9 @@ class OfflineAttendanceQueueService {
         return;
       }
 
-      final deviceSnap = await transaction.get(deviceRef);
-      if (deviceSnap.exists) {
-        final boundUserId = deviceSnap.data()?['userId'] as String? ?? '';
-        if (boundUserId != action.userId) {
-          throw StateError('Device already bound to another account.');
-        }
-      } else {
-        transaction.set(deviceRef, {
-          'deviceId': action.deviceId,
-          'userId': action.userId,
-          'employeeId': action.employeeId,
-          'employeeName': action.employeeName,
-          'deviceLabel': action.deviceLabel,
-          'registeredAt': FieldValue.serverTimestamp(),
-        });
-      }
-
-      transaction.update(userRef, {
-        'registeredAttendanceDeviceId': action.deviceId,
-        'registeredAttendanceDeviceLabel': action.deviceLabel,
-        'registeredAttendanceDeviceAt': FieldValue.serverTimestamp(),
-      });
+      throw StateError(
+        'Attendance device must be registered online before offline attendance can sync.',
+      );
     });
   }
 
