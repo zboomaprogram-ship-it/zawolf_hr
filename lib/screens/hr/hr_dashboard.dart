@@ -186,6 +186,7 @@ class _HrDashboardScreenState extends State<HrDashboardScreen> {
                 return AttendanceInsightsCard(
                   summary: snapshot.data!,
                   onRefresh: _loadAttendanceSummary,
+                  onTap: () => context.go('/hr/attendance-summary'),
                 );
               },
             ),

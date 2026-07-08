@@ -205,6 +205,7 @@ class _ManagerDashboardScreenState extends State<ManagerDashboardScreen> {
                     return AttendanceInsightsCard(
                       summary: summarySnapshot.data!,
                       onRefresh: _loadAttendanceSummary,
+                      onTap: () => context.go('/manager/attendance-summary'),
                     );
                   },
                 ),

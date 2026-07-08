@@ -18,6 +18,7 @@ class AuthService with ChangeNotifier {
   UserModel? _currentUser;
   bool _loading = true;
   StreamSubscription<User?>? _authStateSubscription;
+  int _authSessionVersion = 0;
 
   UserModel? get currentUser => _currentUser;
   bool get loading => _loading;
@@ -31,15 +32,21 @@ class AuthService with ChangeNotifier {
     _authStateSubscription = _auth.authStateChanges().listen((
       User? user,
     ) async {
+      final sessionVersion = ++_authSessionVersion;
+      NotificationService.instance.stopListening();
+      await DailyReminderService.instance.cancelAll();
       if (user == null) {
         _currentUser = null;
         _loading = false;
-        NotificationService.instance.stopListening();
         await OneSignalService.instance.logout();
-        await DailyReminderService.instance.cancelAll();
         notifyListeners();
       } else {
-        await fetchUserData(user.uid);
+        _currentUser = null;
+        _loading = true;
+        notifyListeners();
+
+        await fetchUserData(user.uid, sessionVersion: sessionVersion);
+        if (sessionVersion != _authSessionVersion) return;
         if (_currentUser != null) {
           NotificationService.instance.startListening(user.uid);
           await OneSignalService.instance.login(user.uid);
@@ -56,23 +63,31 @@ class AuthService with ChangeNotifier {
     });
   }
 
-  Future<void> fetchUserData(String uid) async {
+  Future<void> fetchUserData(String uid, {int? sessionVersion}) async {
     try {
       _loading = true;
       notifyListeners();
 
       final doc = await _db.collection('users').doc(uid).get();
+      if (sessionVersion != null && sessionVersion != _authSessionVersion) {
+        return;
+      }
       if (doc.exists) {
         _currentUser = UserModel.fromFirestore(doc);
       } else {
         _currentUser = null;
       }
     } catch (e) {
+      if (sessionVersion != null && sessionVersion != _authSessionVersion) {
+        return;
+      }
       if (kDebugMode) print('Error fetching user data: $e');
       _currentUser = null;
     } finally {
-      _loading = false;
-      notifyListeners();
+      if (sessionVersion == null || sessionVersion == _authSessionVersion) {
+        _loading = false;
+        notifyListeners();
+      }
     }
   }
 
@@ -99,6 +114,13 @@ class AuthService with ChangeNotifier {
 
   // Sign out
   Future<void> signOut() async {
+    _authSessionVersion++;
+    _currentUser = null;
+    _loading = false;
+    NotificationService.instance.stopListening();
+    await OneSignalService.instance.logout();
+    await DailyReminderService.instance.cancelAll();
+    notifyListeners();
     await _auth.signOut();
   }
 

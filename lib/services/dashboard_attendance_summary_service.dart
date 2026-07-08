@@ -38,10 +38,47 @@ class DashboardAttendanceSummaryService {
 
   Future<DashboardAttendanceSummary> loadForReviewer(UserModel reviewer) async {
     final today = DateTime.now();
-    final todayKey = DateFormat('yyyy-MM-dd').format(today);
+    return loadForReviewerDate(reviewer, today);
+  }
+
+  Future<List<DashboardAttendanceSummary>> loadLast30DaysForReviewer(
+    UserModel reviewer,
+  ) async {
+    final today = DateTime.now();
+    final dates = List.generate(
+      30,
+      (index) => DateTime(today.year, today.month, today.day - index),
+    );
+    final employees = await _loadEmployees(
+      reviewer,
+      reviewer.role == EmployeeRole.manager,
+    );
+    final summaries = <DashboardAttendanceSummary>[];
+    for (final date in dates) {
+      summaries.add(await _buildSummaryForDate(reviewer, employees, date));
+    }
+    return summaries;
+  }
+
+  Future<DashboardAttendanceSummary> loadForReviewerDate(
+    UserModel reviewer,
+    DateTime date,
+  ) async {
+    final employees = await _loadEmployees(
+      reviewer,
+      reviewer.role == EmployeeRole.manager,
+    );
+    return _buildSummaryForDate(reviewer, employees, date);
+  }
+
+  Future<DashboardAttendanceSummary> _buildSummaryForDate(
+    UserModel reviewer,
+    List<UserModel> employees,
+    DateTime date,
+  ) async {
+    final dateKey = DateFormat('yyyy-MM-dd').format(date);
     final isManagerScope = reviewer.role == EmployeeRole.manager;
 
-    final employees = await _loadEmployees(reviewer, isManagerScope);
     if (employees.isEmpty) {
       return DashboardAttendanceSummary(
         totalEmployees: 0,
@@ -50,17 +87,17 @@ class DashboardAttendanceSummaryService {
         permission: 0,
         dayOff: 0,
         notAttended: 0,
-        date: today,
+        date: date,
         teamScoped: isManagerScope,
       );
     }
 
     final employeeIds = employees.map((employee) => employee.uid).toSet();
     final results = await Future.wait([
-      _db.collection('attendance').where('date', isEqualTo: todayKey).get(),
+      _db.collection('attendance').where('date', isEqualTo: dateKey).get(),
       _db
           .collection('permissions')
-          .where('requestDate', isEqualTo: todayKey)
+          .where('requestDate', isEqualTo: dateKey)
           .where('status', isEqualTo: 'approved')
           .get(),
       _db
@@ -69,7 +106,7 @@ class DashboardAttendanceSummaryService {
           .where(
             'startDate',
             isLessThanOrEqualTo: Timestamp.fromDate(
-              DateTime(today.year, today.month, today.day, 23, 59, 59),
+              DateTime(date.year, date.month, date.day, 23, 59, 59),
             ),
           )
           .get(),
@@ -90,7 +127,7 @@ class DashboardAttendanceSummaryService {
     }
 
     final dayOffUsers = <String>{};
-    final startOfToday = DateTime(today.year, today.month, today.day);
+    final startOfToday = DateTime(date.year, date.month, date.day);
     for (final doc in results[2].docs) {
       final data = doc.data();
       final userId = data['userId'] as String? ?? '';
@@ -111,9 +148,14 @@ class DashboardAttendanceSummaryService {
     for (final employee in employees) {
       final attendance = attendanceByUser[employee.uid];
       if (attendance != null) {
+        final hasRealCheckIn = attendance['checkInTime'] != null;
         final status = attendance['status'] as String? ?? 'present';
         final isLate = attendance['isLate'] as bool? ?? false;
-        if (isLate || _isLateStatus(status)) {
+        if (status == 'on-leave') {
+          dayOff++;
+        } else if (status == 'absent' || !hasRealCheckIn) {
+          notAttended++;
+        } else if (isLate || _isLateStatus(status)) {
           late++;
         } else {
           present++;
@@ -134,7 +176,7 @@ class DashboardAttendanceSummaryService {
       permission: permission,
       dayOff: dayOff,
       notAttended: notAttended,
-      date: today,
+      date: date,
       teamScoped: isManagerScope,
     );
   }

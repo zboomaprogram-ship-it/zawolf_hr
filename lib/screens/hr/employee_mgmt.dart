@@ -1889,6 +1889,7 @@ class _EditEmployeeDialogState extends State<EditEmployeeDialog> {
   String? _selectedLocationName;
   String? _selectedManagerId;
   String? _selectedManagerName;
+  late List<String> _selectedManagerIds;
 
   bool _isLoading = false;
   List<LocationModel> _locations = [];
@@ -1914,6 +1915,12 @@ class _EditEmployeeDialogState extends State<EditEmployeeDialog> {
     _selectedLocationName = emp.locationName;
     _selectedManagerId = emp.managerId;
     _selectedManagerName = emp.managerName;
+    _selectedManagerIds = emp.managerIds.isNotEmpty
+        ? List<String>.from(emp.managerIds)
+        : [
+            if (emp.managerId != null && emp.managerId!.isNotEmpty)
+              emp.managerId!,
+          ];
 
     _fetchLocationsAndManagers();
   }
@@ -1956,19 +1963,83 @@ class _EditEmployeeDialogState extends State<EditEmployeeDialog> {
         _managers = mgrSnap.docs
             .map((doc) => UserModel.fromFirestore(doc))
             .toList();
-        if (_selectedManagerId != null &&
-            _selectedManagerId!.isNotEmpty &&
-            !_managers.any((mgr) => mgr.uid == _selectedManagerId)) {
+        final missingManagerIds = {
+          ..._selectedManagerIds,
+          if (_selectedManagerId != null && _selectedManagerId!.isNotEmpty)
+            _selectedManagerId!,
+        }.where((id) => !_managers.any((mgr) => mgr.uid == id)).toList();
+        for (final managerId in missingManagerIds) {
+          final index = widget.employee.managerIds.indexOf(managerId);
+          final fallbackName =
+              index >= 0 && index < widget.employee.managerNames.length
+              ? widget.employee.managerNames[index]
+              : (_selectedManagerName ?? 'المدير الحالي');
           _managers.add(
             widget.employee.copyWith(
-              uid: _selectedManagerId,
-              displayName: _selectedManagerName ?? 'المدير الحالي',
+              uid: managerId,
+              displayName: fallbackName,
               role: EmployeeRole.manager,
             ),
           );
         }
       });
     } catch (_) {}
+  }
+
+  UserModel? _managerById(String managerId) {
+    for (final manager in _managers) {
+      if (manager.uid == managerId) return manager;
+    }
+    return null;
+  }
+
+  void _syncPrimaryManagerFromSelection() {
+    if (_selectedManagerIds.isEmpty) {
+      _selectedManagerId = null;
+      _selectedManagerName = null;
+      return;
+    }
+    _selectedManagerId = _selectedManagerIds.first;
+    _selectedManagerName =
+        _managerById(_selectedManagerId!)?.displayName ?? _selectedManagerName;
+  }
+
+  void _setPrimaryManager(String managerId) {
+    setState(() {
+      _selectedManagerIds.remove(managerId);
+      _selectedManagerIds.insert(0, managerId);
+      _syncPrimaryManagerFromSelection();
+    });
+  }
+
+  void _addAssignedManager(String? managerId) {
+    if (managerId == null || managerId.isEmpty) return;
+    setState(() {
+      if (!_selectedManagerIds.contains(managerId)) {
+        _selectedManagerIds.add(managerId);
+      }
+      _syncPrimaryManagerFromSelection();
+    });
+  }
+
+  void _removeAssignedManager(String managerId) {
+    setState(() {
+      _selectedManagerIds.remove(managerId);
+      _syncPrimaryManagerFromSelection();
+    });
+  }
+
+  void _moveAssignedManager(String managerId, int direction) {
+    final index = _selectedManagerIds.indexOf(managerId);
+    final newIndex = index + direction;
+    if (index < 0 || newIndex < 0 || newIndex >= _selectedManagerIds.length) {
+      return;
+    }
+    setState(() {
+      final item = _selectedManagerIds.removeAt(index);
+      _selectedManagerIds.insert(newIndex, item);
+      _syncPrimaryManagerFromSelection();
+    });
   }
 
   @override
@@ -2002,6 +2073,13 @@ class _EditEmployeeDialogState extends State<EditEmployeeDialog> {
           !canUseSuperAdmin && widget.employee.role == EmployeeRole.superAdmin
           ? widget.employee.role
           : _selectedRole;
+      final selectedManagers = _selectedManagerIds
+          .map(_managerById)
+          .whereType<UserModel>()
+          .toList();
+      final primaryManager = selectedManagers.isEmpty
+          ? null
+          : selectedManagers.first;
       final updateData = {
         'displayName': _nameController.text.trim(),
         'employeeId': _codeController.text.trim(),
@@ -2015,8 +2093,16 @@ class _EditEmployeeDialogState extends State<EditEmployeeDialog> {
         'leaveBalance.daysOff':
             int.tryParse(_daysOffController.text) ??
             widget.employee.leaveBalance.daysOff,
-        'managerId': _selectedManagerId,
-        'managerName': _selectedManagerName,
+        'managerId': primaryManager?.uid,
+        'managerName': primaryManager?.displayName,
+        'managerIds': selectedManagers.map((manager) => manager.uid).toList(),
+        'managerNames': selectedManagers
+            .map((manager) => manager.displayName)
+            .toList(),
+        'managerCodes': selectedManagers
+            .map((manager) => manager.employeeId)
+            .where((code) => code.isNotEmpty)
+            .toList(),
       };
 
       await _db.collection('users').doc(widget.employee.uid).update(updateData);
@@ -2331,38 +2417,148 @@ class _EditEmployeeDialogState extends State<EditEmployeeDialog> {
                   onChanged: (val) {
                     setState(() {
                       if (val != null) {
-                        final selected = _managers.firstWhere(
-                          (e) => e.uid == val,
-                        );
-                        _selectedManagerId = val;
-                        _selectedManagerName = selected.displayName;
+                        _selectedManagerIds.remove(val);
+                        _selectedManagerIds.insert(0, val);
+                        _syncPrimaryManagerFromSelection();
                       } else {
-                        _selectedManagerId = null;
-                        _selectedManagerName = null;
+                        _selectedManagerIds.clear();
+                        _syncPrimaryManagerFromSelection();
                       }
                     });
                   },
                 ),
-                if (widget.employee.managerNames.length > 1) ...[
-                  const SizedBox(height: 10),
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: ZaWolfColors.surface02,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: ZaWolfColors.surface03),
-                    ),
-                    child: Text(
-                      'المديرون المسندون: ${widget.employee.managerNames.join('، ')}',
-                      style: const TextStyle(
-                        color: ZaWolfColors.textSecondary,
-                        fontSize: 13,
-                      ),
-                      textDirection: TextDirection.rtl,
-                    ),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<String>(
+                  key: ValueKey(
+                    'assigned-manager-${_selectedManagerIds.join('|')}',
                   ),
-                ],
+                  initialValue: null,
+                  dropdownColor: ZaWolfColors.surface01,
+                  decoration: const InputDecoration(
+                    labelText: 'إضافة مدير آخر لمسار الموافقات',
+                    labelStyle: TextStyle(color: ZaWolfColors.primaryCyan),
+                  ),
+                  style: const TextStyle(color: Colors.white),
+                  items: _managers
+                      .where((mgr) => !_selectedManagerIds.contains(mgr.uid))
+                      .map(
+                        (mgr) => DropdownMenuItem(
+                          value: mgr.uid,
+                          child: Align(
+                            alignment: Alignment.centerRight,
+                            child: Text(mgr.displayName),
+                          ),
+                        ),
+                      )
+                      .toList(),
+                  onChanged: _addAssignedManager,
+                ),
+                const SizedBox(height: 10),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: ZaWolfColors.surface02,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: ZaWolfColors.surface03),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const Text(
+                        'مسار الموافقات',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w700,
+                        ),
+                        textDirection: TextDirection.rtl,
+                      ),
+                      const SizedBox(height: 8),
+                      if (_selectedManagerIds.isEmpty)
+                        const Text(
+                          'لا يوجد مدير مسند حالياً',
+                          style: TextStyle(color: ZaWolfColors.textSecondary),
+                          textDirection: TextDirection.rtl,
+                        )
+                      else
+                        ..._selectedManagerIds.asMap().entries.map((entry) {
+                          final index = entry.key;
+                          final managerId = entry.value;
+                          final manager = _managerById(managerId);
+                          final managerName =
+                              manager?.displayName ?? 'مدير غير معروف';
+                          return Padding(
+                            padding: EdgeInsets.only(
+                              bottom: index == _selectedManagerIds.length - 1
+                                  ? 0
+                                  : 8,
+                            ),
+                            child: Row(
+                              children: [
+                                IconButton(
+                                  tooltip: 'حذف',
+                                  icon: const Icon(
+                                    Icons.close,
+                                    color: ZaWolfColors.error,
+                                  ),
+                                  onPressed: () =>
+                                      _removeAssignedManager(managerId),
+                                ),
+                                IconButton(
+                                  tooltip: 'تحريك لأسفل',
+                                  icon: const Icon(
+                                    Icons.keyboard_arrow_down,
+                                    color: ZaWolfColors.textSecondary,
+                                  ),
+                                  onPressed:
+                                      index == _selectedManagerIds.length - 1
+                                      ? null
+                                      : () =>
+                                            _moveAssignedManager(managerId, 1),
+                                ),
+                                IconButton(
+                                  tooltip: 'تحريك لأعلى',
+                                  icon: const Icon(
+                                    Icons.keyboard_arrow_up,
+                                    color: ZaWolfColors.textSecondary,
+                                  ),
+                                  onPressed: index == 0
+                                      ? null
+                                      : () =>
+                                            _moveAssignedManager(managerId, -1),
+                                ),
+                                Expanded(
+                                  child: Text(
+                                    index == 0
+                                        ? '$managerName · المدير المباشر'
+                                        : '$managerName · موافقة رقم ${index + 1}',
+                                    style: const TextStyle(
+                                      color: ZaWolfColors.textSecondary,
+                                    ),
+                                    textDirection: TextDirection.rtl,
+                                  ),
+                                ),
+                                if (index != 0)
+                                  TextButton(
+                                    onPressed: () =>
+                                        _setPrimaryManager(managerId),
+                                    child: const Text('تعيين مباشر'),
+                                  ),
+                              ],
+                            ),
+                          );
+                        }),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'الطلب يذهب إلى HR أولاً، ثم إلى المديرين بهذا الترتيب.',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: ZaWolfColors.textMuted,
+                  ),
+                  textDirection: TextDirection.rtl,
+                ),
                 const SizedBox(height: 24),
 
                 Container(

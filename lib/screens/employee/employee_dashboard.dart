@@ -29,24 +29,50 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
   bool _actionLoading = false;
   CompanyDayOffStatus _dayOffStatus = const CompanyDayOffStatus.workDay();
   bool _checkingDayOff = false;
-  late Stream<List<AttendanceModel>> _attendanceStream;
+  Stream<List<AttendanceModel>> _attendanceStream = const Stream.empty();
+  String? _attendanceStreamUserId;
+  String? _attendanceStreamMonthKey;
+  String? _preparedUserId;
 
   @override
   void initState() {
     super.initState();
-    final user = Provider.of<AuthService>(context, listen: false).currentUser;
+    AttendanceService().syncPendingOfflineAttendance();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final user = Provider.of<AuthService>(context).currentUser;
     final currentMonthKey = DateFormat('yyyy-MM').format(DateTime.now());
-    if (user != null) {
+    if (user == null) {
+      if (_attendanceStreamUserId != null) {
+        _attendanceStream = const Stream.empty();
+        _attendanceStreamUserId = null;
+        _attendanceStreamMonthKey = null;
+        _preparedUserId = null;
+      }
+      return;
+    }
+
+    if (_attendanceStreamUserId != user.uid ||
+        _attendanceStreamMonthKey != currentMonthKey) {
       _attendanceStream = AttendanceService().watchMonthlyAttendance(
         user.uid,
         currentMonthKey,
       );
-    } else {
-      _attendanceStream = const Stream.empty();
+      _attendanceStreamUserId = user.uid;
+      _attendanceStreamMonthKey = currentMonthKey;
     }
-    _checkCurrentGeofence();
-    _checkCompanyDayOff();
-    AttendanceService().syncPendingOfflineAttendance();
+
+    if (_preparedUserId != user.uid) {
+      _preparedUserId = user.uid;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || _preparedUserId != user.uid) return;
+        _checkCurrentGeofence();
+        _checkCompanyDayOff();
+      });
+    }
   }
 
   Future<void> _checkCurrentGeofence() async {

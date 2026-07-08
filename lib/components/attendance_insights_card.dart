@@ -8,11 +8,13 @@ import 'wolf_card.dart';
 class AttendanceInsightsCard extends StatelessWidget {
   final DashboardAttendanceSummary summary;
   final VoidCallback? onRefresh;
+  final VoidCallback? onTap;
 
   const AttendanceInsightsCard({
     super.key,
     required this.summary,
     this.onRefresh,
+    this.onTap,
   });
 
   @override
@@ -22,6 +24,7 @@ class AttendanceInsightsCard extends StatelessWidget {
 
     return WolfCard(
       hasBorderGlow: true,
+      onTap: onTap,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [

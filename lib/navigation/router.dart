@@ -28,6 +28,7 @@ import '../screens/manager/tasks_mgmt.dart';
 import '../screens/manager/team_attendance.dart';
 import '../screens/manager/warnings_rewards_mgmt.dart';
 import '../screens/hr/hr_dashboard.dart';
+import '../screens/hr/attendance_summary_details_screen.dart';
 import '../screens/hr/employee_mgmt.dart';
 import '../screens/hr/announcements.dart';
 import '../screens/hr/sheets_export_screen.dart';
@@ -160,6 +161,11 @@ class ZaWolfRouter {
               builder: (context, state) => const ManagerDashboardScreen(),
             ),
             GoRoute(
+              path: '/manager/attendance-summary',
+              builder: (context, state) =>
+                  const AttendanceSummaryDetailsScreen(),
+            ),
+            GoRoute(
               path: '/manager/requests',
               builder: (context, state) => const RequestsManagementScreen(),
             ),
@@ -200,6 +206,11 @@ class ZaWolfRouter {
             GoRoute(
               path: '/hr/dashboard',
               builder: (context, state) => const HrDashboardScreen(),
+            ),
+            GoRoute(
+              path: '/hr/attendance-summary',
+              builder: (context, state) =>
+                  const AttendanceSummaryDetailsScreen(),
             ),
             GoRoute(
               path: '/hr/requests',
