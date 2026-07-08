@@ -10,6 +10,78 @@ class PermissionService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
   final AttendancePolicyService _policyService = AttendancePolicyService();
 
+  List<String> _approvalManagerIds(UserModel employee, String fallbackId) {
+    final ids = employee.managerIds
+        .where((id) => id.trim().isNotEmpty)
+        .toList();
+    if (ids.isNotEmpty) return ids;
+    return fallbackId.trim().isEmpty ? <String>[] : <String>[fallbackId];
+  }
+
+  List<String> _approvalManagerNames(UserModel employee, String? fallbackName) {
+    final names = employee.managerNames
+        .where((name) => name.trim().isNotEmpty)
+        .toList();
+    if (names.isNotEmpty) return names;
+    return fallbackName == null || fallbackName.trim().isEmpty
+        ? <String>[]
+        : <String>[fallbackName];
+  }
+
+  Map<String, dynamic> _nextManagerApprovalUpdate({
+    required Map<String, dynamic> data,
+    required String reviewerId,
+    required String reviewerRole,
+  }) {
+    final managerIds =
+        (data['managerIds'] as List<dynamic>?)
+            ?.whereType<String>()
+            .where((id) => id.trim().isNotEmpty)
+            .toList() ??
+        <String>[];
+    final managerNames =
+        (data['managerNames'] as List<dynamic>?)
+            ?.whereType<String>()
+            .toList() ??
+        <String>[];
+    final currentManagerId = data['managerId'] as String? ?? '';
+    final savedIndex = data['managerApprovalIndex'] as int?;
+    final currentIndex = savedIndex ?? managerIds.indexOf(currentManagerId);
+    final nextIndex = currentIndex + 1;
+    final trail = {
+      'reviewerId': reviewerId,
+      'reviewerRole': reviewerRole,
+      'reviewedAt': Timestamp.now(),
+      'stage': currentIndex < 0 ? 0 : currentIndex,
+    };
+
+    if (nextIndex >= 0 && nextIndex < managerIds.length) {
+      return {
+        'status': 'pending_manager',
+        'managerId': managerIds[nextIndex],
+        'managerName': nextIndex < managerNames.length
+            ? managerNames[nextIndex]
+            : null,
+        'managerApprovalIndex': nextIndex,
+        'managerApprovalTrail': FieldValue.arrayUnion([trail]),
+        'reviewedBy': reviewerId,
+        'reviewedAt': FieldValue.serverTimestamp(),
+        'managerReviewedBy': reviewerId,
+        'managerReviewedAt': FieldValue.serverTimestamp(),
+      };
+    }
+
+    return {
+      'status': 'approved',
+      'managerApprovalIndex': managerIds.isEmpty ? 0 : managerIds.length - 1,
+      'managerApprovalTrail': FieldValue.arrayUnion([trail]),
+      'reviewedBy': reviewerId,
+      'reviewedAt': FieldValue.serverTimestamp(),
+      'managerReviewedBy': reviewerId,
+      'managerReviewedAt': FieldValue.serverTimestamp(),
+    };
+  }
+
   DateTime _parseTimeToday(String timeStr) {
     final now = DateTime.now();
     final parts = timeStr.split(':');
@@ -77,6 +149,8 @@ class PermissionService {
 
     final permRef = _db.collection('permissions').doc();
     final finalStatus = isLateSubmission ? 'invalid_late' : 'pending_hr';
+    final managerIds = _approvalManagerIds(employee, req.managerId);
+    final managerNames = _approvalManagerNames(employee, employee.managerName);
 
     final finalModel = PermissionModel(
       permissionId: permRef.id,
@@ -104,7 +178,14 @@ class PermissionService {
       isRead: false,
     );
 
-    await permRef.set(finalModel.toFirestore());
+    await permRef.set({
+      ...finalModel.toFirestore(),
+      'managerIds': managerIds,
+      'managerNames': managerNames,
+      'managerApprovalIndex': 0,
+      'managerApprovalTotal': managerIds.length,
+      'managerApprovalTrail': <Map<String, dynamic>>[],
+    });
 
     // ── Triggers notifications (No functions, direct Firestore write) ──
     if (isLateSubmission) {
@@ -143,13 +224,42 @@ class PermissionService {
     final reviewerRole = (reviewerDoc.data()?['role'] as String?) ?? 'employee';
 
     if (perm.status == 'pending_hr') {
-      await docRef.update({
-        'status': 'pending_manager',
+      final data = doc.data() ?? <String, dynamic>{};
+      final managerIds =
+          (data['managerIds'] as List<dynamic>?)
+              ?.whereType<String>()
+              .toList() ??
+          (perm.managerId.isEmpty ? <String>[] : <String>[perm.managerId]);
+      final managerNames =
+          (data['managerNames'] as List<dynamic>?)
+              ?.whereType<String>()
+              .toList() ??
+          <String>[];
+      final firstManagerId = managerIds.isNotEmpty ? managerIds.first : '';
+      final update = {
+        'status': firstManagerId.isEmpty ? 'approved' : 'pending_manager',
+        if (firstManagerId.isNotEmpty) 'managerId': firstManagerId,
+        if (managerNames.isNotEmpty) 'managerName': managerNames.first,
+        'managerApprovalIndex': 0,
         'hrReviewedBy': reviewerId,
         'hrReviewedAt': FieldValue.serverTimestamp(),
         'reviewedBy': reviewerId,
         'reviewedAt': FieldValue.serverTimestamp(),
-      });
+      };
+
+      if (firstManagerId.isEmpty) {
+        final batch = _db.batch();
+        batch.update(docRef, update);
+        batch.update(_db.collection('users').doc(perm.userId), {
+          'permissionBalance.usedThisMonth': FieldValue.increment(1),
+          'permissionBalance.usedHoursThisMonth': FieldValue.increment(
+            perm.durationMinutes / 60.0,
+          ),
+        });
+        await batch.commit();
+      } else {
+        await docRef.update(update);
+      }
 
       await AuditLogService.instance.record(
         actorId: reviewerId,
@@ -159,10 +269,10 @@ class PermissionService {
         metadata: {'userId': perm.userId, 'managerId': perm.managerId},
       );
 
-      if (perm.managerId.isNotEmpty) {
+      if (firstManagerId.isNotEmpty) {
         try {
           await _createNotification(
-            recipientId: perm.managerId,
+            recipientId: firstManagerId,
             type: 'permission_pending_manager',
             title: 'طلب إذن بانتظار موافقتك',
             body:
@@ -183,24 +293,25 @@ class PermissionService {
     }
 
     final batch = _db.batch();
+    final nextUpdate = _nextManagerApprovalUpdate(
+      data: doc.data() ?? <String, dynamic>{},
+      reviewerId: reviewerId,
+      reviewerRole: reviewerRole,
+    );
 
     // 1. Update status
-    batch.update(docRef, {
-      'status': 'approved',
-      'reviewedBy': reviewerId,
-      'reviewedAt': FieldValue.serverTimestamp(),
-      'managerReviewedBy': reviewerId,
-      'managerReviewedAt': FieldValue.serverTimestamp(),
-    });
+    batch.update(docRef, nextUpdate);
 
     // 2. Increment employee quota counters
-    final userRef = _db.collection('users').doc(perm.userId);
-    batch.update(userRef, {
-      'permissionBalance.usedThisMonth': FieldValue.increment(1),
-      'permissionBalance.usedHoursThisMonth': FieldValue.increment(
-        perm.durationMinutes / 60.0,
-      ),
-    });
+    if (nextUpdate['status'] == 'approved') {
+      final userRef = _db.collection('users').doc(perm.userId);
+      batch.update(userRef, {
+        'permissionBalance.usedThisMonth': FieldValue.increment(1),
+        'permissionBalance.usedHoursThisMonth': FieldValue.increment(
+          perm.durationMinutes / 60.0,
+        ),
+      });
+    }
 
     await batch.commit();
 
@@ -215,6 +326,22 @@ class PermissionService {
         'permissionType': perm.permissionType,
       },
     );
+
+    if (nextUpdate['status'] == 'pending_manager') {
+      final nextManagerId = nextUpdate['managerId'] as String?;
+      if (nextManagerId != null && nextManagerId.isNotEmpty) {
+        try {
+          await _createNotification(
+            recipientId: nextManagerId,
+            type: 'permission_pending_manager',
+            title: 'طلب إذن بانتظار موافقتك',
+            body: '${perm.employeeName} حصل على موافقة مدير سابق وينتظر قرارك.',
+            data: {'permissionId': permissionId},
+          );
+        } catch (_) {}
+      }
+      return;
+    }
 
     // 3. Notify employee
     try {

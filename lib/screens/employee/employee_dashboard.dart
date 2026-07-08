@@ -213,6 +213,9 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
       body: StreamBuilder<List<AttendanceModel>>(
         stream: _attendanceStream,
         builder: (context, snapshot) {
+          final attendanceError = snapshot.hasError
+              ? 'تعذر تحميل سجل الحضور الآن. يمكنك السحب للتحديث أو المحاولة مرة أخرى.'
+              : null;
           final logs = snapshot.data ?? [];
           final todayLog = logs.firstWhere(
             (log) => log.date == todayStr,
@@ -261,6 +264,30 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
+                  if (attendanceError != null) ...[
+                    WolfCard(
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Icon(
+                            Icons.cloud_off_outlined,
+                            color: ZaWolfColors.warning,
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              attendanceError,
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                color: ZaWolfColors.textSecondary,
+                              ),
+                              textDirection: TextDirection.rtl,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                  ],
                   Container(
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(

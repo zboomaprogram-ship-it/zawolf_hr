@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:onesignal_flutter/onesignal_flutter.dart';
+import 'notification_service.dart';
 
 class OneSignalService {
   OneSignalService._internal();
@@ -14,6 +15,11 @@ class OneSignalService {
     if (!isConfigured || _initialized) return;
     try {
       OneSignal.initialize(_appId);
+      OneSignal.Notifications.addClickListener((event) {
+        final data = event.notification.additionalData ?? {};
+        final route = data['route'] as String?;
+        NotificationService.instance.handleRemoteNotificationRoute(route);
+      });
       await OneSignal.Notifications.requestPermission(true);
       _initialized = true;
     } catch (e) {

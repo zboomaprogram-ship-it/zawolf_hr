@@ -32,6 +32,9 @@ async function sendPushToUsers(userIds, title, body, data = {}) {
   if (!response.ok) {
     throw new Error(`OneSignal push failed (${response.status}): ${JSON.stringify(json)}`);
   }
+  if (json.errors) {
+    throw new Error(`OneSignal push returned errors: ${JSON.stringify(json.errors)}`);
+  }
   return { sent: true, response: json };
 }
 

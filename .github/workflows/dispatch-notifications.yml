@@ -1,0 +1,38 @@
+name: Dispatch Push Notifications
+
+on:
+  schedule:
+    # GitHub Actions cannot run every second; this polls often enough without Cloud Functions.
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+    inputs:
+      batch_size:
+        description: Maximum notifications to push in this run
+        required: false
+        default: '100'
+        type: string
+
+jobs:
+  dispatch-notifications:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v5
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+
+      - name: Install Dependencies
+        working-directory: ./scripts
+        run: npm ci
+
+      - name: Dispatch Firestore Notifications to OneSignal
+        working-directory: ./scripts
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          ONESIGNAL_APP_ID: ${{ secrets.ONESIGNAL_APP_ID }}
+          ONESIGNAL_REST_API_KEY: ${{ secrets.ONESIGNAL_REST_API_KEY }}
+          NOTIFICATION_DISPATCH_BATCH_SIZE: ${{ inputs.batch_size || '100' }}
+        run: node dispatch-notifications.js

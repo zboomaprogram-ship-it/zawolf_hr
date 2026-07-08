@@ -587,19 +587,9 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen>
                     _buildApprovalActions(
                       onApprove: () async {
                         try {
-                          String nextStatus;
-                          if (reviewer.role == EmployeeRole.hrAdmin ||
-                              reviewer.role == EmployeeRole.superAdmin) {
-                            nextStatus = advance.status == 'pending_hr'
-                                ? 'pending_manager'
-                                : 'approved';
-                          } else {
-                            nextStatus = 'approved';
-                          }
-                          await _advanceService.updateAdvanceStatus(
+                          await _advanceService.approveAdvanceRequest(
                             advanceId: advance.advanceId,
-                            status: nextStatus,
-                            reviewerId: reviewer.uid,
+                            reviewer: reviewer,
                           );
                         } catch (e) {
                           if (!context.mounted) return;

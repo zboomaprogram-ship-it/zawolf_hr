@@ -11,6 +11,74 @@ class LeaveService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
   final FirebaseStorage _storage = FirebaseStorage.instance;
 
+  List<String> _approvalManagerIds(UserModel employee, String fallbackId) {
+    final ids = employee.managerIds
+        .where((id) => id.trim().isNotEmpty)
+        .toList();
+    if (ids.isNotEmpty) return ids;
+    return fallbackId.trim().isEmpty ? <String>[] : <String>[fallbackId];
+  }
+
+  List<String> _approvalManagerNames(UserModel employee, String? fallbackName) {
+    final names = employee.managerNames
+        .where((name) => name.trim().isNotEmpty)
+        .toList();
+    if (names.isNotEmpty) return names;
+    return fallbackName == null || fallbackName.trim().isEmpty
+        ? <String>[]
+        : <String>[fallbackName];
+  }
+
+  Map<String, dynamic> _nextManagerApprovalUpdate({
+    required Map<String, dynamic> data,
+    required String reviewerId,
+    required String reviewerRole,
+  }) {
+    final managerIds =
+        (data['managerIds'] as List<dynamic>?)
+            ?.whereType<String>()
+            .where((id) => id.trim().isNotEmpty)
+            .toList() ??
+        <String>[];
+    final managerNames =
+        (data['managerNames'] as List<dynamic>?)
+            ?.whereType<String>()
+            .toList() ??
+        <String>[];
+    final currentManagerId = data['managerId'] as String? ?? '';
+    final savedIndex = data['managerApprovalIndex'] as int?;
+    final currentIndex = savedIndex ?? managerIds.indexOf(currentManagerId);
+    final nextIndex = currentIndex + 1;
+    final trail = {
+      'reviewerId': reviewerId,
+      'reviewerRole': reviewerRole,
+      'reviewedAt': Timestamp.now(),
+      'stage': currentIndex < 0 ? 0 : currentIndex,
+    };
+
+    if (nextIndex >= 0 && nextIndex < managerIds.length) {
+      return {
+        'status': 'pending_manager',
+        'managerId': managerIds[nextIndex],
+        'managerName': nextIndex < managerNames.length
+            ? managerNames[nextIndex]
+            : null,
+        'managerApprovalIndex': nextIndex,
+        'managerApprovalTrail': FieldValue.arrayUnion([trail]),
+        'reviewedBy': reviewerId,
+        'reviewedAt': FieldValue.serverTimestamp(),
+      };
+    }
+
+    return {
+      'status': 'approved',
+      'managerApprovalIndex': managerIds.isEmpty ? 0 : managerIds.length - 1,
+      'managerApprovalTrail': FieldValue.arrayUnion([trail]),
+      'reviewedBy': reviewerId,
+      'reviewedAt': FieldValue.serverTimestamp(),
+    };
+  }
+
   // Upload certificate attachment to Firebase Storage (supports mobile & web via bytes)
   Future<String> uploadAttachment({
     required String leaveId,
@@ -71,6 +139,8 @@ class LeaveService {
     }
 
     final reqRef = _db.collection('leaves').doc();
+    final managerIds = _approvalManagerIds(employee, req.managerId);
+    final managerNames = _approvalManagerNames(employee, employee.managerName);
     final finalModel = LeaveModel(
       leaveId: reqRef.id,
       userId: req.userId,
@@ -89,7 +159,14 @@ class LeaveService {
       submittedAt: DateTime.now(),
     );
 
-    await reqRef.set(finalModel.toFirestore());
+    await reqRef.set({
+      ...finalModel.toFirestore(),
+      'managerIds': managerIds,
+      'managerNames': managerNames,
+      'managerApprovalIndex': 0,
+      'managerApprovalTotal': managerIds.length,
+      'managerApprovalTrail': <Map<String, dynamic>>[],
+    });
 
     // 3. Notify manager
     if (req.managerId.isNotEmpty) {
@@ -117,30 +194,54 @@ class LeaveService {
 
     if (!doc.exists) throw Exception('طلب الإجازة غير موجود');
     final leave = LeaveModel.fromFirestore(doc);
+    final data = doc.data() ?? <String, dynamic>{};
 
     final batch = _db.batch();
 
-    String nextStatus;
     bool isFinalApproval = false;
+    Map<String, dynamic> update;
 
     if (role == EmployeeRole.hrAdmin || role == EmployeeRole.superAdmin) {
       if (leave.status == 'pending_hr') {
-        nextStatus = 'pending_manager';
+        final managerIds =
+            (data['managerIds'] as List<dynamic>?)
+                ?.whereType<String>()
+                .toList() ??
+            (leave.managerId.isEmpty ? <String>[] : <String>[leave.managerId]);
+        final managerNames =
+            (data['managerNames'] as List<dynamic>?)
+                ?.whereType<String>()
+                .toList() ??
+            <String>[];
+        final firstManagerId = managerIds.isNotEmpty ? managerIds.first : '';
+        update = {
+          'status': firstManagerId.isEmpty ? 'approved' : 'pending_manager',
+          if (firstManagerId.isNotEmpty) 'managerId': firstManagerId,
+          if (managerNames.isNotEmpty) 'managerName': managerNames.first,
+          'managerApprovalIndex': 0,
+          'reviewedBy': reviewerId,
+          'reviewedAt': FieldValue.serverTimestamp(),
+        };
+        isFinalApproval = firstManagerId.isEmpty;
       } else {
-        nextStatus = 'approved';
-        isFinalApproval = true;
+        update = _nextManagerApprovalUpdate(
+          data: data,
+          reviewerId: reviewerId,
+          reviewerRole: role,
+        );
+        isFinalApproval = update['status'] == 'approved';
       }
     } else {
       // Manager
-      nextStatus = 'approved';
-      isFinalApproval = true;
+      update = _nextManagerApprovalUpdate(
+        data: data,
+        reviewerId: reviewerId,
+        reviewerRole: role,
+      );
+      isFinalApproval = update['status'] == 'approved';
     }
 
-    batch.update(docRef, {
-      'status': nextStatus,
-      'reviewedBy': reviewerId,
-      'reviewedAt': FieldValue.serverTimestamp(),
-    });
+    batch.update(docRef, update);
 
     if (isFinalApproval) {
       // Deduct leave balance
@@ -168,6 +269,22 @@ class LeaveService {
         'leaveType': leave.leaveType,
       },
     );
+
+    if (update['status'] == 'pending_manager') {
+      final nextManagerId = update['managerId'] as String?;
+      if (nextManagerId != null && nextManagerId.isNotEmpty) {
+        try {
+          await _createNotification(
+            recipientId: nextManagerId,
+            type: 'leave_request_submitted',
+            title: 'طلب إجازة بانتظار موافقتك',
+            body: '${leave.employeeName} حصل على موافقة سابقة وينتظر قرارك.',
+            data: {'leaveId': leaveId},
+          );
+        } catch (_) {}
+      }
+      return;
+    }
 
     // 3. Notify employee
     try {

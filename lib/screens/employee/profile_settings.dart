@@ -258,7 +258,9 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                   ),
                   _buildProfileRow(
                     'المدير المباشر',
-                    user.managerName ?? 'لا يوجد مدير مباشر مسند',
+                    user.managerNames.isNotEmpty
+                        ? user.managerNames.join('، ')
+                        : (user.managerName ?? 'لا يوجد مدير مباشر مسند'),
                     theme,
                   ),
                   _buildProfileRow('تاريخ الانضمام', joinDateStr, theme),

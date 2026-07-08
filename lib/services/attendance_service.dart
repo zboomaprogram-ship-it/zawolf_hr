@@ -555,12 +555,18 @@ class AttendanceService {
         if (!controller.isClosed) controller.add(logs);
       }
 
-      final remoteSub = remoteStream.listen((snapshot) {
-        remoteLogs = snapshot.docs
-            .map((doc) => AttendanceModel.fromFirestore(doc))
-            .toList();
-        emitMerged();
-      }, onError: controller.addError);
+      final remoteSub = remoteStream.listen(
+        (snapshot) {
+          remoteLogs = snapshot.docs
+              .map((doc) => AttendanceModel.fromFirestore(doc))
+              .toList();
+          emitMerged();
+        },
+        onError: (_) {
+          remoteLogs = <AttendanceModel>[];
+          emitMerged();
+        },
+      );
       final pendingSub = _offlineQueue.changes.listen((_) => emitMerged());
       emitMerged();
 

@@ -934,7 +934,9 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
                                   child: _buildInfoItem(
                                     icon: Icons.person_outline,
                                     label: 'المدير',
-                                    value: emp.managerName ?? '—',
+                                    value: emp.managerNames.isNotEmpty
+                                        ? emp.managerNames.join('، ')
+                                        : (emp.managerName ?? '—'),
                                   ),
                                 ),
                               ],
@@ -2341,6 +2343,26 @@ class _EditEmployeeDialogState extends State<EditEmployeeDialog> {
                     });
                   },
                 ),
+                if (widget.employee.managerNames.length > 1) ...[
+                  const SizedBox(height: 10),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: ZaWolfColors.surface02,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: ZaWolfColors.surface03),
+                    ),
+                    child: Text(
+                      'المديرون المسندون: ${widget.employee.managerNames.join('، ')}',
+                      style: const TextStyle(
+                        color: ZaWolfColors.textSecondary,
+                        fontSize: 13,
+                      ),
+                      textDirection: TextDirection.rtl,
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 24),
 
                 Container(

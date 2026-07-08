@@ -132,7 +132,10 @@ service cloud.firestore {
     }
     function managerBalanceUpdate() {
       return isManagerRole()
-        && resource.data.get('managerId', '') == uid()
+        && (
+          resource.data.get('managerId', '') == uid() ||
+          uid() in resource.data.get('managerIds', [])
+        )
         && request.resource.data.diff(resource.data).affectedKeys()
           .hasOnly([
             'permissionBalance',
@@ -236,7 +239,10 @@ service cloud.firestore {
       return isHR()
         && resource.data.status == 'pending_hr'
         && request.resource.data.diff(resource.data).affectedKeys()
-          .hasOnly(['status', 'reviewedBy', 'reviewedAt', 'reviewerComment', 'isRead'])
+          .hasOnly([
+            'status', 'reviewedBy', 'reviewedAt', 'reviewerComment', 'isRead',
+            'managerId', 'managerName', 'managerApprovalIndex'
+          ])
         && request.resource.data.status in ['pending_manager', 'approved', 'rejected']
         && request.resource.data.reviewedBy == uid();
     }
@@ -247,15 +253,21 @@ service cloud.firestore {
         )
         && resource.data.status == 'pending_manager'
         && request.resource.data.diff(resource.data).affectedKeys()
-          .hasOnly(['status', 'reviewedBy', 'reviewedAt', 'reviewerComment', 'isRead'])
-        && request.resource.data.status in ['approved', 'rejected']
+          .hasOnly([
+            'status', 'reviewedBy', 'reviewedAt', 'reviewerComment', 'isRead',
+            'managerId', 'managerName', 'managerApprovalIndex', 'managerApprovalTrail'
+          ])
+        && request.resource.data.status in ['pending_manager', 'approved', 'rejected']
         && request.resource.data.reviewedBy == uid();
     }
     function advanceHrReview() {
       return isHR()
         && resource.data.status == 'pending_hr'
         && request.resource.data.diff(resource.data).affectedKeys()
-          .hasOnly(['status', 'reviewedBy', 'reviewedAt', 'reviewerComment', 'isRead'])
+          .hasOnly([
+            'status', 'reviewedBy', 'reviewedAt', 'reviewerComment', 'isRead',
+            'managerId', 'managerName', 'managerApprovalIndex'
+          ])
         && request.resource.data.status in ['pending_manager', 'approved', 'rejected']
         && request.resource.data.reviewedBy == uid();
     }
@@ -266,8 +278,11 @@ service cloud.firestore {
         )
         && resource.data.status == 'pending_manager'
         && request.resource.data.diff(resource.data).affectedKeys()
-          .hasOnly(['status', 'reviewedBy', 'reviewedAt', 'reviewerComment', 'isRead'])
-        && request.resource.data.status in ['approved', 'rejected']
+          .hasOnly([
+            'status', 'reviewedBy', 'reviewedAt', 'reviewerComment', 'isRead',
+            'managerId', 'managerName', 'managerApprovalIndex', 'managerApprovalTrail'
+          ])
+        && request.resource.data.status in ['pending_manager', 'approved', 'rejected']
         && request.resource.data.reviewedBy == uid();
     }
     function permissionHrReview() {
@@ -276,9 +291,10 @@ service cloud.firestore {
         && request.resource.data.diff(resource.data).affectedKeys()
           .hasOnly([
             'status', 'reviewedBy', 'reviewedAt', 'reviewerComment', 'isRead',
-            'hrReviewedBy', 'hrReviewedAt', 'hrReviewerComment'
+            'hrReviewedBy', 'hrReviewedAt', 'hrReviewerComment',
+            'managerId', 'managerName', 'managerApprovalIndex'
           ])
-        && request.resource.data.status in ['pending_manager', 'rejected']
+        && request.resource.data.status in ['pending_manager', 'approved', 'rejected']
         && request.resource.data.reviewedBy == uid()
         && request.resource.data.hrReviewedBy == uid();
     }
@@ -291,9 +307,10 @@ service cloud.firestore {
         && request.resource.data.diff(resource.data).affectedKeys()
           .hasOnly([
             'status', 'reviewedBy', 'reviewedAt', 'reviewerComment', 'isRead',
-            'managerReviewedBy', 'managerReviewedAt', 'managerReviewerComment'
+            'managerReviewedBy', 'managerReviewedAt', 'managerReviewerComment',
+            'managerId', 'managerName', 'managerApprovalIndex', 'managerApprovalTrail'
           ])
-        && request.resource.data.status in ['approved', 'rejected']
+        && request.resource.data.status in ['pending_manager', 'approved', 'rejected']
         && request.resource.data.reviewedBy == uid()
         && request.resource.data.managerReviewedBy == uid();
     }
@@ -574,7 +591,9 @@ service cloud.firestore {
         && request.resource.data.keys().hasOnly([
           'userId', 'employeeId', 'employeeName', 'department', 'locationId',
           'managerId', 'leaveType', 'startDate', 'endDate', 'numberOfDays',
-          'reason', 'attachmentUrl', 'status', 'submittedAt', 'isRead'
+          'reason', 'attachmentUrl', 'status', 'submittedAt', 'isRead',
+          'managerIds', 'managerNames', 'managerApprovalIndex',
+          'managerApprovalTotal', 'managerApprovalTrail'
         ]);
       allow update: if isAuth() && isActive() && (
         (
@@ -607,7 +626,9 @@ service cloud.firestore {
           'durationMinutes', 'reason', 'status', 'isExceedingQuota',
           'isSubmittedAfterWorkStart', 'salaryDeductionFraction',
           'salaryDeductionAmount', 'salaryCurrency', 'salaryDeductionCode',
-          'salaryDeductionLabel', 'monthKey', 'submittedAt', 'isRead'
+          'salaryDeductionLabel', 'monthKey', 'submittedAt', 'isRead',
+          'managerIds', 'managerNames', 'managerApprovalIndex',
+          'managerApprovalTotal', 'managerApprovalTrail'
         ]);
       allow update: if isAuth() && isActive() && (
         (
@@ -634,7 +655,9 @@ service cloud.firestore {
         && request.resource.data.amount > 0
         && request.resource.data.keys().hasOnly([
           'userId', 'employeeId', 'employeeName', 'department', 'locationId',
-          'managerId', 'amount', 'reason', 'status', 'monthKey', 'submittedAt', 'isRead'
+          'managerId', 'amount', 'reason', 'status', 'monthKey', 'submittedAt',
+          'isRead', 'managerIds', 'managerNames', 'managerApprovalIndex',
+          'managerApprovalTotal', 'managerApprovalTrail'
         ]);
       allow update: if isAuth() && isActive() && (
         (

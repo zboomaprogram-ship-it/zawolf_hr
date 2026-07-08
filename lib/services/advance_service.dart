@@ -7,8 +7,83 @@ import 'audit_log_service.dart';
 class AdvanceService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
 
-  Future<void> submitAdvanceRequest(AdvanceModel req, UserModel employee) async {
+  List<String> _approvalManagerIds(UserModel employee, String fallbackId) {
+    final ids = employee.managerIds
+        .where((id) => id.trim().isNotEmpty)
+        .toList();
+    if (ids.isNotEmpty) return ids;
+    return fallbackId.trim().isEmpty ? <String>[] : <String>[fallbackId];
+  }
+
+  List<String> _approvalManagerNames(UserModel employee, String? fallbackName) {
+    final names = employee.managerNames
+        .where((name) => name.trim().isNotEmpty)
+        .toList();
+    if (names.isNotEmpty) return names;
+    return fallbackName == null || fallbackName.trim().isEmpty
+        ? <String>[]
+        : <String>[fallbackName];
+  }
+
+  Map<String, dynamic> _nextManagerApprovalUpdate({
+    required Map<String, dynamic> data,
+    required String reviewerId,
+    required String reviewerRole,
+  }) {
+    final managerIds =
+        (data['managerIds'] as List<dynamic>?)
+            ?.whereType<String>()
+            .where((id) => id.trim().isNotEmpty)
+            .toList() ??
+        <String>[];
+    final managerNames =
+        (data['managerNames'] as List<dynamic>?)
+            ?.whereType<String>()
+            .toList() ??
+        <String>[];
+    final currentManagerId = data['managerId'] as String? ?? '';
+    final savedIndex = data['managerApprovalIndex'] as int?;
+    final currentIndex = savedIndex ?? managerIds.indexOf(currentManagerId);
+    final nextIndex = currentIndex + 1;
+    final trail = {
+      'reviewerId': reviewerId,
+      'reviewerRole': reviewerRole,
+      'reviewedAt': Timestamp.now(),
+      'stage': currentIndex < 0 ? 0 : currentIndex,
+    };
+
+    if (nextIndex >= 0 && nextIndex < managerIds.length) {
+      return {
+        'status': 'pending_manager',
+        'managerId': managerIds[nextIndex],
+        'managerName': nextIndex < managerNames.length
+            ? managerNames[nextIndex]
+            : null,
+        'managerApprovalIndex': nextIndex,
+        'managerApprovalTrail': FieldValue.arrayUnion([trail]),
+        'reviewedBy': reviewerId,
+        'reviewedAt': FieldValue.serverTimestamp(),
+        'isRead': false,
+      };
+    }
+
+    return {
+      'status': 'approved',
+      'managerApprovalIndex': managerIds.isEmpty ? 0 : managerIds.length - 1,
+      'managerApprovalTrail': FieldValue.arrayUnion([trail]),
+      'reviewedBy': reviewerId,
+      'reviewedAt': FieldValue.serverTimestamp(),
+      'isRead': false,
+    };
+  }
+
+  Future<void> submitAdvanceRequest(
+    AdvanceModel req,
+    UserModel employee,
+  ) async {
     final ref = _db.collection('advances').doc();
+    final managerIds = _approvalManagerIds(employee, req.managerId);
+    final managerNames = _approvalManagerNames(employee, employee.managerName);
     final newReq = AdvanceModel(
       advanceId: ref.id,
       userId: req.userId,
@@ -23,7 +98,14 @@ class AdvanceService {
       monthKey: req.monthKey,
     );
 
-    await ref.set(newReq.toFirestore());
+    await ref.set({
+      ...newReq.toFirestore(),
+      'managerIds': managerIds,
+      'managerNames': managerNames,
+      'managerApprovalIndex': 0,
+      'managerApprovalTotal': managerIds.length,
+      'managerApprovalTrail': <Map<String, dynamic>>[],
+    });
 
     await AuditLogService.instance.record(
       actorId: employee.uid,
@@ -40,8 +122,8 @@ class AdvanceService {
         .orderBy('submittedAt', descending: true)
         .snapshots()
         .map((snapshot) {
-      return snapshot.docs.map(AdvanceModel.fromFirestore).toList();
-    });
+          return snapshot.docs.map(AdvanceModel.fromFirestore).toList();
+        });
   }
 
   Stream<List<AdvanceModel>> watchTeamAdvances(UserModel reviewer) {
@@ -50,11 +132,10 @@ class AdvanceService {
     if (reviewer.role == EmployeeRole.manager) {
       query = query.where('managerId', isEqualTo: reviewer.uid);
     }
-    
-    return query
-        .orderBy('submittedAt', descending: true)
-        .snapshots()
-        .map((snapshot) {
+
+    return query.orderBy('submittedAt', descending: true).snapshots().map((
+      snapshot,
+    ) {
       return snapshot.docs.map(AdvanceModel.fromFirestore).toList();
     });
   }
@@ -79,6 +160,61 @@ class AdvanceService {
       targetCollection: 'advances',
       targetId: advanceId,
       metadata: {'newStatus': status},
+    );
+  }
+
+  Future<void> approveAdvanceRequest({
+    required String advanceId,
+    required UserModel reviewer,
+  }) async {
+    final docRef = _db.collection('advances').doc(advanceId);
+    final doc = await docRef.get();
+    if (!doc.exists) throw Exception('طلب السلفة غير موجود');
+    final advance = AdvanceModel.fromFirestore(doc);
+    final data = doc.data() ?? <String, dynamic>{};
+
+    Map<String, dynamic> update;
+    if ((reviewer.role == EmployeeRole.hrAdmin ||
+            reviewer.role == EmployeeRole.superAdmin) &&
+        advance.status == 'pending_hr') {
+      final managerIds =
+          (data['managerIds'] as List<dynamic>?)
+              ?.whereType<String>()
+              .toList() ??
+          (advance.managerId.isEmpty
+              ? <String>[]
+              : <String>[advance.managerId]);
+      final managerNames =
+          (data['managerNames'] as List<dynamic>?)
+              ?.whereType<String>()
+              .toList() ??
+          <String>[];
+      final firstManagerId = managerIds.isNotEmpty ? managerIds.first : '';
+      update = {
+        'status': firstManagerId.isEmpty ? 'approved' : 'pending_manager',
+        if (firstManagerId.isNotEmpty) 'managerId': firstManagerId,
+        if (managerNames.isNotEmpty) 'managerName': managerNames.first,
+        'managerApprovalIndex': 0,
+        'reviewedBy': reviewer.uid,
+        'reviewedAt': FieldValue.serverTimestamp(),
+        'isRead': false,
+      };
+    } else {
+      update = _nextManagerApprovalUpdate(
+        data: data,
+        reviewerId: reviewer.uid,
+        reviewerRole: reviewer.role,
+      );
+    }
+
+    await docRef.update(update);
+
+    await AuditLogService.instance.record(
+      actorId: reviewer.uid,
+      action: 'advance_request_reviewed',
+      targetCollection: 'advances',
+      targetId: advanceId,
+      metadata: {'newStatus': update['status']},
     );
   }
 
