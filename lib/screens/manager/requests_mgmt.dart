@@ -41,7 +41,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 5, vsync: this);
+    _tabController = TabController(length: 6, vsync: this);
   }
 
   @override
@@ -193,6 +193,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen>
             Tab(text: 'الأذونات'),
             Tab(text: 'السلف'),
             Tab(text: 'خصومات التأخير'),
+            Tab(text: 'مراجعة أمنية'),
             Tab(text: 'الشكاوى'),
           ],
         ),
@@ -211,6 +212,8 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen>
 
           // ── TAB 4: SALARY DEDUCTIONS ──
           _buildSalaryDeductionsTab(manager, theme),
+
+          _buildSecurityReviewsTab(manager, theme),
 
           _buildComplaintsTab(manager, theme),
         ],
@@ -808,6 +811,235 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen>
     );
   }
 
+  Widget _buildSecurityReviewsTab(UserModel reviewer, ThemeData theme) {
+    if (reviewer.role == EmployeeRole.manager) {
+      return _buildEmptyState('مراجعة أمان الحضور من HR فقط');
+    }
+    return StreamBuilder<QuerySnapshot>(
+      stream: _db
+          .collection('attendance')
+          .where('securityReviewStatus', isEqualTo: 'pending_hr')
+          .snapshots(),
+      builder: (context, checkInSnapshot) {
+        return StreamBuilder<QuerySnapshot>(
+          stream: _db
+              .collection('attendance')
+              .where('checkoutSecurityReviewStatus', isEqualTo: 'pending_hr')
+              .snapshots(),
+          builder: (context, checkoutSnapshot) {
+            final waiting =
+                checkInSnapshot.connectionState == ConnectionState.waiting ||
+                checkoutSnapshot.connectionState == ConnectionState.waiting;
+            if (waiting) {
+              return const Center(
+                child: CircularProgressIndicator(
+                  color: ZaWolfColors.primaryCyan,
+                ),
+              );
+            }
+
+            final items = <_SecurityReviewItem>[
+              ...((checkInSnapshot.data?.docs ?? []).map(
+                (doc) => _SecurityReviewItem(
+                  attendance: AttendanceModel.fromFirestore(doc),
+                  checkout: false,
+                  docId: doc.id,
+                ),
+              )),
+              ...((checkoutSnapshot.data?.docs ?? []).map(
+                (doc) => _SecurityReviewItem(
+                  attendance: AttendanceModel.fromFirestore(doc),
+                  checkout: true,
+                  docId: doc.id,
+                ),
+              )),
+            ];
+
+            items.sort((a, b) {
+              final aTime =
+                  (a.checkout
+                      ? a.attendance.checkOutTime
+                      : a.attendance.checkInTime) ??
+                  _parseDateKey(a.attendance.date) ??
+                  DateTime.fromMillisecondsSinceEpoch(0);
+              final bTime =
+                  (b.checkout
+                      ? b.attendance.checkOutTime
+                      : b.attendance.checkInTime) ??
+                  _parseDateKey(b.attendance.date) ??
+                  DateTime.fromMillisecondsSinceEpoch(0);
+              return bTime.compareTo(aTime);
+            });
+
+            if (items.isEmpty) {
+              return _buildEmptyState('لا توجد مراجعات أمنية معلقة');
+            }
+
+            return ListView.builder(
+              padding: const EdgeInsets.all(16),
+              itemCount: items.length,
+              itemBuilder: (context, index) {
+                final item = items[index];
+                final attendance = item.attendance;
+                final reasons = item.checkout
+                    ? attendance.checkoutLocationRiskReasons
+                    : attendance.locationRiskReasons;
+                final riskMessage = item.checkout
+                    ? (attendance.checkoutLocationRiskMessage ??
+                          'مراجعة انصراف: تحقق من مؤشرات الموقع المسجلة')
+                    : (attendance.locationRiskMessage ??
+                          'مؤشرات موقع غير معتادة');
+                final accuracy = item.checkout
+                    ? attendance.checkoutLocationAccuracyMeters
+                    : attendance.locationAccuracyMeters;
+                final distance = item.checkout
+                    ? attendance.checkoutLocationDistanceMeters
+                    : attendance.locationDistanceMeters;
+                final radius = item.checkout
+                    ? attendance.checkoutLocationAllowedRadiusMeters
+                    : attendance.locationAllowedRadiusMeters;
+
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 16.0),
+                  child: WolfCard(
+                    hasBorderGlow: true,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _buildEmployeeHeader(
+                          attendance.employeeName,
+                          attendance.employeeId,
+                          attendance.locationName,
+                          theme,
+                        ),
+                        const SizedBox(height: 12),
+                        Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 5,
+                              ),
+                              decoration: BoxDecoration(
+                                color: ZaWolfColors.warning.withValues(
+                                  alpha: 0.12,
+                                ),
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(
+                                  color: ZaWolfColors.warning.withValues(
+                                    alpha: 0.35,
+                                  ),
+                                ),
+                              ),
+                              child: Text(
+                                item.checkout ? 'مراجعة انصراف' : 'مراجعة حضور',
+                                style: const TextStyle(
+                                  color: ZaWolfColors.warning,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                            const Spacer(),
+                            const Icon(
+                              Icons.security,
+                              color: ZaWolfColors.primaryCyan,
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 10),
+                        Text(
+                          riskMessage,
+                          style:
+                              theme.textTheme.titleMedium?.copyWith(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                              ) ??
+                              const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                              ),
+                          textDirection: TextDirection.rtl,
+                        ),
+                        _buildRequestDateLine(
+                          label: item.checkout ? 'وقت الانصراف' : 'وقت الحضور',
+                          date: item.checkout
+                              ? attendance.checkOutTime
+                              : attendance.checkInTime,
+                          fallback: _parseDateKey(attendance.date),
+                        ),
+                        if (accuracy != null)
+                          _buildInfoLine(
+                            'دقة الموقع',
+                            '${accuracy.toStringAsFixed(0)} متر',
+                          ),
+                        if (distance != null && radius != null)
+                          _buildInfoLine(
+                            'المسافة من الفرع',
+                            '${distance.toStringAsFixed(0)} متر من نطاق ${radius.toStringAsFixed(0)} متر',
+                          ),
+                        if (reasons.isNotEmpty)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 8),
+                            child: Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: reasons
+                                  .map(
+                                    (reason) => Chip(
+                                      label: Text(_riskReasonLabel(reason)),
+                                      backgroundColor: ZaWolfColors.surface02,
+                                      labelStyle: const TextStyle(
+                                        color: ZaWolfColors.textSecondary,
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                  )
+                                  .toList(),
+                            ),
+                          ),
+                        const SizedBox(height: 16),
+                        _buildApprovalActions(
+                          onApprove: () async {
+                            try {
+                              await _attendanceService.approveSecurityReview(
+                                item.docId,
+                                reviewer.uid,
+                                checkout: item.checkout,
+                              );
+                            } catch (e) {
+                              if (!context.mounted) return;
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(content: Text('فشل الموافقة: $e')),
+                              );
+                            }
+                          },
+                          onReject: () async {
+                            try {
+                              await _attendanceService.rejectSecurityReview(
+                                item.docId,
+                                reviewer.uid,
+                                checkout: item.checkout,
+                              );
+                            } catch (e) {
+                              if (!context.mounted) return;
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(content: Text('فشل الرفض: $e')),
+                              );
+                            }
+                          },
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            );
+          },
+        );
+      },
+    );
+  }
+
   Widget _buildEmployeeHeader(
     String name,
     String code,
@@ -908,6 +1140,52 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen>
     );
   }
 
+  Widget _buildInfoLine(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 6),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.end,
+        children: [
+          Flexible(
+            child: Text(
+              '$label: $value',
+              style: const TextStyle(
+                color: ZaWolfColors.textSecondary,
+                fontSize: 12,
+              ),
+              textDirection: TextDirection.rtl,
+            ),
+          ),
+          const SizedBox(width: 6),
+          const Icon(
+            Icons.info_outline,
+            size: 15,
+            color: ZaWolfColors.primaryCyan,
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _riskReasonLabel(String reason) {
+    switch (reason) {
+      case 'weak_accuracy':
+        return 'دقة ضعيفة';
+      case 'very_poor_accuracy':
+        return 'دقة مرفوضة';
+      case 'near_geofence_edge':
+        return 'قريب من الحد';
+      case 'offline_capture':
+        return 'بدون اتصال';
+      case 'mock_location':
+        return 'موقع وهمي';
+      case 'device_credential_fallback':
+        return 'بدون بصمة';
+      default:
+        return reason;
+    }
+  }
+
   DateTime? _parseDateKey(String value) {
     try {
       return DateFormat('yyyy-MM-dd').parseStrict(value);
@@ -945,4 +1223,16 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen>
         return type;
     }
   }
+}
+
+class _SecurityReviewItem {
+  final AttendanceModel attendance;
+  final bool checkout;
+  final String docId;
+
+  const _SecurityReviewItem({
+    required this.attendance,
+    required this.checkout,
+    required this.docId,
+  });
 }

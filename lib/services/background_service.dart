@@ -37,8 +37,17 @@ void callbackDispatcher() {
           final data = doc.data();
           final title = data['title'] as String? ?? 'تنبيه جديد';
           final body = data['body'] as String? ?? '';
+          final type = data['type'] as String? ?? '';
+          final rawData = data['data'];
+          final route = rawData is Map && rawData['route'] is String
+              ? rawData['route'] as String
+              : notifService.routeForType(type);
 
-          await notifService.showNotification(title, body, payload: doc.id);
+          await notifService.showNotification(
+            title,
+            body,
+            payload: 'route|$route',
+          );
         }
       }
     } catch (_) {

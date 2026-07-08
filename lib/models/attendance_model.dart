@@ -39,6 +39,15 @@ class AttendanceModel {
   final double? locationAllowedRadiusMeters;
   final bool locationMocked;
   final bool locationCapturedOffline;
+  final String checkoutSecurityReviewStatus;
+  final String checkoutLocationRiskLevel;
+  final List<String> checkoutLocationRiskReasons;
+  final String? checkoutLocationRiskMessage;
+  final double? checkoutLocationAccuracyMeters;
+  final double? checkoutLocationDistanceMeters;
+  final double? checkoutLocationAllowedRadiusMeters;
+  final bool checkoutLocationMocked;
+  final bool checkoutLocationCapturedOffline;
   final String
   status; // 'present' | 'late' | 'absent' | 'half-day' | 'on-leave'
 
@@ -81,6 +90,15 @@ class AttendanceModel {
     this.locationAllowedRadiusMeters,
     this.locationMocked = false,
     this.locationCapturedOffline = false,
+    this.checkoutSecurityReviewStatus = 'none',
+    this.checkoutLocationRiskLevel = 'low',
+    this.checkoutLocationRiskReasons = const [],
+    this.checkoutLocationRiskMessage,
+    this.checkoutLocationAccuracyMeters,
+    this.checkoutLocationDistanceMeters,
+    this.checkoutLocationAllowedRadiusMeters,
+    this.checkoutLocationMocked = false,
+    this.checkoutLocationCapturedOffline = false,
     required this.status,
   });
 
@@ -139,6 +157,26 @@ class AttendanceModel {
       locationMocked: data['locationMocked'] as bool? ?? false,
       locationCapturedOffline:
           data['locationCapturedOffline'] as bool? ?? false,
+      checkoutSecurityReviewStatus:
+          data['checkoutSecurityReviewStatus'] as String? ?? 'none',
+      checkoutLocationRiskLevel:
+          data['checkoutLocationRiskLevel'] as String? ?? 'low',
+      checkoutLocationRiskReasons:
+          (data['checkoutLocationRiskReasons'] as List<dynamic>?)
+              ?.map((item) => item.toString())
+              .toList() ??
+          const [],
+      checkoutLocationRiskMessage:
+          data['checkoutLocationRiskMessage'] as String?,
+      checkoutLocationAccuracyMeters:
+          (data['checkoutLocationAccuracyMeters'] as num?)?.toDouble(),
+      checkoutLocationDistanceMeters:
+          (data['checkoutLocationDistanceMeters'] as num?)?.toDouble(),
+      checkoutLocationAllowedRadiusMeters:
+          (data['checkoutLocationAllowedRadiusMeters'] as num?)?.toDouble(),
+      checkoutLocationMocked: data['checkoutLocationMocked'] as bool? ?? false,
+      checkoutLocationCapturedOffline:
+          data['checkoutLocationCapturedOffline'] as bool? ?? false,
       status: data['status'] as String? ?? 'present',
     );
   }
@@ -195,6 +233,24 @@ class AttendanceModel {
         'locationAllowedRadiusMeters': locationAllowedRadiusMeters,
       'locationMocked': locationMocked,
       'locationCapturedOffline': locationCapturedOffline,
+      if (checkoutSecurityReviewStatus != 'none')
+        'checkoutSecurityReviewStatus': checkoutSecurityReviewStatus,
+      if (checkoutLocationRiskLevel != 'low')
+        'checkoutLocationRiskLevel': checkoutLocationRiskLevel,
+      if (checkoutLocationRiskReasons.isNotEmpty)
+        'checkoutLocationRiskReasons': checkoutLocationRiskReasons,
+      if (checkoutLocationRiskMessage != null)
+        'checkoutLocationRiskMessage': checkoutLocationRiskMessage,
+      if (checkoutLocationAccuracyMeters != null)
+        'checkoutLocationAccuracyMeters': checkoutLocationAccuracyMeters,
+      if (checkoutLocationDistanceMeters != null)
+        'checkoutLocationDistanceMeters': checkoutLocationDistanceMeters,
+      if (checkoutLocationAllowedRadiusMeters != null)
+        'checkoutLocationAllowedRadiusMeters':
+            checkoutLocationAllowedRadiusMeters,
+      if (checkoutLocationMocked) 'checkoutLocationMocked': true,
+      if (checkoutLocationCapturedOffline)
+        'checkoutLocationCapturedOffline': true,
       'status': status,
     };
   }

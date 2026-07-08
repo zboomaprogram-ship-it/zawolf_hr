@@ -84,6 +84,9 @@ class AttendanceService {
     }
 
     final securityResult = await _securityService.verifyForAttendance();
+    final effectiveLocationRisk = locationRisk.withSecurityFallback(
+      securityResult.deviceCredentialFallbackUsed,
+    );
     await _ensureAttendanceDeviceBinding(
       employee,
       securityResult,
@@ -135,10 +138,10 @@ class AttendanceService {
         salaryDeductionApprovalStatus: deduction.dayFraction > 0
             ? 'pending_hr'
             : 'none',
-        securityReviewStatus: locationRisk.securityReviewStatus,
-        locationRiskLevel: locationRisk.level,
-        locationRiskReasons: locationRisk.reasons,
-        locationRiskMessage: locationRisk.message,
+        securityReviewStatus: effectiveLocationRisk.securityReviewStatus,
+        locationRiskLevel: effectiveLocationRisk.level,
+        locationRiskReasons: effectiveLocationRisk.reasons,
+        locationRiskMessage: effectiveLocationRisk.message,
         status: deduction.status,
       );
       final attendanceLog = AttendanceModel(
@@ -169,11 +172,11 @@ class AttendanceService {
             : 'none',
         deviceId: securityResult.deviceId,
         deviceLabel: securityResult.deviceLabel,
-        biometricVerified: securityResult.biometricOrDeviceCredentialVerified,
-        securityReviewStatus: locationRisk.securityReviewStatus,
-        locationRiskLevel: locationRisk.level,
-        locationRiskReasons: locationRisk.reasons,
-        locationRiskMessage: locationRisk.message,
+        biometricVerified: securityResult.biometricVerified,
+        securityReviewStatus: effectiveLocationRisk.securityReviewStatus,
+        locationRiskLevel: effectiveLocationRisk.level,
+        locationRiskReasons: effectiveLocationRisk.reasons,
+        locationRiskMessage: effectiveLocationRisk.message,
         locationAccuracyMeters: geoResult.accuracyMeters,
         locationDistanceMeters: geoResult.distanceMeters,
         locationAllowedRadiusMeters: geoResult.allowedRadius,
@@ -197,11 +200,11 @@ class AttendanceService {
           data: {'attendanceId': logRef.id},
         );
       }
-      if (online && locationRisk.requiresReview) {
+      if (online && effectiveLocationRisk.requiresReview) {
         await _notifyLocationSecurityReview(
           employee: employee,
           attendanceId: logRef.id,
-          risk: locationRisk,
+          risk: effectiveLocationRisk,
           isCheckOut: false,
         );
       }
@@ -266,10 +269,10 @@ class AttendanceService {
         salaryDeductionApprovalStatus: earlyCheckoutDeduction.patch.isEmpty
             ? checkInLog.salaryDeductionApprovalStatus
             : 'pending_hr',
-        securityReviewStatus: locationRisk.securityReviewStatus,
-        locationRiskLevel: locationRisk.level,
-        locationRiskReasons: locationRisk.reasons,
-        locationRiskMessage: locationRisk.message,
+        securityReviewStatus: effectiveLocationRisk.securityReviewStatus,
+        locationRiskLevel: effectiveLocationRisk.level,
+        locationRiskReasons: effectiveLocationRisk.reasons,
+        locationRiskMessage: effectiveLocationRisk.message,
         status: checkInLog.status,
       );
 
@@ -284,9 +287,8 @@ class AttendanceService {
           'totalWorkHours': totalWorkHours,
           'checkOutDeviceId': securityResult.deviceId,
           'checkOutDeviceLabel': securityResult.deviceLabel,
-          'checkOutBiometricVerified':
-              securityResult.biometricOrDeviceCredentialVerified,
-          ...locationRisk.toCheckoutFirestorePatch(geoResult),
+          'checkOutBiometricVerified': securityResult.biometricVerified,
+          ...effectiveLocationRisk.toCheckoutFirestorePatch(geoResult),
           ...earlyCheckoutDeduction.patch,
         });
       } else {
@@ -303,11 +305,11 @@ class AttendanceService {
           data: {'attendanceId': checkInDoc?.id ?? checkInLog.attendanceId},
         );
       }
-      if (online && locationRisk.requiresReview) {
+      if (online && effectiveLocationRisk.requiresReview) {
         await _notifyLocationSecurityReview(
           employee: employee,
           attendanceId: checkInDoc?.id ?? checkInLog.attendanceId,
-          risk: locationRisk,
+          risk: effectiveLocationRisk,
           isCheckOut: true,
         );
       }
@@ -742,6 +744,90 @@ class AttendanceService {
     await _reviewSalaryDeduction(attendanceId, reviewerId, 'rejected');
   }
 
+  Future<void> approveSecurityReview(
+    String attendanceId,
+    String reviewerId, {
+    required bool checkout,
+  }) async {
+    await _reviewAttendanceSecurity(
+      attendanceId,
+      reviewerId,
+      'approved',
+      checkout: checkout,
+    );
+  }
+
+  Future<void> rejectSecurityReview(
+    String attendanceId,
+    String reviewerId, {
+    required bool checkout,
+  }) async {
+    await _reviewAttendanceSecurity(
+      attendanceId,
+      reviewerId,
+      'rejected',
+      checkout: checkout,
+    );
+  }
+
+  Future<void> _reviewAttendanceSecurity(
+    String attendanceId,
+    String reviewerId,
+    String status, {
+    required bool checkout,
+  }) async {
+    final update = checkout
+        ? {
+            'checkoutSecurityReviewStatus': status,
+            'checkoutSecurityReviewedBy': reviewerId,
+            'checkoutSecurityReviewedAt': FieldValue.serverTimestamp(),
+          }
+        : {
+            'securityReviewStatus': status,
+            'securityReviewedBy': reviewerId,
+            'securityReviewedAt': FieldValue.serverTimestamp(),
+          };
+
+    await _db.collection('attendance').doc(attendanceId).update(update);
+
+    await AuditLogService.instance.record(
+      actorId: reviewerId,
+      action: checkout
+          ? 'checkout_security_review_$status'
+          : 'attendance_security_review_$status',
+      targetCollection: 'attendance',
+      targetId: attendanceId,
+    );
+
+    final doc = await _db.collection('attendance').doc(attendanceId).get();
+    if (!doc.exists) return;
+    final data = doc.data() ?? <String, dynamic>{};
+    final userId = data['userId'] as String?;
+    if (userId == null || userId.isEmpty) return;
+
+    final notifRef = _db
+        .collection('notifications')
+        .doc(userId)
+        .collection('items')
+        .doc();
+    await notifRef.set({
+      'notificationId': notifRef.id,
+      'type': 'attendance_security_reviewed',
+      'title': status == 'approved'
+          ? 'تم قبول مراجعة الحضور الأمنية'
+          : 'تم رفض مراجعة الحضور الأمنية',
+      'body': status == 'approved'
+          ? 'تم اعتماد حركة الحضور بعد مراجعة مؤشرات الموقع.'
+          : 'تم رفض حركة الحضور بعد مراجعة مؤشرات الموقع. تواصل مع HR إذا احتجت توضيحاً.',
+      'data': {'attendanceId': attendanceId},
+      'isRead': false,
+      'createdAt': FieldValue.serverTimestamp(),
+    });
+    await _db.collection('users').doc(userId).update({
+      'unreadNotifications': FieldValue.increment(1),
+    });
+  }
+
   Future<void> _reviewSalaryDeduction(
     String attendanceId,
     String reviewerId,
@@ -920,6 +1006,21 @@ class _LocationRiskAssessment {
       'checkoutLocationMocked': geoResult.isMocked,
       'checkoutLocationCapturedOffline': false,
     };
+  }
+
+  _LocationRiskAssessment withSecurityFallback(bool fallbackUsed) {
+    if (!fallbackUsed || blocked) return this;
+    final nextReasons = [...reasons, 'device_credential_fallback'];
+    final fallbackMessage =
+        'تم استخدام قفل الجهاز بدلاً من البصمة لأن الجهاز لا يدعم بصمة/وجه';
+    final nextMessage = message.isEmpty
+        ? fallbackMessage
+        : '$message، $fallbackMessage';
+    return _LocationRiskAssessment.review(
+      level: 'high',
+      reasons: nextReasons,
+      message: nextMessage,
+    );
   }
 }
 

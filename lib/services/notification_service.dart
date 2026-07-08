@@ -20,6 +20,35 @@ class NotificationService {
   // Initial route if app was launched via notification
   String? initialRoute;
 
+  String routeForType(String type) {
+    final value = type.trim();
+    if (value.contains('pending_hr') ||
+        value.contains('pending_manager') ||
+        value.contains('salary_deduction') ||
+        value == 'attendance_security_review') {
+      return '/manager/requests';
+    }
+    if (value.contains('approved') ||
+        value.contains('rejected') ||
+        value.contains('reviewed') ||
+        value.contains('permission') ||
+        value.contains('leave') ||
+        value.contains('advance')) {
+      return '/employee/requests';
+    }
+    if (value.contains('task')) return '/employee/tasks';
+    if (value.contains('warning') || value.contains('reward')) {
+      return '/employee/warnings-rewards';
+    }
+    if (value.contains('suggestion')) return '/employee/suggestions';
+    if (value.contains('kpi') || value.contains('performance')) {
+      return '/employee/kpi';
+    }
+    if (value.contains('payroll')) return '/employee/payroll';
+    if (value.contains('attendance')) return '/employee/dashboard';
+    return '/employee/dashboard';
+  }
+
   void handleRemoteNotificationRoute(String? route) {
     if (route == null || route.trim().isEmpty) return;
     initialRoute = route;
@@ -158,24 +187,7 @@ class NotificationService {
                   final body = data['body'] as String? ?? '';
                   final type = data['type'] as String? ?? '';
 
-                  String route = '/employee/dashboard'; // default fallback
-                  if (type.contains('request_submitted')) {
-                    // We assume it's for manager/hr (they receive submitted)
-                    route = '/manager/requests';
-                  } else if (type.contains('request_reviewed') ||
-                      type.contains('approved') ||
-                      type.contains('rejected')) {
-                    route = '/employee/requests';
-                  } else if (type.contains('task')) {
-                    route = '/employee/tasks';
-                  } else if (type.contains('warning') ||
-                      type.contains('reward')) {
-                    route = '/employee/warnings-rewards';
-                  } else if (type.contains('suggestion')) {
-                    route = '/employee/suggestions';
-                  } else if (type.contains('kpi')) {
-                    route = '/employee/kpi';
-                  }
+                  final route = routeForType(type);
 
                   showNotification(title, body, payload: 'route|$route');
                 }

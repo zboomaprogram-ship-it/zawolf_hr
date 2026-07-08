@@ -1,17 +1,20 @@
 import 'dart:io';
 
 import 'package:device_info_plus/device_info_plus.dart';
+import 'package:jailbreak_root_detection/jailbreak_root_detection.dart';
 import 'package:local_auth/local_auth.dart';
 
 class AttendanceSecurityResult {
   final String deviceId;
   final String deviceLabel;
-  final bool biometricOrDeviceCredentialVerified;
+  final bool biometricVerified;
+  final bool deviceCredentialFallbackUsed;
 
   const AttendanceSecurityResult({
     required this.deviceId,
     required this.deviceLabel,
-    required this.biometricOrDeviceCredentialVerified,
+    required this.biometricVerified,
+    this.deviceCredentialFallbackUsed = false,
   });
 }
 
@@ -33,27 +36,32 @@ class AttendanceSecurityService {
 
   Future<AttendanceSecurityResult> verifyForAttendance() async {
     final device = await _readDevice();
-    final canAuthenticate =
-        await _localAuth.canCheckBiometrics ||
-        await _localAuth.isDeviceSupported();
+    await _assertTrustedDevice();
 
-    if (!canAuthenticate) {
-      throw Exception(
-        'يجب تفعيل بصمة/وجه أو كلمة مرور للجهاز قبل تسجيل الحضور.',
-      );
+    final availableBiometrics = await _localAuth.getAvailableBiometrics();
+    final hasBiometric = availableBiometrics.isNotEmpty;
+    final isDeviceSupported = await _localAuth.isDeviceSupported();
+
+    if (!hasBiometric && !isDeviceSupported) {
+      throw Exception('يجب تفعيل وسيلة قفل آمنة للجهاز قبل تسجيل الحضور.');
     }
 
     bool verified = false;
     try {
       verified = await _localAuth.authenticate(
-        localizedReason: 'تحقق من هويتك لتسجيل الحضور أو الانصراف',
-        biometricOnly: false,
+        localizedReason: hasBiometric
+            ? 'استخدم البصمة أو الوجه فقط لتسجيل الحضور أو الانصراف'
+            : 'هذا الجهاز لا يدعم بصمة/وجه. استخدم قفل الجهاز وسيتم إرسال الحركة لمراجعة HR.',
+        biometricOnly: hasBiometric,
         persistAcrossBackgrounding: true,
       );
     } catch (e) {
       final errorStr = e.toString();
-      if (errorStr.contains('NotEnrolled') || errorStr.contains('noCredentialsSet')) {
-        throw Exception('يجب تفعيل قفل الشاشة (بصمة أو كلمة مرور) في إعدادات الهاتف قبل تسجيل الحضور.');
+      if (errorStr.contains('NotEnrolled') ||
+          errorStr.contains('noCredentialsSet')) {
+        throw Exception(
+          'يجب تفعيل بصمة/وجه أو قفل شاشة آمن في إعدادات الهاتف قبل تسجيل الحضور.',
+        );
       }
       throw Exception('خطأ في المصادقة: $errorStr');
     }
@@ -65,8 +73,29 @@ class AttendanceSecurityService {
     return AttendanceSecurityResult(
       deviceId: device.$1,
       deviceLabel: device.$2,
-      biometricOrDeviceCredentialVerified: true,
+      biometricVerified: true,
+      deviceCredentialFallbackUsed: !hasBiometric,
     );
+  }
+
+  Future<void> _assertTrustedDevice() async {
+    try {
+      final isNotTrusted = await JailbreakRootDetection.instance.isNotTrust;
+      final isJailBroken = await JailbreakRootDetection.instance.isJailBroken;
+      final isRealDevice = await JailbreakRootDetection.instance.isRealDevice;
+      if (isNotTrusted || isJailBroken || !isRealDevice) {
+        throw Exception(
+          'لا يمكن تسجيل الحضور من جهاز مكسور الحماية أو غير موثوق. استخدم جهازاً آمناً أو تواصل مع HR.',
+        );
+      }
+    } catch (e) {
+      if (e is Exception && e.toString().contains('غير موثوق')) {
+        rethrow;
+      }
+      throw Exception(
+        'تعذر التحقق من أمان الجهاز. أعد المحاولة أو تواصل مع HR.',
+      );
+    }
   }
 
   Future<(String, String)> _readDevice() async {

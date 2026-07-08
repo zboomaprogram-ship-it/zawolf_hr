@@ -231,7 +231,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
     try {
       final now = DateTime.now();
       final monthKey = DateFormat('yyyy-MM').format(now);
-      
+
       final req = AdvanceModel(
         advanceId: '',
         userId: employee.uid,
@@ -362,12 +362,17 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
           ),
           actions: [
             IconButton(
-              icon: const Icon(Icons.history_toggle_off, color: ZaWolfColors.primaryCyan),
+              icon: const Icon(
+                Icons.history_toggle_off,
+                color: ZaWolfColors.primaryCyan,
+              ),
               tooltip: 'سجل الطلبات المقبولة والمرفوضة',
               onPressed: () {
                 Navigator.push(
                   context,
-                  MaterialPageRoute(builder: (context) => const RequestsLogScreen()),
+                  MaterialPageRoute(
+                    builder: (context) => const RequestsLogScreen(),
+                  ),
                 );
               },
             ),
@@ -618,7 +623,10 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
                   ),
                   child: Text(
                     '$_permissionDurationHours ساعة',
-                    style: const TextStyle(fontWeight: FontWeight.bold),
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
                   ),
                 ),
               ],
@@ -850,7 +858,9 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
                 if (val == null || val.isEmpty) return 'المبلغ مطلوب';
                 final amt = double.tryParse(val);
                 if (amt == null || amt <= 0) return 'مبلغ غير صحيح';
-                if (amt > user.baseMonthlySalary) return 'المبلغ يتجاوز الراتب الأساسي';
+                if (amt > user.baseMonthlySalary) {
+                  return 'المبلغ يتجاوز الراتب الأساسي';
+                }
                 return null;
               },
             ),
@@ -1045,7 +1055,8 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
                   if (req.status == 'pending') ...[
                     const SizedBox(height: 12),
                     WolfButton(
-                      onPressed: () => _cancelRequest('advances', req.advanceId),
+                      onPressed: () =>
+                          _cancelRequest('advances', req.advanceId),
                       text: 'إلغاء الطلب',
                       secondaryText: 'CANCEL REQUEST',
                       variant: WolfButtonVariant.outline,
@@ -1191,11 +1202,16 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
                       style: theme.textTheme.bodySmall,
                     ),
                   ],
-                  if (req.attachmentUrl != null && req.attachmentUrl!.isNotEmpty) ...[
+                  if (req.attachmentUrl != null &&
+                      req.attachmentUrl!.isNotEmpty) ...[
                     const SizedBox(height: 8),
                     Row(
                       children: [
-                        const Icon(Icons.link, color: ZaWolfColors.primaryCyan, size: 16),
+                        const Icon(
+                          Icons.link,
+                          color: ZaWolfColors.primaryCyan,
+                          size: 16,
+                        ),
                         const SizedBox(width: 4),
                         Expanded(
                           child: Text(
