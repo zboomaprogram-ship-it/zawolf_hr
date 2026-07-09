@@ -1,26 +1,26 @@
-email,displayName,employeeId,role,department,position,locationId,locationName,baseMonthlySalary,salaryCurrency,managerId,managerName
-ceo-100@seg.com,سامي المتولي المتولي,CEO-100,super_admin,CEO,CEO,,SEG,,,, 
-hr-200@seg.com,شيماء صبري عبدالعزيز,HR-200,hr,Human Resources,HR,,SEG,,,,
-acc-300@seg.com,مصطفي رضا الشربيني ابراهيم,ACC-300,manager,Accounting,Accounting Manager,,SEG,,,,
-acc-301@seg.com,حازم ايمن على سيد احمد الميناوى,ACC-301,employee,Accounting,Accountant,,SEG,,ACC-300,مصطفي رضا الشربيني ابراهيم
+﻿email,displayName,employeeId,role,department,position,locationId,locationName,baseMonthlySalary,salaryCurrency,managerId,managerName
+sami.elmetwali@seginvest.com,سامي المتولي المتولي,CEO-100,super_admin,CEO,CEO,,SEG,,,, 
+shimaa.sakr@seginvest.com,شيماء صبري عبدالعزيز,HR-200,hr,Human Resources,HR,,SEG,,,,
+moustafa.reda@seginvest.com,مصطفي رضا الشربيني ابراهيم,ACC-300,manager,Accounting,Accounting Manager,,SEG,,,,
+hazem.meniawy@seginvest.com,حازم ايمن على سيد احمد الميناوى,ACC-301,employee,Accounting,Accountant,,SEG,,ACC-300,مصطفي رضا الشربيني ابراهيم
 acc-302a@seg.com,احمد محمد الهادي حسين,ACC-302,employee,Accounting,Accountant,,SEG,,ACC-300,مصطفي رضا الشربيني ابراهيم
-acc-302b@seg.com,هدي احمد موسي عبد الفتاح النادي,ACC-302B,employee,Accounting,Accountant,,SEG,,ACC-300,مصطفي رضا الشربيني ابراهيم
-it-400@seg.com,محمود ابوالمجد ابراهيم,IT-400,manager,IT,IT Manager,,SEG,,,,
-it-401@seg.com,احمد محمد العراقي الموجي,IT-401,manager,IT,IT Team Leader,,SEG,,IT-400,محمود ابوالمجد ابراهيم
-it-403@seg.com,محمود ابراهيم محمد,IT-403,employee,IT,IT Specialist,,SEG,,IT-400,محمود ابوالمجد ابراهيم
-cs-503@seg.com,فيروز جمال السيد احمد,CS-503,manager,Account Management,Account Manager,,SEG,,,,
-mkt-600@seg.com,اشرف عبد الرازق,MKT-600,manager,In-House Marketing,Marketing Manager,,SEG,,,,
-mkt-601@seg.com,أحمد محمد عوض سليمان,MKT-601,employee,In-House Marketing,Content Creator,,SEG,,MKT-600,اشرف عبد الرازق
-mkt-602@seg.com,عبدالرحمن عماد حمدي,MKT-602,employee,In-House Marketing,Content Creator,,SEG,,MKT-600,اشرف عبد الرازق
-mkt-603@seg.com,فؤاد رجب فؤاد,MKT-603,employee,In-House Marketing,Video Editor,,SEG,,MKT-600,اشرف عبد الرازق
+hoda@seginvest.com,هدي احمد موسي عبد الفتاح النادي,ACC-302B,employee,Accounting,Accountant,,SEG,,ACC-300,مصطفي رضا الشربيني ابراهيم
+mahmoud.aboelmajd@seginvest.com,محمود ابوالمجد ابراهيم,IT-400,manager,IT,IT Manager,,SEG,,,,
+ahmed.elmogi@seginvest.com,احمد محمد العراقي الموجي,IT-401,manager,IT,IT Team Leader,,SEG,,IT-400,محمود ابوالمجد ابراهيم
+mahmoud.ebrahim@seginvest.com,محمود ابراهيم محمد,IT-403,employee,IT,IT Specialist,,SEG,,IT-400,محمود ابوالمجد ابراهيم
+fayroz.gamal@seginvest.com,فيروز جمال السيد احمد,CS-503,manager,Account Management,Account Manager,,SEG,,,,
+ashraf.abdalraaziq@seginvest.com,اشرف عبد الرازق,MKT-600,manager,In-House Marketing,Marketing Manager,,SEG,,,,
+ahmed.soliman@seginvest.com,أحمد محمد عوض سليمان,MKT-601,employee,In-House Marketing,Content Creator,,SEG,,MKT-600,اشرف عبد الرازق
+abderahman.emad@seginvest.com,عبدالرحمن عماد حمدي,MKT-602,employee,In-House Marketing,Content Creator,,SEG,,MKT-600,اشرف عبد الرازق
+fouaad.ragab@seginvest.com,فؤاد رجب فؤاد,MKT-603,employee,In-House Marketing,Video Editor,,SEG,,MKT-600,اشرف عبد الرازق
 mkt-604@seg.com,السيد خالد مصطفى,MKT-604,employee,In-House Marketing,Video Editor,,SEG,,MKT-600,اشرف عبد الرازق
-mkt-605@seg.com,صالح علي المصري,MKT-605,employee,In-House Marketing,Graphic Designer,,SEG,,MKT-600,اشرف عبد الرازق
-mkt-606@seg.com,خليل محمد خليل,MKT-606,employee,In-House Marketing,Lead Generation,,SEG,,MKT-600,اشرف عبد الرازق
-mkt-608@seg.com,على محمد ابراهيم,MKT-608,employee,In-House Marketing,Public Relations,,SEG,,MKT-600,اشرف عبد الرازق
-rd-700@seg.com,عمر طارق محمد عبدالهادي,R&D-700,employee,Research and Development,R&D Engineer,,SEG,,R&D-702,عبدالله لمعي محمد
-rd-701@seg.com,عمر فتحي محمود,R&D-701,employee,Research and Development,R&D Engineer,,SEG,,R&D-702,عبدالله لمعي محمد
-rd-702@seg.com,عبدالله لمعي محمد,R&D-702,manager,Research and Development,Project Manager,,SEG,,,,
-l-800@seg.com,محمد احمد بهجت عبدالسلام,L-800,employee,Legal Affairs,Legal Counsel,,SEG,,,,
+saleh.ali@seginvest.com,صالح علي المصري,MKT-605,employee,In-House Marketing,Graphic Designer,,SEG,,MKT-600,اشرف عبد الرازق
+khalil.mohamed@seginvest.com,خليل محمد خليل,MKT-606,employee,In-House Marketing,Lead Generation,,SEG,,MKT-600,اشرف عبد الرازق
+ali.mahamed@seginvest.com,على محمد ابراهيم,MKT-608,employee,In-House Marketing,Public Relations,,SEG,,MKT-600,اشرف عبد الرازق
+omar.tarek@seginvest.com,عمر طارق محمد عبدالهادي,R&D-700,employee,Research and Development,R&D Engineer,,SEG,,R&D-702,عبدالله لمعي محمد
+omar.fathy@seginvest.com,عمر فتحي محمود,R&D-701,employee,Research and Development,R&D Engineer,,SEG,,R&D-702,عبدالله لمعي محمد
+abdullahlamei@seginvest.com,عبدالله لمعي محمد,R&D-702,manager,Research and Development,Project Manager,,SEG,,,,
+mohamed.bahgt@seginvest.com,محمد احمد بهجت عبدالسلام,L-800,employee,Legal Affairs,Legal Counsel,,SEG,,,,
 sec-901@seg.com,محمد جمال جلال,SEC-901,employee,Safety & Security,Security,,SEG,,,,
 sec-902@seg.com,ابراهيم عبدالمنعم ابراهيم,SEC-902,employee,Safety & Security,Security,,SEG,,,,
 sup-1000@seg.com,ايمان محمد يوسف,SUP-1000,employee,Support Services,Office Girl,,SEG,,,,
@@ -28,39 +28,39 @@ sup-1001@seg.com,رشا محمد ابو السعود,SUP-1001,employee,Support S
 sup-1002@seg.com,علاء الدين محمد,SUP-1002,employee,Support Services,Office Services Assistant,,SEG,,,,
 sup-1003@seg.com,عوض محمد عوض السعيد,SUP-1003,employee,Support Services,Office boy,,SEG,,,,
 sup-1004@seg.com,جمعه حسن محمد الكرداوي,SUP-1004,employee,Support Services,Office boy,,SEG,,,,
-prg-1108@seg.com,سالم فتحي سليم شريف,PRG-1108,employee,Programming,Data Analyst,,SEG,,,,
-prg-1109@seg.com,مريم محمد مصطفي,PRG-1109,employee,Programming,Data Analyst,,SEG,,,,
-prg-1110@seg.com,رنا حسن,PRG-1110,employee,AI,AI Specialist,,SEG,,,,
-prg-1112@seg.com,على نبيل علي محمد,PRG-1112,employee,AI,AI Specialist,,SEG,,,,
-bd-1200@seg.com,ميرنا إبراهيم مناويل معوض,BD-1200,employee,BD,SDR,,SEG,,,,
-bd-1201@seg.com,الاء السيد محمد عبد الحي,BD-1201,employee,BD,SDR,,SEG,,,,
-bd-1202@seg.com,عمر مجدى علي,BD-1202,employee,BD,BD,,SEG,,,,
-bd-1203@seg.com,الاء السيد حسن,BD-1203,employee,BD,SDR,,SEG,,,,
-bd-1204@seg.com,ندي حمدي عبده أحمد,BD-1204,employee,BD,SDR,,SEG,,,,
-bd-1205@seg.com,مازن محمد ابراهيم ملح,BD-1205,employee,BD,BD,,SEG,,,,
-bd-1206@seg.com,يارا اكرم,BD-1206,employee,BD,BD,,SEG,,,,
-bd-1207@seg.com,امل ابراهيم حجازي,BD-1207,employee,BD,SDR,,SEG,,,,
-bd-1208@seg.com,ايه رضا عبد الحميد,BD-1208,employee,BD,SDR,,SEG,,,,
-bd-1209@seg.com,هناء عبدالرحمن عوض,BD-1209,employee,BD,SDR,,SEG,,,,
-bd-1210@seg.com,حنين محمد عبد العال,BD-1210,employee,BD,SDR,,SEG,,,,
-coo-1300@zawolf.com,محمد منير جمال,COO-1300,super_admin,General Manager,GM,,Zawolf,,,,
-hr-201@zawolf.com,فاتن مجدي ماهر,HR-201,hr,Human Resources,HR,,Zawolf,,,,
-km-1400@zawolf.com,فريد يوسف,KM-1400,manager,Kitchen Marketing,Creative Director,,Zawolf,,,,
-km-1401@zawolf.com,جمال الدين محسن محمد,KM-1401,employee,Kitchen Marketing,SEO,,Zawolf,,KM-1400,فريد يوسف
-km-1402@zawolf.com,ايه عادل البنداري,KM-1402,employee,Kitchen Marketing,SEO,,Zawolf,,KM-1400,فريد يوسف
-km-1403@zawolf.com,رينال اشرف حجي,KM-1403,employee,Kitchen Marketing,Social Media,,Zawolf,,KM-1400,فريد يوسف
-km-1404@zawolf.com,محمود علام محمود محمد,KM-1404,employee,Kitchen Marketing,Media Buyer,,Zawolf,,KM-1400,فريد يوسف
-km-1405@zawolf.com,احمد رضا المسلماني,KM-1405,employee,Kitchen Marketing,Media Buyer,,Zawolf,,KM-1400,فريد يوسف
-km-1406@zawolf.com,محمد خالد جمال,KM-1406,employee,Kitchen Marketing,Media Buyer,,Zawolf,,KM-1400,فريد يوسف
-km-1407@zawolf.com,ناديه علاء صافيه,KM-1407,employee,Kitchen Marketing,UI/UX Designer,,Zawolf,,KM-1400,فريد يوسف
-km-1408@zawolf.com,احمد امين حميد,KM-1408,employee,Kitchen Marketing,Graphic Designer,,Zawolf,,KM-1400,فريد يوسف
-km-1409@zawolf.com,نوران وليد عبدالرحيم,KM-1409,employee,Kitchen Marketing,Graphic Designer,,Zawolf,,KM-1400,فريد يوسف
-km-1410@zawolf.com,شيماء محمد حسن,KM-1410,employee,Kitchen Marketing,Social Media,,Zawolf,,KM-1400,فريد يوسف
-prg-1113@zawolf.com,مريت كمال شوقي,PRG-1113,employee,Programming,Salla and Zed,,Zawolf,,,,
-cs-506a@zawolf.com,ريهام رفيق رجائي,CS-506,manager,Account Management,Accounts Manager,,Zawolf,,,,
-cs-507a@zawolf.com,دينا محمد سعد,CS-507,manager,Account Management,Accounts Manager,,Zawolf,,,,
-cs-506b@zawolf.com,روينا السيد عبد الرحمن,CS-506B,manager,Account Management,Accounts Manager,,Zawolf,,,,
-prg-1114@zawolf.com,عمر محمود جوده,PRG-1114,employee,Programming,Mobile Application,,Zawolf,,,,
+salem.fathy@seginvest.com,سالم فتحي سليم شريف,PRG-1108,employee,Programming,Data Analyst,,SEG,,,,
+marym.moustafa@seginvest.com,مريم محمد مصطفي,PRG-1109,employee,Programming,Data Analyst,,SEG,,,,
+rana.hassan@seginvest.com,رنا حسن,PRG-1110,employee,AI,AI Specialist,,SEG,,,,
+ali.nabil@seginvest.com,على نبيل علي محمد,PRG-1112,employee,AI,AI Specialist,,SEG,,,,
+merna.ibrahem@seginvest.com,ميرنا إبراهيم مناويل معوض,BD-1200,employee,BD,SDR,,SEG,,,,
+alaa.elsyed@seginvest.com,الاء السيد محمد عبد الحي,BD-1201,employee,BD,SDR,,SEG,,,,
+omar.magdy@seginvest.com,عمر مجدى علي,BD-1202,employee,BD,BD,,SEG,,,,
+alaa.hasan@seginvest.com,الاء السيد حسن,BD-1203,employee,BD,SDR,,SEG,,,,
+nada.hamdy@seginvest.com,ندي حمدي عبده أحمد,BD-1204,employee,BD,SDR,,SEG,,,,
+mazen.mohamed@seginvest.com,مازن محمد ابراهيم ملح,BD-1205,employee,BD,BD,,SEG,,,,
+yara.akram@seginvest.com,يارا اكرم,BD-1206,employee,BD,BD,,SEG,,,,
+aml.hegazy@seginvest.com,امل ابراهيم حجازي,BD-1207,employee,BD,SDR,,SEG,,,,
+aya.reda@seginvest.com,ايه رضا عبد الحميد,BD-1208,employee,BD,SDR,,SEG,,,,
+hanaa@seginvest.com,هناء عبدالرحمن عوض,BD-1209,employee,BD,SDR,,SEG,,,,
+haneen.hassan@seginvest.com,حنين محمد عبد العال,BD-1210,employee,BD,SDR,,SEG,,,,
+m.monir@seginvest.com,محمد منير جمال,COO-1300,super_admin,General Manager,GM,,Zawolf,,,,
+faten.magdy@seginvest.com,فاتن مجدي ماهر,HR-201,hr,Human Resources,HR,,Zawolf,,,,
+farid.mohamed@seginvest.com,فريد يوسف,KM-1400,manager,Kitchen Marketing,Creative Director,,Zawolf,,,,
+gamal.mohsen@seginvest.com,جمال الدين محسن محمد,KM-1401,employee,Kitchen Marketing,SEO,,Zawolf,,KM-1400,فريد يوسف
+aya.albandari@seginvest.com,ايه عادل البنداري,KM-1402,employee,Kitchen Marketing,SEO,,Zawolf,,KM-1400,فريد يوسف
+renal.hegy@seginvest.com,رينال اشرف حجي,KM-1403,employee,Kitchen Marketing,Social Media,,Zawolf,,KM-1400,فريد يوسف
+mahmoud.allam@seginvest.com,محمود علام محمود محمد,KM-1404,employee,Kitchen Marketing,Media Buyer,,Zawolf,,KM-1400,فريد يوسف
+ahmed.moslimany@seginvest.com,احمد رضا المسلماني,KM-1405,employee,Kitchen Marketing,Media Buyer,,Zawolf,,KM-1400,فريد يوسف
+mohamed.khaled@seginvest.com,محمد خالد جمال,KM-1406,employee,Kitchen Marketing,Media Buyer,,Zawolf,,KM-1400,فريد يوسف
+nadia.alaa@seginvest.com,ناديه علاء صافيه,KM-1407,employee,Kitchen Marketing,UI/UX Designer,,Zawolf,,KM-1400,فريد يوسف
+ahmed.amen@seginvest.com,احمد امين حميد,KM-1408,employee,Kitchen Marketing,Graphic Designer,,Zawolf,,KM-1400,فريد يوسف
+noran.walid@seginvest.com,نوران وليد عبدالرحيم,KM-1409,employee,Kitchen Marketing,Graphic Designer,,Zawolf,,KM-1400,فريد يوسف
+shimaa.mohamed@seginvest.com,شيماء محمد حسن,KM-1410,employee,Kitchen Marketing,Social Media,,Zawolf,,KM-1400,فريد يوسف
+merit.kamal@seginvest.com,مريت كمال شوقي,PRG-1113,employee,Programming,Salla and Zed,,Zawolf,,,,
+reham.rafeq@seginvest.com,ريهام رفيق رجائي,CS-506,manager,Account Management,Accounts Manager,,Zawolf,,,,
+dina.saad@seginvest.com,دينا محمد سعد,CS-507,manager,Account Management,Accounts Manager,,Zawolf,,,,
+rewina.elsid@seginvest.com,روينا السيد عبد الرحمن,CS-506B,manager,Account Management,Accounts Manager,,Zawolf,,,,
+omer.mahmoud@seginvest.com,عمر محمود جوده,PRG-1114,employee,Programming,Mobile Application,,Zawolf,,,,
 prg-1115@zawolf.com,ندي محمد شلبي منصور,PRG-1115,employee,Programming,WordPress,,Zawolf,,,,
 prg-1116@zawolf.com,نورهان عمر عبد اللطيف,PRG-1116,employee,Programming,WordPress,,Zawolf,,,,
 km-1411@zawolf.com,حنان محمد اسماعيل سيف الدين,KM-1411,employee,Kitchen Marketing,Operation Specialist,,Zawolf,,KM-1400,فريد يوسف
