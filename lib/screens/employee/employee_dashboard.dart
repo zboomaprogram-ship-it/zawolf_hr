@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart' hide TextDirection;
@@ -10,6 +12,7 @@ import '../../services/attendance_service.dart';
 import '../../services/company_day_off_service.dart';
 import '../../services/geofence_service.dart';
 import '../../models/attendance_model.dart';
+import '../../models/attendance_policy.dart';
 import '../../models/company_day_off_status.dart';
 import '../../models/user_model.dart';
 import 'checkin_confirm_modal.dart';
@@ -33,11 +36,24 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
   String? _attendanceStreamUserId;
   String? _attendanceStreamMonthKey;
   String? _preparedUserId;
+  Timer? _clockTimer;
+  DateTime _now = DateTime.now();
+  AttendancePolicyConfig _policyConfig = const AttendancePolicyConfig();
+  DateTime? _checkoutAllowedFrom;
 
   @override
   void initState() {
     super.initState();
     AttendanceService().syncPendingOfflineAttendance();
+    _clockTimer = Timer.periodic(const Duration(minutes: 1), (_) {
+      if (mounted) setState(() => _now = DateTime.now());
+    });
+  }
+
+  @override
+  void dispose() {
+    _clockTimer?.cancel();
+    super.dispose();
   }
 
   @override
@@ -71,6 +87,7 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
         if (!mounted || _preparedUserId != user.uid) return;
         _checkCurrentGeofence();
         _checkCompanyDayOff();
+        _refreshAttendanceGate(user);
       });
     }
   }
@@ -133,15 +150,48 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
     }
   }
 
-  Future<void> _handleCheckInCheckOut(UserModel employee) async {
+  Future<void> _refreshAttendanceGate(UserModel user) async {
+    final service = AttendanceService();
+    try {
+      final results = await Future.wait([
+        service.policyConfigForDisplay(),
+        service.checkoutAllowedFromForDisplay(user),
+      ]);
+      if (!mounted) return;
+      setState(() {
+        _policyConfig = results[0] as AttendancePolicyConfig;
+        _checkoutAllowedFrom = results[1] as DateTime;
+        _now = DateTime.now();
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _policyConfig = const AttendancePolicyConfig();
+        _checkoutAllowedFrom = null;
+        _now = DateTime.now();
+      });
+    }
+  }
+
+  Future<void> _handleCheckInCheckOut(
+    UserModel employee,
+    AttendanceActionIntent expectedAction,
+  ) async {
     setState(() {
       _actionLoading = true;
     });
 
     final attendanceService = AttendanceService();
     try {
-      await attendanceService.handleCheckInOrCheckOut(employee);
-      await Future.wait([_checkCurrentGeofence(), _checkCompanyDayOff()]);
+      await attendanceService.handleCheckInOrCheckOut(
+        employee,
+        expectedAction: expectedAction,
+      );
+      await Future.wait([
+        _checkCurrentGeofence(),
+        _checkCompanyDayOff(),
+        _refreshAttendanceGate(employee),
+      ]);
 
       final log = await attendanceService.loadTodayAttendanceForDisplay(
         employee.uid,
@@ -185,6 +235,7 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
       }
     } catch (e) {
       if (mounted) {
+        final message = _friendlyAttendanceError(e);
         showDialog(
           context: context,
           builder: (context) => AlertDialog(
@@ -194,7 +245,7 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
               style: TextStyle(color: Colors.white),
             ),
             content: Text(
-              e.toString().replaceAll('Exception: ', ''),
+              message,
               style: const TextStyle(color: ZaWolfColors.textSecondary),
             ),
             actions: [
@@ -216,6 +267,22 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
         });
       }
     }
+  }
+
+  String _friendlyAttendanceError(Object error) {
+    final raw = error.toString().replaceAll('Exception: ', '');
+    if (raw.contains('TimeoutException') ||
+        raw.contains('Future not completed')) {
+      return 'تعذر تحديد موقعك خلال الوقت المحدد. فعّل GPS، افتح الإنترنت، وانتقل لمكان أقرب لإشارة الموقع ثم أعد المحاولة.';
+    }
+    if (raw.contains('permission-denied')) {
+      return 'لا توجد صلاحية كافية لتنفيذ العملية. حدّث التطبيق وتأكد من نشر قواعد Firebase الأخيرة، أو تواصل مع الإدارة.';
+    }
+    return raw;
+  }
+
+  String _formatGateTime(DateTime value) {
+    return '${value.hour.toString().padLeft(2, '0')}:${value.minute.toString().padLeft(2, '0')}';
   }
 
   @override
@@ -280,10 +347,75 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
           final bool hasCheckedIn = todayLog.checkInTime != null;
           final bool hasCheckedOut =
               hasCheckedIn && todayLog.checkOutTime != null;
+          final checkInOpenAt = AttendancePolicy.parseTimeOnDate(
+            _now,
+            _policyConfig.checkInOpenTime,
+          );
+          final checkoutAllowedFrom =
+              _checkoutAllowedFrom ??
+              AttendancePolicy.parseTimeOnDate(
+                _now,
+                user.workSchedule.endTime ?? _policyConfig.defaultEndTime,
+              );
+          final latestCheckoutAt = AttendancePolicy.parseTimeOnDate(
+            _now,
+            _policyConfig.latestCheckoutTime,
+          );
+          final checkInNotOpenYet =
+              !hasCheckedIn && _now.isBefore(checkInOpenAt);
+          final checkoutNotOpenYet =
+              hasCheckedIn &&
+              !hasCheckedOut &&
+              _now.isBefore(checkoutAllowedFrom);
+          final checkoutExpired =
+              hasCheckedIn && !hasCheckedOut && _now.isAfter(latestCheckoutAt);
           final bool checkInDisabledForDayOff =
               !hasTodayRecord && _dayOffStatus.isDayOff;
           final bool actionDisabled =
-              _actionLoading || hasCheckedOut || checkInDisabledForDayOff;
+              _actionLoading ||
+              hasCheckedOut ||
+              checkInDisabledForDayOff ||
+              checkInNotOpenYet ||
+              checkoutNotOpenYet ||
+              checkoutExpired;
+          final expectedAction = hasCheckedIn
+              ? AttendanceActionIntent.checkOut
+              : AttendanceActionIntent.checkIn;
+          final actionTitle = hasCheckedOut
+              ? 'اكتمل اليوم'
+              : checkInDisabledForDayOff
+              ? 'عطلة اليوم'
+              : checkInNotOpenYet
+              ? 'يفتح ${_formatGateTime(checkInOpenAt)}'
+              : checkoutExpired
+              ? 'انتهى اليوم'
+              : checkoutNotOpenYet
+              ? 'يفتح ${_formatGateTime(checkoutAllowedFrom)}'
+              : hasCheckedIn
+              ? 'تسجيل انصراف'
+              : 'تسجيل حضور';
+          final actionSubtitle = hasCheckedOut
+              ? 'COMPLETED'
+              : checkInDisabledForDayOff
+              ? 'DAY OFF'
+              : checkInNotOpenYet
+              ? 'CHECK IN LATER'
+              : checkoutExpired
+              ? 'CHECKOUT CLOSED'
+              : checkoutNotOpenYet
+              ? 'CHECK OUT AT ${_formatGateTime(checkoutAllowedFrom)}'
+              : hasCheckedIn
+              ? 'CHECK OUT'
+              : 'CHECK IN';
+          final actionIcon = hasCheckedOut
+              ? Icons.lock_clock
+              : checkInDisabledForDayOff
+              ? Icons.event_busy
+              : checkInNotOpenYet || checkoutNotOpenYet || checkoutExpired
+              ? Icons.schedule
+              : hasCheckedIn
+              ? Icons.logout
+              : Icons.fingerprint;
 
           // Quick stats calculation
           final workedDays = logs.where((l) => l.checkInTime != null).length;
@@ -504,7 +636,10 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
                         GestureDetector(
                           onTap: actionDisabled
                               ? null
-                              : () => _handleCheckInCheckOut(user),
+                              : () => _handleCheckInCheckOut(
+                                  user,
+                                  expectedAction,
+                                ),
                           child: Container(
                             width: 160,
                             height: 160,
@@ -560,25 +695,13 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
                                     mainAxisAlignment: MainAxisAlignment.center,
                                     children: [
                                       Icon(
-                                        hasCheckedOut
-                                            ? Icons.lock_clock
-                                            : checkInDisabledForDayOff
-                                            ? Icons.event_busy
-                                            : hasCheckedIn
-                                            ? Icons.logout
-                                            : Icons.fingerprint,
+                                        actionIcon,
                                         size: 44,
                                         color: Colors.white,
                                       ),
                                       const SizedBox(height: 8),
                                       Text(
-                                        hasCheckedOut
-                                            ? 'اكتمل اليوم'
-                                            : checkInDisabledForDayOff
-                                            ? 'عطلة اليوم'
-                                            : hasCheckedIn
-                                            ? 'تسجيل انصراف'
-                                            : 'تسجيل حضور',
+                                        actionTitle,
                                         style:
                                             theme.textTheme.titleMedium
                                                 ?.copyWith(
@@ -591,13 +714,7 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
                                             ),
                                       ),
                                       Text(
-                                        hasCheckedOut
-                                            ? 'COMPLETED'
-                                            : checkInDisabledForDayOff
-                                            ? 'DAY OFF'
-                                            : hasCheckedIn
-                                            ? 'CHECK OUT'
-                                            : 'CHECK IN',
+                                        actionSubtitle,
                                         style:
                                             theme.textTheme.bodySmall?.copyWith(
                                               color: Colors.white70,

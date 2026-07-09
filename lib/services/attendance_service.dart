@@ -10,6 +10,8 @@ import 'company_day_off_service.dart';
 import 'geofence_service.dart';
 import 'offline_attendance_queue_service.dart';
 
+enum AttendanceActionIntent { checkIn, checkOut }
+
 class AttendanceService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
   final GeofenceService _geofenceService = GeofenceService();
@@ -21,7 +23,10 @@ class AttendanceService {
       OfflineAttendanceQueueService.instance;
 
   // Handle employee Check-In or Check-Out
-  Future<void> handleCheckInOrCheckOut(UserModel employee) async {
+  Future<void> handleCheckInOrCheckOut(
+    UserModel employee, {
+    AttendanceActionIntent? expectedAction,
+  }) async {
     final now = DateTime.now();
     final todayStr = DateFormat('yyyy-MM-dd').format(now);
     final online = await _offlineQueue.isOnline();
@@ -33,11 +38,63 @@ class AttendanceService {
     }
 
     final todayLookup = await _loadTodayAttendance(employee.uid, todayStr);
-    final isCheckIn = todayLookup.log == null;
+    final isCheckIn = todayLookup.log?.checkInTime == null;
+    final actualAction = isCheckIn
+        ? AttendanceActionIntent.checkIn
+        : AttendanceActionIntent.checkOut;
+
+    if (expectedAction != null && expectedAction != actualAction) {
+      if (expectedAction == AttendanceActionIntent.checkIn) {
+        throw Exception(
+          'يوجد تسجيل حضور محفوظ لهذا اليوم. قم بتحديث الصفحة، وسيظهر زر الانصراف في موعده.',
+        );
+      }
+      throw Exception(
+        'لا يوجد تسجيل حضور صالح لهذا اليوم. اضغط تسجيل حضور أولاً.',
+      );
+    }
+
     if (isCheckIn) {
+      final checkInOpenAt = AttendancePolicy.parseTimeOnDate(
+        now,
+        policyConfig.checkInOpenTime,
+      );
+      if (now.isBefore(checkInOpenAt)) {
+        throw Exception(
+          'تسجيل الحضور يفتح من الساعة ${_formatArabicTime(checkInOpenAt)}.',
+        );
+      }
+
       final dayOffStatus = await _dayOffService.getDayOffStatus(now);
       if (dayOffStatus.isDayOff) {
         throw Exception('تسجيل الحضور غير متاح اليوم: ${dayOffStatus.reason}.');
+      }
+    } else {
+      final checkInLog = todayLookup.log!;
+      if (checkInLog.checkOutTime != null) {
+        throw Exception('لقد قمت بتسجيل الانصراف بالفعل لهذا اليوم.');
+      }
+
+      final allowedCheckoutFrom = await _effectiveCheckoutAllowedFrom(
+        employee: employee,
+        dateKey: todayStr,
+        policyConfig: policyConfig,
+        now: now,
+      );
+      final latestCheckoutAt = AttendancePolicy.parseTimeOnDate(
+        now,
+        policyConfig.latestCheckoutTime,
+      );
+
+      if (now.isBefore(allowedCheckoutFrom)) {
+        throw Exception(
+          'تسجيل الانصراف يفتح من الساعة ${_formatArabicTime(allowedCheckoutFrom)}.',
+        );
+      }
+      if (now.isAfter(latestCheckoutAt)) {
+        throw Exception(
+          'انتهت مهلة تسجيل الانصراف لهذا اليوم عند الساعة ${_formatArabicTime(latestCheckoutAt)}. سيتم إرسال عدم تسجيل الانصراف إلى HR للمراجعة.',
+        );
       }
     }
 
@@ -95,11 +152,15 @@ class AttendanceService {
 
     if (isCheckIn) {
       // ── CHECK-IN LOGIC ──
-      final companyStartTimeStr =
-          employee.workSchedule.startTime ?? policyConfig.defaultStartTime;
+      final effectiveStartTime = await _effectiveCheckInStartTime(
+        employee: employee,
+        dateKey: todayStr,
+        policyConfig: policyConfig,
+        now: now,
+      );
       final deduction = policyConfig.evaluateLateArrival(
         arrivalTime: now,
-        employeeStartTime: companyStartTimeStr,
+        employeeStartTime: _formatTime(effectiveStartTime),
       );
       final salaryDeductionAmount = policyConfig.calculateSalaryDeductionAmount(
         monthlySalary: employee.baseMonthlySalary,
@@ -213,22 +274,45 @@ class AttendanceService {
       final checkInDoc = todayLookup.doc;
       final checkInLog = todayLookup.log!;
 
+      if (checkInLog.checkInTime == null) {
+        throw Exception(
+          'لا يوجد تسجيل حضور صالح لهذا اليوم. اضغط تسجيل حضور أولاً.',
+        );
+      }
+
       if (checkInLog.checkOutTime != null) {
         throw Exception('لقد قمت بتسجيل الانصراف بالفعل لهذا اليوم.');
       }
 
       final checkInTime = checkInLog.checkInTime ?? now;
       final totalWorkHours = now.difference(checkInTime).inMinutes / 60.0;
+      final allowedCheckoutFrom = await _effectiveCheckoutAllowedFrom(
+        employee: employee,
+        dateKey: todayStr,
+        policyConfig: policyConfig,
+        now: now,
+      );
+      final latestCheckoutWithoutDeduction = AttendancePolicy.parseTimeOnDate(
+        now,
+        policyConfig.latestCheckoutTime,
+      );
+      final needsCheckoutDeduction =
+          now.isBefore(allowedCheckoutFrom) ||
+          now.isAfter(latestCheckoutWithoutDeduction);
+      final checkoutDeductionLabel = now.isAfter(latestCheckoutWithoutDeduction)
+          ? 'خصم ربع يوم - تسجيل انصراف بعد 11 مساءً'
+          : 'خصم ربع يوم - انصراف مبكر';
+      final checkoutDeductionCode = now.isAfter(latestCheckoutWithoutDeduction)
+          ? 'late_checkout_after_11_quarter_day'
+          : 'early_checkout_quarter_day';
+
       final earlyCheckoutDeduction = _buildCheckoutDeductionPatch(
         employee: employee,
         currentLog: checkInLog,
-        reasonCode: 'early_checkout_quarter_day',
-        reasonLabel: 'خصم ربع يوم - انصراف مبكر',
+        reasonCode: checkoutDeductionCode,
+        reasonLabel: checkoutDeductionLabel,
         now: now,
-        applies: _isEarlyCheckout(
-          now,
-          employee.workSchedule.endTime ?? policyConfig.defaultEndTime,
-        ),
+        applies: needsCheckoutDeduction,
         payrollWorkDaysPerMonth: policyConfig.payrollWorkDaysPerMonth,
       );
       final offlineAction = OfflineAttendanceAction(
@@ -262,7 +346,7 @@ class AttendanceService {
         salaryCurrency: employee.salaryCurrency,
         salaryDeductionCode: earlyCheckoutDeduction.patch.isEmpty
             ? checkInLog.salaryDeductionCode
-            : 'early_checkout_quarter_day',
+            : checkoutDeductionCode,
         salaryDeductionLabel: earlyCheckoutDeduction.patch.isEmpty
             ? checkInLog.salaryDeductionLabel
             : earlyCheckoutDeduction.label,
@@ -299,7 +383,7 @@ class AttendanceService {
         await _notifyRole(
           role: 'hr_admin',
           type: 'salary_deduction_pending',
-          title: 'خصم انصراف مبكر بانتظار مراجعة HR',
+          title: '${earlyCheckoutDeduction.label} بانتظار مراجعة HR',
           body:
               '${employee.displayName}: ${earlyCheckoutDeduction.label} (${earlyCheckoutDeduction.amount.toStringAsFixed(2)} ${employee.salaryCurrency}).',
           data: {'attendanceId': checkInDoc?.id ?? checkInLog.attendanceId},
@@ -318,6 +402,25 @@ class AttendanceService {
 
   Future<void> syncPendingOfflineAttendance() {
     return _offlineQueue.syncPendingActions();
+  }
+
+  Future<AttendancePolicyConfig> policyConfigForDisplay() {
+    return _policyService.getPolicyConfig();
+  }
+
+  Future<DateTime> checkoutAllowedFromForDisplay(
+    UserModel employee, {
+    DateTime? now,
+  }) async {
+    final currentTime = now ?? DateTime.now();
+    final policyConfig = await _policyService.getPolicyConfig();
+    final dateKey = DateFormat('yyyy-MM-dd').format(currentTime);
+    return _effectiveCheckoutAllowedFrom(
+      employee: employee,
+      dateKey: dateKey,
+      policyConfig: policyConfig,
+      now: currentTime,
+    );
   }
 
   _LocationRiskAssessment _assessLocationRisk(
@@ -574,10 +677,75 @@ class AttendanceService {
     }
   }
 
-  bool _isEarlyCheckout(DateTime now, String? configuredEndTime) {
-    final endTime = configuredEndTime ?? AttendancePolicy.defaultEndTime;
-    final shiftEnd = AttendancePolicy.parseTimeOnDate(now, endTime);
-    return now.isBefore(shiftEnd);
+  Future<DateTime> _effectiveCheckInStartTime({
+    required UserModel employee,
+    required String dateKey,
+    required AttendancePolicyConfig policyConfig,
+    required DateTime now,
+  }) async {
+    final baseStart = AttendancePolicy.parseTimeOnDate(
+      now,
+      employee.workSchedule.startTime ?? policyConfig.defaultStartTime,
+    );
+    final permission = await _approvedPermissionForDate(
+      userId: employee.uid,
+      dateKey: dateKey,
+      type: 'late_arrival',
+    );
+    if (permission == null) return baseStart;
+    final minutes = permission['durationMinutes'] as int? ?? 0;
+    if (minutes <= 0) return baseStart;
+    return baseStart.add(Duration(minutes: minutes));
+  }
+
+  Future<DateTime> _effectiveCheckoutAllowedFrom({
+    required UserModel employee,
+    required String dateKey,
+    required AttendancePolicyConfig policyConfig,
+    required DateTime now,
+  }) async {
+    final baseEnd = AttendancePolicy.parseTimeOnDate(
+      now,
+      employee.workSchedule.endTime ?? policyConfig.defaultEndTime,
+    );
+    final permission = await _approvedPermissionForDate(
+      userId: employee.uid,
+      dateKey: dateKey,
+      type: 'early_leave',
+    );
+    if (permission == null) return baseEnd;
+    final minutes = permission['durationMinutes'] as int? ?? 0;
+    if (minutes <= 0) return baseEnd;
+    return baseEnd.subtract(Duration(minutes: minutes));
+  }
+
+  Future<Map<String, dynamic>?> _approvedPermissionForDate({
+    required String userId,
+    required String dateKey,
+    required String type,
+  }) async {
+    try {
+      final snap = await _db
+          .collection('permissions')
+          .where('userId', isEqualTo: userId)
+          .where('requestDate', isEqualTo: dateKey)
+          .where('permissionType', isEqualTo: type)
+          .where('status', isEqualTo: 'approved')
+          .limit(1)
+          .get();
+      if (snap.docs.isEmpty) return null;
+      return snap.docs.first.data();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  String _formatTime(DateTime value) {
+    return '${value.hour.toString().padLeft(2, '0')}:${value.minute.toString().padLeft(2, '0')}';
+  }
+
+  String _formatArabicTime(DateTime value) {
+    return '${value.hour.toString().padLeft(2, '0')}:${value.minute.toString().padLeft(2, '0')}';
   }
 
   Future<void> _flagMissedCheckouts(UserModel employee, String todayStr) async {
@@ -839,45 +1007,49 @@ class AttendanceService {
       'salaryDeductionReviewedAt': FieldValue.serverTimestamp(),
     });
 
-    await AuditLogService.instance.record(
-      actorId: reviewerId,
-      action: 'salary_deduction_$status',
-      targetCollection: 'attendance',
-      targetId: attendanceId,
-    );
+    try {
+      await AuditLogService.instance.record(
+        actorId: reviewerId,
+        action: 'salary_deduction_$status',
+        targetCollection: 'attendance',
+        targetId: attendanceId,
+      );
+    } catch (_) {}
 
     // Get attendance doc to find employee ID
-    final doc = await _db.collection('attendance').doc(attendanceId).get();
-    if (doc.exists) {
-      final userId = doc.data()?['userId'] as String?;
-      if (userId != null) {
-        final notifRef = _db
-            .collection('notifications')
-            .doc(userId)
-            .collection('items')
-            .doc();
+    try {
+      final doc = await _db.collection('attendance').doc(attendanceId).get();
+      if (doc.exists) {
+        final userId = doc.data()?['userId'] as String?;
+        if (userId != null) {
+          final notifRef = _db
+              .collection('notifications')
+              .doc(userId)
+              .collection('items')
+              .doc();
 
-        final title = status == 'approved'
-            ? 'تم اعتماد الخصم'
-            : 'تم إلغاء الخصم';
-        final body = status == 'approved'
-            ? 'تم اعتماد خصم الحضور والانصراف الخاص بك.'
-            : 'تم إلغاء خصم الحضور والانصراف الخاص بك.';
+          final title = status == 'approved'
+              ? 'تم اعتماد الخصم'
+              : 'تم إلغاء الخصم';
+          final body = status == 'approved'
+              ? 'تم اعتماد خصم الحضور والانصراف الخاص بك.'
+              : 'تم إلغاء خصم الحضور والانصراف الخاص بك.';
 
-        await notifRef.set({
-          'notificationId': notifRef.id,
-          'type': 'salary_deduction_reviewed',
-          'title': title,
-          'body': body,
-          'data': {'attendanceId': attendanceId},
-          'isRead': false,
-          'createdAt': FieldValue.serverTimestamp(),
-        });
-        await _db.collection('users').doc(userId).update({
-          'unreadNotifications': FieldValue.increment(1),
-        });
+          await notifRef.set({
+            'notificationId': notifRef.id,
+            'type': 'salary_deduction_reviewed',
+            'title': title,
+            'body': body,
+            'data': {'attendanceId': attendanceId},
+            'isRead': false,
+            'createdAt': FieldValue.serverTimestamp(),
+          });
+          await _db.collection('users').doc(userId).update({
+            'unreadNotifications': FieldValue.increment(1),
+          });
+        }
       }
-    }
+    } catch (_) {}
   }
 
   Future<void> _notifyRole({

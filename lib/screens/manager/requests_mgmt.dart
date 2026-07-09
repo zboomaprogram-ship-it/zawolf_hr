@@ -37,6 +37,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen>
   final AttendanceService _attendanceService = AttendanceService();
   final ComplaintService _complaintService = ComplaintService();
   final AdvanceService _advanceService = AdvanceService();
+  String _salaryDeductionFilter = 'all';
 
   @override
   void initState() {
@@ -684,6 +685,40 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen>
                       style: const TextStyle(color: ZaWolfColors.textSecondary),
                       textDirection: TextDirection.rtl,
                     ),
+                    if (complaint.attachmentUrl != null &&
+                        complaint.attachmentUrl!.isNotEmpty) ...[
+                      const SizedBox(height: 10),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          Expanded(
+                            child: Text(
+                              complaint.attachmentUrl!,
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: ZaWolfColors.primaryCyan,
+                                decoration: TextDecoration.underline,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              textDirection: TextDirection.ltr,
+                              textAlign: TextAlign.right,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          const Icon(
+                            Icons.link,
+                            color: ZaWolfColors.primaryCyan,
+                            size: 16,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            'مرفق الشكوى:',
+                            style: theme.textTheme.bodySmall,
+                            textDirection: TextDirection.rtl,
+                          ),
+                        ],
+                      ),
+                    ],
                     const SizedBox(height: 16),
                     WolfButton(
                       onPressed: () async {
@@ -730,84 +765,280 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen>
           );
         }
 
-        final docs = snapshot.data?.docs ?? [];
-        if (docs.isEmpty) {
+        final allItems =
+            snapshot.data?.docs
+                .map((doc) => AttendanceModel.fromFirestore(doc))
+                .toList() ??
+            [];
+        allItems.sort((a, b) => b.date.compareTo(a.date));
+        final items = _filterSalaryDeductions(allItems);
+
+        if (allItems.isEmpty) {
           return _buildEmptyState('لا توجد خصومات راتب بانتظار HR');
         }
 
-        return ListView.builder(
+        return ListView(
           padding: const EdgeInsets.all(16),
-          itemCount: docs.length,
-          itemBuilder: (context, index) {
-            final attendance = AttendanceModel.fromFirestore(docs[index]);
-            return Padding(
-              padding: const EdgeInsets.only(bottom: 16.0),
-              child: WolfCard(
-                hasBorderGlow: true,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _buildEmployeeHeader(
-                      attendance.employeeName,
-                      attendance.employeeId,
-                      attendance.locationName,
-                      theme,
-                    ),
-                    const SizedBox(height: 12),
-                    Text(
-                      attendance.salaryDeductionLabel,
-                      style: theme.textTheme.titleMedium!.copyWith(
-                        color: Colors.white,
-                      ),
-                    ),
-                    _buildRequestDateLine(
-                      label: 'يوم وتاريخ الحضور',
-                      date: _parseDateKey(attendance.date),
-                    ),
-                    Text(
-                      'التاريخ: ${attendance.date}'
-                      '${attendance.lateMinutes > 0 ? ' · التأخير: ${attendance.lateMinutes} دقيقة' : ''}',
-                    ),
-                    Text(
-                      'قيمة الخصم: ${attendance.salaryDeductionAmount.toStringAsFixed(2)} ${attendance.salaryCurrency}',
-                      style: const TextStyle(color: ZaWolfColors.warning),
-                    ),
-                    const SizedBox(height: 16),
-                    _buildApprovalActions(
-                      onApprove: () async {
-                        try {
-                          await _attendanceService.approveSalaryDeduction(
-                            attendance.attendanceId,
-                            reviewer.uid,
-                          );
-                        } catch (e) {
-                          if (!context.mounted) return;
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text('فشل الموافقة: $e')),
-                          );
-                        }
-                      },
-                      onReject: () async {
-                        try {
-                          await _attendanceService.rejectSalaryDeduction(
-                            attendance.attendanceId,
-                            reviewer.uid,
-                          );
-                        } catch (e) {
-                          if (!context.mounted) return;
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text('فشل الرفض: $e')),
-                          );
-                        }
-                      },
-                    ),
-                  ],
+          children: [
+            _buildSalaryDeductionToolbar(
+              theme: theme,
+              visibleItems: items,
+              reviewer: reviewer,
+            ),
+            const SizedBox(height: 12),
+            if (items.isEmpty)
+              WolfCard(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 24),
+                  child: Text(
+                    'لا توجد خصومات مطابقة لهذا الفلتر',
+                    style: theme.textTheme.titleMedium,
+                    textAlign: TextAlign.center,
+                    textDirection: TextDirection.rtl,
+                  ),
                 ),
-              ),
-            );
-          },
+              )
+            else
+              ...items.map((attendance) {
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 16.0),
+                  child: WolfCard(
+                    hasBorderGlow: true,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _buildEmployeeHeader(
+                          attendance.employeeName,
+                          attendance.employeeId,
+                          attendance.locationName,
+                          theme,
+                        ),
+                        const SizedBox(height: 12),
+                        Text(
+                          attendance.salaryDeductionLabel,
+                          style: theme.textTheme.titleMedium!.copyWith(
+                            color: Colors.white,
+                          ),
+                        ),
+                        _buildRequestDateLine(
+                          label: 'يوم وتاريخ الحضور',
+                          date: _parseDateKey(attendance.date),
+                        ),
+                        Text(
+                          'التاريخ: ${attendance.date}'
+                          '${attendance.lateMinutes > 0 ? ' · التأخير: ${attendance.lateMinutes} دقيقة' : ''}',
+                        ),
+                        Text(
+                          'قيمة الخصم: ${attendance.salaryDeductionAmount.toStringAsFixed(2)} ${attendance.salaryCurrency}',
+                          style: const TextStyle(color: ZaWolfColors.warning),
+                        ),
+                        const SizedBox(height: 16),
+                        _buildApprovalActions(
+                          onApprove: () async {
+                            try {
+                              await _attendanceService.approveSalaryDeduction(
+                                attendance.attendanceId,
+                                reviewer.uid,
+                              );
+                            } catch (e) {
+                              if (!context.mounted) return;
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(content: Text('فشل الموافقة: $e')),
+                              );
+                            }
+                          },
+                          onReject: () async {
+                            try {
+                              await _attendanceService.rejectSalaryDeduction(
+                                attendance.attendanceId,
+                                reviewer.uid,
+                              );
+                            } catch (e) {
+                              if (!context.mounted) return;
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(content: Text('فشل الرفض: $e')),
+                              );
+                            }
+                          },
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              }),
+          ],
         );
       },
+    );
+  }
+
+  List<AttendanceModel> _filterSalaryDeductions(List<AttendanceModel> items) {
+    final today = DateFormat('yyyy-MM-dd').format(DateTime.now());
+    return items.where((item) {
+      switch (_salaryDeductionFilter) {
+        case 'today':
+          return item.date == today;
+        case 'absent':
+          return item.salaryDeductionCode == 'absent' ||
+              item.status == 'absent';
+        case 'late':
+          return item.salaryDeductionCode.contains('late') ||
+              item.isLate ||
+              item.lateMinutes > 0;
+        case 'checkout':
+          return item.salaryDeductionCode.contains('checkout');
+        default:
+          return true;
+      }
+    }).toList();
+  }
+
+  Widget _buildSalaryDeductionToolbar({
+    required ThemeData theme,
+    required List<AttendanceModel> visibleItems,
+    required UserModel reviewer,
+  }) {
+    return WolfCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            alignment: WrapAlignment.end,
+            children: [
+              _buildSalaryFilterChip('الكل', 'all'),
+              _buildSalaryFilterChip('اليوم', 'today'),
+              _buildSalaryFilterChip('غياب', 'absent'),
+              _buildSalaryFilterChip('تأخير', 'late'),
+              _buildSalaryFilterChip('انصراف', 'checkout'),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Text(
+            'المعروض: ${visibleItems.length} خصم',
+            style: theme.textTheme.bodySmall,
+            textAlign: TextAlign.right,
+            textDirection: TextDirection.rtl,
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: WolfButton(
+                  onPressed: visibleItems.isEmpty
+                      ? null
+                      : () => _reviewVisibleSalaryDeductions(
+                          items: visibleItems,
+                          reviewer: reviewer,
+                          approve: false,
+                        ),
+                  text: 'رفض المعروض',
+                  secondaryText: 'REJECT FILTER',
+                  variant: WolfButtonVariant.outline,
+                  height: 44,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: WolfButton(
+                  onPressed: visibleItems.isEmpty
+                      ? null
+                      : () => _reviewVisibleSalaryDeductions(
+                          items: visibleItems,
+                          reviewer: reviewer,
+                          approve: true,
+                        ),
+                  text: 'اعتماد المعروض',
+                  secondaryText: 'APPROVE FILTER',
+                  variant: WolfButtonVariant.primary,
+                  height: 44,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSalaryFilterChip(String label, String value) {
+    final selected = _salaryDeductionFilter == value;
+    return ChoiceChip(
+      label: Text(label),
+      selected: selected,
+      selectedColor: ZaWolfColors.primaryCyan.withValues(alpha: 0.24),
+      backgroundColor: ZaWolfColors.surface02,
+      labelStyle: TextStyle(
+        color: selected ? ZaWolfColors.primaryCyan : ZaWolfColors.textSecondary,
+        fontWeight: selected ? FontWeight.bold : FontWeight.w500,
+      ),
+      onSelected: (_) {
+        setState(() => _salaryDeductionFilter = value);
+      },
+    );
+  }
+
+  Future<void> _reviewVisibleSalaryDeductions({
+    required List<AttendanceModel> items,
+    required UserModel reviewer,
+    required bool approve,
+  }) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: ZaWolfColors.surface01,
+        title: Text(
+          approve ? 'اعتماد الخصومات المعروضة؟' : 'رفض الخصومات المعروضة؟',
+          textDirection: TextDirection.rtl,
+        ),
+        content: Text(
+          'سيتم تطبيق الإجراء على ${items.length} خصم حسب الفلتر الحالي.',
+          textDirection: TextDirection.rtl,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('إلغاء'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: Text(approve ? 'اعتماد' : 'رفض'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    var success = 0;
+    var failed = 0;
+    for (final item in items) {
+      try {
+        if (approve) {
+          await _attendanceService.approveSalaryDeduction(
+            item.attendanceId,
+            reviewer.uid,
+          );
+        } else {
+          await _attendanceService.rejectSalaryDeduction(
+            item.attendanceId,
+            reviewer.uid,
+          );
+        }
+        success++;
+      } catch (_) {
+        failed++;
+      }
+    }
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          failed == 0
+              ? 'تم تنفيذ الإجراء على $success خصم.'
+              : 'تم تنفيذ $success وفشل $failed. تحقق من الصلاحيات.',
+        ),
+      ),
     );
   }
 

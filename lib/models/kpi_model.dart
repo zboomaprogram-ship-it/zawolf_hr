@@ -145,6 +145,7 @@ class EmployeeKpiModel {
   final String employeeName;
   final String department;
   final String managerId;
+  final List<String> managerIds;
   final String monthKey;
   final String status;
   final List<EmployeeKpiMetric> metrics;
@@ -161,6 +162,7 @@ class EmployeeKpiModel {
     required this.employeeName,
     required this.department,
     required this.managerId,
+    this.managerIds = const [],
     required this.monthKey,
     required this.status,
     required this.metrics,
@@ -180,6 +182,14 @@ class EmployeeKpiModel {
       employeeName: data['employeeName'] as String? ?? '',
       department: data['department'] as String? ?? '',
       managerId: data['managerId'] as String? ?? '',
+      managerIds:
+          (data['managerIds'] as List<dynamic>?)
+              ?.whereType<String>()
+              .toList() ??
+          [
+            if ((data['managerId'] as String? ?? '').isNotEmpty)
+              data['managerId'] as String,
+          ],
       monthKey: data['monthKey'] as String? ?? '',
       status: data['status'] as String? ?? 'active',
       metrics:
@@ -204,6 +214,7 @@ class EmployeeKpiModel {
       'employeeName': employeeName,
       'department': department,
       'managerId': managerId,
+      'managerIds': managerIds.isNotEmpty ? managerIds : [managerId],
       'monthKey': monthKey,
       'status': status,
       'metrics': metrics.map((metric) => metric.toMap()).toList(),

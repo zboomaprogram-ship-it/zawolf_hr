@@ -17,8 +17,10 @@ class AttendanceDeduction {
 }
 
 class AttendancePolicy {
+  static const String defaultCheckInOpenTime = '07:00';
   static const String defaultStartTime = '09:00';
   static const String defaultEndTime = '17:00';
+  static const String defaultLatestCheckoutTime = '23:00';
   static const List<int> saturdayToThursdayWorkDays = [6, 7, 1, 2, 3, 4];
   static const int defaultPayrollWorkDaysPerMonth = 26;
   static const int defaultGraceMinutes = 15;
@@ -98,16 +100,20 @@ class AttendancePolicy {
 }
 
 class AttendancePolicyConfig {
+  final String checkInOpenTime;
   final String defaultStartTime;
   final String defaultEndTime;
+  final String latestCheckoutTime;
   final int graceMinutes;
   final int quarterDayUntilMinutes;
   final int halfDayUntilMinutes;
   final int payrollWorkDaysPerMonth;
 
   const AttendancePolicyConfig({
+    this.checkInOpenTime = AttendancePolicy.defaultCheckInOpenTime,
     this.defaultStartTime = AttendancePolicy.defaultStartTime,
     this.defaultEndTime = AttendancePolicy.defaultEndTime,
+    this.latestCheckoutTime = AttendancePolicy.defaultLatestCheckoutTime,
     this.graceMinutes = AttendancePolicy.defaultGraceMinutes,
     this.quarterDayUntilMinutes =
         AttendancePolicy.defaultQuarterDayUntilMinutes,
@@ -126,6 +132,9 @@ class AttendancePolicyConfig {
     }
 
     return AttendancePolicyConfig(
+      checkInOpenTime:
+          map['checkInOpenTime'] as String? ??
+          AttendancePolicy.defaultCheckInOpenTime,
       defaultStartTime:
           map['defaultStartTime'] as String? ??
           map['startTime'] as String? ??
@@ -134,6 +143,9 @@ class AttendancePolicyConfig {
           map['defaultEndTime'] as String? ??
           map['endTime'] as String? ??
           AttendancePolicy.defaultEndTime,
+      latestCheckoutTime:
+          map['latestCheckoutTime'] as String? ??
+          AttendancePolicy.defaultLatestCheckoutTime,
       graceMinutes: readInt(
         'graceMinutes',
         AttendancePolicy.defaultGraceMinutes,
@@ -155,8 +167,10 @@ class AttendancePolicyConfig {
 
   Map<String, dynamic> toMap() {
     return {
+      'checkInOpenTime': checkInOpenTime,
       'defaultStartTime': defaultStartTime,
       'defaultEndTime': defaultEndTime,
+      'latestCheckoutTime': latestCheckoutTime,
       'graceMinutes': graceMinutes,
       'quarterDayUntilMinutes': quarterDayUntilMinutes,
       'halfDayUntilMinutes': halfDayUntilMinutes,

@@ -1,0 +1,55 @@
+name: Cleanup Bad Attendance Records
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Run without writing to Firebase
+        required: true
+        default: 'true'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
+      date_from:
+        description: First date to scan, YYYY-MM-DD
+        required: true
+        type: string
+      date_to:
+        description: Last date to scan, YYYY-MM-DD
+        required: true
+        type: string
+      delete_bad_docs:
+        description: Delete invalid docs instead of marking them cancelled
+        required: true
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
+
+jobs:
+  cleanup-attendance:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v5
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+
+      - name: Install Dependencies
+        working-directory: ./scripts
+        run: npm ci
+
+      - name: Cleanup Bad Attendance Records
+        working-directory: ./scripts
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          DRY_RUN: ${{ inputs.dry_run }}
+          DATE_FROM: ${{ inputs.date_from }}
+          DATE_TO: ${{ inputs.date_to }}
+          DELETE_BAD_DOCS: ${{ inputs.delete_bad_docs }}
+        run: node cleanup-attendance.js

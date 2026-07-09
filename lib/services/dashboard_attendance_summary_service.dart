@@ -93,28 +93,14 @@ class DashboardAttendanceSummaryService {
     }
 
     final employeeIds = employees.map((employee) => employee.uid).toSet();
-    final results = await Future.wait([
-      _db.collection('attendance').where('date', isEqualTo: dateKey).get(),
-      _db
-          .collection('permissions')
-          .where('requestDate', isEqualTo: dateKey)
-          .where('status', isEqualTo: 'approved')
-          .get(),
-      _db
-          .collection('leaves')
-          .where('status', isEqualTo: 'approved')
-          .where(
-            'startDate',
-            isLessThanOrEqualTo: Timestamp.fromDate(
-              DateTime(date.year, date.month, date.day, 23, 59, 59),
-            ),
-          )
-          .get(),
-    ]);
+    final results = isManagerScope
+        ? await _loadManagerScopedDayData(employeeIds, dateKey, date)
+        : await _loadHrScopedDayData(dateKey, date);
 
     final attendanceByUser = <String, Map<String, dynamic>>{};
     for (final doc in results[0].docs) {
       final data = doc.data();
+      if (data == null) continue;
       final userId = data['userId'] as String? ?? '';
       if (employeeIds.contains(userId)) attendanceByUser[userId] = data;
     }
@@ -122,6 +108,7 @@ class DashboardAttendanceSummaryService {
     final permissionUsers = <String>{};
     for (final doc in results[1].docs) {
       final data = doc.data();
+      if (data == null) continue;
       final userId = data['userId'] as String? ?? '';
       if (employeeIds.contains(userId)) permissionUsers.add(userId);
     }
@@ -130,6 +117,7 @@ class DashboardAttendanceSummaryService {
     final startOfToday = DateTime(date.year, date.month, date.day);
     for (final doc in results[2].docs) {
       final data = doc.data();
+      if (data == null) continue;
       final userId = data['userId'] as String? ?? '';
       if (!employeeIds.contains(userId)) continue;
       final endDate = (data['endDate'] as Timestamp?)?.toDate();
@@ -217,10 +205,95 @@ class DashboardAttendanceSummaryService {
     }).toList();
   }
 
+  Future<List<_SummaryQueryResult>> _loadManagerScopedDayData(
+    Set<String> employeeIds,
+    String dateKey,
+    DateTime date,
+  ) async {
+    final attendanceDocs = await Future.wait(
+      employeeIds.map(
+        (userId) =>
+            _db.collection('attendance').doc('${userId}_$dateKey').get(),
+      ),
+    );
+    final permissionSnaps = await Future.wait(
+      employeeIds.map(
+        (userId) => _db
+            .collection('permissions')
+            .where('userId', isEqualTo: userId)
+            .where('requestDate', isEqualTo: dateKey)
+            .where('status', isEqualTo: 'approved')
+            .get(),
+      ),
+    );
+    final leaveSnaps = await Future.wait(
+      employeeIds.map(
+        (userId) => _db
+            .collection('leaves')
+            .where('userId', isEqualTo: userId)
+            .where('status', isEqualTo: 'approved')
+            .where(
+              'startDate',
+              isLessThanOrEqualTo: Timestamp.fromDate(
+                DateTime(date.year, date.month, date.day, 23, 59, 59),
+              ),
+            )
+            .get(),
+      ),
+    );
+
+    return [
+      _SummaryQueryResult(attendanceDocs.where((doc) => doc.exists).toList()),
+      _SummaryQueryResult(
+        permissionSnaps.expand((snapshot) => snapshot.docs).toList(),
+      ),
+      _SummaryQueryResult(
+        leaveSnaps.expand((snapshot) => snapshot.docs).toList(),
+      ),
+    ];
+  }
+
+  Future<List<_SummaryQueryResult>> _loadHrScopedDayData(
+    String dateKey,
+    DateTime date,
+  ) async {
+    final results = await Future.wait([
+      _db.collection('attendance').where('date', isEqualTo: dateKey).get(),
+      _db
+          .collection('permissions')
+          .where('requestDate', isEqualTo: dateKey)
+          .where('status', isEqualTo: 'approved')
+          .get(),
+      _db
+          .collection('leaves')
+          .where('status', isEqualTo: 'approved')
+          .where(
+            'startDate',
+            isLessThanOrEqualTo: Timestamp.fromDate(
+              DateTime(date.year, date.month, date.day, 23, 59, 59),
+            ),
+          )
+          .get(),
+    ]);
+    return results.map(_SummaryQueryResult.fromQuery).toList();
+  }
+
   bool _isLateStatus(String status) {
     return status == 'late' ||
         status == 'late_quarter_day' ||
         status == 'late_half_day' ||
         status == 'late_full_day';
+  }
+}
+
+class _SummaryQueryResult {
+  final List<DocumentSnapshot<Map<String, dynamic>>> docs;
+
+  const _SummaryQueryResult(this.docs);
+
+  factory _SummaryQueryResult.fromQuery(
+    QuerySnapshot<Map<String, dynamic>> snapshot,
+  ) {
+    return _SummaryQueryResult(snapshot.docs);
   }
 }

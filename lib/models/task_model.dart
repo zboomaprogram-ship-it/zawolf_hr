@@ -52,6 +52,7 @@ class EmployeeTaskModel {
   final String assigneeEmployeeId;
   final String department;
   final String managerId;
+  final List<String> managerIds;
   final String createdBy;
   final String createdByName;
   final String priority;
@@ -74,6 +75,7 @@ class EmployeeTaskModel {
     required this.assigneeEmployeeId,
     required this.department,
     required this.managerId,
+    this.managerIds = const [],
     required this.createdBy,
     required this.createdByName,
     required this.priority,
@@ -99,6 +101,14 @@ class EmployeeTaskModel {
       assigneeEmployeeId: data['assigneeEmployeeId'] as String? ?? '',
       department: data['department'] as String? ?? '',
       managerId: data['managerId'] as String? ?? '',
+      managerIds:
+          (data['managerIds'] as List<dynamic>?)
+              ?.whereType<String>()
+              .toList() ??
+          [
+            if ((data['managerId'] as String? ?? '').isNotEmpty)
+              data['managerId'] as String,
+          ],
       createdBy: data['createdBy'] as String? ?? '',
       createdByName: data['createdByName'] as String? ?? '',
       priority: data['priority'] as String? ?? TaskPriority.medium,
@@ -123,6 +133,7 @@ class EmployeeTaskModel {
       'assigneeEmployeeId': assigneeEmployeeId,
       'department': department,
       'managerId': managerId,
+      'managerIds': managerIds.isNotEmpty ? managerIds : [managerId],
       'createdBy': createdBy,
       'createdByName': createdByName,
       'priority': priority,

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../models/employee_role.dart';
@@ -12,31 +14,56 @@ class TaskService {
     return _db
         .collection('tasks')
         .where('assigneeId', isEqualTo: userId)
-        .orderBy('dueDate')
         .snapshots()
         .map(_tasksFromSnapshot);
   }
 
   Stream<List<EmployeeTaskModel>> watchManagedTasks(UserModel reviewer) {
-    Query<Map<String, dynamic>> query = _db.collection('tasks');
     if (reviewer.role == EmployeeRole.manager) {
-      query = query.where('managerId', isEqualTo: reviewer.uid);
+      return _watchMergedTaskQueries([
+        _db
+            .collection('tasks')
+            .where('managerIds', arrayContains: reviewer.uid),
+        _db.collection('tasks').where('managerId', isEqualTo: reviewer.uid),
+      ]);
     }
-    return query.orderBy('dueDate').snapshots().map(_tasksFromSnapshot);
+    final query = _db.collection('tasks');
+    return query.snapshots().map(_tasksFromSnapshot);
   }
 
   Future<List<UserModel>> loadAssignableEmployees(UserModel reviewer) async {
-    Query<Map<String, dynamic>> query = _db
-        .collection('users')
-        .where('isActive', isEqualTo: true);
     if (reviewer.role == EmployeeRole.manager) {
-      query = query.where('managerId', isEqualTo: reviewer.uid);
+      final results = await Future.wait([
+        _db
+            .collection('users')
+            .where('managerIds', arrayContains: reviewer.uid)
+            .get(),
+        _db
+            .collection('users')
+            .where('managerId', isEqualTo: reviewer.uid)
+            .get(),
+      ]);
+      final byId = <String, UserModel>{};
+      for (final doc in results.expand((snapshot) => snapshot.docs)) {
+        final user = UserModel.fromFirestore(doc);
+        if (!user.isActive) continue;
+        if (user.role == EmployeeRole.superAdmin) continue;
+        if (user.managerId == reviewer.uid ||
+            user.managerIds.contains(reviewer.uid)) {
+          byId[user.uid] = user;
+        }
+      }
+      final users = byId.values.toList()
+        ..sort((a, b) => a.displayName.compareTo(b.displayName));
+      return users;
     }
+    final query = _db.collection('users').where('isActive', isEqualTo: true);
     final snap = await query.get();
     final users = snap.docs.map(UserModel.fromFirestore).where((user) {
       if (user.role == EmployeeRole.superAdmin) return false;
       if (reviewer.role == EmployeeRole.manager) {
-        return user.managerId == reviewer.uid;
+        return user.managerId == reviewer.uid ||
+            user.managerIds.contains(reviewer.uid);
       }
       return true;
     }).toList();
@@ -62,6 +89,9 @@ class TaskService {
       assigneeEmployeeId: assignee.employeeId,
       department: assignee.department,
       managerId: assignee.managerId ?? creator.uid,
+      managerIds: assignee.managerIds.isNotEmpty
+          ? assignee.managerIds
+          : [assignee.managerId ?? creator.uid],
       createdBy: creator.uid,
       createdByName: creator.displayName,
       priority: priority,
@@ -174,6 +204,54 @@ class TaskService {
     final tasks = snapshot.docs
         .map((doc) => EmployeeTaskModel.fromFirestore(doc))
         .toList();
+    return _sortTasks(tasks);
+  }
+
+  Stream<List<EmployeeTaskModel>> _watchMergedTaskQueries(
+    List<Query<Map<String, dynamic>>> queries,
+  ) {
+    late final StreamController<List<EmployeeTaskModel>> controller;
+    final latest = <int, List<EmployeeTaskModel>>{};
+    final subscriptions =
+        <StreamSubscription<QuerySnapshot<Map<String, dynamic>>>>[];
+
+    void emit() {
+      final byId = <String, EmployeeTaskModel>{};
+      for (final tasks in latest.values) {
+        for (final task in tasks) {
+          byId[task.taskId] = task;
+        }
+      }
+      if (!controller.isClosed) {
+        controller.add(_sortTasks(byId.values.toList()));
+      }
+    }
+
+    controller = StreamController<List<EmployeeTaskModel>>(
+      onListen: () {
+        for (var i = 0; i < queries.length; i++) {
+          final index = i;
+          subscriptions.add(
+            queries[index].snapshots().listen((snapshot) {
+              latest[index] = snapshot.docs
+                  .map((doc) => EmployeeTaskModel.fromFirestore(doc))
+                  .toList();
+              emit();
+            }, onError: controller.addError),
+          );
+        }
+      },
+      onCancel: () async {
+        for (final subscription in subscriptions) {
+          await subscription.cancel();
+        }
+      },
+    );
+
+    return controller.stream;
+  }
+
+  List<EmployeeTaskModel> _sortTasks(List<EmployeeTaskModel> tasks) {
     tasks.sort((a, b) {
       if (a.status == TaskStatus.done && b.status != TaskStatus.done) return 1;
       if (a.status != TaskStatus.done && b.status == TaskStatus.done) return -1;

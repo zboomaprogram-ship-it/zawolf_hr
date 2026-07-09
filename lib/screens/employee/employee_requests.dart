@@ -52,6 +52,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
 
   final _complaintTitleController = TextEditingController();
   final _complaintBodyController = TextEditingController();
+  final _complaintAttachmentController = TextEditingController();
 
   bool _loading = false;
 
@@ -70,6 +71,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
     _advanceReasonController.dispose();
     _complaintTitleController.dispose();
     _complaintBodyController.dispose();
+    _complaintAttachmentController.dispose();
     super.dispose();
   }
 
@@ -284,6 +286,9 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
         employee: employee,
         title: _complaintTitleController.text,
         body: _complaintBodyController.text,
+        attachmentUrl: _complaintAttachmentController.text.trim().isEmpty
+            ? null
+            : _complaintAttachmentController.text.trim(),
       );
 
       if (mounted) {
@@ -295,6 +300,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
         );
         _complaintTitleController.clear();
         _complaintBodyController.clear();
+        _complaintAttachmentController.clear();
         _tabController.animateTo(1);
       }
     } catch (e) {
@@ -931,6 +937,27 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
                   ? 'يرجى كتابة تفاصيل كافية'
                   : null,
             ),
+            const SizedBox(height: 16),
+            WolfInputField(
+              controller: _complaintAttachmentController,
+              labelText: 'رابط مرفق اختياري',
+              englishLabel: 'Optional Link',
+              hintText: 'https://drive.google.com/...',
+              prefixIcon: Icons.link,
+              textDirection: TextDirection.ltr,
+              validator: (val) {
+                final value = val?.trim() ?? '';
+                if (value.isEmpty) return null;
+                final uri = Uri.tryParse(value);
+                if (uri == null || uri.scheme.isEmpty || uri.host.isEmpty) {
+                  return 'أدخل رابطاً صحيحاً أو اتركه فارغاً';
+                }
+                if (!['http', 'https'].contains(uri.scheme.toLowerCase())) {
+                  return 'الرابط يجب أن يبدأ بـ http أو https';
+                }
+                return null;
+              },
+            ),
             const SizedBox(height: 20),
             WolfButton(
               onPressed: () => _submitComplaint(user),
@@ -1052,7 +1079,9 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
                     ),
                     const SizedBox(height: 8),
                   ],
-                  if (req.status == 'pending') ...[
+                  if (req.status == 'pending' ||
+                      req.status == 'pending_hr' ||
+                      req.status == 'pending_manager') ...[
                     const SizedBox(height: 12),
                     WolfButton(
                       onPressed: () =>
@@ -1121,6 +1150,32 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
                   ),
                   const SizedBox(height: 10),
                   Text(complaint.body, style: theme.textTheme.bodyMedium),
+                  if (complaint.attachmentUrl != null &&
+                      complaint.attachmentUrl!.isNotEmpty) ...[
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            complaint.attachmentUrl!,
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: ZaWolfColors.primaryCyan,
+                              decoration: TextDecoration.underline,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            textDirection: TextDirection.ltr,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        const Icon(
+                          Icons.link,
+                          color: ZaWolfColors.primaryCyan,
+                          size: 16,
+                        ),
+                      ],
+                    ),
+                  ],
                 ],
               ),
             );

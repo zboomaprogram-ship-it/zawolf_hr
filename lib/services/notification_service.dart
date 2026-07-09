@@ -22,10 +22,14 @@ class NotificationService {
 
   String routeForType(String type) {
     final value = type.trim();
-    if (value.contains('pending_hr') ||
-        value.contains('pending_manager') ||
-        value.contains('salary_deduction') ||
-        value == 'attendance_security_review') {
+    if (value == 'attendance_security_review') return '/manager/requests';
+    if (value == 'attendance_security_reviewed') {
+      return '/employee/dashboard';
+    }
+    if (value == 'salary_deduction_pending') return '/manager/requests';
+    if (value == 'salary_deduction_reviewed') return '/employee/dashboard';
+    if (value == 'complaint_new') return '/manager/requests';
+    if (value.contains('pending_hr') || value.contains('pending_manager')) {
       return '/manager/requests';
     }
     if (value.contains('approved') ||

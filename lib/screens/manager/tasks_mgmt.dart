@@ -555,6 +555,7 @@ class _ReviewTaskSheet extends StatefulWidget {
 class _ReviewTaskSheetState extends State<_ReviewTaskSheet> {
   final _comment = TextEditingController();
   double _score = 85;
+  bool _saving = false;
 
   @override
   void dispose() {
@@ -601,21 +602,44 @@ class _ReviewTaskSheetState extends State<_ReviewTaskSheet> {
           ),
           const SizedBox(height: 16),
           FilledButton.icon(
-            onPressed: () async {
-              await widget.taskService.reviewTask(
-                taskId: widget.task.taskId,
-                reviewer: widget.reviewer,
-                qualityScore: _score.round(),
-                comment: _comment.text,
-              );
-              if (context.mounted) Navigator.pop(context);
-            },
-            icon: const Icon(Icons.save),
+            onPressed: _saving ? null : _saveReview,
+            icon: _saving
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.save),
             label: const Text('حفظ التقييم'),
           ),
         ],
       ),
     );
+  }
+
+  Future<void> _saveReview() async {
+    setState(() => _saving = true);
+    try {
+      await widget.taskService.reviewTask(
+        taskId: widget.task.taskId,
+        reviewer: widget.reviewer,
+        qualityScore: _score.round(),
+        comment: _comment.text,
+      );
+      if (mounted) Navigator.pop(context);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: ZaWolfColors.error,
+          content: Text(
+            'فشل حفظ التقييم: ${e.toString().replaceAll('Exception: ', '')}',
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
   }
 }
 

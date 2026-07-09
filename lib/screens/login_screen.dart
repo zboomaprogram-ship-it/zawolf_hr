@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models/employee_role.dart';
 import '../services/auth_service.dart';
 import '../theme/theme.dart';
@@ -22,11 +23,44 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _isLoading = false;
   String? _errorMessage;
 
+  static const _rememberAccountKey = 'login_remember_account';
+  static const _rememberedEmailKey = 'login_remembered_email';
+
+  @override
+  void initState() {
+    super.initState();
+    _loadRememberedAccount();
+  }
+
   @override
   void dispose() {
     _emailController.dispose();
     _passwordController.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadRememberedAccount() async {
+    final prefs = await SharedPreferences.getInstance();
+    final remembered = prefs.getBool(_rememberAccountKey) ?? false;
+    final email = prefs.getString(_rememberedEmailKey) ?? '';
+    if (!mounted) return;
+    setState(() {
+      _rememberMe = remembered;
+      if (remembered && email.isNotEmpty) {
+        _emailController.text = email;
+      }
+    });
+  }
+
+  Future<void> _saveRememberedAccount() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (_rememberMe) {
+      await prefs.setBool(_rememberAccountKey, true);
+      await prefs.setString(_rememberedEmailKey, _emailController.text.trim());
+    } else {
+      await prefs.setBool(_rememberAccountKey, false);
+      await prefs.remove(_rememberedEmailKey);
+    }
   }
 
   Future<void> _handleLogin() async {
@@ -44,6 +78,7 @@ class _LoginScreenState extends State<LoginScreen> {
         _emailController.text.trim(),
         _passwordController.text,
       );
+      await _saveRememberedAccount();
 
       if (!mounted) return;
 

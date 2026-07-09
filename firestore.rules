@@ -71,8 +71,15 @@ service cloud.firestore {
     function canCreateNotificationFor(userId) {
       return uid() == userId
         || isHR()
-        || (isManagerRole() && recipientDoc(userId).get('managerId', '') == uid())
+        || (
+          isManagerRole()
+          && (
+            recipientDoc(userId).get('managerId', '') == uid()
+            || uid() in recipientDoc(userId).get('managerIds', [])
+          )
+        )
         || userDoc().get('managerId', '') == userId
+        || userId in userDoc().get('managerIds', [])
         || (
           request.resource.data.type in [
             'salary_deduction_pending',
@@ -87,7 +94,10 @@ service cloud.firestore {
             'permission_pending_manager',
             'leave_request_submitted'
           ]
-          && userDoc().get('managerId', '') == userId
+          && (
+            userDoc().get('managerId', '') == userId
+            || userId in userDoc().get('managerIds', [])
+          )
         )
         || (
           request.resource.data.type == 'suggestion_new'
@@ -100,7 +110,13 @@ service cloud.firestore {
           && (
             uid() == userId ||
             isHR() ||
-            (isManagerRole() && recipientDoc(userId).get('managerId', '') == uid())
+            (
+              isManagerRole()
+              && (
+                recipientDoc(userId).get('managerId', '') == uid()
+                || uid() in recipientDoc(userId).get('managerIds', [])
+              )
+            )
           )
         )
         || (
@@ -108,14 +124,26 @@ service cloud.firestore {
           && (
             uid() == userId ||
             isHR() ||
-            (isManagerRole() && recipientDoc(userId).get('managerId', '') == uid())
+            (
+              isManagerRole()
+              && (
+                recipientDoc(userId).get('managerId', '') == uid()
+                || uid() in recipientDoc(userId).get('managerIds', [])
+              )
+            )
           )
         )
         || (
           request.resource.data.type == 'warning_reward_created'
           && (
             isHR() ||
-            (isManagerRole() && recipientDoc(userId).get('managerId', '') == uid())
+            (
+              isManagerRole()
+              && (
+                recipientDoc(userId).get('managerId', '') == uid()
+                || uid() in recipientDoc(userId).get('managerIds', [])
+              )
+            )
           )
         );
     }
@@ -277,6 +305,18 @@ service cloud.firestore {
           'none', 'pending_hr', 'approved', 'rejected'
         ];
     }
+    function attendanceOwnerCheckInReplacement() {
+      return isOwner(resource.data.userId)
+        && resource.data.get('checkInTime', null) == null
+        && request.resource.data.userId == uid()
+        && request.resource.data.date == resource.data.date
+        && request.resource.data.employeeId == userDoc().get('employeeId', '')
+        && request.resource.data.employeeName == userDoc().get('displayName', '')
+        && request.resource.data.locationId == userDoc().get('locationId', '')
+        && validRequestManagerId()
+        && attendanceCreateKeys()
+        && attendanceCreateValues();
+    }
     function attendanceHrDeductionReview() {
       return request.resource.data.diff(resource.data).affectedKeys()
         .hasOnly([
@@ -395,8 +435,8 @@ service cloud.firestore {
       return request.resource.data.keys().hasOnly([
         'title', 'description', 'assigneeId', 'assigneeName',
         'assigneeEmployeeId', 'department', 'managerId', 'createdBy',
-        'createdByName', 'priority', 'status', 'dueDate', 'createdAt',
-        'updatedAt', 'isRead'
+        'managerIds', 'createdByName', 'priority', 'status', 'dueDate',
+        'createdAt', 'updatedAt', 'isRead'
       ]);
     }
     function taskCreateValues() {
@@ -411,8 +451,11 @@ service cloud.firestore {
           isHR() ||
           (
             isManagerRole()
-            && request.resource.data.managerId == uid()
-            && recipientDoc(request.resource.data.assigneeId).get('managerId', '') == uid()
+            && uid() in request.resource.data.get('managerIds', [])
+            && (
+              recipientDoc(request.resource.data.assigneeId).get('managerId', '') == uid()
+              || uid() in recipientDoc(request.resource.data.assigneeId).get('managerIds', [])
+            )
           )
         );
     }
@@ -426,7 +469,13 @@ service cloud.firestore {
     function taskReviewerUpdate() {
       return (
           isHR() ||
-          (isManagerRole() && resource.data.managerId == uid())
+          (
+            isManagerRole()
+            && (
+              resource.data.managerId == uid()
+              || uid() in resource.data.get('managerIds', [])
+            )
+          )
         )
         && request.resource.data.diff(resource.data).affectedKeys()
           .hasOnly([
@@ -457,7 +506,7 @@ service cloud.firestore {
     function employeeKpiCreateKeys() {
       return request.resource.data.keys().hasOnly([
         'templateId', 'userId', 'employeeId', 'employeeName',
-        'department', 'managerId', 'monthKey', 'status', 'metrics',
+        'department', 'managerId', 'managerIds', 'monthKey', 'status', 'metrics',
         'overallProgress', 'createdBy', 'createdAt', 'updatedAt'
       ]);
     }
@@ -465,8 +514,14 @@ service cloud.firestore {
       return isHR()
         || (
           isManagerRole()
-          && managerId == uid()
-          && recipientDoc(userId).get('managerId', '') == uid()
+          && (
+            managerId == uid()
+            || uid() in recipientDoc(userId).get('managerIds', [])
+          )
+          && (
+            recipientDoc(userId).get('managerId', '') == uid()
+            || uid() in recipientDoc(userId).get('managerIds', [])
+          )
         );
     }
     function employeeKpiCreateValues() {
@@ -634,6 +689,7 @@ service cloud.firestore {
         && attendanceCreateKeys()
         && attendanceCreateValues();
       allow update: if isAuth() && isActive() && (
+        attendanceOwnerCheckInReplacement() ||
         (
           isOwner(resource.data.userId)
           && attendanceOwnerCheckoutKeys()
@@ -660,6 +716,7 @@ service cloud.firestore {
       allow read: if isAuth() && isActive() && (
         isOwner(resource.data.userId) ||
         isMyManager(resource.data.managerId) ||
+        uid() in resource.data.get('managerIds', []) ||
         isHR()
       );
       allow create: if isAuth() && isActive()
@@ -677,7 +734,7 @@ service cloud.firestore {
       allow update: if isAuth() && isActive() && (
         (
           isOwner(resource.data.userId)
-          && resource.data.status == 'pending_hr'
+          && resource.data.status in ['pending', 'pending_hr', 'pending_manager']
           && request.resource.data.status == 'cancelled'
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
         ) ||
@@ -692,6 +749,7 @@ service cloud.firestore {
       allow read: if isAuth() && isActive() && (
         isOwner(resource.data.userId) ||
         isMyManager(resource.data.managerId) ||
+        uid() in resource.data.get('managerIds', []) ||
         isHR()
       );
       allow create: if isAuth() && isActive()
@@ -792,9 +850,10 @@ service cloud.firestore {
         && request.resource.data.title.size() >= 3
         && request.resource.data.body is string
         && request.resource.data.body.size() >= 10
+        && request.resource.data.get('attachmentUrl', '') is string
         && request.resource.data.keys().hasOnly([
           'userId', 'employeeId', 'employeeName', 'department',
-          'title', 'body', 'status', 'submittedAt'
+          'title', 'body', 'attachmentUrl', 'status', 'submittedAt'
         ]);
       allow update: if isAuth() && isActive() && isHR()
         && request.resource.data.diff(resource.data).affectedKeys()
@@ -808,6 +867,7 @@ service cloud.firestore {
       allow read: if isAuth() && isActive() && (
         isOwner(resource.data.assigneeId) ||
         isMyManager(resource.data.managerId) ||
+        uid() in resource.data.get('managerIds', []) ||
         isHR()
       );
       allow create: if isAuth() && isActive()
@@ -840,6 +900,7 @@ service cloud.firestore {
       allow read: if isAuth() && isActive() && (
         isOwner(resource.data.userId) ||
         isMyManager(resource.data.managerId) ||
+        uid() in resource.data.get('managerIds', []) ||
         isHR()
       );
       allow create: if isAuth() && isActive()

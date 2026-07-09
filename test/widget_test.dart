@@ -100,6 +100,22 @@ void main() {
       expect(at(10, 11).dayFraction, 1);
     });
 
+    test('supports configurable attendance action time gates', () {
+      const defaults = AttendancePolicyConfig();
+      expect(defaults.checkInOpenTime, '07:00');
+      expect(defaults.defaultEndTime, '17:00');
+      expect(defaults.latestCheckoutTime, '23:00');
+
+      final custom = AttendancePolicyConfig.fromMap({
+        'checkInOpenTime': '06:30',
+        'defaultEndTime': '16:45',
+        'latestCheckoutTime': '22:30',
+      });
+      expect(custom.checkInOpenTime, '06:30');
+      expect(custom.defaultEndTime, '16:45');
+      expect(custom.latestCheckoutTime, '22:30');
+    });
+
     test(
       'calculates deduction amount from monthly salary over 26 work days',
       () {

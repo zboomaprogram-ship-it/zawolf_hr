@@ -10,6 +10,7 @@ class ComplaintService {
     required UserModel employee,
     required String title,
     required String body,
+    String? attachmentUrl,
   }) async {
     final ref = _db.collection('complaints').doc();
     final complaint = ComplaintModel(
@@ -20,6 +21,7 @@ class ComplaintService {
       department: employee.department,
       title: title.trim(),
       body: body.trim(),
+      attachmentUrl: attachmentUrl?.trim(),
       status: 'new',
       submittedAt: DateTime.now(),
     );

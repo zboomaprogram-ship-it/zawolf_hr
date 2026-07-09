@@ -83,10 +83,7 @@ class GeofenceService {
     final location = LocationModel.fromFirestore(locationDoc);
 
     // 3. Get device GPS position (high accuracy)
-    final position = await Geolocator.getCurrentPosition(
-      desiredAccuracy: LocationAccuracy.high,
-      timeLimit: const Duration(seconds: 15),
-    );
+    final position = await _getReliablePosition();
 
     // 4. Calculate distance in meters using Haversine formula
     final distanceMeters = Geolocator.distanceBetween(
@@ -114,5 +111,30 @@ class GeofenceService {
       isMocked: isMocked,
       position: position,
     );
+  }
+
+  Future<Position> _getReliablePosition() async {
+    try {
+      return await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+        timeLimit: const Duration(seconds: 20),
+      );
+    } catch (_) {
+      final lastKnown = await Geolocator.getLastKnownPosition();
+      if (lastKnown != null &&
+          DateTime.now().difference(lastKnown.timestamp).inMinutes <= 2) {
+        return lastKnown;
+      }
+      try {
+        return await Geolocator.getCurrentPosition(
+          desiredAccuracy: LocationAccuracy.medium,
+          timeLimit: const Duration(seconds: 10),
+        );
+      } catch (_) {
+        throw Exception(
+          'تعذر تحديد موقعك خلال الوقت المحدد. فعّل GPS، افتح الإنترنت، وانتقل لمكان مفتوح ثم أعد المحاولة.',
+        );
+      }
+    }
   }
 }

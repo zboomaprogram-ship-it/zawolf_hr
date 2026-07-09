@@ -5,6 +5,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart' hide TextDirection;
 import '../../services/auth_service.dart';
 import '../../services/dashboard_attendance_summary_service.dart';
+import '../../models/user_model.dart';
 import '../../theme/theme.dart';
 import '../../components/attendance_insights_card.dart';
 import '../../components/wolf_card.dart';
@@ -73,8 +74,16 @@ class _ManagerDashboardScreenState extends State<ManagerDashboardScreen> {
     final user = Provider.of<AuthService>(context, listen: false).currentUser;
     if (user == null) return;
     setState(() {
-      _attendanceSummaryFuture = _summaryService.loadForReviewer(user);
+      _attendanceSummaryFuture = _buildAttendanceSummaryFuture(user);
     });
+  }
+
+  Future<DashboardAttendanceSummary> _buildAttendanceSummaryFuture(
+    UserModel user,
+  ) {
+    return _summaryService
+        .loadForReviewer(user)
+        .timeout(const Duration(seconds: 20));
   }
 
   @override
@@ -92,7 +101,7 @@ class _ManagerDashboardScreenState extends State<ManagerDashboardScreen> {
       );
     }
 
-    _attendanceSummaryFuture ??= _summaryService.loadForReviewer(manager);
+    _attendanceSummaryFuture ??= _buildAttendanceSummaryFuture(manager);
 
     return Scaffold(
       appBar: AppBar(
@@ -190,6 +199,44 @@ class _ManagerDashboardScreenState extends State<ManagerDashboardScreen> {
                 FutureBuilder<DashboardAttendanceSummary>(
                   future: _attendanceSummaryFuture,
                   builder: (context, summarySnapshot) {
+                    if (summarySnapshot.hasError) {
+                      return WolfCard(
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 20),
+                          child: Column(
+                            children: [
+                              const Icon(
+                                Icons.warning_amber_rounded,
+                                color: ZaWolfColors.warning,
+                                size: 32,
+                              ),
+                              const SizedBox(height: 10),
+                              Text(
+                                'تعذر تحميل ملخص حضور الفريق',
+                                style: theme.textTheme.titleMedium?.copyWith(
+                                  color: Colors.white,
+                                ),
+                                textAlign: TextAlign.center,
+                                textDirection: TextDirection.rtl,
+                              ),
+                              const SizedBox(height: 6),
+                              Text(
+                                'تحقق من الصلاحيات أو الاتصال ثم أعد المحاولة.',
+                                style: theme.textTheme.bodySmall,
+                                textAlign: TextAlign.center,
+                                textDirection: TextDirection.rtl,
+                              ),
+                              const SizedBox(height: 12),
+                              OutlinedButton.icon(
+                                onPressed: _loadAttendanceSummary,
+                                icon: const Icon(Icons.refresh),
+                                label: const Text('إعادة المحاولة'),
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    }
                     if (!summarySnapshot.hasData) {
                       return const WolfCard(
                         child: Center(

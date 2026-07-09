@@ -8,6 +8,7 @@ class ComplaintModel {
   final String department;
   final String title;
   final String body;
+  final String? attachmentUrl;
   final String status; // 'new' | 'reviewed' | 'closed'
   final DateTime? submittedAt;
   final DateTime? reviewedAt;
@@ -21,6 +22,7 @@ class ComplaintModel {
     required this.department,
     required this.title,
     required this.body,
+    this.attachmentUrl,
     required this.status,
     this.submittedAt,
     this.reviewedAt,
@@ -37,6 +39,7 @@ class ComplaintModel {
       department: data['department'] as String? ?? '',
       title: data['title'] as String? ?? '',
       body: data['body'] as String? ?? '',
+      attachmentUrl: data['attachmentUrl'] as String?,
       status: data['status'] as String? ?? 'new',
       submittedAt: (data['submittedAt'] as Timestamp?)?.toDate(),
       reviewedAt: (data['reviewedAt'] as Timestamp?)?.toDate(),
@@ -52,6 +55,8 @@ class ComplaintModel {
       'department': department,
       'title': title,
       'body': body,
+      if (attachmentUrl != null && attachmentUrl!.trim().isNotEmpty)
+        'attachmentUrl': attachmentUrl!.trim(),
       'status': status,
       'submittedAt': submittedAt != null
           ? Timestamp.fromDate(submittedAt!)

@@ -19,6 +19,7 @@ class AuthService with ChangeNotifier {
   bool _loading = true;
   StreamSubscription<User?>? _authStateSubscription;
   int _authSessionVersion = 0;
+  String? _startedSessionServicesForUid;
 
   UserModel? get currentUser => _currentUser;
   bool get loading => _loading;
@@ -35,12 +36,17 @@ class AuthService with ChangeNotifier {
       final sessionVersion = ++_authSessionVersion;
       NotificationService.instance.stopListening();
       await DailyReminderService.instance.cancelAll();
+      _startedSessionServicesForUid = null;
       if (user == null) {
         _currentUser = null;
         _loading = false;
         await OneSignalService.instance.logout();
         notifyListeners();
       } else {
+        if (_currentUser?.uid == user.uid && !_loading) {
+          unawaited(_startUserSessionServices(user.uid));
+          return;
+        }
         _currentUser = null;
         _loading = true;
         notifyListeners();
@@ -48,19 +54,24 @@ class AuthService with ChangeNotifier {
         await fetchUserData(user.uid, sessionVersion: sessionVersion);
         if (sessionVersion != _authSessionVersion) return;
         if (_currentUser != null) {
-          NotificationService.instance.startListening(user.uid);
-          await OneSignalService.instance.login(user.uid);
-          // Schedule smart daily reminders based on employee's work schedule
-          final startTime = _currentUser!.workSchedule.startTime ?? '09:00';
-          final endTime = _currentUser!.workSchedule.endTime ?? '17:00';
-          await DailyReminderService.instance.scheduleForUser(
-            userId: user.uid,
-            startTime: startTime,
-            endTime: endTime,
-          );
+          unawaited(_startUserSessionServices(user.uid));
         }
       }
     });
+  }
+
+  Future<void> _startUserSessionServices(String uid) async {
+    if (_startedSessionServicesForUid == uid || _currentUser == null) return;
+    _startedSessionServicesForUid = uid;
+    NotificationService.instance.startListening(uid);
+    await OneSignalService.instance.login(uid);
+    final startTime = _currentUser!.workSchedule.startTime ?? '09:00';
+    final endTime = _currentUser!.workSchedule.endTime ?? '17:00';
+    await DailyReminderService.instance.scheduleForUser(
+      userId: uid,
+      startTime: startTime,
+      endTime: endTime,
+    );
   }
 
   Future<void> fetchUserData(String uid, {int? sessionVersion}) async {
@@ -104,6 +115,7 @@ class AuthService with ChangeNotifier {
           await _auth.signOut();
           throw Exception('Account is disabled');
         }
+        unawaited(_startUserSessionServices(user.uid));
       }
     } catch (e) {
       _loading = false;
@@ -117,6 +129,7 @@ class AuthService with ChangeNotifier {
     _authSessionVersion++;
     _currentUser = null;
     _loading = false;
+    _startedSessionServicesForUid = null;
     NotificationService.instance.stopListening();
     await OneSignalService.instance.logout();
     await DailyReminderService.instance.cancelAll();
