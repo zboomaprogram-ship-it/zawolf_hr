@@ -90,6 +90,7 @@ function loadMappings() {
       return {
         rowNumber: index + 2,
         loginName: String(data.loginName || '').trim(),
+        currentEmail: String(data.currentEmail || '').trim().toLowerCase(),
         newEmail: normalizeEmails ? email.toLowerCase() : email,
         employeeId: String(data.employeeId || '').trim(),
         notes: String(data.notes || '').trim(),
@@ -97,17 +98,43 @@ function loadMappings() {
     });
 }
 
-async function findUserDocByEmployeeId(employeeId) {
+async function findUserDocByEmployeeId(employeeId, currentEmail) {
   const snap = await db
     .collection('users')
     .where('employeeId', '==', employeeId)
-    .limit(2)
     .get();
   if (snap.empty) return null;
-  if (snap.size > 1) {
-    throw new Error(`More than one Firestore user has employeeId=${employeeId}`);
+  if (snap.size === 1) return snap.docs[0];
+
+  const normalizedCurrentEmail = String(currentEmail || '').trim().toLowerCase();
+  if (normalizedCurrentEmail) {
+    const emailMatches = snap.docs.filter((doc) => {
+      const data = doc.data() || {};
+      return String(data.email || '').trim().toLowerCase() === normalizedCurrentEmail;
+    });
+    if (emailMatches.length === 1) return emailMatches[0];
   }
-  return snap.docs[0];
+
+  const duplicateSummary = snap.docs
+    .map((doc) => {
+      const data = doc.data() || {};
+      return `${doc.id}:${data.email || '(no email)'}`;
+    })
+    .join(', ');
+  throw new Error(
+    `More than one Firestore user has employeeId=${employeeId}. ` +
+      `Set currentEmail in scripts/email_updates.csv to disambiguate. Matches: ${duplicateSummary}`,
+  );
+}
+
+async function findAuthUserByCurrentEmail(currentEmail) {
+  if (!currentEmail) return null;
+  try {
+    return await auth.getUserByEmail(currentEmail);
+  } catch (error) {
+    if (error.code === 'auth/user-not-found') return null;
+    throw error;
+  }
 }
 
 async function emailOwnerUid(email) {
@@ -132,7 +159,10 @@ async function updateOne(mapping) {
     throw new Error(`Invalid newEmail at row ${mapping.rowNumber}`);
   }
 
-  const userDoc = await findUserDocByEmployeeId(mapping.employeeId);
+  const userDoc = await findUserDocByEmployeeId(
+    mapping.employeeId,
+    mapping.currentEmail,
+  );
   if (!userDoc) {
     throw new Error(
       `No Firestore user found for employeeId=${mapping.employeeId} at row ${mapping.rowNumber}`,
@@ -142,6 +172,15 @@ async function updateOne(mapping) {
   const data = userDoc.data() || {};
   const uid = userDoc.id;
   const currentFirestoreEmail = String(data.email || '').trim();
+  const authUserByCurrentEmail = await findAuthUserByCurrentEmail(
+    mapping.currentEmail,
+  );
+  if (authUserByCurrentEmail && authUserByCurrentEmail.uid !== uid) {
+    throw new Error(
+      `Current email ${mapping.currentEmail} belongs to Auth user ${authUserByCurrentEmail.uid}, ` +
+        `but Firestore employeeId=${mapping.employeeId} resolved to ${uid}.`,
+    );
+  }
   const currentAuthUser = await auth.getUser(uid);
   const currentAuthEmail = String(currentAuthUser.email || '').trim();
   const ownerUid = await emailOwnerUid(mapping.newEmail);
