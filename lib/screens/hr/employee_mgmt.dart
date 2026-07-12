@@ -6,6 +6,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:go_router/go_router.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import '../../services/auth_service.dart';
@@ -1012,6 +1013,19 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
                                   ),
                                 ),
                                 const Spacer(),
+                                IconButton(
+                                  padding: EdgeInsets.zero,
+                                  constraints: const BoxConstraints(),
+                                  tooltip: 'عرض الملف والأداء',
+                                  icon: const Icon(
+                                    Icons.insights_outlined,
+                                    color: ZaWolfColors.success,
+                                    size: 20,
+                                  ),
+                                  onPressed: () =>
+                                      context.go('/hr/employee/${emp.uid}'),
+                                ),
+                                const SizedBox(width: 16),
                                 // Edit button
                                 IconButton(
                                   padding: EdgeInsets.zero,

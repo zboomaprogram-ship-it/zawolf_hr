@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -11,7 +13,6 @@ import 'navigation/router.dart';
 import 'services/notification_service.dart';
 import 'services/background_service.dart';
 import 'services/daily_reminder_service.dart';
-import 'services/onesignal_service.dart';
 import 'package:intl/date_symbol_data_local.dart';
 
 void main() async {
@@ -45,18 +46,28 @@ void main() async {
     debugPrint('Firebase initialization failed: $e');
   }
 
-  // 3. Initialize Notification and Background Task Dispatcher
+  runApp(const MyApp());
+
+  unawaited(_initializeAppServicesAfterFirstFrame());
+}
+
+Future<void> _initializeAppServicesAfterFirstFrame() async {
+  await Future<void>.delayed(Duration.zero);
   try {
     await NotificationService.instance.initialize();
-    await OneSignalService.instance.initialize();
     await DailyReminderService.instance.initializeTimezones();
-    await BackgroundService.initialize();
-    await BackgroundService.registerPeriodicTask();
-  } catch (e) {
-    debugPrint('Notification/Background service setup failed: $e');
-  }
 
-  runApp(const MyApp());
+    const enableNotificationPolling = bool.fromEnvironment(
+      'ENABLE_NOTIFICATION_POLLING',
+      defaultValue: false,
+    );
+    if (enableNotificationPolling) {
+      await BackgroundService.initialize();
+      await BackgroundService.registerPeriodicTask();
+    }
+  } catch (e) {
+    debugPrint('Notification service setup failed: $e');
+  }
 }
 
 class MyApp extends StatelessWidget {

@@ -337,6 +337,13 @@ class _ManagerDashboardScreenState extends State<ManagerDashboardScreen> {
                       theme,
                     ),
                     _buildQuickActionCard(
+                      'ملفات الفريق',
+                      'بيانات الموظفين والأداء والغياب',
+                      Icons.people_alt_outlined,
+                      () => context.go('/manager/employees'),
+                      theme,
+                    ),
+                    _buildQuickActionCard(
                       'مهام الفريق',
                       'توزيع ومتابعة التنفيذ',
                       Icons.task_alt_outlined,

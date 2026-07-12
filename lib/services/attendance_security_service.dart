@@ -1,18 +1,22 @@
 import 'dart:io';
+import 'dart:math';
 
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:jailbreak_root_detection/jailbreak_root_detection.dart';
 import 'package:local_auth/local_auth.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class AttendanceSecurityResult {
   final String deviceId;
   final String deviceLabel;
+  final String? legacyDeviceId;
   final bool biometricVerified;
   final bool deviceCredentialFallbackUsed;
 
   const AttendanceSecurityResult({
     required this.deviceId,
     required this.deviceLabel,
+    this.legacyDeviceId,
     required this.biometricVerified,
     this.deviceCredentialFallbackUsed = false,
   });
@@ -21,6 +25,8 @@ class AttendanceSecurityResult {
 class AttendanceSecurityService {
   final LocalAuthentication _localAuth;
   final DeviceInfoPlugin _deviceInfo;
+  static const _attendanceInstallDeviceIdKey =
+      'attendance_install_device_id_v2';
 
   AttendanceSecurityService({
     LocalAuthentication? localAuth,
@@ -71,8 +77,9 @@ class AttendanceSecurityService {
     }
 
     return AttendanceSecurityResult(
-      deviceId: device.$1,
-      deviceLabel: device.$2,
+      deviceId: device.id,
+      deviceLabel: device.label,
+      legacyDeviceId: device.legacyId,
       biometricVerified: true,
       deviceCredentialFallbackUsed: !hasBiometric,
     );
@@ -98,19 +105,48 @@ class AttendanceSecurityService {
     }
   }
 
-  Future<(String, String)> _readDevice() async {
+  Future<({String id, String label, String? legacyId})> _readDevice() async {
     if (Platform.isAndroid) {
       final info = await _deviceInfo.androidInfo;
-      return (info.id, '${info.manufacturer} ${info.model}'.trim());
+      return (
+        id: 'android-install-${await _attendanceInstallDeviceId()}',
+        label: '${info.manufacturer} ${info.model}'.trim(),
+        legacyId: info.id.trim().isEmpty ? null : info.id.trim(),
+      );
     }
     if (Platform.isIOS) {
       final info = await _deviceInfo.iosInfo;
       return (
-        info.identifierForVendor ?? 'unknown-ios-device',
-        '${info.name} ${info.model}'.trim(),
+        id:
+            info.identifierForVendor ??
+            'ios-install-${await _attendanceInstallDeviceId()}',
+        label: '${info.name} ${info.model}'.trim(),
+        legacyId: null,
       );
     }
     final info = await _deviceInfo.deviceInfo;
-    return (info.data.toString().hashCode.toString(), Platform.operatingSystem);
+    return (
+      id: '${Platform.operatingSystem}-install-${await _attendanceInstallDeviceId()}',
+      label: Platform.operatingSystem,
+      legacyId: info.data.toString().hashCode.toString(),
+    );
+  }
+
+  Future<String> _attendanceInstallDeviceId() async {
+    final prefs = await SharedPreferences.getInstance();
+    final existing = prefs.getString(_attendanceInstallDeviceIdKey);
+    if (existing != null && existing.trim().isNotEmpty) {
+      return existing;
+    }
+
+    final random = Random.secure();
+    final parts = List.generate(
+      4,
+      (_) => random.nextInt(0x7fffffff).toRadixString(16).padLeft(8, '0'),
+    );
+    final generated =
+        '${DateTime.now().microsecondsSinceEpoch.toRadixString(16)}-${parts.join()}';
+    await prefs.setString(_attendanceInstallDeviceIdKey, generated);
+    return generated;
   }
 }

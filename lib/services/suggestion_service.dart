@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../models/suggestion_model.dart';
 import '../models/user_model.dart';
+import 'role_notification_service.dart';
 
 class SuggestionService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
@@ -71,37 +72,12 @@ class SuggestionService {
     required String body,
     required String suggestionId,
   }) async {
-    final targets = <String>{};
-    for (final role in ['manager', 'super_admin']) {
-      final snap = await _db
-          .collection('users')
-          .where('role', isEqualTo: role)
-          .get();
-      targets.addAll(snap.docs.map((doc) => doc.id));
-    }
-
-    if (targets.isEmpty) return;
-
-    final batch = _db.batch();
-    for (final userId in targets) {
-      final notifRef = _db
-          .collection('notifications')
-          .doc(userId)
-          .collection('items')
-          .doc();
-      batch.set(notifRef, {
-        'notificationId': notifRef.id,
-        'type': 'suggestion_new',
-        'title': title,
-        'body': body,
-        'data': {'suggestionId': suggestionId},
-        'isRead': false,
-        'createdAt': FieldValue.serverTimestamp(),
-      });
-      batch.update(_db.collection('users').doc(userId), {
-        'unreadNotifications': FieldValue.increment(1),
-      });
-    }
-    await batch.commit();
+    await RoleNotificationService.instance.notifyRole(
+      role: 'manager',
+      type: 'suggestion_new',
+      title: title,
+      body: body,
+      data: {'suggestionId': suggestionId},
+    );
   }
 }

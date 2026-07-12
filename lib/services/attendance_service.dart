@@ -9,6 +9,7 @@ import 'audit_log_service.dart';
 import 'company_day_off_service.dart';
 import 'geofence_service.dart';
 import 'offline_attendance_queue_service.dart';
+import 'role_notification_service.dart';
 
 enum AttendanceActionIntent { checkIn, checkOut }
 
@@ -556,6 +557,7 @@ class AttendanceService {
     required bool allowOfflineFallback,
   }) async {
     final deviceId = securityResult.deviceId.trim();
+    final legacyDeviceId = securityResult.legacyDeviceId?.trim() ?? '';
     if (deviceId.isEmpty) {
       throw Exception('تعذر قراءة رقم الجهاز. أعد المحاولة أو تواصل مع HR.');
     }
@@ -589,7 +591,10 @@ class AttendanceService {
       return;
     }
 
-    if (locallyRegisteredDevice.isNotEmpty) {
+    final canMigrateLegacyDevice =
+        legacyDeviceId.isNotEmpty && locallyRegisteredDevice == legacyDeviceId;
+
+    if (locallyRegisteredDevice.isNotEmpty && !canMigrateLegacyDevice) {
       if (locallyRegisteredDevice == deviceId) {
         await _offlineQueue.rememberLocalDeviceOwner(
           deviceId: deviceId,
@@ -617,14 +622,20 @@ class AttendanceService {
         final userData = userSnap.data() ?? <String, dynamic>{};
         final registeredDeviceId =
             (userData['registeredAttendanceDeviceId'] as String?)?.trim() ?? '';
+        final shouldMigrateLegacyDevice =
+            legacyDeviceId.isNotEmpty &&
+            registeredDeviceId == legacyDeviceId &&
+            registeredDeviceId != deviceId;
 
         if (registeredDeviceId.isNotEmpty) {
-          if (registeredDeviceId != deviceId) {
+          if (registeredDeviceId == deviceId) {
+            return;
+          }
+          if (!shouldMigrateLegacyDevice) {
             throw Exception(
               'هذا الحساب مربوط بجهاز حضور آخر. اطلب من HR إعادة ضبط جهاز الحضور قبل استخدام هذا الجهاز.',
             );
           }
-          return;
         }
 
         final deviceSnap = await transaction.get(deviceRef);
@@ -1059,41 +1070,13 @@ class AttendanceService {
     required String body,
     Map<String, dynamic>? data,
   }) async {
-    try {
-      final targets = <String>{};
-      final roleSnap = await _db
-          .collection('users')
-          .where('role', isEqualTo: role)
-          .get();
-      targets.addAll(roleSnap.docs.map((doc) => doc.id));
-      final superSnap = await _db
-          .collection('users')
-          .where('role', isEqualTo: 'super_admin')
-          .get();
-      targets.addAll(superSnap.docs.map((doc) => doc.id));
-
-      for (final userId in targets) {
-        final notifRef = _db
-            .collection('notifications')
-            .doc(userId)
-            .collection('items')
-            .doc();
-        await notifRef.set({
-          'notificationId': notifRef.id,
-          'type': type,
-          'title': title,
-          'body': body,
-          'data': data ?? {},
-          'isRead': false,
-          'createdAt': FieldValue.serverTimestamp(),
-        });
-        await _db.collection('users').doc(userId).update({
-          'unreadNotifications': FieldValue.increment(1),
-        });
-      }
-    } catch (_) {
-      // Notification delivery must never make attendance fail.
-    }
+    await RoleNotificationService.instance.notifyRole(
+      role: role,
+      type: type,
+      title: title,
+      body: body,
+      data: data,
+    );
   }
 }
 

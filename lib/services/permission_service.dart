@@ -5,6 +5,7 @@ import '../models/permission_model.dart';
 import '../models/attendance_policy.dart';
 import 'audit_log_service.dart';
 import 'attendance_policy_service.dart';
+import 'role_notification_service.dart';
 
 class PermissionService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
@@ -459,30 +460,12 @@ class PermissionService {
     required String body,
     Map<String, dynamic>? data,
   }) async {
-    try {
-      final targets = <String>{};
-      final snap = await _db
-          .collection('users')
-          .where('role', isEqualTo: role)
-          .get();
-      targets.addAll(snap.docs.map((doc) => doc.id));
-      final superSnap = await _db
-          .collection('users')
-          .where('role', isEqualTo: 'super_admin')
-          .get();
-      targets.addAll(superSnap.docs.map((doc) => doc.id));
-
-      for (final userId in targets) {
-        await _createNotification(
-          recipientId: userId,
-          type: type,
-          title: title,
-          body: body,
-          data: data,
-        );
-      }
-    } catch (_) {
-      // Notification delivery must not block the permission request flow.
-    }
+    await RoleNotificationService.instance.notifyRole(
+      role: role,
+      type: type,
+      title: title,
+      body: body,
+      data: data,
+    );
   }
 }

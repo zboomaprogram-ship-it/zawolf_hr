@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/attendance_model.dart';
 import 'attendance_security_service.dart';
+import 'role_notification_service.dart';
 
 enum OfflineAttendanceActionType { checkIn, checkOut }
 
@@ -448,44 +449,16 @@ class OfflineAttendanceQueueService {
     OfflineAttendanceAction action,
   ) async {
     if (action.securityReviewStatus != 'pending_hr') return;
-    try {
-      final targets = <String>{};
-      final hrSnap = await _db
-          .collection('users')
-          .where('role', isEqualTo: 'hr_admin')
-          .get();
-      targets.addAll(hrSnap.docs.map((doc) => doc.id));
-      final superSnap = await _db
-          .collection('users')
-          .where('role', isEqualTo: 'super_admin')
-          .get();
-      targets.addAll(superSnap.docs.map((doc) => doc.id));
-
-      for (final userId in targets) {
-        final notifRef = _db
-            .collection('notifications')
-            .doc(userId)
-            .collection('items')
-            .doc();
-        await notifRef.set({
-          'notificationId': notifRef.id,
-          'type': 'attendance_security_review',
-          'title': action.type == OfflineAttendanceActionType.checkOut
-              ? 'انصراف يحتاج مراجعة أمنية'
-              : 'حضور يحتاج مراجعة أمنية',
-          'body':
-              '${action.employeeName}: ${action.locationRiskMessage ?? 'تم تسجيل حركة حضور بمؤشرات موقع غير معتادة.'}',
-          'data': {'attendanceId': action.attendanceId},
-          'isRead': false,
-          'createdAt': FieldValue.serverTimestamp(),
-        });
-        await _db.collection('users').doc(userId).update({
-          'unreadNotifications': FieldValue.increment(1),
-        });
-      }
-    } catch (_) {
-      // Security review notification must not block offline attendance sync.
-    }
+    await RoleNotificationService.instance.notifyRole(
+      role: 'hr_admin',
+      type: 'attendance_security_review',
+      title: action.type == OfflineAttendanceActionType.checkOut
+          ? 'انصراف يحتاج مراجعة أمنية'
+          : 'حضور يحتاج مراجعة أمنية',
+      body:
+          '${action.employeeName}: ${action.locationRiskMessage ?? 'تم تسجيل حركة حضور بمؤشرات موقع غير معتادة.'}',
+      data: {'attendanceId': action.attendanceId},
+    );
   }
 
   Future<void> _ensureDeviceBinding(OfflineAttendanceAction action) async {

@@ -118,6 +118,50 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
+  Future<void> _handlePasswordReset() async {
+    final email = _emailController.text.trim();
+    if (email.isEmpty || !email.contains('@')) {
+      setState(() {
+        _errorMessage =
+            'اكتب البريد الإلكتروني أولاً لإرسال رابط تغيير كلمة المرور.';
+      });
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
+    try {
+      await Provider.of<AuthService>(
+        context,
+        listen: false,
+      ).resetPassword(email);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'تم إرسال رابط تغيير كلمة المرور إلى بريدك الإلكتروني.',
+            textDirection: TextDirection.rtl,
+          ),
+        ),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _errorMessage =
+            'تعذر إرسال رابط تغيير كلمة المرور. تأكد من البريد الإلكتروني وحاول مرة أخرى.';
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -283,6 +327,24 @@ class _LoginScreenState extends State<LoginScreen> {
                                 ],
                               ),
                             ],
+                          ),
+                          Align(
+                            alignment: Alignment.centerLeft,
+                            child: TextButton.icon(
+                              onPressed: _isLoading
+                                  ? null
+                                  : _handlePasswordReset,
+                              icon: const Icon(
+                                Icons.mark_email_read_outlined,
+                                size: 18,
+                              ),
+                              label: const Text('نسيت كلمة المرور؟'),
+                              style: TextButton.styleFrom(
+                                foregroundColor: ZaWolfColors.primaryCyan,
+                                padding: EdgeInsets.zero,
+                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              ),
+                            ),
                           ),
                           const SizedBox(height: 26),
 

@@ -20,6 +20,7 @@ class AuthService with ChangeNotifier {
   StreamSubscription<User?>? _authStateSubscription;
   int _authSessionVersion = 0;
   String? _startedSessionServicesForUid;
+  bool _interactiveSignInInProgress = false;
 
   UserModel? get currentUser => _currentUser;
   bool get loading => _loading;
@@ -43,6 +44,7 @@ class AuthService with ChangeNotifier {
         await OneSignalService.instance.logout();
         notifyListeners();
       } else {
+        if (_interactiveSignInInProgress) return;
         if (_currentUser?.uid == user.uid && !_loading) {
           unawaited(_startUserSessionServices(user.uid));
           return;
@@ -65,13 +67,10 @@ class AuthService with ChangeNotifier {
     _startedSessionServicesForUid = uid;
     NotificationService.instance.startListening(uid);
     await OneSignalService.instance.login(uid);
-    final startTime = _currentUser!.workSchedule.startTime ?? '09:00';
-    final endTime = _currentUser!.workSchedule.endTime ?? '17:00';
-    await DailyReminderService.instance.scheduleForUser(
-      userId: uid,
-      startTime: startTime,
-      endTime: endTime,
-    );
+    // Attendance reminders are created by the trusted server at send time.
+    // This prevents local reminders from appearing during an approved leave
+    // when the app is terminated and cannot re-check Firestore.
+    await DailyReminderService.instance.cancelAll();
   }
 
   Future<void> fetchUserData(String uid, {int? sessionVersion}) async {
@@ -79,7 +78,7 @@ class AuthService with ChangeNotifier {
       _loading = true;
       notifyListeners();
 
-      final doc = await _db.collection('users').doc(uid).get();
+      final doc = await _readUserDocument(uid);
       if (sessionVersion != null && sessionVersion != _authSessionVersion) {
         return;
       }
@@ -102,9 +101,28 @@ class AuthService with ChangeNotifier {
     }
   }
 
+  Future<DocumentSnapshot<Map<String, dynamic>>> _readUserDocument(
+    String uid,
+  ) async {
+    final ref = _db.collection('users').doc(uid);
+    try {
+      return await ref.get().timeout(const Duration(seconds: 8));
+    } on TimeoutException catch (_) {
+      return ref.get(const GetOptions(source: Source.cache));
+    } on FirebaseException catch (error) {
+      if (error.code == 'unavailable' ||
+          error.code == 'deadline-exceeded' ||
+          error.code == 'failed-precondition') {
+        return ref.get(const GetOptions(source: Source.cache));
+      }
+      rethrow;
+    }
+  }
+
   // Sign in
   Future<void> signIn(String email, String password) async {
     try {
+      _interactiveSignInInProgress = true;
       _loading = true;
       notifyListeners();
       await _auth.signInWithEmailAndPassword(email: email, password: password);
@@ -121,6 +139,8 @@ class AuthService with ChangeNotifier {
       _loading = false;
       notifyListeners();
       rethrow;
+    } finally {
+      _interactiveSignInInProgress = false;
     }
   }
 

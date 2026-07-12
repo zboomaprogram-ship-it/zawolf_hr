@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart' hide TextDirection;
+import 'package:go_router/go_router.dart';
 import '../../services/auth_service.dart';
 import '../../theme/theme.dart';
 import '../../components/wolf_card.dart';
@@ -181,6 +182,7 @@ class _TeamAttendanceScreenState extends State<TeamAttendanceScreen> {
                   itemBuilder: (context, index) {
                     final data = docs[index].data() as Map<String, dynamic>;
                     final name = data['employeeName'] as String? ?? '';
+                    final userId = data['userId'] as String? ?? '';
                     final empId = data['employeeId'] as String? ?? '';
                     final status = data['status'] as String? ?? 'present';
                     final checkIn = data['checkInTime'] as Timestamp?;
@@ -209,6 +211,9 @@ class _TeamAttendanceScreenState extends State<TeamAttendanceScreen> {
                       padding: const EdgeInsets.only(bottom: 12.0),
                       key: ValueKey(docs[index].id),
                       child: WolfCard(
+                        onTap: userId.isEmpty
+                            ? null
+                            : () => context.go('/manager/employee/$userId'),
                         hasBorderGlow: true,
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,

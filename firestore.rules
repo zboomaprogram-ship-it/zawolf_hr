@@ -84,6 +84,8 @@ service cloud.firestore {
           request.resource.data.type in [
             'salary_deduction_pending',
             'permission_pending_hr',
+            'advance_pending_hr',
+            'leave_request_submitted',
             'complaint_new',
             'attendance_security_review'
           ]
@@ -92,6 +94,7 @@ service cloud.firestore {
         || (
           request.resource.data.type in [
             'permission_pending_manager',
+            'advance_pending_manager',
             'leave_request_submitted'
           ]
           && (
@@ -167,6 +170,22 @@ service cloud.firestore {
         && resource.data.get('registeredAttendanceDeviceId', '') == ''
         && request.resource.data.get('registeredAttendanceDeviceId', '') is string
         && request.resource.data.get('registeredAttendanceDeviceId', '').size() > 0
+        && request.resource.data.get('registeredAttendanceDeviceLabel', '') is string;
+    }
+    function ownerAttendanceDeviceLegacyMigration() {
+      let oldDeviceId = resource.data.get('registeredAttendanceDeviceId', '');
+      let newDeviceId = request.resource.data.get('registeredAttendanceDeviceId', '');
+      return request.resource.data.diff(resource.data).affectedKeys()
+        .hasOnly([
+          'registeredAttendanceDeviceId',
+          'registeredAttendanceDeviceLabel',
+          'registeredAttendanceDeviceAt'
+        ])
+        && oldDeviceId is string
+        && oldDeviceId.size() > 0
+        && !oldDeviceId.matches('.*-install-.*')
+        && newDeviceId is string
+        && newDeviceId.matches('.*-install-.*')
         && request.resource.data.get('registeredAttendanceDeviceLabel', '') is string;
     }
     function managerBalanceUpdate() {
@@ -637,6 +656,15 @@ service cloud.firestore {
       allow delete: if isAuth() && isActive() && isHR();
     }
 
+    match /notificationRecipients/{role} {
+      allow read: if isAuth() && isActive();
+      allow write: if isAuth() && isActive() && isHR()
+        && role in ['hr_admin', 'manager', 'super_admin']
+        && request.resource.data.keys().hasOnly(['role', 'userIds', 'updatedAt'])
+        && request.resource.data.role == role
+        && request.resource.data.userIds is list;
+    }
+
     match /users/{userId} {
       allow read: if isAuth() && isActive() && (
         isOwner(userId) || isHR() || isAssignedManagerFor(resource.data)
@@ -644,6 +672,7 @@ service cloud.firestore {
       allow update: if isAuth() && isActive() && (
         (isOwner(userId) && ownerProfileUpdate()) ||
         (isOwner(userId) && ownerAttendanceDeviceBind()) ||
+        (isOwner(userId) && ownerAttendanceDeviceLegacyMigration()) ||
         (isOwner(userId) && employeeQuotaReset(userId)) ||
         managerBalanceUpdate() ||
         canIncrementUnreadOnly()

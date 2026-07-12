@@ -41,6 +41,13 @@ class _SplashScreenState extends State<SplashScreen>
     if (!mounted) return;
 
     final authService = Provider.of<AuthService>(context, listen: false);
+    final deadline = DateTime.now().add(const Duration(seconds: 12));
+    while (mounted &&
+        authService.loading &&
+        DateTime.now().isBefore(deadline)) {
+      await Future.delayed(const Duration(milliseconds: 150));
+    }
+    if (!mounted) return;
 
     // Check authentication
     if (authService.isAuthenticated) {
@@ -55,7 +62,7 @@ class _SplashScreenState extends State<SplashScreen>
 
       if (!mounted) return;
       final role = authService.currentUser?.role;
-      
+
       final initialRoute = NotificationService.instance.initialRoute;
       if (initialRoute != null && initialRoute.isNotEmpty) {
         NotificationService.instance.initialRoute = null; // consume it

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import '../models/employee_role.dart';
@@ -26,6 +27,7 @@ import '../screens/manager/requests_mgmt.dart';
 import '../screens/manager/suggestions_mgmt.dart';
 import '../screens/manager/tasks_mgmt.dart';
 import '../screens/manager/team_attendance.dart';
+import '../screens/manager/team_members_screen.dart';
 import '../screens/manager/warnings_rewards_mgmt.dart';
 import '../screens/hr/hr_dashboard.dart';
 import '../screens/hr/attendance_summary_details_screen.dart';
@@ -35,6 +37,7 @@ import '../screens/hr/sheets_export_screen.dart';
 import '../screens/manager/rate_performance.dart';
 import '../screens/smart_assistant_screen.dart';
 import '../screens/hr/department_performance_screen.dart';
+import '../screens/shared/employee_insights_screen.dart';
 
 class ZaWolfRouter {
   static GoRouter getRouter(BuildContext context) {
@@ -48,6 +51,12 @@ class ZaWolfRouter {
         final onSplash = state.matchedLocation == '/splash';
 
         final authenticated = authService.isAuthenticated;
+        if (authService.loading) {
+          if (loggingIn && FirebaseAuth.instance.currentUser != null) {
+            return '/splash';
+          }
+          return null;
+        }
 
         // 1. Unauthenticated users must log in
         if (!authenticated) {
@@ -178,6 +187,16 @@ class ZaWolfRouter {
               builder: (context, state) => const TeamAttendanceScreen(),
             ),
             GoRoute(
+              path: '/manager/employees',
+              builder: (context, state) => const TeamMembersScreen(),
+            ),
+            GoRoute(
+              path: '/manager/employee/:userId',
+              builder: (context, state) => EmployeeInsightsScreen(
+                employeeUid: state.pathParameters['userId']!,
+              ),
+            ),
+            GoRoute(
               path: '/manager/performance',
               builder: (context, state) => const RatePerformanceScreen(),
             ),
@@ -219,6 +238,12 @@ class ZaWolfRouter {
             GoRoute(
               path: '/hr/employees',
               builder: (context, state) => const EmployeeManagementScreen(),
+            ),
+            GoRoute(
+              path: '/hr/employee/:userId',
+              builder: (context, state) => EmployeeInsightsScreen(
+                employeeUid: state.pathParameters['userId']!,
+              ),
             ),
             GoRoute(
               path: '/hr/locations',

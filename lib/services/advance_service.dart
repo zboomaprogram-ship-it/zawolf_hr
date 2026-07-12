@@ -3,6 +3,7 @@ import '../models/advance_model.dart';
 import '../models/user_model.dart';
 import '../models/employee_role.dart';
 import 'audit_log_service.dart';
+import 'role_notification_service.dart';
 
 class AdvanceService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
@@ -113,6 +114,15 @@ class AdvanceService {
       targetCollection: 'advances',
       targetId: ref.id,
     );
+
+    await _notifyRole(
+      role: EmployeeRole.hrAdmin,
+      type: 'advance_pending_hr',
+      title: 'طلب سلفة بانتظار HR',
+      body:
+          '${req.employeeName} يطلب سلفة بقيمة ${req.amount.toStringAsFixed(2)} ${employee.salaryCurrency}.',
+      data: {'advanceId': ref.id},
+    );
   }
 
   Stream<List<AdvanceModel>> watchMyAdvances(String userId) {
@@ -146,7 +156,12 @@ class AdvanceService {
     required String reviewerId,
     String? comment,
   }) async {
-    await _db.collection('advances').doc(advanceId).update({
+    final docRef = _db.collection('advances').doc(advanceId);
+    final doc = await docRef.get();
+    if (!doc.exists) throw Exception('طلب السلفة غير موجود');
+    final advance = AdvanceModel.fromFirestore(doc);
+
+    await docRef.update({
       'status': status,
       'reviewedBy': reviewerId,
       'reviewedAt': FieldValue.serverTimestamp(),
@@ -161,6 +176,22 @@ class AdvanceService {
       targetId: advanceId,
       metadata: {'newStatus': status},
     );
+
+    if (status == 'approved' || status == 'rejected') {
+      try {
+        await _createNotification(
+          recipientId: advance.userId,
+          type: status == 'approved' ? 'advance_approved' : 'advance_rejected',
+          title: status == 'approved'
+              ? 'تم قبول طلب السلفة ✅'
+              : 'تم رفض طلب السلفة ❌',
+          body: status == 'approved'
+              ? 'تمت الموافقة على طلب السلفة بقيمة ${advance.amount.toStringAsFixed(2)}.'
+              : 'تم رفض طلب السلفة${comment == null || comment.trim().isEmpty ? "." : ". السبب: ${comment.trim()}"}',
+          data: {'advanceId': advanceId},
+        );
+      } catch (_) {}
+    }
   }
 
   Future<void> approveAdvanceRequest({
@@ -216,9 +247,83 @@ class AdvanceService {
       targetId: advanceId,
       metadata: {'newStatus': update['status']},
     );
+
+    final nextStatus = update['status'] as String? ?? '';
+    if (nextStatus == 'pending_manager') {
+      final nextManagerId = update['managerId'] as String? ?? '';
+      if (nextManagerId.isNotEmpty) {
+        try {
+          await _createNotification(
+            recipientId: nextManagerId,
+            type: 'advance_pending_manager',
+            title: 'طلب سلفة بانتظار موافقتك',
+            body: '${advance.employeeName} حصل على موافقة HR وينتظر قرارك.',
+            data: {'advanceId': advanceId},
+          );
+        } catch (_) {}
+      }
+      return;
+    }
+
+    if (nextStatus == 'approved') {
+      try {
+        await _createNotification(
+          recipientId: advance.userId,
+          type: 'advance_approved',
+          title: 'تم قبول طلب السلفة ✅',
+          body:
+              'تمت الموافقة على طلب السلفة بقيمة ${advance.amount.toStringAsFixed(2)}.',
+          data: {'advanceId': advanceId},
+        );
+      } catch (_) {}
+    }
   }
 
   Future<void> markAsRead(String advanceId) async {
     await _db.collection('advances').doc(advanceId).update({'isRead': true});
+  }
+
+  Future<void> _createNotification({
+    required String recipientId,
+    required String type,
+    required String title,
+    required String body,
+    Map<String, dynamic>? data,
+  }) async {
+    final notifRef = _db
+        .collection('notifications')
+        .doc(recipientId)
+        .collection('items')
+        .doc();
+
+    await notifRef.set({
+      'notificationId': notifRef.id,
+      'type': type,
+      'title': title,
+      'body': body,
+      'data': data ?? {},
+      'isRead': false,
+      'createdAt': FieldValue.serverTimestamp(),
+    });
+
+    await _db.collection('users').doc(recipientId).update({
+      'unreadNotifications': FieldValue.increment(1),
+    });
+  }
+
+  Future<void> _notifyRole({
+    required String role,
+    required String type,
+    required String title,
+    required String body,
+    Map<String, dynamic>? data,
+  }) async {
+    await RoleNotificationService.instance.notifyRole(
+      role: role,
+      type: type,
+      title: title,
+      body: body,
+      data: data,
+    );
   }
 }

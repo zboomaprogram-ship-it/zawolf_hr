@@ -6,6 +6,7 @@ import 'package:zawolf_hr/models/employee_role.dart';
 import '../models/user_model.dart';
 import '../models/leave_model.dart';
 import 'audit_log_service.dart';
+import 'role_notification_service.dart';
 
 class LeaveService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
@@ -168,19 +169,14 @@ class LeaveService {
       'managerApprovalTrail': <Map<String, dynamic>>[],
     });
 
-    // 3. Notify manager
-    if (req.managerId.isNotEmpty) {
-      try {
-        await _createNotification(
-          recipientId: req.managerId,
-          type: 'leave_request_submitted',
-          title: 'طلب إجازة جديد 📝',
-          body:
-              'يطلب ${req.employeeName} إجازة (${req.leaveType}) لمدّة ${req.numberOfDays} يوم.',
-          data: {'leaveId': reqRef.id},
-        );
-      } catch (_) {}
-    }
+    await RoleNotificationService.instance.notifyRole(
+      role: EmployeeRole.hrAdmin,
+      type: 'leave_request_submitted',
+      title: 'طلب إجازة بانتظار HR',
+      body:
+          'يطلب ${req.employeeName} إجازة (${req.leaveType}) لمدّة ${req.numberOfDays} يوم.',
+      data: {'leaveId': reqRef.id},
+    );
   }
 
   // Approve Leave

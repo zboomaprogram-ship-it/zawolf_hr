@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../models/complaint_model.dart';
 import '../models/user_model.dart';
+import 'role_notification_service.dart';
 
 class ComplaintService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
@@ -51,40 +52,12 @@ class ComplaintService {
     required String body,
     Map<String, dynamic>? data,
   }) async {
-    try {
-      final targets = <String>{};
-      final roleSnap = await _db
-          .collection('users')
-          .where('role', isEqualTo: role)
-          .get();
-      targets.addAll(roleSnap.docs.map((doc) => doc.id));
-      final superSnap = await _db
-          .collection('users')
-          .where('role', isEqualTo: 'super_admin')
-          .get();
-      targets.addAll(superSnap.docs.map((doc) => doc.id));
-
-      for (final userId in targets) {
-        final notifRef = _db
-            .collection('notifications')
-            .doc(userId)
-            .collection('items')
-            .doc();
-        await notifRef.set({
-          'notificationId': notifRef.id,
-          'type': type,
-          'title': title,
-          'body': body,
-          'data': data ?? {},
-          'isRead': false,
-          'createdAt': FieldValue.serverTimestamp(),
-        });
-        await _db.collection('users').doc(userId).update({
-          'unreadNotifications': FieldValue.increment(1),
-        });
-      }
-    } catch (_) {
-      // Notification delivery must not block the complaint itself.
-    }
+    await RoleNotificationService.instance.notifyRole(
+      role: role,
+      type: type,
+      title: title,
+      body: body,
+      data: data,
+    );
   }
 }

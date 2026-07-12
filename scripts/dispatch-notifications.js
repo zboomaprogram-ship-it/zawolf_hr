@@ -1,25 +1,31 @@
 const admin = require('firebase-admin');
 const { isOneSignalConfigured, sendPushToUsers } = require('./onesignal');
 
-const batchSize = Number(process.env.NOTIFICATION_DISPATCH_BATCH_SIZE || 100);
-const perUserLimit = Number(process.env.NOTIFICATION_DISPATCH_PER_USER_LIMIT || 20);
-const maxAttempts = Number(process.env.NOTIFICATION_DISPATCH_MAX_ATTEMPTS || 5);
+function dispatchConfig() {
+  return {
+    batchSize: Number(process.env.NOTIFICATION_DISPATCH_BATCH_SIZE || 100),
+    perUserLimit: Number(process.env.NOTIFICATION_DISPATCH_PER_USER_LIMIT || 20),
+    maxAttempts: Number(process.env.NOTIFICATION_DISPATCH_MAX_ATTEMPTS || 5),
+  };
+}
 
 function initializeFirebase() {
+  if (admin.apps.length) return admin.app();
+
   let serviceAccount;
   try {
     serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
   } catch (_) {
-    console.error('FIREBASE_SERVICE_ACCOUNT is missing or invalid JSON.');
-    process.exit(1);
+    throw new Error('FIREBASE_SERVICE_ACCOUNT is missing or invalid JSON.');
   }
 
-  admin.initializeApp({
+  const app = admin.initializeApp({
     credential: admin.credential.cert(serviceAccount),
   });
 
   console.log(`Using Firebase service account: ${serviceAccount.client_email}`);
   console.log(`Firebase project id: ${serviceAccount.project_id}`);
+  return app;
 }
 
 function routeForNotification(type) {
@@ -64,6 +70,7 @@ function notificationPayload(doc, data) {
 }
 
 async function loadPendingNotifications(db) {
+  const { batchSize, perUserLimit, maxAttempts } = dispatchConfig();
   const usersSnap = await db.collection('users').where('isActive', '==', true).get();
   const pending = [];
 
@@ -82,12 +89,35 @@ async function loadPendingNotifications(db) {
       const data = doc.data();
       const attempts = Number(data.pushAttemptCount || 0);
       if (data.pushSent === true || attempts >= maxAttempts) continue;
+      const claimed = await claimNotification(db, doc.ref);
+      if (!claimed) continue;
       pending.push({ userId, ref: doc.ref, id: doc.id, data });
       if (pending.length >= batchSize) break;
     }
   }
 
   return pending;
+}
+
+// Hostinger and the GitHub backup may overlap. Claim before OneSignal is called
+// so the same unread record cannot produce two lock-screen notifications.
+async function claimNotification(db, ref) {
+  return db.runTransaction(async (transaction) => {
+    const doc = await transaction.get(ref);
+    if (!doc.exists) return false;
+    const data = doc.data();
+    const currentClaim = data.pushClaimUntil?.toDate?.();
+    if (data.pushSent === true || (currentClaim && currentClaim > new Date())) {
+      return false;
+    }
+    transaction.update(ref, {
+      pushClaimedAt: admin.firestore.FieldValue.serverTimestamp(),
+      pushClaimUntil: admin.firestore.Timestamp.fromDate(
+        new Date(Date.now() + 10 * 60 * 1000),
+      ),
+    });
+    return true;
+  });
 }
 
 async function markSent(db, items, result) {
@@ -109,6 +139,7 @@ async function markSent(db, items, result) {
       pushProvider: 'onesignal',
       pushResponseId: result?.response?.id || null,
       pushLastError: admin.firestore.FieldValue.delete(),
+      pushClaimUntil: admin.firestore.FieldValue.delete(),
     });
     ops++;
     await commitIfNeeded();
@@ -134,6 +165,7 @@ async function markFailed(db, items, error) {
       pushAttemptCount: admin.firestore.FieldValue.increment(1),
       pushLastAttemptAt: admin.firestore.FieldValue.serverTimestamp(),
       pushLastError: String(error.message || error).slice(0, 500),
+      pushClaimUntil: admin.firestore.FieldValue.delete(),
     });
     ops++;
     await commitIfNeeded();
@@ -146,14 +178,13 @@ async function dispatchNotifications() {
   initializeFirebase();
 
   if (!isOneSignalConfigured()) {
-    console.error('ONESIGNAL_APP_ID and ONESIGNAL_REST_API_KEY are required.');
-    process.exit(1);
+    throw new Error('ONESIGNAL_APP_ID and ONESIGNAL_REST_API_KEY are required.');
   }
 
   const db = admin.firestore();
   const pending = await loadPendingNotifications(db);
   console.log(`Found ${pending.length} pending push notification(s).`);
-  if (!pending.length) return;
+  if (!pending.length) return { found: 0, sent: 0, failed: 0 };
 
   let sent = 0;
   let failed = 0;
@@ -182,11 +213,21 @@ async function dispatchNotifications() {
   }
 
   console.log(`Notification dispatch complete. Sent: ${sent}. Failed: ${failed}.`);
+  return { found: pending.length, sent, failed };
 }
 
-dispatchNotifications()
-  .then(() => process.exit(0))
-  .catch((error) => {
-    console.error('Notification dispatch failed:', error);
-    process.exit(1);
-  });
+if (require.main === module) {
+  dispatchNotifications()
+    .then(() => process.exit(0))
+    .catch((error) => {
+      console.error('Notification dispatch failed:', error);
+      process.exit(1);
+    });
+}
+
+module.exports = {
+  dispatchNotifications,
+  initializeFirebase,
+  notificationPayload,
+  routeForNotification,
+};
