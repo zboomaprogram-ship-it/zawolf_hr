@@ -36,12 +36,13 @@ class _SplashScreenState extends State<SplashScreen>
   }
 
   Future<void> _navigateAfterSplash() async {
-    // Wait for splash animation / load
-    await Future.delayed(const Duration(seconds: 3));
+    // Give the brand animation a moment, but never make app navigation depend
+    // on an external service completing.
+    await Future.delayed(const Duration(seconds: 2));
     if (!mounted) return;
 
     final authService = Provider.of<AuthService>(context, listen: false);
-    final deadline = DateTime.now().add(const Duration(seconds: 12));
+    final deadline = DateTime.now().add(const Duration(seconds: 8));
     while (mounted &&
         authService.loading &&
         DateTime.now().isBefore(deadline)) {
@@ -53,11 +54,10 @@ class _SplashScreenState extends State<SplashScreen>
     if (authService.isAuthenticated) {
       final user = authService.currentUser;
       if (user != null) {
-        try {
-          await PermissionService().checkAndResetMonthlyPermissionQuota(user);
-        } catch (e) {
-          debugPrint('Failed to reset monthly quota: $e');
-        }
+        // Monthly quota maintenance is not required to open the dashboard.
+        // Running it in the background prevents a slow Firestore request from
+        // trapping a remembered session on the splash screen.
+        _resetMonthlyPermissionQuota(user);
       }
 
       if (!mounted) return;
@@ -79,6 +79,16 @@ class _SplashScreenState extends State<SplashScreen>
       }
     } else {
       context.go('/login');
+    }
+  }
+
+  Future<void> _resetMonthlyPermissionQuota(user) async {
+    try {
+      await PermissionService()
+          .checkAndResetMonthlyPermissionQuota(user)
+          .timeout(const Duration(seconds: 5));
+    } catch (e) {
+      debugPrint('Failed to reset monthly quota: $e');
     }
   }
 

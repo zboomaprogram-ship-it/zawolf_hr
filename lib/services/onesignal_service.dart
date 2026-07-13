@@ -14,11 +14,20 @@ class OneSignalService {
   String? _currentFirebaseUid;
 
   bool get isConfigured => _appId.trim().isNotEmpty;
+  bool get isInitialized => _initialized;
 
   Future<void> initialize() async {
-    if (!isConfigured || _initialized) return;
+    if (_initialized) return;
+    if (!isConfigured) {
+      if (kDebugMode) {
+        debugPrint(
+          'OneSignal is disabled: ONESIGNAL_APP_ID was not supplied at build time.',
+        );
+      }
+      return;
+    }
     try {
-      OneSignal.initialize(_appId);
+      await OneSignal.initialize(_appId).timeout(const Duration(seconds: 8));
       if (kDebugMode) {
         await OneSignal.Debug.setLogLevel(OSLogLevel.verbose);
       }
@@ -28,7 +37,9 @@ class OneSignalService {
         NotificationService.instance.handleRemoteNotificationRoute(route);
       });
       _installObservers();
-      await OneSignal.Notifications.requestPermission(true);
+      await OneSignal.Notifications.requestPermission(
+        true,
+      ).timeout(const Duration(seconds: 8));
       _initialized = true;
     } catch (e) {
       if (kDebugMode) debugPrint('OneSignal initialization failed: $e');
@@ -42,8 +53,11 @@ class OneSignalService {
       _currentFirebaseUid = userId;
       // Firebase Auth UID is the sole OneSignal External ID used by the
       // dispatcher. Never substitute an email, employee code, or Firestore ID.
-      await OneSignal.login(userId);
-      await OneSignal.User.addTagWithKey('firebase_uid', userId);
+      await OneSignal.login(userId).timeout(const Duration(seconds: 8));
+      await OneSignal.User.addTagWithKey(
+        'firebase_uid',
+        userId,
+      ).timeout(const Duration(seconds: 8));
       await _waitForPushSubscription();
     } catch (e) {
       if (kDebugMode) debugPrint('OneSignal login failed: $e');
@@ -53,7 +67,7 @@ class OneSignalService {
   Future<void> logout() async {
     if (!isConfigured || !_initialized) return;
     try {
-      OneSignal.logout();
+      await OneSignal.logout().timeout(const Duration(seconds: 5));
       _currentFirebaseUid = null;
     } catch (e) {
       if (kDebugMode) debugPrint('OneSignal logout failed: $e');

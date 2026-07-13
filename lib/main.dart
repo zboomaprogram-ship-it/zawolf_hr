@@ -13,6 +13,7 @@ import 'navigation/router.dart';
 import 'services/notification_service.dart';
 import 'services/background_service.dart';
 import 'services/daily_reminder_service.dart';
+import 'services/onesignal_service.dart';
 import 'package:intl/date_symbol_data_local.dart';
 
 void main() async {
@@ -54,6 +55,9 @@ void main() async {
 Future<void> _initializeAppServicesAfterFirstFrame() async {
   await Future<void>.delayed(Duration.zero);
   try {
+    // Initialize the push SDK before the auth session starts. Authentication
+    // later assigns the Firebase UID as the OneSignal External ID.
+    await OneSignalService.instance.initialize();
     await NotificationService.instance.initialize();
     await DailyReminderService.instance.initializeTimezones();
 
