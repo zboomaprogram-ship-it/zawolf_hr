@@ -103,7 +103,7 @@ class UserModel {
   final String email;
   final String displayName;
   final String? photoURL;
-  final String role; // 'employee' | 'manager' | 'hr_admin'
+  final String role;
   final String employeeId;
   final String department;
   final String position;
@@ -116,6 +116,8 @@ class UserModel {
   final List<String> managerIds;
   final List<String> managerNames;
   final List<String> managerCodes;
+  final String? teamLeaderId;
+  final String? teamLeaderName;
   final bool isActive;
   final DateTime? joinDate;
   final WorkSchedule workSchedule;
@@ -149,6 +151,8 @@ class UserModel {
     this.managerIds = const [],
     this.managerNames = const [],
     this.managerCodes = const [],
+    this.teamLeaderId,
+    this.teamLeaderName,
     this.isActive = true,
     this.joinDate,
     required this.workSchedule,
@@ -201,6 +205,8 @@ class UserModel {
               ?.map((e) => e as String)
               .toList() ??
           const [],
+      teamLeaderId: data['teamLeaderId'] as String?,
+      teamLeaderName: data['teamLeaderName'] as String?,
       isActive: data['isActive'] as bool? ?? true,
       joinDate: (data['joinDate'] as Timestamp?)?.toDate(),
       workSchedule: WorkSchedule.fromMap(
@@ -248,6 +254,8 @@ class UserModel {
       if (managerIds.isNotEmpty) 'managerIds': managerIds,
       if (managerNames.isNotEmpty) 'managerNames': managerNames,
       if (managerCodes.isNotEmpty) 'managerCodes': managerCodes,
+      if (teamLeaderId != null) 'teamLeaderId': teamLeaderId,
+      if (teamLeaderName != null) 'teamLeaderName': teamLeaderName,
       'isActive': isActive,
       if (joinDate != null) 'joinDate': Timestamp.fromDate(joinDate!),
       'workSchedule': workSchedule.toMap(),
@@ -290,6 +298,8 @@ class UserModel {
     List<String>? managerIds,
     List<String>? managerNames,
     List<String>? managerCodes,
+    String? teamLeaderId,
+    String? teamLeaderName,
     bool? isActive,
     DateTime? joinDate,
     WorkSchedule? workSchedule,
@@ -323,6 +333,8 @@ class UserModel {
       managerIds: managerIds ?? this.managerIds,
       managerNames: managerNames ?? this.managerNames,
       managerCodes: managerCodes ?? this.managerCodes,
+      teamLeaderId: teamLeaderId ?? this.teamLeaderId,
+      teamLeaderName: teamLeaderName ?? this.teamLeaderName,
       isActive: isActive ?? this.isActive,
       joinDate: joinDate ?? this.joinDate,
       workSchedule: workSchedule ?? this.workSchedule,

@@ -1,16 +1,14 @@
 const admin = require('firebase-admin');
+const { parseFirebaseServiceAccount } = require('./firebase-service-account');
 
 const ROLES = ['hr_admin', 'manager', 'super_admin'];
 
 function initializeFirebase() {
   if (admin.apps.length) return;
 
-  let serviceAccount;
-  try {
-    serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
-  } catch (_) {
-    throw new Error('FIREBASE_SERVICE_ACCOUNT is missing or invalid JSON.');
-  }
+  const serviceAccount = parseFirebaseServiceAccount(
+    process.env.FIREBASE_SERVICE_ACCOUNT,
+  );
 
   admin.initializeApp({
     credential: admin.credential.cert(serviceAccount),

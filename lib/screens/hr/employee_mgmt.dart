@@ -36,6 +36,13 @@ List<DropdownMenuItem<String>> _roleMenuItems({
       ),
     ),
     DropdownMenuItem(
+      value: EmployeeRole.teamLeader,
+      child: Align(
+        alignment: Alignment.centerRight,
+        child: Text(includeEnglish ? 'قائد فريق (Team Leader)' : 'قائد فريق'),
+      ),
+    ),
+    DropdownMenuItem(
       value: EmployeeRole.manager,
       child: Align(
         alignment: Alignment.centerRight,
@@ -438,6 +445,7 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
             : _normalizeImportRole(value(row, 'role', ['Role']));
         const allowedRoles = [
           EmployeeRole.employee,
+          EmployeeRole.teamLeader,
           EmployeeRole.manager,
           EmployeeRole.hrAdmin,
           EmployeeRole.superAdmin,
@@ -613,6 +621,10 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
       case 'manager':
       case 'manger':
         return EmployeeRole.manager;
+      case 'teamleader':
+      case 'team_leader':
+      case 'leader':
+        return EmployeeRole.teamLeader;
       default:
         return EmployeeRole.employee;
     }
@@ -1270,6 +1282,7 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
             ),
             ...[
               EmployeeRole.employee,
+              EmployeeRole.teamLeader,
               EmployeeRole.manager,
               EmployeeRole.hrAdmin,
               EmployeeRole.superAdmin,
@@ -1421,10 +1434,13 @@ class _AddEmployeeDialogState extends State<AddEmployeeDialog> {
   String? _selectedLocationName;
   String? _selectedManagerId;
   String? _selectedManagerName;
+  String? _selectedTeamLeaderId;
+  String? _selectedTeamLeaderName;
 
   bool _isLoading = false;
   List<LocationModel> _locations = [];
   List<UserModel> _managers = [];
+  List<UserModel> _teamLeaders = [];
 
   @override
   void initState() {
@@ -1434,21 +1450,27 @@ class _AddEmployeeDialogState extends State<AddEmployeeDialog> {
 
   Future<void> _fetchLocationsAndManagers() async {
     try {
-      final locSnap = await _db
-          .collection('locations')
-          .where('isActive', isEqualTo: true)
-          .get();
-      final mgrSnap = await _db
-          .collection('users')
-          .where(
-            'role',
-            whereIn: [
-              EmployeeRole.manager,
-              EmployeeRole.hrAdmin,
-              EmployeeRole.superAdmin,
-            ],
-          )
-          .get();
+      final results = await Future.wait([
+        _db.collection('locations').where('isActive', isEqualTo: true).get(),
+        _db
+            .collection('users')
+            .where(
+              'role',
+              whereIn: [
+                EmployeeRole.manager,
+                EmployeeRole.hrAdmin,
+                EmployeeRole.superAdmin,
+              ],
+            )
+            .get(),
+        _db
+            .collection('users')
+            .where('role', isEqualTo: EmployeeRole.teamLeader)
+            .get(),
+      ]);
+      final locSnap = results[0];
+      final mgrSnap = results[1];
+      final leaderSnap = results[2];
 
       setState(() {
         _locations = locSnap.docs
@@ -1469,6 +1491,10 @@ class _AddEmployeeDialogState extends State<AddEmployeeDialog> {
         }
         _managers = mgrSnap.docs
             .map((doc) => UserModel.fromFirestore(doc))
+            .toList();
+        _teamLeaders = leaderSnap.docs
+            .map((doc) => UserModel.fromFirestore(doc))
+            .where((leader) => leader.isActive)
             .toList();
       });
     } catch (_) {}
@@ -1514,6 +1540,8 @@ class _AddEmployeeDialogState extends State<AddEmployeeDialog> {
         daysOffBalance: int.tryParse(_daysOffController.text) ?? 21,
         managerId: _selectedManagerId,
         managerName: _selectedManagerName,
+        teamLeaderId: _selectedTeamLeaderId,
+        teamLeaderName: _selectedTeamLeaderName,
       );
 
       if (mounted) {
@@ -1846,6 +1874,45 @@ class _AddEmployeeDialogState extends State<AddEmployeeDialog> {
                     }
                   },
                 ),
+                const SizedBox(height: 16),
+                DropdownButtonFormField<String>(
+                  initialValue: _selectedTeamLeaderId,
+                  dropdownColor: ZaWolfColors.surface01,
+                  decoration: const InputDecoration(
+                    labelText: 'قائد الفريق (اختياري)',
+                    labelStyle: TextStyle(color: ZaWolfColors.primaryCyan),
+                  ),
+                  style: const TextStyle(color: Colors.white),
+                  items: [
+                    const DropdownMenuItem<String>(
+                      value: null,
+                      child: Align(
+                        alignment: Alignment.centerRight,
+                        child: Text('بدون قائد فريق'),
+                      ),
+                    ),
+                    ..._teamLeaders.map(
+                      (leader) => DropdownMenuItem(
+                        value: leader.uid,
+                        child: Align(
+                          alignment: Alignment.centerRight,
+                          child: Text(leader.displayName),
+                        ),
+                      ),
+                    ),
+                  ],
+                  onChanged: (value) {
+                    final leader = value == null
+                        ? null
+                        : _teamLeaders
+                              .where((item) => item.uid == value)
+                              .firstOrNull;
+                    setState(() {
+                      _selectedTeamLeaderId = leader?.uid;
+                      _selectedTeamLeaderName = leader?.displayName;
+                    });
+                  },
+                ),
                 const SizedBox(height: 24),
 
                 // Form Submit Buttons
@@ -1904,10 +1971,13 @@ class _EditEmployeeDialogState extends State<EditEmployeeDialog> {
   String? _selectedManagerId;
   String? _selectedManagerName;
   late List<String> _selectedManagerIds;
+  String? _selectedTeamLeaderId;
+  String? _selectedTeamLeaderName;
 
   bool _isLoading = false;
   List<LocationModel> _locations = [];
   List<UserModel> _managers = [];
+  List<UserModel> _teamLeaders = [];
 
   @override
   void initState() {
@@ -1929,6 +1999,8 @@ class _EditEmployeeDialogState extends State<EditEmployeeDialog> {
     _selectedLocationName = emp.locationName;
     _selectedManagerId = emp.managerId;
     _selectedManagerName = emp.managerName;
+    _selectedTeamLeaderId = emp.teamLeaderId;
+    _selectedTeamLeaderName = emp.teamLeaderName;
     _selectedManagerIds = emp.managerIds.isNotEmpty
         ? List<String>.from(emp.managerIds)
         : [
@@ -1941,21 +2013,27 @@ class _EditEmployeeDialogState extends State<EditEmployeeDialog> {
 
   Future<void> _fetchLocationsAndManagers() async {
     try {
-      final locSnap = await _db
-          .collection('locations')
-          .where('isActive', isEqualTo: true)
-          .get();
-      final mgrSnap = await _db
-          .collection('users')
-          .where(
-            'role',
-            whereIn: [
-              EmployeeRole.manager,
-              EmployeeRole.hrAdmin,
-              EmployeeRole.superAdmin,
-            ],
-          )
-          .get();
+      final results = await Future.wait([
+        _db.collection('locations').where('isActive', isEqualTo: true).get(),
+        _db
+            .collection('users')
+            .where(
+              'role',
+              whereIn: [
+                EmployeeRole.manager,
+                EmployeeRole.hrAdmin,
+                EmployeeRole.superAdmin,
+              ],
+            )
+            .get(),
+        _db
+            .collection('users')
+            .where('role', isEqualTo: EmployeeRole.teamLeader)
+            .get(),
+      ]);
+      final locSnap = results[0];
+      final mgrSnap = results[1];
+      final leaderSnap = results[2];
 
       setState(() {
         _locations = locSnap.docs
@@ -1976,6 +2054,10 @@ class _EditEmployeeDialogState extends State<EditEmployeeDialog> {
         }
         _managers = mgrSnap.docs
             .map((doc) => UserModel.fromFirestore(doc))
+            .toList();
+        _teamLeaders = leaderSnap.docs
+            .map((doc) => UserModel.fromFirestore(doc))
+            .where((leader) => leader.isActive)
             .toList();
         final missingManagerIds = {
           ..._selectedManagerIds,
@@ -2117,6 +2199,8 @@ class _EditEmployeeDialogState extends State<EditEmployeeDialog> {
             .map((manager) => manager.employeeId)
             .where((code) => code.isNotEmpty)
             .toList(),
+        'teamLeaderId': _selectedTeamLeaderId,
+        'teamLeaderName': _selectedTeamLeaderName,
       };
 
       await _db.collection('users').doc(widget.employee.uid).update(updateData);
@@ -2572,6 +2656,45 @@ class _EditEmployeeDialogState extends State<EditEmployeeDialog> {
                     color: ZaWolfColors.textMuted,
                   ),
                   textDirection: TextDirection.rtl,
+                ),
+                const SizedBox(height: 16),
+                DropdownButtonFormField<String>(
+                  initialValue: _selectedTeamLeaderId,
+                  dropdownColor: ZaWolfColors.surface01,
+                  decoration: const InputDecoration(
+                    labelText: 'قائد الفريق (لا يدخل في مسار الموافقات)',
+                    labelStyle: TextStyle(color: ZaWolfColors.primaryCyan),
+                  ),
+                  style: const TextStyle(color: Colors.white),
+                  items: [
+                    const DropdownMenuItem<String>(
+                      value: null,
+                      child: Align(
+                        alignment: Alignment.centerRight,
+                        child: Text('بدون قائد فريق'),
+                      ),
+                    ),
+                    ..._teamLeaders.map(
+                      (leader) => DropdownMenuItem(
+                        value: leader.uid,
+                        child: Align(
+                          alignment: Alignment.centerRight,
+                          child: Text(leader.displayName),
+                        ),
+                      ),
+                    ),
+                  ],
+                  onChanged: (value) {
+                    final leader = value == null
+                        ? null
+                        : _teamLeaders
+                              .where((item) => item.uid == value)
+                              .firstOrNull;
+                    setState(() {
+                      _selectedTeamLeaderId = leader?.uid;
+                      _selectedTeamLeaderName = leader?.displayName;
+                    });
+                  },
                 ),
                 const SizedBox(height: 24),
 

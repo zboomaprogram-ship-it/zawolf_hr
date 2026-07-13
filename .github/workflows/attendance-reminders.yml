@@ -1,22 +1,17 @@
-name: Dispatch Push Notifications
+name: Attendance Reminder Notifications
 
 on:
   schedule:
-    # GitHub Actions cannot run every second; this polls often enough without Cloud Functions.
+    # Queue reminders in a five-minute Cairo-time window, then push them.
     - cron: '*/5 * * * *'
   workflow_dispatch:
-    inputs:
-      batch_size:
-        description: Maximum notifications to push in this run
-        required: false
-        default: '100'
-        type: string
+
+concurrency:
+  group: attendance-reminders
+  cancel-in-progress: false
 
 jobs:
-  dispatch-notifications:
-    concurrency:
-      group: push-dispatch
-      cancel-in-progress: false
+  attendance-reminders:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
@@ -31,11 +26,16 @@ jobs:
         working-directory: ./scripts
         run: npm ci
 
-      - name: Dispatch Firestore Notifications to OneSignal
+      - name: Queue Attendance Reminders
+        working-directory: ./scripts
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: node attendance-reminders.js
+
+      - name: Push Queued Reminders
         working-directory: ./scripts
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
           ONESIGNAL_APP_ID: ${{ secrets.ONESIGNAL_APP_ID }}
           ONESIGNAL_REST_API_KEY: ${{ secrets.ONESIGNAL_REST_API_KEY }}
-          NOTIFICATION_DISPATCH_BATCH_SIZE: ${{ inputs.batch_size || '100' }}
         run: node dispatch-notifications.js

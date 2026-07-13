@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zawolf_hr/models/attendance_model.dart';
 import 'package:zawolf_hr/models/attendance_policy.dart';
+import 'package:zawolf_hr/models/employee_role.dart';
 import 'package:zawolf_hr/models/kpi_model.dart';
 import 'package:zawolf_hr/models/leave_model.dart';
 import 'package:zawolf_hr/models/payroll_run_model.dart';
@@ -11,6 +12,16 @@ import 'package:zawolf_hr/models/warning_reward_model.dart';
 import 'package:zawolf_hr/services/sheets_export_service.dart';
 
 void main() {
+  group('Employee roles', () {
+    test('team leader is team-scoped but not a manager or HR approver', () {
+      expect(EmployeeRole.isTeamLeader(EmployeeRole.teamLeader), isTrue);
+      expect(EmployeeRole.hasTeamScope(EmployeeRole.teamLeader), isTrue);
+      expect(EmployeeRole.isManager(EmployeeRole.teamLeader), isFalse);
+      expect(EmployeeRole.isHr(EmployeeRole.teamLeader), isFalse);
+      expect(EmployeeRole.arabicLabel(EmployeeRole.teamLeader), 'قائد فريق');
+    });
+  });
+
   group('SheetsExportService CSV export', () {
     test('escapes commas and quotes in attendance rows', () async {
       final service = SheetsExportService();

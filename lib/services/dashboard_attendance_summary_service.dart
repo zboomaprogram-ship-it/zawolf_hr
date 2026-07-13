@@ -33,6 +33,37 @@ class DashboardAttendanceSummary {
   }
 }
 
+class DashboardAttendancePerson {
+  final UserModel employee;
+  final String status;
+  final DateTime? checkInTime;
+  final DateTime? checkOutTime;
+  final int lateMinutes;
+
+  const DashboardAttendancePerson({
+    required this.employee,
+    required this.status,
+    this.checkInTime,
+    this.checkOutTime,
+    this.lateMinutes = 0,
+  });
+
+  bool get needsCheckout =>
+      (status == 'present' || status == 'late') &&
+      checkInTime != null &&
+      checkOutTime == null;
+}
+
+class DashboardAttendanceDayDetails {
+  final DashboardAttendanceSummary summary;
+  final List<DashboardAttendancePerson> people;
+
+  const DashboardAttendanceDayDetails({
+    required this.summary,
+    required this.people,
+  });
+}
+
 class DashboardAttendanceSummaryService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
 
@@ -49,13 +80,21 @@ class DashboardAttendanceSummaryService {
       30,
       (index) => DateTime(today.year, today.month, today.day - index),
     );
-    final employees = await _loadEmployees(
-      reviewer,
-      reviewer.role == EmployeeRole.manager,
-    );
+    final employees = await _loadEmployees(reviewer);
+    // The previous implementation loaded all 30 days one after another. On a
+    // real company account that made this page wait for a long Firestore chain.
+    // Keep a small concurrency limit so the page is responsive without sending
+    // hundreds of requests at the device/network at once.
     final summaries = <DashboardAttendanceSummary>[];
-    for (final date in dates) {
-      summaries.add(await _buildSummaryForDate(reviewer, employees, date));
+    const batchSize = 3;
+    for (var offset = 0; offset < dates.length; offset += batchSize) {
+      final end = (offset + batchSize).clamp(0, dates.length);
+      final batch = await Future.wait(
+        dates
+            .sublist(offset, end)
+            .map((date) => _buildSummaryForDate(reviewer, employees, date)),
+      );
+      summaries.addAll(batch);
     }
     return summaries;
   }
@@ -64,10 +103,7 @@ class DashboardAttendanceSummaryService {
     UserModel reviewer,
     DateTime date,
   ) async {
-    final employees = await _loadEmployees(
-      reviewer,
-      reviewer.role == EmployeeRole.manager,
-    );
+    final employees = await _loadEmployees(reviewer);
     return _buildSummaryForDate(reviewer, employees, date);
   }
 
@@ -76,24 +112,52 @@ class DashboardAttendanceSummaryService {
     List<UserModel> employees,
     DateTime date,
   ) async {
+    return (await _loadDayDetailsForEmployees(
+      reviewer,
+      employees,
+      date,
+    )).summary;
+  }
+
+  Future<DashboardAttendanceDayDetails> loadDayDetails(
+    UserModel reviewer,
+    DateTime date,
+  ) async {
+    final employees = await _loadEmployees(reviewer);
+    return _loadDayDetailsForEmployees(reviewer, employees, date);
+  }
+
+  bool _hasTeamScope(UserModel reviewer) {
+    return reviewer.role == EmployeeRole.manager ||
+        reviewer.role == EmployeeRole.teamLeader;
+  }
+
+  Future<DashboardAttendanceDayDetails> _loadDayDetailsForEmployees(
+    UserModel reviewer,
+    List<UserModel> employees,
+    DateTime date,
+  ) async {
     final dateKey = DateFormat('yyyy-MM-dd').format(date);
-    final isManagerScope = reviewer.role == EmployeeRole.manager;
+    final isTeamScope = _hasTeamScope(reviewer);
 
     if (employees.isEmpty) {
-      return DashboardAttendanceSummary(
-        totalEmployees: 0,
-        present: 0,
-        late: 0,
-        permission: 0,
-        dayOff: 0,
-        notAttended: 0,
-        date: date,
-        teamScoped: isManagerScope,
+      return DashboardAttendanceDayDetails(
+        summary: DashboardAttendanceSummary(
+          totalEmployees: 0,
+          present: 0,
+          late: 0,
+          permission: 0,
+          dayOff: 0,
+          notAttended: 0,
+          date: date,
+          teamScoped: isTeamScope,
+        ),
+        people: const [],
       );
     }
 
     final employeeIds = employees.map((employee) => employee.uid).toSet();
-    final results = isManagerScope
+    final results = isTeamScope
         ? await _loadManagerScopedDayData(employeeIds, dateKey, date)
         : await _loadHrScopedDayData(dateKey, date);
 
@@ -127,53 +191,76 @@ class DashboardAttendanceSummaryService {
       }
     }
 
-    var present = 0;
-    var late = 0;
-    var permission = 0;
-    var dayOff = 0;
-    var notAttended = 0;
+    final people = <DashboardAttendancePerson>[];
 
     for (final employee in employees) {
       final attendance = attendanceByUser[employee.uid];
+      var status = 'not_attended';
+      DateTime? checkInTime;
+      DateTime? checkOutTime;
+      var lateMinutes = 0;
       if (attendance != null) {
         final hasRealCheckIn = attendance['checkInTime'] != null;
-        final status = attendance['status'] as String? ?? 'present';
+        final attendanceStatus = attendance['status'] as String? ?? 'present';
         final isLate = attendance['isLate'] as bool? ?? false;
-        if (status == 'on-leave') {
-          dayOff++;
-        } else if (status == 'absent' || !hasRealCheckIn) {
-          notAttended++;
-        } else if (isLate || _isLateStatus(status)) {
-          late++;
+        checkInTime = (attendance['checkInTime'] as Timestamp?)?.toDate();
+        checkOutTime = (attendance['checkOutTime'] as Timestamp?)?.toDate();
+        lateMinutes = (attendance['lateMinutes'] as num?)?.toInt() ?? 0;
+        if (attendanceStatus == 'on-leave') {
+          status = 'day_off';
+        } else if (attendanceStatus == 'absent' || !hasRealCheckIn) {
+          status = 'not_attended';
+        } else if (isLate || _isLateStatus(attendanceStatus)) {
+          status = 'late';
         } else {
-          present++;
+          status = 'present';
         }
       } else if (permissionUsers.contains(employee.uid)) {
-        permission++;
+        status = 'permission';
       } else if (dayOffUsers.contains(employee.uid)) {
-        dayOff++;
-      } else {
-        notAttended++;
+        status = 'day_off';
       }
+      people.add(
+        DashboardAttendancePerson(
+          employee: employee,
+          status: status,
+          checkInTime: checkInTime,
+          checkOutTime: checkOutTime,
+          lateMinutes: lateMinutes,
+        ),
+      );
     }
 
-    return DashboardAttendanceSummary(
-      totalEmployees: employees.length,
-      present: present,
-      late: late,
-      permission: permission,
-      dayOff: dayOff,
-      notAttended: notAttended,
-      date: date,
-      teamScoped: isManagerScope,
+    int count(String status) =>
+        people.where((person) => person.status == status).length;
+    return DashboardAttendanceDayDetails(
+      summary: DashboardAttendanceSummary(
+        totalEmployees: employees.length,
+        present: count('present'),
+        late: count('late'),
+        permission: count('permission'),
+        dayOff: count('day_off'),
+        notAttended: count('not_attended'),
+        date: date,
+        teamScoped: isTeamScope,
+      ),
+      people: people,
     );
   }
 
-  Future<List<UserModel>> _loadEmployees(
-    UserModel reviewer,
-    bool managerScope,
-  ) async {
-    if (managerScope) {
+  Future<List<UserModel>> _loadEmployees(UserModel reviewer) async {
+    if (reviewer.role == EmployeeRole.teamLeader) {
+      final snap = await _db
+          .collection('users')
+          .where('teamLeaderId', isEqualTo: reviewer.uid)
+          .get();
+      return snap.docs
+          .map(UserModel.fromFirestore)
+          .where((employee) => employee.isActive)
+          .toList();
+    }
+
+    if (reviewer.role == EmployeeRole.manager) {
       final modernSnap = await _db
           .collection('users')
           .where('managerIds', arrayContains: reviewer.uid)

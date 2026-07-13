@@ -16,6 +16,7 @@ service cloud.firestore {
       return userDocExists() && userDoc().get('isActive', true) == true;
     }
     function isManagerRole() { return role() == 'manager'; }
+    function isTeamLeaderRole() { return role() == 'team_leader'; }
     function isHRRole() { return role() == 'hr_admin'; }
     function isSuperAdmin() { return role() == 'super_admin'; }
     function isHR() { return isHRRole() || isSuperAdmin(); }
@@ -36,6 +37,13 @@ service cloud.firestore {
     }
     function isAssignedManagerForUser(userId) {
       return isAssignedManagerFor(recipientDoc(userId));
+    }
+    function isAssignedTeamLeaderFor(userData) {
+      return isTeamLeaderRole()
+        && userData.get('teamLeaderId', '') == uid();
+    }
+    function isAssignedTeamLeaderForUser(userId) {
+      return isAssignedTeamLeaderFor(recipientDoc(userId));
     }
     function recipientDoc(userId) {
       return get(userPath(userId)).data;
@@ -219,13 +227,14 @@ service cloud.firestore {
     function hrCanWriteUser() {
       return isHRRole()
         && resource.data.get('role', '') != 'super_admin'
-        && request.resource.data.get('role', '') in ['employee', 'manager']
+        && request.resource.data.get('role', '') in ['employee', 'team_leader', 'manager']
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           'displayName', 'employeeId', 'department', 'position', 'role',
           'locationId', 'locationName', 'baseMonthlySalary', 'salaryCurrency',
           'leaveBalance', 'leaveBalance.daysOff',
           'managerId', 'managerName', 'managerIds', 'managerNames',
-          'managerCodes', 'isActive', 'workSchedule', 'updatedAt',
+          'managerCodes', 'teamLeaderId', 'teamLeaderName',
+          'isActive', 'workSchedule', 'updatedAt',
           'registeredAttendanceDeviceId',
           'registeredAttendanceDeviceLabel',
           'registeredAttendanceDeviceAt'
@@ -233,12 +242,13 @@ service cloud.firestore {
     }
     function hrCanCreateUser() {
       return isHRRole()
-        && request.resource.data.get('role', '') in ['employee', 'manager']
+        && request.resource.data.get('role', '') in ['employee', 'team_leader', 'manager']
         && request.resource.data.keys().hasOnly([
           'email', 'displayName', 'photoURL', 'role', 'employeeId',
           'department', 'position', 'locationId', 'locationName',
           'baseMonthlySalary', 'salaryCurrency', 'managerId', 'managerName',
           'managerIds', 'managerNames', 'managerCodes', 'isActive',
+          'teamLeaderId', 'teamLeaderName',
           'joinDate', 'workSchedule', 'leaveBalance', 'permissionBalance',
           'notificationTokens', 'unreadNotifications', 'createdAt',
           'updatedAt', 'passwordChangedAt'
@@ -667,7 +677,8 @@ service cloud.firestore {
 
     match /users/{userId} {
       allow read: if isAuth() && isActive() && (
-        isOwner(userId) || isHR() || isAssignedManagerFor(resource.data)
+        isOwner(userId) || isHR() || isAssignedManagerFor(resource.data) ||
+        isAssignedTeamLeaderFor(resource.data)
       );
       allow update: if isAuth() && isActive() && (
         (isOwner(userId) && ownerProfileUpdate()) ||
@@ -711,6 +722,7 @@ service cloud.firestore {
         isOwner(resource.data.userId) ||
         isMyManager(resource.data.managerId) ||
         isAssignedManagerForUser(resource.data.userId) ||
+        isAssignedTeamLeaderForUser(resource.data.userId) ||
         isHR()
       );
       allow create: if isAuth() && isActive()
@@ -746,6 +758,7 @@ service cloud.firestore {
         isOwner(resource.data.userId) ||
         isMyManager(resource.data.managerId) ||
         uid() in resource.data.get('managerIds', []) ||
+        isAssignedTeamLeaderForUser(resource.data.userId) ||
         isHR()
       );
       allow create: if isAuth() && isActive()
@@ -779,6 +792,7 @@ service cloud.firestore {
         isOwner(resource.data.userId) ||
         isMyManager(resource.data.managerId) ||
         uid() in resource.data.get('managerIds', []) ||
+        isAssignedTeamLeaderForUser(resource.data.userId) ||
         isHR()
       );
       allow create: if isAuth() && isActive()
@@ -897,6 +911,7 @@ service cloud.firestore {
         isOwner(resource.data.assigneeId) ||
         isMyManager(resource.data.managerId) ||
         uid() in resource.data.get('managerIds', []) ||
+        isAssignedTeamLeaderForUser(resource.data.assigneeId) ||
         isHR()
       );
       allow create: if isAuth() && isActive()
@@ -930,6 +945,7 @@ service cloud.firestore {
         isOwner(resource.data.userId) ||
         isMyManager(resource.data.managerId) ||
         uid() in resource.data.get('managerIds', []) ||
+        isAssignedTeamLeaderForUser(resource.data.userId) ||
         isHR()
       );
       allow create: if isAuth() && isActive()
@@ -946,6 +962,7 @@ service cloud.firestore {
       allow read: if isAuth() && isActive() && (
         isOwner(resource.data.userId) ||
         isMyManager(resource.data.managerId) ||
+        isAssignedTeamLeaderForUser(resource.data.userId) ||
         isHR()
       );
       allow create, update: if isAuth() && isActive()
@@ -985,6 +1002,7 @@ service cloud.firestore {
       allow read: if isAuth() && isActive() && (
         isOwner(resource.data.userId) ||
         isMyManager(resource.data.managerId) ||
+        isAssignedTeamLeaderForUser(resource.data.userId) ||
         isHR()
       );
       allow create, update: if isAuth() && isActive()

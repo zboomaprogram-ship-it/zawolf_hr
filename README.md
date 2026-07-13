@@ -23,6 +23,8 @@ firebase deploy --only firestore:rules --dry-run
 
 - Arabic user manual for employee, manager, HR, and super admin:
   `docs/user_manual_ar.md`
+- Full Arabic audit and role behavior report:
+  `docs/app_audit_report_ar.md`
 - Google Sheets setup notes: `docs/google_sheets_setup.md`
 - Role and permission reference: `docs/roles_permissions.md`
 
@@ -100,6 +102,8 @@ Actions runs the Node scripts in `scripts/` using Firebase Admin SDK:
   review notifications.
 - `.github/workflows/monthly-tasks.yml`: runs at 12:05 AM Egypt time and the
   script only resets permission balances when the Cairo date is day `01`.
+- `.github/workflows/attendance-reminders.yml`: runs every five minutes,
+  creates policy-aware check-in/check-out reminders, then dispatches them.
 
 Create one GitHub repository secret:
 
@@ -126,6 +130,9 @@ notification documents/events as the source for the OneSignal sender.
 ## Production Checklist
 
 - Deploy `firestore.rules` and `firestore.indexes.json` after review.
+- Firebase App Check was removed from the client by request. App Check
+  enforcement must also be turned off in Firebase Console or protected
+  products will reject the app.
 - Restrict Firebase and Google Maps API keys by bundle ID/package name/SHA.
 - Replace any shared fixed passwords after first login and enforce password
   reset/change flows for real users.

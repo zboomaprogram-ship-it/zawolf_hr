@@ -99,6 +99,8 @@ class _LoginScreenState extends State<LoginScreen> {
         context.go('/hr/dashboard');
       } else if (role == EmployeeRole.manager) {
         context.go('/manager/dashboard');
+      } else if (role == EmployeeRole.teamLeader) {
+        context.go('/team-leader/dashboard');
       } else {
         context.go('/employee/dashboard');
       }

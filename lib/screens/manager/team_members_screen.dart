@@ -20,13 +20,27 @@ class _TeamMembersScreenState extends State<TeamMembersScreen> {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
   Future<List<UserModel>>? _teamFuture;
 
-  Future<List<UserModel>> _loadTeam(String managerId) async {
+  Future<List<UserModel>> _loadTeam(UserModel reviewer) async {
+    if (reviewer.role == EmployeeRole.teamLeader) {
+      final snapshot = await _db
+          .collection('users')
+          .where('teamLeaderId', isEqualTo: reviewer.uid)
+          .get();
+      final team =
+          snapshot.docs
+              .map(UserModel.fromFirestore)
+              .where((employee) => employee.isActive)
+              .toList()
+            ..sort((a, b) => a.displayName.compareTo(b.displayName));
+      return team;
+    }
+
     final results = await Future.wait([
       _db
           .collection('users')
-          .where('managerIds', arrayContains: managerId)
+          .where('managerIds', arrayContains: reviewer.uid)
           .get(),
-      _db.collection('users').where('managerId', isEqualTo: managerId).get(),
+      _db.collection('users').where('managerId', isEqualTo: reviewer.uid).get(),
     ]);
     final byId = <String, UserModel>{};
     for (final doc in [...results[0].docs, ...results[1].docs]) {
@@ -40,8 +54,8 @@ class _TeamMembersScreenState extends State<TeamMembersScreen> {
     return team;
   }
 
-  void _refresh(String managerId) {
-    setState(() => _teamFuture = _loadTeam(managerId));
+  void _refresh(UserModel reviewer) {
+    setState(() => _teamFuture = _loadTeam(reviewer));
   }
 
   @override
@@ -55,7 +69,7 @@ class _TeamMembersScreenState extends State<TeamMembersScreen> {
         ),
       );
     }
-    _teamFuture ??= _loadTeam(manager.uid);
+    _teamFuture ??= _loadTeam(manager);
     return Scaffold(
       appBar: AppBar(
         title: Text('ملفات فريقي', style: theme.textTheme.headlineMedium),
@@ -63,7 +77,7 @@ class _TeamMembersScreenState extends State<TeamMembersScreen> {
           IconButton(
             tooltip: 'تحديث',
             icon: const Icon(Icons.refresh),
-            onPressed: () => _refresh(manager.uid),
+            onPressed: () => _refresh(manager),
           ),
         ],
       ),
@@ -89,7 +103,7 @@ class _TeamMembersScreenState extends State<TeamMembersScreen> {
             );
           }
           return RefreshIndicator(
-            onRefresh: () async => _refresh(manager.uid),
+            onRefresh: () async => _refresh(manager),
             color: ZaWolfColors.primaryCyan,
             child: ListView.separated(
               padding: const EdgeInsets.all(16),
@@ -98,7 +112,11 @@ class _TeamMembersScreenState extends State<TeamMembersScreen> {
               itemBuilder: (context, index) {
                 final employee = team[index];
                 return WolfCard(
-                  onTap: () => context.go('/manager/employee/${employee.uid}'),
+                  onTap: () => context.go(
+                    manager.role == EmployeeRole.teamLeader
+                        ? '/team-leader/employee/${employee.uid}'
+                        : '/manager/employee/${employee.uid}',
+                  ),
                   child: Row(
                     children: [
                       CircleAvatar(

@@ -1,5 +1,6 @@
 const admin = require('firebase-admin');
 const { isOneSignalConfigured, sendPushToUsers } = require('./onesignal');
+const { parseFirebaseServiceAccount } = require('./firebase-service-account');
 
 function dispatchConfig() {
   return {
@@ -12,12 +13,9 @@ function dispatchConfig() {
 function initializeFirebase() {
   if (admin.apps.length) return admin.app();
 
-  let serviceAccount;
-  try {
-    serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
-  } catch (_) {
-    throw new Error('FIREBASE_SERVICE_ACCOUNT is missing or invalid JSON.');
-  }
+  const serviceAccount = parseFirebaseServiceAccount(
+    process.env.FIREBASE_SERVICE_ACCOUNT,
+  );
 
   const app = admin.initializeApp({
     credential: admin.credential.cert(serviceAccount),

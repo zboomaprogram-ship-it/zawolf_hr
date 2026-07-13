@@ -46,7 +46,7 @@ class RequestLogService {
       Query query = _db.collection('leaves')
           .where('reviewedAt', isGreaterThanOrEqualTo: Timestamp.fromDate(startOfMonth));
 
-      if (user.role == EmployeeRole.employee) {
+      if (user.role == EmployeeRole.employee || user.role == EmployeeRole.teamLeader) {
         query = query.where('userId', isEqualTo: user.uid);
       } else if (user.role == EmployeeRole.manager) {
         query = query.where('managerId', isEqualTo: user.uid);
@@ -75,7 +75,7 @@ class RequestLogService {
       Query query = _db.collection('permissions')
           .where('reviewedAt', isGreaterThanOrEqualTo: Timestamp.fromDate(startOfMonth));
 
-      if (user.role == EmployeeRole.employee) {
+      if (user.role == EmployeeRole.employee || user.role == EmployeeRole.teamLeader) {
         query = query.where('userId', isEqualTo: user.uid);
       } else if (user.role == EmployeeRole.manager) {
         query = query.where('managerId', isEqualTo: user.uid);
@@ -104,7 +104,7 @@ class RequestLogService {
       Query query = _db.collection('advances')
           .where('reviewedAt', isGreaterThanOrEqualTo: Timestamp.fromDate(startOfMonth));
 
-      if (user.role == EmployeeRole.employee) {
+      if (user.role == EmployeeRole.employee || user.role == EmployeeRole.teamLeader) {
         query = query.where('userId', isEqualTo: user.uid);
       } else if (user.role == EmployeeRole.manager) {
         query = query.where('managerId', isEqualTo: user.uid);

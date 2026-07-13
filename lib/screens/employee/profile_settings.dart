@@ -8,6 +8,7 @@ import '../../components/wolf_button.dart';
 import '../../components/wolf_input_field.dart';
 import '../../services/auth_service.dart';
 import '../../models/employee_role.dart';
+import '../../services/onesignal_service.dart';
 
 class ProfileSettingsScreen extends StatefulWidget {
   const ProfileSettingsScreen({super.key});
@@ -31,6 +32,7 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
   // Preferences visual triggers
   bool _notificationBanners = true;
   String _appLanguage = 'ar'; // ar | en
+  bool _registeringNotifications = false;
 
   @override
   void dispose() {
@@ -112,6 +114,29 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
     }
   }
 
+  Future<void> _enablePushNotifications(String uid) async {
+    setState(() => _registeringNotifications = true);
+    try {
+      final state = await OneSignalService.instance.ensureRegistered(uid);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: state.isReady
+              ? ZaWolfColors.success
+              : ZaWolfColors.warning,
+          content: Text(
+            state.isReady
+                ? 'تم تفعيل الإشعارات وربط هذا الجهاز بالحساب.'
+                : 'لم يكتمل التفعيل. اسمح بالإشعارات من إعدادات الهاتف ثم حاول مرة أخرى.',
+          ),
+        ),
+      );
+      setState(() {});
+    } finally {
+      if (mounted) setState(() => _registeringNotifications = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final authService = Provider.of<AuthService>(context);
@@ -126,6 +151,7 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
         ? DateFormat('yyyy-MM-dd').format(user.joinDate!)
         : 'غير متوفر';
     final mustChangeDefaultPassword = user.passwordChangedAt == null;
+    final pushState = OneSignalService.instance.registrationState();
 
     return Scaffold(
       appBar: AppBar(
@@ -263,6 +289,13 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                         : (user.managerName ?? 'لا يوجد مدير مباشر مسند'),
                     theme,
                   ),
+                  if (user.teamLeaderName != null &&
+                      user.teamLeaderName!.isNotEmpty)
+                    _buildProfileRow(
+                      'قائد الفريق',
+                      user.teamLeaderName!,
+                      theme,
+                    ),
                   _buildProfileRow('تاريخ الانضمام', joinDateStr, theme),
                 ],
               ),
@@ -327,6 +360,36 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                         });
                       },
                     ),
+                  ),
+                  const Divider(color: ZaWolfColors.surface02, height: 1),
+                  ListTile(
+                    leading: Icon(
+                      pushState.isReady
+                          ? Icons.notifications_active
+                          : Icons.notifications_off_outlined,
+                      color: pushState.isReady
+                          ? ZaWolfColors.success
+                          : ZaWolfColors.warning,
+                    ),
+                    title: const Text('إشعارات الهاتف'),
+                    subtitle: Text(
+                      !pushState.configured
+                          ? 'غير مفعلة في نسخة التطبيق الحالية'
+                          : pushState.isReady
+                          ? 'مفعلة ومرتبطة بهذا الحساب'
+                          : 'تحتاج إلى تفعيل أو إعادة ربط',
+                    ),
+                    trailing: _registeringNotifications
+                        ? const SizedBox(
+                            width: 22,
+                            height: 22,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : IconButton(
+                            tooltip: 'تفعيل الإشعارات',
+                            onPressed: () => _enablePushNotifications(user.uid),
+                            icon: const Icon(Icons.refresh),
+                          ),
                   ),
                 ],
               ),

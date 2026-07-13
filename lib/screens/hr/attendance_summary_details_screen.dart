@@ -77,7 +77,7 @@ class _AttendanceSummaryDetailsScreenState
                   itemBuilder: (context, index) {
                     if (index == 0) {
                       return Text(
-                        user.role == 'manager'
+                        (user.role == 'manager' || user.role == 'team_leader')
                             ? 'آخر 30 يوم لفريقك'
                             : 'آخر 30 يوم للشركة',
                         style: theme.textTheme.titleLarge?.copyWith(
@@ -87,24 +87,40 @@ class _AttendanceSummaryDetailsScreenState
                         textDirection: TextDirection.rtl,
                       );
                     }
-                    return _DaySummaryCard(summary: summaries[index - 1]);
+                    return _DaySummaryCard(
+                      summary: summaries[index - 1],
+                      onTap: () =>
+                          _openDayDetails(user, summaries[index - 1].date),
+                    );
                   },
                 );
               },
             ),
     );
   }
+
+  Future<void> _openDayDetails(UserModel user, DateTime date) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) =>
+          _DayDetailsSheet(service: _service, user: user, date: date),
+    );
+  }
 }
 
 class _DaySummaryCard extends StatelessWidget {
   final DashboardAttendanceSummary summary;
+  final VoidCallback onTap;
 
-  const _DaySummaryCard({required this.summary});
+  const _DaySummaryCard({required this.summary, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
     final dateLabel = DateFormat('EEEE، yyyy/MM/dd', 'ar').format(summary.date);
     return WolfCard(
+      onTap: onTap,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -126,6 +142,11 @@ class _DaySummaryCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 12),
+          const Align(
+            alignment: Alignment.centerLeft,
+            child: Icon(Icons.chevron_left, color: ZaWolfColors.primaryCyan),
+          ),
+          const SizedBox(height: 4),
           _MiniBar(summary: summary),
           const SizedBox(height: 12),
           Wrap(
@@ -163,6 +184,211 @@ class _DaySummaryCard extends StatelessWidget {
         ],
       ),
     );
+  }
+}
+
+class _DayDetailsSheet extends StatelessWidget {
+  final DashboardAttendanceSummaryService service;
+  final UserModel user;
+  final DateTime date;
+
+  const _DayDetailsSheet({
+    required this.service,
+    required this.user,
+    required this.date,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final dateLabel = DateFormat('EEEE، yyyy/MM/dd', 'ar').format(date);
+    return DraggableScrollableSheet(
+      initialChildSize: 0.90,
+      minChildSize: 0.55,
+      maxChildSize: 0.96,
+      builder: (context, scrollController) => Container(
+        decoration: const BoxDecoration(
+          color: ZaWolfColors.surface01,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+        ),
+        child: FutureBuilder<DashboardAttendanceDayDetails>(
+          future: service.loadDayDetails(user, date),
+          builder: (context, snapshot) {
+            if (snapshot.hasError) {
+              return const Center(
+                child: Text(
+                  'تعذر تحميل تفاصيل هذا اليوم. حاول مرة أخرى.',
+                  style: TextStyle(color: ZaWolfColors.error),
+                  textDirection: TextDirection.rtl,
+                ),
+              );
+            }
+            if (!snapshot.hasData) {
+              return const Center(
+                child: CircularProgressIndicator(
+                  color: ZaWolfColors.primaryCyan,
+                ),
+              );
+            }
+
+            final people = snapshot.data!.people;
+            final groups = <_AttendanceGroup>[
+              _AttendanceGroup(
+                'حضر في الموعد',
+                'present',
+                ZaWolfColors.success,
+              ),
+              _AttendanceGroup('متأخر', 'late', ZaWolfColors.warning),
+              _AttendanceGroup(
+                'إذن معتمد',
+                'permission',
+                ZaWolfColors.permissionTeal,
+              ),
+              _AttendanceGroup(
+                'إجازة / يوم إجازة',
+                'day_off',
+                ZaWolfColors.dayoffPurple,
+              ),
+              _AttendanceGroup(
+                'لم يسجل حضوراً',
+                'not_attended',
+                ZaWolfColors.error,
+              ),
+            ];
+            final missingCheckout = people
+                .where((person) => person.needsCheckout)
+                .toList();
+
+            return ListView(
+              controller: scrollController,
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
+              children: [
+                Center(
+                  child: Container(
+                    width: 42,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: ZaWolfColors.textMuted,
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 18),
+                Text(
+                  'تفاصيل الحضور',
+                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                  ),
+                  textAlign: TextAlign.right,
+                  textDirection: TextDirection.rtl,
+                ),
+                Text(
+                  dateLabel,
+                  style: const TextStyle(color: ZaWolfColors.textMuted),
+                  textAlign: TextAlign.right,
+                  textDirection: TextDirection.rtl,
+                ),
+                const SizedBox(height: 18),
+                if (missingCheckout.isNotEmpty)
+                  _AttendancePeopleSection(
+                    title: 'لم يسجل انصرافاً',
+                    color: ZaWolfColors.error,
+                    people: missingCheckout,
+                  ),
+                for (final group in groups) ...[
+                  _AttendancePeopleSection(
+                    title: group.title,
+                    color: group.color,
+                    people: people
+                        .where((person) => person.status == group.status)
+                        .toList(),
+                  ),
+                  const SizedBox(height: 12),
+                ],
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
+class _AttendanceGroup {
+  final String title;
+  final String status;
+  final Color color;
+
+  const _AttendanceGroup(this.title, this.status, this.color);
+}
+
+class _AttendancePeopleSection extends StatelessWidget {
+  final String title;
+  final Color color;
+  final List<DashboardAttendancePerson> people;
+
+  const _AttendancePeopleSection({
+    required this.title,
+    required this.color,
+    required this.people,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (people.isEmpty) return const SizedBox.shrink();
+    final timeFormat = DateFormat('hh:mm a', 'en');
+    return WolfCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            '$title (${people.length})',
+            style: TextStyle(color: color, fontWeight: FontWeight.bold),
+            textAlign: TextAlign.right,
+            textDirection: TextDirection.rtl,
+          ),
+          const SizedBox(height: 8),
+          for (final person in people)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 7),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text(
+                    person.employee.displayName,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w600,
+                    ),
+                    textDirection: TextDirection.rtl,
+                  ),
+                  Text(
+                    _detailText(person, timeFormat),
+                    style: const TextStyle(color: ZaWolfColors.textMuted),
+                    textDirection: TextDirection.rtl,
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  String _detailText(DashboardAttendancePerson person, DateFormat timeFormat) {
+    final parts = <String>[];
+    if (person.employee.employeeId.isNotEmpty) {
+      parts.add(person.employee.employeeId);
+    }
+    if (person.checkInTime != null) {
+      parts.add('حضور ${timeFormat.format(person.checkInTime!)}');
+    }
+    if (person.checkOutTime != null) {
+      parts.add('انصراف ${timeFormat.format(person.checkOutTime!)}');
+    }
+    if (person.lateMinutes > 0) parts.add('تأخير ${person.lateMinutes} د');
+    if (person.needsCheckout) parts.add('لم يسجل الانصراف');
+    return parts.isEmpty ? 'لا يوجد سجل حضور لهذا اليوم' : parts.join(' · ');
   }
 }
 

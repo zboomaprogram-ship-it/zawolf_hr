@@ -38,6 +38,8 @@ import '../screens/manager/rate_performance.dart';
 import '../screens/smart_assistant_screen.dart';
 import '../screens/hr/department_performance_screen.dart';
 import '../screens/shared/employee_insights_screen.dart';
+import '../screens/team_leader/team_leader_dashboard.dart';
+import '../screens/team_leader/team_tasks_screen.dart';
 
 class ZaWolfRouter {
   static GoRouter getRouter(BuildContext context) {
@@ -72,6 +74,9 @@ class ZaWolfRouter {
           if (role == EmployeeRole.superAdmin) return '/hr/dashboard';
           if (role == EmployeeRole.hrAdmin) return '/hr/dashboard';
           if (role == EmployeeRole.manager) return '/manager/dashboard';
+          if (role == EmployeeRole.teamLeader) {
+            return '/team-leader/dashboard';
+          }
           return '/employee/dashboard';
         }
 
@@ -79,6 +84,9 @@ class ZaWolfRouter {
         final role = authService.currentUser?.role;
         final goingToHr = state.matchedLocation.startsWith('/hr');
         final goingToManager = state.matchedLocation.startsWith('/manager');
+        final goingToTeamLeader = state.matchedLocation.startsWith(
+          '/team-leader',
+        );
 
         if (role == EmployeeRole.superAdmin) {
           return null;
@@ -86,8 +94,12 @@ class ZaWolfRouter {
 
         if (role == EmployeeRole.employee) {
           // Employees cannot access manager or hr paths
-          if (goingToHr || goingToManager) {
+          if (goingToHr || goingToManager || goingToTeamLeader) {
             return '/employee/dashboard';
+          }
+        } else if (role == EmployeeRole.teamLeader) {
+          if (goingToHr || goingToManager) {
+            return '/team-leader/dashboard';
           }
         } else if (role == EmployeeRole.manager) {
           // Managers cannot access hr paths
@@ -163,6 +175,30 @@ class ZaWolfRouter {
             GoRoute(
               path: '/assistant',
               builder: (context, state) => const SmartAssistantScreen(),
+            ),
+            // Team Leader Routes (team visibility, no approval actions)
+            GoRoute(
+              path: '/team-leader/dashboard',
+              builder: (context, state) => const TeamLeaderDashboardScreen(),
+            ),
+            GoRoute(
+              path: '/team-leader/attendance-summary',
+              builder: (context, state) =>
+                  const AttendanceSummaryDetailsScreen(),
+            ),
+            GoRoute(
+              path: '/team-leader/employees',
+              builder: (context, state) => const TeamMembersScreen(),
+            ),
+            GoRoute(
+              path: '/team-leader/tasks',
+              builder: (context, state) => const TeamLeaderTasksScreen(),
+            ),
+            GoRoute(
+              path: '/team-leader/employee/:userId',
+              builder: (context, state) => EmployeeInsightsScreen(
+                employeeUid: state.pathParameters['userId']!,
+              ),
             ),
             // Manager Routes
             GoRoute(

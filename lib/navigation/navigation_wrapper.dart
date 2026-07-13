@@ -149,6 +149,58 @@ class _NavigationWrapperState extends State<NavigationWrapper> {
           path: '/employee/suggestions',
         ),
       ];
+    } else if (role == EmployeeRole.teamLeader) {
+      items = [
+        NavigationItem(
+          icon: Icons.fingerprint,
+          activeIcon: Icons.fingerprint,
+          label: 'حضوري',
+          englishLabel: 'Attendance',
+          path: '/employee/dashboard',
+        ),
+        NavigationItem(
+          icon: Icons.assignment_outlined,
+          activeIcon: Icons.assignment,
+          label: 'طلباتي',
+          englishLabel: 'Requests',
+          path: '/employee/requests',
+        ),
+        NavigationItem(
+          icon: Icons.groups_2_outlined,
+          activeIcon: Icons.groups_2,
+          label: 'فريقي',
+          englishLabel: 'My Team',
+          path: '/team-leader/dashboard',
+        ),
+        NavigationItem(
+          icon: Icons.people_outline,
+          activeIcon: Icons.people,
+          label: 'الأعضاء',
+          englishLabel: 'Members',
+          path: '/team-leader/employees',
+        ),
+        NavigationItem(
+          icon: Icons.task_alt_outlined,
+          activeIcon: Icons.task_alt,
+          label: 'مهام الفريق',
+          englishLabel: 'Team Tasks',
+          path: '/team-leader/tasks',
+        ),
+        NavigationItem(
+          icon: Icons.check_circle_outline,
+          activeIcon: Icons.check_circle,
+          label: 'مهامي',
+          englishLabel: 'My Tasks',
+          path: '/employee/tasks',
+        ),
+        NavigationItem(
+          icon: Icons.person_outline,
+          activeIcon: Icons.person,
+          label: 'حسابي',
+          englishLabel: 'Profile',
+          path: '/employee/profile',
+        ),
+      ];
     } else if (role == EmployeeRole.manager) {
       items = [
         NavigationItem(
@@ -241,6 +293,13 @@ class _NavigationWrapperState extends State<NavigationWrapper> {
           label: 'المساعد',
           englishLabel: 'Assistant',
           path: '/assistant',
+        ),
+        NavigationItem(
+          icon: Icons.person_outline,
+          activeIcon: Icons.person,
+          label: 'حسابي',
+          englishLabel: 'Profile',
+          path: '/employee/profile',
         ),
       ];
     } else if (role == EmployeeRole.hrAdmin) {
@@ -350,6 +409,13 @@ class _NavigationWrapperState extends State<NavigationWrapper> {
           englishLabel: 'Assistant',
           path: '/assistant',
         ),
+        NavigationItem(
+          icon: Icons.person_outline,
+          activeIcon: Icons.person,
+          label: 'حسابي',
+          englishLabel: 'Profile',
+          path: '/employee/profile',
+        ),
       ];
     } else if (role == EmployeeRole.superAdmin) {
       items = [
@@ -458,6 +524,13 @@ class _NavigationWrapperState extends State<NavigationWrapper> {
           englishLabel: 'Assistant',
           path: '/assistant',
         ),
+        NavigationItem(
+          icon: Icons.person_outline,
+          activeIcon: Icons.person,
+          label: 'حسابي',
+          englishLabel: 'Profile',
+          path: '/employee/profile',
+        ),
       ];
     }
 
@@ -539,7 +612,9 @@ class _NavigationWrapperState extends State<NavigationWrapper> {
                 final unreadCount = user.unreadNotifications;
                 final showUnreadBadge =
                     unreadCount > 0 &&
-                    ((role == 'employee' && item.path == '/employee/profile') ||
+                    (((role == EmployeeRole.employee ||
+                                role == EmployeeRole.teamLeader) &&
+                            item.path == '/employee/profile') ||
                         (role == 'manager' &&
                             item.path == '/manager/dashboard') ||
                         (role == 'hr_admin' && item.path == '/hr/dashboard'));

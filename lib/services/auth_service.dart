@@ -36,13 +36,13 @@ class AuthService with ChangeNotifier {
     ) async {
       final sessionVersion = ++_authSessionVersion;
       NotificationService.instance.stopListening();
-      await DailyReminderService.instance.cancelAll();
+      unawaited(DailyReminderService.instance.cancelAll());
       _startedSessionServicesForUid = null;
       if (user == null) {
         _currentUser = null;
         _loading = false;
-        await OneSignalService.instance.logout();
         notifyListeners();
+        unawaited(OneSignalService.instance.logout());
       } else {
         if (_interactiveSignInInProgress) return;
         if (_currentUser?.uid == user.uid && !_loading) {
@@ -66,7 +66,7 @@ class AuthService with ChangeNotifier {
     if (_startedSessionServicesForUid == uid || _currentUser == null) return;
     _startedSessionServicesForUid = uid;
     NotificationService.instance.startListening(uid);
-    await OneSignalService.instance.login(uid);
+    unawaited(OneSignalService.instance.login(uid));
     // Attendance reminders are created by the trusted server at send time.
     // This prevents local reminders from appearing during an approved leave
     // when the app is terminated and cannot re-check Firestore.
@@ -151,8 +151,8 @@ class AuthService with ChangeNotifier {
     _loading = false;
     _startedSessionServicesForUid = null;
     NotificationService.instance.stopListening();
-    await OneSignalService.instance.logout();
-    await DailyReminderService.instance.cancelAll();
+    unawaited(OneSignalService.instance.logout());
+    unawaited(DailyReminderService.instance.cancelAll());
     notifyListeners();
     await _auth.signOut();
   }
@@ -217,6 +217,8 @@ class AuthService with ChangeNotifier {
     List<String> managerIds = const [],
     List<String> managerNames = const [],
     List<String> managerCodes = const [],
+    String? teamLeaderId,
+    String? teamLeaderName,
   }) async {
     const initialPassword = 'ZW@0000';
     FirebaseApp? tempApp;
@@ -224,6 +226,7 @@ class AuthService with ChangeNotifier {
     try {
       const allowedRoles = [
         EmployeeRole.employee,
+        EmployeeRole.teamLeader,
         EmployeeRole.manager,
         EmployeeRole.hrAdmin,
         EmployeeRole.superAdmin,
@@ -278,6 +281,8 @@ class AuthService with ChangeNotifier {
         managerIds: managerIds,
         managerNames: managerNames,
         managerCodes: managerCodes,
+        teamLeaderId: teamLeaderId,
+        teamLeaderName: teamLeaderName,
         workSchedule: WorkSchedule(
           startTime: AttendancePolicy.defaultStartTime,
           endTime: AttendancePolicy.defaultEndTime,
