@@ -280,6 +280,103 @@ class UserModel {
     };
   }
 
+  /// A JSON-safe local snapshot used only to restore an existing Firebase
+  /// session while Firestore reconnects on app launch.
+  Map<String, dynamic> toSessionCache() {
+    return {
+      'uid': uid,
+      'email': email,
+      'displayName': displayName,
+      'photoURL': photoURL,
+      'role': role,
+      'employeeId': employeeId,
+      'department': department,
+      'position': position,
+      'locationId': locationId,
+      'locationName': locationName,
+      'baseMonthlySalary': baseMonthlySalary,
+      'salaryCurrency': salaryCurrency,
+      'managerId': managerId,
+      'managerName': managerName,
+      'managerIds': managerIds,
+      'managerNames': managerNames,
+      'managerCodes': managerCodes,
+      'teamLeaderId': teamLeaderId,
+      'teamLeaderName': teamLeaderName,
+      'isActive': isActive,
+      'joinDate': joinDate?.millisecondsSinceEpoch,
+      'workSchedule': workSchedule.toMap(),
+      'leaveBalance': leaveBalance.toMap(),
+      'permissionBalance': permissionBalance.toMap(),
+      'notificationTokens': notificationTokens,
+      'unreadNotifications': unreadNotifications,
+      'createdAt': createdAt?.millisecondsSinceEpoch,
+      'updatedAt': updatedAt?.millisecondsSinceEpoch,
+      'passwordChangedAt': passwordChangedAt?.millisecondsSinceEpoch,
+      'registeredAttendanceDeviceId': registeredAttendanceDeviceId,
+      'registeredAttendanceDeviceLabel': registeredAttendanceDeviceLabel,
+      'registeredAttendanceDeviceAt':
+          registeredAttendanceDeviceAt?.millisecondsSinceEpoch,
+    };
+  }
+
+  factory UserModel.fromSessionCache(Map<String, dynamic> data) {
+    DateTime? readDate(String key) {
+      final value = data[key];
+      return value is num
+          ? DateTime.fromMillisecondsSinceEpoch(value.toInt())
+          : null;
+    }
+
+    List<String> readStrings(String key) =>
+        (data[key] as List<dynamic>? ?? const []).whereType<String>().toList(
+          growable: false,
+        );
+
+    return UserModel(
+      uid: data['uid'] as String? ?? '',
+      email: data['email'] as String? ?? '',
+      displayName: data['displayName'] as String? ?? '',
+      photoURL: data['photoURL'] as String?,
+      role: data['role'] as String? ?? 'employee',
+      employeeId: data['employeeId'] as String? ?? '',
+      department: data['department'] as String? ?? '',
+      position: data['position'] as String? ?? '',
+      locationId: data['locationId'] as String? ?? '',
+      locationName: data['locationName'] as String? ?? '',
+      baseMonthlySalary: (data['baseMonthlySalary'] as num?)?.toDouble() ?? 0,
+      salaryCurrency: data['salaryCurrency'] as String? ?? 'EGP',
+      managerId: data['managerId'] as String?,
+      managerName: data['managerName'] as String?,
+      managerIds: readStrings('managerIds'),
+      managerNames: readStrings('managerNames'),
+      managerCodes: readStrings('managerCodes'),
+      teamLeaderId: data['teamLeaderId'] as String?,
+      teamLeaderName: data['teamLeaderName'] as String?,
+      isActive: data['isActive'] as bool? ?? true,
+      joinDate: readDate('joinDate'),
+      workSchedule: WorkSchedule.fromMap(
+        (data['workSchedule'] as Map?)?.cast<String, dynamic>(),
+      ),
+      leaveBalance: LeaveBalance.fromMap(
+        (data['leaveBalance'] as Map?)?.cast<String, dynamic>(),
+      ),
+      permissionBalance: PermissionBalance.fromMap(
+        (data['permissionBalance'] as Map?)?.cast<String, dynamic>(),
+      ),
+      notificationTokens: readStrings('notificationTokens'),
+      unreadNotifications: data['unreadNotifications'] as int? ?? 0,
+      createdAt: readDate('createdAt'),
+      updatedAt: readDate('updatedAt'),
+      passwordChangedAt: readDate('passwordChangedAt'),
+      registeredAttendanceDeviceId:
+          data['registeredAttendanceDeviceId'] as String?,
+      registeredAttendanceDeviceLabel:
+          data['registeredAttendanceDeviceLabel'] as String?,
+      registeredAttendanceDeviceAt: readDate('registeredAttendanceDeviceAt'),
+    );
+  }
+
   UserModel copyWith({
     String? uid,
     String? email,

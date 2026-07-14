@@ -9,6 +9,7 @@ import '../../components/wolf_input_field.dart';
 import '../../services/auth_service.dart';
 import '../../models/employee_role.dart';
 import '../../services/onesignal_service.dart';
+import '../../services/personal_alarm_service.dart';
 
 class ProfileSettingsScreen extends StatefulWidget {
   const ProfileSettingsScreen({super.key});
@@ -33,6 +34,19 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
   bool _notificationBanners = true;
   String _appLanguage = 'ar'; // ar | en
   bool _registeringNotifications = false;
+  PersonalAlarmSettings _personalAlarm = const PersonalAlarmSettings.disabled();
+  String? _personalAlarmUserId;
+  bool _loadingPersonalAlarm = false;
+  bool _savingPersonalAlarm = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final user = Provider.of<AuthService>(context).currentUser;
+    if (user != null && _personalAlarmUserId != user.uid) {
+      _loadPersonalAlarm(user.uid);
+    }
+  }
 
   @override
   void dispose() {
@@ -134,6 +148,122 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
       setState(() {});
     } finally {
       if (mounted) setState(() => _registeringNotifications = false);
+    }
+  }
+
+  Future<void> _loadPersonalAlarm(String userId) async {
+    _personalAlarmUserId = userId;
+    setState(() => _loadingPersonalAlarm = true);
+    try {
+      final settings = await PersonalAlarmService.instance.load(userId);
+      if (mounted && _personalAlarmUserId == userId) {
+        setState(() => _personalAlarm = settings);
+      }
+    } finally {
+      if (mounted && _personalAlarmUserId == userId) {
+        setState(() => _loadingPersonalAlarm = false);
+      }
+    }
+  }
+
+  Future<void> _setPersonalAlarmEnabled(String userId, bool enabled) async {
+    setState(() => _savingPersonalAlarm = true);
+    try {
+      if (enabled) {
+        final settings = await PersonalAlarmService.instance.enable(
+          userId: userId,
+          hour: _personalAlarm.hour,
+          minute: _personalAlarm.minute,
+        );
+        if (!mounted) return;
+        setState(() => _personalAlarm = settings);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              PersonalAlarmService.instance.usesAndroidClock
+                  ? 'افتح تطبيق الساعة وأكّد المنبه، ثم اختر التكرار اليومي إذا أردته.'
+                  : 'تم تفعيل تذكير الدوام اليومي في الساعة ${settings.formattedTime}.',
+            ),
+          ),
+        );
+      } else {
+        await PersonalAlarmService.instance.disable(userId);
+        if (!mounted) return;
+        setState(
+          () => _personalAlarm = PersonalAlarmSettings(
+            enabled: false,
+            hour: _personalAlarm.hour,
+            minute: _personalAlarm.minute,
+          ),
+        );
+        if (PersonalAlarmService.instance.usesAndroidClock) {
+          await PersonalAlarmService.instance.openAndroidClock();
+        }
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              PersonalAlarmService.instance.usesAndroidClock
+                  ? 'تم إيقافه داخل التطبيق. أوقف منبه ZaWolf HR من تطبيق الساعة أيضاً.'
+                  : 'تم إيقاف تذكير الدوام.',
+            ),
+          ),
+        );
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('تعذر تحديث منبه الدوام. أعد المحاولة.'),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _savingPersonalAlarm = false);
+    }
+  }
+
+  Future<void> _choosePersonalAlarmTime(String userId) async {
+    final chosen = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay(
+        hour: _personalAlarm.hour,
+        minute: _personalAlarm.minute,
+      ),
+    );
+    if (chosen == null) return;
+
+    setState(() => _savingPersonalAlarm = true);
+    try {
+      final settings = PersonalAlarmSettings(
+        enabled: _personalAlarm.enabled,
+        hour: chosen.hour,
+        minute: chosen.minute,
+      );
+      if (settings.enabled) {
+        await PersonalAlarmService.instance.enable(
+          userId: userId,
+          hour: settings.hour,
+          minute: settings.minute,
+        );
+      } else {
+        await PersonalAlarmService.instance.saveTime(
+          userId: userId,
+          enabled: false,
+          hour: settings.hour,
+          minute: settings.minute,
+        );
+      }
+      if (!mounted) return;
+      setState(() => _personalAlarm = settings);
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('تعذر حفظ وقت المنبه. أعد المحاولة.')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _savingPersonalAlarm = false);
     }
   }
 
@@ -391,6 +521,63 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                             icon: const Icon(Icons.refresh),
                           ),
                   ),
+                  const Divider(color: ZaWolfColors.surface02, height: 1),
+                  ListTile(
+                    leading: const Icon(
+                      Icons.alarm,
+                      color: ZaWolfColors.primaryCyan,
+                    ),
+                    title: const Text('منبه الدوام'),
+                    subtitle: Text(
+                      _loadingPersonalAlarm
+                          ? 'جارٍ التحميل'
+                          : _personalAlarm.enabled
+                          ? PersonalAlarmService.instance.usesAndroidClock
+                                ? 'مفعّل في ${_personalAlarm.formattedTime}'
+                                : 'مفعّل يومياً في ${_personalAlarm.formattedTime}'
+                          : 'غير مفعّل',
+                    ),
+                    trailing: _savingPersonalAlarm || _loadingPersonalAlarm
+                        ? const SizedBox(
+                            width: 22,
+                            height: 22,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : Switch(
+                            value: _personalAlarm.enabled,
+                            activeThumbColor: ZaWolfColors.primaryCyan,
+                            onChanged: (value) =>
+                                _setPersonalAlarmEnabled(user.uid, value),
+                          ),
+                  ),
+                  ListTile(
+                    enabled: !_savingPersonalAlarm && !_loadingPersonalAlarm,
+                    leading: const Icon(
+                      Icons.schedule,
+                      color: ZaWolfColors.primaryCyan,
+                    ),
+                    title: const Text('وقت منبه الدوام'),
+                    trailing: TextButton(
+                      onPressed: _savingPersonalAlarm || _loadingPersonalAlarm
+                          ? null
+                          : () => _choosePersonalAlarmTime(user.uid),
+                      child: Text(_personalAlarm.formattedTime),
+                    ),
+                  ),
+                  if (PersonalAlarmService.instance.usesAndroidClock)
+                    ListTile(
+                      leading: const Icon(
+                        Icons.alarm_on_outlined,
+                        color: ZaWolfColors.primaryCyan,
+                      ),
+                      title: const Text('إدارة منبه الساعة'),
+                      trailing: IconButton(
+                        tooltip: 'فتح تطبيق الساعة',
+                        onPressed:
+                            PersonalAlarmService.instance.openAndroidClock,
+                        icon: const Icon(Icons.open_in_new),
+                      ),
+                    ),
                 ],
               ),
             ),

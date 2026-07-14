@@ -59,6 +59,13 @@ service cloud.firestore {
     function validRequestManagerId() {
       return requestManagerId() == myManagerId();
     }
+    function attendanceRequiresBiometric() {
+      let companyPath = /databases/$(database)/documents/companies/zawolf;
+      return !exists(companyPath)
+        || get(companyPath).data
+          .get('attendancePolicy', {})
+          .get('attendanceVerificationMode', 'location_only') != 'location_only';
+    }
     function isValidSelfCreate() {
       return request.resource.data.userId == uid()
         && request.resource.data.employeeId == userDoc().get('employeeId', '')
@@ -277,7 +284,10 @@ service cloud.firestore {
         'present', 'late', 'late_quarter_day', 'late_half_day', 'late_full_day'
       ]
       && request.resource.data.isWithinGeofence == true
-      && request.resource.data.biometricVerified == true
+      && (
+        !attendanceRequiresBiometric()
+        || request.resource.data.biometricVerified == true
+      )
       && request.resource.data.get('locationMocked', false) == false
       && request.resource.data.get('securityReviewStatus', 'none') in ['none', 'pending_hr']
       && request.resource.data.get('locationRiskLevel', 'low') in ['low', 'medium', 'high']
@@ -314,6 +324,7 @@ service cloud.firestore {
       return (
           !request.resource.data.diff(resource.data).affectedKeys()
             .hasAny(['checkOutBiometricVerified'])
+          || !attendanceRequiresBiometric()
           || request.resource.data.checkOutBiometricVerified == true
         )
         && (

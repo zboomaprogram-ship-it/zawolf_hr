@@ -1,17 +1,22 @@
 const admin = require('firebase-admin');
-const { parseFirebaseServiceAccount } = require('./firebase-service-account');
+const {
+  getExistingFirebaseApp,
+  installFirestoreCompatibility,
+  parseFirebaseServiceAccount,
+} = require('./firebase-service-account');
+installFirestoreCompatibility(admin);
 
 const ROLES = ['hr_admin', 'manager', 'super_admin'];
 
 function initializeFirebase() {
-  if (admin.apps.length) return;
+  if (getExistingFirebaseApp(admin)) return;
 
   const serviceAccount = parseFirebaseServiceAccount(
     process.env.FIREBASE_SERVICE_ACCOUNT,
   );
 
   admin.initializeApp({
-    credential: admin.credential.cert(serviceAccount),
+    credential: admin.cert(serviceAccount),
   });
 
   console.log(`Using Firebase service account: ${serviceAccount.client_email}`);

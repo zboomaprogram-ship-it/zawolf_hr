@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart' hide TextDirection;
 import '../models/user_model.dart';
@@ -32,10 +34,23 @@ class AttendanceService {
     final todayStr = DateFormat('yyyy-MM-dd').format(now);
     final online = await _offlineQueue.isOnline();
     final policyConfig = await _policyService.getPolicyConfig();
+    final requiresLiveConnection = !policyConfig.requiresBiometric;
+
+    if (requiresLiveConnection && !online) {
+      throw Exception(
+        'تسجيل الحضور بالموقع فقط يتطلب اتصالاً بالإنترنت للتحقق من الوقت والموقع مباشرة. اتصل بالإنترنت ثم أعد المحاولة.',
+      );
+    }
 
     if (online) {
-      await _offlineQueue.syncPendingActions();
-      await _flagMissedCheckouts(employee, todayStr);
+      try {
+        await _offlineQueue.syncPendingActions();
+        await _flagMissedCheckouts(employee, todayStr);
+      } catch (error) {
+        // Connectivity can be present while Firestore is temporarily
+        // unavailable. Do not prevent a new verified attendance action.
+        if (!_isTemporaryFirestoreFailure(error)) rethrow;
+      }
     }
 
     final todayLookup = await _loadTodayAttendance(employee.uid, todayStr);
@@ -116,7 +131,10 @@ class AttendanceService {
     });
 
     // 1. Validate employee position against assigned branch's geofence
-    final geoResult = await _geofenceService.validateCheckIn(employee);
+    final geoResult = await _geofenceService.validateCheckIn(
+      employee,
+      strictLocationOnly: requiresLiveConnection,
+    );
 
     if (!geoResult.isWithinZone && !hasWfhToday) {
       throw Exception(
@@ -136,19 +154,25 @@ class AttendanceService {
       geoResult,
       capturedOffline: !online,
       bypassedByWfh: hasWfhToday,
+      strictLocationOnly: requiresLiveConnection,
     );
     if (locationRisk.blocked) {
       throw Exception(locationRisk.message);
     }
 
-    final securityResult = await _securityService.verifyForAttendance();
+    final securityResult = await _securityService.verifyForAttendance(
+      requireBiometric: policyConfig.requiresBiometric,
+    );
     final effectiveLocationRisk = locationRisk.withSecurityFallback(
       securityResult.deviceCredentialFallbackUsed,
     );
     await _ensureAttendanceDeviceBinding(
       employee,
       securityResult,
-      allowOfflineFallback: !online,
+      // The binding method itself only permits this fallback for a transient
+      // Firestore outage; permanent permission and device-binding failures
+      // continue to block attendance.
+      allowOfflineFallback: !requiresLiveConnection,
     );
 
     if (isCheckIn) {
@@ -190,6 +214,7 @@ class AttendanceService {
         accuracyMeters: geoResult.accuracyMeters,
         deviceId: securityResult.deviceId,
         deviceLabel: securityResult.deviceLabel,
+        biometricVerified: securityResult.biometricVerified,
         isLate: deduction.isLate,
         lateMinutes: deduction.lateMinutes,
         salaryDeductionFraction: deduction.dayFraction,
@@ -247,12 +272,25 @@ class AttendanceService {
         status: deduction.status,
       );
 
+      var savedOnline = online;
       if (online) {
-        await logRef.set(attendanceLog.toFirestore());
+        try {
+          await logRef.set(attendanceLog.toFirestore());
+        } catch (error) {
+          if (!_isTemporaryFirestoreFailure(error)) rethrow;
+          if (requiresLiveConnection) {
+            throw Exception(
+              'تعذر الاتصال بخدمة الحضور الآن. لم يتم حفظ حضورك بدون إنترنت؛ أعد المحاولة عند عودة الاتصال.',
+            );
+          }
+          savedOnline = false;
+          await _offlineQueue.queue(offlineAction);
+        }
       } else {
+        savedOnline = false;
         await _offlineQueue.queue(offlineAction);
       }
-      if (online && deduction.dayFraction > 0) {
+      if (savedOnline && deduction.dayFraction > 0) {
         await _notifyRole(
           role: 'hr_admin',
           type: 'salary_deduction_pending',
@@ -262,7 +300,7 @@ class AttendanceService {
           data: {'attendanceId': logRef.id},
         );
       }
-      if (online && effectiveLocationRisk.requiresReview) {
+      if (savedOnline && effectiveLocationRisk.requiresReview) {
         await _notifyLocationSecurityReview(
           employee: employee,
           attendanceId: logRef.id,
@@ -335,6 +373,7 @@ class AttendanceService {
         accuracyMeters: geoResult.accuracyMeters,
         deviceId: securityResult.deviceId,
         deviceLabel: securityResult.deviceLabel,
+        biometricVerified: securityResult.biometricVerified,
         totalWorkHours: totalWorkHours,
         isLate: checkInLog.isLate,
         lateMinutes: checkInLog.lateMinutes,
@@ -361,26 +400,38 @@ class AttendanceService {
         status: checkInLog.status,
       );
 
-      if (online && checkInDoc != null) {
-        await checkInDoc.reference.update({
-          'checkOutTime': Timestamp.fromDate(now),
-          'checkOutLocation': GeoPoint(
-            geoResult.position.latitude,
-            geoResult.position.longitude,
-          ),
-          'localCheckOutTime': Timestamp.fromDate(now),
-          'totalWorkHours': totalWorkHours,
-          'checkOutDeviceId': securityResult.deviceId,
-          'checkOutDeviceLabel': securityResult.deviceLabel,
-          'checkOutBiometricVerified': securityResult.biometricVerified,
-          ...effectiveLocationRisk.toCheckoutFirestorePatch(geoResult),
-          ...earlyCheckoutDeduction.patch,
-        });
+      var savedOnline = online && checkInDoc != null;
+      if (savedOnline) {
+        try {
+          await checkInDoc.reference.update({
+            'checkOutTime': Timestamp.fromDate(now),
+            'checkOutLocation': GeoPoint(
+              geoResult.position.latitude,
+              geoResult.position.longitude,
+            ),
+            'localCheckOutTime': Timestamp.fromDate(now),
+            'totalWorkHours': totalWorkHours,
+            'checkOutDeviceId': securityResult.deviceId,
+            'checkOutDeviceLabel': securityResult.deviceLabel,
+            'checkOutBiometricVerified': securityResult.biometricVerified,
+            ...effectiveLocationRisk.toCheckoutFirestorePatch(geoResult),
+            ...earlyCheckoutDeduction.patch,
+          });
+        } catch (error) {
+          if (!_isTemporaryFirestoreFailure(error)) rethrow;
+          if (requiresLiveConnection) {
+            throw Exception(
+              'تعذر الاتصال بخدمة الحضور الآن. لم يتم حفظ انصرافك بدون إنترنت؛ أعد المحاولة عند عودة الاتصال.',
+            );
+          }
+          savedOnline = false;
+          await _offlineQueue.queue(offlineAction);
+        }
       } else {
         await _offlineQueue.queue(offlineAction);
       }
 
-      if (online && earlyCheckoutDeduction.shouldNotify) {
+      if (savedOnline && earlyCheckoutDeduction.shouldNotify) {
         await _notifyRole(
           role: 'hr_admin',
           type: 'salary_deduction_pending',
@@ -390,7 +441,7 @@ class AttendanceService {
           data: {'attendanceId': checkInDoc?.id ?? checkInLog.attendanceId},
         );
       }
-      if (online && effectiveLocationRisk.requiresReview) {
+      if (savedOnline && effectiveLocationRisk.requiresReview) {
         await _notifyLocationSecurityReview(
           employee: employee,
           attendanceId: checkInDoc?.id ?? checkInLog.attendanceId,
@@ -403,6 +454,23 @@ class AttendanceService {
 
   Future<void> syncPendingOfflineAttendance() {
     return _offlineQueue.syncPendingActions();
+  }
+
+  bool _isTemporaryFirestoreFailure(Object error) {
+    if (error is TimeoutException) return true;
+    if (error is FirebaseException) {
+      return const {
+        'unavailable',
+        'deadline-exceeded',
+        'aborted',
+        'resource-exhausted',
+        'internal',
+      }.contains(error.code);
+    }
+    final message = error.toString().toLowerCase();
+    return message.contains('cloud_firestore/unavailable') ||
+        message.contains('service is currently unavailable') ||
+        message.contains('deadline-exceeded');
   }
 
   Future<AttendancePolicyConfig> policyConfigForDisplay() {
@@ -428,6 +496,7 @@ class AttendanceService {
     GeofenceResult geoResult, {
     required bool capturedOffline,
     required bool bypassedByWfh,
+    required bool strictLocationOnly,
   }) {
     if (bypassedByWfh) {
       return const _LocationRiskAssessment.clean();
@@ -440,6 +509,14 @@ class AttendanceService {
       return const _LocationRiskAssessment.blocked(
         message: 'تم رفض العملية بسبب اكتشاف موقع وهمي أو Mock GPS.',
         reasons: ['mock_location'],
+      );
+    }
+
+    if (strictLocationOnly && geoResult.accuracyMeters > 25) {
+      return _LocationRiskAssessment.blocked(
+        message:
+            'دقة الموقع يجب أن تكون 25 متراً أو أفضل لتسجيل الحضور بالموقع فقط. انتقل لمكان مفتوح وفعّل GPS ثم أعد المحاولة.',
+        reasons: const ['location_only_accuracy_too_low'],
       );
     }
 
@@ -673,11 +750,24 @@ class AttendanceService {
       if (e is Exception && e.toString().contains('مربوط')) {
         rethrow;
       }
-      if (!allowOfflineFallback) rethrow;
+      if (!allowOfflineFallback || !_isTemporaryFirestoreFailure(e)) rethrow;
 
       if (localOwner != null && localOwner != employee.uid) {
         throw Exception(
           'هذا الجهاز مربوط محلياً بحساب موظف آخر. اتصل بالإنترنت للتحقق أو اطلب من HR إعادة الضبط.',
+        );
+      }
+
+      if (locallyRegisteredDevice.isEmpty && localOwner == null) {
+        throw Exception(
+          'لأمان تسجيل الحضور، يجب تسجيل أول حضور مرة واحدة وأنت متصل بالإنترنت لربط الحساب بهذا الجهاز.',
+        );
+      }
+      if (locallyRegisteredDevice.isNotEmpty &&
+          locallyRegisteredDevice != deviceId &&
+          !canMigrateLegacyDevice) {
+        throw Exception(
+          'هذا الحساب مربوط بجهاز حضور آخر. اتصل بالإنترنت للتحقق أو اطلب من HR إعادة الضبط.',
         );
       }
 

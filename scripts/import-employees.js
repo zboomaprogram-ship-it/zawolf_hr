@@ -1,6 +1,8 @@
 const fs = require('fs');
 const path = require('path');
 const admin = require('firebase-admin');
+const { installFirestoreCompatibility } = require('./firebase-service-account');
+installFirestoreCompatibility(admin);
 
 const initialPassword = process.env.INITIAL_EMPLOYEE_PASSWORD || 'ZW@0000';
 const csvPath = process.env.IMPORT_CSV_PATH || '../zawolf_employee_accounts_import.csv';
@@ -20,7 +22,7 @@ if (process.env.FIREBASE_SERVICE_ACCOUNT) {
   }
 
   admin.initializeApp({
-    credential: admin.credential.cert(serviceAccount),
+    credential: admin.cert(serviceAccount),
   });
   console.log(`Using Firebase service account: ${serviceAccount.client_email}`);
   console.log(`Firebase project id: ${serviceAccount.project_id}`);

@@ -40,9 +40,20 @@ class AttendanceSecurityService {
     return trimmed.replaceAll('/', '_');
   }
 
-  Future<AttendanceSecurityResult> verifyForAttendance() async {
+  Future<AttendanceSecurityResult> verifyForAttendance({
+    bool requireBiometric = true,
+  }) async {
     final device = await _readDevice();
     await _assertTrustedDevice();
+
+    if (!requireBiometric) {
+      return AttendanceSecurityResult(
+        deviceId: device.id,
+        deviceLabel: device.label,
+        legacyDeviceId: device.legacyId,
+        biometricVerified: false,
+      );
+    }
 
     final availableBiometrics = await _localAuth.getAvailableBiometrics();
     final hasBiometric = availableBiometrics.isNotEmpty;

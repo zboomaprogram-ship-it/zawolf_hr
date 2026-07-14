@@ -107,7 +107,11 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
     }
 
     try {
-      final res = await GeofenceService().validateCheckIn(user);
+      final policy = await AttendanceService().policyConfigForDisplay();
+      final res = await GeofenceService().validateCheckIn(
+        user,
+        strictLocationOnly: !policy.requiresBiometric,
+      );
       if (mounted) {
         setState(() {
           _geofenceResult = res;

@@ -1,4 +1,6 @@
 const admin = require('firebase-admin');
+const { installFirestoreCompatibility } = require('./firebase-service-account');
+installFirestoreCompatibility(admin);
 
 let serviceAccount;
 try {
@@ -9,7 +11,7 @@ try {
 }
 
 admin.initializeApp({
-  credential: admin.credential.cert(serviceAccount),
+  credential: admin.cert(serviceAccount),
 });
 
 const db = admin.firestore();

@@ -4,6 +4,9 @@ const assert = require('node:assert/strict');
 const { routeForNotification } = require('../dispatch-notifications');
 const { isWorkDay, notificationFor } = require('../attendance-reminders');
 const { parseFirebaseServiceAccount } = require('../firebase-service-account');
+const { getExistingFirebaseApp } = require('../firebase-service-account');
+const { installFirestoreCompatibility } = require('../firebase-service-account');
+const admin = require('firebase-admin');
 
 test('request and task notifications open the intended app areas', () => {
   assert.equal(routeForNotification('permission_pending_hr'), '/manager/requests');
@@ -52,4 +55,23 @@ test('normalizes Hostinger escaped Firebase service-account JSON', () => {
   assert.equal(parsed.project_id, original.project_id);
   assert.equal(parsed.client_email, original.client_email);
   assert.match(parsed.private_key, /line-one\nline-two/);
+});
+
+test('supports the Firebase Admin v14 app registry API', () => {
+  const app = { name: 'default' };
+  assert.equal(getExistingFirebaseApp({ getApps: () => [app] }), app);
+  assert.equal(getExistingFirebaseApp({ getApps: () => [] }), null);
+});
+
+test('uses the Firebase Admin v14 certificate factory', () => {
+  assert.equal(typeof admin.cert, 'function');
+  assert.equal(typeof admin.credential, 'undefined');
+});
+
+test('installs Firestore compatibility for Firebase Admin v14', () => {
+  const fakeAdmin = {};
+  installFirestoreCompatibility(fakeAdmin);
+  assert.equal(typeof fakeAdmin.firestore, 'function');
+  assert.equal(typeof fakeAdmin.firestore.FieldValue, 'function');
+  assert.equal(typeof fakeAdmin.firestore.Timestamp, 'function');
 });

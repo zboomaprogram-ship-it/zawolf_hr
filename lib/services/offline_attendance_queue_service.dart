@@ -30,6 +30,7 @@ class OfflineAttendanceAction {
   final double accuracyMeters;
   final String deviceId;
   final String deviceLabel;
+  final bool biometricVerified;
   final double? totalWorkHours;
   final bool isLate;
   final int lateMinutes;
@@ -64,6 +65,7 @@ class OfflineAttendanceAction {
     required this.accuracyMeters,
     required this.deviceId,
     required this.deviceLabel,
+    required this.biometricVerified,
     this.totalWorkHours,
     required this.isLate,
     required this.lateMinutes,
@@ -102,6 +104,7 @@ class OfflineAttendanceAction {
       accuracyMeters: (json['accuracyMeters'] as num).toDouble(),
       deviceId: json['deviceId'] as String,
       deviceLabel: json['deviceLabel'] as String,
+      biometricVerified: json['biometricVerified'] as bool? ?? true,
       totalWorkHours: (json['totalWorkHours'] as num?)?.toDouble(),
       isLate: json['isLate'] as bool? ?? false,
       lateMinutes: json['lateMinutes'] as int? ?? 0,
@@ -149,6 +152,7 @@ class OfflineAttendanceAction {
       'accuracyMeters': accuracyMeters,
       'deviceId': deviceId,
       'deviceLabel': deviceLabel,
+      'biometricVerified': biometricVerified,
       if (totalWorkHours != null) 'totalWorkHours': totalWorkHours,
       'isLate': isLate,
       'lateMinutes': lateMinutes,
@@ -190,7 +194,7 @@ class OfflineAttendanceAction {
       'salaryDeductionApprovalStatus': salaryDeductionApprovalStatus,
       'deviceId': deviceId,
       'deviceLabel': deviceLabel,
-      'biometricVerified': true,
+      'biometricVerified': biometricVerified,
       'status': status,
       'offlineCaptured': true,
       'offlineCapturedAt': Timestamp.fromDate(eventTime),
@@ -218,7 +222,7 @@ class OfflineAttendanceAction {
       'totalWorkHours': totalWorkHours ?? 0,
       'checkOutDeviceId': deviceId,
       'checkOutDeviceLabel': deviceLabel,
-      'checkOutBiometricVerified': true,
+      'checkOutBiometricVerified': biometricVerified,
       'offlineCheckoutCaptured': true,
       'offlineCheckoutCapturedAt': Timestamp.fromDate(eventTime),
       'offlineCheckoutDistanceMeters': distanceMeters,

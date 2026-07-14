@@ -1,8 +1,10 @@
 const admin = require('firebase-admin');
+const { installFirestoreCompatibility } = require('./firebase-service-account');
+installFirestoreCompatibility(admin);
 const serviceAccount = require('/Users/seg/Downloads/zawolf-hr-system-60317-firebase-adminsdk-fbsvc-92ac87dc9b.json');
 
 admin.initializeApp({
-  credential: admin.credential.cert(serviceAccount)
+  credential: admin.cert(serviceAccount)
 });
 
 const db = admin.firestore();

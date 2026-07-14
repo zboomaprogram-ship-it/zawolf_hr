@@ -37,4 +37,23 @@ function parseFirebaseServiceAccount(rawValue) {
   }
 }
 
-module.exports = { parseFirebaseServiceAccount };
+function getExistingFirebaseApp(admin) {
+  const apps = typeof admin.getApps === 'function'
+    ? admin.getApps()
+    : (admin.apps || []);
+  return apps.length > 0 ? apps[0] : null;
+}
+
+function installFirestoreCompatibility(admin) {
+  if (typeof admin.firestore === 'function') return;
+  const { FieldValue, Timestamp, getFirestore } = require('firebase-admin/firestore');
+  admin.firestore = getFirestore;
+  admin.firestore.FieldValue = FieldValue;
+  admin.firestore.Timestamp = Timestamp;
+}
+
+module.exports = {
+  getExistingFirebaseApp,
+  installFirestoreCompatibility,
+  parseFirebaseServiceAccount,
+};

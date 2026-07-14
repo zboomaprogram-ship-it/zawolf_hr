@@ -22,6 +22,10 @@ workflows:
           find . -name "Podfile" -execdir pod install \;
       - name: Build iOS App
         script: |
+          if [ -z "${ONESIGNAL_APP_ID:-}" ]; then
+            echo "ONESIGNAL_APP_ID is missing. Add it to Codemagic group: production."
+            exit 1
+          fi
           flutter build ipa --release \
             --dart-define=ONESIGNAL_APP_ID=$ONESIGNAL_APP_ID
     artifacts:

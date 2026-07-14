@@ -1,6 +1,8 @@
 const fs = require('fs');
 const path = require('path');
 const admin = require('firebase-admin');
+const { installFirestoreCompatibility } = require('./firebase-service-account');
+installFirestoreCompatibility(admin);
 
 const dryRun = process.env.DRY_RUN !== 'false';
 const mappingPath = process.env.EMAIL_UPDATES_CSV || './email_updates.csv';
@@ -18,7 +20,7 @@ try {
 }
 
 admin.initializeApp({
-  credential: admin.credential.cert(serviceAccount),
+  credential: admin.cert(serviceAccount),
 });
 
 if (serviceAccount.project_id !== expectedProjectId) {

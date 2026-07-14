@@ -1,6 +1,11 @@
 const admin = require('firebase-admin');
 const { isOneSignalConfigured, sendPushToUsers } = require('./onesignal');
-const { parseFirebaseServiceAccount } = require('./firebase-service-account');
+const {
+  getExistingFirebaseApp,
+  installFirestoreCompatibility,
+  parseFirebaseServiceAccount,
+} = require('./firebase-service-account');
+installFirestoreCompatibility(admin);
 
 function dispatchConfig() {
   return {
@@ -11,14 +16,15 @@ function dispatchConfig() {
 }
 
 function initializeFirebase() {
-  if (admin.apps.length) return admin.app();
+  const existingApp = getExistingFirebaseApp(admin);
+  if (existingApp) return existingApp;
 
   const serviceAccount = parseFirebaseServiceAccount(
     process.env.FIREBASE_SERVICE_ACCOUNT,
   );
 
   const app = admin.initializeApp({
-    credential: admin.credential.cert(serviceAccount),
+    credential: admin.cert(serviceAccount),
   });
 
   console.log(`Using Firebase service account: ${serviceAccount.client_email}`);

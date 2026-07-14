@@ -58,7 +58,10 @@ class GeofenceService {
   }
 
   // Validate employee position against their assigned branch's geofence
-  Future<GeofenceResult> validateCheckIn(UserModel employee) async {
+  Future<GeofenceResult> validateCheckIn(
+    UserModel employee, {
+    bool strictLocationOnly = false,
+  }) async {
     // 1. Verify permissions
     final hasPermission = await handleLocationPermission();
     if (!hasPermission) {
@@ -83,7 +86,9 @@ class GeofenceService {
     final location = LocationModel.fromFirestore(locationDoc);
 
     // 3. Get device GPS position (high accuracy)
-    final position = await _getReliablePosition();
+    final position = await _getReliablePosition(
+      allowLastKnown: !strictLocationOnly,
+    );
 
     // 4. Calculate distance in meters using Haversine formula
     final distanceMeters = Geolocator.distanceBetween(
@@ -97,8 +102,11 @@ class GeofenceService {
     final isMocked = position.isMocked;
 
     // 6. Check if user is inside the geofence radius.
-    // GPS can drift indoors, so allow a small bounded tolerance from reported accuracy.
-    final accuracyTolerance = position.accuracy.clamp(0, 35).toDouble();
+    // Location-only attendance uses the configured radius exactly. Biometric
+    // mode retains a small tolerance for normal indoor GPS drift.
+    final accuracyTolerance = strictLocationOnly
+        ? 0.0
+        : position.accuracy.clamp(0, 35).toDouble();
     final effectiveRadius = location.geofenceRadiusMeters + accuracyTolerance;
     final isWithin = distanceMeters <= effectiveRadius;
 
@@ -113,17 +121,19 @@ class GeofenceService {
     );
   }
 
-  Future<Position> _getReliablePosition() async {
+  Future<Position> _getReliablePosition({required bool allowLastKnown}) async {
     try {
       return await Geolocator.getCurrentPosition(
         desiredAccuracy: LocationAccuracy.high,
         timeLimit: const Duration(seconds: 20),
       );
     } catch (_) {
-      final lastKnown = await Geolocator.getLastKnownPosition();
-      if (lastKnown != null &&
-          DateTime.now().difference(lastKnown.timestamp).inMinutes <= 2) {
-        return lastKnown;
+      if (allowLastKnown) {
+        final lastKnown = await Geolocator.getLastKnownPosition();
+        if (lastKnown != null &&
+            DateTime.now().difference(lastKnown.timestamp).inMinutes <= 2) {
+          return lastKnown;
+        }
       }
       try {
         return await Geolocator.getCurrentPosition(

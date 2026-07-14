@@ -1,18 +1,24 @@
 const admin = require('firebase-admin');
-const { parseFirebaseServiceAccount } = require('./firebase-service-account');
+const {
+  getExistingFirebaseApp,
+  installFirestoreCompatibility,
+  parseFirebaseServiceAccount,
+} = require('./firebase-service-account');
+installFirestoreCompatibility(admin);
 
 const CAIRO_TIME_ZONE = 'Africa/Cairo';
 const REMINDER_WINDOW_MINUTES = 5;
 
 function initializeFirebase() {
-  if (admin.apps.length) return admin.app();
+  const existingApp = getExistingFirebaseApp(admin);
+  if (existingApp) return existingApp;
 
   const serviceAccount = parseFirebaseServiceAccount(
     process.env.FIREBASE_SERVICE_ACCOUNT,
   );
 
   return admin.initializeApp({
-    credential: admin.credential.cert(serviceAccount),
+    credential: admin.cert(serviceAccount),
   });
 }
 
@@ -48,8 +54,13 @@ function formatTime(minutes) {
 
 function timestampToDateKey(value) {
   if (!value) return null;
+  if (typeof value === 'string') {
+    const matchedDate = value.match(/^(\d{4}-\d{2}-\d{2})/);
+    if (matchedDate) return matchedDate[1];
+  }
+
   const date = typeof value.toDate === 'function' ? value.toDate() : value;
-  if (!(date instanceof Date)) return null;
+  if (!(date instanceof Date) || Number.isNaN(date.getTime())) return null;
   return cairoParts(date).dateKey;
 }
 

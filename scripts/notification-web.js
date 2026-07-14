@@ -5,6 +5,10 @@ const { queueAttendanceReminders } = require('./attendance-reminders');
 
 const port = Number(process.env.PORT || 3000);
 const dispatchSecret = process.env.NOTIFICATION_DISPATCH_SECRET || '';
+const backgroundIntervalMs = Math.max(
+  60000,
+  Number(process.env.NOTIFICATION_DISPATCH_INTERVAL_MS || 60000),
+);
 let runningDispatch = null;
 
 function sendJson(res, statusCode, payload) {
@@ -88,6 +92,40 @@ async function handleAttendanceReminders(req, res, url) {
   }
 }
 
+// Hostinger keeps this Node process alive, so it can deliver pushes without
+// depending on GitHub's best-effort scheduled workflow. Firestore's claim and
+// reminder-run documents make this safe when a manual endpoint or GitHub run
+// overlaps with the in-process schedule.
+async function runBackgroundDispatch() {
+  if (runningDispatch) return;
+
+  runningDispatch = (async () => {
+    let reminders;
+    try {
+      reminders = await queueAttendanceReminders();
+    } catch (error) {
+      // A reminder query failure must not stop approvals, tasks, and other
+      // pending notifications from being delivered.
+      console.error('Background attendance reminder scan failed:', error);
+      reminders = { error: String(error.message || error) };
+    }
+
+    const push = await dispatchNotifications();
+    return { reminders, push };
+  })();
+
+  try {
+    const result = await runningDispatch;
+    if (result.reminders.queued || result.push.found) {
+      console.log('Background notification dispatch:', result);
+    }
+  } catch (error) {
+    console.error('Background notification dispatch failed:', error);
+  } finally {
+    runningDispatch = null;
+  }
+}
+
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
 
@@ -115,4 +153,9 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(port, '0.0.0.0', () => {
   console.log(`ZaWolf notification dispatcher listening on port ${port}`);
+  // Run shortly after a deploy, then at least once per minute. The attendance
+  // scanner has a five-minute delivery window, so minute-level polling will
+  // not miss a reminder if the service starts between five-minute boundaries.
+  setTimeout(() => void runBackgroundDispatch(), 5000);
+  setInterval(() => void runBackgroundDispatch(), backgroundIntervalMs);
 });

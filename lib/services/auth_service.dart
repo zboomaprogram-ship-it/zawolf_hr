@@ -1,8 +1,10 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models/user_model.dart';
 import '../models/employee_role.dart';
 import 'audit_log_service.dart';
@@ -21,6 +23,8 @@ class AuthService with ChangeNotifier {
   int _authSessionVersion = 0;
   String? _startedSessionServicesForUid;
   bool _interactiveSignInInProgress = false;
+
+  static const _cachedProfileKey = 'zawolf.auth.cached_profile.v1';
 
   UserModel? get currentUser => _currentUser;
   bool get loading => _loading;
@@ -49,10 +53,30 @@ class AuthService with ChangeNotifier {
           unawaited(_startUserSessionServices(user.uid));
           return;
         }
+        final cachedUser = await _readCachedProfile(user.uid);
+        if (sessionVersion != _authSessionVersion) return;
+
+        if (cachedUser != null) {
+          // Firebase has already restored this user's credential. Let the app
+          // open using the last known profile, then refresh it without making
+          // a slow or offline Firestore read look like a forced logout.
+          _currentUser = cachedUser;
+          _loading = false;
+          notifyListeners();
+          unawaited(_startUserSessionServices(user.uid));
+          unawaited(
+            fetchUserData(
+              user.uid,
+              sessionVersion: sessionVersion,
+              showLoading: false,
+            ),
+          );
+          return;
+        }
+
         _currentUser = null;
         _loading = true;
         notifyListeners();
-
         await fetchUserData(user.uid, sessionVersion: sessionVersion);
         if (sessionVersion != _authSessionVersion) return;
         if (_currentUser != null) {
@@ -73,10 +97,16 @@ class AuthService with ChangeNotifier {
     await DailyReminderService.instance.cancelAll();
   }
 
-  Future<void> fetchUserData(String uid, {int? sessionVersion}) async {
+  Future<void> fetchUserData(
+    String uid, {
+    int? sessionVersion,
+    bool showLoading = true,
+  }) async {
     try {
-      _loading = true;
-      notifyListeners();
+      if (showLoading) {
+        _loading = true;
+        notifyListeners();
+      }
 
       final doc = await _readUserDocument(uid);
       if (sessionVersion != null && sessionVersion != _authSessionVersion) {
@@ -84,21 +114,62 @@ class AuthService with ChangeNotifier {
       }
       if (doc.exists) {
         _currentUser = UserModel.fromFirestore(doc);
+        if (_currentUser!.isActive) {
+          await _cacheProfile(_currentUser!);
+        } else {
+          _currentUser = null;
+          await _clearCachedProfile();
+          unawaited(_auth.signOut());
+        }
       } else {
         _currentUser = null;
+        await _clearCachedProfile();
       }
     } catch (e) {
       if (sessionVersion != null && sessionVersion != _authSessionVersion) {
         return;
       }
       if (kDebugMode) print('Error fetching user data: $e');
-      _currentUser = null;
+      // Keep a same-user cached profile during a temporary network, token, or
+      // Firestore startup failure. Firebase Auth remains the source of truth
+      // for the session; this only avoids sending a valid user back to login.
+      if (_currentUser?.uid != uid) {
+        _currentUser = await _readCachedProfile(uid);
+      }
     } finally {
       if (sessionVersion == null || sessionVersion == _authSessionVersion) {
-        _loading = false;
+        if (showLoading) {
+          _loading = false;
+        }
         notifyListeners();
       }
     }
+  }
+
+  Future<UserModel?> _readCachedProfile(String uid) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_cachedProfileKey);
+      if (raw == null || raw.isEmpty) return null;
+
+      final data = jsonDecode(raw);
+      if (data is! Map<String, dynamic>) return null;
+      final cachedUser = UserModel.fromSessionCache(data);
+      return cachedUser.uid == uid ? cachedUser : null;
+    } catch (e) {
+      if (kDebugMode) debugPrint('Unable to restore cached user profile: $e');
+      return null;
+    }
+  }
+
+  Future<void> _cacheProfile(UserModel user) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_cachedProfileKey, jsonEncode(user.toSessionCache()));
+  }
+
+  Future<void> _clearCachedProfile() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_cachedProfileKey);
   }
 
   Future<DocumentSnapshot<Map<String, dynamic>>> _readUserDocument(
@@ -154,6 +225,7 @@ class AuthService with ChangeNotifier {
     unawaited(OneSignalService.instance.logout());
     unawaited(DailyReminderService.instance.cancelAll());
     notifyListeners();
+    await _clearCachedProfile();
     await _auth.signOut();
   }
 
