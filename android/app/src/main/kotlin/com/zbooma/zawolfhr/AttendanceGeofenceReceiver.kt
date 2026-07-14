@@ -12,7 +12,10 @@ import com.google.firebase.firestore.FirebaseFirestore
 class AttendanceGeofenceReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val pending = goAsync()
-        val event = GeofencingEvent.fromIntent(intent)
+        val event = GeofencingEvent.fromIntent(intent) ?: run {
+            pending.finish()
+            return
+        }
         if (event.hasError()) {
             pending.finish()
             return

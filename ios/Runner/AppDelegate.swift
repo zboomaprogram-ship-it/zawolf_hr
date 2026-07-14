@@ -4,10 +4,6 @@ import GoogleMaps
 import CoreLocation
 import FirebaseAuth
 import FirebaseFirestore
-#if canImport(AlarmKit)
-import AlarmKit
-import SwiftUI
-#endif
 
 @main
 @objc class AppDelegate: FlutterAppDelegate {
@@ -34,55 +30,14 @@ import SwiftUI
     channel.setMethodCallHandler { call, result in
       switch call.method {
       case "iosAlarmAvailability":
-        #if canImport(AlarmKit)
-        if #available(iOS 26.0, *) { result(true) } else { result(false) }
-        #else
         result(false)
-        #endif
       case "scheduleIosWorkAlarm":
-        guard let arguments = call.arguments as? [String: Any],
-              let hour = arguments["hour"] as? Int,
-              let minute = arguments["minute"] as? Int else {
-          result(FlutterError(code: "invalid_arguments", message: "وقت المنبه غير صالح.", details: nil))
-          return
-        }
-        #if canImport(AlarmKit)
-        if #available(iOS 26.0, *) {
-          Task {
-            do {
-              let alarmID = try await IosWorkAlarm.schedule(
-                existingID: arguments["alarmId"] as? String,
-                hour: hour,
-                minute: minute
-              )
-              result(["alarmId": alarmID])
-            } catch {
-              result(FlutterError(code: "alarm_schedule_failed", message: error.localizedDescription, details: nil))
-            }
-          }
-        } else {
-          result(FlutterError(code: "alarmkit_unavailable", message: "يتطلب منبه النظام iOS 26 أو أحدث.", details: nil))
-        }
-        #else
-        result(FlutterError(code: "alarmkit_unavailable", message: "يتطلب منبه النظام إصداراً أحدث من iOS.", details: nil))
-        #endif
+        // The Flutter local-notification fallback is used on iOS. AlarmKit's
+        // public API is still changing across Xcode releases, so compiling it
+        // into a production HR app would make releases unnecessarily fragile.
+        result(FlutterError(code: "alarmkit_unavailable", message: "سيتم استخدام تذكير iPhone المحلي بدلاً من منبه النظام.", details: nil))
       case "cancelIosWorkAlarm":
-        #if canImport(AlarmKit)
-        if #available(iOS 26.0, *),
-           let arguments = call.arguments as? [String: Any],
-           let alarmID = arguments["alarmId"] as? String {
-          do {
-            try IosWorkAlarm.cancel(id: alarmID)
-            result(nil)
-          } catch {
-            result(FlutterError(code: "alarm_cancel_failed", message: error.localizedDescription, details: nil))
-          }
-        } else {
-          result(nil)
-        }
-        #else
         result(nil)
-        #endif
       default:
         result(FlutterMethodNotImplemented)
       }
@@ -264,59 +219,3 @@ private final class AutomaticAttendanceRegionDelegate: NSObject, CLLocationManag
     pendingEvent = nil
   }
 }
-
-#if canImport(AlarmKit)
-@available(iOS 26.0, *)
-private enum IosWorkAlarm {
-  static func schedule(
-    existingID: String?,
-    hour: Int,
-    minute: Int
-  ) async throws -> String {
-    let manager = AlarmManager.shared
-    let authorization = try await manager.requestAuthorization()
-    guard authorization == .authorized else {
-      throw IosWorkAlarmError.notAuthorized
-    }
-
-    let id = existingID.flatMap(UUID.init(uuidString:)) ?? UUID()
-    try? manager.cancel(id: id)
-    let time = Alarm.Schedule.Relative.Time(hour: hour, minute: minute)
-    let schedule = Alarm.Schedule.relative(
-      .init(
-        time: time,
-        repeats: .weekly([.monday, .tuesday, .wednesday, .thursday, .saturday, .sunday])
-      )
-    )
-    let alert = AlarmPresentation.Alert(
-      title: "منبه الدوام",
-      stopButton: .stopButton
-    )
-    let attributes: AlarmAttributes<EmptyMetadata> = .init(
-      presentation: AlarmPresentation(alert: alert),
-      metadata: nil,
-      tintColor: .cyan
-    )
-    let configuration = AlarmManager.AlarmConfiguration.alarm(
-      schedule: schedule,
-      attributes: attributes
-    )
-    _ = try await manager.schedule(id: id, configuration: configuration)
-    return id.uuidString
-  }
-
-  static func cancel(id: String) throws {
-    guard let alarmID = UUID(uuidString: id) else { return }
-    try AlarmManager.shared.cancel(id: alarmID)
-  }
-}
-
-@available(iOS 26.0, *)
-private enum IosWorkAlarmError: LocalizedError {
-  case notAuthorized
-
-  var errorDescription: String? {
-    "لم يتم السماح لمنبه الدوام. فعّل إذن المنبه من إعدادات iPhone ثم أعد المحاولة."
-  }
-}
-#endif
