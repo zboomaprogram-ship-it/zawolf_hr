@@ -410,20 +410,6 @@ class PermissionService {
     } catch (_) {}
   }
 
-  // Reset monthly balance client-side
-  Future<void> checkAndResetMonthlyPermissionQuota(UserModel user) async {
-    final currentMonth = DateFormat('yyyy-MM').format(DateTime.now());
-
-    if (user.permissionBalance.lastResetMonth != currentMonth) {
-      await _db.collection('users').doc(user.uid).update({
-        'permissionBalance.usedThisMonth': 0,
-        'permissionBalance.usedHoursThisMonth': 0.0,
-        'permissionBalance.lastResetMonth': currentMonth,
-        'updatedAt': FieldValue.serverTimestamp(),
-      });
-    }
-  }
-
   // Private Helper to create notification records
   Future<void> _createNotification({
     required String recipientId,

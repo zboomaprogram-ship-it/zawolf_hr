@@ -470,6 +470,23 @@ class AttendanceService {
     return _offlineQueue.syncPendingActions();
   }
 
+  /// Binds the current trusted device before automatic attendance is enabled.
+  /// This deliberately uses the same one-device-per-account transaction as
+  /// manual attendance, without prompting for biometrics.
+  Future<AttendanceSecurityResult> prepareAutomaticAttendance(
+    UserModel employee,
+  ) async {
+    final security = await _securityService.verifyForAttendance(
+      requireBiometric: false,
+    );
+    await _ensureAttendanceDeviceBinding(
+      employee,
+      security,
+      allowOfflineFallback: false,
+    );
+    return security;
+  }
+
   bool _isTemporaryFirestoreFailure(Object error) {
     if (error is TimeoutException) return true;
     if (error is FirebaseException) {

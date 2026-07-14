@@ -103,6 +103,7 @@ import SwiftUI
         guard let arguments = call.arguments as? [String: Any],
               let userId = arguments["userId"] as? String,
               let employeeId = arguments["employeeId"] as? String,
+              let deviceId = arguments["deviceId"] as? String,
               let locationId = arguments["locationId"] as? String,
               let locationName = arguments["locationName"] as? String,
               let latitude = arguments["latitude"] as? Double,
@@ -118,6 +119,8 @@ import SwiftUI
         self?.automaticAttendance.configure(
           userId: userId,
           employeeId: employeeId,
+          deviceId: deviceId,
+          deviceLabel: arguments["deviceLabel"] as? String ?? "",
           locationId: locationId,
           locationName: locationName,
           latitude: latitude,
@@ -151,6 +154,8 @@ private final class AutomaticAttendanceRegionDelegate: NSObject, CLLocationManag
   func configure(
     userId: String,
     employeeId: String,
+    deviceId: String,
+    deviceLabel: String,
     locationId: String,
     locationName: String,
     latitude: Double,
@@ -160,6 +165,8 @@ private final class AutomaticAttendanceRegionDelegate: NSObject, CLLocationManag
     let config: [String: Any] = [
       "userId": userId,
       "employeeId": employeeId,
+      "deviceId": deviceId,
+      "deviceLabel": deviceLabel,
       "locationId": locationId,
       "locationName": locationName,
       "latitude": latitude,
@@ -237,6 +244,8 @@ private final class AutomaticAttendanceRegionDelegate: NSObject, CLLocationManag
     let data: [String: Any] = [
       "userId": userId,
       "employeeId": config["employeeId"] as? String ?? "",
+      "deviceId": config["deviceId"] as? String ?? "",
+      "deviceLabel": config["deviceLabel"] as? String ?? "",
       "locationId": config["locationId"] as? String ?? "",
       "locationName": config["locationName"] as? String ?? "",
       "event": event,

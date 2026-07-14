@@ -69,12 +69,14 @@ class MainActivity : FlutterFragmentActivity() {
     private fun configureAndroidGeofence(call: io.flutter.plugin.common.MethodCall, result: MethodChannel.Result) {
         val userId = call.argument<String>("userId")
         val employeeId = call.argument<String>("employeeId") ?: ""
+        val deviceId = call.argument<String>("deviceId") ?: ""
+        val deviceLabel = call.argument<String>("deviceLabel") ?: ""
         val locationId = call.argument<String>("locationId")
         val locationName = call.argument<String>("locationName") ?: ""
         val latitude = call.argument<Double>("latitude")
         val longitude = call.argument<Double>("longitude")
         val radius = call.argument<Double>("radiusMeters")
-        if (userId.isNullOrEmpty() || locationId.isNullOrEmpty() || latitude == null || longitude == null || radius == null) {
+        if (userId.isNullOrEmpty() || deviceId.isEmpty() || locationId.isNullOrEmpty() || latitude == null || longitude == null || radius == null) {
             result.error("INVALID_GEOFENCE", "بيانات فرع الحضور غير مكتملة.", null)
             return
         }
@@ -89,6 +91,8 @@ class MainActivity : FlutterFragmentActivity() {
         prefs.edit()
             .putString("userId", userId)
             .putString("employeeId", employeeId)
+            .putString("deviceId", deviceId)
+            .putString("deviceLabel", deviceLabel)
             .putString("locationId", locationId)
             .putString("locationName", locationName)
             .apply()

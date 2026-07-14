@@ -26,8 +26,8 @@ function isAuthorized(req, url) {
   const auth = req.headers.authorization || '';
   const bearer = auth.startsWith('Bearer ') ? auth.slice('Bearer '.length) : '';
   return (
-    url.searchParams.get('secret') === dispatchSecret ||
-    bearer === dispatchSecret
+    bearer === dispatchSecret ||
+    req.headers['x-notification-dispatch-secret'] === dispatchSecret
   );
 }
 

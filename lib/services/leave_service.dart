@@ -12,6 +12,21 @@ class LeaveService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
   final FirebaseStorage _storage = FirebaseStorage.instance;
 
+  String _attachmentContentType(String pathOrExtension) {
+    final extension = pathOrExtension.split('.').last.trim().toLowerCase();
+    switch (extension) {
+      case 'jpg':
+      case 'jpeg':
+        return 'image/jpeg';
+      case 'png':
+        return 'image/png';
+      case 'webp':
+        return 'image/webp';
+      default:
+        return 'application/pdf';
+    }
+  }
+
   List<String> _approvalManagerIds(UserModel employee, String fallbackId) {
     final ids = employee.managerIds
         .where((id) => id.trim().isNotEmpty)
@@ -92,9 +107,7 @@ class LeaveService {
     );
     final uploadTask = await ref.putData(
       fileBytes,
-      SettableMetadata(
-        contentType: 'application/pdf',
-      ), // typical document format
+      SettableMetadata(contentType: _attachmentContentType(fileExtension)),
     );
     return await uploadTask.ref.getDownloadURL();
   }
@@ -110,7 +123,10 @@ class LeaveService {
     final ref = _storage.ref().child(
       'leaves/$userId/${leaveId}_cert.$fileExtension',
     );
-    final uploadTask = await ref.putFile(file);
+    final uploadTask = await ref.putFile(
+      file,
+      SettableMetadata(contentType: _attachmentContentType(fileExtension)),
+    );
     return await uploadTask.ref.getDownloadURL();
   }
 

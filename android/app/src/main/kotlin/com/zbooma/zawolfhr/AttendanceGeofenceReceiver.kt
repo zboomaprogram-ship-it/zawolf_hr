@@ -36,6 +36,8 @@ class AttendanceGeofenceReceiver : BroadcastReceiver() {
         val data = hashMapOf<String, Any>(
             "userId" to configuredUserId,
             "employeeId" to (prefs.getString("employeeId", "") ?: ""),
+            "deviceId" to (prefs.getString("deviceId", "") ?: ""),
+            "deviceLabel" to (prefs.getString("deviceLabel", "") ?: ""),
             "locationId" to (prefs.getString("locationId", "") ?: ""),
             "locationName" to (prefs.getString("locationName", "") ?: ""),
             "event" to transition,

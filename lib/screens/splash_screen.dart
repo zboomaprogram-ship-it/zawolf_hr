@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 import '../services/auth_service.dart';
-import '../services/permission_service.dart';
 import '../models/employee_role.dart';
 import '../theme/theme.dart';
 import '../services/notification_service.dart';
@@ -52,14 +51,6 @@ class _SplashScreenState extends State<SplashScreen>
 
     // Check authentication
     if (authService.isAuthenticated) {
-      final user = authService.currentUser;
-      if (user != null) {
-        // Monthly quota maintenance is not required to open the dashboard.
-        // Running it in the background prevents a slow Firestore request from
-        // trapping a remembered session on the splash screen.
-        _resetMonthlyPermissionQuota(user);
-      }
-
       if (!mounted) return;
       final role = authService.currentUser?.role;
 
@@ -81,16 +72,6 @@ class _SplashScreenState extends State<SplashScreen>
       }
     } else {
       context.go('/login');
-    }
-  }
-
-  Future<void> _resetMonthlyPermissionQuota(user) async {
-    try {
-      await PermissionService()
-          .checkAndResetMonthlyPermissionQuota(user)
-          .timeout(const Duration(seconds: 5));
-    } catch (e) {
-      debugPrint('Failed to reset monthly quota: $e');
     }
   }
 

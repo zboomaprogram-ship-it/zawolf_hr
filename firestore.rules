@@ -66,6 +66,31 @@ service cloud.firestore {
           .get('attendancePolicy', {})
           .get('attendanceVerificationMode', 'location_only') != 'location_only';
     }
+    function sequentialManagerDecision() {
+      let managerIds = resource.data.get('managerIds', []);
+      let currentIndex = resource.data.get('managerApprovalIndex', 0);
+      let nextIndex = currentIndex + 1;
+      return managerIds.size() == 0
+        || (
+          currentIndex >= 0
+          && currentIndex < managerIds.size()
+          && managerIds[currentIndex] == uid()
+          && (
+            request.resource.data.status == 'rejected'
+            || (
+              request.resource.data.status == 'pending_manager'
+              && nextIndex < managerIds.size()
+              && request.resource.data.managerApprovalIndex == nextIndex
+              && request.resource.data.managerId == managerIds[nextIndex]
+            )
+            || (
+              request.resource.data.status == 'approved'
+              && nextIndex >= managerIds.size()
+              && request.resource.data.managerApprovalIndex == currentIndex
+            )
+          )
+        );
+    }
     function isValidSelfCreate() {
       return request.resource.data.userId == uid()
         && request.resource.data.employeeId == userDoc().get('employeeId', '')
@@ -216,20 +241,15 @@ service cloud.firestore {
             'permissionBalance.usedHoursThisMonth',
             'permissionBalance.lastResetMonth',
             'updatedAt'
-          ]);
-    }
-    function employeeQuotaReset(userId) {
-      return isOwner(userId)
-        && request.resource.data.diff(resource.data).affectedKeys()
-          .hasOnly([
-            'permissionBalance',
-            'permissionBalance.usedThisMonth',
-            'permissionBalance.usedHoursThisMonth',
-            'permissionBalance.lastResetMonth',
-            'updatedAt'
           ])
-        && request.resource.data.permissionBalance.usedThisMonth == 0
-        && request.resource.data.permissionBalance.usedHoursThisMonth == 0.0;
+        && request.resource.data.permissionBalance.lastResetMonth
+          == resource.data.permissionBalance.lastResetMonth
+        && request.resource.data.permissionBalance.usedThisMonth
+          == resource.data.permissionBalance.usedThisMonth + 1
+        && request.resource.data.permissionBalance.usedHoursThisMonth
+          > resource.data.permissionBalance.usedHoursThisMonth
+        && request.resource.data.permissionBalance.usedHoursThisMonth
+          <= resource.data.permissionBalance.usedHoursThisMonth + 8;
     }
     function hrCanWriteUser() {
       return isHRRole()
@@ -239,6 +259,8 @@ service cloud.firestore {
           'displayName', 'employeeId', 'department', 'position', 'role',
           'locationId', 'locationName', 'baseMonthlySalary', 'salaryCurrency',
           'leaveBalance', 'leaveBalance.daysOff',
+          'permissionBalance', 'permissionBalance.usedThisMonth',
+          'permissionBalance.usedHoursThisMonth', 'permissionBalance.lastResetMonth',
           'managerId', 'managerName', 'managerIds', 'managerNames',
           'managerCodes', 'teamLeaderId', 'teamLeaderName',
           'isActive', 'workSchedule', 'updatedAt',
@@ -298,7 +320,19 @@ service cloud.firestore {
       && request.resource.data.salaryDeductionFraction >= 0
       && request.resource.data.salaryDeductionFraction <= 1
       && request.resource.data.salaryDeductionAmount >= 0
-      && request.resource.data.lateMinutes >= 0;
+      && request.resource.data.lateMinutes >= 0
+      && request.resource.data.get('deviceId', '') == userDoc()
+        .get('registeredAttendanceDeviceId', '')
+      && request.resource.data.get('deviceLabel', '') is string
+      && request.resource.data.checkInTime is timestamp
+      && (
+        attendanceRequiresBiometric()
+        || (
+          request.resource.data.get('locationCapturedOffline', false) == false
+          && request.resource.data.checkInTime >= request.time - duration.value(5, 'm')
+          && request.resource.data.checkInTime <= request.time + duration.value(1, 'm')
+        )
+      );
     }
     function attendanceOwnerCheckoutKeys() {
       return request.resource.data.diff(resource.data).affectedKeys()
@@ -343,7 +377,18 @@ service cloud.firestore {
         && request.resource.data.salaryDeductionAmount >= 0
         && request.resource.data.salaryDeductionApprovalStatus in [
           'none', 'pending_hr', 'approved', 'rejected'
-        ];
+        ]
+        && request.resource.data.get('checkOutDeviceId', '') == userDoc()
+          .get('registeredAttendanceDeviceId', '')
+        && request.resource.data.checkOutTime is timestamp
+        && (
+          attendanceRequiresBiometric()
+          || (
+            request.resource.data.get('checkoutLocationCapturedOffline', false) == false
+            && request.resource.data.checkOutTime >= request.time - duration.value(5, 'm')
+            && request.resource.data.checkOutTime <= request.time + duration.value(1, 'm')
+          )
+        );
     }
     function attendanceOwnerCheckInReplacement() {
       return isOwner(resource.data.userId)
@@ -405,7 +450,8 @@ service cloud.firestore {
     }
     function leaveManagerReview() {
       return (
-          (isManagerRole() && isMyManager(resource.data.managerId)) ||
+          (isManagerRole() && isMyManager(resource.data.managerId)
+            && sequentialManagerDecision()) ||
           isSuperAdmin()
         )
         && resource.data.status == 'pending_manager'
@@ -430,7 +476,8 @@ service cloud.firestore {
     }
     function advanceManagerReview() {
       return (
-          (isManagerRole() && isMyManager(resource.data.managerId)) ||
+          (isManagerRole() && isMyManager(resource.data.managerId)
+            && sequentialManagerDecision()) ||
           isSuperAdmin()
         )
         && resource.data.status == 'pending_manager'
@@ -457,7 +504,8 @@ service cloud.firestore {
     }
     function permissionManagerReview() {
       return (
-          (isManagerRole() && isMyManager(resource.data.managerId)) ||
+          (isManagerRole() && isMyManager(resource.data.managerId)
+            && sequentialManagerDecision()) ||
           isSuperAdmin()
         )
         && resource.data.status == 'pending_manager'
@@ -695,7 +743,6 @@ service cloud.firestore {
         (isOwner(userId) && ownerProfileUpdate()) ||
         (isOwner(userId) && ownerAttendanceDeviceBind()) ||
         (isOwner(userId) && ownerAttendanceDeviceLegacyMigration()) ||
-        (isOwner(userId) && employeeQuotaReset(userId)) ||
         managerBalanceUpdate() ||
         canIncrementUnreadOnly()
       );
@@ -711,7 +758,9 @@ service cloud.firestore {
     }
 
     match /attendanceDevices/{deviceId} {
-      allow read: if isAuth() && isActive();
+      allow read: if isAuth() && isActive() && (
+        isOwner(resource.data.userId) || isHR()
+      );
       allow create: if isAuth() && isActive()
         && !exists(/databases/$(database)/documents/attendanceDevices/$(deviceId))
         && request.resource.data.keys().hasOnly([
@@ -732,11 +781,12 @@ service cloud.firestore {
       allow create: if isAuth() && isActive()
         && request.resource.data.keys().hasOnly([
           'userId', 'employeeId', 'locationId', 'locationName', 'event',
-          'latitude', 'longitude', 'accuracyMeters', 'capturedAtMillis',
+          'deviceId', 'deviceLabel', 'latitude', 'longitude', 'accuracyMeters', 'capturedAtMillis',
           'source', 'status', 'createdAt'
         ])
         && request.resource.data.userId == uid()
         && request.resource.data.employeeId == userDoc().get('employeeId', '')
+        && request.resource.data.deviceId == userDoc().get('registeredAttendanceDeviceId', '')
         && request.resource.data.locationId == userDoc().get('locationId', '')
         && request.resource.data.event in ['enter', 'exit']
         && request.resource.data.source in ['android_geofence', 'ios_region']
@@ -744,6 +794,8 @@ service cloud.firestore {
         && request.resource.data.latitude is number
         && request.resource.data.longitude is number
         && request.resource.data.accuracyMeters is number
+        && request.resource.data.deviceId is string
+        && request.resource.data.deviceLabel is string
         && request.resource.data.capturedAtMillis is int
         && request.resource.data.createdAt == request.time;
       allow read: if isAuth() && isActive() && (

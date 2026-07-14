@@ -150,7 +150,7 @@ async function processSignal(db, signalDoc, company, now) {
   if (!userDoc.exists || !locationDoc.exists) return resolveSignal(db, signalDoc, 'rejected_account_or_location');
   const user = userDoc.data();
   const location = locationDoc.data();
-  if (!user.isActive || user.employeeId !== signal.employeeId || user.locationId !== signal.locationId || !location.isActive) {
+  if (!user.isActive || user.employeeId !== signal.employeeId || user.locationId !== signal.locationId || user.registeredAttendanceDeviceId !== signal.deviceId || !location.isActive) {
     return resolveSignal(db, signalDoc, 'rejected_assignment');
   }
   if (!isWorkDay(user, signalTime.weekday)) return resolveSignal(db, signalDoc, 'ignored_non_work_day');
@@ -171,7 +171,9 @@ async function processSignal(db, signalDoc, company, now) {
   }
   const policy = company.attendancePolicy || company || {};
   const times = effectiveTimes(user, policy, todaysPermissions);
-  const attendanceRef = db.collection('attendance').doc(`${userDoc.id}_${now.dateKey}`);
+  // The dispatcher can run after midnight while processing an event captured
+  // shortly before it. The attendance date must follow the validated signal.
+  const attendanceRef = db.collection('attendance').doc(`${userDoc.id}_${signalTime.dateKey}`);
   const attendance = await attendanceRef.get();
   if (signal.event === 'enter') {
     const opensAt = parseMinutes(policy.checkInOpenTime, 7 * 60);
@@ -182,6 +184,7 @@ async function processSignal(db, signalDoc, company, now) {
       userId: userDoc.id, employeeId: user.employeeId || '', employeeName: user.displayName || '',
       locationId: signal.locationId, locationName: location.name || signal.locationName || '',
       managerId: user.managerId || null, date: signalTime.dateKey,
+      deviceId: signal.deviceId, deviceLabel: signal.deviceLabel || '',
       checkInTime: admin.firestore.Timestamp.fromDate(capturedAt),
       localCheckInTime: admin.firestore.Timestamp.fromDate(capturedAt),
       checkInLocation: new admin.firestore.GeoPoint(Number(signal.latitude), Number(signal.longitude)),
@@ -219,6 +222,7 @@ async function processSignal(db, signalDoc, company, now) {
     checkOutLocation: new admin.firestore.GeoPoint(Number(signal.latitude), Number(signal.longitude)),
     totalWorkHours: Math.max(0, (capturedAt.getTime() - checkIn.getTime()) / 3600000),
     checkOutAutomatic: true, checkOutAttendanceSource: signal.source,
+    checkOutDeviceId: signal.deviceId, checkOutDeviceLabel: signal.deviceLabel || '',
     checkoutLocationAccuracyMeters: accuracy, checkoutLocationDistanceMeters: distance,
     checkoutLocationAllowedRadiusMeters: radius, checkoutLocationMocked: false,
     checkoutLocationCapturedOffline: false, checkoutSecurityReviewStatus: 'none',
