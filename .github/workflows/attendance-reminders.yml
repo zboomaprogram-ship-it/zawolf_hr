@@ -1,9 +1,7 @@
 name: Attendance Reminder Notifications
 
 on:
-  schedule:
-    # Queue reminders in a five-minute Cairo-time window, then push them.
-    - cron: '*/5 * * * *'
+  # Hostinger is the live scheduler. This workflow is manual backup only.
   workflow_dispatch:
 
 concurrency:

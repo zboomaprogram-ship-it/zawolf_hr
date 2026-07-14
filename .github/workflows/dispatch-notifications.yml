@@ -1,9 +1,8 @@
 name: Dispatch Push Notifications
 
 on:
-  schedule:
-    # GitHub Actions cannot run every second; this polls often enough without Cloud Functions.
-    - cron: '*/5 * * * *'
+  # Hostinger is the live dispatcher. Keep this as a manual recovery tool so
+  # two independent five-minute schedulers do not exhaust Firestore quota.
   workflow_dispatch:
     inputs:
       batch_size:

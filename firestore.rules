@@ -100,13 +100,14 @@ service cloud.firestore {
     }
     function notificationKeysAreValid() {
       return request.resource.data.keys().hasOnly([
-        'notificationId', 'type', 'title', 'body', 'data', 'isRead', 'createdAt'
+        'notificationId', 'type', 'title', 'body', 'data', 'isRead', 'pushSent', 'createdAt'
       ])
       && request.resource.data.notificationId is string
       && request.resource.data.type is string
       && request.resource.data.title is string
       && request.resource.data.body is string
-      && request.resource.data.isRead == false;
+        && request.resource.data.isRead == false
+        && request.resource.data.pushSent == false;
     }
     function canCreateNotificationFor(userId) {
       return uid() == userId

@@ -1127,6 +1127,7 @@ class AttendanceService {
           : 'تم رفض حركة الحضور بعد مراجعة مؤشرات الموقع. تواصل مع HR إذا احتجت توضيحاً.',
       'data': {'attendanceId': attendanceId},
       'isRead': false,
+      'pushSent': false,
       'createdAt': FieldValue.serverTimestamp(),
     });
     await _db.collection('users').doc(userId).update({
@@ -1180,6 +1181,7 @@ class AttendanceService {
             'body': body,
             'data': {'attendanceId': attendanceId},
             'isRead': false,
+            'pushSent': false,
             'createdAt': FieldValue.serverTimestamp(),
           });
           await _db.collection('users').doc(userId).update({

@@ -7,8 +7,8 @@ const { processAutomaticAttendance } = require('./auto-attendance');
 const port = Number(process.env.PORT || 3000);
 const dispatchSecret = process.env.NOTIFICATION_DISPATCH_SECRET || '';
 const backgroundIntervalMs = Math.max(
-  60000,
-  Number(process.env.NOTIFICATION_DISPATCH_INTERVAL_MS || 60000),
+  5 * 60 * 1000,
+  Number(process.env.NOTIFICATION_DISPATCH_INTERVAL_MS || 5 * 60 * 1000),
 );
 let runningDispatch = null;
 
@@ -161,9 +161,9 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(port, '0.0.0.0', () => {
   console.log(`ZaWolf notification dispatcher listening on port ${port}`);
-  // Run shortly after a deploy, then at least once per minute. The attendance
-  // scanner has a five-minute delivery window, so minute-level polling will
-  // not miss a reminder if the service starts between five-minute boundaries.
+  // Run shortly after a deploy, then every five minutes. The reminder scanner
+  // uses a ten-minute delivery window, so this avoids Firestore quota-heavy
+  // minute polling without missing a scheduled reminder.
   setTimeout(() => void runBackgroundDispatch(), 5000);
   setInterval(() => void runBackgroundDispatch(), backgroundIntervalMs);
 });

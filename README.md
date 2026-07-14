@@ -53,7 +53,7 @@ OneSignal push:
 - App fully killed/offline: OneSignal can deliver push notifications if the app
   was built with `ONESIGNAL_APP_ID` and the user has logged in at least once.
 
-This is still a no-Cloud-Functions setup. GitHub Actions sends scheduled push
+This is still a no-Cloud-Functions setup. Hostinger sends scheduled push
 notifications through OneSignal for daily HR tasks. Instant push for every
 in-app event still needs a trusted sender to call the OneSignal REST API at the
 moment the event happens.

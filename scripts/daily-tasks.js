@@ -223,6 +223,7 @@ async function runDailyTasks() {
         body,
         data: data || {},
         isRead: false,
+        pushSent: false,
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
       });
       batchOps++;
@@ -263,6 +264,7 @@ async function runDailyTasks() {
           body,
           data: { taskId: taskDoc.id },
           isRead: false,
+          pushSent: false,
           createdAt: admin.firestore.FieldValue.serverTimestamp(),
         });
         batchOps++;

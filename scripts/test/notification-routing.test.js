@@ -5,7 +5,11 @@ const {
   routeForNotification,
   isUnsubscribedDeviceError,
 } = require('../dispatch-notifications');
-const { isWorkDay, notificationFor } = require('../attendance-reminders');
+const {
+  isWorkDay,
+  isReminderScanWindow,
+  notificationFor,
+} = require('../attendance-reminders');
 const { parseFirebaseServiceAccount } = require('../firebase-service-account');
 const { deductionFor, effectiveTimes, haversineMeters } = require('../auto-attendance');
 const { getExistingFirebaseApp } = require('../firebase-service-account');
@@ -71,6 +75,19 @@ test('attendance reminders follow work days and approved permission times', () =
   assert.equal(lateWarning.targetMinutes, 11 * 60 + 10);
   assert.equal(checkOut.targetMinutes, 15 * 60);
   assert.match(checkOut.body, /15:00/);
+});
+
+test('attendance scans do not read employees outside the configured work window', () => {
+  assert.equal(isReminderScanWindow(5 * 60 + 55, {}), false);
+  assert.equal(isReminderScanWindow(9 * 60, {}), true);
+  assert.equal(isReminderScanWindow(20 * 60 + 5, {}), false);
+  assert.equal(
+    isReminderScanWindow(22 * 60, {
+      reminderScanStartTime: '21:00',
+      reminderScanEndTime: '02:00',
+    }),
+    true,
+  );
 });
 
 test('normalizes Hostinger escaped Firebase service-account JSON', () => {

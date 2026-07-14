@@ -81,39 +81,45 @@ function notificationPayload(doc, data) {
 
 async function loadPendingNotifications(db) {
   const { batchSize, perUserLimit, maxAttempts } = dispatchConfig();
-  const usersSnap = await db.collection('users').where('isActive', '==', true).get();
+  // A collection-group query avoids scanning every user and then every user's
+  // notification subcollection on each Hostinger interval.
+  const candidatesSnap = await db.collectionGroup('items')
+    .where('isRead', '==', false)
+    .where('pushSent', '==', false)
+    .limit(batchSize * 5)
+    .get();
+  const userIds = [...new Set(candidatesSnap.docs.map((doc) => doc.ref.parent.parent?.id).filter(Boolean))];
+  const userDocs = userIds.length
+    ? await db.getAll(...userIds.map((userId) => db.collection('users').doc(userId)))
+    : [];
+  const activeUsers = new Set(
+    userDocs.filter((doc) => doc.exists && doc.data()?.isActive === true).map((doc) => doc.id),
+  );
   const pending = [];
+  const perUserCount = new Map();
 
-  for (const userDoc of usersSnap.docs) {
+  for (const doc of candidatesSnap.docs) {
     if (pending.length >= batchSize) break;
-    const userId = userDoc.id;
-    const snap = await db
-      .collection('notifications')
-      .doc(userId)
-      .collection('items')
-      .where('isRead', '==', false)
-      .limit(perUserLimit)
-      .get();
-
-    for (const doc of snap.docs) {
-      const data = doc.data();
-      const attempts = Number(data.pushAttemptCount || 0);
-      const waitingForDeviceSubscription = isUnsubscribedDeviceError(
-        data.pushLastError,
-      );
-      const nextRetryAt = data.pushNextRetryAt?.toDate?.();
-      if (nextRetryAt && nextRetryAt > new Date()) continue;
-      if (
-        data.pushSent === true ||
-        (attempts >= maxAttempts && !waitingForDeviceSubscription)
-      ) {
-        continue;
-      }
-      const claimed = await claimNotification(db, doc.ref);
-      if (!claimed) continue;
-      pending.push({ userId, ref: doc.ref, id: doc.id, data });
-      if (pending.length >= batchSize) break;
+    const userId = doc.ref.parent.parent?.id;
+    if (!userId || !activeUsers.has(userId)) continue;
+    if ((perUserCount.get(userId) || 0) >= perUserLimit) continue;
+    const data = doc.data();
+    const attempts = Number(data.pushAttemptCount || 0);
+    const waitingForDeviceSubscription = isUnsubscribedDeviceError(
+      data.pushLastError,
+    );
+    const nextRetryAt = data.pushNextRetryAt?.toDate?.();
+    if (nextRetryAt && nextRetryAt > new Date()) continue;
+    if (
+      data.pushSent === true ||
+      (attempts >= maxAttempts && !waitingForDeviceSubscription)
+    ) {
+      continue;
     }
+    const claimed = await claimNotification(db, doc.ref);
+    if (!claimed) continue;
+    pending.push({ userId, ref: doc.ref, id: doc.id, data });
+    perUserCount.set(userId, (perUserCount.get(userId) || 0) + 1);
   }
 
   return pending;

@@ -368,6 +368,7 @@ class LeaveService {
       'body': body,
       'data': data ?? {},
       'isRead': false,
+      'pushSent': false,
       'createdAt': FieldValue.serverTimestamp(),
     });
 

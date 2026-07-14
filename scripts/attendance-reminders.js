@@ -7,7 +7,9 @@ const {
 installFirestoreCompatibility(admin);
 
 const CAIRO_TIME_ZONE = 'Africa/Cairo';
-const REMINDER_WINDOW_MINUTES = 5;
+// The Hostinger process scans every five minutes. A ten-minute window covers
+// a delayed scan while the run-document prevents duplicate reminders.
+const REMINDER_WINDOW_MINUTES = 10;
 
 function initializeFirebase() {
   const existingApp = getExistingFirebaseApp(admin);
@@ -50,6 +52,16 @@ function parseMinutes(value, fallback) {
 
 function formatTime(minutes) {
   return `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
+}
+
+function isReminderScanWindow(nowMinutes, policy) {
+  // This avoids reading the full employee list overnight. Companies with an
+  // unusual shift can override either value in attendancePolicy in Firestore.
+  const start = parseMinutes(policy.reminderScanStartTime, 6 * 60);
+  const end = parseMinutes(policy.reminderScanEndTime, 20 * 60);
+  return start <= end
+    ? nowMinutes >= start && nowMinutes <= end
+    : nowMinutes >= start || nowMinutes <= end;
 }
 
 function timestampToDateKey(value) {
@@ -161,18 +173,24 @@ async function queueAttendanceReminders() {
   const now = cairoParts();
   if (now.weekday === 'Fri') return { queued: 0, skipped: 'friday', date: now.dateKey };
 
-  const [companyDayOff, companySnap, usersSnap, leavesSnap, permissionsSnap, fieldAssignmentsSnap] = await Promise.all([
+  const [companyDayOff, companySnap] = await Promise.all([
     db.collection('companyDayOffs').doc(now.dateKey).get(),
     db.collection('companies').doc('zawolf').get(),
-    db.collection('users').where('isActive', '==', true).get(),
-    db.collection('leaves').where('status', '==', 'approved').get(),
-    db.collection('permissions').where('status', '==', 'approved').where('requestDate', '==', now.dateKey).get(),
-    db.collection('fieldAssignments').where('status', '==', 'active').where('date', '==', now.dateKey).get(),
   ]);
   if (companyDayOff.exists && companyDayOff.data()?.isActive === true) {
     return { queued: 0, skipped: 'company_day_off', date: now.dateKey };
   }
   const policy = companySnap.data()?.attendancePolicy || companySnap.data() || {};
+  if (!isReminderScanWindow(now.minutes, policy)) {
+    return { queued: 0, skipped: 'outside_reminder_window', date: now.dateKey };
+  }
+
+  const [usersSnap, leavesSnap, permissionsSnap, fieldAssignmentsSnap] = await Promise.all([
+    db.collection('users').where('isActive', '==', true).get(),
+    db.collection('leaves').where('status', '==', 'approved').get(),
+    db.collection('permissions').where('status', '==', 'approved').where('requestDate', '==', now.dateKey).get(),
+    db.collection('fieldAssignments').where('status', '==', 'active').where('date', '==', now.dateKey).get(),
+  ]);
 
   const leaveByUser = new Map();
   for (const doc of leavesSnap.docs) {
@@ -208,8 +226,6 @@ async function queueAttendanceReminders() {
     const reminderLeadMinutes = Number(policy.checkInReminderLeadMinutes ?? 10);
     const lateReminderMinutes = Number(policy.checkInLateWarningMinutes ?? 10);
 
-    const attendance = await db.collection('attendance').doc(`${userDoc.id}_${now.dateKey}`).get();
-    const attendanceData = attendance.exists ? attendance.data() : null;
     const plans = [
       { kind: 'check_in_before', notification: notificationFor({ kind: 'check_in_before', startMinutes: effectiveStart, endMinutes: effectiveEnd, hasLatePermission: Boolean(late), hasEarlyPermission: Boolean(early), reminderLeadMinutes, lateReminderMinutes }) },
       { kind: 'check_in_start', notification: notificationFor({ kind: 'check_in_start', startMinutes: effectiveStart, endMinutes: effectiveEnd, hasLatePermission: Boolean(late), hasEarlyPermission: Boolean(early), reminderLeadMinutes, lateReminderMinutes }) },
@@ -217,13 +233,23 @@ async function queueAttendanceReminders() {
       { kind: 'check_out', notification: notificationFor({ kind: 'check_out', startMinutes: effectiveStart, endMinutes: effectiveEnd, hasLatePermission: Boolean(late), hasEarlyPermission: Boolean(early) }) },
     ];
 
-    for (const plan of plans) {
-      if (plan.kind === 'check_out' && fieldAssignments.some((item) => item.requiresCheckout === false)) continue;
+    const duePlans = plans.filter((plan) => {
+      if (plan.kind === 'check_out' && fieldAssignments.some((item) => item.requiresCheckout === false)) return false;
+      return now.minutes >= plan.notification.targetMinutes
+        && now.minutes < plan.notification.targetMinutes + REMINDER_WINDOW_MINUTES;
+    });
+    if (!duePlans.length) continue;
+
+    // Do not read one attendance document per active employee on every scan.
+    // Attendance is needed only for an employee with a reminder due now.
+    const attendance = await db.collection('attendance').doc(`${userDoc.id}_${now.dateKey}`).get();
+    const attendanceData = attendance.exists ? attendance.data() : null;
+
+    for (const plan of duePlans) {
       const isAlreadyDone = plan.kind.startsWith('check_in')
         ? attendanceData?.checkInTime != null
         : attendanceData?.checkOutTime != null || attendanceData?.checkInTime == null;
       if (isAlreadyDone) continue;
-      if (now.minutes < plan.notification.targetMinutes || now.minutes >= plan.notification.targetMinutes + REMINDER_WINDOW_MINUTES) continue;
       if (await createReminder(db, { userId: userDoc.id, dateKey: now.dateKey, kind: plan.kind, notification: plan.notification })) queued++;
     }
   }
@@ -238,6 +264,7 @@ if (require.main === module) {
 
 module.exports = {
   isWorkDay,
+  isReminderScanWindow,
   notificationFor,
   queueAttendanceReminders,
 };
