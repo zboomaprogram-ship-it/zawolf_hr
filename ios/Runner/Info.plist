@@ -41,6 +41,8 @@
 	<string>يستخدم التطبيق الكاميرا لمسح رموز QR ورفع الصور المطلوبة.</string>
 	<key>NSFaceIDUsageDescription</key>
 	<string>يستخدم التطبيق Face ID لتأمين تسجيل الحضور والانصراف.</string>
+	<key>NSAlarmKitUsageDescription</key>
+	<string>يستخدم ZaWolf HR هذا الإذن فقط عندما تختار تفعيل منبه الدوام الشخصي.</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
 	<string>يستخدم التطبيق موقعك للتحقق من الحضور في الفروع المحددة.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
@@ -52,6 +54,7 @@
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>fetch</string>
+		<string>location</string>
 		<string>remote-notification</string>
 	</array>
 	<key>UILaunchStoryboardName</key>

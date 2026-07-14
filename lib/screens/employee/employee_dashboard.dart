@@ -9,6 +9,7 @@ import '../../theme/theme.dart';
 import '../../components/wolf_card.dart';
 import '../../services/auth_service.dart';
 import '../../services/attendance_service.dart';
+import '../../services/automatic_attendance_service.dart';
 import '../../services/company_day_off_service.dart';
 import '../../services/geofence_service.dart';
 import '../../models/attendance_model.dart';
@@ -88,6 +89,9 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
         _checkCurrentGeofence();
         _checkCompanyDayOff();
         _refreshAttendanceGate(user);
+        // This only registers Android's branch boundary after the employee
+        // has explicitly granted Always Location. It never prompts here.
+        AutomaticAttendanceService.instance.configureFor(user).catchError((_) {});
       });
     }
   }

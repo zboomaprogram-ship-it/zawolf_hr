@@ -18,6 +18,8 @@ import '../screens/employee/profile_settings.dart';
 import '../screens/employee/performance_view.dart';
 import '../screens/employee/suggestions_screen.dart';
 import '../screens/hr/company_day_offs_screen.dart';
+import '../screens/hr/attendance_policy_settings_screen.dart';
+import '../screens/hr/field_assignments_screen.dart';
 import '../screens/hr/location_mgmt.dart';
 import '../screens/hr/payroll_screen.dart';
 import '../screens/manager/manager_dashboard.dart';
@@ -321,6 +323,15 @@ class ZaWolfRouter {
             GoRoute(
               path: '/hr/day-offs',
               builder: (context, state) => const CompanyDayOffsScreen(),
+            ),
+            GoRoute(
+              path: '/hr/attendance-policy',
+              builder: (context, state) =>
+                  const AttendancePolicySettingsScreen(),
+            ),
+            GoRoute(
+              path: '/hr/field-assignments',
+              builder: (context, state) => const FieldAssignmentsScreen(),
             ),
           ],
         ),

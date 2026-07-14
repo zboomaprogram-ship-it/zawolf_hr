@@ -2,6 +2,7 @@ const http = require('http');
 const { URL } = require('url');
 const { dispatchNotifications } = require('./dispatch-notifications');
 const { queueAttendanceReminders } = require('./attendance-reminders');
+const { processAutomaticAttendance } = require('./auto-attendance');
 
 const port = Number(process.env.PORT || 3000);
 const dispatchSecret = process.env.NOTIFICATION_DISPATCH_SECRET || '';
@@ -46,7 +47,11 @@ async function handleDispatch(req, res, url) {
   }
 
   const startedAt = new Date().toISOString();
-  runningDispatch = dispatchNotifications();
+  runningDispatch = (async () => {
+    const automaticAttendance = await processAutomaticAttendance();
+    const push = await dispatchNotifications();
+    return { automaticAttendance, ...push };
+  })();
   try {
     const result = await runningDispatch;
     sendJson(res, 200, {
@@ -78,9 +83,10 @@ async function handleAttendanceReminders(req, res, url) {
     return;
   }
   runningDispatch = (async () => {
+    const automaticAttendance = await processAutomaticAttendance();
     const reminders = await queueAttendanceReminders();
     const push = await dispatchNotifications();
-    return { reminders, push };
+    return { automaticAttendance, reminders, push };
   })();
   try {
     sendJson(res, 200, { ok: true, ...(await runningDispatch) });
@@ -101,7 +107,9 @@ async function runBackgroundDispatch() {
 
   runningDispatch = (async () => {
     let reminders;
+    let automaticAttendance;
     try {
+      automaticAttendance = await processAutomaticAttendance();
       reminders = await queueAttendanceReminders();
     } catch (error) {
       // A reminder query failure must not stop approvals, tasks, and other
@@ -111,7 +119,7 @@ async function runBackgroundDispatch() {
     }
 
     const push = await dispatchNotifications();
-    return { reminders, push };
+    return { automaticAttendance, reminders, push };
   })();
 
   try {

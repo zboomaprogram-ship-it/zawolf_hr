@@ -46,9 +46,10 @@ function getExistingFirebaseApp(admin) {
 
 function installFirestoreCompatibility(admin) {
   if (typeof admin.firestore === 'function') return;
-  const { FieldValue, Timestamp, getFirestore } = require('firebase-admin/firestore');
+  const { FieldValue, GeoPoint, Timestamp, getFirestore } = require('firebase-admin/firestore');
   admin.firestore = getFirestore;
   admin.firestore.FieldValue = FieldValue;
+  admin.firestore.GeoPoint = GeoPoint;
   admin.firestore.Timestamp = Timestamp;
 }
 

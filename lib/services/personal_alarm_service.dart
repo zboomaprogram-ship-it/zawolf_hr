@@ -27,8 +27,9 @@ class PersonalAlarmSettings {
       '${hour.toString().padLeft(2, '0')}:${minute.toString().padLeft(2, '0')}';
 }
 
-/// A personal, opt-in work alarm. Android delegates to the user's Clock app,
-/// while iOS uses the strongest daily local-notification reminder Apple allows.
+/// A personal, opt-in work alarm. Android delegates to the user's Clock app.
+/// iOS 26+ uses AlarmKit only after the employee turns the feature on;
+/// older iOS versions fall back to a daily local notification.
 class PersonalAlarmService {
   PersonalAlarmService._();
   static final PersonalAlarmService instance = PersonalAlarmService._();
@@ -37,8 +38,14 @@ class PersonalAlarmService {
   static const _enabledKeyPrefix = 'personal_alarm_enabled_';
   static const _hourKeyPrefix = 'personal_alarm_hour_';
   static const _minuteKeyPrefix = 'personal_alarm_minute_';
+  static const _iosAlarmIdKeyPrefix = 'personal_alarm_ios_id_';
 
   bool get usesAndroidClock => Platform.isAndroid;
+
+  Future<bool> get supportsIosSystemAlarm async {
+    if (!Platform.isIOS) return false;
+    return await _channel.invokeMethod<bool>('iosAlarmAvailability') ?? false;
+  }
 
   Future<PersonalAlarmSettings> load(String userId) async {
     final prefs = await SharedPreferences.getInstance();
@@ -60,9 +67,6 @@ class PersonalAlarmService {
       minute: minute,
     );
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('$_enabledKeyPrefix$userId', true);
-    await prefs.setInt('$_hourKeyPrefix$userId', hour);
-    await prefs.setInt('$_minuteKeyPrefix$userId', minute);
 
     if (Platform.isAndroid) {
       await _channel.invokeMethod<void>('setSystemAlarm', {
@@ -71,8 +75,26 @@ class PersonalAlarmService {
         'message': 'منبه الدوام - ZaWolf HR',
       });
     } else if (Platform.isIOS) {
-      await _scheduleIosReminder(userId, settings);
+      if (await supportsIosSystemAlarm) {
+        final existingAlarmId = prefs.getString('$_iosAlarmIdKeyPrefix$userId');
+        final response = await _channel.invokeMapMethod<String, dynamic>(
+          'scheduleIosWorkAlarm',
+          {'alarmId': existingAlarmId, 'hour': hour, 'minute': minute},
+        );
+        final alarmId = response?['alarmId'] as String?;
+        if (alarmId == null || alarmId.isEmpty) {
+          throw Exception('تعذر جدولة منبه iPhone.');
+        }
+        await prefs.setString('$_iosAlarmIdKeyPrefix$userId', alarmId);
+      } else {
+        await NotificationService.instance.requestPermissions();
+        await _scheduleIosReminder(userId, settings);
+      }
     }
+    // Do not mark the setting enabled until the platform has accepted it.
+    await prefs.setBool('$_enabledKeyPrefix$userId', true);
+    await prefs.setInt('$_hourKeyPrefix$userId', hour);
+    await prefs.setInt('$_minuteKeyPrefix$userId', minute);
     return settings;
   }
 
@@ -93,6 +115,13 @@ class PersonalAlarmService {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('$_enabledKeyPrefix$userId', false);
     if (Platform.isIOS) {
+      final alarmId = prefs.getString('$_iosAlarmIdKeyPrefix$userId');
+      if (alarmId != null && alarmId.isNotEmpty) {
+        await _channel.invokeMethod<void>('cancelIosWorkAlarm', {
+          'alarmId': alarmId,
+        });
+        await prefs.remove('$_iosAlarmIdKeyPrefix$userId');
+      }
       await NotificationService.instance.cancelNotification(
         _notificationIdFor(userId),
       );

@@ -79,16 +79,32 @@ function isWorkDay(user, cairoWeekday) {
   return cairoWeekday !== 'Fri';
 }
 
-function notificationFor({ kind, startMinutes, endMinutes, hasLatePermission, hasEarlyPermission }) {
-  if (kind === 'check_in') {
+function notificationFor({ kind, startMinutes, endMinutes, hasLatePermission, hasEarlyPermission, reminderLeadMinutes = 10, lateReminderMinutes = 10 }) {
+  if (kind === 'check_in_before') {
     const effectiveStart = startMinutes;
     return {
-      targetMinutes: Math.max(0, effectiveStart - 10),
+      targetMinutes: Math.max(0, effectiveStart - reminderLeadMinutes),
       title: 'تذكير بتسجيل الحضور',
       body: hasLatePermission
         ? `موعد حضورك المعتمد اليوم الساعة ${formatTime(effectiveStart)}. لا تنسَ تسجيل الحضور.`
         : `موعد بدء الدوام الساعة ${formatTime(effectiveStart)}. لا تنسَ تسجيل الحضور.`,
       type: 'attendance_check_in_reminder',
+    };
+  }
+  if (kind === 'check_in_start') {
+    return {
+      targetMinutes: startMinutes,
+      title: 'حان وقت تسجيل الحضور',
+      body: `موعد حضورك المعتمد الآن الساعة ${formatTime(startMinutes)}. سجّل حضورك لتجنب الخصم.`,
+      type: 'attendance_check_in_reminder',
+    };
+  }
+  if (kind === 'check_in_late_warning') {
+    return {
+      targetMinutes: startMinutes + lateReminderMinutes,
+      title: 'تنبيه قبل خصم التأخير',
+      body: `لم يتم تسجيل حضورك بعد. سجّل الحضور الآن قبل بدء احتساب خصم التأخير.`,
+      type: 'attendance_late_warning',
     };
   }
   return {
@@ -145,15 +161,18 @@ async function queueAttendanceReminders() {
   const now = cairoParts();
   if (now.weekday === 'Fri') return { queued: 0, skipped: 'friday', date: now.dateKey };
 
-  const [companyDayOff, usersSnap, leavesSnap, permissionsSnap] = await Promise.all([
+  const [companyDayOff, companySnap, usersSnap, leavesSnap, permissionsSnap, fieldAssignmentsSnap] = await Promise.all([
     db.collection('companyDayOffs').doc(now.dateKey).get(),
+    db.collection('companies').doc('zawolf').get(),
     db.collection('users').where('isActive', '==', true).get(),
     db.collection('leaves').where('status', '==', 'approved').get(),
     db.collection('permissions').where('status', '==', 'approved').where('requestDate', '==', now.dateKey).get(),
+    db.collection('fieldAssignments').where('status', '==', 'active').where('date', '==', now.dateKey).get(),
   ]);
   if (companyDayOff.exists && companyDayOff.data()?.isActive === true) {
     return { queued: 0, skipped: 'company_day_off', date: now.dateKey };
   }
+  const policy = companySnap.data()?.attendancePolicy || companySnap.data() || {};
 
   const leaveByUser = new Map();
   for (const doc of leavesSnap.docs) {
@@ -166,6 +185,12 @@ async function queueAttendanceReminders() {
     if (!permissionsByUser.has(permission.userId)) permissionsByUser.set(permission.userId, []);
     permissionsByUser.get(permission.userId).push(permission);
   }
+  const fieldAssignmentsByUser = new Map();
+  for (const doc of fieldAssignmentsSnap.docs) {
+    const assignment = doc.data();
+    if (!fieldAssignmentsByUser.has(assignment.userId)) fieldAssignmentsByUser.set(assignment.userId, []);
+    fieldAssignmentsByUser.get(assignment.userId).push(assignment);
+  }
 
   let queued = 0;
   for (const userDoc of usersSnap.docs) {
@@ -173,22 +198,28 @@ async function queueAttendanceReminders() {
     if (!isWorkDay(user, now.weekday) || leaveByUser.has(userDoc.id)) continue;
 
     const permissions = permissionsByUser.get(userDoc.id) || [];
+    const fieldAssignments = fieldAssignmentsByUser.get(userDoc.id) || [];
     const late = permissions.find((item) => item.permissionType === 'late_arrival');
     const early = permissions.find((item) => item.permissionType === 'early_leave');
     const baseStart = parseMinutes(user.workSchedule?.startTime, 9 * 60);
     const baseEnd = parseMinutes(user.workSchedule?.endTime, 17 * 60);
     const effectiveStart = late ? baseStart + Number(late.durationMinutes || 0) : baseStart;
     const effectiveEnd = early ? baseEnd - Number(early.durationMinutes || 0) : baseEnd;
+    const reminderLeadMinutes = Number(policy.checkInReminderLeadMinutes ?? 10);
+    const lateReminderMinutes = Number(policy.checkInLateWarningMinutes ?? 10);
 
     const attendance = await db.collection('attendance').doc(`${userDoc.id}_${now.dateKey}`).get();
     const attendanceData = attendance.exists ? attendance.data() : null;
     const plans = [
-      { kind: 'check_in', notification: notificationFor({ kind: 'check_in', startMinutes: effectiveStart, endMinutes: effectiveEnd, hasLatePermission: Boolean(late), hasEarlyPermission: Boolean(early) }) },
+      { kind: 'check_in_before', notification: notificationFor({ kind: 'check_in_before', startMinutes: effectiveStart, endMinutes: effectiveEnd, hasLatePermission: Boolean(late), hasEarlyPermission: Boolean(early), reminderLeadMinutes, lateReminderMinutes }) },
+      { kind: 'check_in_start', notification: notificationFor({ kind: 'check_in_start', startMinutes: effectiveStart, endMinutes: effectiveEnd, hasLatePermission: Boolean(late), hasEarlyPermission: Boolean(early), reminderLeadMinutes, lateReminderMinutes }) },
+      { kind: 'check_in_late_warning', notification: notificationFor({ kind: 'check_in_late_warning', startMinutes: effectiveStart, endMinutes: effectiveEnd, hasLatePermission: Boolean(late), hasEarlyPermission: Boolean(early), reminderLeadMinutes, lateReminderMinutes }) },
       { kind: 'check_out', notification: notificationFor({ kind: 'check_out', startMinutes: effectiveStart, endMinutes: effectiveEnd, hasLatePermission: Boolean(late), hasEarlyPermission: Boolean(early) }) },
     ];
 
     for (const plan of plans) {
-      const isAlreadyDone = plan.kind === 'check_in'
+      if (plan.kind === 'check_out' && fieldAssignments.some((item) => item.requiresCheckout === false)) continue;
+      const isAlreadyDone = plan.kind.startsWith('check_in')
         ? attendanceData?.checkInTime != null
         : attendanceData?.checkOutTime != null || attendanceData?.checkInTime == null;
       if (isAlreadyDone) continue;

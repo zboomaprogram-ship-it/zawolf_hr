@@ -108,6 +108,8 @@ class AttendancePolicyConfig {
   final int quarterDayUntilMinutes;
   final int halfDayUntilMinutes;
   final int payrollWorkDaysPerMonth;
+  final int checkInReminderLeadMinutes;
+  final int checkInLateWarningMinutes;
 
   /// `location_only` is the company attendance mode. It keeps the device,
   /// root, mock-location, and geofence checks but skips the biometric prompt.
@@ -124,6 +126,8 @@ class AttendancePolicyConfig {
     this.halfDayUntilMinutes = AttendancePolicy.defaultHalfDayUntilMinutes,
     this.payrollWorkDaysPerMonth =
         AttendancePolicy.defaultPayrollWorkDaysPerMonth,
+    this.checkInReminderLeadMinutes = 10,
+    this.checkInLateWarningMinutes = 10,
     this.attendanceVerificationMode = 'location_only',
   });
 
@@ -169,6 +173,8 @@ class AttendancePolicyConfig {
         'payrollWorkDaysPerMonth',
         AttendancePolicy.defaultPayrollWorkDaysPerMonth,
       ),
+      checkInReminderLeadMinutes: readInt('checkInReminderLeadMinutes', 10),
+      checkInLateWarningMinutes: readInt('checkInLateWarningMinutes', 10),
       attendanceVerificationMode:
           map['attendanceVerificationMode'] == 'biometric'
           ? 'biometric'
@@ -186,6 +192,8 @@ class AttendancePolicyConfig {
       'quarterDayUntilMinutes': quarterDayUntilMinutes,
       'halfDayUntilMinutes': halfDayUntilMinutes,
       'payrollWorkDaysPerMonth': payrollWorkDaysPerMonth,
+      'checkInReminderLeadMinutes': checkInReminderLeadMinutes,
+      'checkInLateWarningMinutes': checkInLateWarningMinutes,
       'attendanceVerificationMode': attendanceVerificationMode,
     };
   }

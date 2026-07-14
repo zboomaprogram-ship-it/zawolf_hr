@@ -728,6 +728,30 @@ service cloud.firestore {
       allow delete: if isAuth() && isActive() && isHR();
     }
 
+    match /autoAttendanceSignals/{signalId} {
+      allow create: if isAuth() && isActive()
+        && request.resource.data.keys().hasOnly([
+          'userId', 'employeeId', 'locationId', 'locationName', 'event',
+          'latitude', 'longitude', 'accuracyMeters', 'capturedAtMillis',
+          'source', 'status', 'createdAt'
+        ])
+        && request.resource.data.userId == uid()
+        && request.resource.data.employeeId == userDoc().get('employeeId', '')
+        && request.resource.data.locationId == userDoc().get('locationId', '')
+        && request.resource.data.event in ['enter', 'exit']
+        && request.resource.data.source in ['android_geofence', 'ios_region']
+        && request.resource.data.status == 'pending'
+        && request.resource.data.latitude is number
+        && request.resource.data.longitude is number
+        && request.resource.data.accuracyMeters is number
+        && request.resource.data.capturedAtMillis is int
+        && request.resource.data.createdAt == request.time;
+      allow read: if isAuth() && isActive() && (
+        isOwner(resource.data.userId) || isHR()
+      );
+      allow update, delete: if false;
+    }
+
     match /attendance/{attendanceId} {
       allow read: if isAuth() && isActive() && (
         isOwner(resource.data.userId) ||
@@ -832,6 +856,24 @@ service cloud.firestore {
         permissionManagerReview()
       );
       allow delete: if isAuth() && isActive() && isHR();
+    }
+
+    match /fieldAssignments/{assignmentId} {
+      allow read: if isAuth() && isActive() && (
+        isOwner(resource.data.userId) ||
+        isAssignedManagerForUser(resource.data.userId) ||
+        isHR()
+      );
+      allow create: if isAuth() && isActive() && isHR()
+        && request.resource.data.keys().hasOnly([
+          'userId', 'employeeId', 'employeeName', 'department', 'locationId',
+          'date', 'startTime', 'endTime', 'reason', 'siteName',
+          'requiresReturnToOffice', 'requiresCheckout', 'status', 'createdBy',
+          'createdAt'
+        ])
+        && request.resource.data.status == 'active'
+        && request.resource.data.createdBy == uid();
+      allow update, delete: if isAuth() && isActive() && isHR();
     }
 
     match /advances/{advanceId} {

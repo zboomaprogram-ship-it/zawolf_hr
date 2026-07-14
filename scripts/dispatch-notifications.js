@@ -15,6 +15,12 @@ function dispatchConfig() {
   };
 }
 
+function isUnsubscribedDeviceError(error) {
+  return String(error?.message || error || '')
+    .toLowerCase()
+    .includes('all included players are not subscribed');
+}
+
 function initializeFirebase() {
   const existingApp = getExistingFirebaseApp(admin);
   if (existingApp) return existingApp;
@@ -92,7 +98,17 @@ async function loadPendingNotifications(db) {
     for (const doc of snap.docs) {
       const data = doc.data();
       const attempts = Number(data.pushAttemptCount || 0);
-      if (data.pushSent === true || attempts >= maxAttempts) continue;
+      const waitingForDeviceSubscription = isUnsubscribedDeviceError(
+        data.pushLastError,
+      );
+      const nextRetryAt = data.pushNextRetryAt?.toDate?.();
+      if (nextRetryAt && nextRetryAt > new Date()) continue;
+      if (
+        data.pushSent === true ||
+        (attempts >= maxAttempts && !waitingForDeviceSubscription)
+      ) {
+        continue;
+      }
       const claimed = await claimNotification(db, doc.ref);
       if (!claimed) continue;
       pending.push({ userId, ref: doc.ref, id: doc.id, data });
@@ -143,6 +159,38 @@ async function markSent(db, items, result) {
       pushProvider: 'onesignal',
       pushResponseId: result?.response?.id || null,
       pushLastError: admin.firestore.FieldValue.delete(),
+      pushNextRetryAt: admin.firestore.FieldValue.delete(),
+      pushClaimUntil: admin.firestore.FieldValue.delete(),
+    });
+    ops++;
+    await commitIfNeeded();
+  }
+
+  await commitIfNeeded(true);
+}
+
+async function markWaitingForSubscription(db, items, error) {
+  let batch = db.batch();
+  let ops = 0;
+
+  async function commitIfNeeded(force = false) {
+    if (ops >= 450 || (force && ops > 0)) {
+      await batch.commit();
+      batch = db.batch();
+      ops = 0;
+    }
+  }
+
+  for (const item of items) {
+    batch.update(item.ref, {
+      pushLastAttemptAt: admin.firestore.FieldValue.serverTimestamp(),
+      pushLastError: String(error.message || error).slice(0, 500),
+      // Keep the notification available after the device is subscribed.
+      // This avoids permanently losing a request while the user installs or
+      // repairs the app's OneSignal registration.
+      pushNextRetryAt: admin.firestore.Timestamp.fromDate(
+        new Date(Date.now() + 5 * 60 * 1000),
+      ),
       pushClaimUntil: admin.firestore.FieldValue.delete(),
     });
     ops++;
@@ -208,7 +256,11 @@ async function dispatchNotifications() {
         failed++;
       }
     } catch (error) {
-      await markFailed(db, [item], error);
+      if (isUnsubscribedDeviceError(error)) {
+        await markWaitingForSubscription(db, [item], error);
+      } else {
+        await markFailed(db, [item], error);
+      }
       failed++;
       console.warn(
         `Failed to push notification ${item.id} to ${item.userId}: ${error.message}`,
@@ -234,4 +286,5 @@ module.exports = {
   initializeFirebase,
   notificationPayload,
   routeForNotification,
+  isUnsubscribedDeviceError,
 };

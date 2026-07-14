@@ -1,0 +1,288 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/material.dart';
+
+import '../../components/wolf_card.dart';
+import '../../components/wolf_input_field.dart';
+import '../../models/attendance_policy.dart';
+import '../../services/attendance_policy_service.dart';
+import '../../theme/theme.dart';
+
+class AttendancePolicySettingsScreen extends StatefulWidget {
+  const AttendancePolicySettingsScreen({super.key});
+
+  @override
+  State<AttendancePolicySettingsScreen> createState() =>
+      _AttendancePolicySettingsScreenState();
+}
+
+class _AttendancePolicySettingsScreenState
+    extends State<AttendancePolicySettingsScreen> {
+  final _formKey = GlobalKey<FormState>();
+  final _checkInOpen = TextEditingController();
+  final _start = TextEditingController();
+  final _end = TextEditingController();
+  final _latestCheckout = TextEditingController();
+  final _reminderLead = TextEditingController();
+  final _lateWarning = TextEditingController();
+  final _grace = TextEditingController();
+  final _quarterUntil = TextEditingController();
+  final _halfUntil = TextEditingController();
+  bool _loading = true;
+  bool _saving = false;
+  AttendancePolicyConfig _loadedPolicy = const AttendancePolicyConfig();
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  @override
+  void dispose() {
+    for (final controller in [
+      _checkInOpen,
+      _start,
+      _end,
+      _latestCheckout,
+      _reminderLead,
+      _lateWarning,
+      _grace,
+      _quarterUntil,
+      _halfUntil,
+    ]) {
+      controller.dispose();
+    }
+    super.dispose();
+  }
+
+  Future<void> _load() async {
+    final policy = await AttendancePolicyService().getPolicyConfig();
+    if (!mounted) return;
+    _checkInOpen.text = policy.checkInOpenTime;
+    _start.text = policy.defaultStartTime;
+    _end.text = policy.defaultEndTime;
+    _latestCheckout.text = policy.latestCheckoutTime;
+    _reminderLead.text = policy.checkInReminderLeadMinutes.toString();
+    _lateWarning.text = policy.checkInLateWarningMinutes.toString();
+    _grace.text = policy.graceMinutes.toString();
+    _quarterUntil.text = policy.quarterDayUntilMinutes.toString();
+    _halfUntil.text = policy.halfDayUntilMinutes.toString();
+    _loadedPolicy = policy;
+    setState(() => _loading = false);
+  }
+
+  bool _validTime(String value) {
+    final match = RegExp(r'^([01]\\d|2[0-3]):[0-5]\\d$').hasMatch(value);
+    return match;
+  }
+
+  int _readInt(TextEditingController controller) =>
+      int.tryParse(controller.text.trim()) ?? 0;
+
+  Future<void> _save() async {
+    if (!(_formKey.currentState?.validate() ?? false)) return;
+    final grace = _readInt(_grace);
+    final quarter = _readInt(_quarterUntil);
+    final half = _readInt(_halfUntil);
+    if (grace < 0 || quarter < grace || half < quarter) {
+      _showError('رتّب حدود التأخير: السماح ثم ربع يوم ثم نصف يوم.');
+      return;
+    }
+    setState(() => _saving = true);
+    final policy = AttendancePolicyConfig(
+      checkInOpenTime: _checkInOpen.text.trim(),
+      defaultStartTime: _start.text.trim(),
+      defaultEndTime: _end.text.trim(),
+      latestCheckoutTime: _latestCheckout.text.trim(),
+      graceMinutes: grace,
+      quarterDayUntilMinutes: quarter,
+      halfDayUntilMinutes: half,
+      payrollWorkDaysPerMonth: _loadedPolicy.payrollWorkDaysPerMonth,
+      checkInReminderLeadMinutes: _readInt(_reminderLead),
+      checkInLateWarningMinutes: _readInt(_lateWarning),
+      attendanceVerificationMode: _loadedPolicy.attendanceVerificationMode,
+    );
+    try {
+      await FirebaseFirestore.instance
+          .collection('companies')
+          .doc('zawolf')
+          .set({
+            'attendancePolicy': policy.toMap(),
+            'updatedAt': FieldValue.serverTimestamp(),
+          }, SetOptions(merge: true));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            backgroundColor: ZaWolfColors.success,
+            content: Text(
+              'تم حفظ سياسة الدوام. تُستخدم التغييرات في الحضور والتنبيهات القادمة.',
+            ),
+          ),
+        );
+      }
+    } catch (error) {
+      _showError(
+        'تعذر حفظ الإعدادات: ${error.toString().replaceFirst('Exception: ', '')}',
+      );
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  void _showError(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(backgroundColor: ZaWolfColors.error, content: Text(message)),
+    );
+  }
+
+  Widget _timeField(String label, TextEditingController controller) {
+    return WolfInputField(
+      controller: controller,
+      labelText: label,
+      englishLabel: 'HH:MM',
+      keyboardType: TextInputType.datetime,
+      textDirection: TextDirection.ltr,
+      validator: (value) =>
+          _validTime(value?.trim() ?? '') ? null : 'اكتب الوقت بصيغة 09:00',
+    );
+  }
+
+  Widget _minutesField(String label, TextEditingController controller) {
+    return WolfInputField(
+      controller: controller,
+      labelText: label,
+      keyboardType: TextInputType.number,
+      textDirection: TextDirection.ltr,
+      validator: (value) {
+        final minutes = int.tryParse(value?.trim() ?? '');
+        return minutes != null && minutes >= 0 && minutes <= 240
+            ? null
+            : 'أدخل من 0 إلى 240 دقيقة';
+      },
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(
+          'سياسة الدوام والحضور',
+          style: theme.textTheme.headlineMedium,
+        ),
+      ),
+      body: _loading
+          ? const Center(
+              child: CircularProgressIndicator(color: ZaWolfColors.primaryCyan),
+            )
+          : Form(
+              key: _formKey,
+              child: ListView(
+                padding: const EdgeInsets.all(16),
+                children: [
+                  WolfCard(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Text(
+                          'أوقات الدوام',
+                          style: theme.textTheme.titleLarge?.copyWith(
+                            color: Colors.white,
+                          ),
+                          textDirection: TextDirection.rtl,
+                        ),
+                        const SizedBox(height: 16),
+                        _timeField('فتح تسجيل الحضور', _checkInOpen),
+                        const SizedBox(height: 12),
+                        _timeField('بداية الدوام الافتراضية', _start),
+                        const SizedBox(height: 12),
+                        _timeField('نهاية الدوام الافتراضية', _end),
+                        const SizedBox(height: 12),
+                        _timeField('آخر موعد لتسجيل الانصراف', _latestCheckout),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  WolfCard(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Text(
+                          'تذكيرات الحضور',
+                          style: theme.textTheme.titleLarge?.copyWith(
+                            color: Colors.white,
+                          ),
+                          textDirection: TextDirection.rtl,
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'تُرسل من الخادم للموظف في يوم عمله فقط، مع مراعاة الإجازات والأذونات المعتمدة.',
+                          style: theme.textTheme.bodySmall,
+                          textDirection: TextDirection.rtl,
+                        ),
+                        const SizedBox(height: 16),
+                        _minutesField(
+                          'قبل بداية الدوام بكم دقيقة',
+                          _reminderLead,
+                        ),
+                        const SizedBox(height: 12),
+                        _minutesField(
+                          'تنبيه قبل احتساب التأخير بكم دقيقة',
+                          _lateWarning,
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  WolfCard(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Text(
+                          'خصومات التأخير',
+                          style: theme.textTheme.titleLarge?.copyWith(
+                            color: Colors.white,
+                          ),
+                          textDirection: TextDirection.rtl,
+                        ),
+                        const SizedBox(height: 16),
+                        _minutesField('فترة السماح بالدقائق', _grace),
+                        const SizedBox(height: 12),
+                        _minutesField(
+                          'حتى ربع يوم بالدقائق من بداية الدوام',
+                          _quarterUntil,
+                        ),
+                        const SizedBox(height: 12),
+                        _minutesField(
+                          'حتى نصف يوم بالدقائق من بداية الدوام',
+                          _halfUntil,
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'أي خصم مقترح يبقى بانتظار موافقة HR قبل اعتماده.',
+                          style: theme.textTheme.bodySmall,
+                          textDirection: TextDirection.rtl,
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  FilledButton.icon(
+                    onPressed: _saving ? null : _save,
+                    icon: _saving
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.save_outlined),
+                    label: const Text('حفظ سياسة الدوام'),
+                  ),
+                ],
+              ),
+            ),
+    );
+  }
+}

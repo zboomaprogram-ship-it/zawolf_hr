@@ -10,6 +10,7 @@ import 'attendance_policy_service.dart';
 import 'audit_log_service.dart';
 import 'company_day_off_service.dart';
 import 'geofence_service.dart';
+import 'field_assignment_service.dart';
 import 'offline_attendance_queue_service.dart';
 import 'role_notification_service.dart';
 
@@ -22,6 +23,8 @@ class AttendanceService {
       AttendanceSecurityService();
   final AttendancePolicyService _policyService = AttendancePolicyService();
   final CompanyDayOffService _dayOffService = CompanyDayOffService();
+  final FieldAssignmentService _fieldAssignmentService =
+      FieldAssignmentService();
   final OfflineAttendanceQueueService _offlineQueue =
       OfflineAttendanceQueueService.instance;
 
@@ -114,6 +117,14 @@ class AttendanceService {
       }
     }
 
+    // An active HR-created field assignment is a time-bounded, auditable
+    // exception to branch geofence enforcement.
+    final activeFieldAssignment = await _fieldAssignmentService.activeAt(
+      userId: employee.uid,
+      dateKey: todayStr,
+      now: now,
+    );
+
     // Check if employee has an approved WFH request today
     final wfhQuery = await _db
         .collection('leaves')
@@ -136,7 +147,8 @@ class AttendanceService {
       strictLocationOnly: requiresLiveConnection,
     );
 
-    if (!geoResult.isWithinZone && !hasWfhToday) {
+    final allowsExternalWork = hasWfhToday || activeFieldAssignment != null;
+    if (!geoResult.isWithinZone && !allowsExternalWork) {
       throw Exception(
         '🐺 أنت خارج نطاق العمل المسموح به لفرع (${geoResult.locationName}).\n'
         'المسافة الحالية: ${geoResult.distanceMeters.toInt()} متر.\n'
@@ -145,7 +157,9 @@ class AttendanceService {
     }
 
     // Check if spoofing app is used
-    if (geoResult.isMocked && !hasWfhToday) {
+    // A valid WFH or field assignment changes the allowed place, never the
+    // requirement for a genuine device location.
+    if (geoResult.isMocked) {
       throw Exception(
         'عذراً، تم الكشف عن استخدام تطبيق لتزييف الموقع الجغرافي (Mock GPS).',
       );
@@ -153,7 +167,7 @@ class AttendanceService {
     final locationRisk = _assessLocationRisk(
       geoResult,
       capturedOffline: !online,
-      bypassedByWfh: hasWfhToday,
+      bypassedByWfh: false,
       strictLocationOnly: requiresLiveConnection,
     );
     if (locationRisk.blocked) {
@@ -246,7 +260,7 @@ class AttendanceService {
           geoResult.position.longitude,
         ),
         localCheckInTime: now,
-        isWithinGeofence: geoResult.isWithinZone || hasWfhToday,
+        isWithinGeofence: geoResult.isWithinZone || allowsExternalWork,
         isLate: deduction.isLate,
         lateMinutes: deduction.lateMinutes,
         salaryDeductionFraction: deduction.dayFraction,
@@ -860,6 +874,12 @@ class AttendanceService {
     for (final doc in snapshot.docs) {
       final log = AttendanceModel.fromFirestore(doc);
       if (log.checkOutTime != null) continue;
+      if (await _fieldAssignmentService.skipsCheckoutForDate(
+        userId: employee.uid,
+        dateKey: log.date,
+      )) {
+        continue;
+      }
 
       final missedCheckoutDeduction = _buildCheckoutDeductionPatch(
         employee: employee,

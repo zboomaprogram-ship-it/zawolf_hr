@@ -10,6 +10,7 @@ import '../../services/auth_service.dart';
 import '../../models/employee_role.dart';
 import '../../services/onesignal_service.dart';
 import '../../services/personal_alarm_service.dart';
+import '../../services/automatic_attendance_service.dart';
 
 class ProfileSettingsScreen extends StatefulWidget {
   const ProfileSettingsScreen({super.key});
@@ -38,6 +39,8 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
   String? _personalAlarmUserId;
   bool _loadingPersonalAlarm = false;
   bool _savingPersonalAlarm = false;
+  bool _automaticAttendanceEnabled = false;
+  bool _loadingAutomaticAttendance = false;
 
   @override
   void didChangeDependencies() {
@@ -45,6 +48,52 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
     final user = Provider.of<AuthService>(context).currentUser;
     if (user != null && _personalAlarmUserId != user.uid) {
       _loadPersonalAlarm(user.uid);
+      _loadAutomaticAttendance(user.uid);
+    }
+  }
+
+  Future<void> _loadAutomaticAttendance(String userId) async {
+    setState(() => _loadingAutomaticAttendance = true);
+    try {
+      final enabled = await AutomaticAttendanceService.instance.isEnabledFor(
+        userId,
+      );
+      if (mounted) setState(() => _automaticAttendanceEnabled = enabled);
+    } finally {
+      if (mounted) setState(() => _loadingAutomaticAttendance = false);
+    }
+  }
+
+  Future<void> _setAutomaticAttendanceEnabled(bool enabled) async {
+    final user = Provider.of<AuthService>(context, listen: false).currentUser;
+    if (user == null) return;
+    setState(() => _loadingAutomaticAttendance = true);
+    try {
+      if (enabled) {
+        await AutomaticAttendanceService.instance.enableFor(user);
+      } else {
+        await AutomaticAttendanceService.instance.disable(user.uid);
+      }
+      if (!mounted) return;
+      setState(() => _automaticAttendanceEnabled = enabled);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            enabled
+                ? 'تم تفعيل الحضور التلقائي. سيعمل عند دخول أو مغادرة نطاق الفرع في الوقت المناسب.'
+                : 'تم إيقاف الحضور التلقائي. يمكنك استخدام تسجيل الحضور اليدوي.',
+          ),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(error.toString().replaceFirst('Exception: ', '')),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _loadingAutomaticAttendance = false);
     }
   }
 
@@ -182,7 +231,7 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
             content: Text(
               PersonalAlarmService.instance.usesAndroidClock
                   ? 'افتح تطبيق الساعة وأكّد المنبه، ثم اختر التكرار اليومي إذا أردته.'
-                  : 'تم تفعيل تذكير الدوام اليومي في الساعة ${settings.formattedTime}.',
+                  : 'تم تفعيل منبه الدوام اليومي في الساعة ${settings.formattedTime}. سيطلب iPhone الإذن عند الحاجة فقط.',
             ),
           ),
         );
@@ -205,7 +254,7 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
             content: Text(
               PersonalAlarmService.instance.usesAndroidClock
                   ? 'تم إيقافه داخل التطبيق. أوقف منبه ZaWolf HR من تطبيق الساعة أيضاً.'
-                  : 'تم إيقاف تذكير الدوام.',
+                  : 'تم إيقاف منبه الدوام.',
             ),
           ),
         );
@@ -468,6 +517,28 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                         });
                       },
                     ),
+                  ),
+                  const Divider(color: ZaWolfColors.surface02, height: 1),
+                  ListTile(
+                    leading: const Icon(
+                      Icons.location_searching,
+                      color: ZaWolfColors.primaryCyan,
+                    ),
+                    title: const Text('الحضور التلقائي بالموقع'),
+                    subtitle: const Text(
+                      'يسجل الحضور عند دخول الفرع والانصراف عند المغادرة بعد وقت الدوام. يتطلب إذن الموقع دائماً.',
+                    ),
+                    trailing: _loadingAutomaticAttendance
+                        ? const SizedBox(
+                            width: 22,
+                            height: 22,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : Switch(
+                            value: _automaticAttendanceEnabled,
+                            activeThumbColor: ZaWolfColors.primaryCyan,
+                            onChanged: _setAutomaticAttendanceEnabled,
+                          ),
                   ),
                   const Divider(color: ZaWolfColors.surface02, height: 1),
 
