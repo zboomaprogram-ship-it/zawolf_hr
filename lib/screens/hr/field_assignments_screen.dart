@@ -57,13 +57,15 @@ class _FieldAssignmentsScreenState extends State<FieldAssignmentsScreen> {
       context: context,
       initialTime: start ? _start : _end,
     );
-    if (picked != null)
+    if (picked != null) {
       setState(() {
-        if (start)
+        if (start) {
           _start = picked;
-        else
+        } else {
           _end = picked;
+        }
       });
+    }
   }
 
   Future<void> _save() async {
@@ -157,7 +159,7 @@ class _FieldAssignmentsScreenState extends State<FieldAssignmentsScreen> {
                               .toList() ??
                           <UserModel>[];
                       return DropdownButtonFormField<UserModel>(
-                        value:
+                        initialValue:
                             employees.any((user) => user.uid == _employee?.uid)
                             ? _employee
                             : null,
@@ -271,15 +273,17 @@ class _FieldAssignmentsScreenState extends State<FieldAssignmentsScreen> {
             stream: _service.watchForDate(_date),
             builder: (context, snapshot) {
               final assignments = snapshot.data ?? <FieldAssignmentModel>[];
-              if (snapshot.connectionState == ConnectionState.waiting)
+              if (snapshot.connectionState == ConnectionState.waiting) {
                 return const Center(child: CircularProgressIndicator());
-              if (assignments.isEmpty)
+              }
+              if (assignments.isEmpty) {
                 return const WolfCard(
                   child: Text(
                     'لا توجد مهام ميدانية لهذا اليوم.',
                     textDirection: TextDirection.rtl,
                   ),
                 );
+              }
               final actor = Provider.of<AuthService>(
                 context,
                 listen: false,

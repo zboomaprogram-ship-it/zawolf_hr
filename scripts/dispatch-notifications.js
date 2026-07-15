@@ -9,9 +9,9 @@ installFirestoreCompatibility(admin);
 
 function dispatchConfig() {
   return {
-    batchSize: Number(process.env.NOTIFICATION_DISPATCH_BATCH_SIZE || 100),
-    perUserLimit: Number(process.env.NOTIFICATION_DISPATCH_PER_USER_LIMIT || 20),
-    maxAttempts: Number(process.env.NOTIFICATION_DISPATCH_MAX_ATTEMPTS || 5),
+    batchSize: Number(process.env.NOTIFICATION_DISPATCH_BATCH_SIZE || 50),
+    perUserLimit: Number(process.env.NOTIFICATION_DISPATCH_PER_USER_LIMIT || 10),
+    maxAttempts: Number(process.env.NOTIFICATION_DISPATCH_MAX_ATTEMPTS || 3),
   };
 }
 
@@ -86,7 +86,7 @@ async function loadPendingNotifications(db) {
   const candidatesSnap = await db.collectionGroup('items')
     .where('isRead', '==', false)
     .where('pushSent', '==', false)
-    .limit(batchSize * 5)
+    .limit(batchSize)
     .get();
   const userIds = [...new Set(candidatesSnap.docs.map((doc) => doc.ref.parent.parent?.id).filter(Boolean))];
   const userDocs = userIds.length
@@ -163,6 +163,7 @@ async function markSent(db, items, result) {
       pushSent: true,
       pushSentAt: admin.firestore.FieldValue.serverTimestamp(),
       pushProvider: 'onesignal',
+      pushDeliveryStatus: 'sent',
       pushResponseId: result?.response?.id || null,
       pushLastError: admin.firestore.FieldValue.delete(),
       pushNextRetryAt: admin.firestore.FieldValue.delete(),
@@ -189,14 +190,15 @@ async function markWaitingForSubscription(db, items, error) {
 
   for (const item of items) {
     batch.update(item.ref, {
+      // An unsubscribed device cannot receive a retry. Close the push attempt
+      // while preserving the Firestore item for the in-app notification list.
+      // New notifications will work as soon as the user subscribes again.
+      pushSent: true,
+      pushDeliveryStatus: 'unsubscribed',
+      pushFinishedAt: admin.firestore.FieldValue.serverTimestamp(),
       pushLastAttemptAt: admin.firestore.FieldValue.serverTimestamp(),
       pushLastError: String(error.message || error).slice(0, 500),
-      // Keep the notification available after the device is subscribed.
-      // This avoids permanently losing a request while the user installs or
-      // repairs the app's OneSignal registration.
-      pushNextRetryAt: admin.firestore.Timestamp.fromDate(
-        new Date(Date.now() + 5 * 60 * 1000),
-      ),
+      pushNextRetryAt: admin.firestore.FieldValue.delete(),
       pushClaimUntil: admin.firestore.FieldValue.delete(),
     });
     ops++;
@@ -207,6 +209,7 @@ async function markWaitingForSubscription(db, items, error) {
 }
 
 async function markFailed(db, items, error) {
+  const { maxAttempts } = dispatchConfig();
   let batch = db.batch();
   let ops = 0;
 
@@ -219,10 +222,23 @@ async function markFailed(db, items, error) {
   }
 
   for (const item of items) {
+    const attempts = Number(item.data.pushAttemptCount || 0) + 1;
+    const finalFailure = attempts >= maxAttempts;
+    const retryDelayMinutes = Math.min(60, 5 * (2 ** Math.max(0, attempts - 1)));
     batch.update(item.ref, {
-      pushAttemptCount: admin.firestore.FieldValue.increment(1),
+      pushAttemptCount: attempts,
+      pushSent: finalFailure,
+      pushDeliveryStatus: finalFailure ? 'failed' : 'retry_wait',
       pushLastAttemptAt: admin.firestore.FieldValue.serverTimestamp(),
       pushLastError: String(error.message || error).slice(0, 500),
+      pushNextRetryAt: finalFailure
+        ? admin.firestore.FieldValue.delete()
+        : admin.firestore.Timestamp.fromDate(
+          new Date(Date.now() + retryDelayMinutes * 60 * 1000),
+        ),
+      ...(finalFailure
+        ? { pushFinishedAt: admin.firestore.FieldValue.serverTimestamp() }
+        : {}),
       pushClaimUntil: admin.firestore.FieldValue.delete(),
     });
     ops++;
@@ -230,6 +246,29 @@ async function markFailed(db, items, error) {
   }
 
   await commitIfNeeded(true);
+}
+
+function watchPendingNotifications({ onPending, onError } = {}) {
+  initializeFirebase();
+  const db = admin.firestore();
+  const { batchSize } = dispatchConfig();
+  const query = db.collectionGroup('items')
+    .where('isRead', '==', false)
+    .where('pushSent', '==', false)
+    .limit(batchSize);
+
+  return query.onSnapshot(
+    (snapshot) => {
+      const added = snapshot.docChanges().filter((change) => change.type === 'added');
+      if (added.length && typeof onPending === 'function') {
+        onPending(added.length);
+      }
+    },
+    (error) => {
+      console.error('Pending notification listener failed:', error);
+      if (typeof onError === 'function') onError(error);
+    },
+  );
 }
 
 async function dispatchNotifications() {
@@ -293,4 +332,5 @@ module.exports = {
   notificationPayload,
   routeForNotification,
   isUnsubscribedDeviceError,
+  watchPendingNotifications,
 };

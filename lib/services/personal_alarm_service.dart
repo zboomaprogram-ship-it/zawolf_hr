@@ -47,6 +47,12 @@ class PersonalAlarmService {
     return await _channel.invokeMethod<bool>('canUseSystemAlarm') ?? false;
   }
 
+  Future<bool> requestAndroidAlarmPermission() async {
+    if (!Platform.isAndroid) return true;
+    return await _channel.invokeMethod<bool>('requestExactAlarmPermission') ??
+        false;
+  }
+
   Future<bool> get supportsIosSystemAlarm async {
     if (!Platform.isIOS) return false;
     return await _channel.invokeMethod<bool>('iosAlarmAvailability') ?? false;
@@ -76,7 +82,10 @@ class PersonalAlarmService {
     if (Platform.isAndroid) {
       await NotificationService.instance.requestPermissions();
       if (!await canUseAndroidAlarm) {
-        throw Exception('اسمح بإشعارات الهاتف حتى يظهر زر إيقاف منبه الدوام.');
+        await requestAndroidAlarmPermission();
+        throw Exception(
+          'فعّل إذن "المنبهات والتذكيرات" من الصفحة التي فُتحت، ثم عد للتطبيق وفعّل المنبه مرة أخرى.',
+        );
       }
       await _channel.invokeMethod<void>('setSystemAlarm', {
         'userId': userId,

@@ -8,6 +8,7 @@ import '../../components/wolf_button.dart';
 import '../../components/wolf_input_field.dart';
 import '../../services/auth_service.dart';
 import '../../models/employee_role.dart';
+import '../../models/user_model.dart';
 import '../../services/onesignal_service.dart';
 import '../../services/personal_alarm_service.dart';
 import '../../services/automatic_attendance_service.dart';
@@ -195,6 +196,16 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
         ),
       );
       setState(() {});
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: ZaWolfColors.error,
+          content: Text(
+            'تعذر ربط الإشعارات: ${error.toString().replaceFirst('Exception: ', '')}',
+          ),
+        ),
+      );
     } finally {
       if (mounted) setState(() => _registeringNotifications = false);
     }
@@ -256,11 +267,11 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
           ),
         );
       }
-    } catch (_) {
+    } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('تعذر تحديث منبه الدوام. أعد المحاولة.'),
+          SnackBar(
+            content: Text(error.toString().replaceFirst('Exception: ', '')),
           ),
         );
       }
@@ -476,6 +487,9 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                 ],
               ),
             ),
+            const SizedBox(height: 20),
+
+            _buildLeaveBalanceCard(user, theme),
             const SizedBox(height: 20),
 
             // Settings Panels
@@ -817,6 +831,83 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
               textAlign: TextAlign.left,
               overflow: TextOverflow.ellipsis,
             ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLeaveBalanceCard(UserModel user, ThemeData theme) {
+    final balance = user.leaveBalance;
+    final items = <({String label, int value, Color color})>[
+      (label: 'سنوية', value: balance.annual, color: ZaWolfColors.primaryCyan),
+      (label: 'مرضية', value: balance.sick, color: ZaWolfColors.permissionTeal),
+      (label: 'عارضة', value: balance.casual, color: ZaWolfColors.warning),
+      (
+        label: 'أيام إجازة',
+        value: balance.daysOff,
+        color: ZaWolfColors.dayoffPurple,
+      ),
+    ];
+
+    return WolfCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(
+                Icons.event_available_outlined,
+                color: ZaWolfColors.primaryCyan,
+              ),
+              const SizedBox(width: 10),
+              Text(
+                'رصيد الإجازات المتبقي',
+                style: theme.textTheme.titleMedium?.copyWith(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          GridView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: items.length,
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 2,
+              crossAxisSpacing: 10,
+              mainAxisSpacing: 10,
+              childAspectRatio: 2.5,
+            ),
+            itemBuilder: (context, index) {
+              final item = items[index];
+              return Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
+                decoration: BoxDecoration(
+                  color: item.color.withValues(alpha: 0.09),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: item.color.withValues(alpha: 0.28)),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(item.label, style: theme.textTheme.bodySmall),
+                    Text(
+                      '${item.value}',
+                      style: theme.textTheme.titleLarge?.copyWith(
+                        color: item.color,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            },
           ),
         ],
       ),

@@ -2,9 +2,12 @@ package com.zbooma.zawolfhr
 
 import android.content.Intent
 import android.app.PendingIntent
+import android.app.AlarmManager
 import android.content.Context
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
+import android.provider.Settings
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import com.google.android.gms.location.Geofence
@@ -59,7 +62,35 @@ class MainActivity : FlutterFragmentActivity() {
                         val notificationsEnabled = NotificationManagerCompat.from(this).areNotificationsEnabled()
                         val notificationPermissionGranted = Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
                             ContextCompat.checkSelfPermission(this, android.Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
-                        result.success(notificationsEnabled && notificationPermissionGranted)
+                        val alarmManager = getSystemService(Context.ALARM_SERVICE) as AlarmManager
+                        val exactAlarmGranted = Build.VERSION.SDK_INT < Build.VERSION_CODES.S || alarmManager.canScheduleExactAlarms()
+                        result.success(notificationsEnabled && notificationPermissionGranted && exactAlarmGranted)
+                    }
+                    "requestExactAlarmPermission" -> {
+                        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
+                            result.success(true)
+                            return@setMethodCallHandler
+                        }
+                        val alarmManager = getSystemService(Context.ALARM_SERVICE) as AlarmManager
+                        if (alarmManager.canScheduleExactAlarms()) {
+                            result.success(true)
+                            return@setMethodCallHandler
+                        }
+                        try {
+                            startActivity(
+                                Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM).apply {
+                                    data = Uri.parse("package:$packageName")
+                                },
+                            )
+                            result.success(false)
+                        } catch (error: Exception) {
+                            startActivity(
+                                Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                                    data = Uri.parse("package:$packageName")
+                                },
+                            )
+                            result.success(false)
+                        }
                     }
                     else -> result.notImplemented()
                 }

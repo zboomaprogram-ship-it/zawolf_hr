@@ -1,20 +1,28 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
 import 'package:onesignal_flutter/onesignal_flutter.dart';
 import 'notification_service.dart';
 
-class OneSignalService {
+class OneSignalService with WidgetsBindingObserver {
   OneSignalService._internal();
   static final OneSignalService instance = OneSignalService._internal();
 
-  static const String _appId = String.fromEnvironment('ONESIGNAL_APP_ID');
+  // A OneSignal App ID is a public application identifier, not a credential.
+  // Keep the dart-define override for staging builds, while production remains
+  // push-capable when a visual CI workflow forgets to pass the build argument.
+  static const String _appId = String.fromEnvironment(
+    'ONESIGNAL_APP_ID',
+    defaultValue: 'b1f85662-d1d6-4629-969c-ed843350baed',
+  );
   bool _initialized = false;
   bool _observersInstalled = false;
   Future<void>? _initializationFuture;
   String? _currentFirebaseUid;
   String? _boundExternalId;
   bool _bindingExternalId = false;
+  bool _repairingRegistration = false;
 
   bool get isConfigured => _appId.trim().isNotEmpty;
   bool get isInitialized => _initialized;
@@ -39,6 +47,7 @@ class OneSignalService {
       }
       await OneSignal.initialize(_appId).timeout(const Duration(seconds: 8));
       _initialized = true;
+      WidgetsBinding.instance.addObserver(this);
       OneSignal.Notifications.addClickListener((event) {
         final data = event.notification.additionalData ?? {};
         final route = data['route'] as String?;
@@ -66,14 +75,14 @@ class OneSignalService {
     try {
       await _requestPermissionAndOptIn();
       await _bindExternalId(userId);
-      unawaited(_waitForPushSubscription());
+      unawaited(_repairPushRegistration());
     } catch (e) {
       if (kDebugMode) debugPrint('OneSignal login failed: $e');
     }
   }
 
-  Future<void> _bindExternalId(String userId) async {
-    if (_bindingExternalId || _boundExternalId == userId) return;
+  Future<void> _bindExternalId(String userId, {bool force = false}) async {
+    if (_bindingExternalId || (!force && _boundExternalId == userId)) return;
     _bindingExternalId = true;
     // Firebase Auth UID is the sole OneSignal External ID used by the
     // dispatcher. Never substitute an email, employee code, or Firestore ID.
@@ -130,8 +139,16 @@ class OneSignalService {
   ) async {
     if (!isConfigured) return const OneSignalRegistrationState.notConfigured();
     await login(firebaseUid);
-    await _waitForPushSubscription();
+    await _repairPushRegistration();
     return registrationState();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed || _currentFirebaseUid == null) {
+      return;
+    }
+    unawaited(_repairPushRegistration());
   }
 
   OneSignalRegistrationState registrationState() {
@@ -161,10 +178,43 @@ class OneSignalService {
         optedIn: state.current.optedIn,
       );
       final uid = _currentFirebaseUid;
-      if (uid != null && state.current.id != null) {
-        unawaited(_bindExternalId(uid));
+      if (uid != null &&
+          state.current.id != null &&
+          state.current.token?.isNotEmpty == true) {
+        // Bind again after APNs/FCM has produced a real subscription. This
+        // repairs devices where login happened before the native push token
+        // was ready.
+        unawaited(_bindExternalId(uid, force: true));
       }
     });
+  }
+
+  Future<void> _repairPushRegistration() async {
+    if (_repairingRegistration || !_initialized) return;
+    final uid = _currentFirebaseUid;
+    if (uid == null) return;
+
+    _repairingRegistration = true;
+    try {
+      if (OneSignal.Notifications.permission) {
+        await OneSignal.User.pushSubscription.optIn().timeout(
+          const Duration(seconds: 5),
+        );
+      }
+      await _waitForPushSubscription();
+      final subscription = OneSignal.User.pushSubscription;
+      if (subscription.id != null &&
+          subscription.token?.isNotEmpty == true &&
+          subscription.optedIn == true) {
+        await _bindExternalId(uid, force: true);
+      }
+    } catch (error) {
+      if (kDebugMode) {
+        debugPrint('OneSignal registration repair failed: $error');
+      }
+    } finally {
+      _repairingRegistration = false;
+    }
   }
 
   Future<void> _waitForPushSubscription() async {

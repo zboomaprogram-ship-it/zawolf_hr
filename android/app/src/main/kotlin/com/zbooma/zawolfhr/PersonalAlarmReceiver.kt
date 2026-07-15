@@ -24,7 +24,9 @@ class PersonalAlarmReceiver : BroadcastReceiver() {
 
         // Queue tomorrow before ringing, so a terminated app does not lose the
         // following workday's alarm.
-        PersonalAlarmScheduler.schedule(context, userId, hour, minute, message)
+        runCatching {
+            PersonalAlarmScheduler.schedule(context, userId, hour, minute, message)
+        }
 
         val serviceIntent = Intent(context, PersonalAlarmService::class.java).apply {
             action = PersonalAlarmService.ACTION_RING
@@ -45,11 +47,22 @@ object PersonalAlarmScheduler {
     const val EXTRA_MESSAGE = "message"
     private const val PREFS = "zawolf_personal_alarm"
     private const val ENABLED_PREFIX = "enabled_"
+    private const val USER_IDS = "enabled_user_ids"
+    private const val HOUR_PREFIX = "hour_"
+    private const val MINUTE_PREFIX = "minute_"
+    private const val MESSAGE_PREFIX = "message_"
 
     fun schedule(context: Context, userId: String, hour: Int, minute: Int, message: String) {
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .edit()
+        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val enabledUsers = prefs.getStringSet(USER_IDS, emptySet())?.toMutableSet()
+            ?: mutableSetOf()
+        enabledUsers.add(userId)
+        prefs.edit()
             .putBoolean("$ENABLED_PREFIX$userId", true)
+            .putInt("$HOUR_PREFIX$userId", hour)
+            .putInt("$MINUTE_PREFIX$userId", minute)
+            .putString("$MESSAGE_PREFIX$userId", message)
+            .putStringSet(USER_IDS, enabledUsers)
             .apply()
 
         val calendar = Calendar.getInstance().apply {
@@ -78,9 +91,16 @@ object PersonalAlarmScheduler {
     }
 
     fun cancel(context: Context, userId: String) {
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .edit()
+        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val enabledUsers = prefs.getStringSet(USER_IDS, emptySet())?.toMutableSet()
+            ?: mutableSetOf()
+        enabledUsers.remove(userId)
+        prefs.edit()
             .putBoolean("$ENABLED_PREFIX$userId", false)
+            .remove("$HOUR_PREFIX$userId")
+            .remove("$MINUTE_PREFIX$userId")
+            .remove("$MESSAGE_PREFIX$userId")
+            .putStringSet(USER_IDS, enabledUsers)
             .apply()
         val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
         alarmManager.cancel(pendingIntent(context, userId, 0, 0, ""))
@@ -90,6 +110,24 @@ object PersonalAlarmScheduler {
     fun isEnabled(context: Context, userId: String): Boolean =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .getBoolean("$ENABLED_PREFIX$userId", false)
+
+    fun restoreEnabledAlarms(context: Context) {
+        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val userIds = prefs.getStringSet(USER_IDS, emptySet()) ?: emptySet()
+        for (userId in userIds) {
+            if (!prefs.getBoolean("$ENABLED_PREFIX$userId", false)) continue
+            runCatching {
+                schedule(
+                    context,
+                    userId,
+                    prefs.getInt("$HOUR_PREFIX$userId", 8),
+                    prefs.getInt("$MINUTE_PREFIX$userId", 45),
+                    prefs.getString("$MESSAGE_PREFIX$userId", null)
+                        ?: "منبه الدوام - ZaWolf HR",
+                )
+            }
+        }
+    }
 
     private fun pendingIntent(
         context: Context,
@@ -114,4 +152,14 @@ object PersonalAlarmScheduler {
     }
 
     private fun requestCode(userId: String): Int = userId.hashCode() and 0x7fffffff
+}
+
+class PersonalAlarmBootReceiver : BroadcastReceiver() {
+    override fun onReceive(context: Context, intent: Intent) {
+        if (intent.action == Intent.ACTION_BOOT_COMPLETED ||
+            intent.action == Intent.ACTION_MY_PACKAGE_REPLACED
+        ) {
+            PersonalAlarmScheduler.restoreEnabledAlarms(context)
+        }
+    }
 }

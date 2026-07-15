@@ -55,6 +55,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
   final _complaintAttachmentController = TextEditingController();
 
   bool _loading = false;
+  int _requestTypeIndex = 0;
 
   @override
   void initState() {
@@ -414,51 +415,170 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Sub Segment Tabs
           Text(
-            'اختر نوع الطلب / Select Request Type',
-            style: theme.textTheme.titleMedium!.copyWith(
+            'طلب جديد',
+            style: theme.textTheme.headlineSmall!.copyWith(
               color: Colors.white,
               fontWeight: FontWeight.bold,
             ),
           ),
+          const SizedBox(height: 4),
+          Text(
+            'اختر النوع ثم أكمل البيانات المطلوبة',
+            style: theme.textTheme.bodyMedium,
+          ),
           const SizedBox(height: 16),
-          DefaultTabController(
-            length: 4,
-            child: Column(
-              children: [
-                TabBar(
-                  isScrollable: true,
-                  tabs: const [
-                    Tab(icon: Icon(Icons.access_time), text: 'إذن شخصي'),
-                    Tab(icon: Icon(Icons.calendar_month), text: 'إجازة رسمية'),
-                    Tab(icon: Icon(Icons.payments), text: 'سلفة مالية'),
-                    Tab(icon: Icon(Icons.report_problem), text: 'شكوى'),
-                  ],
-                  labelColor: ZaWolfColors.primaryCyan,
-                  unselectedLabelColor: ZaWolfColors.textSecondary,
-                  indicatorColor: ZaWolfColors.primaryCyan,
-                ),
-                const SizedBox(height: 24),
-                SizedBox(
-                  height: 480,
-                  child: TabBarView(
-                    children: [
-                      // Sub-tab 1: Permission form
-                      _buildPermissionForm(user, theme),
+          _buildRequestTypeSelector(theme),
+          const SizedBox(height: 16),
+          _buildLeaveBalanceSummary(user, theme),
+          const SizedBox(height: 18),
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 180),
+            child: KeyedSubtree(
+              key: ValueKey(_requestTypeIndex),
+              child: switch (_requestTypeIndex) {
+                0 => _buildPermissionForm(user, theme),
+                1 => _buildLeaveForm(user, theme),
+                2 => _buildAdvanceForm(user, theme),
+                _ => _buildComplaintForm(user, theme),
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
-                      // Sub-tab 2: Leave form
-                      _buildLeaveForm(user, theme),
-
-                      // Sub-tab 3: Advance form
-                      _buildAdvanceForm(user, theme),
-
-                      // Sub-tab 4: Complaint form
-                      _buildComplaintForm(user, theme),
-                    ],
+  Widget _buildRequestTypeSelector(ThemeData theme) {
+    const types = [
+      ('إذن', Icons.schedule_outlined, ZaWolfColors.permissionTeal),
+      ('إجازة', Icons.event_available_outlined, ZaWolfColors.dayoffPurple),
+      ('سلفة', Icons.account_balance_wallet_outlined, ZaWolfColors.warning),
+      ('شكوى', Icons.feedback_outlined, ZaWolfColors.error),
+    ];
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final itemWidth = (constraints.maxWidth - 10) / 2;
+        return Wrap(
+          spacing: 10,
+          runSpacing: 10,
+          children: List.generate(types.length, (index) {
+            final type = types[index];
+            final selected = _requestTypeIndex == index;
+            return SizedBox(
+              width: itemWidth,
+              child: Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  onTap: () => setState(() => _requestTypeIndex = index),
+                  borderRadius: BorderRadius.circular(8),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 160),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 13,
+                    ),
+                    decoration: BoxDecoration(
+                      color: selected
+                          ? type.$3.withValues(alpha: 0.14)
+                          : ZaWolfColors.surface01,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: selected ? type.$3 : ZaWolfColors.surface03,
+                        width: selected ? 1.4 : 1,
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          type.$2,
+                          color: selected
+                              ? type.$3
+                              : ZaWolfColors.textSecondary,
+                        ),
+                        const SizedBox(width: 9),
+                        Text(
+                          type.$1,
+                          style: theme.textTheme.titleMedium?.copyWith(
+                            color: selected
+                                ? Colors.white
+                                : ZaWolfColors.textSecondary,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const Spacer(),
+                        if (selected)
+                          Icon(Icons.check_circle, color: type.$3, size: 18),
+                      ],
+                    ),
                   ),
                 ),
-              ],
+              ),
+            );
+          }),
+        );
+      },
+    );
+  }
+
+  Widget _buildLeaveBalanceSummary(UserModel user, ThemeData theme) {
+    final balance = user.leaveBalance;
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: ZaWolfColors.surface01,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: ZaWolfColors.surface03),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'رصيد الإجازات المتبقي',
+            style: theme.textTheme.titleSmall?.copyWith(
+              color: Colors.white,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              _balanceItem('سنوية', balance.annual, ZaWolfColors.primaryCyan),
+              _balanceItem('مرضية', balance.sick, ZaWolfColors.permissionTeal),
+              _balanceItem('عارضة', balance.casual, ZaWolfColors.warning),
+              _balanceItem(
+                'أيام إجازة',
+                balance.daysOff,
+                ZaWolfColors.dayoffPurple,
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _balanceItem(String label, int value, Color color) {
+    return Expanded(
+      child: Column(
+        children: [
+          Text(
+            '$value',
+            style: TextStyle(
+              color: color,
+              fontSize: 19,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 2),
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Text(
+              label,
+              style: const TextStyle(
+                color: ZaWolfColors.textMuted,
+                fontSize: 10,
+              ),
             ),
           ),
         ],
@@ -521,34 +641,27 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
             const SizedBox(height: 16),
 
             // Chips selection for type
-            Row(
+            Wrap(
+              spacing: 10,
+              runSpacing: 10,
               children: [
-                Expanded(
-                  child: ChoiceChip(
-                    label: const Center(
-                      child: Text('مغادرة مبكرة (Early Leave)'),
-                    ),
-                    selected: _permissionType == 'early_leave',
-                    onSelected: (val) {
-                      if (val) setState(() => _permissionType = 'early_leave');
-                    },
-                    selectedColor: ZaWolfColors.permissionTeal,
-                    checkmarkColor: Colors.white,
-                  ),
+                ChoiceChip(
+                  label: const Center(child: Text('مغادرة مبكرة')),
+                  selected: _permissionType == 'early_leave',
+                  onSelected: (val) {
+                    if (val) setState(() => _permissionType = 'early_leave');
+                  },
+                  selectedColor: ZaWolfColors.permissionTeal,
+                  checkmarkColor: Colors.white,
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: ChoiceChip(
-                    label: const Center(
-                      child: Text('تأخير حضور (Late Arrival)'),
-                    ),
-                    selected: _permissionType == 'late_arrival',
-                    onSelected: (val) {
-                      if (val) setState(() => _permissionType = 'late_arrival');
-                    },
-                    selectedColor: ZaWolfColors.permissionTeal,
-                    checkmarkColor: Colors.white,
-                  ),
+                ChoiceChip(
+                  label: const Center(child: Text('تأخير حضور')),
+                  selected: _permissionType == 'late_arrival',
+                  onSelected: (val) {
+                    if (val) setState(() => _permissionType = 'late_arrival');
+                  },
+                  selectedColor: ZaWolfColors.permissionTeal,
+                  checkmarkColor: Colors.white,
                 ),
               ],
             ),
@@ -703,56 +816,44 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             // Leave type selection row
-            Row(
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
               children: [
-                Expanded(
-                  child: ChoiceChip(
-                    label: const Center(child: Text('سنوية')),
-                    selected: _leaveType == 'annual',
-                    onSelected: (val) {
-                      if (val) setState(() => _leaveType = 'annual');
-                    },
-                  ),
+                ChoiceChip(
+                  label: const Center(child: Text('سنوية')),
+                  selected: _leaveType == 'annual',
+                  onSelected: (val) {
+                    if (val) setState(() => _leaveType = 'annual');
+                  },
                 ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: ChoiceChip(
-                    label: const Center(child: Text('مرضية')),
-                    selected: _leaveType == 'sick',
-                    onSelected: (val) {
-                      if (val) setState(() => _leaveType = 'sick');
-                    },
-                  ),
+                ChoiceChip(
+                  label: const Center(child: Text('مرضية')),
+                  selected: _leaveType == 'sick',
+                  onSelected: (val) {
+                    if (val) setState(() => _leaveType = 'sick');
+                  },
                 ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: ChoiceChip(
-                    label: const Center(child: Text('عارضة')),
-                    selected: _leaveType == 'casual',
-                    onSelected: (val) {
-                      if (val) setState(() => _leaveType = 'casual');
-                    },
-                  ),
+                ChoiceChip(
+                  label: const Center(child: Text('عارضة')),
+                  selected: _leaveType == 'casual',
+                  onSelected: (val) {
+                    if (val) setState(() => _leaveType = 'casual');
+                  },
                 ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: ChoiceChip(
-                    label: const Center(child: Text('يوم إجازة')),
-                    selected: _leaveType == 'day_off',
-                    onSelected: (val) {
-                      if (val) setState(() => _leaveType = 'day_off');
-                    },
-                  ),
+                ChoiceChip(
+                  label: const Center(child: Text('يوم إجازة')),
+                  selected: _leaveType == 'day_off',
+                  onSelected: (val) {
+                    if (val) setState(() => _leaveType = 'day_off');
+                  },
                 ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: ChoiceChip(
-                    label: const Center(child: Text('عمل من المنزل')),
-                    selected: _leaveType == 'wfh',
-                    onSelected: (val) {
-                      if (val) setState(() => _leaveType = 'wfh');
-                    },
-                  ),
+                ChoiceChip(
+                  label: const Center(child: Text('عمل من المنزل')),
+                  selected: _leaveType == 'wfh',
+                  onSelected: (val) {
+                    if (val) setState(() => _leaveType = 'wfh');
+                  },
                 ),
               ],
             ),

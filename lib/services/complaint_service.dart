@@ -38,10 +38,34 @@ class ComplaintService {
   }
 
   Future<void> markReviewed(String complaintId, String reviewerId) async {
-    await _db.collection('complaints').doc(complaintId).update({
+    final ref = _db.collection('complaints').doc(complaintId);
+    final snapshot = await ref.get();
+    if (!snapshot.exists) throw Exception('الشكوى غير موجودة');
+    final complaint = ComplaintModel.fromFirestore(snapshot);
+
+    await ref.update({
       'status': 'reviewed',
       'reviewedBy': reviewerId,
       'reviewedAt': FieldValue.serverTimestamp(),
+    });
+
+    final notificationRef = _db
+        .collection('notifications')
+        .doc(complaint.userId)
+        .collection('items')
+        .doc();
+    await notificationRef.set({
+      'notificationId': notificationRef.id,
+      'type': 'complaint_reviewed',
+      'title': 'تمت مراجعة الشكوى',
+      'body': 'تمت مراجعة شكواك: ${complaint.title}',
+      'data': {'complaintId': complaintId},
+      'isRead': false,
+      'pushSent': false,
+      'createdAt': FieldValue.serverTimestamp(),
+    });
+    await _db.collection('users').doc(complaint.userId).update({
+      'unreadNotifications': FieldValue.increment(1),
     });
   }
 

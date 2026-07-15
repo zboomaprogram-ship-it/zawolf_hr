@@ -26,7 +26,7 @@ test('request and task notifications open the intended app areas', () => {
   );
 });
 
-test('unsubscribed OneSignal devices wait without exhausting delivery attempts', () => {
+test('detects unsubscribed OneSignal devices so they are not retried forever', () => {
   assert.equal(
     isUnsubscribedDeviceError(
       new Error('OneSignal push returned errors: ["All included players are not subscribed"]'),

@@ -13,10 +13,20 @@ const REMINDER_WINDOW_MINUTES = 10;
 // Active employee profiles change rarely during a working day. Reusing them
 // for a short period prevents a full users read on every five-minute tick.
 const ACTIVE_USERS_CACHE_MS = Math.max(
-  15 * 60 * 1000,
-  Number(process.env.ATTENDANCE_REMINDER_USERS_CACHE_MS || 60 * 60 * 1000),
+  60 * 60 * 1000,
+  Number(process.env.ATTENDANCE_REMINDER_USERS_CACHE_MS || 6 * 60 * 60 * 1000),
+);
+const POLICY_CACHE_MS = Math.max(
+  5 * 60 * 1000,
+  Number(process.env.ATTENDANCE_REMINDER_POLICY_CACHE_MS || 30 * 60 * 1000),
+);
+const DAILY_CONTEXT_CACHE_MS = Math.max(
+  10 * 60 * 1000,
+  Number(process.env.ATTENDANCE_REMINDER_CONTEXT_CACHE_MS || 30 * 60 * 1000),
 );
 let activeUsersCache = { expiresAt: 0, users: [] };
+let policyCache = { expiresAt: 0, dateKey: '', value: null };
+let dailyContextCache = { expiresAt: 0, dateKey: '', value: null };
 
 function initializeFirebase() {
   const existingApp = getExistingFirebaseApp(admin);
@@ -110,6 +120,70 @@ async function loadActiveUsers(db) {
   return activeUsersCache.users;
 }
 
+function earliestCairoDayStart(dateKey) {
+  const [year, month, day] = dateKey.split('-').map(Number);
+  // Cairo is UTC+2 or UTC+3 depending on daylight saving time. Using UTC+3
+  // as the lower bound can include one harmless extra hour, never omit today.
+  return new Date(Date.UTC(year, month - 1, day) - 3 * 60 * 60 * 1000);
+}
+
+async function loadPolicyContext(db, dateKey) {
+  if (
+    policyCache.value &&
+    policyCache.dateKey === dateKey &&
+    Date.now() < policyCache.expiresAt
+  ) {
+    return policyCache.value;
+  }
+  const [companyDayOff, companySnap] = await Promise.all([
+    db.collection('companyDayOffs').doc(dateKey).get(),
+    db.collection('companies').doc('zawolf').get(),
+  ]);
+  const value = {
+    companyDayOff: companyDayOff.exists && companyDayOff.data()?.isActive === true,
+    policy: companySnap.data()?.attendancePolicy || companySnap.data() || {},
+  };
+  policyCache = {
+    expiresAt: Date.now() + POLICY_CACHE_MS,
+    dateKey,
+    value,
+  };
+  return value;
+}
+
+async function loadDailyContext(db, dateKey) {
+  if (
+    dailyContextCache.value &&
+    dailyContextCache.dateKey === dateKey &&
+    Date.now() < dailyContextCache.expiresAt
+  ) {
+    return dailyContextCache.value;
+  }
+  const [users, leavesSnap, permissionsSnap, fieldAssignmentsSnap] = await Promise.all([
+    loadActiveUsers(db),
+    // Query only leave records which can still overlap today. Filtering by
+    // status locally avoids a composite index and excludes historical leave.
+    db.collection('leaves')
+      .where('endDate', '>=', admin.firestore.Timestamp.fromDate(earliestCairoDayStart(dateKey)))
+      .get(),
+    db.collection('permissions')
+      .where('status', '==', 'approved')
+      .where('requestDate', '==', dateKey)
+      .get(),
+    db.collection('fieldAssignments')
+      .where('status', '==', 'active')
+      .where('date', '==', dateKey)
+      .get(),
+  ]);
+  const value = { users, leavesSnap, permissionsSnap, fieldAssignmentsSnap };
+  dailyContextCache = {
+    expiresAt: Date.now() + DAILY_CONTEXT_CACHE_MS,
+    dateKey,
+    value,
+  };
+  return value;
+}
+
 function notificationFor({ kind, startMinutes, endMinutes, hasLatePermission, hasEarlyPermission, reminderLeadMinutes = 10, lateReminderMinutes = 10 }) {
   if (kind === 'check_in_before') {
     const effectiveStart = startMinutes;
@@ -192,29 +266,24 @@ async function queueAttendanceReminders() {
   const now = cairoParts();
   if (now.weekday === 'Fri') return { queued: 0, skipped: 'friday', date: now.dateKey };
 
-  const [companyDayOff, companySnap] = await Promise.all([
-    db.collection('companyDayOffs').doc(now.dateKey).get(),
-    db.collection('companies').doc('zawolf').get(),
-  ]);
-  if (companyDayOff.exists && companyDayOff.data()?.isActive === true) {
+  const policyContext = await loadPolicyContext(db, now.dateKey);
+  if (policyContext.companyDayOff) {
     return { queued: 0, skipped: 'company_day_off', date: now.dateKey };
   }
-  const policy = companySnap.data()?.attendancePolicy || companySnap.data() || {};
+  const policy = policyContext.policy;
   if (!isReminderScanWindow(now.minutes, policy)) {
     return { queued: 0, skipped: 'outside_reminder_window', date: now.dateKey };
   }
 
-  const [users, leavesSnap, permissionsSnap, fieldAssignmentsSnap] = await Promise.all([
-    loadActiveUsers(db),
-    db.collection('leaves').where('status', '==', 'approved').get(),
-    db.collection('permissions').where('status', '==', 'approved').where('requestDate', '==', now.dateKey).get(),
-    db.collection('fieldAssignments').where('status', '==', 'active').where('date', '==', now.dateKey).get(),
-  ]);
+  const { users, leavesSnap, permissionsSnap, fieldAssignmentsSnap } =
+    await loadDailyContext(db, now.dateKey);
 
   const leaveByUser = new Map();
   for (const doc of leavesSnap.docs) {
     const leave = doc.data();
-    if (isDateWithinLeave(leave, now.dateKey)) leaveByUser.set(leave.userId, leave);
+    if (leave.status === 'approved' && isDateWithinLeave(leave, now.dateKey)) {
+      leaveByUser.set(leave.userId, leave);
+    }
   }
   const permissionsByUser = new Map();
   for (const doc of permissionsSnap.docs) {

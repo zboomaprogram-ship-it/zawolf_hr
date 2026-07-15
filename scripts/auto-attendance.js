@@ -236,10 +236,16 @@ async function processAutomaticAttendance() {
   initializeFirebase();
   const db = admin.firestore();
   const now = cairoParts();
-  const [companyDoc, signals] = await Promise.all([
-    db.collection('companies').doc('zawolf').get(),
-    db.collection('autoAttendanceSignals').where('status', '==', 'pending').limit(100).get(),
-  ]);
+  const signals = await db.collection('autoAttendanceSignals')
+    .where('status', '==', 'pending')
+    .limit(100)
+    .get();
+  if (signals.empty) {
+    return { found: 0, processed: 0, failed: 0, date: now.dateKey };
+  }
+  // Company policy is needed only when an actual geofence signal exists.
+  // Avoid one unnecessary policy read on every five-minute scheduler tick.
+  const companyDoc = await db.collection('companies').doc('zawolf').get();
   let processed = 0;
   let failed = 0;
   for (const signal of signals.docs) {

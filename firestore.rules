@@ -149,7 +149,8 @@ service cloud.firestore {
         )
         || (
           request.resource.data.type in [
-            'task_assigned', 'task_reviewed', 'task_overdue'
+            'task_assigned', 'task_started', 'task_completed',
+            'task_reviewed', 'task_cancelled', 'task_overdue'
           ]
           && (
             uid() == userId ||

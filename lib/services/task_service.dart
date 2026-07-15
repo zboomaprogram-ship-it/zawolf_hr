@@ -132,6 +132,14 @@ class TaskService {
     if (![TaskStatus.inProgress, TaskStatus.done].contains(status)) {
       throw Exception('حالة المهمة غير صحيحة');
     }
+    final taskRef = _db.collection('tasks').doc(taskId);
+    final taskDoc = await taskRef.get();
+    if (!taskDoc.exists) throw Exception('المهمة غير موجودة');
+    final task = EmployeeTaskModel.fromFirestore(taskDoc);
+    if (task.assigneeId != userId) {
+      throw Exception('لا يمكن تحديث مهمة موظف آخر');
+    }
+
     final patch = <String, dynamic>{
       'status': status,
       'isRead': true,
@@ -140,7 +148,7 @@ class TaskService {
       if (status == TaskStatus.done)
         'completedAt': FieldValue.serverTimestamp(),
     };
-    await _db.collection('tasks').doc(taskId).update(patch);
+    await taskRef.update(patch);
     await AuditLogService.instance.record(
       actorId: userId,
       action: 'task_status_updated',
@@ -148,6 +156,25 @@ class TaskService {
       targetId: taskId,
       metadata: {'status': status},
     );
+
+    final managerIds = <String>{
+      ...task.managerIds,
+      if (task.managerId.isNotEmpty) task.managerId,
+    }..remove(userId);
+    final started = status == TaskStatus.inProgress;
+    for (final managerId in managerIds) {
+      try {
+        await _createNotification(
+          recipientId: managerId,
+          type: started ? 'task_started' : 'task_completed',
+          title: started ? 'بدء تنفيذ مهمة' : 'تم إكمال مهمة',
+          body: started
+              ? 'بدأ ${task.assigneeName} تنفيذ مهمة "${task.title}".'
+              : 'أكمل ${task.assigneeName} مهمة "${task.title}" وتنتظر المراجعة.',
+          data: {'taskId': taskId},
+        );
+      } catch (_) {}
+    }
   }
 
   Future<void> reviewTask({
@@ -188,7 +215,11 @@ class TaskService {
     required String taskId,
     required UserModel reviewer,
   }) async {
-    await _db.collection('tasks').doc(taskId).update({
+    final ref = _db.collection('tasks').doc(taskId);
+    final doc = await ref.get();
+    if (!doc.exists) throw Exception('المهمة غير موجودة');
+    final task = EmployeeTaskModel.fromFirestore(doc);
+    await ref.update({
       'status': TaskStatus.cancelled,
       'updatedAt': FieldValue.serverTimestamp(),
     });
@@ -198,6 +229,15 @@ class TaskService {
       targetCollection: 'tasks',
       targetId: taskId,
     );
+    try {
+      await _createNotification(
+        recipientId: task.assigneeId,
+        type: 'task_cancelled',
+        title: 'تم إلغاء مهمة',
+        body: 'ألغى ${reviewer.displayName} مهمة "${task.title}".',
+        data: {'taskId': taskId},
+      );
+    } catch (_) {}
   }
 
   List<EmployeeTaskModel> _tasksFromSnapshot(QuerySnapshot snapshot) {
