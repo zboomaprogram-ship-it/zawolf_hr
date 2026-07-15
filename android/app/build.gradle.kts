@@ -57,6 +57,8 @@ android {
 dependencies {
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.3")
     implementation("com.google.android.gms:play-services-location:21.3.0")
+    implementation("com.google.firebase:firebase-auth:23.2.1")
+    implementation("com.google.firebase:firebase-firestore:25.1.4")
 }
 
 
@@ -67,9 +69,6 @@ flutter {
 
 kotlin {
     compilerOptions {
-        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_11)
-    }
-}
         jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_11)
     }
 }

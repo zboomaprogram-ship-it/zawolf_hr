@@ -759,9 +759,16 @@ service cloud.firestore {
     }
 
     match /attendanceDevices/{deviceId} {
-      allow read: if isAuth() && isActive() && (
-        isOwner(resource.data.userId) || isHR()
+      // A first attendance attempt reads this exact document inside a
+      // transaction before it creates the binding. A missing document must be
+      // readable so that first-time binding can proceed, while existing
+      // devices remain visible only to their owner or HR.
+      allow get: if isAuth() && isActive() && (
+        !exists(/databases/$(database)/documents/attendanceDevices/$(deviceId))
+        || isOwner(resource.data.userId)
+        || isHR()
       );
+      allow list: if isAuth() && isActive() && isHR();
       allow create: if isAuth() && isActive()
         && !exists(/databases/$(database)/documents/attendanceDevices/$(deviceId))
         && request.resource.data.keys().hasOnly([

@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:provider/provider.dart';
 import 'theme/theme.dart';
 import 'services/auth_service.dart';
@@ -22,11 +21,9 @@ void main() async {
   // In a normal build, this will consume GoogleService JSONs from native platforms automatically.
   try {
     await Firebase.initializeApp();
-    // 2. Enable Firestore Offline Persistence
-    FirebaseFirestore.instance.settings = const Settings(
-      persistenceEnabled: true,
-      cacheSizeBytes: Settings.CACHE_SIZE_UNLIMITED,
-    );
+    // Cloud Firestore enables offline persistence by default on Android and
+    // iOS. Do not set Firestore settings here: the native call is asynchronous
+    // and can race the first query during launch, which crashes iOS.
   } catch (e) {
     debugPrint('Firebase initialization failed: $e');
   }
