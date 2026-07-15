@@ -324,6 +324,14 @@
         { "fieldPath": "managerId", "order": "ASCENDING" },
         { "fieldPath": "status", "order": "ASCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "items",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        { "fieldPath": "isRead", "order": "ASCENDING" },
+        { "fieldPath": "pushSent", "order": "ASCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []

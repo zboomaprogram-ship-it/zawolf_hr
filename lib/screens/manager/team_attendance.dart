@@ -20,6 +20,29 @@ class _TeamAttendanceScreenState extends State<TeamAttendanceScreen> {
   DateTime _selectedDate = DateTime.now();
   String _selectedStatus =
       'all'; // 'all' | 'present' | 'late' | 'absent' | 'on-leave'
+  Stream<QuerySnapshot<Map<String, dynamic>>>? _attendanceStream;
+  String? _attendanceStreamKey;
+
+  Stream<QuerySnapshot<Map<String, dynamic>>> _attendanceForSelection(
+    String managerId,
+    String date,
+    String status,
+  ) {
+    final key = '$managerId|$date|$status';
+    if (_attendanceStream != null && _attendanceStreamKey == key) {
+      return _attendanceStream!;
+    }
+    Query<Map<String, dynamic>> query = _db
+        .collection('attendance')
+        .where('managerId', isEqualTo: managerId)
+        .where('date', isEqualTo: date);
+    if (status != 'all') {
+      query = query.where('status', isEqualTo: status);
+    }
+    _attendanceStreamKey = key;
+    _attendanceStream = query.snapshots();
+    return _attendanceStream!;
+  }
 
   Future<void> _selectDate(BuildContext context) async {
     final DateTime? picked = await showDatePicker(
@@ -61,16 +84,6 @@ class _TeamAttendanceScreenState extends State<TeamAttendanceScreen> {
           child: CircularProgressIndicator(color: ZaWolfColors.primaryCyan),
         ),
       );
-    }
-
-    // Build Firestore query
-    Query query = _db
-        .collection('attendance')
-        .where('managerId', isEqualTo: manager.uid)
-        .where('date', isEqualTo: dateStr);
-
-    if (_selectedStatus != 'all') {
-      query = query.where('status', isEqualTo: _selectedStatus);
     }
 
     return Scaffold(
@@ -145,7 +158,11 @@ class _TeamAttendanceScreenState extends State<TeamAttendanceScreen> {
           // Stream Results
           Expanded(
             child: StreamBuilder<QuerySnapshot>(
-              stream: query.snapshots(),
+              stream: _attendanceForSelection(
+                manager.uid,
+                dateStr,
+                _selectedStatus,
+              ),
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
                   return const Center(

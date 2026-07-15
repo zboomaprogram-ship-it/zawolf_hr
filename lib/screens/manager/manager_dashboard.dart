@@ -24,6 +24,8 @@ class _ManagerDashboardScreenState extends State<ManagerDashboardScreen> {
   int _pendingCount = 0;
   bool _loadingRequests = true;
   Future<DashboardAttendanceSummary>? _attendanceSummaryFuture;
+  Stream<QuerySnapshot<Map<String, dynamic>>>? _todayAttendanceStream;
+  String? _todayAttendanceStreamKey;
 
   @override
   void initState() {
@@ -86,6 +88,22 @@ class _ManagerDashboardScreenState extends State<ManagerDashboardScreen> {
         .timeout(const Duration(seconds: 20));
   }
 
+  Stream<QuerySnapshot<Map<String, dynamic>>> _attendanceForToday(
+    String managerId,
+    String date,
+  ) {
+    final key = '$managerId|$date';
+    if (_todayAttendanceStream == null || _todayAttendanceStreamKey != key) {
+      _todayAttendanceStreamKey = key;
+      _todayAttendanceStream = _db
+          .collection('attendance')
+          .where('managerId', isEqualTo: managerId)
+          .where('date', isEqualTo: date)
+          .snapshots();
+    }
+    return _todayAttendanceStream!;
+  }
+
   @override
   Widget build(BuildContext context) {
     final authService = Provider.of<AuthService>(context);
@@ -119,11 +137,7 @@ class _ManagerDashboardScreenState extends State<ManagerDashboardScreen> {
         ],
       ),
       body: StreamBuilder<QuerySnapshot>(
-        stream: _db
-            .collection('attendance')
-            .where('managerId', isEqualTo: manager.uid)
-            .where('date', isEqualTo: todayStr)
-            .snapshots(),
+        stream: _attendanceForToday(manager.uid, todayStr),
         builder: (context, snapshot) {
           List<Map<String, dynamic>> teamList = [];
 

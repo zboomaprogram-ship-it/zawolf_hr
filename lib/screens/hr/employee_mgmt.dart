@@ -105,6 +105,7 @@ class EmployeeManagementScreen extends StatefulWidget {
 
 class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
+  late final Stream<QuerySnapshot<Map<String, dynamic>>> _employeesStream;
   String _searchQuery = '';
   String? _filterRole;
   String? _filterDepartment;
@@ -113,6 +114,14 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
   bool _bulkImporting = false;
   int _importProgress = 0;
   int _importTotal = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    // Keep one listener for this large collection. Creating snapshots() in
+    // build resubscribes after every StreamBuilder rebuild and wastes reads.
+    _employeesStream = _db.collection('users').snapshots();
+  }
 
   void _showAddEmployeeDialog() {
     showDialog(
@@ -739,7 +748,7 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
           // Real-time Employee List
           Expanded(
             child: StreamBuilder<QuerySnapshot>(
-              stream: _db.collection('users').snapshots(),
+              stream: _employeesStream,
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
                   return const Center(

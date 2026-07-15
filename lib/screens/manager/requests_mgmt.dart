@@ -38,6 +38,8 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen>
   final ComplaintService _complaintService = ComplaintService();
   final AdvanceService _advanceService = AdvanceService();
   String _salaryDeductionFilter = 'all';
+  final Map<String, Stream<QuerySnapshot<Map<String, dynamic>>>> _streamCache =
+      {};
 
   @override
   void initState() {
@@ -222,7 +224,14 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen>
     );
   }
 
-  Stream<QuerySnapshot> _pendingStream(
+  Stream<QuerySnapshot<Map<String, dynamic>>> _cachedStream(
+    String key,
+    Query<Map<String, dynamic>> query,
+  ) {
+    return _streamCache.putIfAbsent(key, query.snapshots);
+  }
+
+  Stream<QuerySnapshot<Map<String, dynamic>>> _pendingStream(
     String collection,
     String reviewerId,
     String role,
@@ -237,7 +246,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen>
     } else {
       query = query.where('status', isEqualTo: 'pending_hr');
     }
-    return query.snapshots();
+    return _cachedStream('pending|$collection|$reviewerId|$role', query);
   }
 
   Widget _buildLeavesTab(UserModel reviewer, ThemeData theme) {
@@ -633,10 +642,10 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen>
     }
 
     return StreamBuilder<QuerySnapshot>(
-      stream: _db
-          .collection('complaints')
-          .where('status', isEqualTo: 'new')
-          .snapshots(),
+      stream: _cachedStream(
+        'complaints|new|${reviewer.uid}',
+        _db.collection('complaints').where('status', isEqualTo: 'new'),
+      ),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(
@@ -754,10 +763,12 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen>
       return _buildEmptyState('خصومات الراتب تراجع من HR فقط');
     }
     return StreamBuilder<QuerySnapshot>(
-      stream: _db
-          .collection('attendance')
-          .where('salaryDeductionApprovalStatus', isEqualTo: 'pending_hr')
-          .snapshots(),
+      stream: _cachedStream(
+        'attendance|salary-deduction|${reviewer.uid}',
+        _db
+            .collection('attendance')
+            .where('salaryDeductionApprovalStatus', isEqualTo: 'pending_hr'),
+      ),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(
@@ -1047,16 +1058,20 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen>
       return _buildEmptyState('مراجعة أمان الحضور من HR فقط');
     }
     return StreamBuilder<QuerySnapshot>(
-      stream: _db
-          .collection('attendance')
-          .where('securityReviewStatus', isEqualTo: 'pending_hr')
-          .snapshots(),
+          stream: _cachedStream(
+            'attendance|checkin-security|${reviewer.uid}',
+            _db
+                .collection('attendance')
+                .where('securityReviewStatus', isEqualTo: 'pending_hr'),
+          ),
       builder: (context, checkInSnapshot) {
         return StreamBuilder<QuerySnapshot>(
-          stream: _db
-              .collection('attendance')
-              .where('checkoutSecurityReviewStatus', isEqualTo: 'pending_hr')
-              .snapshots(),
+          stream: _cachedStream(
+            'attendance|checkout-security|${reviewer.uid}',
+            _db
+                .collection('attendance')
+                .where('checkoutSecurityReviewStatus', isEqualTo: 'pending_hr'),
+          ),
           builder: (context, checkoutSnapshot) {
             final waiting =
                 checkInSnapshot.connectionState == ConnectionState.waiting ||

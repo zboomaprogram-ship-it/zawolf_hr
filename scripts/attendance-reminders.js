@@ -10,6 +10,13 @@ const CAIRO_TIME_ZONE = 'Africa/Cairo';
 // The Hostinger process scans every five minutes. A ten-minute window covers
 // a delayed scan while the run-document prevents duplicate reminders.
 const REMINDER_WINDOW_MINUTES = 10;
+// Active employee profiles change rarely during a working day. Reusing them
+// for a short period prevents a full users read on every five-minute tick.
+const ACTIVE_USERS_CACHE_MS = Math.max(
+  15 * 60 * 1000,
+  Number(process.env.ATTENDANCE_REMINDER_USERS_CACHE_MS || 60 * 60 * 1000),
+);
+let activeUsersCache = { expiresAt: 0, users: [] };
 
 function initializeFirebase() {
   const existingApp = getExistingFirebaseApp(admin);
@@ -89,6 +96,18 @@ function isWorkDay(user, cairoWeekday) {
     return workDays.includes(weekdayMap[cairoWeekday]);
   }
   return cairoWeekday !== 'Fri';
+}
+
+async function loadActiveUsers(db) {
+  if (Date.now() < activeUsersCache.expiresAt) {
+    return activeUsersCache.users;
+  }
+  const snapshot = await db.collection('users').where('isActive', '==', true).get();
+  activeUsersCache = {
+    expiresAt: Date.now() + ACTIVE_USERS_CACHE_MS,
+    users: snapshot.docs,
+  };
+  return activeUsersCache.users;
 }
 
 function notificationFor({ kind, startMinutes, endMinutes, hasLatePermission, hasEarlyPermission, reminderLeadMinutes = 10, lateReminderMinutes = 10 }) {
@@ -185,8 +204,8 @@ async function queueAttendanceReminders() {
     return { queued: 0, skipped: 'outside_reminder_window', date: now.dateKey };
   }
 
-  const [usersSnap, leavesSnap, permissionsSnap, fieldAssignmentsSnap] = await Promise.all([
-    db.collection('users').where('isActive', '==', true).get(),
+  const [users, leavesSnap, permissionsSnap, fieldAssignmentsSnap] = await Promise.all([
+    loadActiveUsers(db),
     db.collection('leaves').where('status', '==', 'approved').get(),
     db.collection('permissions').where('status', '==', 'approved').where('requestDate', '==', now.dateKey).get(),
     db.collection('fieldAssignments').where('status', '==', 'active').where('date', '==', now.dateKey).get(),
@@ -211,7 +230,7 @@ async function queueAttendanceReminders() {
   }
 
   let queued = 0;
-  for (const userDoc of usersSnap.docs) {
+  for (const userDoc of users) {
     const user = userDoc.data();
     if (!isWorkDay(user, now.weekday) || leaveByUser.has(userDoc.id)) continue;
 
@@ -265,6 +284,7 @@ if (require.main === module) {
 module.exports = {
   isWorkDay,
   isReminderScanWindow,
+  loadActiveUsers,
   notificationFor,
   queueAttendanceReminders,
 };

@@ -10,7 +10,24 @@ const backgroundIntervalMs = Math.max(
   5 * 60 * 1000,
   Number(process.env.NOTIFICATION_DISPATCH_INTERVAL_MS || 5 * 60 * 1000),
 );
+const quotaBackoffMs = Math.max(
+  15 * 60 * 1000,
+  Number(process.env.FIRESTORE_QUOTA_BACKOFF_MS || 60 * 60 * 1000),
+);
 let runningDispatch = null;
+let firestoreQuotaBlockedUntil = 0;
+
+function isFirestoreQuotaError(error) {
+  const message = String(error?.message || error || '');
+  return error?.code === 8 || message.includes('RESOURCE_EXHAUSTED') || message.includes('Quota exceeded');
+}
+
+function pauseForFirestoreQuota(error) {
+  firestoreQuotaBlockedUntil = Date.now() + quotaBackoffMs;
+  console.warn(
+    `Firestore quota is exhausted. Background notification work is paused for ${Math.round(quotaBackoffMs / 60000)} minutes: ${String(error?.message || error)}`,
+  );
+}
 
 function sendJson(res, statusCode, payload) {
   const body = JSON.stringify(payload);
@@ -104,6 +121,7 @@ async function handleAttendanceReminders(req, res, url) {
 // overlaps with the in-process schedule.
 async function runBackgroundDispatch() {
   if (runningDispatch) return;
+  if (Date.now() < firestoreQuotaBlockedUntil) return;
 
   runningDispatch = (async () => {
     let reminders;
@@ -116,9 +134,19 @@ async function runBackgroundDispatch() {
       // pending notifications from being delivered.
       console.error('Background attendance reminder scan failed:', error);
       reminders = { error: String(error.message || error) };
+      if (isFirestoreQuotaError(error)) {
+        pauseForFirestoreQuota(error);
+        return { reminders, push: { skipped: 'firestore_quota_exhausted' } };
+      }
     }
 
-    const push = await dispatchNotifications();
+    let push;
+    try {
+      push = await dispatchNotifications();
+    } catch (error) {
+      if (isFirestoreQuotaError(error)) pauseForFirestoreQuota(error);
+      throw error;
+    }
     return { automaticAttendance, reminders, push };
   })();
 
