@@ -42,6 +42,11 @@ class PersonalAlarmService {
 
   bool get usesAndroidClock => Platform.isAndroid;
 
+  Future<bool> get canUseAndroidAlarm async {
+    if (!Platform.isAndroid) return true;
+    return await _channel.invokeMethod<bool>('canUseSystemAlarm') ?? false;
+  }
+
   Future<bool> get supportsIosSystemAlarm async {
     if (!Platform.isIOS) return false;
     return await _channel.invokeMethod<bool>('iosAlarmAvailability') ?? false;
@@ -69,7 +74,12 @@ class PersonalAlarmService {
     final prefs = await SharedPreferences.getInstance();
 
     if (Platform.isAndroid) {
+      await NotificationService.instance.requestPermissions();
+      if (!await canUseAndroidAlarm) {
+        throw Exception('اسمح بإشعارات الهاتف حتى يظهر زر إيقاف منبه الدوام.');
+      }
       await _channel.invokeMethod<void>('setSystemAlarm', {
+        'userId': userId,
         'hour': hour,
         'minute': minute,
         'message': 'منبه الدوام - ZaWolf HR',
@@ -126,11 +136,10 @@ class PersonalAlarmService {
         _notificationIdFor(userId),
       );
     }
-  }
-
-  Future<void> openAndroidClock() async {
     if (Platform.isAndroid) {
-      await _channel.invokeMethod<void>('showSystemAlarms');
+      await _channel.invokeMethod<void>('cancelSystemAlarm', {
+        'userId': userId,
+      });
     }
   }
 

@@ -1,4 +1,26 @@
 workflows:
+  android-workflow:
+    name: Android Release Build
+    max_build_duration: 120
+    instance_type: mac_mini_m2
+    environment:
+      groups:
+        - production
+      flutter: default
+    scripts:
+      - name: Install dependencies
+        script: flutter pub get
+      - name: Build Android App Bundle
+        script: |
+          if [ -z "${ONESIGNAL_APP_ID:-}" ]; then
+            echo "ONESIGNAL_APP_ID is missing. Add it to Codemagic group: production."
+            exit 1
+          fi
+          flutter build appbundle --release \
+            --dart-define=ONESIGNAL_APP_ID=$ONESIGNAL_APP_ID
+    artifacts:
+      - build/app/outputs/bundle/release/*.aab
+
   ios-workflow:
     name: iOS Release Build
     max_build_duration: 120

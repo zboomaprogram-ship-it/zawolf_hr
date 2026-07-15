@@ -230,7 +230,7 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
           SnackBar(
             content: Text(
               PersonalAlarmService.instance.usesAndroidClock
-                  ? 'افتح تطبيق الساعة وأكّد المنبه، ثم اختر التكرار اليومي إذا أردته.'
+                  ? 'تم تفعيل منبه الدوام اليومي. سيستمر بالرنين حتى تضغط إيقاف المنبه.'
                   : 'تم تفعيل منبه الدوام اليومي في الساعة ${settings.formattedTime}. سيطلب iPhone الإذن عند الحاجة فقط.',
             ),
           ),
@@ -245,15 +245,12 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
             minute: _personalAlarm.minute,
           ),
         );
-        if (PersonalAlarmService.instance.usesAndroidClock) {
-          await PersonalAlarmService.instance.openAndroidClock();
-        }
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
               PersonalAlarmService.instance.usesAndroidClock
-                  ? 'تم إيقافه داخل التطبيق. أوقف منبه ZaWolf HR من تطبيق الساعة أيضاً.'
+                  ? 'تم إيقاف منبه الدوام.'
                   : 'تم إيقاف منبه الدوام.',
             ),
           ),
@@ -635,20 +632,6 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                       child: Text(_personalAlarm.formattedTime),
                     ),
                   ),
-                  if (PersonalAlarmService.instance.usesAndroidClock)
-                    ListTile(
-                      leading: const Icon(
-                        Icons.alarm_on_outlined,
-                        color: ZaWolfColors.primaryCyan,
-                      ),
-                      title: const Text('إدارة منبه الساعة'),
-                      trailing: IconButton(
-                        tooltip: 'فتح تطبيق الساعة',
-                        onPressed:
-                            PersonalAlarmService.instance.openAndroidClock,
-                        icon: const Icon(Icons.open_in_new),
-                      ),
-                    ),
                 ],
               ),
             ),

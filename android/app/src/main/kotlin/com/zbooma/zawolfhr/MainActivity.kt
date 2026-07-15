@@ -4,7 +4,8 @@ import android.content.Intent
 import android.app.PendingIntent
 import android.content.Context
 import android.content.pm.PackageManager
-import android.provider.AlarmClock
+import android.os.Build
+import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import com.google.android.gms.location.Geofence
 import com.google.android.gms.location.GeofencingClient
@@ -29,28 +30,36 @@ class MainActivity : FlutterFragmentActivity() {
                         val hour = call.argument<Int>("hour") ?: 8
                         val minute = call.argument<Int>("minute") ?: 45
                         val message = call.argument<String>("message") ?: "ZaWolf HR"
-                        val intent = Intent(AlarmClock.ACTION_SET_ALARM).apply {
-                            putExtra(AlarmClock.EXTRA_HOUR, hour)
-                            putExtra(AlarmClock.EXTRA_MINUTES, minute)
-                            putExtra(AlarmClock.EXTRA_MESSAGE, message)
-                            // Keep the Clock app visible so the employee can confirm
-                            // the alarm and choose its repeat behavior.
-                            putExtra(AlarmClock.EXTRA_SKIP_UI, false)
+                        val userId = call.argument<String>("userId")
+                        if (userId.isNullOrBlank()) {
+                            result.error("INVALID_ALARM", "بيانات منبه الدوام غير مكتملة.", null)
+                            return@setMethodCallHandler
                         }
                         try {
-                            startActivity(intent)
-                            result.success(null)
+                            PersonalAlarmScheduler.schedule(this, userId, hour, minute, message)
+                            result.success(true)
                         } catch (error: Exception) {
-                            result.error("CLOCK_UNAVAILABLE", "تعذر فتح تطبيق الساعة على هذا الجهاز.", error.message)
+                            result.error("ALARM_UNAVAILABLE", "تعذر جدولة منبه الدوام على هذا الجهاز.", error.message)
                         }
                     }
-                    "showSystemAlarms" -> {
+                    "cancelSystemAlarm" -> {
+                        val userId = call.argument<String>("userId")
+                        if (userId.isNullOrBlank()) {
+                            result.success(null)
+                            return@setMethodCallHandler
+                        }
                         try {
-                            startActivity(Intent(AlarmClock.ACTION_SHOW_ALARMS))
+                            PersonalAlarmScheduler.cancel(this, userId)
                             result.success(null)
                         } catch (error: Exception) {
-                            result.error("CLOCK_UNAVAILABLE", "تعذر فتح تطبيق الساعة على هذا الجهاز.", error.message)
+                            result.error("ALARM_UNAVAILABLE", "تعذر إيقاف منبه الدوام.", error.message)
                         }
+                    }
+                    "canUseSystemAlarm" -> {
+                        val notificationsEnabled = NotificationManagerCompat.from(this).areNotificationsEnabled()
+                        val notificationPermissionGranted = Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+                            ContextCompat.checkSelfPermission(this, android.Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+                        result.success(notificationsEnabled && notificationPermissionGranted)
                     }
                     else -> result.notImplemented()
                 }
