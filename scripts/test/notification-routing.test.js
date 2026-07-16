@@ -9,6 +9,7 @@ const {
   isWorkDay,
   isReminderScanWindow,
   notificationFor,
+  dueReminderPlans,
 } = require('../attendance-reminders');
 const { parseFirebaseServiceAccount } = require('../firebase-service-account');
 const { deductionFor, effectiveTimes, haversineMeters } = require('../auto-attendance');
@@ -75,6 +76,24 @@ test('attendance reminders follow work days and approved permission times', () =
   assert.equal(lateWarning.targetMinutes, 11 * 60 + 10);
   assert.equal(checkOut.targetMinutes, 15 * 60);
   assert.match(checkOut.body, /15:00/);
+});
+
+test('a Hostinger cold start queues only the latest relevant morning reminder', () => {
+  const plans = [
+    { kind: 'check_in_before', notification: { targetMinutes: 8 * 60 + 50 } },
+    { kind: 'check_in_start', notification: { targetMinutes: 9 * 60 } },
+    { kind: 'check_in_late_warning', notification: { targetMinutes: 9 * 60 + 10 } },
+    { kind: 'check_out', notification: { targetMinutes: 17 * 60 } },
+  ];
+
+  assert.deepEqual(
+    dueReminderPlans(plans, 9 * 60 + 36).map((plan) => plan.kind),
+    ['check_in_late_warning'],
+  );
+  assert.deepEqual(
+    dueReminderPlans(plans, 17 * 60).map((plan) => plan.kind),
+    ['check_out'],
+  );
 });
 
 test('attendance scans do not read employees outside the configured work window', () => {

@@ -30,6 +30,7 @@ class _AttendancePolicySettingsScreenState
   bool _loading = true;
   bool _saving = false;
   AttendancePolicyConfig _loadedPolicy = const AttendancePolicyConfig();
+  String _attendanceVerificationMode = 'location_only';
 
   @override
   void initState() {
@@ -68,11 +69,12 @@ class _AttendancePolicySettingsScreenState
     _quarterUntil.text = policy.quarterDayUntilMinutes.toString();
     _halfUntil.text = policy.halfDayUntilMinutes.toString();
     _loadedPolicy = policy;
+    _attendanceVerificationMode = policy.attendanceVerificationMode;
     setState(() => _loading = false);
   }
 
   bool _validTime(String value) {
-    final match = RegExp(r'^([01]\\d|2[0-3]):[0-5]\\d$').hasMatch(value);
+    final match = RegExp(r'^([01]\d|2[0-3]):[0-5]\d$').hasMatch(value);
     return match;
   }
 
@@ -100,7 +102,7 @@ class _AttendancePolicySettingsScreenState
       payrollWorkDaysPerMonth: _loadedPolicy.payrollWorkDaysPerMonth,
       checkInReminderLeadMinutes: _readInt(_reminderLead),
       checkInLateWarningMinutes: _readInt(_lateWarning),
-      attendanceVerificationMode: _loadedPolicy.attendanceVerificationMode,
+      attendanceVerificationMode: _attendanceVerificationMode,
     );
     try {
       await FirebaseFirestore.instance
@@ -182,6 +184,57 @@ class _AttendancePolicySettingsScreenState
               child: ListView(
                 padding: const EdgeInsets.all(16),
                 children: [
+                  WolfCard(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Text(
+                          'طريقة التحقق من الحضور',
+                          style: theme.textTheme.titleLarge?.copyWith(
+                            color: Colors.white,
+                          ),
+                          textDirection: TextDirection.rtl,
+                        ),
+                        const SizedBox(height: 16),
+                        Directionality(
+                          textDirection: TextDirection.rtl,
+                          child: SegmentedButton<String>(
+                            segments: const [
+                              ButtonSegment<String>(
+                                value: 'location_only',
+                                icon: Icon(Icons.location_on_outlined),
+                                label: Text('الموقع فقط'),
+                              ),
+                              ButtonSegment<String>(
+                                value: 'biometric',
+                                icon: Icon(Icons.fingerprint),
+                                label: Text('الموقع والبصمة'),
+                              ),
+                            ],
+                            selected: {_attendanceVerificationMode},
+                            showSelectedIcon: false,
+                            onSelectionChanged: _saving
+                                ? null
+                                : (selection) {
+                                    setState(() {
+                                      _attendanceVerificationMode =
+                                          selection.first;
+                                    });
+                                  },
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        Text(
+                          _attendanceVerificationMode == 'biometric'
+                              ? 'يتطلب الموقع داخل النطاق ثم بصمة أو وجه الجهاز.'
+                              : 'يتحقق من الجهاز والموقع داخل النطاق دون طلب البصمة.',
+                          style: theme.textTheme.bodySmall,
+                          textDirection: TextDirection.rtl,
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
                   WolfCard(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,

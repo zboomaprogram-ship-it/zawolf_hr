@@ -543,11 +543,18 @@ class AttendanceService {
       );
     }
 
-    if (strictLocationOnly && geoResult.accuracyMeters > 25) {
+    if (strictLocationOnly && geoResult.accuracyMeters > 50) {
       return _LocationRiskAssessment.blocked(
         message:
-            'دقة الموقع يجب أن تكون 25 متراً أو أفضل لتسجيل الحضور بالموقع فقط. انتقل لمكان مفتوح وفعّل GPS ثم أعد المحاولة.',
+            'دقة الموقع يجب أن تكون 50 متراً أو أفضل لتسجيل الحضور بالموقع فقط. انتقل لمكان مفتوح وفعّل الموقع الدقيق ثم أعد المحاولة.',
         reasons: const ['location_only_accuracy_too_low'],
+      );
+    }
+
+    if (strictLocationOnly && geoResult.accuracyMeters > 25) {
+      reasons.add('location_only_accuracy_review');
+      messages.add(
+        'دقة الموقع متوسطة: ${geoResult.accuracyMeters.toStringAsFixed(0)} متر',
       );
     }
 
@@ -588,6 +595,7 @@ class AttendanceService {
 
     final highRisk =
         reasons.contains('weak_accuracy') ||
+        reasons.contains('location_only_accuracy_review') ||
         reasons.contains('offline_capture');
     return _LocationRiskAssessment.review(
       level: highRisk ? 'high' : 'medium',

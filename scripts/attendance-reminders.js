@@ -10,6 +10,13 @@ const CAIRO_TIME_ZONE = 'Africa/Cairo';
 // The Hostinger process scans every five minutes. A ten-minute window covers
 // a delayed scan while the run-document prevents duplicate reminders.
 const REMINDER_WINDOW_MINUTES = 10;
+// Shared hosting can suspend the Node process while it is idle. When it wakes
+// after a reminder's exact minute, send the latest relevant check-in reminder
+// instead of silently missing every morning notification.
+const CHECK_IN_CATCH_UP_MINUTES = Math.max(
+  REMINDER_WINDOW_MINUTES,
+  Number(process.env.ATTENDANCE_REMINDER_CATCH_UP_MINUTES || 90),
+);
 // Active employee profiles change rarely during a working day. Reusing them
 // for a short period prevents a full users read on every five-minute tick.
 const ACTIVE_USERS_CACHE_MS = Math.max(
@@ -208,7 +215,7 @@ function notificationFor({ kind, startMinutes, endMinutes, hasLatePermission, ha
     return {
       targetMinutes: startMinutes + lateReminderMinutes,
       title: 'تنبيه قبل خصم التأخير',
-      body: `لم يتم تسجيل حضورك بعد. سجّل الحضور الآن قبل بدء احتساب خصم التأخير.`,
+      body: 'لم يتم تسجيل حضورك بعد. سجّل الحضور الآن؛ قد يُحتسب التأخير وفق سياسة الدوام.',
       type: 'attendance_late_warning',
     };
   }
@@ -220,6 +227,35 @@ function notificationFor({ kind, startMinutes, endMinutes, hasLatePermission, ha
       : `انتهى الدوام الساعة ${formatTime(endMinutes)}. لا تنسَ تسجيل الانصراف قبل المغادرة.`,
     type: 'attendance_check_out_reminder',
   };
+}
+
+function dueReminderPlans(plans, nowMinutes) {
+  const checkInPlans = plans
+    .filter((plan) => plan.kind.startsWith('check_in'))
+    .filter((plan) => nowMinutes >= plan.notification.targetMinutes)
+    .filter(
+      (plan) =>
+        nowMinutes <
+        plan.notification.targetMinutes + CHECK_IN_CATCH_UP_MINUTES,
+    )
+    .sort(
+      (left, right) =>
+        right.notification.targetMinutes - left.notification.targetMinutes,
+    );
+
+  const checkoutPlans = plans.filter(
+    (plan) =>
+      plan.kind === 'check_out' &&
+      nowMinutes >= plan.notification.targetMinutes &&
+      nowMinutes <
+        plan.notification.targetMinutes + REMINDER_WINDOW_MINUTES,
+  );
+
+  // Only the newest check-in message is useful after a cold start. This also
+  // prevents 08:50, 09:00, and 09:10 alerts arriving together.
+  return checkInPlans.length
+    ? [checkInPlans[0], ...checkoutPlans]
+    : checkoutPlans;
 }
 
 async function createReminder(db, { userId, dateKey, kind, notification }) {
@@ -299,9 +335,13 @@ async function queueAttendanceReminders() {
   }
 
   let queued = 0;
+  let eligibleUsers = 0;
+  let dueUsers = 0;
+  let alreadyCompleted = 0;
   for (const userDoc of users) {
     const user = userDoc.data();
     if (!isWorkDay(user, now.weekday) || leaveByUser.has(userDoc.id)) continue;
+    eligibleUsers++;
 
     const permissions = permissionsByUser.get(userDoc.id) || [];
     const fieldAssignments = fieldAssignmentsByUser.get(userDoc.id) || [];
@@ -321,12 +361,12 @@ async function queueAttendanceReminders() {
       { kind: 'check_out', notification: notificationFor({ kind: 'check_out', startMinutes: effectiveStart, endMinutes: effectiveEnd, hasLatePermission: Boolean(late), hasEarlyPermission: Boolean(early) }) },
     ];
 
-    const duePlans = plans.filter((plan) => {
+    const duePlans = dueReminderPlans(plans, now.minutes).filter((plan) => {
       if (plan.kind === 'check_out' && fieldAssignments.some((item) => item.requiresCheckout === false)) return false;
-      return now.minutes >= plan.notification.targetMinutes
-        && now.minutes < plan.notification.targetMinutes + REMINDER_WINDOW_MINUTES;
+      return true;
     });
     if (!duePlans.length) continue;
+    dueUsers++;
 
     // Do not read one attendance document per active employee on every scan.
     // Attendance is needed only for an employee with a reminder due now.
@@ -337,11 +377,22 @@ async function queueAttendanceReminders() {
       const isAlreadyDone = plan.kind.startsWith('check_in')
         ? attendanceData?.checkInTime != null
         : attendanceData?.checkOutTime != null || attendanceData?.checkInTime == null;
-      if (isAlreadyDone) continue;
+      if (isAlreadyDone) {
+        alreadyCompleted++;
+        continue;
+      }
       if (await createReminder(db, { userId: userDoc.id, dateKey: now.dateKey, kind: plan.kind, notification: plan.notification })) queued++;
     }
   }
-  return { queued, date: now.dateKey, cairoMinute: now.minutes };
+  return {
+    queued,
+    activeUsers: users.length,
+    eligibleUsers,
+    dueUsers,
+    alreadyCompleted,
+    date: now.dateKey,
+    cairoMinute: now.minutes,
+  };
 }
 
 if (require.main === module) {
@@ -355,5 +406,6 @@ module.exports = {
   isReminderScanWindow,
   loadActiveUsers,
   notificationFor,
+  dueReminderPlans,
   queueAttendanceReminders,
 };

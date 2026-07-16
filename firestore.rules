@@ -61,8 +61,12 @@ service cloud.firestore {
     }
     function attendanceRequiresBiometric() {
       let companyPath = /databases/$(database)/documents/companies/zawolf;
-      return !exists(companyPath)
-        || get(companyPath).data
+      // The Flutter policy service defaults to location-only when the company
+      // policy document has not been created yet. Rules must use the same
+      // default or every valid location-only attendance write is rejected for
+      // having biometricVerified=false.
+      return exists(companyPath)
+        && get(companyPath).data
           .get('attendancePolicy', {})
           .get('attendanceVerificationMode', 'location_only') != 'location_only';
     }
@@ -374,14 +378,23 @@ service cloud.firestore {
         && request.resource.data.get('checkoutLocationAccuracyMeters', 0) >= 0
         && request.resource.data.get('checkoutLocationDistanceMeters', 0) >= 0
         && request.resource.data.get('checkoutLocationAllowedRadiusMeters', 0) >= 0
-        && request.resource.data.salaryDeductionFraction >= 0
-        && request.resource.data.salaryDeductionFraction <= 1
-        && request.resource.data.salaryDeductionAmount >= 0
-        && request.resource.data.salaryDeductionApprovalStatus in [
+        // Attendance records created by older app versions may not contain
+        // deduction fields. Treat missing values as the same safe defaults
+        // used by AttendanceModel instead of blocking a valid checkout.
+        && request.resource.data.get('salaryDeductionFraction', 0) >= 0
+        && request.resource.data.get('salaryDeductionFraction', 0) <= 1
+        && request.resource.data.get('salaryDeductionAmount', 0) >= 0
+        && request.resource.data.get('salaryDeductionApprovalStatus', 'none') in [
           'none', 'pending_hr', 'approved', 'rejected'
         ]
-        && request.resource.data.get('checkOutDeviceId', '') == userDoc()
-          .get('registeredAttendanceDeviceId', '')
+        && (
+          request.resource.data.get('checkOutDeviceId', '') == userDoc()
+            .get('registeredAttendanceDeviceId', '')
+          || (
+            resource.data.get('deviceId', '') != ''
+            && request.resource.data.get('checkOutDeviceId', '') == resource.data.get('deviceId', '')
+          )
+        )
         && request.resource.data.checkOutTime is timestamp
         && (
           attendanceRequiresBiometric()
