@@ -162,6 +162,37 @@ class AuthService with ChangeNotifier {
     }
   }
 
+  /// Stops a slow Firebase profile refresh from trapping the router on the
+  /// splash screen. A valid cached profile can open the app immediately; when
+  /// no cache exists, the login screen remains available while Firebase may
+  /// still finish the in-flight refresh.
+  Future<void> recoverStartupSession() async {
+    if (!_loading) return;
+
+    final firebaseUser = _auth.currentUser;
+    if (firebaseUser == null) {
+      _currentUser = null;
+      _loading = false;
+      notifyListeners();
+      return;
+    }
+
+    try {
+      final cachedUser = await _readCachedProfile(
+        firebaseUser.uid,
+      ).timeout(const Duration(seconds: 2));
+      if (cachedUser != null && cachedUser.isActive) {
+        _currentUser = cachedUser;
+        unawaited(_startUserSessionServices(firebaseUser.uid));
+      }
+    } catch (_) {
+      // The normal auth listener can still complete after this fallback.
+    } finally {
+      _loading = false;
+      notifyListeners();
+    }
+  }
+
   Future<void> _cacheProfile(UserModel user) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_cachedProfileKey, jsonEncode(user.toSessionCache()));

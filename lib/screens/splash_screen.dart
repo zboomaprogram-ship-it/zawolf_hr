@@ -49,6 +49,11 @@ class _SplashScreenState extends State<SplashScreen>
     }
     if (!mounted) return;
 
+    if (authService.loading) {
+      await authService.recoverStartupSession();
+    }
+    if (!mounted) return;
+
     // Check authentication
     if (authService.isAuthenticated) {
       if (!mounted) return;
