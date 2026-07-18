@@ -1,0 +1,41 @@
+name: Reset All Salary Deductions
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Preview affected records without changing Firebase
+        required: true
+        default: 'true'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
+      confirmation:
+        description: For a live reset, enter RESET_ALL_SALARY_DEDUCTIONS
+        required: false
+        type: string
+
+jobs:
+  reset-salary-deductions:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v5
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+
+      - name: Install Dependencies
+        working-directory: ./scripts
+        run: npm ci
+
+      - name: Reset Salary Deductions
+        working-directory: ./scripts
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          DRY_RUN: ${{ inputs.dry_run }}
+          RESET_CONFIRMATION: ${{ inputs.confirmation }}
+        run: node reset-salary-deductions.js
