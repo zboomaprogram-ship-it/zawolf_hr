@@ -11,6 +11,7 @@ import 'audit_log_service.dart';
 import 'notification_service.dart';
 import 'daily_reminder_service.dart';
 import 'onesignal_service.dart';
+import 'required_attendance_alarm_service.dart';
 import '../models/attendance_policy.dart';
 
 class AuthService with ChangeNotifier {
@@ -39,6 +40,12 @@ class AuthService with ChangeNotifier {
       User? user,
     ) async {
       final sessionVersion = ++_authSessionVersion;
+      final previousSessionUid = _startedSessionServicesForUid;
+      if (previousSessionUid != null && previousSessionUid != user?.uid) {
+        unawaited(
+          RequiredAttendanceAlarmService.instance.disable(previousSessionUid),
+        );
+      }
       NotificationService.instance.stopListening();
       unawaited(DailyReminderService.instance.cancelAll());
       _startedSessionServicesForUid = null;
@@ -248,6 +255,7 @@ class AuthService with ChangeNotifier {
 
   // Sign out
   Future<void> signOut() async {
+    final signingOutUid = _currentUser?.uid ?? _auth.currentUser?.uid;
     _authSessionVersion++;
     _currentUser = null;
     _loading = false;
@@ -255,6 +263,9 @@ class AuthService with ChangeNotifier {
     NotificationService.instance.stopListening();
     unawaited(OneSignalService.instance.logout());
     unawaited(DailyReminderService.instance.cancelAll());
+    if (signingOutUid != null) {
+      unawaited(RequiredAttendanceAlarmService.instance.disable(signingOutUid));
+    }
     notifyListeners();
     await _clearCachedProfile();
     await _auth.signOut();

@@ -1,5 +1,3 @@
-import 'dart:io';
-
 import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -17,12 +15,22 @@ class AutomaticAttendanceService {
 
   static const _channel = MethodChannel('zawolf_hr/automatic_attendance');
 
+  // Public App Store and Google Play builds intentionally use foreground-only
+  // location. Employee geofencing in the background is not an acceptable use
+  // of the public-store background-location capability.
+  bool get isSupported => false;
+
   Future<bool> isEnabledFor(String userId) async {
     final preferences = await SharedPreferences.getInstance();
     return preferences.getBool('automatic_attendance_enabled_$userId') ?? false;
   }
 
   Future<void> enableFor(UserModel user) async {
+    if (!isSupported) {
+      throw Exception(
+        'الحضور التلقائي غير متاح على iPhone. استخدم زر الحضور والانصراف داخل التطبيق؛ لا يتم تتبع موقعك في الخلفية.',
+      );
+    }
     if (user.locationId.isEmpty) {
       throw Exception('لا يوجد فرع عمل محدد لهذا الحساب. تواصل مع HR.');
     }
@@ -55,7 +63,7 @@ class AutomaticAttendanceService {
     String? deviceId,
     String? deviceLabel,
   }) async {
-    if ((!Platform.isAndroid && !Platform.isIOS) || user.locationId.isEmpty) {
+    if (!isSupported || user.locationId.isEmpty) {
       return;
     }
     if (!force && !await isEnabledFor(user.uid)) return;
@@ -65,28 +73,22 @@ class AutomaticAttendanceService {
     if (location == null || !location.isActive) return;
     final boundDeviceId = deviceId ?? user.registeredAttendanceDeviceId;
     if (boundDeviceId == null || boundDeviceId.trim().isEmpty) return;
-    await _channel.invokeMethod<void>(
-      Platform.isAndroid ? 'configureAndroidGeofence' : 'configureIosRegion',
-      {
-        'userId': user.uid,
-        'employeeId': user.employeeId,
-        'deviceId': boundDeviceId,
-        'deviceLabel':
-            deviceLabel ?? user.registeredAttendanceDeviceLabel ?? '',
-        'locationId': location.locationId,
-        'locationName': location.name,
-        'latitude': location.latitude,
-        'longitude': location.longitude,
-        'radiusMeters': location.geofenceRadiusMeters,
-      },
-    );
+    await _channel.invokeMethod<void>('configureAndroidGeofence', {
+      'userId': user.uid,
+      'employeeId': user.employeeId,
+      'deviceId': boundDeviceId,
+      'deviceLabel': deviceLabel ?? user.registeredAttendanceDeviceLabel ?? '',
+      'locationId': location.locationId,
+      'locationName': location.name,
+      'latitude': location.latitude,
+      'longitude': location.longitude,
+      'radiusMeters': location.geofenceRadiusMeters,
+    });
   }
 
   Future<void> disable(String userId) async {
-    if (Platform.isAndroid || Platform.isIOS) {
-      await _channel.invokeMethod<void>(
-        Platform.isAndroid ? 'disableAndroidGeofence' : 'disableIosRegion',
-      );
+    if (isSupported) {
+      await _channel.invokeMethod<void>('disableAndroidGeofence');
     }
     final preferences = await SharedPreferences.getInstance();
     await preferences.remove('automatic_attendance_enabled_$userId');

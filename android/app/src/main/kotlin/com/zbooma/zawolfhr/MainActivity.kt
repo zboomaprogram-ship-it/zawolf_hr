@@ -45,6 +45,30 @@ class MainActivity : FlutterFragmentActivity() {
                             result.error("ALARM_UNAVAILABLE", "تعذر جدولة منبه الدوام على هذا الجهاز.", error.message)
                         }
                     }
+                    "setDatedSystemAlarms" -> {
+                        val ownerId = call.argument<String>("ownerId")
+                        val rawAlarms = call.argument<List<Map<String, Any>>>("alarms")
+                        if (ownerId.isNullOrBlank() || rawAlarms == null) {
+                            result.error("INVALID_ALARM", "بيانات منبهات الحضور غير مكتملة.", null)
+                            return@setMethodCallHandler
+                        }
+                        try {
+                            val alarms = rawAlarms.mapNotNull { item ->
+                                val key = item["key"] as? String
+                                val triggerAtMillis = item["triggerAtMillis"] as? Number
+                                if (key.isNullOrBlank() || triggerAtMillis == null) null else
+                                    DatedAlarm(
+                                        key = key,
+                                        triggerAtMillis = triggerAtMillis.toLong(),
+                                        message = item["message"] as? String ?: "حان وقت تسجيل الحضور في ZaWolf HR",
+                                    )
+                            }
+                            PersonalAlarmScheduler.replaceDated(this, ownerId, alarms)
+                            result.success(true)
+                        } catch (error: Exception) {
+                            result.error("ALARM_UNAVAILABLE", "تعذر جدولة منبهات الحضور.", error.message)
+                        }
+                    }
                     "cancelSystemAlarm" -> {
                         val userId = call.argument<String>("userId")
                         if (userId.isNullOrBlank()) {

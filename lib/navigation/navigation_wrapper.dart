@@ -8,6 +8,8 @@ import '../theme/theme.dart';
 import 'package:badges/badges.dart' as badges;
 import '../services/notification_service.dart';
 import '../services/pending_requests_service.dart';
+import '../services/required_attendance_alarm_service.dart';
+import '../models/user_model.dart';
 import 'dart:async';
 
 class NavigationWrapper extends StatefulWidget {
@@ -19,13 +21,17 @@ class NavigationWrapper extends StatefulWidget {
   State<NavigationWrapper> createState() => _NavigationWrapperState();
 }
 
-class _NavigationWrapperState extends State<NavigationWrapper> {
+class _NavigationWrapperState extends State<NavigationWrapper>
+    with WidgetsBindingObserver {
   StreamSubscription<String>? _notifTapSub;
   String? _currentUserUid;
+  String? _attendanceAlarmCheckedForUid;
+  UserModel? _alarmUser;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _notifTapSub = NotificationService.instance.onNotificationTap.listen((
       route,
     ) {
@@ -37,20 +43,95 @@ class _NavigationWrapperState extends State<NavigationWrapper> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _notifTapSub?.cancel();
     PendingRequestsService.instance.stopListening();
     super.dispose();
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed || _alarmUser == null) return;
+    unawaited(
+      RequiredAttendanceAlarmService.instance
+          .syncIfEnabled(_alarmUser!)
+          .catchError((_) => false),
+    );
+  }
+
+  void _checkRequiredAttendanceAlarm(UserModel user) {
+    if (_attendanceAlarmCheckedForUid == user.uid) return;
+    _attendanceAlarmCheckedForUid = user.uid;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+      try {
+        final alreadyEnabled = await RequiredAttendanceAlarmService.instance
+            .syncIfEnabled(user);
+        if (alreadyEnabled || !mounted) return;
+        final alreadyPrompted = await RequiredAttendanceAlarmService.instance
+            .hasPrompted(user.uid);
+        if (alreadyPrompted || !mounted) return;
+
+        final startTime = RequiredAttendanceAlarmService.instance.startTimeFor(
+          user,
+        );
+        final shouldEnable = await showDialog<bool>(
+          context: context,
+          barrierDismissible: true,
+          builder: (dialogContext) => AlertDialog(
+            title: const Text('منبه تسجيل الحضور'),
+            content: Text(
+              'يمكنك تفعيل منبه اختياري للحضور الساعة $startTime. يعمل بصوت الذئب في أيام العمل، ويتوقف تلقائياً في الإجازات المعتمدة وأيام العطلة. يمكنك متابعة استخدام التطبيق من دون تفعيله.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(false),
+                child: const Text('ليس الآن'),
+              ),
+              FilledButton.icon(
+                onPressed: () => Navigator.of(dialogContext).pop(true),
+                icon: const Icon(Icons.alarm),
+                label: const Text('تفعيل'),
+              ),
+            ],
+          ),
+        );
+        await RequiredAttendanceAlarmService.instance.markPrompted(user.uid);
+        if (shouldEnable != true || !mounted) return;
+
+        final settings = await RequiredAttendanceAlarmService.instance
+            .enableFor(user);
+        RequiredAttendanceAlarmService.instance.startWatching(user);
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'تم تفعيل منبه الحضور الساعة ${settings.formattedTime}.',
+            ),
+          ),
+        );
+      } catch (error) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(error.toString().replaceFirst('Exception: ', '')),
+          ),
+        );
+      }
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
     final authService = Provider.of<AuthService>(context);
     final user = authService.currentUser;
+    _alarmUser = user;
     final theme = Theme.of(context);
 
     if (user == null) {
       if (_currentUserUid != null) {
         _currentUserUid = null;
+        _attendanceAlarmCheckedForUid = null;
         PendingRequestsService.instance.stopListening();
       }
       return const Scaffold(
@@ -70,6 +151,7 @@ class _NavigationWrapperState extends State<NavigationWrapper> {
         PendingRequestsService.instance.stopListening();
       }
     }
+    _checkRequiredAttendanceAlarm(user);
 
     final String matchedLocation = GoRouterState.of(context).matchedLocation;
     final String role = user.role;

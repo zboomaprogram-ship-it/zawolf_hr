@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zawolf_hr/models/attendance_policy.dart';
+import 'package:zawolf_hr/services/required_attendance_alarm_service.dart';
 
 void main() {
   test('policy config keeps configurable reminder thresholds', () {
@@ -29,5 +30,39 @@ void main() {
 
     expect(result.dayFraction, 0.25);
     expect(result.code, 'quarter_day');
+  });
+
+  test('attendance alarm skips an approved leave date', () {
+    final alarms = AttendanceAlarmPlanner.build(
+      now: DateTime(2026, 7, 18, 8),
+      startTime: '09:00',
+      workDays: const [1, 2, 3, 4, 5, 6, 7],
+      approvedLeaves: [
+        AttendanceAlarmLeaveRange(
+          start: DateTime(2026, 7, 18),
+          end: DateTime(2026, 7, 18),
+        ),
+      ],
+      companyDaysOff: const {},
+      latePermissionMinutes: const {},
+      horizonDays: 1,
+    );
+
+    expect(alarms, hasLength(1));
+    expect(alarms.single.key, '2026-07-19');
+  });
+
+  test('attendance alarm follows an approved late permission duration', () {
+    final alarms = AttendanceAlarmPlanner.build(
+      now: DateTime(2026, 7, 18, 8),
+      startTime: '09:00',
+      workDays: const [1, 2, 3, 4, 5, 6, 7],
+      approvedLeaves: const [],
+      companyDaysOff: const {},
+      latePermissionMinutes: const {'2026-07-18': 120},
+      horizonDays: 0,
+    );
+
+    expect(alarms.single.triggerAt, DateTime(2026, 7, 18, 11));
   });
 }

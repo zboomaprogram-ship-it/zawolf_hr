@@ -6,6 +6,7 @@ import '../models/employee_role.dart';
 import '../services/auth_service.dart';
 import '../screens/splash_screen.dart';
 import '../screens/login_screen.dart';
+import '../screens/privacy_policy_screen.dart';
 import 'navigation_wrapper.dart';
 import '../screens/employee/employee_dashboard.dart';
 import '../screens/employee/employee_requests.dart';
@@ -53,6 +54,7 @@ class ZaWolfRouter {
       redirect: (BuildContext context, GoRouterState state) {
         final loggingIn = state.matchedLocation == '/login';
         final onSplash = state.matchedLocation == '/splash';
+        final viewingPrivacy = state.matchedLocation == '/privacy';
 
         final authenticated = authService.isAuthenticated;
         if (authService.loading) {
@@ -64,7 +66,7 @@ class ZaWolfRouter {
 
         // 1. Unauthenticated users must log in
         if (!authenticated) {
-          if (!loggingIn && !onSplash) {
+          if (!loggingIn && !onSplash && !viewingPrivacy) {
             return '/login';
           }
           return null;
@@ -125,6 +127,10 @@ class ZaWolfRouter {
         GoRoute(
           path: '/login',
           builder: (context, state) => const LoginScreen(),
+        ),
+        GoRoute(
+          path: '/privacy',
+          builder: (context, state) => const PrivacyPolicyScreen(),
         ),
 
         // Shell Route to wrap dashboard screens with bottom navigation

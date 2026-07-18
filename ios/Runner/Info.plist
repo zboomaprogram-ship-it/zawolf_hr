@@ -7,7 +7,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>ZaPack</string>
+	<string>ZaWolf HR</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -15,7 +15,7 @@
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>ZaPack</string>
+	<string>ZaWolf HR</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
@@ -42,19 +42,15 @@
 	<key>NSFaceIDUsageDescription</key>
 	<string>يستخدم التطبيق Face ID لتأمين تسجيل الحضور والانصراف.</string>
 	<key>NSAlarmKitUsageDescription</key>
-	<string>يستخدم ZaWolf HR هذا الإذن فقط عندما تختار تفعيل منبه الدوام الشخصي.</string>
-	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
-	<string>يستخدم التطبيق موقعك للتحقق من الحضور في الفروع المحددة.</string>
+	<string>يستخدم ZaWolf HR المنبه لتذكيرك بتسجيل الحضور في بداية الدوام.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>يستخدم التطبيق موقعك للتحقق من الحضور في الفروع المحددة.</string>
+	<string>يستخدم التطبيق موقعك أثناء فتح شاشة الحضور فقط للتحقق من وجودك داخل نطاق فرع العمل عند تسجيل الحضور أو الانصراف يدوياً.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>يستخدم التطبيق مكتبة الصور لرفع المستندات والصور المطلوبة.</string>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
 	<key>UIBackgroundModes</key>
 	<array>
-		<string>fetch</string>
-		<string>location</string>
 		<string>remote-notification</string>
 	</array>
 	<key>UILaunchStoryboardName</key>

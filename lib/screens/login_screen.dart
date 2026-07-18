@@ -368,6 +368,10 @@ class _LoginScreenState extends State<LoginScreen> {
                       fontWeight: FontWeight.w600,
                     ),
                   ),
+                  TextButton(
+                    onPressed: () => context.push('/privacy'),
+                    child: const Text('سياسة الخصوصية'),
+                  ),
                 ],
               ),
             ),

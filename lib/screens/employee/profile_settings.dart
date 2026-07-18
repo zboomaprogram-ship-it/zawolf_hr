@@ -40,6 +40,7 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
   String? _personalAlarmUserId;
   bool _loadingPersonalAlarm = false;
   bool _savingPersonalAlarm = false;
+  PersonalAlarmCapability? _personalAlarmCapability;
   bool _automaticAttendanceEnabled = false;
   bool _loadingAutomaticAttendance = false;
 
@@ -49,7 +50,9 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
     final user = Provider.of<AuthService>(context).currentUser;
     if (user != null && _personalAlarmUserId != user.uid) {
       _loadPersonalAlarm(user.uid);
-      _loadAutomaticAttendance(user.uid);
+      if (AutomaticAttendanceService.instance.isSupported) {
+        _loadAutomaticAttendance(user.uid);
+      }
     }
   }
 
@@ -215,9 +218,26 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
     _personalAlarmUserId = userId;
     setState(() => _loadingPersonalAlarm = true);
     try {
-      final settings = await PersonalAlarmService.instance.load(userId);
+      final results = await Future.wait<dynamic>([
+        PersonalAlarmService.instance.load(userId),
+        PersonalAlarmService.instance.capability(),
+      ]);
+      final settings = results[0] as PersonalAlarmSettings;
+      final capability = results[1] as PersonalAlarmCapability;
+      try {
+        await PersonalAlarmService.instance.repairEnabledAlarmIfNeeded(
+          userId,
+          settings,
+          capability,
+        );
+      } catch (_) {
+        // Keep the existing local reminder if AlarmKit authorization is denied.
+      }
       if (mounted && _personalAlarmUserId == userId) {
-        setState(() => _personalAlarm = settings);
+        setState(() {
+          _personalAlarm = settings;
+          _personalAlarmCapability = capability;
+        });
       }
     } finally {
       if (mounted && _personalAlarmUserId == userId) {
@@ -242,7 +262,9 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
             content: Text(
               PersonalAlarmService.instance.usesAndroidClock
                   ? 'تم تفعيل منبه الدوام اليومي. سيستمر بالرنين حتى تضغط إيقاف المنبه.'
-                  : 'تم تفعيل منبه الدوام اليومي في الساعة ${settings.formattedTime}. سيطلب iPhone الإذن عند الحاجة فقط.',
+                  : _personalAlarmCapability?.nativeSystemAlarm == true
+                  ? 'تم تفعيل منبه iPhone في الساعة ${settings.formattedTime}.'
+                  : 'تم تفعيل تذكير iPhone بالصوت في الساعة ${settings.formattedTime}. الإصدارات الأقل من iOS 26 لا تدعم منبه النظام الكامل.',
             ),
           ),
         );
@@ -529,28 +551,30 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                       },
                     ),
                   ),
-                  const Divider(color: ZaWolfColors.surface02, height: 1),
-                  ListTile(
-                    leading: const Icon(
-                      Icons.location_searching,
-                      color: ZaWolfColors.primaryCyan,
+                  if (AutomaticAttendanceService.instance.isSupported) ...[
+                    const Divider(color: ZaWolfColors.surface02, height: 1),
+                    ListTile(
+                      leading: const Icon(
+                        Icons.location_searching,
+                        color: ZaWolfColors.primaryCyan,
+                      ),
+                      title: const Text('الحضور التلقائي بالموقع'),
+                      subtitle: const Text(
+                        'يسجل الحضور عند دخول الفرع والانصراف عند المغادرة بعد وقت الدوام. يتطلب إذن الموقع دائماً.',
+                      ),
+                      trailing: _loadingAutomaticAttendance
+                          ? const SizedBox(
+                              width: 22,
+                              height: 22,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : Switch(
+                              value: _automaticAttendanceEnabled,
+                              activeThumbColor: ZaWolfColors.primaryCyan,
+                              onChanged: _setAutomaticAttendanceEnabled,
+                            ),
                     ),
-                    title: const Text('الحضور التلقائي بالموقع'),
-                    subtitle: const Text(
-                      'يسجل الحضور عند دخول الفرع والانصراف عند المغادرة بعد وقت الدوام. يتطلب إذن الموقع دائماً.',
-                    ),
-                    trailing: _loadingAutomaticAttendance
-                        ? const SizedBox(
-                            width: 22,
-                            height: 22,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : Switch(
-                            value: _automaticAttendanceEnabled,
-                            activeThumbColor: ZaWolfColors.primaryCyan,
-                            onChanged: _setAutomaticAttendanceEnabled,
-                          ),
-                  ),
+                  ],
                   const Divider(color: ZaWolfColors.surface02, height: 1),
 
                   // Notifications Toggle Switch
@@ -616,7 +640,10 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                           : _personalAlarm.enabled
                           ? PersonalAlarmService.instance.usesAndroidClock
                                 ? 'مفعّل في ${_personalAlarm.formattedTime}'
-                                : 'مفعّل يومياً في ${_personalAlarm.formattedTime}'
+                                : _personalAlarmCapability?.nativeSystemAlarm ==
+                                      true
+                                ? 'منبه iPhone مفعّل في ${_personalAlarm.formattedTime}'
+                                : 'تذكير iPhone بالصوت مفعّل في ${_personalAlarm.formattedTime}'
                           : 'غير مفعّل',
                     ),
                     trailing: _savingPersonalAlarm || _loadingPersonalAlarm
@@ -645,6 +672,17 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                           : () => _choosePersonalAlarmTime(user.uid),
                       child: Text(_personalAlarm.formattedTime),
                     ),
+                  ),
+                  const Divider(color: ZaWolfColors.surface02, height: 1),
+                  ListTile(
+                    leading: const Icon(
+                      Icons.privacy_tip_outlined,
+                      color: ZaWolfColors.primaryCyan,
+                    ),
+                    title: const Text('سياسة الخصوصية'),
+                    subtitle: const Text('اعرف كيف نستخدم بياناتك ونحميها'),
+                    trailing: const Icon(Icons.chevron_left),
+                    onTap: () => context.push('/privacy'),
                   ),
                 ],
               ),

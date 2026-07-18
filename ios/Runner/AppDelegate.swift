@@ -1,13 +1,13 @@
 import Flutter
 import UIKit
 import GoogleMaps
-import CoreLocation
-import FirebaseAuth
-import FirebaseFirestore
+#if canImport(AlarmKit)
+import AlarmKit
+import SwiftUI
+#endif
 
 @main
 @objc class AppDelegate: FlutterAppDelegate {
-  private let automaticAttendance = AutomaticAttendanceRegionDelegate()
   override func application(
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
@@ -15,7 +15,6 @@ import FirebaseFirestore
     GMSServices.provideAPIKey("AIzaSyDl5bO63kW9ukQkEEyqdg40oSFh1R8mOSM")
     GeneratedPluginRegistrant.register(with: self)
     configurePersonalAlarmChannel()
-    configureAutomaticAttendanceChannel()
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }
 
@@ -30,13 +29,120 @@ import FirebaseFirestore
     channel.setMethodCallHandler { call, result in
       switch call.method {
       case "iosAlarmAvailability":
-        result(false)
+        if #available(iOS 26.0, *) {
+          #if canImport(AlarmKit)
+          result(true)
+          #else
+          result(false)
+          #endif
+        } else {
+          result(false)
+        }
+      case "iosAlarmStatus":
+        var status: [String: Any] = [
+          "systemVersion": UIDevice.current.systemVersion,
+          "alarmKitCompiled": false,
+          "available": false,
+          "authorization": "unavailable",
+        ]
+        if #available(iOS 26.0, *) {
+          #if canImport(AlarmKit)
+          status["alarmKitCompiled"] = true
+          status["available"] = true
+          switch AlarmManager.shared.authorizationState {
+          case .notDetermined:
+            status["authorization"] = "notDetermined"
+          case .authorized:
+            status["authorization"] = "authorized"
+          case .denied:
+            status["authorization"] = "denied"
+          @unknown default:
+            status["authorization"] = "unknown"
+          }
+          #endif
+        }
+        result(status)
       case "scheduleIosWorkAlarm":
-        // The Flutter local-notification fallback is used on iOS. AlarmKit's
-        // public API is still changing across Xcode releases, so compiling it
-        // into a production HR app would make releases unnecessarily fragile.
-        result(FlutterError(code: "alarmkit_unavailable", message: "سيتم استخدام تذكير iPhone المحلي بدلاً من منبه النظام.", details: nil))
+        guard let arguments = call.arguments as? [String: Any],
+              let hour = arguments["hour"] as? Int,
+              let minute = arguments["minute"] as? Int else {
+          result(FlutterError(code: "invalid_alarm", message: "وقت المنبه غير صالح.", details: nil))
+          return
+        }
+        if #available(iOS 26.0, *) {
+          #if canImport(AlarmKit)
+          Task { @MainActor in
+            do {
+              let alarmID = try await self.scheduleWorkAlarm(
+                existingID: arguments["alarmId"] as? String,
+                hour: hour,
+                minute: minute
+              )
+              result(["alarmId": alarmID.uuidString])
+            } catch {
+              result(FlutterError(code: "alarmkit_failed", message: "تعذر تفعيل منبه iPhone. تأكد من السماح بالمنبهات في الإعدادات.", details: error.localizedDescription))
+            }
+          }
+          #else
+          result(FlutterError(code: "alarmkit_unavailable", message: "AlarmKit غير متاح في هذا البناء.", details: nil))
+          #endif
+        } else {
+          result(FlutterError(code: "alarmkit_unavailable", message: "سيتم استخدام تذكير iPhone المحلي بدلاً من منبه النظام.", details: nil))
+        }
       case "cancelIosWorkAlarm":
+        if #available(iOS 26.0, *) {
+          #if canImport(AlarmKit)
+          if let arguments = call.arguments as? [String: Any],
+             let rawID = arguments["alarmId"] as? String,
+             let alarmID = UUID(uuidString: rawID) {
+            do {
+              try AlarmManager.shared.cancel(id: alarmID)
+            } catch {
+              result(FlutterError(code: "alarmkit_cancel_failed", message: "تعذر إلغاء منبه iPhone.", details: error.localizedDescription))
+              return
+            }
+          }
+          #endif
+        }
+        result(nil)
+      case "scheduleIosDatedAlarms":
+        guard let arguments = call.arguments as? [String: Any],
+              let rawAlarms = arguments["alarms"] as? [[String: Any]] else {
+          result(FlutterError(code: "invalid_alarm", message: "بيانات منبهات الحضور غير مكتملة.", details: nil))
+          return
+        }
+        if #available(iOS 26.0, *) {
+          #if canImport(AlarmKit)
+          Task { @MainActor in
+            do {
+              let ids = try await self.scheduleDatedWorkAlarms(
+                existingIDs: arguments["alarmIds"] as? [String] ?? [],
+                rawAlarms: rawAlarms
+              )
+              result(["alarmIds": ids.map(\.uuidString)])
+            } catch {
+              result(FlutterError(code: "alarmkit_failed", message: "تعذر تفعيل منبهات الحضور على iPhone.", details: error.localizedDescription))
+            }
+          }
+          #else
+          result(FlutterError(code: "alarmkit_unavailable", message: "AlarmKit غير متاح في هذا البناء.", details: nil))
+          #endif
+        } else {
+          result(FlutterError(code: "alarmkit_unavailable", message: "AlarmKit يتطلب iOS 26 أو أحدث.", details: nil))
+        }
+      case "cancelIosDatedAlarms":
+        if #available(iOS 26.0, *) {
+          #if canImport(AlarmKit)
+          if let arguments = call.arguments as? [String: Any],
+             let rawIDs = arguments["alarmIds"] as? [String] {
+            for rawID in rawIDs {
+              if let alarmID = UUID(uuidString: rawID) {
+                try? AlarmManager.shared.cancel(id: alarmID)
+              }
+            }
+          }
+          #endif
+        }
         result(nil)
       default:
         result(FlutterMethodNotImplemented)
@@ -44,178 +150,132 @@ import FirebaseFirestore
     }
   }
 
-  private func configureAutomaticAttendanceChannel() {
-    guard let controller = window?.rootViewController as? FlutterViewController else {
-      return
+  #if canImport(AlarmKit)
+  @available(iOS 26.0, *)
+  @MainActor
+  private func scheduleWorkAlarm(existingID: String?, hour: Int, minute: Int) async throws -> UUID {
+    let manager = AlarmManager.shared
+    let authorization: AlarmManager.AuthorizationState
+    if manager.authorizationState == .notDetermined {
+      authorization = try await manager.requestAuthorization()
+    } else {
+      authorization = manager.authorizationState
     }
-    let channel = FlutterMethodChannel(
-      name: "zawolf_hr/automatic_attendance",
-      binaryMessenger: controller.binaryMessenger
+    guard authorization == .authorized else {
+      throw WorkAlarmError.authorizationDenied
+    }
+
+    if let rawID = existingID, let oldID = UUID(uuidString: rawID) {
+      try? manager.cancel(id: oldID)
+    }
+
+    let alarmID = UUID()
+    let time = Alarm.Schedule.Relative.Time(
+      hour: min(max(hour, 0), 23),
+      minute: min(max(minute, 0), 59)
     )
-    channel.setMethodCallHandler { [weak self] call, result in
-      switch call.method {
-      case "configureIosRegion":
-        guard let arguments = call.arguments as? [String: Any],
-              let userId = arguments["userId"] as? String,
-              let employeeId = arguments["employeeId"] as? String,
-              let deviceId = arguments["deviceId"] as? String,
-              let locationId = arguments["locationId"] as? String,
-              let locationName = arguments["locationName"] as? String,
-              let latitude = arguments["latitude"] as? Double,
-              let longitude = arguments["longitude"] as? Double,
-              let radius = arguments["radiusMeters"] as? Double else {
-          result(FlutterError(code: "invalid_geofence", message: "بيانات فرع الحضور غير مكتملة.", details: nil))
-          return
-        }
-        guard CLLocationManager.authorizationStatus() == .authorizedAlways else {
-          result(FlutterError(code: "always_location_required", message: "فعّل الموقع دائماً (Always) للحضور التلقائي.", details: nil))
-          return
-        }
-        self?.automaticAttendance.configure(
-          userId: userId,
-          employeeId: employeeId,
-          deviceId: deviceId,
-          deviceLabel: arguments["deviceLabel"] as? String ?? "",
-          locationId: locationId,
-          locationName: locationName,
-          latitude: latitude,
-          longitude: longitude,
-          radius: radius
+    let recurrence = Alarm.Schedule.Relative.Recurrence.weekly([
+      .monday, .tuesday, .wednesday, .thursday, .saturday, .sunday,
+    ])
+    let schedule = Alarm.Schedule.relative(
+      Alarm.Schedule.Relative(time: time, repeats: recurrence)
+    )
+    let stopButton = AlarmButton(
+      text: "إيقاف",
+      textColor: .white,
+      systemImageName: "stop.circle"
+    )
+    let alert = AlarmPresentation.Alert(
+      title: "منبه الدوام - ZaWolf HR",
+      stopButton: stopButton
+    )
+    let attributes = AlarmAttributes<WorkAlarmMetadata>(
+      presentation: AlarmPresentation(alert: alert),
+      metadata: WorkAlarmMetadata(),
+      tintColor: Color(red: 0.0, green: 0.83, blue: 0.88)
+    )
+    let configuration: AlarmManager.AlarmConfiguration<WorkAlarmMetadata> = .alarm(
+      schedule: schedule,
+      attributes: attributes,
+      sound: .named("wolf_alarm.wav")
+    )
+    _ = try await manager.schedule(id: alarmID, configuration: configuration)
+    return alarmID
+  }
+
+  @available(iOS 26.0, *)
+  @MainActor
+  private func scheduleDatedWorkAlarms(
+    existingIDs: [String],
+    rawAlarms: [[String: Any]]
+  ) async throws -> [UUID] {
+    let manager = AlarmManager.shared
+    let authorization: AlarmManager.AuthorizationState
+    if manager.authorizationState == .notDetermined {
+      authorization = try await manager.requestAuthorization()
+    } else {
+      authorization = manager.authorizationState
+    }
+    guard authorization == .authorized else {
+      throw WorkAlarmError.authorizationDenied
+    }
+
+    var scheduledIDs: [UUID] = []
+    do {
+      for rawAlarm in rawAlarms {
+        guard let millis = rawAlarm["triggerAtMillis"] as? NSNumber else { continue }
+        let triggerDate = Date(timeIntervalSince1970: millis.doubleValue / 1000)
+        guard triggerDate > Date() else { continue }
+
+        let alarmID = UUID()
+        let schedule = Alarm.Schedule.fixed(triggerDate)
+        let stopButton = AlarmButton(
+          text: "إيقاف",
+          textColor: .white,
+          systemImageName: "stop.circle"
         )
-        result(true)
-      case "disableIosRegion":
-        self?.automaticAttendance.disable()
-        result(true)
-      default:
-        result(FlutterMethodNotImplemented)
+        let alert = AlarmPresentation.Alert(
+          title: "منبه تسجيل الحضور - ZaWolf HR",
+          stopButton: stopButton
+        )
+        let attributes = AlarmAttributes<WorkAlarmMetadata>(
+          presentation: AlarmPresentation(alert: alert),
+          metadata: WorkAlarmMetadata(),
+          tintColor: Color(red: 0.0, green: 0.83, blue: 0.88)
+        )
+        let configuration: AlarmManager.AlarmConfiguration<WorkAlarmMetadata> = .alarm(
+          schedule: schedule,
+          attributes: attributes,
+          sound: .named("wolf_alarm.wav")
+        )
+        _ = try await manager.schedule(id: alarmID, configuration: configuration)
+        scheduledIDs.append(alarmID)
+      }
+    } catch {
+      for alarmID in scheduledIDs {
+        try? manager.cancel(id: alarmID)
+      }
+      throw error
+    }
+    for rawID in existingIDs {
+      if let alarmID = UUID(uuidString: rawID) {
+        try? manager.cancel(id: alarmID)
       }
     }
+    return scheduledIDs
   }
+  #endif
 }
 
-private final class AutomaticAttendanceRegionDelegate: NSObject, CLLocationManagerDelegate {
-  private let manager = CLLocationManager()
-  private let configKey = "zawolf_auto_attendance_config"
-  private var pendingEvent: String?
+#if canImport(AlarmKit)
+@available(iOS 26.0, *)
+private struct WorkAlarmMetadata: AlarmMetadata {}
 
-  override init() {
-    super.init()
-    manager.delegate = self
-    manager.allowsBackgroundLocationUpdates = true
-    manager.pausesLocationUpdatesAutomatically = true
-    restoreMonitoring()
-  }
+private enum WorkAlarmError: LocalizedError {
+  case authorizationDenied
 
-  func configure(
-    userId: String,
-    employeeId: String,
-    deviceId: String,
-    deviceLabel: String,
-    locationId: String,
-    locationName: String,
-    latitude: Double,
-    longitude: Double,
-    radius: Double
-  ) {
-    let config: [String: Any] = [
-      "userId": userId,
-      "employeeId": employeeId,
-      "deviceId": deviceId,
-      "deviceLabel": deviceLabel,
-      "locationId": locationId,
-      "locationName": locationName,
-      "latitude": latitude,
-      "longitude": longitude,
-      "radius": radius,
-    ]
-    UserDefaults.standard.set(config, forKey: configKey)
-    monitor(config)
-  }
-
-  func disable() {
-    for region in manager.monitoredRegions {
-      if region.identifier.hasPrefix("zawolf_") {
-        manager.stopMonitoring(for: region)
-      }
-    }
-    UserDefaults.standard.removeObject(forKey: configKey)
-    pendingEvent = nil
-  }
-
-  private func restoreMonitoring() {
-    guard let config = UserDefaults.standard.dictionary(forKey: configKey) else { return }
-    monitor(config)
-  }
-
-  private func monitor(_ config: [String: Any]) {
-    guard let locationId = config["locationId"] as? String,
-          let latitude = config["latitude"] as? Double,
-          let longitude = config["longitude"] as? Double,
-          let radius = config["radius"] as? Double else { return }
-    for region in manager.monitoredRegions where region.identifier.hasPrefix("zawolf_") {
-      manager.stopMonitoring(for: region)
-    }
-    let region = CLCircularRegion(
-      center: CLLocationCoordinate2D(latitude: latitude, longitude: longitude),
-      radius: min(max(radius, 10), manager.maximumRegionMonitoringDistance),
-      identifier: "zawolf_\(locationId)"
-    )
-    region.notifyOnEntry = true
-    region.notifyOnExit = true
-    manager.startMonitoring(for: region)
-    manager.requestState(for: region)
-  }
-
-  func locationManager(_ manager: CLLocationManager, didEnterRegion region: CLRegion) {
-    capture(event: "enter", region: region)
-  }
-
-  func locationManager(_ manager: CLLocationManager, didExitRegion region: CLRegion) {
-    capture(event: "exit", region: region)
-  }
-
-  func locationManager(_ manager: CLLocationManager, didDetermineState state: CLRegionState, for region: CLRegion) {
-    // Initial state can recover an app restart, but is only treated as entry.
-    if state == .inside { capture(event: "enter", region: region) }
-  }
-
-  private func capture(event: String, region: CLRegion) {
-    guard region.identifier.hasPrefix("zawolf_") else { return }
-    pendingEvent = event
-    manager.requestLocation()
-  }
-
-  func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
-    guard let event = pendingEvent,
-          let location = locations.last,
-          location.horizontalAccuracy > 0,
-          let config = UserDefaults.standard.dictionary(forKey: configKey),
-          let userId = config["userId"] as? String,
-          Auth.auth().currentUser?.uid == userId else {
-      pendingEvent = nil
-      return
-    }
-    pendingEvent = nil
-    let data: [String: Any] = [
-      "userId": userId,
-      "employeeId": config["employeeId"] as? String ?? "",
-      "deviceId": config["deviceId"] as? String ?? "",
-      "deviceLabel": config["deviceLabel"] as? String ?? "",
-      "locationId": config["locationId"] as? String ?? "",
-      "locationName": config["locationName"] as? String ?? "",
-      "event": event,
-      "latitude": location.coordinate.latitude,
-      "longitude": location.coordinate.longitude,
-      "accuracyMeters": location.horizontalAccuracy,
-      "capturedAtMillis": Int64(Date().timeIntervalSince1970 * 1000),
-      "source": "ios_region",
-      "status": "pending",
-      "createdAt": FieldValue.serverTimestamp(),
-    ]
-    Firestore.firestore().collection("autoAttendanceSignals").addDocument(data: data)
-  }
-
-  func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
-    pendingEvent = nil
+  var errorDescription: String? {
+    "لم يتم السماح لتطبيق ZaWolf HR بإنشاء منبهات النظام."
   }
 }
+#endif
