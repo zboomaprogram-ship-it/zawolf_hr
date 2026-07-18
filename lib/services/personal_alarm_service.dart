@@ -306,7 +306,7 @@ class PersonalAlarmService {
   }
 
   /// Repairs an alarm enabled by an older build. iOS 26+ migrates it to
-  /// AlarmKit; older versions refresh it as a time-sensitive reminder.
+  /// AlarmKit; older versions refresh it as a standard local reminder.
   Future<void> repairEnabledAlarmIfNeeded(
     String userId,
     PersonalAlarmSettings settings,
@@ -378,7 +378,7 @@ class PersonalAlarmService {
         presentBadge: true,
         presentSound: true,
         sound: 'wolf_alarm.wav',
-        interruptionLevel: InterruptionLevel.timeSensitive,
+        interruptionLevel: InterruptionLevel.active,
         threadIdentifier: 'zawolf_work_alarm',
       ),
     );
@@ -441,7 +441,7 @@ class PersonalAlarmService {
         presentBadge: true,
         presentSound: true,
         sound: 'wolf_alarm.wav',
-        interruptionLevel: InterruptionLevel.timeSensitive,
+        interruptionLevel: InterruptionLevel.active,
         threadIdentifier: 'zawolf_work_alarm',
       ),
     );
