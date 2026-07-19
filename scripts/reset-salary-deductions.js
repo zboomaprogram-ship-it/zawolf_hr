@@ -19,6 +19,7 @@ const dryRun = process.env.DRY_RUN !== 'false';
 const confirmation = process.env.RESET_CONFIRMATION || '';
 const requiredConfirmation = 'RESET_ALL_SALARY_DEDUCTIONS';
 const noDeductionLabel = 'لا يوجد خصم';
+const ignoredHistoryCode = 'non_attendance_history_ignored';
 
 function hasDeduction(data) {
   return Number(data.salaryDeductionFraction || 0) !== 0 ||
@@ -38,6 +39,43 @@ function deductionResetPatch() {
     salaryDeductionReviewedBy: admin.firestore.FieldValue.delete(),
     salaryDeductionReviewedAt: admin.firestore.FieldValue.delete(),
   };
+}
+
+function isNonAttendanceHistory(data) {
+  return !data.checkInTime;
+}
+
+function isIgnoredNonAttendanceHistory(data) {
+  return isNonAttendanceHistory(data) &&
+    Number(data.salaryDeductionFraction || 0) >= 0.25 &&
+    Number(data.salaryDeductionAmount || 0) === 0 &&
+    String(data.salaryDeductionCode || '') === ignoredHistoryCode &&
+    String(data.salaryDeductionApprovalStatus || '') === 'rejected';
+}
+
+function nonAttendanceResetPatch(data) {
+  const label = String(data.status || '') === 'on-leave'
+    ? 'لا يوجد خصم - سجل إجازة'
+    : 'لا يوجد خصم - سجل بدون حضور';
+  return {
+    salaryDeductionFraction: 0.25,
+    salaryDeductionAmount: 0,
+    salaryDeductionCode: ignoredHistoryCode,
+    salaryDeductionLabel: label,
+    salaryDeductionApprovalStatus: 'rejected',
+    salaryDeductionDetectedAt: admin.firestore.FieldValue.delete(),
+    salaryDeductionReviewedBy: 'salary-deduction-reset',
+    salaryDeductionReviewedAt: admin.firestore.FieldValue.serverTimestamp(),
+  };
+}
+
+function attendanceResetPatch(data) {
+  // Older installed clients interpret any historical row without checkout as
+  // a missed checkout. Keep a rejected zero-value marker on rows that never
+  // had a real check-in so a financial reset cannot reactivate that bug.
+  return isNonAttendanceHistory(data)
+    ? nonAttendanceResetPatch(data)
+    : deductionResetPatch();
 }
 
 function payrollHasDeduction(data) {
@@ -79,9 +117,11 @@ async function main() {
       db.collection('payrollRuns').get(),
     ]);
 
-  const attendance = attendanceSnapshot.docs.filter((doc) =>
-    hasDeduction(doc.data()),
-  );
+  const attendance = attendanceSnapshot.docs.filter((doc) => {
+    const data = doc.data();
+    return !isIgnoredNonAttendanceHistory(data) &&
+      (hasDeduction(data) || isNonAttendanceHistory(data));
+  });
   const permissions = permissionsSnapshot.docs.filter((doc) =>
     hasDeduction(doc.data()),
   );
@@ -89,7 +129,7 @@ async function main() {
     payrollHasDeduction(doc.data()),
   );
 
-  console.log(`Attendance deductions found: ${attendance.length}`);
+  console.log(`Attendance records requiring reset or compatibility repair: ${attendance.length}`);
   console.log(`Permission deductions found: ${permissions.length}`);
   console.log(`Payroll summaries requiring recalculation: ${payrollRuns.length}`);
 
@@ -113,7 +153,7 @@ async function main() {
   }
 
   for (const doc of attendance) {
-    batch.update(doc.ref, deductionResetPatch());
+    batch.update(doc.ref, attendanceResetPatch(doc.data()));
     pendingOperations++;
     await commit();
   }
