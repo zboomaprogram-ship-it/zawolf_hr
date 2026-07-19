@@ -85,16 +85,11 @@ service cloud.firestore {
         );
     }
     function isValidSelfCreate() {
-      // Names and manager assignments are mutable profile metadata and may be
-      // stale in an installed app. They must not decide whether an employee
-      // can create their own record. Authorization remains bound to the
-      // authenticated user, employee id, registered device, and the attendance
-      // security checks below. locationId is intentionally metadata here: old
-      // installs can retain a legacy branch document id after the branch is
-      // migrated, while the actual coordinates are checked by the attendance
-      // geofence flow.
-      return request.resource.data.userId == uid()
-        && request.resource.data.employeeId == userDoc().get('employeeId', '');
+      // Employee code, name, manager, and branch are mutable reporting
+      // metadata and can be stale in an older installed session. Ownership is
+      // the authenticated Firebase uid; attendance adds device, geofence, and
+      // server-time checks separately below.
+      return request.resource.data.userId == uid();
     }
     function attendanceDeviceBelongsToCurrentUser(deviceId) {
       // Installed clients can briefly retain the previous attendance device
@@ -419,7 +414,6 @@ service cloud.firestore {
         && resource.data.get('checkInTime', null) == null
         && request.resource.data.userId == uid()
         && request.resource.data.date == resource.data.date
-        && request.resource.data.employeeId == userDoc().get('employeeId', '')
         && attendanceCreateKeys()
         && attendanceCreateValues();
     }
@@ -816,8 +810,8 @@ service cloud.firestore {
           'deviceLabel', 'registeredAt'
         ])
         && request.resource.data.userId == uid()
-        && request.resource.data.employeeId == userDoc().get('employeeId', '')
-        && request.resource.data.employeeName == userDoc().get('displayName', '')
+        && request.resource.data.employeeId is string
+        && request.resource.data.employeeName is string
         && request.resource.data.deviceId is string
         && request.resource.data.deviceId.size() > 0
         && request.resource.data.deviceLabel is string;
@@ -833,9 +827,12 @@ service cloud.firestore {
           'source', 'status', 'createdAt'
         ])
         && request.resource.data.userId == uid()
-        && request.resource.data.employeeId == userDoc().get('employeeId', '')
-        && request.resource.data.deviceId == userDoc().get('registeredAttendanceDeviceId', '')
-        && request.resource.data.locationId == userDoc().get('locationId', '')
+        && request.resource.data.employeeId is string
+        && (
+          request.resource.data.deviceId == userDoc().get('registeredAttendanceDeviceId', '')
+          || attendanceDeviceBelongsToCurrentUser(request.resource.data.deviceId)
+        )
+        && request.resource.data.locationId is string
         && request.resource.data.event in ['enter', 'exit']
         && request.resource.data.source in ['android_geofence', 'ios_region']
         && request.resource.data.status == 'pending'

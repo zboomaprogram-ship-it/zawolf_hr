@@ -321,12 +321,16 @@ async function runDailyTasks() {
           isWithinGeofence: true,
           isLate: false,
           lateMinutes: 0,
-          salaryDeductionFraction: 0,
+          // Older clients scan every historical row without a checkout before
+          // they create today's attendance. A rejected zero-value sentinel
+          // prevents an approved leave row from being mistaken for a missed
+          // checkout while remaining excluded from payroll calculations.
+          salaryDeductionFraction: 0.25,
           salaryDeductionAmount: 0,
           salaryCurrency: user.salaryCurrency || 'EGP',
-          salaryDeductionCode: 'none',
-          salaryDeductionLabel: 'لا يوجد خصم',
-          salaryDeductionApprovalStatus: 'none',
+          salaryDeductionCode: 'non_attendance_history_ignored',
+          salaryDeductionLabel: 'لا يوجد خصم - سجل إجازة',
+          salaryDeductionApprovalStatus: 'rejected',
           biometricVerified: false,
           status: 'on-leave',
         });
