@@ -408,6 +408,26 @@ service cloud.firestore {
         && attendanceCreateKeys()
         && attendanceCreateValues();
     }
+    function attendanceOwnerMissedCheckoutDeduction() {
+      return isOwner(resource.data.userId)
+        && resource.data.get('checkInTime', null) is timestamp
+        && resource.data.get('checkOutTime', null) == null
+        && resource.data.get('salaryDeductionFraction', 0) < 0.25
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'salaryDeductionFraction', 'salaryDeductionAmount',
+          'salaryCurrency', 'salaryDeductionCode', 'salaryDeductionLabel',
+          'salaryDeductionApprovalStatus', 'salaryDeductionDetectedAt'
+        ])
+        && request.resource.data.salaryDeductionFraction == 0.25
+        && request.resource.data.salaryDeductionAmount >= 0
+        && request.resource.data.salaryCurrency is string
+        && request.resource.data.salaryDeductionCode == 'missed_checkout_quarter_day'
+        && request.resource.data.salaryDeductionLabel == 'خصم ربع يوم - عدم تسجيل الانصراف'
+        && request.resource.data.salaryDeductionApprovalStatus == 'pending_hr'
+        && request.resource.data.salaryDeductionDetectedAt is timestamp
+        && request.resource.data.salaryDeductionDetectedAt >= request.time - duration.value(5, 'm')
+        && request.resource.data.salaryDeductionDetectedAt <= request.time + duration.value(1, 'm');
+    }
     function attendanceHrDeductionReview() {
       return request.resource.data.diff(resource.data).affectedKeys()
         .hasOnly([
@@ -831,6 +851,7 @@ service cloud.firestore {
         && attendanceCreateValues();
       allow update: if isAuth() && isActive() && (
         attendanceOwnerCheckInReplacement() ||
+        attendanceOwnerMissedCheckoutDeduction() ||
         (
           isOwner(resource.data.userId)
           && attendanceOwnerCheckoutKeys()
