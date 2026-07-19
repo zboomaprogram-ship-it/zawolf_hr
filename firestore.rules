@@ -88,11 +88,13 @@ service cloud.firestore {
       // Names and manager assignments are mutable profile metadata and may be
       // stale in an installed app. They must not decide whether an employee
       // can create their own record. Authorization remains bound to the
-      // authenticated user, employee id, branch, registered device, and the
-      // attendance security checks below.
+      // authenticated user, employee id, registered device, and the attendance
+      // security checks below. locationId is intentionally metadata here: old
+      // installs can retain a legacy branch document id after the branch is
+      // migrated, while the actual coordinates are checked by the attendance
+      // geofence flow.
       return request.resource.data.userId == uid()
-        && request.resource.data.employeeId == userDoc().get('employeeId', '')
-        && request.resource.data.locationId == userDoc().get('locationId', '');
+        && request.resource.data.employeeId == userDoc().get('employeeId', '');
     }
     function notificationKeysAreValid() {
       return request.resource.data.keys().hasOnly([
@@ -403,7 +405,6 @@ service cloud.firestore {
         && request.resource.data.userId == uid()
         && request.resource.data.date == resource.data.date
         && request.resource.data.employeeId == userDoc().get('employeeId', '')
-        && request.resource.data.locationId == userDoc().get('locationId', '')
         && attendanceCreateKeys()
         && attendanceCreateValues();
     }
