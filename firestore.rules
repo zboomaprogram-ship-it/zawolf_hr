@@ -48,17 +48,6 @@ service cloud.firestore {
     function recipientDoc(userId) {
       return get(userPath(userId)).data;
     }
-    function myManagerId() {
-      return userDoc().get('managerId', '') == null ? '' : userDoc().get('managerId', '');
-    }
-    function requestManagerId() {
-      return request.resource.data.get('managerId', '') == null
-        ? ''
-        : request.resource.data.get('managerId', '');
-    }
-    function validRequestManagerId() {
-      return requestManagerId() == myManagerId();
-    }
     function attendanceRequiresBiometric() {
       let companyPath = /databases/$(database)/documents/companies/zawolf;
       // The Flutter policy service defaults to location-only when the company
@@ -96,11 +85,14 @@ service cloud.firestore {
         );
     }
     function isValidSelfCreate() {
+      // Names and manager assignments are mutable profile metadata and may be
+      // stale in an installed app. They must not decide whether an employee
+      // can create their own record. Authorization remains bound to the
+      // authenticated user, employee id, branch, registered device, and the
+      // attendance security checks below.
       return request.resource.data.userId == uid()
         && request.resource.data.employeeId == userDoc().get('employeeId', '')
-        && request.resource.data.employeeName == userDoc().get('displayName', '')
-        && request.resource.data.locationId == userDoc().get('locationId', '')
-        && validRequestManagerId();
+        && request.resource.data.locationId == userDoc().get('locationId', '');
     }
     function notificationKeysAreValid() {
       return request.resource.data.keys().hasOnly([
@@ -411,9 +403,7 @@ service cloud.firestore {
         && request.resource.data.userId == uid()
         && request.resource.data.date == resource.data.date
         && request.resource.data.employeeId == userDoc().get('employeeId', '')
-        && request.resource.data.employeeName == userDoc().get('displayName', '')
         && request.resource.data.locationId == userDoc().get('locationId', '')
-        && validRequestManagerId()
         && attendanceCreateKeys()
         && attendanceCreateValues();
     }
