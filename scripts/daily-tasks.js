@@ -107,6 +107,19 @@ async function runDailyTasks() {
   }
   console.log(`Processing completed workday: ${todayStr}`);
 
+  // These dates were administratively reset. Keep the nightly job from
+  // recreating absence, lateness, or deduction records for them.
+  const attendanceAmnestyDates = new Set(
+    (process.env.ATTENDANCE_AMNESTY_DATES || '2026-07-18,2026-07-19')
+      .split(',')
+      .map(value => value.trim())
+      .filter(Boolean),
+  );
+  const skipAttendanceProcessing = attendanceAmnestyDates.has(todayStr);
+  if (skipAttendanceProcessing) {
+    console.log(`Attendance amnesty is active for ${todayStr}; attendance processing will be skipped.`);
+  }
+
   // Get JS Day 0-6 in Cairo time
   const jsDayOptions = { timeZone: 'Africa/Cairo', weekday: 'short' };
   const targetNoonUtc = new Date(`${todayStr}T12:00:00.000Z`);
@@ -282,6 +295,10 @@ async function runDailyTasks() {
   for (const userDoc of usersSnap.docs) {
     const user = userDoc.data();
     const userId = userDoc.id;
+
+    if (skipAttendanceProcessing) {
+      continue;
+    }
 
     // Check if today is a custom day off for the user
     let isOffDay = false;
