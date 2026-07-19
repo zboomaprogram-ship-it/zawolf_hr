@@ -96,6 +96,16 @@ service cloud.firestore {
       return request.resource.data.userId == uid()
         && request.resource.data.employeeId == userDoc().get('employeeId', '');
     }
+    function attendanceDeviceBelongsToCurrentUser(deviceId) {
+      // Installed clients can briefly retain the previous attendance device
+      // id after a profile refresh or device-id migration. The binding
+      // document is authoritative and still enforces one account per device.
+      return deviceId is string
+        && deviceId.size() > 0
+        && exists(/databases/$(database)/documents/attendanceDevices/$(deviceId))
+        && get(/databases/$(database)/documents/attendanceDevices/$(deviceId))
+          .data.userId == uid();
+    }
     function notificationKeysAreValid() {
       return request.resource.data.keys().hasOnly([
         'notificationId', 'type', 'title', 'body', 'data', 'isRead', 'pushSent', 'createdAt'
@@ -321,8 +331,13 @@ service cloud.firestore {
       && request.resource.data.salaryDeductionFraction <= 1
       && request.resource.data.salaryDeductionAmount >= 0
       && request.resource.data.lateMinutes >= 0
-      && request.resource.data.get('deviceId', '') == userDoc()
-        .get('registeredAttendanceDeviceId', '')
+      && (
+        request.resource.data.get('deviceId', '') == userDoc()
+          .get('registeredAttendanceDeviceId', '')
+        || attendanceDeviceBelongsToCurrentUser(
+          request.resource.data.get('deviceId', '')
+        )
+      )
       && request.resource.data.get('deviceLabel', '') is string
       && request.resource.data.checkInTime is timestamp
       && (
