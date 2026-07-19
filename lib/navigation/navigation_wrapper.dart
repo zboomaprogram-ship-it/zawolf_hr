@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 import '../services/auth_service.dart';
@@ -60,6 +61,7 @@ class _NavigationWrapperState extends State<NavigationWrapper>
   }
 
   void _checkRequiredAttendanceAlarm(UserModel user) {
+    if (kIsWeb) return;
     if (_attendanceAlarmCheckedForUid == user.uid) return;
     _attendanceAlarmCheckedForUid = user.uid;
     WidgetsBinding.instance.addPostFrameCallback((_) async {
@@ -616,6 +618,32 @@ class _NavigationWrapperState extends State<NavigationWrapper>
       ];
     }
 
+    final isManagementRole =
+        role == EmployeeRole.manager ||
+        role == EmployeeRole.hrAdmin ||
+        role == EmployeeRole.superAdmin;
+    final useDesktopWebShell =
+        kIsWeb && MediaQuery.sizeOf(context).width >= 980 && isManagementRole;
+    if (useDesktopWebShell) {
+      final managementItems = items
+          .where(
+            (item) =>
+                !item.path.startsWith('/employee/') ||
+                item.path == '/employee/profile',
+          )
+          .toList();
+      return _DesktopManagementShell(
+        user: user,
+        items: managementItems,
+        matchedLocation: matchedLocation,
+        child: widget.child,
+        onSignOut: () async {
+          await authService.signOut();
+          if (context.mounted) context.go('/login');
+        },
+      );
+    }
+
     final hasOverflow = items.length > 4;
     final bottomItems = hasOverflow
         ? [
@@ -907,4 +935,237 @@ class NavigationItem {
     required this.englishLabel,
     required this.path,
   });
+}
+
+class _DesktopManagementShell extends StatelessWidget {
+  final UserModel user;
+  final List<NavigationItem> items;
+  final String matchedLocation;
+  final Widget child;
+  final Future<void> Function() onSignOut;
+
+  const _DesktopManagementShell({
+    required this.user,
+    required this.items,
+    required this.matchedLocation,
+    required this.child,
+    required this.onSignOut,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Scaffold(
+      backgroundColor: ZaWolfColors.background,
+      body: Directionality(
+        textDirection: TextDirection.rtl,
+        child: Row(
+          children: [
+            SizedBox(
+              width: 278,
+              child: ColoredBox(
+                color: ZaWolfColors.surface01,
+                child: SafeArea(
+                  child: Column(
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(20, 20, 20, 16),
+                        child: Row(
+                          children: [
+                            Image.asset(
+                              'assets/images/wolf_head_geometric.png',
+                              width: 42,
+                              height: 42,
+                            ),
+                            const SizedBox(width: 12),
+                            const Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'ZaWolf HR',
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                  Text(
+                                    'مساحة الإدارة',
+                                    style: TextStyle(
+                                      color: ZaWolfColors.textMuted,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const Divider(height: 1, color: ZaWolfColors.surface03),
+                      Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Row(
+                          children: [
+                            CircleAvatar(
+                              radius: 20,
+                              backgroundColor: ZaWolfColors.primaryCyan
+                                  .withValues(alpha: 0.12),
+                              child: Text(
+                                user.displayName.isEmpty
+                                    ? 'Z'
+                                    : user.displayName.characters.first,
+                                style: const TextStyle(
+                                  color: ZaWolfColors.primaryCyan,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    user.displayName,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: theme.textTheme.titleSmall?.copyWith(
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                  Text(
+                                    EmployeeRole.arabicLabel(user.role),
+                                    style: theme.textTheme.bodySmall?.copyWith(
+                                      color: ZaWolfColors.textMuted,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Expanded(
+                        child: ListView.separated(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 4,
+                          ),
+                          itemCount: items.length,
+                          separatorBuilder: (_, _) => const SizedBox(height: 3),
+                          itemBuilder: (context, index) {
+                            final item = items[index];
+                            final selected =
+                                matchedLocation == item.path ||
+                                (item.path != '/hr/dashboard' &&
+                                    matchedLocation.startsWith(
+                                      '${item.path}/',
+                                    ));
+                            return Tooltip(
+                              message: item.englishLabel,
+                              child: Material(
+                                color: selected
+                                    ? ZaWolfColors.primaryCyan.withValues(
+                                        alpha: 0.10,
+                                      )
+                                    : Colors.transparent,
+                                borderRadius: BorderRadius.circular(6),
+                                child: InkWell(
+                                  onTap: selected
+                                      ? null
+                                      : () => context.go(item.path),
+                                  borderRadius: BorderRadius.circular(6),
+                                  child: Container(
+                                    height: 46,
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      border: Border(
+                                        right: BorderSide(
+                                          color: selected
+                                              ? ZaWolfColors.primaryCyan
+                                              : Colors.transparent,
+                                          width: 3,
+                                        ),
+                                      ),
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        Icon(
+                                          selected
+                                              ? item.activeIcon
+                                              : item.icon,
+                                          size: 21,
+                                          color: selected
+                                              ? ZaWolfColors.primaryCyan
+                                              : ZaWolfColors.textSecondary,
+                                        ),
+                                        const SizedBox(width: 12),
+                                        Expanded(
+                                          child: Text(
+                                            item.label,
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: TextStyle(
+                                              color: selected
+                                                  ? Colors.white
+                                                  : ZaWolfColors.textSecondary,
+                                              fontWeight: selected
+                                                  ? FontWeight.w700
+                                                  : FontWeight.w500,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                      const Divider(height: 1, color: ZaWolfColors.surface03),
+                      Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: OutlinedButton.icon(
+                          onPressed: onSignOut,
+                          icon: const Icon(Icons.logout, size: 19),
+                          label: const Text('تسجيل الخروج'),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: ZaWolfColors.error,
+                            minimumSize: const Size.fromHeight(44),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            const VerticalDivider(
+              width: 1,
+              thickness: 1,
+              color: ZaWolfColors.surface03,
+            ),
+            Expanded(
+              child: ColoredBox(
+                color: ZaWolfColors.background,
+                child: Align(
+                  alignment: Alignment.topCenter,
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 1560),
+                    child: child,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }

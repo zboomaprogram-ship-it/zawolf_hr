@@ -331,10 +331,14 @@ class _ManagerDashboardScreenState extends State<ManagerDashboardScreen> {
                 GridView.count(
                   shrinkWrap: true,
                   physics: const NeverScrollableScrollPhysics(),
-                  crossAxisCount: 2,
+                  crossAxisCount: MediaQuery.sizeOf(context).width >= 1200
+                      ? 4
+                      : 2,
                   crossAxisSpacing: 16,
                   mainAxisSpacing: 16,
-                  childAspectRatio: 1.5,
+                  childAspectRatio: MediaQuery.sizeOf(context).width >= 1200
+                      ? 1.65
+                      : 1.5,
                   children: [
                     _buildQuickActionCard(
                       'طلبات فريقي',

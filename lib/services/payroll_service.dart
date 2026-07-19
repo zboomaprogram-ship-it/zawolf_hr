@@ -7,6 +7,7 @@ import '../models/user_model.dart';
 import '../models/warning_reward_model.dart';
 import '../models/advance_model.dart';
 import 'audit_log_service.dart';
+import '../utils/payroll_cycle.dart';
 
 class PayrollService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
@@ -32,13 +33,13 @@ class PayrollService {
     required String monthKey,
     required String actorId,
   }) async {
-    final nextMonthDateKey = _nextMonthDateKey(monthKey);
+    final cycle = PayrollCycle.forKey(monthKey);
     final results = await Future.wait([
       _db
           .collection('attendance')
           .where('userId', isEqualTo: employee.uid)
-          .where('date', isGreaterThanOrEqualTo: '$monthKey-01')
-          .where('date', isLessThan: nextMonthDateKey)
+          .where('date', isGreaterThanOrEqualTo: cycle.startDateKey)
+          .where('date', isLessThan: cycle.nextStartDateKey)
           .get(),
       _db
           .collection('warningsRewards')
@@ -55,7 +56,7 @@ class PayrollService {
     final attendanceSnap = results[0];
     final rewardSnap = results[1];
     final advanceSnap = results[2];
-    
+
     final attendance = attendanceSnap.docs
         .map((doc) => AttendanceModel.fromFirestore(doc))
         .toList();
@@ -206,14 +207,5 @@ class PayrollService {
     final runs = snapshot.docs.map(PayrollRunModel.fromFirestore).toList();
     runs.sort((a, b) => a.employeeName.compareTo(b.employeeName));
     return runs;
-  }
-
-  String _nextMonthDateKey(String monthKey) {
-    final parts = monthKey.split('-');
-    final year = int.parse(parts[0]);
-    final month = int.parse(parts[1]);
-    final nextMonth = month == 12 ? 1 : month + 1;
-    final nextYear = month == 12 ? year + 1 : year;
-    return '$nextYear-${nextMonth.toString().padLeft(2, '0')}-01';
   }
 }

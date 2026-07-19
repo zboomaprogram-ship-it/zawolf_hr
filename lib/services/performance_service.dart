@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/performance_model.dart';
 import '../models/attendance_model.dart';
 import 'audit_log_service.dart';
+import '../utils/payroll_cycle.dart';
 
 class AutoScoresResult {
   final double attendanceScore;
@@ -23,19 +24,14 @@ class PerformanceService {
     String userId,
     String monthKey,
   ) async {
-    final parts = monthKey.split('-');
-    final year = int.parse(parts[0]);
-    final month = int.parse(parts[1]);
-    final nextMonth = month == 12 ? 1 : month + 1;
-    final nextYear = month == 12 ? year + 1 : year;
-    final nextMonthStr = '$nextYear-${nextMonth.toString().padLeft(2, '0')}-01';
+    final cycle = PayrollCycle.forKey(monthKey);
 
     // Query attendance records for that month
     final attendanceSnap = await _db
         .collection('attendance')
         .where('userId', isEqualTo: userId)
-        .where('date', isGreaterThanOrEqualTo: '$monthKey-01')
-        .where('date', isLessThan: nextMonthStr)
+        .where('date', isGreaterThanOrEqualTo: cycle.startDateKey)
+        .where('date', isLessThan: cycle.nextStartDateKey)
         .get();
 
     final logs = attendanceSnap.docs

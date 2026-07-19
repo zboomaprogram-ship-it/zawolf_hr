@@ -16,6 +16,7 @@ import '../../models/attendance_model.dart';
 import '../../models/attendance_policy.dart';
 import '../../models/company_day_off_status.dart';
 import '../../models/user_model.dart';
+import '../../utils/payroll_cycle.dart';
 import 'checkin_confirm_modal.dart';
 
 class EmployeeDashboardScreen extends StatefulWidget {
@@ -61,7 +62,7 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
   void didChangeDependencies() {
     super.didChangeDependencies();
     final user = Provider.of<AuthService>(context).currentUser;
-    final currentMonthKey = DateFormat('yyyy-MM').format(DateTime.now());
+    final currentMonthKey = PayrollCycle.keyFor(DateTime.now());
     if (user == null) {
       if (_attendanceStreamUserId != null) {
         _attendanceStream = const Stream.empty();
@@ -91,7 +92,9 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
         _refreshAttendanceGate(user);
         // This only registers Android's branch boundary after the employee
         // has explicitly granted Always Location. It never prompts here.
-        AutomaticAttendanceService.instance.configureFor(user).catchError((_) {});
+        AutomaticAttendanceService.instance
+            .configureFor(user)
+            .catchError((_) {});
       });
     }
   }

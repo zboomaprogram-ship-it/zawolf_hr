@@ -7,6 +7,7 @@ import '../models/productivity_score_model.dart';
 import '../models/task_model.dart';
 import '../models/user_model.dart';
 import 'audit_log_service.dart';
+import '../utils/payroll_cycle.dart';
 
 class ProductivityService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
@@ -48,22 +49,22 @@ class ProductivityService {
     UserModel user,
     String monthKey,
   ) async {
-    final range = _MonthRange.fromMonthKey(monthKey);
+    final cycle = PayrollCycle.forKey(monthKey);
     final results = await Future.wait([
       _db
           .collection('attendance')
           .where('userId', isEqualTo: user.uid)
-          .where('date', isGreaterThanOrEqualTo: '$monthKey-01')
-          .where('date', isLessThan: range.nextMonthDateKey)
+          .where('date', isGreaterThanOrEqualTo: cycle.startDateKey)
+          .where('date', isLessThan: cycle.nextStartDateKey)
           .get(),
       _db
           .collection('tasks')
           .where('assigneeId', isEqualTo: user.uid)
           .where(
             'dueDate',
-            isGreaterThanOrEqualTo: Timestamp.fromDate(range.start),
+            isGreaterThanOrEqualTo: Timestamp.fromDate(cycle.start),
           )
-          .where('dueDate', isLessThan: Timestamp.fromDate(range.nextStart))
+          .where('dueDate', isLessThan: Timestamp.fromDate(cycle.nextStart))
           .get(),
       _db
           .collection('employeeKpis')
@@ -200,30 +201,5 @@ class ProductivityService {
       );
     }
     return users.length;
-  }
-}
-
-class _MonthRange {
-  final DateTime start;
-  final DateTime nextStart;
-  final String nextMonthDateKey;
-
-  const _MonthRange({
-    required this.start,
-    required this.nextStart,
-    required this.nextMonthDateKey,
-  });
-
-  factory _MonthRange.fromMonthKey(String monthKey) {
-    final parts = monthKey.split('-');
-    final year = int.parse(parts[0]);
-    final month = int.parse(parts[1]);
-    final nextMonth = month == 12 ? 1 : month + 1;
-    final nextYear = month == 12 ? year + 1 : year;
-    return _MonthRange(
-      start: DateTime(year, month),
-      nextStart: DateTime(nextYear, nextMonth),
-      nextMonthDateKey: '$nextYear-${nextMonth.toString().padLeft(2, '0')}-01',
-    );
   }
 }

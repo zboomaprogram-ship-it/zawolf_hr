@@ -13,6 +13,7 @@ import 'daily_reminder_service.dart';
 import 'onesignal_service.dart';
 import 'required_attendance_alarm_service.dart';
 import '../models/attendance_policy.dart';
+import '../utils/payroll_cycle.dart';
 
 class AuthService with ChangeNotifier {
   final FirebaseAuth _auth = FirebaseAuth.instance;
@@ -41,7 +42,9 @@ class AuthService with ChangeNotifier {
     ) async {
       final sessionVersion = ++_authSessionVersion;
       final previousSessionUid = _startedSessionServicesForUid;
-      if (previousSessionUid != null && previousSessionUid != user?.uid) {
+      if (!kIsWeb &&
+          previousSessionUid != null &&
+          previousSessionUid != user?.uid) {
         unawaited(
           RequiredAttendanceAlarmService.instance.disable(previousSessionUid),
         );
@@ -96,6 +99,7 @@ class AuthService with ChangeNotifier {
   Future<void> _startUserSessionServices(String uid) async {
     if (_startedSessionServicesForUid == uid || _currentUser == null) return;
     _startedSessionServicesForUid = uid;
+    if (kIsWeb) return;
     NotificationService.instance.startListening(uid);
     unawaited(OneSignalService.instance.login(uid));
     // Attendance reminders are created by the trusted server at send time.
@@ -411,8 +415,7 @@ class AuthService with ChangeNotifier {
         permissionBalance: PermissionBalance(
           usedThisMonth: 0,
           usedHoursThisMonth: 0.0,
-          lastResetMonth:
-              '${DateTime.now().year}-${DateTime.now().month.toString().padLeft(2, '0')}',
+          lastResetMonth: PayrollCycle.keyFor(DateTime.now()),
         ),
       );
 

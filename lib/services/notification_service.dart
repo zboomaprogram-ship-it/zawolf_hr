@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'daily_reminder_service.dart';
@@ -64,6 +65,7 @@ class NotificationService {
 
   // Initialize notifications settings
   Future<void> initialize() async {
+    if (kIsWeb) return;
     const androidSettings = AndroidInitializationSettings(
       '@mipmap/ic_launcher',
     );
@@ -107,6 +109,7 @@ class NotificationService {
   }
 
   Future<void> requestPermissions() async {
+    if (kIsWeb) return;
     await _localNotificationsPlugin
         .resolvePlatformSpecificImplementation<
           AndroidFlutterLocalNotificationsPlugin
@@ -122,6 +125,7 @@ class NotificationService {
 
   /// Cancel a specific notification by ID.
   Future<void> cancelNotification(int id) async {
+    if (kIsWeb) return;
     await _localNotificationsPlugin.cancel(id);
   }
 
@@ -131,6 +135,7 @@ class NotificationService {
     String body, {
     String? payload,
   }) async {
+    if (kIsWeb) return;
     const androidDetails = AndroidNotificationDetails(
       'zawolf_hr_notifications',
       'إشعارات ZaWolf',

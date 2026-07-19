@@ -11,6 +11,43 @@ flutter pub get
 flutter run
 ```
 
+## HR Web Portal
+
+The same Firebase project now supports an optimized desktop web portal for
+manager, HR, and super-admin accounts. The browser layout uses a persistent
+role-based sidebar and keeps employee self-service views out of the management
+navigation.
+
+```bash
+flutter run -d chrome
+flutter build web --release
+firebase deploy --only hosting --project zawolf-hr-system-60317
+```
+
+The production hosting target is:
+`https://zawolf-hr-system-60317.web.app`.
+
+Employees can technically authenticate on the web, but the desktop management
+shell is intentionally enabled only for manager, HR, and super-admin roles.
+
+## Payroll Cycle
+
+ZaWolf uses a company cycle from day `26` through day `25`, not a calendar
+month. The cycle key is the month in which the cycle ends. For example,
+`2026-08` covers `2026-07-26` through `2026-08-25`.
+
+At the start of day 26 in Cairo, `.github/workflows/monthly-tasks.yml`:
+
+- finalizes a `payrollCycles/{YYYY-MM}` summary;
+- creates draft payroll rows for the closed cycle;
+- records pending HR deductions and pending permissions in the close summary;
+- resets each active user's used permission hours/count for the new cycle;
+- leaves payroll as `draft` so HR can review it before locking or payment.
+
+The job is idempotent and will not close the same cycle twice. For a controlled
+manual recovery, run the workflow with a `cycle_key` such as `2026-08` and set
+`force` to true. Do not force-close an active cycle during normal operation.
+
 ## Verify
 
 ```bash
@@ -100,8 +137,8 @@ Actions runs the Node scripts in `scripts/` using Firebase Admin SDK:
 - `.github/workflows/daily-tasks.yml`: runs daily at 11:55 PM Egypt time to
   mark absences, auto-close missed checkouts, mark overdue tasks, and create HR
   review notifications.
-- `.github/workflows/monthly-tasks.yml`: runs at 12:05 AM Egypt time and the
-  script only resets permission balances when the Cairo date is day `01`.
+- `.github/workflows/monthly-tasks.yml`: handles both Cairo UTC offsets and
+  closes the 26-to-25 cycle only when the Cairo date is day `26`.
 - `.github/workflows/attendance-reminders.yml`: runs every five minutes,
   creates policy-aware check-in/check-out reminders, then dispatches them.
 

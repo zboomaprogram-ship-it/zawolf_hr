@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart' hide TextDirection;
 import 'package:provider/provider.dart';
 
 import '../../components/wolf_card.dart';
@@ -7,6 +6,7 @@ import '../../models/kpi_model.dart';
 import '../../services/auth_service.dart';
 import '../../services/kpi_service.dart';
 import '../../theme/theme.dart';
+import '../../utils/payroll_cycle.dart';
 
 class EmployeeKpiScreen extends StatelessWidget {
   const EmployeeKpiScreen({super.key});
@@ -15,7 +15,7 @@ class EmployeeKpiScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final user = context.watch<AuthService>().currentUser;
     final theme = Theme.of(context);
-    final monthKey = DateFormat('yyyy-MM').format(DateTime.now());
+    final monthKey = PayrollCycle.keyFor(DateTime.now());
 
     if (user == null) {
       return const Scaffold(

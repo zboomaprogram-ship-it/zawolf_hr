@@ -9,6 +9,7 @@ import '../../services/auth_service.dart';
 import '../../services/payroll_service.dart';
 import '../../services/sheets_export_service.dart';
 import '../../theme/theme.dart';
+import '../../utils/payroll_cycle.dart';
 
 class PayrollScreen extends StatefulWidget {
   const PayrollScreen({super.key});
@@ -20,7 +21,7 @@ class PayrollScreen extends StatefulWidget {
 class _PayrollScreenState extends State<PayrollScreen> {
   final PayrollService _payrollService = PayrollService();
   final SheetsExportService _exportService = SheetsExportService();
-  DateTime _selectedMonth = DateTime.now();
+  DateTime _selectedMonth = PayrollCycle.forDate(DateTime.now()).end;
   bool _calculating = false;
 
   String get _monthKey => DateFormat('yyyy-MM').format(_selectedMonth);
@@ -148,6 +149,12 @@ class _PayrollScreenState extends State<PayrollScreen> {
                 ],
               ),
               const SizedBox(height: 16),
+              Text(
+                PayrollCycle.forKey(_monthKey).arabicRangeLabel,
+                textAlign: TextAlign.center,
+                style: theme.textTheme.bodySmall,
+              ),
+              const SizedBox(height: 12),
               if (runs.isEmpty)
                 WolfCard(
                   child: Padding(

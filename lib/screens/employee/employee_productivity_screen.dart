@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart' hide TextDirection;
 import 'package:provider/provider.dart';
 
 import '../../components/wolf_card.dart';
@@ -7,6 +6,7 @@ import '../../models/productivity_score_model.dart';
 import '../../services/auth_service.dart';
 import '../../services/productivity_service.dart';
 import '../../theme/theme.dart';
+import '../../utils/payroll_cycle.dart';
 
 class EmployeeProductivityScreen extends StatefulWidget {
   const EmployeeProductivityScreen({super.key});
@@ -18,7 +18,7 @@ class EmployeeProductivityScreen extends StatefulWidget {
 
 class _EmployeeProductivityScreenState
     extends State<EmployeeProductivityScreen> {
-  late final String _monthKey = DateFormat('yyyy-MM').format(DateTime.now());
+  late final String _monthKey = PayrollCycle.keyFor(DateTime.now());
   final ProductivityService _service = ProductivityService();
   Future<ProductivityScoreModel>? _scoreFuture;
 

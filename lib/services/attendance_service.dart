@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart' hide TextDirection;
+import '../utils/payroll_cycle.dart';
 import '../models/user_model.dart';
 import '../models/attendance_model.dart';
 import '../models/attendance_policy.dart';
@@ -972,27 +973,23 @@ class AttendanceService {
     String userId,
     String monthKey,
   ) {
-    final parts = monthKey.split('-');
-    final year = int.parse(parts[0]);
-    final month = int.parse(parts[1]);
-    final nextMonth = month == 12 ? 1 : month + 1;
-    final nextYear = month == 12 ? year + 1 : year;
-    final nextMonthStr = '$nextYear-${nextMonth.toString().padLeft(2, '0')}-01';
+    final cycle = PayrollCycle.forKey(monthKey);
 
     final remoteStream = _db
         .collection('attendance')
         .where('userId', isEqualTo: userId)
-        .where('date', isGreaterThanOrEqualTo: '$monthKey-01')
-        .where('date', isLessThan: nextMonthStr)
+        .where('date', isGreaterThanOrEqualTo: cycle.startDateKey)
+        .where('date', isLessThan: cycle.nextStartDateKey)
         .snapshots();
 
     return Stream.multi((controller) {
       var remoteLogs = <AttendanceModel>[];
 
       Future<void> emitMerged() async {
-        final pendingLogs = await _offlineQueue.pendingLogsForMonth(
+        final pendingLogs = await _offlineQueue.pendingLogsForRange(
           userId: userId,
-          monthKey: monthKey,
+          startDateKey: cycle.startDateKey,
+          endDateKey: cycle.endDateKey,
         );
         final merged = <String, AttendanceModel>{
           for (final log in remoteLogs) log.attendanceId: log,

@@ -7,6 +7,7 @@ import '../../services/performance_service.dart';
 import '../../models/user_model.dart';
 import '../../models/performance_model.dart';
 import '../../theme/theme.dart';
+import '../../utils/payroll_cycle.dart';
 import '../../components/wolf_card.dart';
 import '../../components/wolf_button.dart';
 import '../../components/wolf_input_field.dart';
@@ -26,7 +27,7 @@ class _RatePerformanceScreenState extends State<RatePerformanceScreen> {
   UserModel? _selectedEmployee;
   bool _loadingTeam = true;
 
-  DateTime _selectedMonth = DateTime.now();
+  DateTime _selectedMonth = PayrollCycle.forDate(DateTime.now()).end;
 
   // Scoring parameters
   double _autoAttendance = 100.0;

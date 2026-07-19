@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart' hide TextDirection;
 import 'package:provider/provider.dart';
 
 import '../../components/wolf_card.dart';
@@ -9,6 +8,7 @@ import '../../models/user_model.dart';
 import '../../services/auth_service.dart';
 import '../../services/kpi_service.dart';
 import '../../theme/theme.dart';
+import '../../utils/payroll_cycle.dart';
 
 class KpiManagementScreen extends StatefulWidget {
   const KpiManagementScreen({super.key});
@@ -19,7 +19,7 @@ class KpiManagementScreen extends StatefulWidget {
 
 class _KpiManagementScreenState extends State<KpiManagementScreen> {
   final KpiService _kpiService = KpiService();
-  final String _monthKey = DateFormat('yyyy-MM').format(DateTime.now());
+  final String _monthKey = PayrollCycle.keyFor(DateTime.now());
 
   @override
   Widget build(BuildContext context) {

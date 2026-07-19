@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart' hide TextDirection;
 import 'package:provider/provider.dart';
 
 import '../../components/wolf_card.dart';
@@ -9,6 +8,7 @@ import '../../models/warning_reward_model.dart';
 import '../../services/auth_service.dart';
 import '../../services/warning_reward_service.dart';
 import '../../theme/theme.dart';
+import '../../utils/payroll_cycle.dart';
 
 class WarningsRewardsManagementScreen extends StatefulWidget {
   const WarningsRewardsManagementScreen({super.key});
@@ -21,7 +21,7 @@ class WarningsRewardsManagementScreen extends StatefulWidget {
 class _WarningsRewardsManagementScreenState
     extends State<WarningsRewardsManagementScreen> {
   final WarningRewardService _service = WarningRewardService();
-  final String _monthKey = DateFormat('yyyy-MM').format(DateTime.now());
+  final String _monthKey = PayrollCycle.keyFor(DateTime.now());
   bool _generating = false;
 
   Future<void> _generate(UserModel reviewer) async {

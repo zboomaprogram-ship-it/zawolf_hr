@@ -12,6 +12,8 @@ import 'services/background_service.dart';
 import 'services/daily_reminder_service.dart';
 import 'services/onesignal_service.dart';
 import 'package:intl/date_symbol_data_local.dart';
+import 'package:flutter/foundation.dart';
+import 'firebase_options.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -20,7 +22,9 @@ void main() async {
   // 1. Initialize Firebase Core
   // In a normal build, this will consume GoogleService JSONs from native platforms automatically.
   try {
-    await Firebase.initializeApp();
+    await Firebase.initializeApp(
+      options: DefaultFirebaseOptions.currentPlatform,
+    );
     // Cloud Firestore enables offline persistence by default on Android and
     // iOS. Do not set Firestore settings here: the native call is asynchronous
     // and can race the first query during launch, which crashes iOS.
@@ -35,6 +39,7 @@ void main() async {
 
 Future<void> _initializeAppServicesAfterFirstFrame() async {
   await Future<void>.delayed(Duration.zero);
+  if (kIsWeb) return;
   try {
     // Initialize the push SDK before the auth session starts. Authentication
     // later assigns the Firebase UID as the OneSignal External ID.

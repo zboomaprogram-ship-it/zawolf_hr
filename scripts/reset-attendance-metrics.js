@@ -3,6 +3,7 @@ const {
   installFirestoreCompatibility,
   parseFirebaseServiceAccount,
 } = require('./firebase-service-account');
+const { currentCycle, cycleForKey } = require('./payroll-cycle');
 
 installFirestoreCompatibility(admin);
 
@@ -18,28 +19,10 @@ const db = admin.firestore();
 const dryRun = process.env.DRY_RUN !== 'false';
 const confirmation = process.env.RESET_CONFIRMATION || '';
 const requiredConfirmation = 'RESET_CURRENT_MONTH_ATTENDANCE_METRICS';
-const monthKey = process.env.MONTH_KEY || currentCairoMonthKey();
-
-function currentCairoMonthKey() {
-  const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Africa/Cairo',
-    year: 'numeric',
-    month: '2-digit',
-  }).formatToParts(new Date());
-  const year = parts.find((part) => part.type === 'year').value;
-  const month = parts.find((part) => part.type === 'month').value;
-  return `${year}-${month}`;
-}
-
-function nextMonthDateKey(value) {
-  const [year, month] = value.split('-').map(Number);
-  if (!year || !month || month < 1 || month > 12) {
-    throw new Error(`Invalid MONTH_KEY: ${value}. Expected YYYY-MM.`);
-  }
-  const nextYear = month === 12 ? year + 1 : year;
-  const nextMonth = month === 12 ? 1 : month + 1;
-  return `${nextYear}-${String(nextMonth).padStart(2, '0')}-01`;
-}
+const cycle = process.env.MONTH_KEY
+  ? cycleForKey(process.env.MONTH_KEY)
+  : currentCycle();
+const monthKey = cycle.key;
 
 function isAbsent(data) {
   return String(data.status || '') === 'absent';
@@ -109,10 +92,10 @@ async function main() {
     );
   }
 
-  const firstDate = `${monthKey}-01`;
-  const nextDate = nextMonthDateKey(monthKey);
+  const firstDate = cycle.startDate;
+  const nextDate = cycle.nextStartDate;
   console.log(`Using Firebase project: ${serviceAccount.project_id}`);
-  console.log(`Month: ${monthKey}`);
+  console.log(`Cycle: ${monthKey} (${cycle.startDate} to ${cycle.endDate})`);
   console.log(`Dry run: ${dryRun}`);
 
   const [attendanceSnapshot, productivitySnapshot, performanceSnapshot] =

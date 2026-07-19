@@ -17,6 +17,7 @@ import '../../models/advance_model.dart';
 import '../../models/complaint_model.dart';
 import '../../models/user_model.dart';
 import '../shared/requests_log_screen.dart';
+import '../../utils/payroll_cycle.dart';
 
 class EmployeeRequestsScreen extends StatefulWidget {
   const EmployeeRequestsScreen({super.key});
@@ -113,7 +114,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
     try {
       final now = DateTime.now();
       final dateStr = DateFormat('yyyy-MM-dd').format(now);
-      final monthKey = DateFormat('yyyy-MM').format(now);
+      final monthKey = PayrollCycle.keyFor(now);
 
       final expectedTimeStr =
           '${_selectedTime.hour.toString().padLeft(2, '0')}:${_selectedTime.minute.toString().padLeft(2, '0')}';
@@ -233,7 +234,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
 
     try {
       final now = DateTime.now();
-      final monthKey = DateFormat('yyyy-MM').format(now);
+      final monthKey = PayrollCycle.keyFor(now);
 
       final req = AdvanceModel(
         advanceId: '',

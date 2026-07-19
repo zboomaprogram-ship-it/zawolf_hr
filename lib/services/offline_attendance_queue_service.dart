@@ -400,6 +400,28 @@ class OfflineAttendanceQueueService {
     return byAttendanceId.values.toList();
   }
 
+  Future<List<AttendanceModel>> pendingLogsForRange({
+    required String userId,
+    required String startDateKey,
+    required String endDateKey,
+  }) async {
+    final actions = await pendingActions();
+    final relevant = actions.where(
+      (action) =>
+          action.userId == userId &&
+          action.date.compareTo(startDateKey) >= 0 &&
+          action.date.compareTo(endDateKey) <= 0,
+    );
+    final byAttendanceId = <String, AttendanceModel>{};
+    for (final action in relevant) {
+      final existing = byAttendanceId[action.attendanceId];
+      byAttendanceId[action.attendanceId] = action.toLocalAttendanceModel(
+        existing: existing,
+      );
+    }
+    return byAttendanceId.values.toList();
+  }
+
   Future<String?> localDeviceOwner(String deviceId) async {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getString(_deviceBindingPrefix + _deviceKey(deviceId));

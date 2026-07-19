@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart' hide TextDirection;
 import 'package:provider/provider.dart';
 
 import '../../components/wolf_card.dart';
@@ -8,6 +7,7 @@ import '../../models/user_model.dart';
 import '../../services/auth_service.dart';
 import '../../services/productivity_service.dart';
 import '../../theme/theme.dart';
+import '../../utils/payroll_cycle.dart';
 
 class ProductivityRankingScreen extends StatefulWidget {
   const ProductivityRankingScreen({super.key});
@@ -19,7 +19,7 @@ class ProductivityRankingScreen extends StatefulWidget {
 
 class _ProductivityRankingScreenState extends State<ProductivityRankingScreen> {
   final ProductivityService _service = ProductivityService();
-  late final String _monthKey = DateFormat('yyyy-MM').format(DateTime.now());
+  late final String _monthKey = PayrollCycle.keyFor(DateTime.now());
   bool _refreshing = false;
 
   Future<void> _refresh(UserModel reviewer) async {

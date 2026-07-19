@@ -3,6 +3,13 @@
     "rules": "firestore.rules",
     "indexes": "firestore.indexes.json"
   },
+  "hosting": {
+    "public": "build/web",
+    "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
+    "rewrites": [
+      { "source": "**", "destination": "/index.html" }
+    ]
+  },
   "flutter": {
     "platforms": {
       "android": {
@@ -20,12 +27,20 @@
           "fileOutput": "ios/Runner/GoogleService-Info.plist"
         }
       },
+      "web": {
+        "default": {
+          "projectId": "zawolf-hr-system-60317",
+          "appId": "1:469569205485:web:fcb3ada7f4ca94f13d48e4",
+          "fileOutput": "web/firebase-config.json"
+        }
+      },
       "dart": {
         "lib/firebase_options.dart": {
           "projectId": "zawolf-hr-system-60317",
           "configurations": {
             "android": "1:469569205485:android:8ada173dd2f2db373d48e4",
-            "ios": "1:469569205485:ios:725d8b1464d1a8c73d48e4"
+            "ios": "1:469569205485:ios:725d8b1464d1a8c73d48e4",
+            "web": "1:469569205485:web:fcb3ada7f4ca94f13d48e4"
           }
         }
       }

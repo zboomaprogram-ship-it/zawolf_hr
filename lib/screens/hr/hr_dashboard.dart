@@ -202,10 +202,12 @@ class _HrDashboardScreenState extends State<HrDashboardScreen> {
             GridView.count(
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
-              crossAxisCount: 2,
+              crossAxisCount: MediaQuery.sizeOf(context).width >= 1200 ? 4 : 2,
               crossAxisSpacing: 16,
               mainAxisSpacing: 16,
-              childAspectRatio: 1.3,
+              childAspectRatio: MediaQuery.sizeOf(context).width >= 1200
+                  ? 1.45
+                  : 1.3,
               children: [
                 _buildHRActionCard(
                   'إدارة الطلبات',

@@ -24,7 +24,7 @@ class OneSignalService with WidgetsBindingObserver {
   bool _bindingExternalId = false;
   bool _repairingRegistration = false;
 
-  bool get isConfigured => _appId.trim().isNotEmpty;
+  bool get isConfigured => !kIsWeb && _appId.trim().isNotEmpty;
   bool get isInitialized => _initialized;
 
   Future<void> initialize() {

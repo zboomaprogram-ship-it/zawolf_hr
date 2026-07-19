@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart' hide TextDirection;
 import 'package:provider/provider.dart';
 
 import '../../components/wolf_card.dart';
@@ -9,6 +8,7 @@ import '../../models/employee_role.dart';
 import '../../services/auth_service.dart';
 import '../../services/productivity_service.dart';
 import '../../theme/theme.dart';
+import '../../utils/payroll_cycle.dart';
 
 class DepartmentPerformanceData {
   final String departmentName;
@@ -33,7 +33,7 @@ class DepartmentPerformanceScreen extends StatefulWidget {
 class _DepartmentPerformanceScreenState
     extends State<DepartmentPerformanceScreen> {
   final ProductivityService _service = ProductivityService();
-  late final String _monthKey = DateFormat('yyyy-MM').format(DateTime.now());
+  late final String _monthKey = PayrollCycle.keyFor(DateTime.now());
   bool _refreshing = false;
 
   Future<void> _refresh(UserModel reviewer) async {
@@ -41,9 +41,9 @@ class _DepartmentPerformanceScreenState
     try {
       final count = await _service.refreshRanking(reviewer, _monthKey);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('تم تحديث بيانات $count موظف.')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('تم تحديث بيانات $count موظف.')));
       }
     } finally {
       if (mounted) setState(() => _refreshing = false);
@@ -67,7 +67,10 @@ class _DepartmentPerformanceScreenState
     }
 
     final results = grouped.entries.map((e) {
-      final totalScore = e.value.fold<double>(0, (sum, item) => sum + item.overallScore);
+      final totalScore = e.value.fold<double>(
+        0,
+        (sum, item) => sum + item.overallScore,
+      );
       final avg = totalScore / e.value.length;
       return DepartmentPerformanceData(
         departmentName: e.key,
@@ -147,7 +150,8 @@ class _DepartmentPerformanceScreenState
           }
 
           final best = departments.first;
-          final needsFollowUp = [...departments]..sort((a, b) => a.averageScore.compareTo(b.averageScore));
+          final needsFollowUp = [...departments]
+            ..sort((a, b) => a.averageScore.compareTo(b.averageScore));
           final worst = needsFollowUp.first;
 
           return ListView(

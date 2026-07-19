@@ -1,11 +1,11 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:intl/intl.dart' hide TextDirection;
 import '../models/user_model.dart';
 import '../models/permission_model.dart';
 import '../models/attendance_policy.dart';
 import 'audit_log_service.dart';
 import 'attendance_policy_service.dart';
 import 'role_notification_service.dart';
+import '../utils/payroll_cycle.dart';
 
 class PermissionService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
@@ -98,7 +98,7 @@ class PermissionService {
   // Submit permission request with rule audits
   Future<void> submitPermission(PermissionModel req, UserModel employee) async {
     final now = DateTime.now();
-    final monthKey = DateFormat('yyyy-MM').format(now);
+    final monthKey = PayrollCycle.keyFor(now);
     final policyConfig = await _policyService.getPolicyConfig();
 
     // ── Rule 1: Validate quota (maximum 2 permissions OR 5 hours total) ──

@@ -2,9 +2,21 @@ name: Monthly HR Tasks
 
 on:
   schedule:
-    # Runs daily at 21:05 UTC (12:05 AM Egypt time); script resets only on Cairo day 01
+    # Cairo alternates between UTC+2 and UTC+3. Both schedules are safe because
+    # the script runs only on day 26 and the finalized cycle document is idempotent.
     - cron: '5 21 * * *'
-  workflow_dispatch: # Allows manual trigger from UI
+    - cron: '5 22 * * *'
+  workflow_dispatch:
+    inputs:
+      cycle_key:
+        description: 'Optional cycle to close (YYYY-MM)'
+        required: false
+        type: string
+      force:
+        description: 'Allow a manual close outside day 26'
+        required: true
+        default: false
+        type: boolean
 
 jobs:
   run-monthly-tasks:
@@ -26,4 +38,6 @@ jobs:
         working-directory: ./scripts
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          PROCESS_CYCLE_KEY: ${{ inputs.cycle_key }}
+          FORCE_MONTHLY_CLOSE: ${{ inputs.force }}
         run: node monthly-tasks.js

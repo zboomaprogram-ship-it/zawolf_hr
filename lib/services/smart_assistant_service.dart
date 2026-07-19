@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 
 import '../models/employee_role.dart';
 import '../models/user_model.dart';
+import '../utils/payroll_cycle.dart';
 
 class SmartAssistantService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
@@ -277,7 +278,7 @@ class SmartAssistantService {
     if (user.role == EmployeeRole.manager) {
       return 'المدير لا يرى كشوف رواتب الفريق من المساعد. كشوف الرواتب متاحة لـ HR ومالك النظام فقط.';
     }
-    final monthKey = DateFormat('yyyy-MM').format(DateTime.now());
+    final monthKey = PayrollCycle.keyFor(DateTime.now());
     final snap = await _db
         .collection('payrollRuns')
         .where('monthKey', isEqualTo: monthKey)

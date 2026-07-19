@@ -1149,6 +1149,11 @@ service cloud.firestore {
       allow delete: if isAuth() && isActive() && isSuperAdmin();
     }
 
+    match /payrollCycles/{cycleKey} {
+      allow read: if isAuth() && isActive() && isHR();
+      allow write: if false;
+    }
+
     match /performance/{performanceId} {
       allow read: if isAuth() && isActive() && (
         isOwner(resource.data.userId) ||
