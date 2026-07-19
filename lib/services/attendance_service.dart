@@ -710,19 +710,6 @@ class AttendanceService {
     final canMigrateLegacyDevice =
         legacyDeviceId.isNotEmpty && locallyRegisteredDevice == legacyDeviceId;
 
-    if (locallyRegisteredDevice.isNotEmpty && !canMigrateLegacyDevice) {
-      if (locallyRegisteredDevice == deviceId) {
-        await _offlineQueue.rememberLocalDeviceOwner(
-          deviceId: deviceId,
-          userId: employee.uid,
-        );
-        return;
-      }
-      throw Exception(
-        'هذا الحساب مربوط بجهاز حضور آخر. اطلب من HR إعادة ضبط جهاز الحضور قبل استخدام هذا الجهاز.',
-      );
-    }
-
     final userRef = _db.collection('users').doc(employee.uid);
     final deviceRef = _db
         .collection('attendanceDevices')
@@ -743,15 +730,12 @@ class AttendanceService {
             registeredDeviceId == legacyDeviceId &&
             registeredDeviceId != deviceId;
 
-        if (registeredDeviceId.isNotEmpty) {
-          if (registeredDeviceId == deviceId) {
-            return;
-          }
-          if (!shouldMigrateLegacyDevice) {
-            throw Exception(
-              'هذا الحساب مربوط بجهاز حضور آخر. اطلب من HR إعادة ضبط جهاز الحضور قبل استخدام هذا الجهاز.',
-            );
-          }
+        if (registeredDeviceId.isNotEmpty &&
+            registeredDeviceId != deviceId &&
+            !shouldMigrateLegacyDevice) {
+          throw Exception(
+            'هذا الحساب مربوط بجهاز حضور آخر. اطلب من HR إعادة ضبط جهاز الحضور قبل استخدام هذا الجهاز.',
+          );
         }
 
         final deviceSnap = await transaction.get(deviceRef);
@@ -774,11 +758,13 @@ class AttendanceService {
           });
         }
 
-        transaction.update(userRef, {
-          'registeredAttendanceDeviceId': deviceId,
-          'registeredAttendanceDeviceLabel': securityResult.deviceLabel,
-          'registeredAttendanceDeviceAt': FieldValue.serverTimestamp(),
-        });
+        if (registeredDeviceId != deviceId) {
+          transaction.update(userRef, {
+            'registeredAttendanceDeviceId': deviceId,
+            'registeredAttendanceDeviceLabel': securityResult.deviceLabel,
+            'registeredAttendanceDeviceAt': FieldValue.serverTimestamp(),
+          });
+        }
       });
 
       await _offlineQueue.rememberLocalDeviceOwner(
