@@ -8,12 +8,13 @@ class LeaveModel {
   final String department;
   final String locationId;
   final String managerId;
-  final String leaveType; // 'annual' | 'sick' | 'casual' | 'day_off' | 'wfh'
+  final String leaveType; // day_off | sick | casual | unpaid | exam | wfh
   final DateTime startDate;
   final DateTime endDate;
   final int numberOfDays;
   final String? reason;
   final String? attachmentUrl;
+  final String workHandoverTo;
   final String status; // 'pending' | 'approved' | 'rejected' | 'cancelled'
   final DateTime? submittedAt;
   final DateTime? reviewedAt;
@@ -35,6 +36,7 @@ class LeaveModel {
     required this.numberOfDays,
     this.reason,
     this.attachmentUrl,
+    this.workHandoverTo = '',
     required this.status,
     this.submittedAt,
     this.reviewedAt,
@@ -59,6 +61,7 @@ class LeaveModel {
       numberOfDays: data['numberOfDays'] as int? ?? 1,
       reason: data['reason'] as String?,
       attachmentUrl: data['attachmentUrl'] as String?,
+      workHandoverTo: data['workHandoverTo'] as String? ?? '',
       status: data['status'] as String? ?? 'pending',
       submittedAt: (data['submittedAt'] as Timestamp?)?.toDate(),
       reviewedAt: (data['reviewedAt'] as Timestamp?)?.toDate(),
@@ -82,6 +85,7 @@ class LeaveModel {
       'numberOfDays': numberOfDays,
       if (reason != null) 'reason': reason,
       if (attachmentUrl != null) 'attachmentUrl': attachmentUrl,
+      'workHandoverTo': workHandoverTo,
       'status': status,
       'submittedAt': submittedAt != null
           ? Timestamp.fromDate(submittedAt!)

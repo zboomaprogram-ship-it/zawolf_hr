@@ -8,10 +8,12 @@ void main() {
       'defaultStartTime': '09:00',
       'checkInReminderLeadMinutes': 10,
       'checkInLateWarningMinutes': 10,
+      'checkInFinalWarningLeadMinutes': 5,
     });
 
     expect(policy.checkInReminderLeadMinutes, 10);
     expect(policy.checkInLateWarningMinutes, 10);
+    expect(policy.checkInFinalWarningLeadMinutes, 5);
     expect(policy.toMap()['checkInReminderLeadMinutes'], 10);
   });
 

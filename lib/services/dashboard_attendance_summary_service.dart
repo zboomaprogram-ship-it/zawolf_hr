@@ -250,27 +250,28 @@ class DashboardAttendanceSummaryService {
 
   Future<List<UserModel>> _loadEmployees(UserModel reviewer) async {
     if (reviewer.role == EmployeeRole.teamLeader) {
-      final snap = await _db
-          .collection('users')
-          .where('teamLeaderId', isEqualTo: reviewer.uid)
-          .get();
-      return snap.docs
+      final result = await _safeQueryResult(
+        _db.collection('users').where('teamLeaderId', isEqualTo: reviewer.uid),
+      );
+      return result.docs
           .map(UserModel.fromFirestore)
           .where((employee) => employee.isActive)
           .toList();
     }
 
     if (reviewer.role == EmployeeRole.manager) {
-      final modernSnap = await _db
-          .collection('users')
-          .where('managerIds', arrayContains: reviewer.uid)
-          .get();
-      final legacySnap = await _db
-          .collection('users')
-          .where('managerId', isEqualTo: reviewer.uid)
-          .get();
+      final results = await Future.wait([
+        _safeQueryResult(
+          _db
+              .collection('users')
+              .where('managerIds', arrayContains: reviewer.uid),
+        ),
+        _safeQueryResult(
+          _db.collection('users').where('managerId', isEqualTo: reviewer.uid),
+        ),
+      ]);
       final byId = <String, UserModel>{};
-      for (final doc in [...modernSnap.docs, ...legacySnap.docs]) {
+      for (final doc in results.expand((result) => result.docs)) {
         final employee = UserModel.fromFirestore(doc);
         if (employee.isActive &&
             employee.role != EmployeeRole.superAdmin &&
@@ -299,38 +300,46 @@ class DashboardAttendanceSummaryService {
   ) async {
     final attendanceDocs = await Future.wait(
       employeeIds.map(
-        (userId) =>
-            _db.collection('attendance').doc('${userId}_$dateKey').get(),
+        (userId) => _safeDocumentGet(
+          _db.collection('attendance').doc('${userId}_$dateKey'),
+        ),
       ),
     );
     final permissionSnaps = await Future.wait(
       employeeIds.map(
-        (userId) => _db
-            .collection('permissions')
-            .where('userId', isEqualTo: userId)
-            .where('requestDate', isEqualTo: dateKey)
-            .where('status', isEqualTo: 'approved')
-            .get(),
+        (userId) => _safeQueryResult(
+          _db
+              .collection('permissions')
+              .where('userId', isEqualTo: userId)
+              .where('requestDate', isEqualTo: dateKey)
+              .where('status', isEqualTo: 'approved'),
+        ),
       ),
     );
     final leaveSnaps = await Future.wait(
       employeeIds.map(
-        (userId) => _db
-            .collection('leaves')
-            .where('userId', isEqualTo: userId)
-            .where('status', isEqualTo: 'approved')
-            .where(
-              'startDate',
-              isLessThanOrEqualTo: Timestamp.fromDate(
-                DateTime(date.year, date.month, date.day, 23, 59, 59),
+        (userId) => _safeQueryResult(
+          _db
+              .collection('leaves')
+              .where('userId', isEqualTo: userId)
+              .where('status', isEqualTo: 'approved')
+              .where(
+                'startDate',
+                isLessThanOrEqualTo: Timestamp.fromDate(
+                  DateTime(date.year, date.month, date.day, 23, 59, 59),
+                ),
               ),
-            )
-            .get(),
+        ),
       ),
     );
 
     return [
-      _SummaryQueryResult(attendanceDocs.where((doc) => doc.exists).toList()),
+      _SummaryQueryResult(
+        attendanceDocs
+            .whereType<DocumentSnapshot<Map<String, dynamic>>>()
+            .where((doc) => doc.exists)
+            .toList(),
+      ),
       _SummaryQueryResult(
         permissionSnaps.expand((snapshot) => snapshot.docs).toList(),
       ),
@@ -345,24 +354,48 @@ class DashboardAttendanceSummaryService {
     DateTime date,
   ) async {
     final results = await Future.wait([
-      _db.collection('attendance').where('date', isEqualTo: dateKey).get(),
-      _db
-          .collection('permissions')
-          .where('requestDate', isEqualTo: dateKey)
-          .where('status', isEqualTo: 'approved')
-          .get(),
-      _db
-          .collection('leaves')
-          .where('status', isEqualTo: 'approved')
-          .where(
-            'startDate',
-            isLessThanOrEqualTo: Timestamp.fromDate(
-              DateTime(date.year, date.month, date.day, 23, 59, 59),
+      _safeQueryResult(
+        _db.collection('attendance').where('date', isEqualTo: dateKey),
+      ),
+      _safeQueryResult(
+        _db
+            .collection('permissions')
+            .where('requestDate', isEqualTo: dateKey)
+            .where('status', isEqualTo: 'approved'),
+      ),
+      _safeQueryResult(
+        _db
+            .collection('leaves')
+            .where('status', isEqualTo: 'approved')
+            .where(
+              'startDate',
+              isLessThanOrEqualTo: Timestamp.fromDate(
+                DateTime(date.year, date.month, date.day, 23, 59, 59),
+              ),
             ),
-          )
-          .get(),
+      ),
     ]);
-    return results.map(_SummaryQueryResult.fromQuery).toList();
+    return results;
+  }
+
+  Future<DocumentSnapshot<Map<String, dynamic>>?> _safeDocumentGet(
+    DocumentReference<Map<String, dynamic>> reference,
+  ) async {
+    try {
+      return await reference.get();
+    } on FirebaseException {
+      return null;
+    }
+  }
+
+  Future<_SummaryQueryResult> _safeQueryResult(
+    Query<Map<String, dynamic>> query,
+  ) async {
+    try {
+      return _SummaryQueryResult.fromQuery(await query.get());
+    } on FirebaseException {
+      return const _SummaryQueryResult([]);
+    }
   }
 
   bool _isLateStatus(String status) {

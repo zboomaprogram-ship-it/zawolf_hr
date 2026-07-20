@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 
 import '../../components/wolf_card.dart';
 import '../../models/payroll_run_model.dart';
+import '../../models/employee_role.dart';
 import '../../services/auth_service.dart';
 import '../../services/payroll_service.dart';
 import '../../services/sheets_export_service.dart';
@@ -73,6 +74,7 @@ class _PayrollScreenState extends State<PayrollScreen> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final actor = context.watch<AuthService>().currentUser;
+    final canExportReports = EmployeeRole.canAccessReports(actor?.role);
     return Scaffold(
       appBar: AppBar(
         title: Text('الرواتب', style: theme.textTheme.headlineMedium),
@@ -131,14 +133,16 @@ class _PayrollScreenState extends State<PayrollScreen> {
               const SizedBox(height: 12),
               Row(
                 children: [
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: runs.isEmpty ? null : () => _export(runs),
-                      icon: const Icon(Icons.copy),
-                      label: const Text('نسخ CSV'),
+                  if (canExportReports) ...[
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: runs.isEmpty ? null : () => _export(runs),
+                        icon: const Icon(Icons.copy),
+                        label: const Text('نسخ CSV'),
+                      ),
                     ),
-                  ),
-                  const SizedBox(width: 10),
+                    const SizedBox(width: 10),
+                  ],
                   Expanded(
                     child: FilledButton.icon(
                       onPressed: _calculating ? null : _calculate,

@@ -104,21 +104,39 @@ class _EmployeeProductivityScreenState
                   value: score.punctualityScore,
                   color: ZaWolfColors.warning,
                 ),
-                _ScoreBar(
-                  label: 'إنجاز المهام',
-                  value: score.taskCompletionScore,
-                  color: ZaWolfColors.primaryCyan,
-                ),
-                _ScoreBar(
-                  label: 'جودة المهام',
-                  value: score.taskQualityScore,
-                  color: ZaWolfColors.perfGold,
-                ),
-                _ScoreBar(
-                  label: 'KPI',
-                  value: score.kpiScore,
-                  color: ZaWolfColors.dayoffPurple,
-                ),
+                if (score.hasTaskData)
+                  _ScoreBar(
+                    label: 'إنجاز المهام',
+                    value: score.taskCompletionScore,
+                    color: ZaWolfColors.primaryCyan,
+                  ),
+                if (score.hasTaskQualityData)
+                  _ScoreBar(
+                    label: 'جودة المهام',
+                    value: score.taskQualityScore,
+                    color: ZaWolfColors.perfGold,
+                  ),
+                if (score.hasKpiData)
+                  _ScoreBar(
+                    label: 'KPI',
+                    value: score.kpiScore,
+                    color: ZaWolfColors.dayoffPurple,
+                  )
+                else
+                  const ListTile(
+                    leading: Icon(
+                      Icons.info_outline,
+                      color: ZaWolfColors.textMuted,
+                    ),
+                    title: Text(
+                      'لم يتم تعيين KPI لهذه الدورة',
+                      textAlign: TextAlign.right,
+                    ),
+                    subtitle: Text(
+                      'لن يؤثر ذلك على نتيجة الإنتاجية.',
+                      textAlign: TextAlign.right,
+                    ),
+                  ),
                 const SizedBox(height: 12),
                 WolfCard(
                   child: Column(

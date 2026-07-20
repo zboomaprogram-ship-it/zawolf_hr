@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../services/auth_service.dart';
 import '../../services/dashboard_attendance_summary_service.dart';
+import '../../models/employee_role.dart';
 import '../../theme/theme.dart';
 import '../../components/attendance_insights_card.dart';
 import '../../components/wolf_card.dart';
@@ -74,6 +75,7 @@ class _HrDashboardScreenState extends State<HrDashboardScreen> {
         ),
       );
     }
+    final canAccessReports = EmployeeRole.canAccessReports(hrAdmin.role);
 
     _attendanceSummaryFuture ??= _summaryService.loadForReviewer(hrAdmin);
 
@@ -230,13 +232,14 @@ class _HrDashboardScreenState extends State<HrDashboardScreen> {
                   () => context.go('/hr/locations'),
                   theme,
                 ),
-                _buildHRActionCard(
-                  'تصدير التقارير',
-                  'تصدير الحضور والإجازات مباشرة لـ Google Sheets',
-                  Icons.file_download_outlined,
-                  () => context.go('/hr/reports'),
-                  theme,
-                ),
+                if (canAccessReports)
+                  _buildHRActionCard(
+                    'تصدير التقارير',
+                    'تصدير الحضور والإجازات مباشرة لـ Google Sheets',
+                    Icons.file_download_outlined,
+                    () => context.go('/hr/reports'),
+                    theme,
+                  ),
                 _buildHRActionCard(
                   'بث الإعلانات العامة',
                   'نشر إشعار إداري لجميع موظفي المنظومة',

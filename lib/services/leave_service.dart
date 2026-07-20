@@ -5,12 +5,49 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'package:zawolf_hr/models/employee_role.dart';
 import '../models/user_model.dart';
 import '../models/leave_model.dart';
+import '../models/leave_type_policy.dart';
+import '../models/manager_approval_chain.dart';
 import 'audit_log_service.dart';
-import 'role_notification_service.dart';
 
 class LeaveService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
   final FirebaseStorage _storage = FirebaseStorage.instance;
+
+  static void validateRequest(LeaveModel request, {DateTime? now}) {
+    if (!LeaveTypePolicy.supportedTypes.contains(request.leaveType)) {
+      throw Exception('اختر نوع إجازة صحيحاً.');
+    }
+    if ((request.reason ?? '').trim().isEmpty) {
+      throw Exception('يجب كتابة سبب الإجازة.');
+    }
+    if (request.workHandoverTo.trim().isEmpty) {
+      throw Exception('يجب تحديد من سيقوم بالعمل أثناء الإجازة.');
+    }
+    final current = now ?? DateTime.now();
+    final today = DateTime(current.year, current.month, current.day);
+    final start = DateTime(
+      request.startDate.year,
+      request.startDate.month,
+      request.startDate.day,
+    );
+    final end = DateTime(
+      request.endDate.year,
+      request.endDate.month,
+      request.endDate.day,
+    );
+    if (end.isBefore(start)) {
+      throw Exception('تاريخ نهاية الإجازة يسبق تاريخ البداية.');
+    }
+    if (start.isBefore(today)) {
+      throw Exception('لا يمكن تقديم طلب إجازة عن يوم سابق.');
+    }
+    if (LeaveTypePolicy.requiresTwoDayNotice(request.leaveType) &&
+        start.isBefore(today.add(const Duration(days: 2)))) {
+      throw Exception(
+        'الإجازة العادية يجب تقديمها قبل موعدها بيومين على الأقل.',
+      );
+    }
+  }
 
   String _attachmentContentType(String pathOrExtension) {
     final extension = pathOrExtension.split('.').last.trim().toLowerCase();
@@ -28,11 +65,10 @@ class LeaveService {
   }
 
   List<String> _approvalManagerIds(UserModel employee, String fallbackId) {
-    final ids = employee.managerIds
-        .where((id) => id.trim().isNotEmpty)
-        .toList();
-    if (ids.isNotEmpty) return ids;
-    return fallbackId.trim().isEmpty ? <String>[] : <String>[fallbackId];
+    return ManagerApprovalChain.orderedIds(
+      employee.managerIds,
+      fallbackId: fallbackId,
+    );
   }
 
   List<String> _approvalManagerNames(UserModel employee, String? fallbackName) {
@@ -63,7 +99,11 @@ class LeaveService {
         <String>[];
     final currentManagerId = data['managerId'] as String? ?? '';
     final savedIndex = data['managerApprovalIndex'] as int?;
-    final currentIndex = savedIndex ?? managerIds.indexOf(currentManagerId);
+    final currentIndex = ManagerApprovalChain.currentIndex(
+      managerIds: managerIds,
+      currentManagerId: currentManagerId,
+      savedIndex: savedIndex,
+    );
     final nextIndex = currentIndex + 1;
     final trail = {
       'reviewerId': reviewerId,
@@ -132,9 +172,7 @@ class LeaveService {
 
   // Submit leave request
   Future<void> submitLeaveRequest(LeaveModel req, UserModel employee) async {
-    if (!['annual', 'sick', 'casual', 'day_off'].contains(req.leaveType)) {
-      throw Exception('نوع الإجازة غير صحيح');
-    }
+    validateRequest(req);
 
     // 1. Validate overlaps (basic check against other active leaves)
     final overlaps = await _db
@@ -158,6 +196,12 @@ class LeaveService {
     final reqRef = _db.collection('leaves').doc();
     final managerIds = _approvalManagerIds(employee, req.managerId);
     final managerNames = _approvalManagerNames(employee, employee.managerName);
+    if (managerIds.isEmpty) {
+      throw Exception(
+        'لا يمكن إرسال الطلب قبل تعيين مدير مباشر للموظف من إدارة الحسابات.',
+      );
+    }
+    final firstManagerId = managerIds.first;
     final finalModel = LeaveModel(
       leaveId: reqRef.id,
       userId: req.userId,
@@ -165,19 +209,25 @@ class LeaveService {
       employeeName: req.employeeName,
       department: req.department,
       locationId: req.locationId,
-      managerId: req.managerId,
+      managerId: firstManagerId,
       leaveType: req.leaveType,
       startDate: req.startDate,
       endDate: req.endDate,
       numberOfDays: req.numberOfDays,
       reason: req.reason,
       attachmentUrl: req.attachmentUrl,
-      status: 'pending_hr',
+      workHandoverTo: req.workHandoverTo,
+      status: 'pending_manager',
       submittedAt: DateTime.now(),
     );
 
     await reqRef.set({
       ...finalModel.toFirestore(),
+      'deductsLeaveBalance': LeaveTypePolicy.balanceKey(req.leaveType) != null,
+      if (LeaveTypePolicy.balanceKey(req.leaveType) != null)
+        'leaveBalanceKey': LeaveTypePolicy.balanceKey(req.leaveType),
+      'requiresFullDaySalaryDeduction':
+          LeaveTypePolicy.requiresFullDaySalaryDeduction(req.leaveType),
       'managerIds': managerIds,
       'managerNames': managerNames,
       'managerApprovalIndex': 0,
@@ -185,12 +235,12 @@ class LeaveService {
       'managerApprovalTrail': <Map<String, dynamic>>[],
     });
 
-    await RoleNotificationService.instance.notifyRole(
-      role: EmployeeRole.hrAdmin,
+    await _createNotification(
+      recipientId: firstManagerId,
       type: 'leave_request_submitted',
-      title: 'طلب إجازة بانتظار HR',
+      title: 'طلب إجازة بانتظار موافقتك',
       body:
-          'يطلب ${req.employeeName} إجازة (${req.leaveType}) لمدّة ${req.numberOfDays} يوم.',
+          'يطلب ${req.employeeName} ${LeaveTypePolicy.arabicLabel(req.leaveType)} لمدّة ${req.numberOfDays} يوم. تسليم العمل إلى: ${req.workHandoverTo}.',
       data: {'leaveId': reqRef.id},
     );
   }
@@ -213,7 +263,9 @@ class LeaveService {
     bool isFinalApproval = false;
     Map<String, dynamic> update;
 
-    if (role == EmployeeRole.hrAdmin || role == EmployeeRole.superAdmin) {
+    if (role == EmployeeRole.hrAdmin ||
+        role == EmployeeRole.hrManager ||
+        role == EmployeeRole.superAdmin) {
       if (leave.status == 'pending_hr') {
         final managerIds =
             (data['managerIds'] as List<dynamic>?)
@@ -236,6 +288,9 @@ class LeaveService {
         };
         isFinalApproval = firstManagerId.isEmpty;
       } else {
+        if (leave.managerId != reviewerId) {
+          throw Exception('هذا الطلب ينتظر قرار مدير آخر.');
+        }
         update = _nextManagerApprovalUpdate(
           data: data,
           reviewerId: reviewerId,
@@ -245,6 +300,9 @@ class LeaveService {
       }
     } else {
       // Manager
+      if (leave.managerId != reviewerId) {
+        throw Exception('هذا الطلب ينتظر قرار مدير آخر.');
+      }
       update = _nextManagerApprovalUpdate(
         data: data,
         reviewerId: reviewerId,
@@ -257,15 +315,14 @@ class LeaveService {
 
     if (isFinalApproval) {
       // Deduct leave balance
-      String balanceKey = leave.leaveType;
-      if (balanceKey == 'day_off') {
-        balanceKey = 'daysOff';
-      }
+      final balanceKey = LeaveTypePolicy.balanceKey(leave.leaveType);
 
       final userRef = _db.collection('users').doc(leave.userId);
-      batch.update(userRef, {
-        'leaveBalance.$balanceKey': FieldValue.increment(-leave.numberOfDays),
-      });
+      if (balanceKey != null) {
+        batch.update(userRef, {
+          'leaveBalance.$balanceKey': FieldValue.increment(-leave.numberOfDays),
+        });
+      }
     }
 
     await batch.commit();
@@ -304,7 +361,14 @@ class LeaveService {
         recipientId: leave.userId,
         type: 'leave_approved',
         title: 'تم قبول طلب الإجازة ✅',
-        body: 'تمت الموافقة على طلب إجازتك لمدّة ${leave.numberOfDays} يوم.',
+        body:
+            'تمت الموافقة على طلب إجازتك لمدّة ${leave.numberOfDays} يوم. السبب المسجل: ${leave.reason}',
+        data: {
+          'leaveId': leaveId,
+          'route': '/employee/requests',
+          'decision': 'approved',
+          'resyncAttendanceAlarm': true,
+        },
       );
     } catch (_) {}
   }
@@ -320,6 +384,9 @@ class LeaveService {
 
     if (!doc.exists) throw Exception('طلب الإجازة غير موجود');
     final leave = LeaveModel.fromFirestore(doc);
+    if (leave.status == 'pending_manager' && leave.managerId != reviewerId) {
+      throw Exception('هذا الطلب ينتظر قرار مدير آخر.');
+    }
 
     await docRef.update({
       'status': 'rejected',
@@ -343,6 +410,13 @@ class LeaveService {
         type: 'leave_rejected',
         title: 'تم رفض طلب الإجازة ❌',
         body: 'تم رفض طلب إجازتك. السبب: $comment',
+        data: {
+          'leaveId': leaveId,
+          'route': '/employee/requests',
+          'decision': 'rejected',
+          'decisionReason': comment,
+          'resyncAttendanceAlarm': true,
+        },
       );
     } catch (_) {}
   }

@@ -75,10 +75,26 @@ class AttendanceService {
     }
 
     if (isCheckIn) {
-      final checkInOpenAt = AttendancePolicy.parseTimeOnDate(
+      final workDays = employee.workSchedule.workDays;
+      if (workDays != null &&
+          workDays.isNotEmpty &&
+          !workDays.contains(now.weekday)) {
+        throw Exception(
+          'اليوم ليس ضمن أيام عملك المسجلة. لن يتم احتسابه غياباً أو خصماً.',
+        );
+      }
+
+      final policyCheckInOpenAt = AttendancePolicy.parseTimeOnDate(
         now,
         policyConfig.checkInOpenTime,
       );
+      final employeeStartAt = AttendancePolicy.parseTimeOnDate(
+        now,
+        employee.workSchedule.startTime ?? policyConfig.defaultStartTime,
+      );
+      final checkInOpenAt = employeeStartAt.isBefore(policyCheckInOpenAt)
+          ? employeeStartAt
+          : policyCheckInOpenAt;
       if (now.isBefore(checkInOpenAt)) {
         throw Exception(
           'تسجيل الحضور يفتح من الساعة ${_formatArabicTime(checkInOpenAt)}.',
@@ -88,6 +104,13 @@ class AttendanceService {
       final dayOffStatus = await _dayOffService.getDayOffStatus(now);
       if (dayOffStatus.isDayOff) {
         throw Exception('تسجيل الحضور غير متاح اليوم: ${dayOffStatus.reason}.');
+      }
+
+      final approvedLeave = await _approvedLeaveOnDate(employee.uid, now);
+      if (approvedLeave != null) {
+        throw Exception(
+          'لديك إجازة معتمدة اليوم (${approvedLeave['leaveType'] ?? 'إجازة'}). تسجيل الحضور غير مطلوب.',
+        );
       }
     } else {
       final checkInLog = todayLookup.log!;
@@ -143,24 +166,32 @@ class AttendanceService {
     });
 
     // 1. Validate employee position against assigned branch's geofence
-    final geoResult = await _geofenceService.validateCheckIn(
-      employee,
-      strictLocationOnly: requiresLiveConnection,
-    );
-
-    final allowsExternalWork = hasWfhToday || activeFieldAssignment != null;
-    if (!geoResult.isWithinZone && !allowsExternalWork) {
-      throw Exception(
-        '🐺 أنت خارج نطاق العمل المسموح به لفرع (${geoResult.locationName}).\n'
-        'المسافة الحالية: ${geoResult.distanceMeters.toInt()} متر.\n'
-        'النطاق المسموح به: ${geoResult.allowedRadius.toInt()} متر.',
+    late final GeofenceResult geoResult;
+    try {
+      geoResult = await _geofenceService.validateCheckIn(
+        employee,
+        strictLocationOnly: requiresLiveConnection,
       );
+    } catch (error) {
+      await _recordLocationDiagnostic(
+        employee: employee,
+        action: isCheckIn ? 'check_in' : 'check_out',
+        result: 'location_unavailable',
+        metadata: {'message': _safeDiagnosticMessage(error)},
+      );
+      rethrow;
     }
 
     // Check if spoofing app is used
     // A valid WFH or field assignment changes the allowed place, never the
     // requirement for a genuine device location.
     if (geoResult.isMocked) {
+      await _recordLocationDiagnostic(
+        employee: employee,
+        action: isCheckIn ? 'check_in' : 'check_out',
+        result: 'mock_location_blocked',
+        geoResult: geoResult,
+      );
       throw Exception(
         'عذراً، تم الكشف عن استخدام تطبيق لتزييف الموقع الجغرافي (Mock GPS).',
       );
@@ -172,7 +203,29 @@ class AttendanceService {
       strictLocationOnly: requiresLiveConnection,
     );
     if (locationRisk.blocked) {
+      await _recordLocationDiagnostic(
+        employee: employee,
+        action: isCheckIn ? 'check_in' : 'check_out',
+        result: locationRisk.reasons.join(','),
+        geoResult: geoResult,
+      );
       throw Exception(locationRisk.message);
+    }
+
+    final allowsExternalWork = hasWfhToday || activeFieldAssignment != null;
+    if (!geoResult.isWithinZone && !allowsExternalWork) {
+      await _recordLocationDiagnostic(
+        employee: employee,
+        action: isCheckIn ? 'check_in' : 'check_out',
+        result: 'outside_geofence',
+        geoResult: geoResult,
+      );
+      throw Exception(
+        'أنت خارج نطاق العمل المسموح به لفرع (${geoResult.locationName}).\n'
+        'المسافة الحالية: ${geoResult.distanceMeters.toInt()} متر.\n'
+        'نطاق الفرع: ${geoResult.configuredRadius.toInt()} متر. '
+        'دقة القراءة: ${geoResult.accuracyMeters.toInt()} متر.',
+      );
     }
 
     final securityResult = await _securityService.verifyForAttendance(
@@ -467,6 +520,28 @@ class AttendanceService {
     }
   }
 
+  Future<Map<String, dynamic>?> _approvedLeaveOnDate(
+    String userId,
+    DateTime date,
+  ) async {
+    final dayStart = DateTime(date.year, date.month, date.day);
+    final snapshot = await _db
+        .collection('leaves')
+        .where('userId', isEqualTo: userId)
+        .where('status', isEqualTo: 'approved')
+        .where('startDate', isLessThanOrEqualTo: Timestamp.fromDate(dayStart))
+        .get();
+
+    for (final doc in snapshot.docs) {
+      final data = doc.data();
+      final endDate = (data['endDate'] as Timestamp?)?.toDate();
+      if (endDate == null) continue;
+      final leaveEnd = DateTime(endDate.year, endDate.month, endDate.day);
+      if (!dayStart.isAfter(leaveEnd)) return data;
+    }
+    return null;
+  }
+
   Future<void> syncPendingOfflineAttendance() {
     return _offlineQueue.syncPendingActions();
   }
@@ -507,6 +582,44 @@ class AttendanceService {
 
   Future<AttendancePolicyConfig> policyConfigForDisplay() {
     return _policyService.getPolicyConfig();
+  }
+
+  Future<void> _recordLocationDiagnostic({
+    required UserModel employee,
+    required String action,
+    required String result,
+    GeofenceResult? geoResult,
+    Map<String, dynamic> metadata = const {},
+  }) async {
+    try {
+      await AuditLogService.instance.record(
+        actorId: employee.uid,
+        action: 'attendance_location_validation_failed',
+        targetCollection: 'attendance',
+        targetId:
+            '${employee.uid}_${DateFormat('yyyy-MM-dd').format(DateTime.now())}',
+        metadata: {
+          'attendanceAction': action,
+          'result': result,
+          'locationId': employee.locationId,
+          if (geoResult != null) ...{
+            'distanceMeters': geoResult.distanceMeters.round(),
+            'accuracyMeters': geoResult.accuracyMeters.round(),
+            'configuredRadiusMeters': geoResult.configuredRadius.round(),
+            'effectiveRadiusMeters': geoResult.allowedRadius.round(),
+            'isMocked': geoResult.isMocked,
+          },
+          ...metadata,
+        },
+      );
+    } catch (_) {
+      // Diagnostics must never replace the actual attendance error.
+    }
+  }
+
+  String _safeDiagnosticMessage(Object error) {
+    final message = error.toString().replaceFirst('Exception: ', '');
+    return message.length <= 180 ? message : message.substring(0, 180);
   }
 
   Future<DateTime> checkoutAllowedFromForDisplay(
@@ -574,9 +687,18 @@ class AttendanceService {
       );
     }
 
-    final distanceToEdge = geoResult.allowedRadius - geoResult.distanceMeters;
+    if (geoResult.distanceMeters > geoResult.configuredRadius &&
+        geoResult.isWithinZone) {
+      reasons.add('accuracy_tolerance_used');
+      messages.add(
+        'تم القبول ضمن هامش دقة GPS (${geoResult.accuracyToleranceMeters.toStringAsFixed(0)} متر)',
+      );
+    }
+
+    final distanceToEdge =
+        geoResult.configuredRadius - geoResult.distanceMeters;
     final edgeTolerance = geoResult.accuracyMeters.clamp(15, 50).toDouble();
-    if (geoResult.isWithinZone &&
+    if (geoResult.distanceMeters <= geoResult.configuredRadius &&
         distanceToEdge >= 0 &&
         distanceToEdge < edgeTolerance) {
       reasons.add('near_geofence_edge');

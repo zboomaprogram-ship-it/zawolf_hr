@@ -90,9 +90,7 @@ class SmartAssistantService {
   }
 
   bool _canUseAssistant(UserModel user) {
-    return user.role == EmployeeRole.manager ||
-        user.role == EmployeeRole.hrAdmin ||
-        user.role == EmployeeRole.superAdmin;
+    return user.role == EmployeeRole.manager || EmployeeRole.isHr(user.role);
   }
 
   String _helpText(UserModel user) {

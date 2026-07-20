@@ -296,22 +296,29 @@ class _ManagerDashboardScreenState extends State<ManagerDashboardScreen> {
                               size: 16,
                               color: ZaWolfColors.warning,
                             ),
-                            Row(
-                              children: [
-                                Text(
-                                  'لديك $_pendingCount طلبات معلقة بانتظار موافقتك',
-                                  style: theme.textTheme.titleMedium!.copyWith(
-                                    color: ZaWolfColors.warning,
-                                    fontWeight: FontWeight.bold,
+                            Expanded(
+                              child: Row(
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      'لديك $_pendingCount طلبات معلقة بانتظار موافقتك',
+                                      style: theme.textTheme.titleMedium!
+                                          .copyWith(
+                                            color: ZaWolfColors.warning,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                      textDirection: TextDirection.rtl,
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
                                   ),
-                                  textDirection: TextDirection.rtl,
-                                ),
-                                const SizedBox(width: 8),
-                                const Icon(
-                                  Icons.pending_actions,
-                                  color: ZaWolfColors.warning,
-                                ),
-                              ],
+                                  const SizedBox(width: 8),
+                                  const Icon(
+                                    Icons.pending_actions,
+                                    color: ZaWolfColors.warning,
+                                  ),
+                                ],
+                              ),
                             ),
                           ],
                         ),

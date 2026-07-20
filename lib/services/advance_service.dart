@@ -205,9 +205,7 @@ class AdvanceService {
     final data = doc.data() ?? <String, dynamic>{};
 
     Map<String, dynamic> update;
-    if ((reviewer.role == EmployeeRole.hrAdmin ||
-            reviewer.role == EmployeeRole.superAdmin) &&
-        advance.status == 'pending_hr') {
+    if (EmployeeRole.isHr(reviewer.role) && advance.status == 'pending_hr') {
       final managerIds =
           (data['managerIds'] as List<dynamic>?)
               ?.whereType<String>()

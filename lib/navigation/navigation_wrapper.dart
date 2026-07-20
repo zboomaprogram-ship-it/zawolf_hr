@@ -147,6 +147,7 @@ class _NavigationWrapperState extends State<NavigationWrapper>
       _currentUserUid = user.uid;
       if (user.role == EmployeeRole.manager ||
           user.role == EmployeeRole.hrAdmin ||
+          user.role == EmployeeRole.hrManager ||
           user.role == EmployeeRole.superAdmin) {
         PendingRequestsService.instance.startListening(user);
       } else {
@@ -424,13 +425,6 @@ class _NavigationWrapperState extends State<NavigationWrapper>
           path: '/hr/locations',
         ),
         NavigationItem(
-          icon: Icons.assessment_outlined,
-          activeIcon: Icons.assessment,
-          label: 'التقارير',
-          englishLabel: 'Reports',
-          path: '/hr/reports',
-        ),
-        NavigationItem(
           icon: Icons.payments_outlined,
           activeIcon: Icons.payments,
           label: 'الرواتب',
@@ -501,7 +495,8 @@ class _NavigationWrapperState extends State<NavigationWrapper>
           path: '/employee/profile',
         ),
       ];
-    } else if (role == EmployeeRole.superAdmin) {
+    } else if (role == EmployeeRole.superAdmin ||
+        role == EmployeeRole.hrManager) {
       items = [
         NavigationItem(
           icon: Icons.fingerprint,
@@ -567,6 +562,13 @@ class _NavigationWrapperState extends State<NavigationWrapper>
           path: '/hr/employees',
         ),
         NavigationItem(
+          icon: Icons.assessment_outlined,
+          activeIcon: Icons.assessment,
+          label: 'التقارير',
+          englishLabel: 'Reports',
+          path: '/hr/reports',
+        ),
+        NavigationItem(
           icon: Icons.payments_outlined,
           activeIcon: Icons.payments,
           label: 'الرواتب',
@@ -621,6 +623,7 @@ class _NavigationWrapperState extends State<NavigationWrapper>
     final isManagementRole =
         role == EmployeeRole.manager ||
         role == EmployeeRole.hrAdmin ||
+        role == EmployeeRole.hrManager ||
         role == EmployeeRole.superAdmin;
     final useDesktopWebShell =
         kIsWeb && MediaQuery.sizeOf(context).width >= 980 && isManagementRole;
@@ -753,6 +756,7 @@ class _NavigationWrapperState extends State<NavigationWrapper>
                 if (isRequestsTab &&
                     (role == EmployeeRole.manager ||
                         role == EmployeeRole.hrAdmin ||
+                        role == EmployeeRole.hrManager ||
                         role == EmployeeRole.superAdmin)) {
                   iconWidget = ValueListenableBuilder<int>(
                     valueListenable:

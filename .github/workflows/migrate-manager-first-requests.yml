@@ -1,0 +1,41 @@
+name: Migrate Requests To Manager First
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Preview requests without changing Firebase
+        required: true
+        default: 'true'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
+      confirmation:
+        description: For a live migration, enter MIGRATE_MANAGER_FIRST_REQUESTS
+        required: false
+        type: string
+
+jobs:
+  migrate-manager-first-requests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v5
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+
+      - name: Install Dependencies
+        working-directory: ./scripts
+        run: npm ci
+
+      - name: Migrate Requests
+        working-directory: ./scripts
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          DRY_RUN: ${{ inputs.dry_run }}
+          MIGRATION_CONFIRMATION: ${{ inputs.confirmation }}
+        run: node migrate-manager-first-requests.js

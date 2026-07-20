@@ -47,6 +47,7 @@ class WarningRewardModel {
   final String employeeName;
   final String department;
   final String managerId;
+  final List<String> managerIds;
   final String type;
   final String status;
   final String title;
@@ -68,6 +69,7 @@ class WarningRewardModel {
     required this.employeeName,
     required this.department,
     required this.managerId,
+    this.managerIds = const [],
     required this.type,
     required this.status,
     required this.title,
@@ -92,6 +94,9 @@ class WarningRewardModel {
       employeeName: data['employeeName'] as String? ?? '',
       department: data['department'] as String? ?? '',
       managerId: data['managerId'] as String? ?? '',
+      managerIds: (data['managerIds'] as List<dynamic>? ?? const [])
+          .whereType<String>()
+          .toList(),
       type: data['type'] as String? ?? WarningRewardType.warning,
       status: data['status'] as String? ?? WarningRewardStatus.issued,
       title: data['title'] as String? ?? '',
@@ -115,6 +120,7 @@ class WarningRewardModel {
       'employeeName': employeeName,
       'department': department,
       'managerId': managerId,
+      'managerIds': managerIds,
       'type': type,
       'status': status,
       'title': title,

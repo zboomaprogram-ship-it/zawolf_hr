@@ -36,17 +36,10 @@ class PendingRequestsService {
 
     // 1. Leaves
     Query<Map<String, dynamic>> leavesQuery = _db.collection('leaves');
-    if (reviewer.role == EmployeeRole.manager) {
+    if (EmployeeRole.canActAsApprovalManager(reviewer.role)) {
       leavesQuery = leavesQuery
           .where('managerId', isEqualTo: reviewer.uid)
-          .where('status', isEqualTo: targetStatus);
-    } else if (reviewer.role == EmployeeRole.hrAdmin) {
-      leavesQuery = leavesQuery.where('status', isEqualTo: targetStatus);
-    } else if (reviewer.role == EmployeeRole.superAdmin) {
-      leavesQuery = leavesQuery.where(
-        'status',
-        whereIn: ['pending_hr', 'pending_manager'],
-      );
+          .where('status', isEqualTo: 'pending_manager');
     }
 
     _leavesSub = leavesQuery.snapshots().listen(
@@ -64,20 +57,10 @@ class PendingRequestsService {
     Query<Map<String, dynamic>> permissionsQuery = _db.collection(
       'permissions',
     );
-    if (reviewer.role == EmployeeRole.manager) {
+    if (EmployeeRole.canActAsApprovalManager(reviewer.role)) {
       permissionsQuery = permissionsQuery
           .where('managerId', isEqualTo: reviewer.uid)
-          .where('status', isEqualTo: targetStatus);
-    } else if (reviewer.role == EmployeeRole.hrAdmin) {
-      permissionsQuery = permissionsQuery.where(
-        'status',
-        isEqualTo: targetStatus,
-      );
-    } else if (reviewer.role == EmployeeRole.superAdmin) {
-      permissionsQuery = permissionsQuery.where(
-        'status',
-        whereIn: ['pending_hr', 'pending_manager'],
-      );
+          .where('status', isEqualTo: 'pending_manager');
     }
 
     _permissionsSub = permissionsQuery.snapshots().listen(
@@ -99,6 +82,11 @@ class PendingRequestsService {
           .where('status', isEqualTo: targetStatus);
     } else if (reviewer.role == EmployeeRole.hrAdmin) {
       advancesQuery = advancesQuery.where('status', isEqualTo: targetStatus);
+    } else if (reviewer.role == EmployeeRole.hrManager) {
+      advancesQuery = advancesQuery.where(
+        'status',
+        whereIn: ['pending_hr', 'pending_manager'],
+      );
     } else if (reviewer.role == EmployeeRole.superAdmin) {
       advancesQuery = advancesQuery.where(
         'status',

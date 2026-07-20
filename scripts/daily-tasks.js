@@ -149,7 +149,7 @@ async function runDailyTasks() {
     const startStr = timestampToDateStr(leave.startDate);
     const endStr = timestampToDateStr(leave.endDate);
     if (startStr && endStr && startStr <= todayStr && endStr >= todayStr) {
-      activeLeavesByUserId[leave.userId] = leave;
+      activeLeavesByUserId[leave.userId] = { ...leave, leaveId: doc.id };
     }
   });
 
@@ -177,13 +177,19 @@ async function runDailyTasks() {
     .where('isActive', '==', true)
     .get();
   hrSnap.docs.forEach(doc => reviewerIds.add(doc.id));
+  const hrManagerSnap = await db
+    .collection('users')
+    .where('role', '==', 'hr_manager')
+    .where('isActive', '==', true)
+    .get();
+  hrManagerSnap.docs.forEach(doc => reviewerIds.add(doc.id));
   const superSnap = await db
     .collection('users')
     .where('role', '==', 'super_admin')
     .where('isActive', '==', true)
     .get();
   superSnap.docs.forEach(doc => reviewerIds.add(doc.id));
-  console.log(`Found ${reviewerIds.size} HR/super-admin reviewers for deduction notifications.`);
+  console.log(`Found ${reviewerIds.size} HR/HR-manager/super-admin reviewers for deduction notifications.`);
 
   // Load attendance policy
   let payrollWorkDaysPerMonth = 26;
@@ -324,6 +330,15 @@ async function runDailyTasks() {
       }
 
       if (activeLeavesByUserId[userId]) {
+        const activeLeave = activeLeavesByUserId[userId];
+        const requiresFullDaySalaryDeduction =
+          activeLeave.leaveType === 'unpaid' ||
+          activeLeave.requiresFullDaySalaryDeduction === true;
+        const baseSalary = user.baseMonthlySalary || 0;
+        const unpaidLeaveAmount = requiresFullDaySalaryDeduction
+          ? baseSalary / payrollWorkDaysPerMonth
+          : 0;
+
         // Create on-leave record
         batch.set(attendanceRef, {
           userId: userId,
@@ -342,17 +357,31 @@ async function runDailyTasks() {
           // they create today's attendance. A rejected zero-value sentinel
           // prevents an approved leave row from being mistaken for a missed
           // checkout while remaining excluded from payroll calculations.
-          salaryDeductionFraction: 0.25,
-          salaryDeductionAmount: 0,
+          salaryDeductionFraction: requiresFullDaySalaryDeduction ? 1 : 0.25,
+          salaryDeductionAmount: unpaidLeaveAmount,
           salaryCurrency: user.salaryCurrency || 'EGP',
-          salaryDeductionCode: 'non_attendance_history_ignored',
-          salaryDeductionLabel: 'لا يوجد خصم - سجل إجازة',
-          salaryDeductionApprovalStatus: 'rejected',
+          salaryDeductionCode: requiresFullDaySalaryDeduction
+            ? 'unpaid_leave_full_day'
+            : 'non_attendance_history_ignored',
+          salaryDeductionLabel: requiresFullDaySalaryDeduction
+            ? 'خصم يوم كامل - إجازة بدون راتب'
+            : 'لا يوجد خصم - سجل إجازة',
+          salaryDeductionApprovalStatus: requiresFullDaySalaryDeduction
+            ? 'pending_hr'
+            : 'rejected',
           biometricVerified: false,
           status: 'on-leave',
         });
         batchOps++;
         leavesCreated++;
+        if (requiresFullDaySalaryDeduction) {
+          await notifyReviewers(
+            'salary_deduction_pending',
+            'خصم إجازة بدون راتب بانتظار مراجعة HR',
+            `${user.displayName}: خصم يوم كامل عن إجازة بدون راتب بتاريخ ${todayStr} (${unpaidLeaveAmount.toFixed(2)} ${user.salaryCurrency || 'EGP'}).`,
+            { attendanceId: attendanceId, leaveId: activeLeave.leaveId || '' }
+          );
+        }
       } else {
         // Create absent record
         const salaryDeductionFraction = 1.0;

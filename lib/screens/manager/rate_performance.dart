@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:intl/intl.dart' hide TextDirection;
 import '../../services/auth_service.dart';
 import '../../services/performance_service.dart';
 import '../../models/user_model.dart';
@@ -32,7 +31,8 @@ class _RatePerformanceScreenState extends State<RatePerformanceScreen> {
   // Scoring parameters
   double _autoAttendance = 100.0;
   double _autoPunctuality = 100.0;
-  double _autoKpi = 80.0;
+  double _autoKpi = 0.0;
+  bool _hasAutoKpi = false;
   double _quality = 80.0;
   double _teamwork = 80.0;
   double _commitment = 80.0;
@@ -88,7 +88,7 @@ class _RatePerformanceScreenState extends State<RatePerformanceScreen> {
       _loadingAutoScores = true;
     });
 
-    final monthKey = DateFormat('yyyy-MM').format(_selectedMonth);
+    final monthKey = PayrollCycle.keyFor(_selectedMonth);
 
     try {
       final scores = await _performanceService.calculateAutoScores(
@@ -98,7 +98,8 @@ class _RatePerformanceScreenState extends State<RatePerformanceScreen> {
       setState(() {
         _autoAttendance = scores.attendanceScore;
         _autoPunctuality = scores.punctualityScore;
-        _autoKpi = scores.kpiScore;
+        _autoKpi = scores.kpiScore ?? 0;
+        _hasAutoKpi = scores.kpiScore != null;
         _loadingAutoScores = false;
       });
     } catch (e) {
@@ -108,14 +109,17 @@ class _RatePerformanceScreenState extends State<RatePerformanceScreen> {
     }
   }
 
-  double get _overallScore =>
-      (_autoAttendance +
-          _autoPunctuality +
-          _autoKpi +
-          _quality +
-          _teamwork +
-          _commitment) /
-      6.0;
+  double get _overallScore {
+    final values = <double>[
+      _autoAttendance,
+      _autoPunctuality,
+      if (_hasAutoKpi) _autoKpi,
+      _quality,
+      _teamwork,
+      _commitment,
+    ];
+    return values.reduce((a, b) => a + b) / values.length;
+  }
 
   String get _gradeLetter =>
       _performanceService.calculateGradeLetter(_overallScore);
@@ -128,7 +132,7 @@ class _RatePerformanceScreenState extends State<RatePerformanceScreen> {
     });
 
     final authService = Provider.of<AuthService>(context, listen: false);
-    final monthKey = DateFormat('yyyy-MM').format(_selectedMonth);
+    final monthKey = PayrollCycle.keyFor(_selectedMonth);
 
     final evaluation = PerformanceModel(
       performanceId: '',
@@ -177,7 +181,7 @@ class _RatePerformanceScreenState extends State<RatePerformanceScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final monthStr = DateFormat('yyyy-MM').format(_selectedMonth);
+    final monthStr = PayrollCycle.keyFor(_selectedMonth);
 
     if (_loadingTeam) {
       return const Scaffold(
@@ -331,11 +335,28 @@ class _RatePerformanceScreenState extends State<RatePerformanceScreen> {
                       ZaWolfColors.warning,
                     ),
                     const SizedBox(height: 16),
-                    _buildDisabledSlider(
-                      'إنجاز أهداف KPI',
-                      _autoKpi,
-                      ZaWolfColors.perfGold,
-                    ),
+                    if (_hasAutoKpi)
+                      _buildDisabledSlider(
+                        'إنجاز أهداف KPI',
+                        _autoKpi,
+                        ZaWolfColors.perfGold,
+                      )
+                    else
+                      const ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        leading: Icon(
+                          Icons.info_outline,
+                          color: ZaWolfColors.warning,
+                        ),
+                        title: Text(
+                          'لم يتم تعيين KPI لهذه الدورة',
+                          textAlign: TextAlign.right,
+                        ),
+                        subtitle: Text(
+                          'لن يدخل KPI في المتوسط حتى يتم تعيينه.',
+                          textAlign: TextAlign.right,
+                        ),
+                      ),
                   ],
                   const SizedBox(height: 24),
 

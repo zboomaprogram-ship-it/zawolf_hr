@@ -142,9 +142,18 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
     });
 
     try {
-      final status = await CompanyDayOffService().getDayOffStatus(
-        DateTime.now(),
-      );
+      final now = DateTime.now();
+      final user = Provider.of<AuthService>(context, listen: false).currentUser;
+      final workDays = user?.workSchedule.workDays;
+      final status =
+          workDays != null &&
+              workDays.isNotEmpty &&
+              !workDays.contains(now.weekday)
+          ? const CompanyDayOffStatus(
+              isDayOff: true,
+              reason: 'ليس ضمن جدول عملك',
+            )
+          : await CompanyDayOffService().getDayOffStatus(now);
       if (mounted) {
         setState(() {
           _dayOffStatus = status;
@@ -358,10 +367,17 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
           final bool hasCheckedIn = todayLog.checkInTime != null;
           final bool hasCheckedOut =
               hasCheckedIn && todayLog.checkOutTime != null;
-          final checkInOpenAt = AttendancePolicy.parseTimeOnDate(
+          final policyCheckInOpenAt = AttendancePolicy.parseTimeOnDate(
             _now,
             _policyConfig.checkInOpenTime,
           );
+          final employeeStartAt = AttendancePolicy.parseTimeOnDate(
+            _now,
+            user.workSchedule.startTime ?? _policyConfig.defaultStartTime,
+          );
+          final checkInOpenAt = employeeStartAt.isBefore(policyCheckInOpenAt)
+              ? employeeStartAt
+              : policyCheckInOpenAt;
           final checkoutAllowedFrom =
               _checkoutAllowedFrom ??
               AttendancePolicy.parseTimeOnDate(

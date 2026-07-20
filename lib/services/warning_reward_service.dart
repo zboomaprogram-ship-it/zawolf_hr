@@ -21,12 +21,9 @@ class WarningRewardService {
   Stream<List<WarningRewardModel>> watchManagedRecords(UserModel reviewer) {
     Query<Map<String, dynamic>> query = _db.collection('warningsRewards');
     if (reviewer.role == EmployeeRole.manager) {
-      query = query.where('managerId', isEqualTo: reviewer.uid);
+      query = query.where('managerIds', arrayContains: reviewer.uid);
     }
-    return query
-        .orderBy('createdAt', descending: true)
-        .snapshots()
-        .map(_recordsFromSnapshot);
+    return query.snapshots().map(_recordsFromSnapshot);
   }
 
   Future<List<UserModel>> loadAssignableEmployees(UserModel reviewer) async {
@@ -34,13 +31,14 @@ class WarningRewardService {
         .collection('users')
         .where('isActive', isEqualTo: true);
     if (reviewer.role == EmployeeRole.manager) {
-      query = query.where('managerId', isEqualTo: reviewer.uid);
+      query = query.where('managerIds', arrayContains: reviewer.uid);
     }
     final snap = await query.get();
     final users = snap.docs.map(UserModel.fromFirestore).where((user) {
       if (user.role == EmployeeRole.superAdmin) return false;
       if (reviewer.role == EmployeeRole.manager) {
-        return user.managerId == reviewer.uid;
+        return user.managerId == reviewer.uid ||
+            user.managerIds.contains(reviewer.uid);
       }
       return true;
     }).toList();
@@ -69,6 +67,9 @@ class WarningRewardService {
       employeeName: employee.displayName,
       department: employee.department,
       managerId: employee.managerId ?? creator.uid,
+      managerIds: employee.managerIds.isEmpty
+          ? [employee.managerId ?? creator.uid]
+          : employee.managerIds,
       type: type,
       status: status,
       title: title.trim(),
@@ -238,7 +239,15 @@ class WarningRewardService {
   }
 
   List<WarningRewardModel> _recordsFromSnapshot(QuerySnapshot snapshot) {
-    return snapshot.docs.map(WarningRewardModel.fromFirestore).toList();
+    final records = snapshot.docs
+        .map(WarningRewardModel.fromFirestore)
+        .toList();
+    records.sort((a, b) {
+      final aDate = a.createdAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+      final bDate = b.createdAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+      return bDate.compareTo(aDate);
+    });
+    return records;
   }
 
   Future<void> _createNotification({

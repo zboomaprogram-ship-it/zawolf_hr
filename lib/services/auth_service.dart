@@ -337,6 +337,7 @@ class AuthService with ChangeNotifier {
     List<String> managerCodes = const [],
     String? teamLeaderId,
     String? teamLeaderName,
+    WorkSchedule? workSchedule,
   }) async {
     const initialPassword = 'ZW@0000';
     FirebaseApp? tempApp;
@@ -347,14 +348,19 @@ class AuthService with ChangeNotifier {
         EmployeeRole.teamLeader,
         EmployeeRole.manager,
         EmployeeRole.hrAdmin,
+        EmployeeRole.hrManager,
         EmployeeRole.superAdmin,
       ];
       if (!allowedRoles.contains(role)) {
         throw Exception('Invalid employee role');
       }
-      if ((role == EmployeeRole.superAdmin || role == EmployeeRole.hrAdmin) &&
-          _currentUser?.role != EmployeeRole.superAdmin) {
-        throw Exception('Only super admin can create admin accounts');
+      if ((role == EmployeeRole.superAdmin ||
+              role == EmployeeRole.hrManager ||
+              role == EmployeeRole.hrAdmin) &&
+          !EmployeeRole.canManagePrivilegedAccounts(_currentUser?.role)) {
+        throw Exception(
+          'Only HR manager or super admin can create admin accounts',
+        );
       }
       if (email.trim().isEmpty ||
           displayName.trim().isEmpty ||
@@ -401,11 +407,13 @@ class AuthService with ChangeNotifier {
         managerCodes: managerCodes,
         teamLeaderId: teamLeaderId,
         teamLeaderName: teamLeaderName,
-        workSchedule: WorkSchedule(
-          startTime: AttendancePolicy.defaultStartTime,
-          endTime: AttendancePolicy.defaultEndTime,
-          workDays: AttendancePolicy.saturdayToThursdayWorkDays,
-        ),
+        workSchedule:
+            workSchedule ??
+            WorkSchedule(
+              startTime: AttendancePolicy.defaultStartTime,
+              endTime: AttendancePolicy.defaultEndTime,
+              workDays: AttendancePolicy.saturdayToThursdayWorkDays,
+            ),
         leaveBalance: LeaveBalance(
           annual: 21,
           sick: 14,

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:go_router/go_router.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../../components/wolf_button.dart';
 import '../../components/wolf_input_field.dart';
 import '../../models/location_model.dart';
@@ -22,6 +24,8 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
 
   bool _isLoading = false;
   List<LocationModel> _locations = [];
+  List<QueryDocumentSnapshot<Map<String, dynamic>>> _employees = [];
+  final Set<String> _selectedEmployeeIds = {};
 
   String _targetGroup = 'all'; // all | managers_only | location | department
   String? _selectedLocationId;
@@ -31,6 +35,113 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
   void initState() {
     super.initState();
     _fetchLocations();
+    _fetchEmployees();
+  }
+
+  Future<void> _fetchEmployees() async {
+    try {
+      final snapshot = await _db
+          .collection('users')
+          .where('isActive', isEqualTo: true)
+          .get();
+      if (!mounted) return;
+      setState(() {
+        _employees = snapshot.docs
+          ..sort((a, b) {
+            final left = a.data()['displayName'] as String? ?? '';
+            final right = b.data()['displayName'] as String? ?? '';
+            return left.compareTo(right);
+          });
+      });
+    } catch (_) {}
+  }
+
+  Future<void> _selectEmployees() async {
+    final workingSelection = Set<String>.from(_selectedEmployeeIds);
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setSheetState) => SafeArea(
+          child: SizedBox(
+            height: MediaQuery.sizeOf(context).height * 0.78,
+            child: Column(
+              children: [
+                ListTile(
+                  title: const Text(
+                    'اختر الموظفين',
+                    textDirection: TextDirection.rtl,
+                  ),
+                  subtitle: Text(
+                    'تم اختيار ${workingSelection.length}',
+                    textDirection: TextDirection.rtl,
+                  ),
+                  trailing: TextButton(
+                    onPressed: () => setSheetState(() {
+                      if (workingSelection.length == _employees.length) {
+                        workingSelection.clear();
+                      } else {
+                        workingSelection
+                          ..clear()
+                          ..addAll(_employees.map((doc) => doc.id));
+                      }
+                    }),
+                    child: Text(
+                      workingSelection.length == _employees.length
+                          ? 'إلغاء الكل'
+                          : 'تحديد الكل',
+                    ),
+                  ),
+                ),
+                const Divider(height: 1),
+                Expanded(
+                  child: ListView.builder(
+                    itemCount: _employees.length,
+                    itemBuilder: (context, index) {
+                      final employee = _employees[index];
+                      final data = employee.data();
+                      return CheckboxListTile(
+                        value: workingSelection.contains(employee.id),
+                        title: Text(
+                          data['displayName'] as String? ?? 'موظف',
+                          textDirection: TextDirection.rtl,
+                        ),
+                        subtitle: Text(
+                          '${data['employeeId'] ?? ''} · ${data['department'] ?? ''}',
+                          textDirection: TextDirection.rtl,
+                        ),
+                        onChanged: (selected) => setSheetState(() {
+                          if (selected == true) {
+                            workingSelection.add(employee.id);
+                          } else {
+                            workingSelection.remove(employee.id);
+                          }
+                        }),
+                      );
+                    },
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: FilledButton.icon(
+                    onPressed: () {
+                      setState(() {
+                        _selectedEmployeeIds
+                          ..clear()
+                          ..addAll(workingSelection);
+                      });
+                      Navigator.pop(context);
+                    },
+                    icon: const Icon(Icons.check),
+                    label: const Text('تأكيد الاختيار'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   Future<void> _fetchLocations() async {
@@ -67,21 +178,38 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
     final deptFilter = _departmentController.text.trim();
 
     try {
-      // 1. Fetch users from Firestore based on target selections
-      Query query = _db.collection('users');
+      // The active directory is loaded once for selection. Filtering locally
+      // avoids fragile composite indexes and keeps one/many/all identical.
+      var users = List<QueryDocumentSnapshot<Map<String, dynamic>>>.from(
+        _employees,
+      );
+      if (users.isEmpty) {
+        await _fetchEmployees();
+        users = List<QueryDocumentSnapshot<Map<String, dynamic>>>.from(
+          _employees,
+        );
+      }
       if (_targetGroup == 'managers_only') {
-        query = query.where('role', isEqualTo: 'manager');
+        users = users.where((doc) => doc.data()['role'] == 'manager').toList();
       } else if (_targetGroup == 'location' && _selectedLocationId != null) {
-        query = query.where('locationId', isEqualTo: _selectedLocationId);
+        users = users
+            .where((doc) => doc.data()['locationId'] == _selectedLocationId)
+            .toList();
       }
 
-      final usersSnap = await query.get();
-      var users = usersSnap.docs;
+      if (_targetGroup == 'selected') {
+        if (_selectedEmployeeIds.isEmpty) {
+          throw Exception('اختر موظفاً واحداً على الأقل.');
+        }
+        users = users
+            .where((doc) => _selectedEmployeeIds.contains(doc.id))
+            .toList();
+      }
 
       // Filter by department client side
       if (_targetGroup == 'department' && deptFilter.isNotEmpty) {
         users = users.where((doc) {
-          final data = doc.data() as Map<String, dynamic>;
+          final data = doc.data();
           final userDept = data['department'] as String? ?? '';
           return userDept.toLowerCase() == deptFilter.toLowerCase();
         }).toList();
@@ -91,47 +219,60 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
         throw Exception('لا يوجد موظفون مسجلون يطابقون الفئة المستهدفة.');
       }
 
-      final batch = _db.batch();
-
-      // 2. Loop and generate notification item for every target user
-      for (var userDoc in users) {
-        final userId = userDoc.id;
-
-        final notifRef = _db
-            .collection('notifications')
-            .doc(userId)
-            .collection('items')
-            .doc();
-
-        batch.set(notifRef, {
-          'notificationId': notifRef.id,
-          'type': 'hr_announcement',
-          'title': '📢 إعلان إداري: $title',
-          'body': body,
-          'data': {},
-          'isRead': false,
-          'createdAt': FieldValue.serverTimestamp(),
-        });
-
-        // Increment unread count
-        final userRef = _db.collection('users').doc(userId);
-        batch.update(userRef, {'unreadNotifications': FieldValue.increment(1)});
-      }
-
       // Write to global announcements history for archival/future views
       final globalAnnRef = _db.collection('announcements').doc();
-      batch.set(globalAnnRef, {
+      await globalAnnRef.set({
         'announcementId': globalAnnRef.id,
         'title': title,
         'body': body,
         'targetGroup': _targetGroup,
+        if (_targetGroup == 'selected')
+          'targetUserIds': _selectedEmployeeIds.toList(),
+        'recipientCount': users.length,
         if (_targetGroup == 'location')
           'targetLocationName': _selectedLocationName,
         if (_targetGroup == 'department') 'targetDepartment': deptFilter,
+        'createdBy': FirebaseAuth.instance.currentUser?.uid ?? '',
         'createdAt': FieldValue.serverTimestamp(),
       });
 
-      await batch.commit();
+      // Each recipient needs two writes. Chunking keeps every Firestore batch
+      // comfortably below the 500-operation limit.
+      const recipientsPerBatch = 200;
+      for (
+        var offset = 0;
+        offset < users.length;
+        offset += recipientsPerBatch
+      ) {
+        final end = (offset + recipientsPerBatch).clamp(0, users.length);
+        final batch = _db.batch();
+        for (final userDoc in users.sublist(offset, end)) {
+          final userId = userDoc.id;
+          final notifRef = _db
+              .collection('notifications')
+              .doc(userId)
+              .collection('items')
+              .doc();
+
+          batch.set(notifRef, {
+            'notificationId': notifRef.id,
+            'type': 'hr_announcement',
+            'title': 'إعلان إداري: $title',
+            'body': body,
+            'data': {
+              'announcementId': globalAnnRef.id,
+              'route': '/notifications',
+            },
+            'isRead': false,
+            'pushSent': false,
+            'createdAt': FieldValue.serverTimestamp(),
+          });
+          batch.update(_db.collection('users').doc(userId), {
+            'unreadNotifications': FieldValue.increment(1),
+          });
+        }
+        await batch.commit();
+      }
 
       _titleController.clear();
       _bodyController.clear();
@@ -203,6 +344,13 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
               ),
               const SizedBox(height: 24),
 
+              OutlinedButton.icon(
+                onPressed: () => context.go('/polls'),
+                icon: const Icon(Icons.how_to_vote_outlined),
+                label: const Text('إنشاء تصويت وعرض النتائج'),
+              ),
+              const SizedBox(height: 20),
+
               // Target Selector Dropdown
               DropdownButtonFormField<String>(
                 initialValue: _targetGroup,
@@ -217,6 +365,10 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
                   DropdownMenuItem(
                     value: 'all',
                     child: Text('جميع الموظفين (الكل)'),
+                  ),
+                  DropdownMenuItem(
+                    value: 'selected',
+                    child: Text('موظف واحد أو عدة موظفين'),
                   ),
                   DropdownMenuItem(
                     value: 'managers_only',
@@ -238,6 +390,19 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
                 },
               ),
               const SizedBox(height: 16),
+
+              if (_targetGroup == 'selected') ...[
+                OutlinedButton.icon(
+                  onPressed: _selectEmployees,
+                  icon: const Icon(Icons.people_alt_outlined),
+                  label: Text(
+                    _selectedEmployeeIds.isEmpty
+                        ? 'اختيار الموظفين'
+                        : 'المحددون: ${_selectedEmployeeIds.length}',
+                  ),
+                ),
+                const SizedBox(height: 16),
+              ],
 
               // Conditional Location Dropdown
               if (_targetGroup == 'location') ...[

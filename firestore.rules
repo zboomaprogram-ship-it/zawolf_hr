@@ -18,18 +18,23 @@ service cloud.firestore {
     function isManagerRole() { return role() == 'manager'; }
     function isTeamLeaderRole() { return role() == 'team_leader'; }
     function isHRRole() { return role() == 'hr_admin'; }
+    function isHRManagerRole() { return role() == 'hr_manager'; }
     function isSuperAdmin() { return role() == 'super_admin'; }
-    function isHR() { return isHRRole() || isSuperAdmin(); }
+    function isHR() { return isHRRole() || isHRManagerRole() || isSuperAdmin(); }
+    function isPrivilegedAdmin() { return isHRManagerRole() || isSuperAdmin(); }
+    function canActAsApprovalManager() {
+      return isManagerRole() || isHRRole() || isHRManagerRole() || isSuperAdmin();
+    }
     function isManagerOrAbove() {
-      return isManagerRole() || isHRRole() || isSuperAdmin();
+      return isManagerRole() || isHRRole() || isHRManagerRole() || isSuperAdmin();
     }
     function canReviewSuggestions() {
-      return isManagerRole() || isSuperAdmin();
+      return isManagerRole() || isHRManagerRole() || isSuperAdmin();
     }
     function isOwner(docUserId) { return uid() == docUserId; }
     function isMyManager(managerId) { return managerId is string && uid() == managerId; }
     function isAssignedManagerFor(userData) {
-      return isManagerRole()
+      return canActAsApprovalManager()
         && (
           userData.get('managerId', '') == uid()
           || uid() in userData.get('managerIds', [])
@@ -112,11 +117,29 @@ service cloud.firestore {
         && request.resource.data.isRead == false
         && request.resource.data.pushSent == false;
     }
+    function canNotifyPermissionStageManager(userId) {
+      let permissionId = request.resource.data.get('data', {}).get('permissionId', '');
+      let permissionPath = /databases/$(database)/documents/permissions/$(permissionId);
+      return permissionId is string
+        && permissionId.size() > 0
+        && exists(permissionPath)
+        && get(permissionPath).data.get('managerId', '') == userId
+        && uid() in get(permissionPath).data.get('managerIds', []);
+    }
+    function canNotifyLeaveStageManager(userId) {
+      let leaveId = request.resource.data.get('data', {}).get('leaveId', '');
+      let leavePath = /databases/$(database)/documents/leaves/$(leaveId);
+      return leaveId is string
+        && leaveId.size() > 0
+        && exists(leavePath)
+        && get(leavePath).data.get('managerId', '') == userId
+        && uid() in get(leavePath).data.get('managerIds', []);
+    }
     function canCreateNotificationFor(userId) {
       return uid() == userId
         || isHR()
         || (
-          isManagerRole()
+          canActAsApprovalManager()
           && (
             recipientDoc(userId).get('managerId', '') == uid()
             || uid() in recipientDoc(userId).get('managerIds', [])
@@ -133,7 +156,7 @@ service cloud.firestore {
             'complaint_new',
             'attendance_security_review'
           ]
-          && recipientDoc(userId).get('role', '') in ['hr_admin', 'super_admin']
+          && recipientDoc(userId).get('role', '') in ['hr_admin', 'hr_manager', 'super_admin']
         )
         || (
           request.resource.data.type in [
@@ -144,11 +167,19 @@ service cloud.firestore {
           && (
             userDoc().get('managerId', '') == userId
             || userId in userDoc().get('managerIds', [])
+            || (
+              request.resource.data.type == 'permission_pending_manager'
+              && canNotifyPermissionStageManager(userId)
+            )
+            || (
+              request.resource.data.type == 'leave_request_submitted'
+              && canNotifyLeaveStageManager(userId)
+            )
           )
         )
         || (
           request.resource.data.type == 'suggestion_new'
-          && recipientDoc(userId).get('role', '') in ['manager', 'super_admin']
+          && recipientDoc(userId).get('role', '') in ['manager', 'hr_manager', 'super_admin']
         )
         || (
           request.resource.data.type in [
@@ -234,7 +265,7 @@ service cloud.firestore {
         && request.resource.data.get('registeredAttendanceDeviceLabel', '') is string;
     }
     function managerBalanceUpdate() {
-      return isManagerRole()
+      return canActAsApprovalManager()
         && (
           resource.data.get('managerId', '') == uid() ||
           uid() in resource.data.get('managerIds', [])
@@ -256,9 +287,25 @@ service cloud.firestore {
         && request.resource.data.permissionBalance.usedHoursThisMonth
           <= resource.data.permissionBalance.usedHoursThisMonth + 8;
     }
+    function managerLeaveBalanceUpdate() {
+      return canActAsApprovalManager()
+        && (
+          resource.data.get('managerId', '') == uid() ||
+          uid() in resource.data.get('managerIds', [])
+        )
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'leaveBalance', 'leaveBalance.daysOff', 'leaveBalance.casual'
+        ])
+        && request.resource.data.leaveBalance.get('daysOff', 0) >= 0
+        && request.resource.data.leaveBalance.get('casual', 0) >= 0
+        && request.resource.data.leaveBalance.get('daysOff', 0)
+          <= resource.data.leaveBalance.get('daysOff', 0)
+        && request.resource.data.leaveBalance.get('casual', 0)
+          <= resource.data.leaveBalance.get('casual', 0);
+    }
     function hrCanWriteUser() {
       return isHRRole()
-        && resource.data.get('role', '') != 'super_admin'
+        && !(resource.data.get('role', '') in ['super_admin', 'hr_manager', 'hr_admin'])
         && request.resource.data.get('role', '') in ['employee', 'team_leader', 'manager']
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           'displayName', 'employeeId', 'department', 'position', 'role',
@@ -484,11 +531,9 @@ service cloud.firestore {
         && request.resource.data.reviewedBy == uid();
     }
     function leaveManagerReview() {
-      return (
-          (isManagerRole() && isMyManager(resource.data.managerId)
-            && sequentialManagerDecision()) ||
-          isSuperAdmin()
-        )
+      return canActAsApprovalManager()
+        && isMyManager(resource.data.managerId)
+        && sequentialManagerDecision()
         && resource.data.status == 'pending_manager'
         && request.resource.data.diff(resource.data).affectedKeys()
           .hasOnly([
@@ -538,11 +583,9 @@ service cloud.firestore {
         && request.resource.data.hrReviewedBy == uid();
     }
     function permissionManagerReview() {
-      return (
-          (isManagerRole() && isMyManager(resource.data.managerId)
-            && sequentialManagerDecision()) ||
-          isSuperAdmin()
-        )
+      return canActAsApprovalManager()
+        && isMyManager(resource.data.managerId)
+        && sequentialManagerDecision()
         && resource.data.status == 'pending_manager'
         && request.resource.data.diff(resource.data).affectedKeys()
           .hasOnly([
@@ -626,6 +669,22 @@ service cloud.firestore {
         'isActive', 'metrics', 'createdAt'
       ]);
     }
+    function kpiTemplateManagedUpdate() {
+      return (
+          isHR()
+          || (isManagerRole() && resource.data.createdBy == uid())
+        )
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['title', 'department', 'metrics', 'isActive', 'updatedAt'])
+        && request.resource.data.title is string
+        && request.resource.data.title.size() >= 3
+        && request.resource.data.department is string
+        && request.resource.data.department.size() > 0
+        && request.resource.data.metrics is list
+        && request.resource.data.metrics.size() > 0
+        && request.resource.data.metrics.size() <= 12
+        && request.resource.data.isActive is bool;
+    }
     function employeeKpiCreateKeys() {
       return request.resource.data.keys().hasOnly([
         'templateId', 'userId', 'employeeId', 'employeeName',
@@ -652,6 +711,10 @@ service cloud.firestore {
         && request.resource.data.monthKey is string
         && request.resource.data.status == 'active'
         && request.resource.data.overallProgress == 0
+        && request.resource.data.metrics is list
+        && request.resource.data.metrics.size() > 0
+        && request.resource.data.metrics.size() <= 12
+        && request.resource.data.managerIds is list
         && request.resource.data.createdBy == uid()
         && canManageEmployeeKpiFor(
           request.resource.data.userId,
@@ -660,16 +723,38 @@ service cloud.firestore {
     }
     function employeeKpiProgressUpdate() {
       return canManageEmployeeKpiFor(resource.data.userId, resource.data.managerId)
+        && resource.data.status == 'active'
+        && request.resource.data.status == 'active'
         && request.resource.data.diff(resource.data).affectedKeys()
           .hasOnly(['metrics', 'overallProgress', 'updatedAt'])
         && request.resource.data.overallProgress >= 0
         && request.resource.data.overallProgress <= 100;
     }
+    function employeeKpiLifecycleUpdate() {
+      return canManageEmployeeKpiFor(resource.data.userId, resource.data.managerId)
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['status', 'finalizedBy', 'finalizedAt', 'updatedAt'])
+        && (
+          (
+            resource.data.status == 'active'
+            && request.resource.data.status == 'finalized'
+            && request.resource.data.finalizedBy == uid()
+          )
+          || (
+            isHR()
+            && resource.data.status == 'finalized'
+            && request.resource.data.status == 'active'
+            && !request.resource.data.keys().hasAny(['finalizedBy', 'finalizedAt'])
+          )
+        );
+    }
     function productivityScoreKeys() {
       return request.resource.data.keys().hasOnly([
         'userId', 'employeeId', 'employeeName', 'department', 'managerId',
+        'managerIds',
         'monthKey', 'attendanceScore', 'punctualityScore',
         'taskCompletionScore', 'taskQualityScore', 'kpiScore',
+        'hasTaskData', 'hasTaskQualityData', 'hasKpiData',
         'overallScore', 'completedTasks', 'totalTasks', 'overdueTasks',
         'absentDays', 'lateDays', 'calculatedAt'
       ]);
@@ -677,6 +762,9 @@ service cloud.firestore {
     function productivityScoreValues() {
       return request.resource.data.userId is string
         && request.resource.data.monthKey is string
+        && request.resource.data.get('hasTaskData', true) is bool
+        && request.resource.data.get('hasTaskQualityData', true) is bool
+        && request.resource.data.get('hasKpiData', true) is bool
         && request.resource.data.overallScore >= 0
         && request.resource.data.overallScore <= 100
         && canManageEmployeeKpiFor(
@@ -695,6 +783,7 @@ service cloud.firestore {
     function warningRewardCreateValues() {
       return request.resource.data.userId is string
         && request.resource.data.createdBy == uid()
+        && request.resource.data.managerIds is list
         && request.resource.data.type in [
           'warning', 'reward', 'bonus_recommendation', 'follow_up'
         ]
@@ -763,7 +852,7 @@ service cloud.firestore {
     match /notificationRecipients/{role} {
       allow read: if isAuth() && isActive();
       allow write: if isAuth() && isActive() && isHR()
-        && role in ['hr_admin', 'manager', 'super_admin']
+        && role in ['hr_admin', 'hr_manager', 'manager', 'super_admin']
         && request.resource.data.keys().hasOnly(['role', 'userIds', 'updatedAt'])
         && request.resource.data.role == role
         && request.resource.data.userIds is list;
@@ -779,16 +868,20 @@ service cloud.firestore {
         (isOwner(userId) && ownerAttendanceDeviceBind()) ||
         (isOwner(userId) && ownerAttendanceDeviceLegacyMigration()) ||
         managerBalanceUpdate() ||
+        managerLeaveBalanceUpdate() ||
         canIncrementUnreadOnly()
       );
       allow create: if isAuth() && isActive() && (
-        isSuperAdmin() || hrCanCreateUser()
+        isPrivilegedAdmin() || hrCanCreateUser()
       );
       allow update: if isAuth() && isActive() && (
-        isSuperAdmin() || hrCanWriteUser()
+        isPrivilegedAdmin() || hrCanWriteUser()
       );
       allow delete: if isAuth() && isActive() && (
-        isSuperAdmin() || (isHRRole() && resource.data.get('role', '') != 'super_admin')
+        isPrivilegedAdmin() || (
+          isHRRole()
+          && !(resource.data.get('role', '') in ['super_admin', 'hr_manager', 'hr_admin'])
+        )
       );
     }
 
@@ -896,15 +989,67 @@ service cloud.firestore {
       );
       allow create: if isAuth() && isActive()
         && isValidSelfCreate()
-        && request.resource.data.status == 'pending_hr'
-        && request.resource.data.leaveType in ['annual', 'sick', 'casual', 'day_off']
+        && request.resource.data.status == 'pending_manager'
+        && request.resource.data.managerIds is list
+        && request.resource.data.managerIds.size() > 0
+        && request.resource.data.managerId == request.resource.data.managerIds[0]
+        && request.resource.data.managerApprovalIndex == 0
+        && request.resource.data.leaveType in ['sick', 'casual', 'day_off', 'unpaid', 'exam']
+        && request.resource.data.get(
+          'deductsLeaveBalance',
+          request.resource.data.leaveType in ['casual', 'day_off']
+        ) ==
+          (request.resource.data.leaveType in ['casual', 'day_off'])
+        && request.resource.data.get(
+          'requiresFullDaySalaryDeduction',
+          request.resource.data.leaveType == 'unpaid'
+        ) ==
+          (request.resource.data.leaveType == 'unpaid')
+        && (
+          (
+            request.resource.data.leaveType == 'casual'
+            && (
+              !request.resource.data.keys().hasAny(['leaveBalanceKey'])
+              || request.resource.data.leaveBalanceKey == 'casual'
+            )
+          )
+          || (
+            request.resource.data.leaveType == 'day_off'
+            && (
+              !request.resource.data.keys().hasAny(['leaveBalanceKey'])
+              || request.resource.data.leaveBalanceKey == 'daysOff'
+            )
+          )
+          || (
+            !(request.resource.data.leaveType in ['casual', 'day_off'])
+            && !request.resource.data.keys().hasAny(['leaveBalanceKey'])
+          )
+        )
         && request.resource.data.numberOfDays > 0
+        && request.resource.data.reason is string
+        && request.resource.data.reason.size() > 0
+        && (
+          !request.resource.data.keys().hasAny(['workHandoverTo'])
+          || (
+            request.resource.data.workHandoverTo is string
+            && request.resource.data.workHandoverTo.size() > 0
+          )
+        )
+        && request.resource.data.startDate is timestamp
+        && request.resource.data.endDate is timestamp
+        && request.resource.data.endDate >= request.resource.data.startDate
+        && (
+          request.resource.data.leaveType != 'day_off'
+          || request.resource.data.startDate >= request.time + duration.value(24, 'h')
+        )
         && request.resource.data.keys().hasOnly([
           'userId', 'employeeId', 'employeeName', 'department', 'locationId',
           'managerId', 'leaveType', 'startDate', 'endDate', 'numberOfDays',
-          'reason', 'attachmentUrl', 'status', 'submittedAt', 'isRead',
+          'reason', 'attachmentUrl', 'workHandoverTo', 'status', 'submittedAt', 'isRead',
           'managerIds', 'managerNames', 'managerApprovalIndex',
-          'managerApprovalTotal', 'managerApprovalTrail'
+          'managerApprovalTotal', 'managerApprovalTrail',
+          'deductsLeaveBalance', 'leaveBalanceKey',
+          'requiresFullDaySalaryDeduction'
         ]);
       allow update: if isAuth() && isActive() && (
         (
@@ -930,7 +1075,16 @@ service cloud.firestore {
       );
       allow create: if isAuth() && isActive()
         && isValidSelfCreate()
-        && request.resource.data.status in ['pending_hr', 'invalid_late']
+        && request.resource.data.status in ['pending_manager', 'invalid_late']
+        && (
+          request.resource.data.status == 'invalid_late'
+          || (
+            request.resource.data.managerIds is list
+            && request.resource.data.managerIds.size() > 0
+            && request.resource.data.managerId == request.resource.data.managerIds[0]
+            && request.resource.data.managerApprovalIndex == 0
+          )
+        )
         && request.resource.data.permissionType in ['early_leave', 'late_arrival']
         && request.resource.data.durationMinutes > 0
         && request.resource.data.keys().hasOnly([
@@ -978,6 +1132,7 @@ service cloud.firestore {
       allow read: if isAuth() && isActive() && (
         isOwner(resource.data.userId) ||
         isMyManager(resource.data.managerId) ||
+        uid() in resource.data.get('managerIds', []) ||
         isHR()
       );
       allow create: if isAuth() && isActive()
@@ -1086,8 +1241,11 @@ service cloud.firestore {
         && request.resource.data.title.size() >= 3
         && request.resource.data.department is string
         && request.resource.data.department.size() > 0
+        && request.resource.data.metrics is list
+        && request.resource.data.metrics.size() > 0
+        && request.resource.data.metrics.size() <= 12
         && request.resource.data.isActive == true;
-      allow update: if isAuth() && isActive() && isHR();
+      allow update: if isAuth() && isActive() && kpiTemplateManagedUpdate();
       allow delete: if isAuth() && isActive() && isSuperAdmin();
     }
 
@@ -1104,6 +1262,7 @@ service cloud.firestore {
         && employeeKpiCreateValues();
       allow update: if isAuth() && isActive() && (
         employeeKpiProgressUpdate() ||
+        employeeKpiLifecycleUpdate() ||
         isSuperAdmin()
       );
       allow delete: if isAuth() && isActive() && isSuperAdmin();
@@ -1183,6 +1342,42 @@ service cloud.firestore {
     match /announcements/{announcementId} {
       allow read: if isAuth() && isActive();
       allow create, update, delete: if isAuth() && isActive() && isHR();
+    }
+
+    match /polls/{pollId} {
+      allow read: if isAuth() && isActive() && (
+        isHR() || uid() in resource.data.get('targetUserIds', [])
+      );
+      allow create: if isAuth() && isActive() && isHR()
+        && request.resource.data.keys().hasOnly([
+          'pollId', 'title', 'description', 'options', 'targetUserIds',
+          'status', 'createdBy', 'createdAt'
+        ])
+        && request.resource.data.pollId == pollId
+        && request.resource.data.createdBy == uid()
+        && request.resource.data.title is string
+        && request.resource.data.title.size() > 0
+        && request.resource.data.options is list
+        && request.resource.data.options.size() >= 2
+        && request.resource.data.targetUserIds is list
+        && request.resource.data.targetUserIds.size() > 0
+        && request.resource.data.status == 'open';
+      allow update: if isAuth() && isActive() && isHR()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
+        && request.resource.data.status == 'closed';
+      allow delete: if isAuth() && isActive() && isHR();
+
+      match /votes/{voterId} {
+        allow read: if isAuth() && isActive() && (isHR() || uid() == voterId);
+        allow create: if isAuth() && isActive()
+          && uid() == voterId
+          && uid() in get(/databases/$(database)/documents/polls/$(pollId)).data.get('targetUserIds', [])
+          && get(/databases/$(database)/documents/polls/$(pollId)).data.status == 'open'
+          && request.resource.data.keys().hasOnly(['userId', 'optionId', 'votedAt'])
+          && request.resource.data.userId == uid()
+          && request.resource.data.optionId is string;
+        allow update, delete: if false;
+      }
     }
 
     match /auditLogs/{auditId} {

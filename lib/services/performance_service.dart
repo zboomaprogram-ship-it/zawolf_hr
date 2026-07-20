@@ -7,7 +7,7 @@ import '../utils/payroll_cycle.dart';
 class AutoScoresResult {
   final double attendanceScore;
   final double punctualityScore;
-  final double kpiScore;
+  final double? kpiScore;
 
   AutoScoresResult({
     required this.attendanceScore,
@@ -74,7 +74,7 @@ class PerformanceService {
     );
   }
 
-  Future<double> _loadKpiScore(String userId, String monthKey) async {
+  Future<double?> _loadKpiScore(String userId, String monthKey) async {
     try {
       final snap = await _db
           .collection('employeeKpis')
@@ -82,11 +82,10 @@ class PerformanceService {
           .where('monthKey', isEqualTo: monthKey)
           .limit(1)
           .get();
-      if (snap.docs.isEmpty) return 80.0;
-      return (snap.docs.first.data()['overallProgress'] as num?)?.toDouble() ??
-          80.0;
+      if (snap.docs.isEmpty) return null;
+      return (snap.docs.first.data()['overallProgress'] as num?)?.toDouble();
     } catch (_) {
-      return 80.0;
+      return null;
     }
   }
 

@@ -76,6 +76,17 @@ class EmployeeKpiScreen extends StatelessWidget {
                       style: theme.textTheme.titleMedium,
                       textAlign: TextAlign.center,
                     ),
+                    const SizedBox(height: 6),
+                    Text(
+                      kpi.status == KpiStatus.finalized
+                          ? 'نتيجة معتمدة'
+                          : 'قيد المتابعة',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: kpi.status == KpiStatus.finalized
+                            ? ZaWolfColors.success
+                            : ZaWolfColors.warning,
+                      ),
+                    ),
                     const SizedBox(height: 8),
                     Text(
                       '${kpi.overallProgress.toStringAsFixed(1)}%',
@@ -116,6 +127,29 @@ class EmployeeKpiScreen extends StatelessWidget {
                           style: theme.textTheme.bodyMedium,
                           textAlign: TextAlign.right,
                         ),
+                        Text(
+                          '${KpiMetricDirection.arabicLabel(metric.direction)} · الوزن ${metric.weight.toStringAsFixed(0)}%',
+                          style: theme.textTheme.bodySmall,
+                          textAlign: TextAlign.right,
+                        ),
+                        if (metric.managerComment.isNotEmpty) ...[
+                          const SizedBox(height: 8),
+                          Text(
+                            'ملاحظة المدير: ${metric.managerComment}',
+                            style: theme.textTheme.bodySmall,
+                            textAlign: TextAlign.right,
+                          ),
+                        ],
+                        if (metric.evidenceUrl.isNotEmpty) ...[
+                          const SizedBox(height: 4),
+                          Text(
+                            'تم إرفاق رابط إثبات',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: ZaWolfColors.primaryCyan,
+                            ),
+                            textAlign: TextAlign.right,
+                          ),
+                        ],
                         const SizedBox(height: 10),
                         LinearProgressIndicator(
                           value: (metric.completion / 100).clamp(0, 1),

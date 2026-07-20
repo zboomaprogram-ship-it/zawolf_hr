@@ -40,6 +40,7 @@ function initializeFirebase() {
 
 function routeForNotification(type) {
   const value = String(type || '');
+  if (value === 'poll_created') return '/polls';
   if (value === 'attendance_security_review') return '/manager/requests';
   if (value === 'attendance_security_reviewed') return '/employee/dashboard';
   if (value === 'salary_deduction_pending') return '/manager/requests';

@@ -1,16 +1,46 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+class KpiMetricDirection {
+  static const higherIsBetter = 'higher_is_better';
+  static const lowerIsBetter = 'lower_is_better';
+  static const passFail = 'pass_fail';
+
+  static const values = [higherIsBetter, lowerIsBetter, passFail];
+
+  static String normalize(String? value) {
+    return values.contains(value) ? value! : higherIsBetter;
+  }
+
+  static String arabicLabel(String value) {
+    switch (normalize(value)) {
+      case lowerIsBetter:
+        return 'الأقل أفضل';
+      case passFail:
+        return 'نجاح / عدم نجاح';
+      default:
+        return 'الأعلى أفضل';
+    }
+  }
+}
+
+class KpiStatus {
+  static const active = 'active';
+  static const finalized = 'finalized';
+}
+
 class KpiMetricTemplate {
   final String name;
   final String unit;
   final double target;
   final double weight;
+  final String direction;
 
   const KpiMetricTemplate({
     required this.name,
     required this.unit,
     required this.target,
     required this.weight,
+    this.direction = KpiMetricDirection.higherIsBetter,
   });
 
   factory KpiMetricTemplate.fromMap(Map<String, dynamic> map) {
@@ -19,11 +49,18 @@ class KpiMetricTemplate {
       unit: map['unit'] as String? ?? '',
       target: (map['target'] as num?)?.toDouble() ?? 0,
       weight: (map['weight'] as num?)?.toDouble() ?? 1,
+      direction: KpiMetricDirection.normalize(map['direction'] as String?),
     );
   }
 
   Map<String, dynamic> toMap() {
-    return {'name': name, 'unit': unit, 'target': target, 'weight': weight};
+    return {
+      'name': name,
+      'unit': unit,
+      'target': target,
+      'weight': weight,
+      'direction': direction,
+    };
   }
 }
 
@@ -89,6 +126,9 @@ class EmployeeKpiMetric {
   final double target;
   final double actual;
   final double weight;
+  final String direction;
+  final String evidenceUrl;
+  final String managerComment;
 
   const EmployeeKpiMetric({
     required this.name,
@@ -96,11 +136,20 @@ class EmployeeKpiMetric {
     required this.target,
     required this.actual,
     required this.weight,
+    this.direction = KpiMetricDirection.higherIsBetter,
+    this.evidenceUrl = '',
+    this.managerComment = '',
   });
 
   double get completion {
     if (target <= 0) return 0;
-    final value = (actual / target) * 100;
+    final normalizedDirection = KpiMetricDirection.normalize(direction);
+    if (normalizedDirection == KpiMetricDirection.passFail) {
+      return actual >= target ? 100 : 0;
+    }
+    final value = normalizedDirection == KpiMetricDirection.lowerIsBetter
+        ? (actual <= 0 ? 150.0 : (target / actual) * 100)
+        : (actual / target) * 100;
     if (value < 0) return 0;
     if (value > 150) return 150;
     return value;
@@ -113,6 +162,9 @@ class EmployeeKpiMetric {
       target: (map['target'] as num?)?.toDouble() ?? 0,
       actual: (map['actual'] as num?)?.toDouble() ?? 0,
       weight: (map['weight'] as num?)?.toDouble() ?? 1,
+      direction: KpiMetricDirection.normalize(map['direction'] as String?),
+      evidenceUrl: map['evidenceUrl'] as String? ?? '',
+      managerComment: map['managerComment'] as String? ?? '',
     );
   }
 
@@ -123,16 +175,26 @@ class EmployeeKpiMetric {
       'target': target,
       'actual': actual,
       'weight': weight,
+      'direction': direction,
+      'evidenceUrl': evidenceUrl,
+      'managerComment': managerComment,
     };
   }
 
-  EmployeeKpiMetric copyWith({double? actual}) {
+  EmployeeKpiMetric copyWith({
+    double? actual,
+    String? evidenceUrl,
+    String? managerComment,
+  }) {
     return EmployeeKpiMetric(
       name: name,
       unit: unit,
       target: target,
       actual: actual ?? this.actual,
       weight: weight,
+      direction: direction,
+      evidenceUrl: evidenceUrl ?? this.evidenceUrl,
+      managerComment: managerComment ?? this.managerComment,
     );
   }
 }
@@ -153,6 +215,8 @@ class EmployeeKpiModel {
   final String createdBy;
   final DateTime? createdAt;
   final DateTime? updatedAt;
+  final String finalizedBy;
+  final DateTime? finalizedAt;
 
   const EmployeeKpiModel({
     required this.employeeKpiId,
@@ -170,6 +234,8 @@ class EmployeeKpiModel {
     required this.createdBy,
     this.createdAt,
     this.updatedAt,
+    this.finalizedBy = '',
+    this.finalizedAt,
   });
 
   factory EmployeeKpiModel.fromFirestore(DocumentSnapshot doc) {
@@ -203,6 +269,8 @@ class EmployeeKpiModel {
       createdBy: data['createdBy'] as String? ?? '',
       createdAt: (data['createdAt'] as Timestamp?)?.toDate(),
       updatedAt: (data['updatedAt'] as Timestamp?)?.toDate(),
+      finalizedBy: data['finalizedBy'] as String? ?? '',
+      finalizedAt: (data['finalizedAt'] as Timestamp?)?.toDate(),
     );
   }
 
@@ -226,6 +294,8 @@ class EmployeeKpiModel {
       'updatedAt': updatedAt == null
           ? FieldValue.serverTimestamp()
           : Timestamp.fromDate(updatedAt!),
+      if (finalizedBy.isNotEmpty) 'finalizedBy': finalizedBy,
+      if (finalizedAt != null) 'finalizedAt': Timestamp.fromDate(finalizedAt!),
     };
   }
 

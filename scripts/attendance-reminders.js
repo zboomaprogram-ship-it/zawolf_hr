@@ -191,7 +191,7 @@ async function loadDailyContext(db, dateKey) {
   return value;
 }
 
-function notificationFor({ kind, startMinutes, endMinutes, hasLatePermission, hasEarlyPermission, reminderLeadMinutes = 10, lateReminderMinutes = 10 }) {
+function notificationFor({ kind, startMinutes, endMinutes, hasLatePermission, hasEarlyPermission, reminderLeadMinutes = 10, lateReminderMinutes = 10, halfDayUntilMinutes = 60, finalWarningLeadMinutes = 5 }) {
   if (kind === 'check_in_before') {
     const effectiveStart = startMinutes;
     return {
@@ -217,6 +217,18 @@ function notificationFor({ kind, startMinutes, endMinutes, hasLatePermission, ha
       title: 'تنبيه قبل خصم التأخير',
       body: 'لم يتم تسجيل حضورك بعد. سجّل الحضور الآن؛ قد يُحتسب التأخير وفق سياسة الدوام.',
       type: 'attendance_late_warning',
+    };
+  }
+  if (kind === 'check_in_final_warning') {
+    const fullDayDeductionAt = startMinutes + halfDayUntilMinutes + 1;
+    return {
+      targetMinutes: Math.max(
+        startMinutes,
+        fullDayDeductionAt - 1 - finalWarningLeadMinutes,
+      ),
+      title: 'تنبيه أخير لتسجيل الحضور',
+      body: `لم تسجل حضورك بعد. سجّل قبل ${formatTime(fullDayDeductionAt)} حتى لا تُسجل غائباً ويُقترح خصم يوم كامل للمراجعة من HR.`,
+      type: 'attendance_final_warning',
     };
   }
   return {
@@ -353,11 +365,16 @@ async function queueAttendanceReminders() {
     const effectiveEnd = early ? baseEnd - Number(early.durationMinutes || 0) : baseEnd;
     const reminderLeadMinutes = Number(policy.checkInReminderLeadMinutes ?? 10);
     const lateReminderMinutes = Number(policy.checkInLateWarningMinutes ?? 10);
+    const halfDayUntilMinutes = Number(policy.halfDayUntilMinutes ?? 60);
+    const finalWarningLeadMinutes = Number(
+      policy.checkInFinalWarningLeadMinutes ?? 5,
+    );
 
     const plans = [
       { kind: 'check_in_before', notification: notificationFor({ kind: 'check_in_before', startMinutes: effectiveStart, endMinutes: effectiveEnd, hasLatePermission: Boolean(late), hasEarlyPermission: Boolean(early), reminderLeadMinutes, lateReminderMinutes }) },
       { kind: 'check_in_start', notification: notificationFor({ kind: 'check_in_start', startMinutes: effectiveStart, endMinutes: effectiveEnd, hasLatePermission: Boolean(late), hasEarlyPermission: Boolean(early), reminderLeadMinutes, lateReminderMinutes }) },
       { kind: 'check_in_late_warning', notification: notificationFor({ kind: 'check_in_late_warning', startMinutes: effectiveStart, endMinutes: effectiveEnd, hasLatePermission: Boolean(late), hasEarlyPermission: Boolean(early), reminderLeadMinutes, lateReminderMinutes }) },
+      { kind: 'check_in_final_warning', notification: notificationFor({ kind: 'check_in_final_warning', startMinutes: effectiveStart, endMinutes: effectiveEnd, hasLatePermission: Boolean(late), hasEarlyPermission: Boolean(early), reminderLeadMinutes, lateReminderMinutes, halfDayUntilMinutes, finalWarningLeadMinutes }) },
       { kind: 'check_out', notification: notificationFor({ kind: 'check_out', startMinutes: effectiveStart, endMinutes: effectiveEnd, hasLatePermission: Boolean(late), hasEarlyPermission: Boolean(early) }) },
     ];
 

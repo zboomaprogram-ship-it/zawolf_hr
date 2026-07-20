@@ -10,18 +10,20 @@ import 'audit_log_service.dart';
 class KpiService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
 
-  Stream<List<KpiTemplateModel>> watchTemplates() {
-    return _db
-        .collection('kpiTemplates')
-        .where('isActive', isEqualTo: true)
-        .snapshots()
-        .map((snapshot) {
-          final templates = snapshot.docs
-              .map(KpiTemplateModel.fromFirestore)
-              .toList();
-          templates.sort((a, b) => a.department.compareTo(b.department));
-          return templates;
-        });
+  Stream<List<KpiTemplateModel>> watchTemplates({
+    bool includeInactive = false,
+  }) {
+    Query<Map<String, dynamic>> query = _db.collection('kpiTemplates');
+    if (!includeInactive) {
+      query = query.where('isActive', isEqualTo: true);
+    }
+    return query.snapshots().map((snapshot) {
+      final templates = snapshot.docs
+          .map(KpiTemplateModel.fromFirestore)
+          .toList();
+      templates.sort((a, b) => a.department.compareTo(b.department));
+      return templates;
+    });
   }
 
   Stream<List<EmployeeKpiModel>> watchMyKpis(String userId, String monthKey) {
@@ -101,6 +103,7 @@ class KpiService {
     required String department,
     required List<KpiMetricTemplate> metrics,
   }) async {
+    _validateTemplate(title: title, department: department, metrics: metrics);
     final ref = _db.collection('kpiTemplates').doc();
     final template = KpiTemplateModel(
       templateId: ref.id,
@@ -121,6 +124,46 @@ class KpiService {
     );
   }
 
+  Future<void> updateTemplate({
+    required KpiTemplateModel template,
+    required UserModel editor,
+    required String title,
+    required String department,
+    required List<KpiMetricTemplate> metrics,
+  }) async {
+    _validateTemplate(title: title, department: department, metrics: metrics);
+    await _db.collection('kpiTemplates').doc(template.templateId).update({
+      'title': title.trim(),
+      'department': department.trim(),
+      'metrics': metrics.map((metric) => metric.toMap()).toList(),
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+    await AuditLogService.instance.record(
+      actorId: editor.uid,
+      action: 'kpi_template_updated',
+      targetCollection: 'kpiTemplates',
+      targetId: template.templateId,
+      metadata: {'department': department.trim(), 'metrics': metrics.length},
+    );
+  }
+
+  Future<void> setTemplateActive({
+    required KpiTemplateModel template,
+    required UserModel editor,
+    required bool isActive,
+  }) async {
+    await _db.collection('kpiTemplates').doc(template.templateId).update({
+      'isActive': isActive,
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+    await AuditLogService.instance.record(
+      actorId: editor.uid,
+      action: isActive ? 'kpi_template_activated' : 'kpi_template_archived',
+      targetCollection: 'kpiTemplates',
+      targetId: template.templateId,
+    );
+  }
+
   Future<void> assignMonthlyKpi({
     required UserModel creator,
     required UserModel employee,
@@ -137,6 +180,7 @@ class KpiService {
             target: metric.target,
             actual: 0,
             weight: metric.weight,
+            direction: metric.direction,
           ),
         )
         .toList();
@@ -158,7 +202,13 @@ class KpiService {
       createdBy: creator.uid,
     );
 
-    await ref.set(kpi.toFirestore());
+    await _db.runTransaction((transaction) async {
+      final existing = await transaction.get(ref);
+      if (existing.exists) {
+        throw Exception('تم تعيين KPI لهذا الموظف في هذه الدورة بالفعل.');
+      }
+      transaction.set(ref, kpi.toFirestore());
+    });
     await AuditLogService.instance.record(
       actorId: creator.uid,
       action: 'employee_kpi_assigned',
@@ -178,21 +228,61 @@ class KpiService {
     } catch (_) {}
   }
 
+  Future<({int assigned, int skipped})> assignMonthlyKpiToEmployees({
+    required UserModel creator,
+    required List<UserModel> employees,
+    required KpiTemplateModel template,
+    required String monthKey,
+  }) async {
+    var assigned = 0;
+    var skipped = 0;
+    for (final employee in employees) {
+      try {
+        await assignMonthlyKpi(
+          creator: creator,
+          employee: employee,
+          template: template,
+          monthKey: monthKey,
+        );
+        assigned += 1;
+      } on Exception catch (error) {
+        if (error.toString().contains('بالفعل')) {
+          skipped += 1;
+          continue;
+        }
+        rethrow;
+      }
+    }
+    return (assigned: assigned, skipped: skipped);
+  }
+
   Future<void> updateMetricProgress({
     required String employeeKpiId,
     required UserModel reviewer,
     required int metricIndex,
     required double actual,
+    String evidenceUrl = '',
+    String managerComment = '',
   }) async {
+    if (!actual.isFinite || actual < 0) {
+      throw Exception('القيمة الفعلية يجب أن تكون صفراً أو رقماً موجباً.');
+    }
     final ref = _db.collection('employeeKpis').doc(employeeKpiId);
     final doc = await ref.get();
     if (!doc.exists) throw Exception('سجل KPI غير موجود');
     final kpi = EmployeeKpiModel.fromFirestore(doc);
+    if (kpi.status == KpiStatus.finalized) {
+      throw Exception('تم إغلاق KPI لهذه الدورة ولا يمكن تعديله.');
+    }
     if (metricIndex < 0 || metricIndex >= kpi.metrics.length) {
       throw Exception('المؤشر غير صحيح');
     }
     final metrics = [...kpi.metrics];
-    metrics[metricIndex] = metrics[metricIndex].copyWith(actual: actual);
+    metrics[metricIndex] = metrics[metricIndex].copyWith(
+      actual: actual,
+      evidenceUrl: _validatedEvidenceUrl(evidenceUrl),
+      managerComment: managerComment.trim(),
+    );
     final progress = EmployeeKpiModel.calculateProgress(metrics);
 
     await ref.update({
@@ -222,6 +312,97 @@ class KpiService {
         data: {'employeeKpiId': employeeKpiId},
       );
     } catch (_) {}
+  }
+
+  Future<void> finalizeKpi({
+    required EmployeeKpiModel kpi,
+    required UserModel reviewer,
+  }) async {
+    if (kpi.metrics.isEmpty) throw Exception('لا توجد مؤشرات لإغلاقها.');
+    await _db.collection('employeeKpis').doc(kpi.employeeKpiId).update({
+      'status': KpiStatus.finalized,
+      'finalizedBy': reviewer.uid,
+      'finalizedAt': FieldValue.serverTimestamp(),
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+    await AuditLogService.instance.record(
+      actorId: reviewer.uid,
+      action: 'employee_kpi_finalized',
+      targetCollection: 'employeeKpis',
+      targetId: kpi.employeeKpiId,
+      metadata: {'userId': kpi.userId, 'score': kpi.overallProgress},
+    );
+    try {
+      await _createNotification(
+        recipientId: kpi.userId,
+        type: 'kpi_finalized',
+        title: 'تم اعتماد نتيجة KPI',
+        body:
+            'تم اعتماد نتيجة دورة ${kpi.monthKey}: ${kpi.overallProgress.toStringAsFixed(1)}%.',
+        data: {'employeeKpiId': kpi.employeeKpiId},
+      );
+    } catch (_) {}
+  }
+
+  Future<void> reopenKpi({
+    required EmployeeKpiModel kpi,
+    required UserModel reviewer,
+  }) async {
+    if (!EmployeeRole.isHr(reviewer.role)) {
+      throw Exception('إعادة فتح KPI متاحة لـ HR ومالك النظام فقط.');
+    }
+    await _db.collection('employeeKpis').doc(kpi.employeeKpiId).update({
+      'status': KpiStatus.active,
+      'finalizedBy': FieldValue.delete(),
+      'finalizedAt': FieldValue.delete(),
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+    await AuditLogService.instance.record(
+      actorId: reviewer.uid,
+      action: 'employee_kpi_reopened',
+      targetCollection: 'employeeKpis',
+      targetId: kpi.employeeKpiId,
+      metadata: {'userId': kpi.userId},
+    );
+  }
+
+  void _validateTemplate({
+    required String title,
+    required String department,
+    required List<KpiMetricTemplate> metrics,
+  }) {
+    if (title.trim().length < 3 || department.trim().isEmpty) {
+      throw Exception('أدخل اسم القالب والقسم.');
+    }
+    if (metrics.isEmpty) throw Exception('أضف مؤشراً واحداً على الأقل.');
+    if (metrics.length > 12) throw Exception('الحد الأقصى 12 مؤشراً.');
+    final totalWeight = metrics.fold<double>(
+      0,
+      (total, metric) => total + metric.weight,
+    );
+    if ((totalWeight - 100).abs() > 0.01) {
+      throw Exception('مجموع أوزان المؤشرات يجب أن يساوي 100%.');
+    }
+    for (final metric in metrics) {
+      if (metric.name.trim().length < 2 ||
+          metric.target <= 0 ||
+          metric.weight <= 0 ||
+          !KpiMetricDirection.values.contains(metric.direction)) {
+        throw Exception('راجع اسم وهدف ووزن وطريقة احتساب كل مؤشر.');
+      }
+    }
+  }
+
+  String _validatedEvidenceUrl(String value) {
+    final trimmed = value.trim();
+    if (trimmed.isEmpty) return '';
+    final uri = Uri.tryParse(trimmed);
+    if (uri == null ||
+        !uri.hasScheme ||
+        !['http', 'https'].contains(uri.scheme.toLowerCase())) {
+      throw Exception('رابط الإثبات يجب أن يبدأ بـ http أو https.');
+    }
+    return trimmed;
   }
 
   List<EmployeeKpiModel> _employeeKpisFromSnapshot(QuerySnapshot snapshot) {

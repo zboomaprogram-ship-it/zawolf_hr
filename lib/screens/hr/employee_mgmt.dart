@@ -49,17 +49,24 @@ List<DropdownMenuItem<String>> _roleMenuItems({
         child: Text(includeEnglish ? 'مدير قسم (Manager)' : 'مدير قسم'),
       ),
     ),
-    DropdownMenuItem(
-      value: EmployeeRole.hrAdmin,
-      child: Align(
-        alignment: Alignment.centerRight,
-        child: Text(includeEnglish ? 'مسؤول HR (HR Admin)' : 'مسؤول HR'),
-      ),
-    ),
   ];
 
   if (canUseSuperAdmin) {
-    items.add(
+    items.addAll([
+      DropdownMenuItem(
+        value: EmployeeRole.hrAdmin,
+        child: Align(
+          alignment: Alignment.centerRight,
+          child: Text(includeEnglish ? 'مسؤول HR (HR Admin)' : 'مسؤول HR'),
+        ),
+      ),
+      DropdownMenuItem(
+        value: EmployeeRole.hrManager,
+        child: Align(
+          alignment: Alignment.centerRight,
+          child: Text(includeEnglish ? 'مدير HR (HR Manager)' : 'مدير HR'),
+        ),
+      ),
       DropdownMenuItem(
         value: EmployeeRole.superAdmin,
         child: Align(
@@ -69,10 +76,32 @@ List<DropdownMenuItem<String>> _roleMenuItems({
           ),
         ),
       ),
-    );
+    ]);
   }
 
   return items;
+}
+
+int _scheduleMinutes(String value) {
+  final parts = value.split(':');
+  if (parts.length != 2) return -1;
+  final hour = int.tryParse(parts[0]);
+  final minute = int.tryParse(parts[1]);
+  if (hour == null ||
+      minute == null ||
+      hour < 0 ||
+      hour > 23 ||
+      minute < 0 ||
+      minute > 59) {
+    return -1;
+  }
+  return hour * 60 + minute;
+}
+
+bool _isValidWorkSchedule(String start, String end) {
+  final startMinutes = _scheduleMinutes(start);
+  final endMinutes = _scheduleMinutes(end);
+  return startMinutes >= 0 && endMinutes > startMinutes;
 }
 
 class _SupervisorRef {
@@ -457,15 +486,20 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
           EmployeeRole.teamLeader,
           EmployeeRole.manager,
           EmployeeRole.hrAdmin,
+          EmployeeRole.hrManager,
           EmployeeRole.superAdmin,
         ];
         if (!allowedRoles.contains(role)) {
           throw Exception('الصف $rowNumber يحتوي على دور غير صحيح: $role');
         }
-        if (role == EmployeeRole.superAdmin &&
-            authService.currentUser?.role != EmployeeRole.superAdmin) {
+        if ((role == EmployeeRole.superAdmin ||
+                role == EmployeeRole.hrManager ||
+                role == EmployeeRole.hrAdmin) &&
+            !EmployeeRole.canManagePrivilegedAccounts(
+              authService.currentUser?.role,
+            )) {
           throw Exception(
-            'لا يمكن لمسؤول HR إنشاء حساب مالك النظام من الاستيراد.',
+            'إنشاء حسابات الإدارة العليا متاح لمدير HR ومالك النظام فقط.',
           );
         }
         final locationId = value(row, 'locationId', ['Location ID']);
@@ -621,6 +655,9 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
       case 'hradmin':
       case 'hr_admin':
         return EmployeeRole.hrAdmin;
+      case 'hrmanager':
+      case 'hr_manager':
+        return EmployeeRole.hrManager;
       case 'super':
       case 'superadmin':
       case 'super_admin':
@@ -650,6 +687,7 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
   static bool _canBeSupervisor(String role) {
     return role == EmployeeRole.manager ||
         role == EmployeeRole.hrAdmin ||
+        role == EmployeeRole.hrManager ||
         role == EmployeeRole.superAdmin;
   }
 
@@ -1294,6 +1332,7 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
               EmployeeRole.teamLeader,
               EmployeeRole.manager,
               EmployeeRole.hrAdmin,
+              EmployeeRole.hrManager,
               EmployeeRole.superAdmin,
             ].map((role) {
               return ListTile(
@@ -1443,8 +1482,12 @@ class _AddEmployeeDialogState extends State<AddEmployeeDialog> {
   String? _selectedLocationName;
   String? _selectedManagerId;
   String? _selectedManagerName;
+  final List<String> _selectedManagerIds = [];
   String? _selectedTeamLeaderId;
   String? _selectedTeamLeaderName;
+  String _workStartTime = '09:00';
+  String _workEndTime = '17:00';
+  List<int> _workDays = [6, 7, 1, 2, 3, 4];
 
   bool _isLoading = false;
   List<LocationModel> _locations = [];
@@ -1468,6 +1511,7 @@ class _AddEmployeeDialogState extends State<AddEmployeeDialog> {
               whereIn: [
                 EmployeeRole.manager,
                 EmployeeRole.hrAdmin,
+                EmployeeRole.hrManager,
                 EmployeeRole.superAdmin,
               ],
             )
@@ -1520,8 +1564,76 @@ class _AddEmployeeDialogState extends State<AddEmployeeDialog> {
     super.dispose();
   }
 
+  UserModel? _managerById(String managerId) {
+    for (final manager in _managers) {
+      if (manager.uid == managerId) return manager;
+    }
+    return null;
+  }
+
+  void _syncPrimaryManagerFromSelection() {
+    if (_selectedManagerIds.isEmpty) {
+      _selectedManagerId = null;
+      _selectedManagerName = null;
+      return;
+    }
+    _selectedManagerId = _selectedManagerIds.first;
+    _selectedManagerName =
+        _managerById(_selectedManagerId!)?.displayName ?? _selectedManagerName;
+  }
+
+  void _selectPrimaryManager(String? managerId) {
+    setState(() {
+      if (managerId == null || managerId.isEmpty) {
+        _selectedManagerIds.clear();
+      } else {
+        _selectedManagerIds.remove(managerId);
+        _selectedManagerIds.insert(0, managerId);
+      }
+      _syncPrimaryManagerFromSelection();
+    });
+  }
+
+  void _addAssignedManager(String? managerId) {
+    if (managerId == null || managerId.isEmpty) return;
+    setState(() {
+      if (!_selectedManagerIds.contains(managerId)) {
+        _selectedManagerIds.add(managerId);
+      }
+      _syncPrimaryManagerFromSelection();
+    });
+  }
+
+  void _removeAssignedManager(String managerId) {
+    setState(() {
+      _selectedManagerIds.remove(managerId);
+      _syncPrimaryManagerFromSelection();
+    });
+  }
+
+  void _moveAssignedManager(String managerId, int direction) {
+    final index = _selectedManagerIds.indexOf(managerId);
+    final newIndex = index + direction;
+    if (index < 0 || newIndex < 0 || newIndex >= _selectedManagerIds.length) {
+      return;
+    }
+    setState(() {
+      final manager = _selectedManagerIds.removeAt(index);
+      _selectedManagerIds.insert(newIndex, manager);
+      _syncPrimaryManagerFromSelection();
+    });
+  }
+
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
+    if (!_isValidWorkSchedule(_workStartTime, _workEndTime)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('وقت الانصراف يجب أن يكون بعد وقت الحضور.'),
+        ),
+      );
+      return;
+    }
     if (_selectedLocationId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('الرجاء اختيار فرع الموظف.')),
@@ -1536,6 +1648,11 @@ class _AddEmployeeDialogState extends State<AddEmployeeDialog> {
     final authService = Provider.of<AuthService>(context, listen: false);
 
     try {
+      final selectedManagers = _selectedManagerIds
+          .map(_managerById)
+          .whereType<UserModel>()
+          .toList();
+      final primaryManager = selectedManagers.firstOrNull;
       final newEmp = await authService.createEmployeeAccount(
         email: _emailController.text.trim(),
         displayName: _nameController.text.trim(),
@@ -1547,10 +1664,23 @@ class _AddEmployeeDialogState extends State<AddEmployeeDialog> {
         locationName: _selectedLocationName!,
         baseMonthlySalary: double.tryParse(_salaryController.text) ?? 0,
         daysOffBalance: int.tryParse(_daysOffController.text) ?? 21,
-        managerId: _selectedManagerId,
-        managerName: _selectedManagerName,
+        managerId: primaryManager?.uid,
+        managerName: primaryManager?.displayName,
+        managerIds: selectedManagers.map((manager) => manager.uid).toList(),
+        managerNames: selectedManagers
+            .map((manager) => manager.displayName)
+            .toList(),
+        managerCodes: selectedManagers
+            .map((manager) => manager.employeeId)
+            .where((code) => code.isNotEmpty)
+            .toList(),
         teamLeaderId: _selectedTeamLeaderId,
         teamLeaderName: _selectedTeamLeaderName,
+        workSchedule: WorkSchedule(
+          startTime: _workStartTime,
+          endTime: _workEndTime,
+          workDays: _workDays,
+        ),
       );
 
       if (mounted) {
@@ -1645,9 +1775,9 @@ class _AddEmployeeDialogState extends State<AddEmployeeDialog> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final canUseSuperAdmin =
-        Provider.of<AuthService>(context, listen: false).currentUser?.role ==
-        EmployeeRole.superAdmin;
+    final canUseSuperAdmin = EmployeeRole.canManagePrivilegedAccounts(
+      Provider.of<AuthService>(context, listen: false).currentUser?.role,
+    );
 
     return Dialog(
       backgroundColor: ZaWolfColors.surface01,
@@ -1848,12 +1978,12 @@ class _AddEmployeeDialogState extends State<AddEmployeeDialog> {
                 ),
                 const SizedBox(height: 16),
 
-                // Manager Selector Dropdown
+                // Manager approval chain
                 DropdownButtonFormField<String>(
                   initialValue: _selectedManagerId,
                   dropdownColor: ZaWolfColors.surface01,
                   decoration: const InputDecoration(
-                    labelText: 'المدير المباشر (اختياري)',
+                    labelText: 'المدير المباشر',
                     labelStyle: TextStyle(color: ZaWolfColors.primaryCyan),
                   ),
                   style: const TextStyle(color: Colors.white),
@@ -1866,23 +1996,101 @@ class _AddEmployeeDialogState extends State<AddEmployeeDialog> {
                       ),
                     );
                   }).toList(),
-                  onChanged: (val) {
-                    if (val != null) {
-                      final selected = _managers.firstWhere(
-                        (element) => element.uid == val,
-                      );
-                      setState(() {
-                        _selectedManagerId = val;
-                        _selectedManagerName = selected.displayName;
-                      });
-                    } else {
-                      setState(() {
-                        _selectedManagerId = null;
-                        _selectedManagerName = null;
-                      });
-                    }
-                  },
+                  onChanged: _selectPrimaryManager,
                 ),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<String>(
+                  key: ValueKey(
+                    'new-account-manager-${_selectedManagerIds.join('|')}',
+                  ),
+                  initialValue: null,
+                  dropdownColor: ZaWolfColors.surface01,
+                  decoration: const InputDecoration(
+                    labelText: 'إضافة مدير أعلى لمسار الموافقات',
+                    labelStyle: TextStyle(color: ZaWolfColors.primaryCyan),
+                  ),
+                  style: const TextStyle(color: Colors.white),
+                  items: _managers
+                      .where(
+                        (manager) => !_selectedManagerIds.contains(manager.uid),
+                      )
+                      .map(
+                        (manager) => DropdownMenuItem(
+                          value: manager.uid,
+                          child: Align(
+                            alignment: Alignment.centerRight,
+                            child: Text(manager.displayName),
+                          ),
+                        ),
+                      )
+                      .toList(),
+                  onChanged: _addAssignedManager,
+                ),
+                if (_selectedManagerIds.isNotEmpty) ...[
+                  const SizedBox(height: 10),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: ZaWolfColors.surface02,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: ZaWolfColors.surface03),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: _selectedManagerIds.asMap().entries.map((
+                        entry,
+                      ) {
+                        final index = entry.key;
+                        final managerId = entry.value;
+                        final managerName =
+                            _managerById(managerId)?.displayName ??
+                            'مدير غير معروف';
+                        return Row(
+                          children: [
+                            IconButton(
+                              tooltip: 'حذف',
+                              onPressed: () =>
+                                  _removeAssignedManager(managerId),
+                              icon: const Icon(
+                                Icons.close,
+                                color: ZaWolfColors.error,
+                              ),
+                            ),
+                            IconButton(
+                              tooltip: 'تحريك لأسفل',
+                              onPressed: index == _selectedManagerIds.length - 1
+                                  ? null
+                                  : () => _moveAssignedManager(managerId, 1),
+                              icon: const Icon(Icons.keyboard_arrow_down),
+                            ),
+                            IconButton(
+                              tooltip: 'تحريك لأعلى',
+                              onPressed: index == 0
+                                  ? null
+                                  : () => _moveAssignedManager(managerId, -1),
+                              icon: const Icon(Icons.keyboard_arrow_up),
+                            ),
+                            Expanded(
+                              child: Text(
+                                index == 0
+                                    ? '$managerName · المدير المباشر'
+                                    : '$managerName · موافقة رقم ${index + 1}',
+                                textDirection: TextDirection.rtl,
+                              ),
+                            ),
+                          ],
+                        );
+                      }).toList(),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'تبدأ الموافقة بالمدير المباشر ثم تنتقل بالترتيب الظاهر.',
+                    style: TextStyle(color: ZaWolfColors.textMuted),
+                    textDirection: TextDirection.rtl,
+                  ),
+                ],
                 const SizedBox(height: 16),
                 DropdownButtonFormField<String>(
                   initialValue: _selectedTeamLeaderId,
@@ -1919,6 +2127,20 @@ class _AddEmployeeDialogState extends State<AddEmployeeDialog> {
                     setState(() {
                       _selectedTeamLeaderId = leader?.uid;
                       _selectedTeamLeaderName = leader?.displayName;
+                    });
+                  },
+                ),
+                const SizedBox(height: 24),
+
+                _WorkScheduleEditor(
+                  startTime: _workStartTime,
+                  endTime: _workEndTime,
+                  workDays: _workDays,
+                  onChanged: (start, end, days) {
+                    setState(() {
+                      _workStartTime = start;
+                      _workEndTime = end;
+                      _workDays = days;
                     });
                   },
                 ),
@@ -1982,6 +2204,9 @@ class _EditEmployeeDialogState extends State<EditEmployeeDialog> {
   late List<String> _selectedManagerIds;
   String? _selectedTeamLeaderId;
   String? _selectedTeamLeaderName;
+  late String _workStartTime;
+  late String _workEndTime;
+  late List<int> _workDays;
 
   bool _isLoading = false;
   List<LocationModel> _locations = [];
@@ -2010,6 +2235,11 @@ class _EditEmployeeDialogState extends State<EditEmployeeDialog> {
     _selectedManagerName = emp.managerName;
     _selectedTeamLeaderId = emp.teamLeaderId;
     _selectedTeamLeaderName = emp.teamLeaderName;
+    _workStartTime = emp.workSchedule.startTime ?? '09:00';
+    _workEndTime = emp.workSchedule.endTime ?? '17:00';
+    _workDays = List<int>.from(
+      emp.workSchedule.workDays ?? const [6, 7, 1, 2, 3, 4],
+    );
     _selectedManagerIds = emp.managerIds.isNotEmpty
         ? List<String>.from(emp.managerIds)
         : [
@@ -2031,6 +2261,7 @@ class _EditEmployeeDialogState extends State<EditEmployeeDialog> {
               whereIn: [
                 EmployeeRole.manager,
                 EmployeeRole.hrAdmin,
+                EmployeeRole.hrManager,
                 EmployeeRole.superAdmin,
               ],
             )
@@ -2159,6 +2390,14 @@ class _EditEmployeeDialogState extends State<EditEmployeeDialog> {
 
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
+    if (!_isValidWorkSchedule(_workStartTime, _workEndTime)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('وقت الانصراف يجب أن يكون بعد وقت الحضور.'),
+        ),
+      );
+      return;
+    }
     if (_selectedLocationId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('الرجاء اختيار فرع الموظف.')),
@@ -2171,11 +2410,14 @@ class _EditEmployeeDialogState extends State<EditEmployeeDialog> {
     });
 
     try {
-      final canUseSuperAdmin =
-          Provider.of<AuthService>(context, listen: false).currentUser?.role ==
-          EmployeeRole.superAdmin;
-      final effectiveRole =
-          !canUseSuperAdmin && widget.employee.role == EmployeeRole.superAdmin
+      final canUseSuperAdmin = EmployeeRole.canManagePrivilegedAccounts(
+        Provider.of<AuthService>(context, listen: false).currentUser?.role,
+      );
+      final existingRoleIsPrivileged =
+          widget.employee.role == EmployeeRole.superAdmin ||
+          widget.employee.role == EmployeeRole.hrManager ||
+          widget.employee.role == EmployeeRole.hrAdmin;
+      final effectiveRole = !canUseSuperAdmin && existingRoleIsPrivileged
           ? widget.employee.role
           : _selectedRole;
       final selectedManagers = _selectedManagerIds
@@ -2210,6 +2452,11 @@ class _EditEmployeeDialogState extends State<EditEmployeeDialog> {
             .toList(),
         'teamLeaderId': _selectedTeamLeaderId,
         'teamLeaderName': _selectedTeamLeaderName,
+        'workSchedule': WorkSchedule(
+          startTime: _workStartTime,
+          endTime: _workEndTime,
+          workDays: _workDays,
+        ).toMap(),
       };
 
       await _db.collection('users').doc(widget.employee.uid).update(updateData);
@@ -2312,12 +2559,15 @@ class _EditEmployeeDialogState extends State<EditEmployeeDialog> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final canUseSuperAdmin =
-        Provider.of<AuthService>(context, listen: false).currentUser?.role ==
-        EmployeeRole.superAdmin;
+    final canUseSuperAdmin = EmployeeRole.canManagePrivilegedAccounts(
+      Provider.of<AuthService>(context, listen: false).currentUser?.role,
+    );
     final selectedRole = _selectedRole;
     final canEditRole =
-        canUseSuperAdmin || widget.employee.role != EmployeeRole.superAdmin;
+        canUseSuperAdmin ||
+        !(widget.employee.role == EmployeeRole.superAdmin ||
+            widget.employee.role == EmployeeRole.hrManager ||
+            widget.employee.role == EmployeeRole.hrAdmin);
 
     return Dialog(
       backgroundColor: ZaWolfColors.surface01,
@@ -2506,7 +2756,7 @@ class _EditEmployeeDialogState extends State<EditEmployeeDialog> {
                       : null,
                   dropdownColor: ZaWolfColors.surface01,
                   decoration: const InputDecoration(
-                    labelText: 'المدير المباشر (اختياري)',
+                    labelText: 'المدير المباشر',
                     labelStyle: TextStyle(color: ZaWolfColors.primaryCyan),
                   ),
                   style: const TextStyle(color: Colors.white),
@@ -2660,7 +2910,7 @@ class _EditEmployeeDialogState extends State<EditEmployeeDialog> {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'الطلب يذهب إلى HR أولاً، ثم إلى المديرين بهذا الترتيب.',
+                  'طلبات الإذن والإجازة تبدأ بالمدير المباشر ثم تنتقل للمديرين بهذا الترتيب حتى آخر موافقة.',
                   style: theme.textTheme.bodySmall?.copyWith(
                     color: ZaWolfColors.textMuted,
                   ),
@@ -2702,6 +2952,20 @@ class _EditEmployeeDialogState extends State<EditEmployeeDialog> {
                     setState(() {
                       _selectedTeamLeaderId = leader?.uid;
                       _selectedTeamLeaderName = leader?.displayName;
+                    });
+                  },
+                ),
+                const SizedBox(height: 24),
+
+                _WorkScheduleEditor(
+                  startTime: _workStartTime,
+                  endTime: _workEndTime,
+                  workDays: _workDays,
+                  onChanged: (start, end, days) {
+                    setState(() {
+                      _workStartTime = start;
+                      _workEndTime = end;
+                      _workDays = days;
                     });
                   },
                 ),
@@ -2789,6 +3053,130 @@ class _EditEmployeeDialogState extends State<EditEmployeeDialog> {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _WorkScheduleEditor extends StatelessWidget {
+  final String startTime;
+  final String endTime;
+  final List<int> workDays;
+  final void Function(String start, String end, List<int> days) onChanged;
+
+  const _WorkScheduleEditor({
+    required this.startTime,
+    required this.endTime,
+    required this.workDays,
+    required this.onChanged,
+  });
+
+  static const _dayLabels = <int, String>{
+    DateTime.saturday: 'السبت',
+    DateTime.sunday: 'الأحد',
+    DateTime.monday: 'الاثنين',
+    DateTime.tuesday: 'الثلاثاء',
+    DateTime.wednesday: 'الأربعاء',
+    DateTime.thursday: 'الخميس',
+    DateTime.friday: 'الجمعة',
+  };
+
+  TimeOfDay _parse(String value) {
+    final parts = value.split(':');
+    return TimeOfDay(
+      hour: int.tryParse(parts.first) ?? 9,
+      minute: parts.length > 1 ? int.tryParse(parts[1]) ?? 0 : 0,
+    );
+  }
+
+  String _format(TimeOfDay value) =>
+      '${value.hour.toString().padLeft(2, '0')}:${value.minute.toString().padLeft(2, '0')}';
+
+  Future<void> _pickTime(BuildContext context, {required bool start}) async {
+    final selected = await showTimePicker(
+      context: context,
+      initialTime: _parse(start ? startTime : endTime),
+    );
+    if (selected == null) return;
+    final value = _format(selected);
+    onChanged(
+      start ? value : startTime,
+      start ? endTime : value,
+      List<int>.from(workDays),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: ZaWolfColors.surface02.withValues(alpha: 0.45),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: ZaWolfColors.surface03),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            'جدول الحضور الخاص بالموظف',
+            style: theme.textTheme.titleMedium?.copyWith(color: Colors.white),
+            textDirection: TextDirection.rtl,
+          ),
+          const SizedBox(height: 4),
+          const Text(
+            'الأيام غير المحددة لا تُحسب غياباً ولا ترسل تذكيراً أو خصماً.',
+            style: TextStyle(color: ZaWolfColors.textSecondary, fontSize: 12),
+            textDirection: TextDirection.rtl,
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: () => _pickTime(context, start: false),
+                  icon: const Icon(Icons.logout),
+                  label: Text('الانصراف $endTime'),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: () => _pickTime(context, start: true),
+                  icon: const Icon(Icons.login),
+                  label: Text('الحضور $startTime'),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            alignment: WrapAlignment.end,
+            spacing: 8,
+            runSpacing: 8,
+            children: _dayLabels.entries.map((entry) {
+              final selected = workDays.contains(entry.key);
+              return FilterChip(
+                label: Text(entry.value),
+                selected: selected,
+                onSelected: (enabled) {
+                  final days = List<int>.from(workDays);
+                  enabled ? days.add(entry.key) : days.remove(entry.key);
+                  if (days.isEmpty) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('يجب اختيار يوم عمل واحد على الأقل.'),
+                      ),
+                    );
+                    return;
+                  }
+                  onChanged(startTime, endTime, days);
+                },
+              );
+            }).toList(),
+          ),
+        ],
       ),
     );
   }

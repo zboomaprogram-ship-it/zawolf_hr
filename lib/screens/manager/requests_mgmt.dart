@@ -11,6 +11,7 @@ import '../../models/employee_role.dart';
 import '../../models/attendance_model.dart';
 import '../../models/complaint_model.dart';
 import '../../models/leave_model.dart';
+import '../../models/leave_type_policy.dart';
 import '../../models/permission_model.dart';
 import '../../models/user_model.dart';
 import '../../models/advance_model.dart';
@@ -237,7 +238,9 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen>
     String role,
   ) {
     var query = _db.collection(collection) as Query<Map<String, dynamic>>;
-    if (role == EmployeeRole.manager) {
+    final usesManagerChain =
+        collection == 'leaves' || collection == 'permissions';
+    if (usesManagerChain && EmployeeRole.canActAsApprovalManager(role)) {
       query = query
           .where('status', isEqualTo: 'pending_manager')
           .where('managerId', isEqualTo: reviewerId);
@@ -304,6 +307,11 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen>
                           color: ZaWolfColors.textSecondary,
                         ),
                       ),
+                    if (leave.workHandoverTo.isNotEmpty)
+                      Text(
+                        'تسليم المهام إلى: ${leave.workHandoverTo}',
+                        style: const TextStyle(color: ZaWolfColors.primaryCyan),
+                      ),
                     if (leave.attachmentUrl != null &&
                         leave.attachmentUrl!.isNotEmpty) ...[
                       const SizedBox(height: 8),
@@ -353,9 +361,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen>
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      leave.status == 'pending_hr'
-                          ? 'المرحلة الحالية: مراجعة HR'
-                          : 'المرحلة الحالية: موافقة المدير النهائية',
+                      'المرحلة الحالية: موافقة المدير المسؤول',
                       style: const TextStyle(color: ZaWolfColors.primaryCyan),
                     ),
                   ],
@@ -370,14 +376,12 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen>
 
   Stream<QuerySnapshot> _permissionReviewStream(UserModel reviewer) {
     var query = _db.collection('permissions') as Query<Map<String, dynamic>>;
-    if (reviewer.role == EmployeeRole.manager) {
+    if (EmployeeRole.canActAsApprovalManager(reviewer.role)) {
       query = query
           .where('status', isEqualTo: 'pending_manager')
           .where('managerId', isEqualTo: reviewer.uid);
-    } else if (reviewer.role == EmployeeRole.superAdmin) {
-      query = query.where('status', whereIn: ['pending_hr', 'pending_manager']);
     } else {
-      query = query.where('status', isEqualTo: 'pending_hr');
+      query = query.where('managerId', isEqualTo: '__no_approver__');
     }
     return query.snapshots();
   }
@@ -487,9 +491,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen>
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      perm.status == 'pending_hr'
-                          ? 'المرحلة الحالية: مراجعة HR'
-                          : 'المرحلة الحالية: موافقة المدير النهائية',
+                      'المرحلة الحالية: موافقة المدير المسؤول',
                       style: const TextStyle(color: ZaWolfColors.primaryCyan),
                     ),
                     const SizedBox(height: 16),
@@ -634,9 +636,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen>
   }
 
   Widget _buildComplaintsTab(UserModel reviewer, ThemeData theme) {
-    final canReview =
-        reviewer.role == EmployeeRole.hrAdmin ||
-        reviewer.role == EmployeeRole.superAdmin;
+    final canReview = EmployeeRole.isHr(reviewer.role);
     if (!canReview) {
       return _buildEmptyState('الشكاوى تظهر لمسؤول HR والإدارة العليا فقط');
     }
@@ -838,6 +838,14 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen>
                         Text(
                           'التاريخ: ${attendance.date}'
                           '${attendance.lateMinutes > 0 ? ' · التأخير: ${attendance.lateMinutes} دقيقة' : ''}',
+                        ),
+                        Text(
+                          attendance.checkInTime == null
+                              ? 'وقت الحضور: لم يسجل حضوراً'
+                              : 'وقت الحضور الفعلي: ${DateFormat('hh:mm a', 'ar').format(attendance.checkInTime!)}',
+                          style: const TextStyle(
+                            color: ZaWolfColors.textSecondary,
+                          ),
                         ),
                         Text(
                           'قيمة الخصم: ${attendance.salaryDeductionAmount.toStringAsFixed(2)} ${attendance.salaryCurrency}',
@@ -1058,12 +1066,12 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen>
       return _buildEmptyState('مراجعة أمان الحضور من HR فقط');
     }
     return StreamBuilder<QuerySnapshot>(
-          stream: _cachedStream(
-            'attendance|checkin-security|${reviewer.uid}',
-            _db
-                .collection('attendance')
-                .where('securityReviewStatus', isEqualTo: 'pending_hr'),
-          ),
+      stream: _cachedStream(
+        'attendance|checkin-security|${reviewer.uid}',
+        _db
+            .collection('attendance')
+            .where('securityReviewStatus', isEqualTo: 'pending_hr'),
+      ),
       builder: (context, checkInSnapshot) {
         return StreamBuilder<QuerySnapshot>(
           stream: _cachedStream(
@@ -1454,20 +1462,8 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen>
   }
 
   String _translateLeaveType(String type) {
-    switch (type) {
-      case 'annual':
-        return 'سنوية';
-      case 'sick':
-        return 'مرضية';
-      case 'casual':
-        return 'عارضة';
-      case 'day_off':
-        return 'يوم إجازة';
-      case 'wfh':
-        return 'عمل من المنزل';
-      default:
-        return type;
-    }
+    if (type == 'wfh') return 'عمل من المنزل';
+    return LeaveTypePolicy.arabicLabel(type);
   }
 }
 

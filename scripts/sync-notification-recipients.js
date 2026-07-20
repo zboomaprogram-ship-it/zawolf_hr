@@ -6,7 +6,7 @@ const {
 } = require('./firebase-service-account');
 installFirestoreCompatibility(admin);
 
-const ROLES = ['hr_admin', 'manager', 'super_admin'];
+const ROLES = ['hr_admin', 'hr_manager', 'manager', 'super_admin'];
 
 function initializeFirebase() {
   if (getExistingFirebaseApp(admin)) return;

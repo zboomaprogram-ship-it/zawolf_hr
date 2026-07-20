@@ -77,7 +77,7 @@ class PersonalAlarmService : Service() {
     }
 
     private fun buildNotification(message: String) = NotificationCompat.Builder(this, CHANNEL_ID)
-        .setSmallIcon(R.mipmap.launcher_icon)
+        .setSmallIcon(R.drawable.ic_stat_onesignal_default)
         .setContentTitle("منبه الدوام")
         .setContentText(message)
         .setCategory(NotificationCompat.CATEGORY_ALARM)

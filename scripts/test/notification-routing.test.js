@@ -21,6 +21,7 @@ test('request and task notifications open the intended app areas', () => {
   assert.equal(routeForNotification('permission_pending_hr'), '/manager/requests');
   assert.equal(routeForNotification('leave_approved'), '/employee/requests');
   assert.equal(routeForNotification('task_assigned'), '/employee/tasks');
+  assert.equal(routeForNotification('poll_created'), '/polls');
   assert.equal(
     routeForNotification('salary_deduction_reviewed'),
     '/employee/dashboard',
@@ -69,6 +70,15 @@ test('attendance reminders follow work days and approved permission times', () =
     hasLatePermission: false,
     hasEarlyPermission: true,
   });
+  const finalWarning = notificationFor({
+    kind: 'check_in_final_warning',
+    startMinutes: 9 * 60,
+    endMinutes: 17 * 60,
+    hasLatePermission: false,
+    hasEarlyPermission: false,
+    halfDayUntilMinutes: 25,
+    finalWarningLeadMinutes: 5,
+  });
 
   assert.equal(checkInBefore.targetMinutes, 10 * 60 + 50);
   assert.match(checkInBefore.body, /11:00/);
@@ -76,6 +86,8 @@ test('attendance reminders follow work days and approved permission times', () =
   assert.equal(lateWarning.targetMinutes, 11 * 60 + 10);
   assert.equal(checkOut.targetMinutes, 15 * 60);
   assert.match(checkOut.body, /15:00/);
+  assert.equal(finalWarning.targetMinutes, 9 * 60 + 20);
+  assert.match(finalWarning.body, /09:26/);
 });
 
 test('a Hostinger cold start queues only the latest relevant morning reminder', () => {
@@ -83,6 +95,7 @@ test('a Hostinger cold start queues only the latest relevant morning reminder', 
     { kind: 'check_in_before', notification: { targetMinutes: 8 * 60 + 50 } },
     { kind: 'check_in_start', notification: { targetMinutes: 9 * 60 } },
     { kind: 'check_in_late_warning', notification: { targetMinutes: 9 * 60 + 10 } },
+    { kind: 'check_in_final_warning', notification: { targetMinutes: 9 * 60 + 55 } },
     { kind: 'check_out', notification: { targetMinutes: 17 * 60 } },
   ];
 
@@ -93,6 +106,10 @@ test('a Hostinger cold start queues only the latest relevant morning reminder', 
   assert.deepEqual(
     dueReminderPlans(plans, 17 * 60).map((plan) => plan.kind),
     ['check_out'],
+  );
+  assert.deepEqual(
+    dueReminderPlans(plans, 9 * 60 + 56).map((plan) => plan.kind),
+    ['check_in_final_warning'],
   );
 });
 

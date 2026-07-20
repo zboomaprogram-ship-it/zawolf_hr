@@ -41,6 +41,7 @@ import '../screens/manager/rate_performance.dart';
 import '../screens/smart_assistant_screen.dart';
 import '../screens/hr/department_performance_screen.dart';
 import '../screens/shared/employee_insights_screen.dart';
+import '../screens/shared/polls_screen.dart';
 import '../screens/team_leader/team_leader_dashboard.dart';
 import '../screens/team_leader/team_tasks_screen.dart';
 
@@ -76,6 +77,7 @@ class ZaWolfRouter {
         if (loggingIn || onSplash) {
           final role = authService.currentUser?.role;
           if (role == EmployeeRole.superAdmin) return '/hr/dashboard';
+          if (role == EmployeeRole.hrManager) return '/hr/dashboard';
           if (role == EmployeeRole.hrAdmin) return '/hr/dashboard';
           if (role == EmployeeRole.manager) return '/manager/dashboard';
           if (role == EmployeeRole.teamLeader) {
@@ -91,8 +93,13 @@ class ZaWolfRouter {
         final goingToTeamLeader = state.matchedLocation.startsWith(
           '/team-leader',
         );
+        final goingToReports = state.matchedLocation == '/hr/reports';
 
-        if (role == EmployeeRole.superAdmin) {
+        if (goingToReports && !EmployeeRole.canAccessReports(role)) {
+          return '/hr/dashboard';
+        }
+
+        if (role == EmployeeRole.superAdmin || role == EmployeeRole.hrManager) {
           return null;
         }
 
@@ -137,6 +144,10 @@ class ZaWolfRouter {
         ShellRoute(
           builder: (context, state, child) => NavigationWrapper(child: child),
           routes: [
+            GoRoute(
+              path: '/polls',
+              builder: (context, state) => const PollsScreen(),
+            ),
             // Employee Routes
             GoRoute(
               path: '/employee/dashboard',

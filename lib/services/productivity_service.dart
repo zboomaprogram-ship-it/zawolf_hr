@@ -106,16 +106,18 @@ class ProductivityService {
           (DateTime.now().isAfter(task.dueDate) &&
               task.status != TaskStatus.done);
     }).length;
+    final hasTaskData = activeTasks.isNotEmpty;
     final taskCompletionScore = activeTasks.isEmpty
-        ? 80.0
+        ? 0.0
         : ((completedTasks / activeTasks.length) * 100)
               .clamp(0, 100)
               .toDouble();
     final reviewedTasks = activeTasks
         .where((task) => task.qualityScore != null)
         .toList();
+    final hasTaskQualityData = reviewedTasks.isNotEmpty;
     final taskQualityScore = reviewedTasks.isEmpty
-        ? 80.0
+        ? 0.0
         : (reviewedTasks.fold<double>(
                     0,
                     (total, task) => total + (task.qualityScore ?? 0),
@@ -123,13 +125,14 @@ class ProductivityService {
                   reviewedTasks.length)
               .clamp(0, 100)
               .toDouble();
-    final kpiScore = (kpi?.overallProgress ?? 80).clamp(0, 100).toDouble();
-    final overall = ProductivityScoreModel.calculateOverall(
+    final hasKpiData = kpi != null;
+    final kpiScore = (kpi?.overallProgress ?? 0).clamp(0, 100).toDouble();
+    final overall = ProductivityScoreModel.calculateAvailableOverall(
       attendanceScore: attendanceScore,
       punctualityScore: punctualityScore,
-      taskCompletionScore: taskCompletionScore,
-      taskQualityScore: taskQualityScore,
-      kpiScore: kpiScore,
+      taskCompletionScore: hasTaskData ? taskCompletionScore : null,
+      taskQualityScore: hasTaskQualityData ? taskQualityScore : null,
+      kpiScore: hasKpiData ? kpiScore : null,
     );
 
     return ProductivityScoreModel(
@@ -145,6 +148,9 @@ class ProductivityService {
       taskCompletionScore: taskCompletionScore,
       taskQualityScore: taskQualityScore,
       kpiScore: kpiScore,
+      hasTaskData: hasTaskData,
+      hasTaskQualityData: hasTaskQualityData,
+      hasKpiData: hasKpiData,
       overallScore: overall,
       completedTasks: completedTasks,
       totalTasks: activeTasks.length,

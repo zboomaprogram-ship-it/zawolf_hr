@@ -397,6 +397,10 @@ class SheetsExportService {
         return 'إجازة عارضة';
       case 'day_off':
         return 'يوم إجازة';
+      case 'unpaid':
+        return 'إجازة بدون راتب';
+      case 'exam':
+        return 'إجازة امتحان';
       default:
         return type;
     }

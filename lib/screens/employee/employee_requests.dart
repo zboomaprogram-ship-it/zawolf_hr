@@ -13,6 +13,7 @@ import '../../services/audit_log_service.dart';
 import '../../services/advance_service.dart';
 import '../../models/permission_model.dart';
 import '../../models/leave_model.dart';
+import '../../models/leave_type_policy.dart';
 import '../../models/advance_model.dart';
 import '../../models/complaint_model.dart';
 import '../../models/user_model.dart';
@@ -40,10 +41,11 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
   final _permissionReasonController = TextEditingController();
 
   // Leave form fields
-  String _leaveType = 'annual'; // annual | sick | casual | day_off
-  DateTime _leaveStart = DateTime.now().add(const Duration(days: 1));
+  String _leaveType = LeaveTypePolicy.normal;
+  DateTime _leaveStart = DateTime.now().add(const Duration(days: 2));
   DateTime _leaveEnd = DateTime.now().add(const Duration(days: 2));
   final _leaveReasonController = TextEditingController();
+  final _workHandoverController = TextEditingController();
   String? _attachmentUrl;
 
   // Advance form fields
@@ -69,6 +71,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
     _tabController.dispose();
     _permissionReasonController.dispose();
     _leaveReasonController.dispose();
+    _workHandoverController.dispose();
     _advanceAmountController.dispose();
     _advanceReasonController.dispose();
     _complaintTitleController.dispose();
@@ -194,6 +197,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
         numberOfDays: days,
         reason: _leaveReasonController.text.trim(),
         attachmentUrl: _attachmentUrl,
+        workHandoverTo: _workHandoverController.text.trim(),
         status: 'pending',
       );
 
@@ -207,6 +211,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
           ),
         );
         _leaveReasonController.clear();
+        _workHandoverController.clear();
         setState(() => _attachmentUrl = null);
         _tabController.animateTo(1);
       }
@@ -822,13 +827,6 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
               runSpacing: 8,
               children: [
                 ChoiceChip(
-                  label: const Center(child: Text('سنوية')),
-                  selected: _leaveType == 'annual',
-                  onSelected: (val) {
-                    if (val) setState(() => _leaveType = 'annual');
-                  },
-                ),
-                ChoiceChip(
                   label: const Center(child: Text('مرضية')),
                   selected: _leaveType == 'sick',
                   onSelected: (val) {
@@ -843,28 +841,42 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
                   },
                 ),
                 ChoiceChip(
-                  label: const Center(child: Text('يوم إجازة')),
+                  label: const Center(child: Text('إجازة عادية')),
                   selected: _leaveType == 'day_off',
                   onSelected: (val) {
                     if (val) setState(() => _leaveType = 'day_off');
                   },
                 ),
                 ChoiceChip(
-                  label: const Center(child: Text('عمل من المنزل')),
-                  selected: _leaveType == 'wfh',
+                  label: const Center(child: Text('بدون راتب')),
+                  selected: _leaveType == LeaveTypePolicy.unpaid,
                   onSelected: (val) {
-                    if (val) setState(() => _leaveType = 'wfh');
+                    if (val) {
+                      setState(() => _leaveType = LeaveTypePolicy.unpaid);
+                    }
+                  },
+                ),
+                ChoiceChip(
+                  label: const Center(child: Text('امتحان')),
+                  selected: _leaveType == LeaveTypePolicy.exam,
+                  onSelected: (val) {
+                    if (val) setState(() => _leaveType = LeaveTypePolicy.exam);
                   },
                 ),
               ],
             ),
+            const SizedBox(height: 8),
+            Text(
+              LeaveTypePolicy.description(_leaveType),
+              style: theme.textTheme.bodySmall,
+              textDirection: TextDirection.rtl,
+            ),
             const SizedBox(height: 16),
 
             // Date Picker Range
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Column(
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final dateDetails = Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
@@ -876,8 +888,8 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
                       style: theme.textTheme.bodySmall,
                     ),
                   ],
-                ),
-                TextButton.icon(
+                );
+                final dateButton = TextButton.icon(
                   icon: const Icon(
                     Icons.date_range,
                     color: ZaWolfColors.primaryCyan,
@@ -887,8 +899,29 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
                     style: TextStyle(color: ZaWolfColors.primaryCyan),
                   ),
                   onPressed: () => _selectLeaveDateRange(context),
-                ),
-              ],
+                );
+
+                if (constraints.maxWidth < 430) {
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      dateDetails,
+                      Align(
+                        alignment: AlignmentDirectional.centerEnd,
+                        child: dateButton,
+                      ),
+                    ],
+                  );
+                }
+
+                return Row(
+                  children: [
+                    Expanded(child: dateDetails),
+                    const SizedBox(width: 8),
+                    dateButton,
+                  ],
+                );
+              },
             ),
             const Divider(color: ZaWolfColors.surface02),
 
@@ -901,6 +934,18 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
               maxLines: 2,
               validator: (val) =>
                   val == null || val.isEmpty ? 'يرجى كتابة السبب' : null,
+            ),
+            const SizedBox(height: 12),
+
+            WolfInputField(
+              controller: _workHandoverController,
+              labelText: 'من سيقوم بمهامك أثناء الإجازة؟',
+              englishLabel: 'Work Handover',
+              hintText: 'اكتب اسم الموظف البديل أو الفريق المسؤول',
+              maxLines: 2,
+              validator: (val) => val == null || val.trim().isEmpty
+                  ? 'يرجى تحديد من سيقوم بالعمل أثناء الإجازة'
+                  : null,
             ),
             const SizedBox(height: 12),
 
@@ -1359,6 +1404,15 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
                       style: theme.textTheme.bodySmall,
                     ),
                   ],
+                  if (req.workHandoverTo.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      'تسليم المهام إلى: ${req.workHandoverTo}',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: ZaWolfColors.primaryCyan,
+                      ),
+                    ),
+                  ],
                   if (req.attachmentUrl != null &&
                       req.attachmentUrl!.isNotEmpty) ...[
                     const SizedBox(height: 8),
@@ -1593,17 +1647,6 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
   }
 
   String _getLeaveTypeLabel(String type) {
-    switch (type) {
-      case 'annual':
-        return 'سنوية';
-      case 'sick':
-        return 'مرضية';
-      case 'casual':
-        return 'عارضة';
-      case 'day_off':
-        return 'يوم إجازة';
-      default:
-        return type;
-    }
+    return LeaveTypePolicy.arabicLabel(type);
   }
 }

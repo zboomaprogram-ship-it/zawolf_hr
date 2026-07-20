@@ -24,6 +24,7 @@ class _AttendancePolicySettingsScreenState
   final _latestCheckout = TextEditingController();
   final _reminderLead = TextEditingController();
   final _lateWarning = TextEditingController();
+  final _finalWarningLead = TextEditingController();
   final _grace = TextEditingController();
   final _quarterUntil = TextEditingController();
   final _halfUntil = TextEditingController();
@@ -47,6 +48,7 @@ class _AttendancePolicySettingsScreenState
       _latestCheckout,
       _reminderLead,
       _lateWarning,
+      _finalWarningLead,
       _grace,
       _quarterUntil,
       _halfUntil,
@@ -65,6 +67,7 @@ class _AttendancePolicySettingsScreenState
     _latestCheckout.text = policy.latestCheckoutTime;
     _reminderLead.text = policy.checkInReminderLeadMinutes.toString();
     _lateWarning.text = policy.checkInLateWarningMinutes.toString();
+    _finalWarningLead.text = policy.checkInFinalWarningLeadMinutes.toString();
     _grace.text = policy.graceMinutes.toString();
     _quarterUntil.text = policy.quarterDayUntilMinutes.toString();
     _halfUntil.text = policy.halfDayUntilMinutes.toString();
@@ -102,6 +105,7 @@ class _AttendancePolicySettingsScreenState
       payrollWorkDaysPerMonth: _loadedPolicy.payrollWorkDaysPerMonth,
       checkInReminderLeadMinutes: _readInt(_reminderLead),
       checkInLateWarningMinutes: _readInt(_lateWarning),
+      checkInFinalWarningLeadMinutes: _readInt(_finalWarningLead),
       attendanceVerificationMode: _attendanceVerificationMode,
     );
     try {
@@ -284,6 +288,11 @@ class _AttendancePolicySettingsScreenState
                         _minutesField(
                           'تنبيه قبل احتساب التأخير بكم دقيقة',
                           _lateWarning,
+                        ),
+                        const SizedBox(height: 12),
+                        _minutesField(
+                          'التنبيه النهائي قبل خصم يوم كامل بكم دقيقة',
+                          _finalWarningLead,
                         ),
                       ],
                     ),

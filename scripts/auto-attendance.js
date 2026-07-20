@@ -108,7 +108,7 @@ async function writeHrNotification(db, title, body, data) {
   let count = 0;
   for (const userDoc of hrUsers.docs) {
     const role = userDoc.data().role;
-    if (role !== 'hr_admin' && role !== 'super_admin') continue;
+    if (role !== 'hr_admin' && role !== 'hr_manager' && role !== 'super_admin') continue;
     const notification = db.collection('notifications').doc(userDoc.id).collection('items').doc();
     batch.set(notification, {
       notificationId: notification.id,
@@ -176,7 +176,9 @@ async function processSignal(db, signalDoc, company, now) {
   const attendanceRef = db.collection('attendance').doc(`${userDoc.id}_${signalTime.dateKey}`);
   const attendance = await attendanceRef.get();
   if (signal.event === 'enter') {
-    const opensAt = parseMinutes(policy.checkInOpenTime, 7 * 60);
+    const policyOpensAt = parseMinutes(policy.checkInOpenTime, 7 * 60);
+    const employeeStartsAt = parseMinutes(user.workSchedule?.startTime, parseMinutes(policy.defaultStartTime, 9 * 60));
+    const opensAt = Math.min(policyOpensAt, employeeStartsAt);
     if (signalTime.minutes < opensAt) return resolveSignal(db, signalDoc, 'ignored_before_check_in_open');
     if (attendance.exists && attendance.data()?.checkInTime) return resolveSignal(db, signalDoc, 'ignored_already_checked_in');
     const deduction = deductionFor(signalTime.minutes, times.start, policy, user.baseMonthlySalary, user.salaryCurrency);

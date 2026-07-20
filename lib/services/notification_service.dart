@@ -23,6 +23,7 @@ class NotificationService {
 
   String routeForType(String type) {
     final value = type.trim();
+    if (value == 'poll_created') return '/polls';
     if (value == 'attendance_security_review') return '/manager/requests';
     if (value == 'attendance_security_reviewed') {
       return '/employee/dashboard';
@@ -67,7 +68,7 @@ class NotificationService {
   Future<void> initialize() async {
     if (kIsWeb) return;
     const androidSettings = AndroidInitializationSettings(
-      '@mipmap/ic_launcher',
+      'ic_stat_onesignal_default',
     );
     const iosSettings = DarwinInitializationSettings(
       requestAlertPermission: true,
@@ -140,6 +141,7 @@ class NotificationService {
       'zawolf_hr_notifications',
       'إشعارات ZaWolf',
       channelDescription: 'قناة إشعارات نظام الموارد البشرية ZaWolf',
+      icon: 'ic_stat_onesignal_default',
       importance: Importance.max,
       priority: Priority.high,
       playSound: true,

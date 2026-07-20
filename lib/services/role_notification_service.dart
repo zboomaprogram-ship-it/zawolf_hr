@@ -43,6 +43,9 @@ class RoleNotificationService {
   }) async {
     final targets = <String>{};
     await _addDirectoryRecipients(targets, role);
+    if (role == EmployeeRole.hrAdmin) {
+      await _addDirectoryRecipients(targets, EmployeeRole.hrManager);
+    }
     if (includeSuperAdmins && role != EmployeeRole.superAdmin) {
       await _addDirectoryRecipients(targets, EmployeeRole.superAdmin);
     }
@@ -53,6 +56,9 @@ class RoleNotificationService {
     // seeded. Employee-owned flows cannot rely on this because user docs stay
     // protected by Firestore rules.
     await _addUserQueryRecipients(targets, role);
+    if (role == EmployeeRole.hrAdmin) {
+      await _addUserQueryRecipients(targets, EmployeeRole.hrManager);
+    }
     if (includeSuperAdmins && role != EmployeeRole.superAdmin) {
       await _addUserQueryRecipients(targets, EmployeeRole.superAdmin);
     }

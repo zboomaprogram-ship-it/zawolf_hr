@@ -9,9 +9,25 @@ import 'package:zawolf_hr/models/payroll_run_model.dart';
 import 'package:zawolf_hr/models/productivity_score_model.dart';
 import 'package:zawolf_hr/models/task_model.dart';
 import 'package:zawolf_hr/models/warning_reward_model.dart';
+import 'package:zawolf_hr/models/user_model.dart';
 import 'package:zawolf_hr/services/sheets_export_service.dart';
 
 void main() {
+  group('Employee work schedule', () {
+    test('preserves custom workdays and shift times', () {
+      final schedule = WorkSchedule.fromMap({
+        'startTime': '10:00',
+        'endTime': '18:00',
+        'workDays': [1, 3, 6],
+      });
+
+      expect(schedule.startTime, '10:00');
+      expect(schedule.endTime, '18:00');
+      expect(schedule.workDays, [1, 3, 6]);
+      expect(schedule.toMap()['workDays'], [1, 3, 6]);
+    });
+  });
+
   group('Employee roles', () {
     test('team leader is team-scoped but not a manager or HR approver', () {
       expect(EmployeeRole.isTeamLeader(EmployeeRole.teamLeader), isTrue);
@@ -63,6 +79,7 @@ void main() {
           startDate: DateTime(2026, 7, 2),
           endDate: DateTime(2026, 7, 3),
           numberOfDays: 2,
+          workHandoverTo: 'زميل العمل',
           status: 'approved',
         ),
       ]);
@@ -166,6 +183,36 @@ void main() {
   });
 
   group('KPI progress', () {
+    test('supports higher, lower, and pass/fail directions', () {
+      const higher = EmployeeKpiMetric(
+        name: 'Sales',
+        unit: 'deal',
+        target: 10,
+        actual: 8,
+        weight: 1,
+      );
+      const lower = EmployeeKpiMetric(
+        name: 'Errors',
+        unit: 'error',
+        target: 4,
+        actual: 2,
+        weight: 1,
+        direction: KpiMetricDirection.lowerIsBetter,
+      );
+      const passed = EmployeeKpiMetric(
+        name: 'Audit',
+        unit: 'result',
+        target: 1,
+        actual: 1,
+        weight: 1,
+        direction: KpiMetricDirection.passFail,
+      );
+
+      expect(higher.completion, 80);
+      expect(lower.completion, 150);
+      expect(passed.completion, 100);
+    });
+
     test('calculates weighted monthly KPI progress', () {
       final metrics = [
         const EmployeeKpiMetric(
@@ -206,6 +253,15 @@ void main() {
   });
 
   group('Productivity score', () {
+    test('does not invent scores when tasks or KPI are missing', () {
+      final score = ProductivityScoreModel.calculateAvailableOverall(
+        attendanceScore: 100,
+        punctualityScore: 80,
+      );
+
+      expect(score, 92.5);
+    });
+
     test('calculates weighted productivity score', () {
       final score = ProductivityScoreModel.calculateOverall(
         attendanceScore: 90,

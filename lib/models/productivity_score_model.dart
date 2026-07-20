@@ -13,6 +13,9 @@ class ProductivityScoreModel {
   final double taskCompletionScore;
   final double taskQualityScore;
   final double kpiScore;
+  final bool hasTaskData;
+  final bool hasTaskQualityData;
+  final bool hasKpiData;
   final double overallScore;
   final int completedTasks;
   final int totalTasks;
@@ -34,6 +37,9 @@ class ProductivityScoreModel {
     required this.taskCompletionScore,
     required this.taskQualityScore,
     required this.kpiScore,
+    this.hasTaskData = true,
+    this.hasTaskQualityData = true,
+    this.hasKpiData = true,
     required this.overallScore,
     required this.completedTasks,
     required this.totalTasks,
@@ -67,6 +73,9 @@ class ProductivityScoreModel {
           (data['taskCompletionScore'] as num?)?.toDouble() ?? 0,
       taskQualityScore: (data['taskQualityScore'] as num?)?.toDouble() ?? 0,
       kpiScore: (data['kpiScore'] as num?)?.toDouble() ?? 0,
+      hasTaskData: data['hasTaskData'] as bool? ?? true,
+      hasTaskQualityData: data['hasTaskQualityData'] as bool? ?? true,
+      hasKpiData: data['hasKpiData'] as bool? ?? true,
       overallScore: (data['overallScore'] as num?)?.toDouble() ?? 0,
       completedTasks: data['completedTasks'] as int? ?? 0,
       totalTasks: data['totalTasks'] as int? ?? 0,
@@ -90,6 +99,9 @@ class ProductivityScoreModel {
       'taskCompletionScore': taskCompletionScore,
       'taskQualityScore': taskQualityScore,
       'kpiScore': kpiScore,
+      'hasTaskData': hasTaskData,
+      'hasTaskQualityData': hasTaskQualityData,
+      'hasKpiData': hasKpiData,
       'overallScore': overallScore,
       'completedTasks': completedTasks,
       'totalTasks': totalTasks,
@@ -116,5 +128,31 @@ class ProductivityScoreModel {
         (taskQualityScore * 0.15) +
         (kpiScore * 0.20);
     return value.clamp(0, 100).toDouble();
+  }
+
+  static double calculateAvailableOverall({
+    required double attendanceScore,
+    required double punctualityScore,
+    double? taskCompletionScore,
+    double? taskQualityScore,
+    double? kpiScore,
+  }) {
+    final components = <(double, double)>[
+      (attendanceScore, 0.25),
+      (punctualityScore, 0.15),
+      if (taskCompletionScore != null) (taskCompletionScore, 0.25),
+      if (taskQualityScore != null) (taskQualityScore, 0.15),
+      if (kpiScore != null) (kpiScore, 0.20),
+    ];
+    final totalWeight = components.fold<double>(
+      0,
+      (total, item) => total + item.$2,
+    );
+    if (totalWeight == 0) return 0;
+    final weighted = components.fold<double>(
+      0,
+      (total, item) => total + (item.$1 * item.$2),
+    );
+    return (weighted / totalWeight).clamp(0, 100).toDouble();
   }
 }

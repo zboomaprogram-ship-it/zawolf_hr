@@ -95,7 +95,9 @@ class _LoginScreenState extends State<LoginScreen> {
 
       // Navigate based on role
       final role = user?.role;
-      if (role == EmployeeRole.superAdmin || role == EmployeeRole.hrAdmin) {
+      if (role == EmployeeRole.superAdmin ||
+          role == EmployeeRole.hrManager ||
+          role == EmployeeRole.hrAdmin) {
         context.go('/hr/dashboard');
       } else if (role == EmployeeRole.manager) {
         context.go('/manager/dashboard');
