@@ -204,7 +204,7 @@ class _PollsScreenState extends State<PollsScreen> {
                   const SizedBox(height: 12),
                   OutlinedButton.icon(
                     onPressed: _chooseRecipients,
-                    icon: const Icon(Icons.groups_outlined),
+                    icon: const Icon(Icons.groups_2_outlined),
                     label: Text(
                       _selectedUsers.isEmpty
                           ? 'اختيار الموظفين'

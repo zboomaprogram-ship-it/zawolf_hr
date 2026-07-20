@@ -346,7 +346,7 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
 
               OutlinedButton.icon(
                 onPressed: () => context.go('/polls'),
-                icon: const Icon(Icons.how_to_vote_outlined),
+                icon: const Icon(Icons.assessment_outlined),
                 label: const Text('إنشاء تصويت وعرض النتائج'),
               ),
               const SizedBox(height: 20),

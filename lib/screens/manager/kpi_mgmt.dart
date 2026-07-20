@@ -222,7 +222,7 @@ class _EmployeeKpiTab extends StatelessWidget {
                         else if (EmployeeRole.isHr(reviewer.role))
                           OutlinedButton.icon(
                             onPressed: () => _reopen(context, kpi),
-                            icon: const Icon(Icons.lock_open),
+                            icon: const Icon(Icons.lock_outline),
                             label: const Text('إعادة فتح النتيجة'),
                           ),
                       ],
@@ -733,7 +733,7 @@ class _AssignKpiSheetState extends State<_AssignKpiSheet> {
                                 ..addAll(employees.map((user) => user.uid));
                             }
                           }),
-                          icon: const Icon(Icons.select_all),
+                          icon: const Icon(Icons.checklist_rtl),
                           label: Text(
                             _selectedEmployeeIds.length == employees.length
                                 ? 'إلغاء تحديد الكل'
