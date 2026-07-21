@@ -64,6 +64,16 @@ service cloud.firestore {
           .get('attendancePolicy', {})
           .get('attendanceVerificationMode', 'location_only') != 'location_only';
     }
+    function minimumAttendanceSecurityProtocol() {
+      let publicPath = /databases/$(database)/documents/publicConfig/appSecurity;
+      return exists(publicPath)
+        ? get(publicPath).data.get('minimumAttendanceProtocolVersion', 0)
+        : 0;
+    }
+    function attendanceSecurityProtocolAllowed() {
+      return request.resource.data.get('securityProtocolVersion', 0)
+        >= minimumAttendanceSecurityProtocol();
+    }
     function sequentialManagerDecision() {
       let managerIds = resource.data.get('managerIds', []);
       let currentIndex = resource.data.get('managerApprovalIndex', 0);
@@ -352,7 +362,7 @@ service cloud.firestore {
         'locationRiskLevel', 'locationRiskReasons', 'locationRiskMessage',
         'locationAccuracyMeters', 'locationDistanceMeters',
         'locationAllowedRadiusMeters', 'locationMocked',
-        'locationCapturedOffline'
+        'locationCapturedOffline', 'securityProtocolVersion'
       ]);
     }
     function attendanceCreateValues() {
@@ -365,6 +375,7 @@ service cloud.firestore {
         || request.resource.data.biometricVerified == true
       )
       && request.resource.data.get('locationMocked', false) == false
+      && attendanceSecurityProtocolAllowed()
       && request.resource.data.get('securityReviewStatus', 'none') in ['none', 'pending_hr']
       && request.resource.data.get('locationRiskLevel', 'low') in ['low', 'medium', 'high']
       && request.resource.data.get('locationAccuracyMeters', 0) >= 0
@@ -410,7 +421,7 @@ service cloud.firestore {
           'checkoutLocationRiskMessage', 'checkoutLocationAccuracyMeters',
           'checkoutLocationDistanceMeters',
           'checkoutLocationAllowedRadiusMeters', 'checkoutLocationMocked',
-          'checkoutLocationCapturedOffline'
+          'checkoutLocationCapturedOffline', 'securityProtocolVersion'
         ]);
     }
     function attendanceOwnerCheckoutValues() {
@@ -426,6 +437,7 @@ service cloud.firestore {
           || request.resource.data.totalWorkHours >= 0
         )
         && request.resource.data.get('checkoutLocationMocked', false) == false
+        && attendanceSecurityProtocolAllowed()
         && request.resource.data.get('checkoutSecurityReviewStatus', 'none') in ['none', 'pending_hr']
         && request.resource.data.get('checkoutLocationRiskLevel', 'low') in ['low', 'medium', 'high']
         && request.resource.data.get('checkoutLocationAccuracyMeters', 0) >= 0
@@ -835,6 +847,13 @@ service cloud.firestore {
     match /companies/{companyId} {
       allow read: if isAuth() && isActive();
       allow write: if isAuth() && isActive() && isHR();
+    }
+
+    match /publicConfig/{configId} {
+      allow read: if configId == 'appSecurity';
+      allow create, update: if configId == 'appSecurity'
+        && isAuth() && isActive() && isHR();
+      allow delete: if false;
     }
 
     match /locations/{locationId} {

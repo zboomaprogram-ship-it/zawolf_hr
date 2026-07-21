@@ -5,6 +5,7 @@ import 'package:device_info_plus/device_info_plus.dart';
 import 'package:jailbreak_root_detection/jailbreak_root_detection.dart';
 import 'package:local_auth/local_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter/services.dart';
 
 class AttendanceSecurityResult {
   final String deviceId;
@@ -27,6 +28,7 @@ class AttendanceSecurityService {
   final DeviceInfoPlugin _deviceInfo;
   static const _attendanceInstallDeviceIdKey =
       'attendance_install_device_id_v2';
+  static const _securityChannel = MethodChannel('zawolf_hr/device_security');
 
   AttendanceSecurityService({
     LocalAuthentication? localAuth,
@@ -42,9 +44,13 @@ class AttendanceSecurityService {
 
   Future<AttendanceSecurityResult> verifyForAttendance({
     bool requireBiometric = true,
+    bool blockAndroidDeveloperOptions = true,
   }) async {
     final device = await _readDevice();
     await _assertTrustedDevice();
+    if (blockAndroidDeveloperOptions) {
+      await _assertAndroidDeveloperOptionsDisabled();
+    }
 
     if (!requireBiometric) {
       return AttendanceSecurityResult(
@@ -94,6 +100,25 @@ class AttendanceSecurityService {
       biometricVerified: true,
       deviceCredentialFallbackUsed: !hasBiometric,
     );
+  }
+
+  Future<void> _assertAndroidDeveloperOptionsDisabled() async {
+    if (!Platform.isAndroid) return;
+    try {
+      final signals = await _securityChannel.invokeMapMethod<String, dynamic>(
+        'getSecuritySignals',
+      );
+      if (signals?['developerOptionsEnabled'] == true ||
+          signals?['adbEnabled'] == true) {
+        throw Exception(
+          'لأمان الحضور، أوقف خيارات المطور وUSB debugging ثم أعد تشغيل التطبيق.',
+        );
+      }
+    } on PlatformException {
+      throw Exception(
+        'تعذر التحقق من إعدادات أمان الجهاز. أعد المحاولة أو تواصل مع HR.',
+      );
+    }
   }
 
   Future<void> _assertTrustedDevice() async {

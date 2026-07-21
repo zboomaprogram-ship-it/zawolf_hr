@@ -21,6 +21,7 @@ import io.flutter.plugin.common.MethodChannel
 class MainActivity : FlutterFragmentActivity() {
     private val personalAlarmChannel = "zawolf_hr/personal_alarm"
     private val autoAttendanceChannel = "zawolf_hr/automatic_attendance"
+    private val deviceSecurityChannel = "zawolf_hr/device_security"
     private lateinit var geofencingClient: GeofencingClient
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
@@ -125,6 +126,31 @@ class MainActivity : FlutterFragmentActivity() {
                 when (call.method) {
                     "configureAndroidGeofence" -> configureAndroidGeofence(call, result)
                     "disableAndroidGeofence" -> disableAndroidGeofence(result)
+                    else -> result.notImplemented()
+                }
+            }
+
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, deviceSecurityChannel)
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "getSecuritySignals" -> {
+                        val developerOptionsEnabled = Settings.Global.getInt(
+                            contentResolver,
+                            Settings.Global.DEVELOPMENT_SETTINGS_ENABLED,
+                            0,
+                        ) == 1
+                        val adbEnabled = Settings.Global.getInt(
+                            contentResolver,
+                            Settings.Global.ADB_ENABLED,
+                            0,
+                        ) == 1
+                        result.success(
+                            mapOf(
+                                "developerOptionsEnabled" to developerOptionsEnabled,
+                                "adbEnabled" to adbEnabled,
+                            ),
+                        )
+                    }
                     else -> result.notImplemented()
                 }
             }

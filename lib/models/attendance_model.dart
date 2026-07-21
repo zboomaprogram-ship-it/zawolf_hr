@@ -1,6 +1,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 class AttendanceModel {
+  static const currentSecurityProtocolVersion = 2;
+
   final String attendanceId;
   final String userId;
   final String employeeId;
@@ -48,6 +50,7 @@ class AttendanceModel {
   final double? checkoutLocationAllowedRadiusMeters;
   final bool checkoutLocationMocked;
   final bool checkoutLocationCapturedOffline;
+  final int securityProtocolVersion;
   final String
   status; // 'present' | 'late' | 'absent' | 'half-day' | 'on-leave'
 
@@ -99,6 +102,7 @@ class AttendanceModel {
     this.checkoutLocationAllowedRadiusMeters,
     this.checkoutLocationMocked = false,
     this.checkoutLocationCapturedOffline = false,
+    this.securityProtocolVersion = currentSecurityProtocolVersion,
     required this.status,
   });
 
@@ -177,6 +181,8 @@ class AttendanceModel {
       checkoutLocationMocked: data['checkoutLocationMocked'] as bool? ?? false,
       checkoutLocationCapturedOffline:
           data['checkoutLocationCapturedOffline'] as bool? ?? false,
+      securityProtocolVersion:
+          (data['securityProtocolVersion'] as num?)?.toInt() ?? 0,
       status: data['status'] as String? ?? 'present',
     );
   }
@@ -251,6 +257,7 @@ class AttendanceModel {
       if (checkoutLocationMocked) 'checkoutLocationMocked': true,
       if (checkoutLocationCapturedOffline)
         'checkoutLocationCapturedOffline': true,
+      'securityProtocolVersion': securityProtocolVersion,
       'status': status,
     };
   }

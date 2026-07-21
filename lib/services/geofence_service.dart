@@ -170,6 +170,7 @@ class GeofenceService {
         desiredAccuracy: LocationAccuracy.high,
         timeLimit: const Duration(seconds: 12),
       );
+      _throwIfMocked(first);
       if (_isFresh(first)) samples.add(first);
       if (first.accuracy <= 20) return first;
 
@@ -178,6 +179,7 @@ class GeofenceService {
           desiredAccuracy: LocationAccuracy.best,
           timeLimit: const Duration(seconds: 8),
         );
+        _throwIfMocked(second);
         if (_isFresh(second)) samples.add(second);
       } catch (_) {}
 
@@ -185,7 +187,8 @@ class GeofenceService {
         samples.sort((a, b) => a.accuracy.compareTo(b.accuracy));
         return samples.first;
       }
-    } catch (_) {
+    } catch (error) {
+      if (_isMockLocationError(error)) rethrow;
       if (allowLastKnown) {
         final lastKnown = await Geolocator.getLastKnownPosition();
         if (lastKnown != null && _isFresh(lastKnown, maxAgeMinutes: 2)) {
@@ -199,12 +202,24 @@ class GeofenceService {
         desiredAccuracy: LocationAccuracy.medium,
         timeLimit: const Duration(seconds: 8),
       );
+      _throwIfMocked(fallback);
       if (_isFresh(fallback)) return fallback;
     } catch (_) {}
     throw Exception(
       'تعذر الحصول على موقع حديث ودقيق. فعّل الموقع الدقيق والإنترنت، وانتقل قرب نافذة أو مكان مفتوح ثم أعد المحاولة.',
     );
   }
+
+  void _throwIfMocked(Position position) {
+    if (position.isMocked) {
+      throw Exception(
+        'تم اكتشاف موقع وهمي. أوقف تطبيقات تغيير الموقع وأعد تشغيل الهاتف قبل تسجيل الحضور.',
+      );
+    }
+  }
+
+  bool _isMockLocationError(Object error) =>
+      error.toString().contains('موقع وهمي');
 
   Future<Position> _retryOutsidePosition(
     LocationModel location,

@@ -5,6 +5,7 @@ import '../../components/wolf_card.dart';
 import '../../components/wolf_input_field.dart';
 import '../../models/attendance_policy.dart';
 import '../../services/attendance_policy_service.dart';
+import '../../services/app_security_policy_service.dart';
 import '../../theme/theme.dart';
 
 class AttendancePolicySettingsScreen extends StatefulWidget {
@@ -28,10 +29,19 @@ class _AttendancePolicySettingsScreenState
   final _grace = TextEditingController();
   final _quarterUntil = TextEditingController();
   final _halfUntil = TextEditingController();
+  final _minimumAndroidBuild = TextEditingController();
+  final _minimumIosBuild = TextEditingController();
+  final _androidStoreUrl = TextEditingController();
+  final _iosStoreUrl = TextEditingController();
+  final _updateMessage = TextEditingController();
   bool _loading = true;
   bool _saving = false;
   AttendancePolicyConfig _loadedPolicy = const AttendancePolicyConfig();
   String _attendanceVerificationMode = 'location_only';
+  bool _forceUpdateEnabled = false;
+  bool _enforceSecureAttendance = false;
+  bool _blockAndroidDeveloperOptions = true;
+  int _currentBuild = 0;
 
   @override
   void initState() {
@@ -52,6 +62,11 @@ class _AttendancePolicySettingsScreenState
       _grace,
       _quarterUntil,
       _halfUntil,
+      _minimumAndroidBuild,
+      _minimumIosBuild,
+      _androidStoreUrl,
+      _iosStoreUrl,
+      _updateMessage,
     ]) {
       controller.dispose();
     }
@@ -59,7 +74,12 @@ class _AttendancePolicySettingsScreenState
   }
 
   Future<void> _load() async {
-    final policy = await AttendancePolicyService().getPolicyConfig();
+    final results = await Future.wait([
+      AttendancePolicyService().getPolicyConfig(),
+      AppSecurityPolicyService.instance.loadStatus(),
+    ]);
+    final policy = results[0] as AttendancePolicyConfig;
+    final securityStatus = results[1] as AppSecurityStatus;
     if (!mounted) return;
     _checkInOpen.text = policy.checkInOpenTime;
     _start.text = policy.defaultStartTime;
@@ -73,6 +93,19 @@ class _AttendancePolicySettingsScreenState
     _halfUntil.text = policy.halfDayUntilMinutes.toString();
     _loadedPolicy = policy;
     _attendanceVerificationMode = policy.attendanceVerificationMode;
+    _forceUpdateEnabled = securityStatus.policy.forceUpdateEnabled;
+    _enforceSecureAttendance =
+        securityStatus.policy.minimumAttendanceProtocolVersion >=
+        AppSecurityPolicy.currentAttendanceProtocolVersion;
+    _blockAndroidDeveloperOptions =
+        securityStatus.policy.blockAndroidDeveloperOptions;
+    _minimumAndroidBuild.text = securityStatus.policy.minimumAndroidBuild
+        .toString();
+    _minimumIosBuild.text = securityStatus.policy.minimumIosBuild.toString();
+    _androidStoreUrl.text = securityStatus.policy.androidStoreUrl;
+    _iosStoreUrl.text = securityStatus.policy.iosStoreUrl;
+    _updateMessage.text = securityStatus.policy.messageAr;
+    _currentBuild = securityStatus.currentBuild;
     setState(() => _loading = false);
   }
 
@@ -93,6 +126,16 @@ class _AttendancePolicySettingsScreenState
       _showError('رتّب حدود التأخير: السماح ثم ربع يوم ثم نصف يوم.');
       return;
     }
+    if (_forceUpdateEnabled &&
+        (_readInt(_minimumAndroidBuild) <= 0 ||
+            _readInt(_minimumIosBuild) <= 0 ||
+            _androidStoreUrl.text.trim().isEmpty ||
+            _iosStoreUrl.text.trim().isEmpty)) {
+      _showError(
+        'قبل تفعيل التحديث الإجباري، أدخل أقل Build ورابط المتجر لأندرويد وiOS حتى لا يتم قفل المستخدمين دون وسيلة تحديث.',
+      );
+      return;
+    }
     setState(() => _saving = true);
     final policy = AttendancePolicyConfig(
       checkInOpenTime: _checkInOpen.text.trim(),
@@ -108,14 +151,31 @@ class _AttendancePolicySettingsScreenState
       checkInFinalWarningLeadMinutes: _readInt(_finalWarningLead),
       attendanceVerificationMode: _attendanceVerificationMode,
     );
+    final securityPolicy = AppSecurityPolicy(
+      forceUpdateEnabled: _forceUpdateEnabled,
+      minimumAndroidBuild: _readInt(_minimumAndroidBuild),
+      minimumIosBuild: _readInt(_minimumIosBuild),
+      minimumAttendanceProtocolVersion: _enforceSecureAttendance
+          ? AppSecurityPolicy.currentAttendanceProtocolVersion
+          : 0,
+      blockAndroidDeveloperOptions: _blockAndroidDeveloperOptions,
+      androidStoreUrl: _androidStoreUrl.text.trim(),
+      iosStoreUrl: _iosStoreUrl.text.trim(),
+      messageAr: _updateMessage.text.trim(),
+    );
     try {
-      await FirebaseFirestore.instance
-          .collection('companies')
-          .doc('zawolf')
-          .set({
-            'attendancePolicy': policy.toMap(),
-            'updatedAt': FieldValue.serverTimestamp(),
-          }, SetOptions(merge: true));
+      final db = FirebaseFirestore.instance;
+      final batch = db.batch();
+      batch.set(db.collection('companies').doc('zawolf'), {
+        'attendancePolicy': policy.toMap(),
+        'securityPolicy': securityPolicy.toMap(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+      batch.set(db.collection('publicConfig').doc('appSecurity'), {
+        ...securityPolicy.toMap(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+      await batch.commit();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -165,6 +225,19 @@ class _AttendancePolicySettingsScreenState
         return minutes != null && minutes >= 0 && minutes <= 240
             ? null
             : 'أدخل من 0 إلى 240 دقيقة';
+      },
+    );
+  }
+
+  Widget _buildNumberField(String label, TextEditingController controller) {
+    return WolfInputField(
+      controller: controller,
+      labelText: label,
+      keyboardType: TextInputType.number,
+      textDirection: TextDirection.ltr,
+      validator: (value) {
+        final build = int.tryParse(value?.trim() ?? '');
+        return build != null && build >= 0 ? null : 'أدخل رقم Build صحيحاً';
       },
     );
   }
@@ -234,6 +307,100 @@ class _AttendancePolicySettingsScreenState
                               : 'يتحقق من الجهاز والموقع داخل النطاق دون طلب البصمة.',
                           style: theme.textTheme.bodySmall,
                           textDirection: TextDirection.rtl,
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  WolfCard(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Text(
+                          'التحديث والأمان',
+                          style: theme.textTheme.titleLarge?.copyWith(
+                            color: Colors.white,
+                          ),
+                          textDirection: TextDirection.rtl,
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'البناء الحالي على هذا الجهاز: $_currentBuild. فعّل المنع بعد نشر الإصدار الآمن على المتاجر فقط.',
+                          style: theme.textTheme.bodySmall,
+                          textDirection: TextDirection.rtl,
+                        ),
+                        const SizedBox(height: 12),
+                        SwitchListTile.adaptive(
+                          contentPadding: EdgeInsets.zero,
+                          value: _forceUpdateEnabled,
+                          onChanged: _saving
+                              ? null
+                              : (value) =>
+                                    setState(() => _forceUpdateEnabled = value),
+                          title: const Text('إلزام المستخدمين بالتحديث'),
+                          subtitle: const Text(
+                            'يعرض شاشة تحديث مانعة للإصدارات الأقل من الأرقام المحددة.',
+                          ),
+                        ),
+                        SwitchListTile.adaptive(
+                          contentPadding: EdgeInsets.zero,
+                          value: _enforceSecureAttendance,
+                          onChanged: _saving
+                              ? null
+                              : (value) => setState(
+                                  () => _enforceSecureAttendance = value,
+                                ),
+                          title: const Text('منع الحضور من الإصدارات القديمة'),
+                          subtitle: const Text(
+                            'يفرض بروتوكول الحضور الآمن رقم 2 في قواعد Firebase.',
+                          ),
+                        ),
+                        SwitchListTile.adaptive(
+                          contentPadding: EdgeInsets.zero,
+                          value: _blockAndroidDeveloperOptions,
+                          onChanged: _saving
+                              ? null
+                              : (value) => setState(
+                                  () => _blockAndroidDeveloperOptions = value,
+                                ),
+                          title: const Text(
+                            'منع الحضور مع خيارات المطور على Android',
+                          ),
+                          subtitle: const Text(
+                            'يمنع مسار تطبيقات Fake GPS المعتادة. يجب إيقاف Developer options وUSB debugging.',
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        _buildNumberField(
+                          'أقل Build مسموح لأندرويد',
+                          _minimumAndroidBuild,
+                        ),
+                        const SizedBox(height: 12),
+                        _buildNumberField(
+                          'أقل Build مسموح لـ iOS',
+                          _minimumIosBuild,
+                        ),
+                        const SizedBox(height: 12),
+                        WolfInputField(
+                          controller: _androidStoreUrl,
+                          labelText: 'رابط تحديث Android',
+                          textDirection: TextDirection.ltr,
+                        ),
+                        const SizedBox(height: 12),
+                        WolfInputField(
+                          controller: _iosStoreUrl,
+                          labelText: 'رابط تحديث iOS',
+                          textDirection: TextDirection.ltr,
+                        ),
+                        const SizedBox(height: 12),
+                        WolfInputField(
+                          controller: _updateMessage,
+                          labelText: 'رسالة التحديث الإجباري',
+                          textDirection: TextDirection.rtl,
+                          validator: (value) =>
+                              (value?.trim().isNotEmpty ?? false)
+                              ? null
+                              : 'اكتب رسالة واضحة للمستخدم',
                         ),
                       ],
                     ),

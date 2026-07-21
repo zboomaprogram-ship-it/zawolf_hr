@@ -8,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/attendance_model.dart';
 import 'attendance_security_service.dart';
 import 'role_notification_service.dart';
+import 'app_security_policy_service.dart';
 
 enum OfflineAttendanceActionType { checkIn, checkOut }
 
@@ -211,6 +212,8 @@ class OfflineAttendanceAction {
       'locationAllowedRadiusMeters': allowedRadius,
       'locationMocked': false,
       'locationCapturedOffline': true,
+      'securityProtocolVersion':
+          AppSecurityPolicy.currentAttendanceProtocolVersion,
     };
   }
 
@@ -238,6 +241,8 @@ class OfflineAttendanceAction {
       'checkoutLocationAllowedRadiusMeters': allowedRadius,
       'checkoutLocationMocked': false,
       'checkoutLocationCapturedOffline': true,
+      'securityProtocolVersion':
+          AppSecurityPolicy.currentAttendanceProtocolVersion,
       if (salaryDeductionFraction > 0) ...{
         'salaryDeductionFraction': salaryDeductionFraction,
         'salaryDeductionAmount': salaryDeductionAmount,

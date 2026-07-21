@@ -139,6 +139,9 @@ async function processSignal(db, signalDoc, company, now) {
   if (!['android_geofence', 'ios_region'].includes(signal.source)) {
     return resolveSignal(db, signalDoc, 'rejected_source');
   }
+  if (signal.locationMocked === true) {
+    return resolveSignal(db, signalDoc, 'rejected_mock_location');
+  }
   // The server timestamp is the authoritative work time. The dispatcher may
   // run a minute later, so never calculate a shift from the worker's clock.
   const signalTime = cairoParts(capturedAt);
@@ -244,6 +247,19 @@ async function processAutomaticAttendance() {
     .get();
   if (signals.empty) {
     return { found: 0, processed: 0, failed: 0, date: now.dateKey };
+  }
+  const securityDoc = await db.collection('publicConfig').doc('appSecurity').get();
+  if (securityDoc.data()?.automaticAttendanceEnabled !== true) {
+    for (const signal of signals.docs) {
+      await resolveSignal(db, signal, 'rejected_security_disabled');
+    }
+    return {
+      found: signals.size,
+      processed: signals.size,
+      failed: 0,
+      date: now.dateKey,
+      automaticAttendanceEnabled: false,
+    };
   }
   // Company policy is needed only when an actual geofence signal exists.
   // Avoid one unnecessary policy read on every five-minute scheduler tick.

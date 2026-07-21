@@ -14,6 +14,7 @@ import 'geofence_service.dart';
 import 'field_assignment_service.dart';
 import 'offline_attendance_queue_service.dart';
 import 'role_notification_service.dart';
+import 'app_security_policy_service.dart';
 
 enum AttendanceActionIntent { checkIn, checkOut }
 
@@ -34,6 +35,8 @@ class AttendanceService {
     UserModel employee, {
     AttendanceActionIntent? expectedAction,
   }) async {
+    final securityPolicy = await AppSecurityPolicyService.instance
+        .assertAttendanceClientAllowed();
     final now = DateTime.now();
     final todayStr = DateFormat('yyyy-MM-dd').format(now);
     final online = await _offlineQueue.isOnline();
@@ -230,6 +233,7 @@ class AttendanceService {
 
     final securityResult = await _securityService.verifyForAttendance(
       requireBiometric: policyConfig.requiresBiometric,
+      blockAndroidDeveloperOptions: securityPolicy.blockAndroidDeveloperOptions,
     );
     final effectiveLocationRisk = locationRisk.withSecurityFallback(
       securityResult.deviceCredentialFallbackUsed,
@@ -482,6 +486,8 @@ class AttendanceService {
             'checkOutDeviceId': securityResult.deviceId,
             'checkOutDeviceLabel': securityResult.deviceLabel,
             'checkOutBiometricVerified': securityResult.biometricVerified,
+            'securityProtocolVersion':
+                AppSecurityPolicy.currentAttendanceProtocolVersion,
             ...effectiveLocationRisk.toCheckoutFirestorePatch(geoResult),
             ...earlyCheckoutDeduction.patch,
           });

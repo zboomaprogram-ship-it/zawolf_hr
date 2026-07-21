@@ -36,6 +36,10 @@ class AttendanceGeofenceReceiver : BroadcastReceiver() {
             pending.finish()
             return
         }
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S && location.isMock) {
+            pending.finish()
+            return
+        }
         val data = hashMapOf<String, Any>(
             "userId" to configuredUserId,
             "employeeId" to (prefs.getString("employeeId", "") ?: ""),
@@ -50,6 +54,9 @@ class AttendanceGeofenceReceiver : BroadcastReceiver() {
             "capturedAtMillis" to System.currentTimeMillis(),
             "source" to "android_geofence",
             "status" to "pending",
+            "locationMocked" to (
+                android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S && location.isMock
+            ),
             "createdAt" to FieldValue.serverTimestamp(),
         )
         FirebaseFirestore.getInstance().collection("autoAttendanceSignals")

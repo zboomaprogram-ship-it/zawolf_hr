@@ -14,6 +14,8 @@ import 'services/onesignal_service.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:flutter/foundation.dart';
 import 'firebase_options.dart';
+import 'screens/required_update_screen.dart';
+import 'services/app_security_policy_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -60,26 +62,86 @@ Future<void> _initializeAppServicesAfterFirstFrame() async {
   }
 }
 
-class MyApp extends StatelessWidget {
+class MyApp extends StatefulWidget {
   const MyApp({super.key});
 
   @override
+  State<MyApp> createState() => _MyAppState();
+}
+
+class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
+  late Future<AppSecurityStatus> _securityStatus;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _securityStatus = AppSecurityPolicyService.instance.loadStatus();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _retrySecurityCheck();
+    }
+  }
+
+  void _retrySecurityCheck() {
+    setState(() {
+      _securityStatus = AppSecurityPolicyService.instance.loadStatus(
+        serverOnly: true,
+      );
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return MultiProvider(
-      providers: [
-        ChangeNotifierProvider<AuthService>(create: (_) => AuthService()),
-      ],
-      child: Builder(
-        builder: (context) {
-          final router = ZaWolfRouter.getRouter(context);
-          return MaterialApp.router(
-            title: 'Zawolf Hr',
+    return FutureBuilder<AppSecurityStatus>(
+      future: _securityStatus,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState != ConnectionState.done) {
+          return MaterialApp(
             debugShowCheckedModeBanner: false,
             theme: ZaWolfTheme.darkTheme,
-            routerConfig: router,
+            home: const Scaffold(
+              body: Center(
+                child: CircularProgressIndicator(
+                  color: ZaWolfColors.primaryCyan,
+                ),
+              ),
+            ),
           );
-        },
-      ),
+        }
+        final status = snapshot.data;
+        if (status?.updateRequired ?? false) {
+          return RequiredUpdateScreen(
+            status: status!,
+            onRetry: _retrySecurityCheck,
+          );
+        }
+        return MultiProvider(
+          providers: [
+            ChangeNotifierProvider<AuthService>(create: (_) => AuthService()),
+          ],
+          child: Builder(
+            builder: (context) {
+              final router = ZaWolfRouter.getRouter(context);
+              return MaterialApp.router(
+                title: 'Zawolf Hr',
+                debugShowCheckedModeBanner: false,
+                theme: ZaWolfTheme.darkTheme,
+                routerConfig: router,
+              );
+            },
+          ),
+        );
+      },
     );
   }
 }
