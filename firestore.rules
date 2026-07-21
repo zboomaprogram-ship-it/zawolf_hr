@@ -123,8 +123,9 @@ service cloud.firestore {
       return permissionId is string
         && permissionId.size() > 0
         && exists(permissionPath)
+        && get(permissionPath).data.get('userId', '') == uid()
         && get(permissionPath).data.get('managerId', '') == userId
-        && uid() in get(permissionPath).data.get('managerIds', []);
+        && userId in get(permissionPath).data.get('managerIds', []);
     }
     function canNotifyLeaveStageManager(userId) {
       let leaveId = request.resource.data.get('data', {}).get('leaveId', '');
