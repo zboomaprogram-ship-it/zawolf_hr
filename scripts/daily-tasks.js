@@ -98,6 +98,18 @@ async function runDailyTasks() {
   // By default process yesterday, because absence and missed-checkout decisions
   // must happen after the workday has fully ended.
   const now = new Date();
+  const cairoHour = Number(new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Africa/Cairo',
+    hour: '2-digit',
+    hourCycle: 'h23',
+  }).format(now));
+  const requiredCairoHour = Number(process.env.REQUIRE_CAIRO_HOUR || -1);
+  if (requiredCairoHour >= 0 && cairoHour !== requiredCairoHour) {
+    console.log(
+      `Skipping scheduled daily tasks at Cairo hour ${cairoHour}; expected ${requiredCairoHour}.`,
+    );
+    return;
+  }
   const todayCairoStr = cairoDateStr(now);
   const requestedDate = process.env.PROCESS_DATE;
   const todayStr = requestedDate || cairoDateStr(addDays(now, -1));
@@ -217,6 +229,7 @@ async function runDailyTasks() {
   let absentsCreated = 0;
   let leavesCreated = 0;
   let updatesApplied = 0;
+  const missedCheckoutEmployees = [];
 
   // Firestore batches have a 500 operation limit, so we chunk
   let batch = db.batch();
@@ -453,9 +466,18 @@ async function runDailyTasks() {
       // 2. Check if they forgot to checkout. The job runs after the completed day,
       // so employees had until 11 PM to check out from the location.
       if (log.checkInTime && !log.checkOutTime) {
+        const wasAlreadyDetected = Boolean(log.salaryDeductionDetectedAt);
         const currentFraction = updates.salaryDeductionFraction !== undefined ? updates.salaryDeductionFraction : log.salaryDeductionFraction;
-        
-        if (currentFraction < 0.25) {
+
+        if (!wasAlreadyDetected) {
+          missedCheckoutEmployees.push({
+            userId,
+            attendanceId,
+            displayName: user.displayName || user.employeeId || userId,
+          });
+        }
+
+        if (!wasAlreadyDetected && currentFraction < 0.25) {
           const salaryDeductionFraction = 0.25;
           const baseSalary = user.baseMonthlySalary || 0;
           const amount = (baseSalary / payrollWorkDaysPerMonth) * salaryDeductionFraction;
@@ -468,14 +490,7 @@ async function runDailyTasks() {
             salaryDeductionApprovalStatus: 'pending_hr',
             salaryDeductionDetectedAt: admin.firestore.FieldValue.serverTimestamp(),
           });
-
-          await notifyReviewers(
-            'salary_deduction_pending',
-            'خصم عدم تسجيل انصراف بانتظار مراجعة HR',
-            `${user.displayName}: خصم ربع يوم - عدم تسجيل الانصراف عن يوم ${todayStr} (${amount.toFixed(2)} ${user.salaryCurrency || 'EGP'}).`,
-            { attendanceId: attendanceId }
-          );
-        } else {
+        } else if (!wasAlreadyDetected) {
           Object.assign(updates, {
             salaryDeductionDetectedAt: admin.firestore.FieldValue.serverTimestamp(),
           });
@@ -503,6 +518,26 @@ async function runDailyTasks() {
     }
 
     await commitIfNeeded();
+  }
+
+  if (missedCheckoutEmployees.length > 0) {
+    const visibleNames = missedCheckoutEmployees
+      .slice(0, 5)
+      .map(employee => employee.displayName)
+      .join('، ');
+    const remaining = missedCheckoutEmployees.length - 5;
+    const remainingLabel = remaining > 0 ? `، و${remaining} آخرين` : '';
+    await notifyReviewers(
+      'salary_deduction_pending',
+      'مراجعة عدم تسجيل الانصراف',
+      `${missedCheckoutEmployees.length} موظف لم يسجلوا الانصراف عن يوم ${todayStr}: ${visibleNames}${remainingLabel}.`,
+      {
+        route: '/manager/requests',
+        date: todayStr,
+        deductionType: 'missed_checkout',
+        employeeCount: missedCheckoutEmployees.length,
+      },
+    );
   }
 
   await markOverdueTasks();

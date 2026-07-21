@@ -2,8 +2,9 @@ name: Daily HR Tasks
 
 on:
   schedule:
-    # Runs at 20:55 UTC (11:55 PM Egypt Time) every day
-    - cron: '55 20 * * *'
+    # Run at both possible UTC offsets, then let the script keep only 08:00
+    # Cairo. This remains correct across Egypt daylight-saving changes.
+    - cron: '0 5,6 * * *'
   workflow_dispatch: # Allows manual trigger from UI
 
 jobs:
@@ -28,4 +29,5 @@ jobs:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
           ONESIGNAL_APP_ID: ${{ secrets.ONESIGNAL_APP_ID }}
           ONESIGNAL_REST_API_KEY: ${{ secrets.ONESIGNAL_REST_API_KEY }}
+          REQUIRE_CAIRO_HOUR: ${{ github.event_name == 'schedule' && '8' || '' }}
         run: node daily-tasks.js
