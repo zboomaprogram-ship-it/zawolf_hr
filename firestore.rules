@@ -133,8 +133,9 @@ service cloud.firestore {
       return leaveId is string
         && leaveId.size() > 0
         && exists(leavePath)
+        && get(leavePath).data.get('userId', '') == uid()
         && get(leavePath).data.get('managerId', '') == userId
-        && uid() in get(leavePath).data.get('managerIds', []);
+        && userId in get(leavePath).data.get('managerIds', []);
     }
     function canCreateNotificationFor(userId) {
       return uid() == userId
