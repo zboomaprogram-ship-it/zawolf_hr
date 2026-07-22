@@ -68,6 +68,8 @@ class KpiTemplateModel {
   final String templateId;
   final String title;
   final String department;
+  final String companyLocationId;
+  final String companyName;
   final String createdBy;
   final String createdByName;
   final bool isActive;
@@ -78,6 +80,8 @@ class KpiTemplateModel {
     required this.templateId,
     required this.title,
     required this.department,
+    this.companyLocationId = '',
+    this.companyName = '',
     required this.createdBy,
     required this.createdByName,
     required this.isActive,
@@ -91,6 +95,8 @@ class KpiTemplateModel {
       templateId: doc.id,
       title: data['title'] as String? ?? '',
       department: data['department'] as String? ?? '',
+      companyLocationId: data['companyLocationId'] as String? ?? '',
+      companyName: data['companyName'] as String? ?? '',
       createdBy: data['createdBy'] as String? ?? '',
       createdByName: data['createdByName'] as String? ?? '',
       isActive: data['isActive'] as bool? ?? true,
@@ -109,6 +115,8 @@ class KpiTemplateModel {
     return {
       'title': title,
       'department': department,
+      'companyLocationId': companyLocationId,
+      'companyName': companyName,
       'createdBy': createdBy,
       'createdByName': createdByName,
       'isActive': isActive,

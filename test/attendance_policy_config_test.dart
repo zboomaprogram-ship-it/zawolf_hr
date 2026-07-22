@@ -34,6 +34,28 @@ void main() {
     expect(result.code, 'quarter_day');
   });
 
+  test('approved two-hour permission keeps 11:20 inside grace period', () {
+    final policy = AttendancePolicyConfig.fromMap({
+      'graceMinutes': 20,
+      'quarterDayUntilMinutes': 30,
+      'halfDayUntilMinutes': 60,
+    });
+
+    final atGraceBoundary = policy.evaluateLateArrival(
+      arrivalTime: DateTime(2026, 7, 22, 11, 20),
+      employeeStartTime: '11:00',
+    );
+    final afterGraceBoundary = policy.evaluateLateArrival(
+      arrivalTime: DateTime(2026, 7, 22, 11, 21),
+      employeeStartTime: '11:00',
+    );
+
+    expect(atGraceBoundary.dayFraction, 0);
+    expect(atGraceBoundary.code, 'none');
+    expect(afterGraceBoundary.dayFraction, 0.25);
+    expect(afterGraceBoundary.code, 'quarter_day');
+  });
+
   test('attendance alarm skips an approved leave date', () {
     final alarms = AttendanceAlarmPlanner.build(
       now: DateTime(2026, 7, 18, 8),

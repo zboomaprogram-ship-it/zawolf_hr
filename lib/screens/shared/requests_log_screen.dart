@@ -39,15 +39,12 @@ class _RequestsLogScreenState extends State<RequestsLogScreen> {
       appBar: AppBar(
         title: const Text('سجل طلبات الشهر'),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: _refreshLogs,
-          ),
+          IconButton(icon: const Icon(Icons.refresh), onPressed: _refreshLogs),
         ],
       ),
       body: Column(
         children: [
-          // Banner informing users it's current month only
+          // Banner informing users it's current payroll cycle only
           Container(
             width: double.infinity,
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
@@ -55,12 +52,19 @@ class _RequestsLogScreenState extends State<RequestsLogScreen> {
             child: const Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(Icons.info_outline, color: ZaWolfColors.primaryCyan, size: 18),
+                Icon(
+                  Icons.info_outline,
+                  color: ZaWolfColors.primaryCyan,
+                  size: 18,
+                ),
                 SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    'يعرض هذا السجل الطلبات التي تم البت فيها خلال الشهر الحالي فقط لتسريع الأداء.',
-                    style: TextStyle(color: ZaWolfColors.primaryCyan, fontSize: 12),
+                    'يعرض هذا السجل الطلبات التي تم البت فيها خلال دورة العمل الحالية (من 26 إلى 25).',
+                    style: TextStyle(
+                      color: ZaWolfColors.primaryCyan,
+                      fontSize: 12,
+                    ),
                     textAlign: TextAlign.center,
                   ),
                 ),
@@ -81,7 +85,10 @@ class _RequestsLogScreenState extends State<RequestsLogScreen> {
                     decoration: InputDecoration(
                       filled: true,
                       fillColor: ZaWolfColors.surface01,
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
+                      ),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(8),
                         borderSide: BorderSide.none,
@@ -89,9 +96,15 @@ class _RequestsLogScreenState extends State<RequestsLogScreen> {
                     ),
                     style: const TextStyle(color: Colors.white, fontSize: 13),
                     items: const [
-                      DropdownMenuItem(value: 'all', child: Text('جميع الأنواع')),
+                      DropdownMenuItem(
+                        value: 'all',
+                        child: Text('جميع الأنواع'),
+                      ),
                       DropdownMenuItem(value: 'leave', child: Text('الإجازات')),
-                      DropdownMenuItem(value: 'permission', child: Text('الأذونات')),
+                      DropdownMenuItem(
+                        value: 'permission',
+                        child: Text('الأذونات'),
+                      ),
                       DropdownMenuItem(value: 'advance', child: Text('السلف')),
                     ],
                     onChanged: (val) {
@@ -110,7 +123,10 @@ class _RequestsLogScreenState extends State<RequestsLogScreen> {
                     decoration: InputDecoration(
                       filled: true,
                       fillColor: ZaWolfColors.surface01,
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
+                      ),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(8),
                         borderSide: BorderSide.none,
@@ -118,9 +134,18 @@ class _RequestsLogScreenState extends State<RequestsLogScreen> {
                     ),
                     style: const TextStyle(color: Colors.white, fontSize: 13),
                     items: const [
-                      DropdownMenuItem(value: 'all', child: Text('جميع الحالات')),
-                      DropdownMenuItem(value: 'approved', child: Text('المقبولة')),
-                      DropdownMenuItem(value: 'rejected', child: Text('المرفوضة')),
+                      DropdownMenuItem(
+                        value: 'all',
+                        child: Text('جميع الحالات'),
+                      ),
+                      DropdownMenuItem(
+                        value: 'approved',
+                        child: Text('المقبولة'),
+                      ),
+                      DropdownMenuItem(
+                        value: 'rejected',
+                        child: Text('المرفوضة'),
+                      ),
                     ],
                     onChanged: (val) {
                       if (val != null) {
@@ -139,7 +164,9 @@ class _RequestsLogScreenState extends State<RequestsLogScreen> {
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
                   return const Center(
-                    child: CircularProgressIndicator(color: ZaWolfColors.primaryCyan),
+                    child: CircularProgressIndicator(
+                      color: ZaWolfColors.primaryCyan,
+                    ),
                   );
                 }
 
@@ -153,11 +180,13 @@ class _RequestsLogScreenState extends State<RequestsLogScreen> {
                 }
 
                 final allLogs = snapshot.data ?? [];
-                
+
                 // Filter client side
                 final filteredLogs = allLogs.where((log) {
-                  final matchesType = _typeFilter == 'all' || log.type == _typeFilter;
-                  final matchesStatus = _statusFilter == 'all' || log.status == _statusFilter;
+                  final matchesType =
+                      _typeFilter == 'all' || log.type == _typeFilter;
+                  final matchesStatus =
+                      _statusFilter == 'all' || log.status == _statusFilter;
                   return matchesType && matchesStatus;
                 }).toList();
 
@@ -166,7 +195,11 @@ class _RequestsLogScreenState extends State<RequestsLogScreen> {
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Icon(Icons.history_toggle_off, color: ZaWolfColors.textMuted, size: 64),
+                        Icon(
+                          Icons.history_toggle_off,
+                          color: ZaWolfColors.textMuted,
+                          size: 64,
+                        ),
                         SizedBox(height: 16),
                         Text(
                           'لا توجد سجلات مطابقة للشهر الحالي.',
@@ -181,12 +214,17 @@ class _RequestsLogScreenState extends State<RequestsLogScreen> {
                   onRefresh: () async => _refreshLogs(),
                   color: ZaWolfColors.primaryCyan,
                   child: ListView.builder(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 8,
+                    ),
                     itemCount: filteredLogs.length,
                     itemBuilder: (context, index) {
                       final item = filteredLogs[index];
                       final isApproved = item.status == 'approved';
-                      final dateStr = intl.DateFormat('yyyy/MM/dd hh:mm a').format(item.reviewedAt);
+                      final dateStr = intl.DateFormat(
+                        'yyyy/MM/dd hh:mm a',
+                      ).format(item.reviewedAt);
 
                       return Padding(
                         padding: const EdgeInsets.only(bottom: 12.0),
@@ -197,22 +235,36 @@ class _RequestsLogScreenState extends State<RequestsLogScreen> {
                               crossAxisAlignment: CrossAxisAlignment.stretch,
                               children: [
                                 Row(
-                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
                                   children: [
                                     // Status Badge
                                     Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 10,
+                                        vertical: 4,
+                                      ),
                                       decoration: BoxDecoration(
-                                        color: (isApproved ? ZaWolfColors.success : ZaWolfColors.error).withValues(alpha: 0.15),
+                                        color:
+                                            (isApproved
+                                                    ? ZaWolfColors.success
+                                                    : ZaWolfColors.error)
+                                                .withValues(alpha: 0.15),
                                         borderRadius: BorderRadius.circular(8),
                                         border: Border.all(
-                                          color: (isApproved ? ZaWolfColors.success : ZaWolfColors.error).withValues(alpha: 0.3),
+                                          color:
+                                              (isApproved
+                                                      ? ZaWolfColors.success
+                                                      : ZaWolfColors.error)
+                                                  .withValues(alpha: 0.3),
                                         ),
                                       ),
                                       child: Text(
                                         isApproved ? 'مقبول' : 'مرفوض',
                                         style: TextStyle(
-                                          color: isApproved ? ZaWolfColors.success : ZaWolfColors.error,
+                                          color: isApproved
+                                              ? ZaWolfColors.success
+                                              : ZaWolfColors.error,
                                           fontWeight: FontWeight.bold,
                                           fontSize: 12,
                                         ),
@@ -221,7 +273,11 @@ class _RequestsLogScreenState extends State<RequestsLogScreen> {
                                     // Request Type Badge
                                     Row(
                                       children: [
-                                        Icon(_getTypeIcon(item.type), color: ZaWolfColors.primaryCyan, size: 16),
+                                        Icon(
+                                          _getTypeIcon(item.type),
+                                          color: ZaWolfColors.primaryCyan,
+                                          size: 16,
+                                        ),
                                         const SizedBox(width: 6),
                                         Text(
                                           item.requestType,
@@ -237,39 +293,72 @@ class _RequestsLogScreenState extends State<RequestsLogScreen> {
                                 const SizedBox(height: 12),
                                 // Details
                                 Row(
-                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
                                   children: [
                                     Text(
                                       item.details,
-                                      style: const TextStyle(color: ZaWolfColors.primaryCyan, fontWeight: FontWeight.w600),
+                                      style: const TextStyle(
+                                        color: ZaWolfColors.primaryCyan,
+                                        fontWeight: FontWeight.w600,
+                                      ),
                                     ),
                                     Text(
                                       'الموظف: ${item.employeeName}',
-                                      style: const TextStyle(color: Colors.white70),
+                                      style: const TextStyle(
+                                        color: Colors.white70,
+                                      ),
                                     ),
                                   ],
                                 ),
-                                const Divider(color: ZaWolfColors.surface02, height: 20),
+                                const Divider(
+                                  color: ZaWolfColors.surface02,
+                                  height: 20,
+                                ),
                                 // Metadata
                                 if (item.reason.isNotEmpty) ...[
                                   Text(
                                     'السبب: ${item.reason}',
-                                    style: const TextStyle(color: ZaWolfColors.textSecondary, fontSize: 12),
+                                    style: const TextStyle(
+                                      color: ZaWolfColors.textSecondary,
+                                      fontSize: 12,
+                                    ),
+                                    textDirection: TextDirection.rtl,
+                                  ),
+                                  const SizedBox(height: 4),
+                                ],
+                                if (item.response.isNotEmpty) ...[
+                                  Text(
+                                    'رد المراجع: ${item.response}',
+                                    style: TextStyle(
+                                      color: item.status == 'rejected'
+                                          ? ZaWolfColors.error
+                                          : ZaWolfColors.textSecondary,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w600,
+                                    ),
                                     textDirection: TextDirection.rtl,
                                   ),
                                   const SizedBox(height: 4),
                                 ],
                                 Row(
-                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
                                   children: [
                                     Text(
                                       'تاريخ الرد: $dateStr',
-                                      style: const TextStyle(color: ZaWolfColors.textMuted, fontSize: 11),
+                                      style: const TextStyle(
+                                        color: ZaWolfColors.textMuted,
+                                        fontSize: 11,
+                                      ),
                                     ),
                                     if (item.reviewedBy.isNotEmpty)
                                       Text(
                                         'بواسطة: ${item.reviewedBy}',
-                                        style: const TextStyle(color: ZaWolfColors.textMuted, fontSize: 11),
+                                        style: const TextStyle(
+                                          color: ZaWolfColors.textMuted,
+                                          fontSize: 11,
+                                        ),
                                       ),
                                   ],
                                 ),
@@ -291,10 +380,14 @@ class _RequestsLogScreenState extends State<RequestsLogScreen> {
 
   IconData _getTypeIcon(String type) {
     switch (type) {
-      case 'leave': return Icons.beach_access;
-      case 'permission': return Icons.access_time;
-      case 'advance': return Icons.monetization_on;
-      default: return Icons.help_outline;
+      case 'leave':
+        return Icons.beach_access;
+      case 'permission':
+        return Icons.access_time;
+      case 'advance':
+        return Icons.monetization_on;
+      default:
+        return Icons.help_outline;
     }
   }
 }

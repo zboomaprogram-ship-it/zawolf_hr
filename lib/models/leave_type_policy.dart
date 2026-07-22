@@ -4,6 +4,7 @@ class LeaveTypePolicy {
   static const String casual = 'casual';
   static const String unpaid = 'unpaid';
   static const String exam = 'exam';
+  static const String remote = 'remote';
 
   static const Set<String> supportedTypes = {
     normal,
@@ -11,6 +12,7 @@ class LeaveTypePolicy {
     casual,
     unpaid,
     exam,
+    remote,
   };
 
   static String arabicLabel(String type) {
@@ -25,6 +27,8 @@ class LeaveTypePolicy {
         return 'إجازة بدون راتب';
       case exam:
         return 'إجازة امتحان';
+      case remote:
+        return 'يوم عمل عن بعد';
       default:
         return type;
     }
@@ -37,11 +41,13 @@ class LeaveTypePolicy {
       case sick:
         return 'لا تُخصم من رصيد الإجازات ولا يترتب عليها خصم راتب.';
       case casual:
-        return 'متاحة حتى صباح اليوم وتُخصم من رصيد الإجازات العارضة.';
+        return 'متاحة حتى صباح اليوم وتُخصم من رصيد الإجازات الكلي.';
       case unpaid:
         return 'لا تُخصم من رصيد الإجازات، ويُقترح خصم راتب يوم كامل عن كل يوم بعد موافقة HR.';
       case exam:
         return 'لا تُخصم من رصيد الإجازات ولا من الراتب، ويجب كتابة سبب الامتحان.';
+      case remote:
+        return 'يوم عمل عن بعد لا يُخصم من رصيد الإجازات ولا من الراتب.';
       default:
         return '';
     }
@@ -50,9 +56,8 @@ class LeaveTypePolicy {
   static String? balanceKey(String type) {
     switch (type) {
       case normal:
-        return 'daysOff';
       case casual:
-        return 'casual';
+        return 'daysOff';
       default:
         return null;
     }

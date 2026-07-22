@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:provider/provider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart' hide TextDirection;
@@ -16,6 +17,8 @@ import '../../models/permission_model.dart';
 import '../../models/user_model.dart';
 import '../../models/advance_model.dart';
 import '../../services/advance_service.dart';
+import '../../services/request_approval_policy_service.dart';
+import '../../models/request_approval_policy.dart';
 import '../../theme/theme.dart';
 import '../../components/wolf_card.dart';
 import '../../components/wolf_button.dart';
@@ -38,6 +41,9 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen>
   final AttendanceService _attendanceService = AttendanceService();
   final ComplaintService _complaintService = ComplaintService();
   final AdvanceService _advanceService = AdvanceService();
+  final RequestApprovalPolicyService _approvalPolicyService =
+      RequestApprovalPolicyService();
+  bool _isSavingApprovalPolicy = false;
   String _salaryDeductionFilter = 'all';
   final Map<String, Stream<QuerySnapshot<Map<String, dynamic>>>> _streamCache =
       {};
@@ -202,26 +208,77 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen>
           ],
         ),
       ),
-      body: TabBarView(
-        controller: _tabController,
+      body: Column(
         children: [
-          // ── TAB 1: LEAVES ──
-          _buildLeavesTab(manager, theme),
-
-          // ── TAB 2: PERMISSIONS ──
-          _buildPermissionsTab(manager, theme),
-
-          // ── TAB 3: ADVANCES ──
-          _buildAdvancesTab(manager, theme),
-
-          // ── TAB 4: SALARY DEDUCTIONS ──
-          _buildSalaryDeductionsTab(manager, theme),
-
-          _buildSecurityReviewsTab(manager, theme),
-
-          _buildComplaintsTab(manager, theme),
+          if (kIsWeb && manager.role == EmployeeRole.superAdmin)
+            _buildApprovalPolicyControl(manager),
+          Expanded(
+            child: TabBarView(
+              controller: _tabController,
+              children: [
+                _buildLeavesTab(manager, theme),
+                _buildPermissionsTab(manager, theme),
+                _buildAdvancesTab(manager, theme),
+                _buildSalaryDeductionsTab(manager, theme),
+                _buildSecurityReviewsTab(manager, theme),
+                _buildComplaintsTab(manager, theme),
+              ],
+            ),
+          ),
         ],
       ),
+    );
+  }
+
+  Widget _buildApprovalPolicyControl(UserModel superAdmin) {
+    return StreamBuilder<RequestApprovalPolicy>(
+      stream: _approvalPolicyService.watchPolicy(),
+      initialData: const RequestApprovalPolicy(),
+      builder: (context, snapshot) {
+        final policy = snapshot.data ?? const RequestApprovalPolicy();
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+          child: WolfCard(
+            padding: EdgeInsets.zero,
+            child: CheckboxListTile(
+              value: policy.requireHrAfterManagerApproval,
+              enabled: !_isSavingApprovalPolicy,
+              activeColor: ZaWolfColors.primaryCyan,
+              controlAffinity: ListTileControlAffinity.leading,
+              title: const Text(
+                'مراجعة HR بعد موافقات المديرين',
+                textDirection: TextDirection.rtl,
+              ),
+              subtitle: const Text(
+                'عند التفعيل يمر الطلب على المديرين بالترتيب، ثم يقرر HR الموافقة أو الرفض النهائي. رفض أي مدير ينهي الطلب مباشرة.',
+                textDirection: TextDirection.rtl,
+              ),
+              onChanged: (value) async {
+                if (value == null) return;
+                setState(() => _isSavingApprovalPolicy = true);
+                try {
+                  await _approvalPolicyService.setRequireHrAfterManagerApproval(
+                    value: value,
+                    updatedBy: superAdmin.uid,
+                  );
+                } catch (error) {
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('تعذر حفظ مسار الموافقات: $error'),
+                      ),
+                    );
+                  }
+                } finally {
+                  if (context.mounted) {
+                    setState(() => _isSavingApprovalPolicy = false);
+                  }
+                }
+              },
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -232,6 +289,18 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen>
     return _streamCache.putIfAbsent(key, query.snapshots);
   }
 
+  List<QueryDocumentSnapshot<Map<String, dynamic>>> _visibleApprovalDocs(
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
+    UserModel reviewer,
+  ) {
+    if (!EmployeeRole.isHr(reviewer.role)) return docs;
+    return docs.where((doc) {
+      final data = doc.data();
+      return data['status'] == 'pending_hr' ||
+          data['managerId'] == reviewer.uid;
+    }).toList();
+  }
+
   Stream<QuerySnapshot<Map<String, dynamic>>> _pendingStream(
     String collection,
     String reviewerId,
@@ -240,7 +309,9 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen>
     var query = _db.collection(collection) as Query<Map<String, dynamic>>;
     final usesManagerChain =
         collection == 'leaves' || collection == 'permissions';
-    if (usesManagerChain && EmployeeRole.canActAsApprovalManager(role)) {
+    if (usesManagerChain && EmployeeRole.isHr(role)) {
+      query = query.where('status', whereIn: ['pending_hr', 'pending_manager']);
+    } else if (usesManagerChain && EmployeeRole.canActAsApprovalManager(role)) {
       query = query
           .where('status', isEqualTo: 'pending_manager')
           .where('managerId', isEqualTo: reviewerId);
@@ -253,7 +324,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen>
   }
 
   Widget _buildLeavesTab(UserModel reviewer, ThemeData theme) {
-    return StreamBuilder<QuerySnapshot>(
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
       stream: _pendingStream('leaves', reviewer.uid, reviewer.role),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
@@ -262,7 +333,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen>
           );
         }
 
-        final docs = snapshot.data?.docs ?? [];
+        final docs = _visibleApprovalDocs(snapshot.data?.docs ?? [], reviewer);
         if (docs.isEmpty) {
           return _buildEmptyState('لا توجد طلبات إجازة معلقة');
         }
@@ -361,7 +432,9 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen>
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      'المرحلة الحالية: موافقة المدير المسؤول',
+                      leave.status == 'pending_hr'
+                          ? 'المرحلة الحالية: المراجعة النهائية لدى HR'
+                          : 'المرحلة الحالية: موافقة المدير المسؤول',
                       style: const TextStyle(color: ZaWolfColors.primaryCyan),
                     ),
                   ],
@@ -374,9 +447,13 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen>
     );
   }
 
-  Stream<QuerySnapshot> _permissionReviewStream(UserModel reviewer) {
+  Stream<QuerySnapshot<Map<String, dynamic>>> _permissionReviewStream(
+    UserModel reviewer,
+  ) {
     var query = _db.collection('permissions') as Query<Map<String, dynamic>>;
-    if (EmployeeRole.canActAsApprovalManager(reviewer.role)) {
+    if (EmployeeRole.isHr(reviewer.role)) {
+      query = query.where('status', whereIn: ['pending_hr', 'pending_manager']);
+    } else if (EmployeeRole.canActAsApprovalManager(reviewer.role)) {
       query = query
           .where('status', isEqualTo: 'pending_manager')
           .where('managerId', isEqualTo: reviewer.uid);
@@ -387,7 +464,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen>
   }
 
   Widget _buildPermissionsTab(UserModel reviewer, ThemeData theme) {
-    return StreamBuilder<QuerySnapshot>(
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
       stream: _permissionReviewStream(reviewer),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
@@ -396,7 +473,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen>
           );
         }
 
-        final docs = snapshot.data?.docs ?? [];
+        final docs = _visibleApprovalDocs(snapshot.data?.docs ?? [], reviewer);
         if (docs.isEmpty) {
           return _buildEmptyState('لا توجد طلبات إذن معلقة');
         }
@@ -491,7 +568,9 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen>
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      'المرحلة الحالية: موافقة المدير المسؤول',
+                      perm.status == 'pending_hr'
+                          ? 'المرحلة الحالية: المراجعة النهائية لدى HR'
+                          : 'المرحلة الحالية: موافقة المدير المسؤول',
                       style: const TextStyle(color: ZaWolfColors.primaryCyan),
                     ),
                     const SizedBox(height: 16),
@@ -835,6 +914,18 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen>
                           label: 'يوم وتاريخ الحضور',
                           date: _parseDateKey(attendance.date),
                         ),
+                        if (reviewer.role == EmployeeRole.hrAdmin ||
+                            reviewer.role == EmployeeRole.hrManager ||
+                            reviewer.role == EmployeeRole.superAdmin)
+                          Align(
+                            alignment: AlignmentDirectional.centerStart,
+                            child: TextButton.icon(
+                              onPressed: () =>
+                                  _correctArrivalTime(attendance, reviewer),
+                              icon: const Icon(Icons.access_time),
+                              label: const Text('تصحيح وقت الوصول'),
+                            ),
+                          ),
                         Text(
                           'التاريخ: ${attendance.date}'
                           '${attendance.lateMinutes > 0 ? ' · التأخير: ${attendance.lateMinutes} دقيقة' : ''}',
@@ -889,6 +980,72 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen>
         );
       },
     );
+  }
+
+  Future<void> _correctArrivalTime(
+    AttendanceModel attendance,
+    UserModel reviewer,
+  ) async {
+    final parsedDay = _parseDateKey(attendance.date) ?? DateTime.now();
+    final initial = attendance.checkInTime ?? parsedDay;
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.fromDateTime(initial),
+    );
+    if (picked == null || !mounted) return;
+    final reasonController = TextEditingController();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('سبب تصحيح وقت الوصول'),
+        content: TextField(
+          controller: reasonController,
+          maxLines: 2,
+          decoration: const InputDecoration(
+            hintText: 'مثال: الموظف وصل مبكراً وتعذر التسجيل',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('إلغاء'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('حفظ وإعادة الحساب'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    final day = _parseDateKey(attendance.date) ?? parsedDay;
+    try {
+      await _attendanceService.correctCheckInTime(
+        attendanceId: attendance.attendanceId,
+        reviewerId: reviewer.uid,
+        correctedTime: DateTime(
+          day.year,
+          day.month,
+          day.day,
+          picked.hour,
+          picked.minute,
+        ),
+        reason: reasonController.text,
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('تم تصحيح الوقت وإعادة حساب الخصم.')),
+        );
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('تعذر تعديل الوقت: $error')));
+      }
+    } finally {
+      reasonController.dispose();
+    }
   }
 
   List<AttendanceModel> _filterSalaryDeductions(List<AttendanceModel> items) {

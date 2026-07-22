@@ -1983,7 +1983,9 @@ class _AddEmployeeDialogState extends State<AddEmployeeDialog> {
                   initialValue: _selectedManagerId,
                   dropdownColor: ZaWolfColors.surface01,
                   decoration: const InputDecoration(
-                    labelText: 'المدير المباشر',
+                    labelText: 'المدير المباشر (مالك الفريق)',
+                    helperText:
+                        'هذا المدير يرى الموظف في جميع أقسام الإدارة ويستلم أول موافقة.',
                     labelStyle: TextStyle(color: ZaWolfColors.primaryCyan),
                   ),
                   style: const TextStyle(color: Colors.white),
@@ -2086,7 +2088,7 @@ class _AddEmployeeDialogState extends State<AddEmployeeDialog> {
                   ),
                   const SizedBox(height: 8),
                   const Text(
-                    'تبدأ الموافقة بالمدير المباشر ثم تنتقل بالترتيب الظاهر.',
+                    'إذا حُدد قائد فريق فتبدأ الموافقة به، ثم تنتقل للمديرين بالترتيب.',
                     style: TextStyle(color: ZaWolfColors.textMuted),
                     textDirection: TextDirection.rtl,
                   ),
@@ -2096,7 +2098,7 @@ class _AddEmployeeDialogState extends State<AddEmployeeDialog> {
                   initialValue: _selectedTeamLeaderId,
                   dropdownColor: ZaWolfColors.surface01,
                   decoration: const InputDecoration(
-                    labelText: 'قائد الفريق (اختياري)',
+                    labelText: 'قائد الفريق (أول موافق - اختياري)',
                     labelStyle: TextStyle(color: ZaWolfColors.primaryCyan),
                   ),
                   style: const TextStyle(color: Colors.white),
@@ -2356,6 +2358,67 @@ class _EditEmployeeDialogState extends State<EditEmployeeDialog> {
       }
       _syncPrimaryManagerFromSelection();
     });
+  }
+
+  Future<void> _addManagerWithAssignmentType(String? managerId) async {
+    if (managerId == null || managerId.isEmpty) return;
+    final managerName = _managerById(managerId)?.displayName ?? 'المدير';
+    final assignmentType = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: ZaWolfColors.surface01,
+        title: Text(
+          'كيف تريد إسناد $managerName؟',
+          textDirection: TextDirection.rtl,
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(
+                Icons.person_pin,
+                color: ZaWolfColors.primaryCyan,
+              ),
+              title: const Text('مدير مباشر', textDirection: TextDirection.rtl),
+              subtitle: const Text(
+                'سيظهر الموظف في جميع شاشات هذا المدير ويبدأ مسار الموافقات منه.',
+                textDirection: TextDirection.rtl,
+              ),
+              onTap: () => Navigator.pop(dialogContext, 'direct'),
+            ),
+            const Divider(color: ZaWolfColors.surface03),
+            ListTile(
+              leading: const Icon(
+                Icons.account_tree_outlined,
+                color: ZaWolfColors.textSecondary,
+              ),
+              title: const Text(
+                'مدير أعلى في المسار',
+                textDirection: TextDirection.rtl,
+              ),
+              subtitle: const Text(
+                'يأتي بعد المدير المباشر ولا يستبدله في ملكية الفريق.',
+                textDirection: TextDirection.rtl,
+              ),
+              onTap: () => Navigator.pop(dialogContext, 'higher'),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('إلغاء'),
+          ),
+        ],
+      ),
+    );
+
+    if (!mounted || assignmentType == null) return;
+    if (assignmentType == 'direct') {
+      _setPrimaryManager(managerId);
+    } else {
+      _addAssignedManager(managerId);
+    }
   }
 
   void _removeAssignedManager(String managerId) {
@@ -2756,7 +2819,9 @@ class _EditEmployeeDialogState extends State<EditEmployeeDialog> {
                       : null,
                   dropdownColor: ZaWolfColors.surface01,
                   decoration: const InputDecoration(
-                    labelText: 'المدير المباشر',
+                    labelText: 'المدير المباشر (مالك الفريق)',
+                    helperText:
+                        'هذا المدير يرى الموظف في جميع أقسام الإدارة ويستلم أول موافقة.',
                     labelStyle: TextStyle(color: ZaWolfColors.primaryCyan),
                   ),
                   style: const TextStyle(color: Colors.white),
@@ -2792,7 +2857,9 @@ class _EditEmployeeDialogState extends State<EditEmployeeDialog> {
                   initialValue: null,
                   dropdownColor: ZaWolfColors.surface01,
                   decoration: const InputDecoration(
-                    labelText: 'إضافة مدير آخر لمسار الموافقات',
+                    labelText: 'إضافة مدير مباشر أو مدير أعلى',
+                    helperText:
+                        'سيطلب منك النظام تحديد نوع الإسناد قبل الإضافة.',
                     labelStyle: TextStyle(color: ZaWolfColors.primaryCyan),
                   ),
                   style: const TextStyle(color: Colors.white),
@@ -2808,7 +2875,7 @@ class _EditEmployeeDialogState extends State<EditEmployeeDialog> {
                         ),
                       )
                       .toList(),
-                  onChanged: _addAssignedManager,
+                  onChanged: _addManagerWithAssignmentType,
                 ),
                 const SizedBox(height: 10),
                 Container(
@@ -2868,7 +2935,9 @@ class _EditEmployeeDialogState extends State<EditEmployeeDialog> {
                                     color: ZaWolfColors.textSecondary,
                                   ),
                                   onPressed:
-                                      index == _selectedManagerIds.length - 1
+                                      index == 0 ||
+                                          index ==
+                                              _selectedManagerIds.length - 1
                                       ? null
                                       : () =>
                                             _moveAssignedManager(managerId, 1),
@@ -2879,7 +2948,7 @@ class _EditEmployeeDialogState extends State<EditEmployeeDialog> {
                                     Icons.keyboard_arrow_up,
                                     color: ZaWolfColors.textSecondary,
                                   ),
-                                  onPressed: index == 0
+                                  onPressed: index <= 1
                                       ? null
                                       : () =>
                                             _moveAssignedManager(managerId, -1),
@@ -2910,7 +2979,7 @@ class _EditEmployeeDialogState extends State<EditEmployeeDialog> {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'طلبات الإذن والإجازة تبدأ بالمدير المباشر ثم تنتقل للمديرين بهذا الترتيب حتى آخر موافقة.',
+                  'عند تحديد قائد فريق، تبدأ طلبات الإذن والإجازة به، ثم تنتقل للمديرين بالترتيب.',
                   style: theme.textTheme.bodySmall?.copyWith(
                     color: ZaWolfColors.textMuted,
                   ),
@@ -2921,7 +2990,7 @@ class _EditEmployeeDialogState extends State<EditEmployeeDialog> {
                   initialValue: _selectedTeamLeaderId,
                   dropdownColor: ZaWolfColors.surface01,
                   decoration: const InputDecoration(
-                    labelText: 'قائد الفريق (لا يدخل في مسار الموافقات)',
+                    labelText: 'قائد الفريق (أول موافق - اختياري)',
                     labelStyle: TextStyle(color: ZaWolfColors.primaryCyan),
                   ),
                   style: const TextStyle(color: Colors.white),

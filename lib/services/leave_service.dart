@@ -8,10 +8,17 @@ import '../models/leave_model.dart';
 import '../models/leave_type_policy.dart';
 import '../models/manager_approval_chain.dart';
 import 'audit_log_service.dart';
+import 'request_approval_policy_service.dart';
+import 'role_notification_service.dart';
+import 'attendance_reconciliation_service.dart';
 
 class LeaveService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
   final FirebaseStorage _storage = FirebaseStorage.instance;
+  final RequestApprovalPolicyService _approvalPolicyService =
+      RequestApprovalPolicyService();
+  final AttendanceReconciliationService _reconciliationService =
+      AttendanceReconciliationService();
 
   static void validateRequest(LeaveModel request, {DateTime? now}) {
     if (!LeaveTypePolicy.supportedTypes.contains(request.leaveType)) {
@@ -68,23 +75,28 @@ class LeaveService {
     return ManagerApprovalChain.orderedIds(
       employee.managerIds,
       fallbackId: fallbackId,
+      teamLeaderId: employee.teamLeaderId,
     );
   }
 
   List<String> _approvalManagerNames(UserModel employee, String? fallbackName) {
-    final names = employee.managerNames
-        .where((name) => name.trim().isNotEmpty)
-        .toList();
-    if (names.isNotEmpty) return names;
-    return fallbackName == null || fallbackName.trim().isEmpty
-        ? <String>[]
-        : <String>[fallbackName];
+    final ids = _approvalManagerIds(employee, employee.managerId ?? '');
+    return ManagerApprovalChain.orderedNames(
+      orderedIds: ids,
+      managerIds: employee.managerIds,
+      managerNames: employee.managerNames,
+      teamLeaderId: employee.teamLeaderId,
+      teamLeaderName: employee.teamLeaderName,
+      fallbackManagerId: employee.managerId,
+      fallbackManagerName: fallbackName,
+    );
   }
 
   Map<String, dynamic> _nextManagerApprovalUpdate({
     required Map<String, dynamic> data,
     required String reviewerId,
     required String reviewerRole,
+    required String finalStatus,
   }) {
     final managerIds =
         (data['managerIds'] as List<dynamic>?)
@@ -127,7 +139,7 @@ class LeaveService {
     }
 
     return {
-      'status': 'approved',
+      'status': finalStatus,
       'managerApprovalIndex': managerIds.isEmpty ? 0 : managerIds.length - 1,
       'managerApprovalTrail': FieldValue.arrayUnion([trail]),
       'reviewedBy': reviewerId,
@@ -194,14 +206,19 @@ class LeaveService {
     }
 
     final reqRef = _db.collection('leaves').doc();
-    final managerIds = _approvalManagerIds(employee, req.managerId);
-    final managerNames = _approvalManagerNames(employee, employee.managerName);
-    if (managerIds.isEmpty) {
+    final requiresHrOnlyApproval = employee.role == EmployeeRole.superAdmin;
+    final managerIds = requiresHrOnlyApproval
+        ? <String>[]
+        : _approvalManagerIds(employee, req.managerId);
+    final managerNames = requiresHrOnlyApproval
+        ? <String>[]
+        : _approvalManagerNames(employee, employee.managerName);
+    if (managerIds.isEmpty && !requiresHrOnlyApproval) {
       throw Exception(
         'لا يمكن إرسال الطلب قبل تعيين مدير مباشر للموظف من إدارة الحسابات.',
       );
     }
-    final firstManagerId = managerIds.first;
+    final firstManagerId = managerIds.isEmpty ? '' : managerIds.first;
     final finalModel = LeaveModel(
       leaveId: reqRef.id,
       userId: req.userId,
@@ -217,7 +234,7 @@ class LeaveService {
       reason: req.reason,
       attachmentUrl: req.attachmentUrl,
       workHandoverTo: req.workHandoverTo,
-      status: 'pending_manager',
+      status: requiresHrOnlyApproval ? 'pending_hr' : 'pending_manager',
       submittedAt: DateTime.now(),
     );
 
@@ -235,14 +252,59 @@ class LeaveService {
       'managerApprovalTrail': <Map<String, dynamic>>[],
     });
 
-    await _createNotification(
-      recipientId: firstManagerId,
-      type: 'leave_request_submitted',
-      title: 'طلب إجازة بانتظار موافقتك',
-      body:
-          'يطلب ${req.employeeName} ${LeaveTypePolicy.arabicLabel(req.leaveType)} لمدّة ${req.numberOfDays} يوم. تسليم العمل إلى: ${req.workHandoverTo}.',
-      data: {'leaveId': reqRef.id},
-    );
+    if (requiresHrOnlyApproval) {
+      await RoleNotificationService.instance.notifyRole(
+        role: EmployeeRole.hrAdmin,
+        includeSuperAdmins: false,
+        type: 'leave_request_submitted',
+        title: 'طلب إجازة لمالك النظام',
+        body:
+            '${req.employeeName} أرسل ${LeaveTypePolicy.arabicLabel(req.leaveType)} وينتظر قرار HR.',
+        data: {'leaveId': reqRef.id},
+      );
+    } else {
+      await _createNotification(
+        recipientId: firstManagerId,
+        type: 'leave_request_submitted',
+        title: 'طلب إجازة بانتظار موافقتك',
+        body:
+            'يطلب ${req.employeeName} ${LeaveTypePolicy.arabicLabel(req.leaveType)} لمدّة ${req.numberOfDays} يوم. تسليم العمل إلى: ${req.workHandoverTo}.',
+        data: {'leaveId': reqRef.id},
+      );
+    }
+  }
+
+  Future<void> cancelLeave(String leaveId, String userId) async {
+    final ref = _db.collection('leaves').doc(leaveId);
+    final userRef = _db.collection('users').doc(userId);
+    await _db.runTransaction((transaction) async {
+      final doc = await transaction.get(ref);
+      if (!doc.exists) throw Exception('طلب الإجازة غير موجود.');
+      final leave = LeaveModel.fromFirestore(doc);
+      if (leave.userId != userId) throw Exception('غير مسموح بإلغاء الطلب.');
+      if (leave.status == 'rejected' || leave.status == 'cancelled') {
+        throw Exception('لا يمكن إلغاء هذا الطلب.');
+      }
+      final today = DateTime.now();
+      final todayOnly = DateTime(today.year, today.month, today.day);
+      if (leave.status == 'approved' && !leave.startDate.isAfter(todayOnly)) {
+        throw Exception('لا يمكن إلغاء إجازة بدأت بالفعل.');
+      }
+      final balanceKey = LeaveTypePolicy.balanceKey(leave.leaveType);
+      transaction.update(ref, {
+        'status': 'cancelled',
+        'cancelledAt': FieldValue.serverTimestamp(),
+        'cancelledBy': userId,
+        if (leave.status == 'approved' && balanceKey != null)
+          'balanceRestored': true,
+      });
+      if (leave.status == 'approved' && balanceKey != null) {
+        transaction.update(userRef, {
+          'leaveBalance.$balanceKey': FieldValue.increment(leave.numberOfDays),
+          'lastLeaveBalanceRestorationId': leaveId,
+        });
+      }
+    });
   }
 
   // Approve Leave
@@ -257,6 +319,25 @@ class LeaveService {
     if (!doc.exists) throw Exception('طلب الإجازة غير موجود');
     final leave = LeaveModel.fromFirestore(doc);
     final data = doc.data() ?? <String, dynamic>{};
+    final reviewerDoc = await _db.collection('users').doc(reviewerId).get();
+    final reviewerName =
+        (reviewerDoc.data()?['displayName'] as String?)?.trim() ?? '';
+
+    if (leave.status == 'pending_hr') {
+      final requesterDoc = await _db
+          .collection('users')
+          .doc(leave.userId)
+          .get();
+      final requesterRole = requesterDoc.data()?['role'] as String? ?? '';
+      if (leave.userId == reviewerId) {
+        throw Exception('لا يمكن اعتماد طلبك الشخصي. يجب أن يراجعه HR آخر.');
+      }
+      if (requesterRole == EmployeeRole.superAdmin &&
+          role != EmployeeRole.hrAdmin &&
+          role != EmployeeRole.hrManager) {
+        throw Exception('طلبات مالك النظام يراجعها HR أو مدير HR فقط.');
+      }
+    }
 
     final batch = _db.batch();
 
@@ -277,24 +358,33 @@ class LeaveService {
                 ?.whereType<String>()
                 .toList() ??
             <String>[];
+        final approvalTrail =
+            (data['managerApprovalTrail'] as List<dynamic>?) ?? <dynamic>[];
+        final managersCompleted =
+            managerIds.isEmpty || approvalTrail.length >= managerIds.length;
         final firstManagerId = managerIds.isNotEmpty ? managerIds.first : '';
         update = {
-          'status': firstManagerId.isEmpty ? 'approved' : 'pending_manager',
-          if (firstManagerId.isNotEmpty) 'managerId': firstManagerId,
-          if (managerNames.isNotEmpty) 'managerName': managerNames.first,
-          'managerApprovalIndex': 0,
+          'status': managersCompleted ? 'approved' : 'pending_manager',
+          if (!managersCompleted && firstManagerId.isNotEmpty)
+            'managerId': firstManagerId,
+          if (!managersCompleted && managerNames.isNotEmpty)
+            'managerName': managerNames.first,
+          if (!managersCompleted) 'managerApprovalIndex': 0,
           'reviewedBy': reviewerId,
+          'reviewerName': reviewerName,
           'reviewedAt': FieldValue.serverTimestamp(),
         };
-        isFinalApproval = firstManagerId.isEmpty;
+        isFinalApproval = managersCompleted;
       } else {
         if (leave.managerId != reviewerId) {
           throw Exception('هذا الطلب ينتظر قرار مدير آخر.');
         }
+        final approvalPolicy = await _approvalPolicyService.getPolicy();
         update = _nextManagerApprovalUpdate(
           data: data,
           reviewerId: reviewerId,
           reviewerRole: role,
+          finalStatus: approvalPolicy.finalManagerApprovalStatus,
         );
         isFinalApproval = update['status'] == 'approved';
       }
@@ -303,13 +393,17 @@ class LeaveService {
       if (leave.managerId != reviewerId) {
         throw Exception('هذا الطلب ينتظر قرار مدير آخر.');
       }
+      final approvalPolicy = await _approvalPolicyService.getPolicy();
       update = _nextManagerApprovalUpdate(
         data: data,
         reviewerId: reviewerId,
         reviewerRole: role,
+        finalStatus: approvalPolicy.finalManagerApprovalStatus,
       );
       isFinalApproval = update['status'] == 'approved';
     }
+
+    update['reviewerName'] = reviewerName;
 
     batch.update(docRef, update);
 
@@ -355,7 +449,20 @@ class LeaveService {
       return;
     }
 
+    if (update['status'] == 'pending_hr') {
+      await RoleNotificationService.instance.notifyRole(
+        role: EmployeeRole.hrAdmin,
+        type: 'leave_request_submitted',
+        title: 'طلب إجازة بانتظار مراجعة HR',
+        body:
+            'اكتملت موافقات المديرين على طلب ${leave.employeeName} وينتظر القرار النهائي من HR.',
+        data: {'leaveId': leaveId},
+      );
+      return;
+    }
+
     // 3. Notify employee
+    await _reconciliationService.reconcileApprovedLeave(leave);
     try {
       await _createNotification(
         recipientId: leave.userId,
@@ -384,6 +491,25 @@ class LeaveService {
 
     if (!doc.exists) throw Exception('طلب الإجازة غير موجود');
     final leave = LeaveModel.fromFirestore(doc);
+    final reviewerDoc = await _db.collection('users').doc(reviewerId).get();
+    final reviewerRole = reviewerDoc.data()?['role'] as String? ?? '';
+    final reviewerName =
+        (reviewerDoc.data()?['displayName'] as String?)?.trim() ?? '';
+    if (leave.status == 'pending_hr') {
+      final requesterDoc = await _db
+          .collection('users')
+          .doc(leave.userId)
+          .get();
+      final requesterRole = requesterDoc.data()?['role'] as String? ?? '';
+      if (leave.userId == reviewerId) {
+        throw Exception('لا يمكن رفض طلبك الشخصي. يجب أن يراجعه HR آخر.');
+      }
+      if (requesterRole == EmployeeRole.superAdmin &&
+          reviewerRole != EmployeeRole.hrAdmin &&
+          reviewerRole != EmployeeRole.hrManager) {
+        throw Exception('طلبات مالك النظام يراجعها HR أو مدير HR فقط.');
+      }
+    }
     if (leave.status == 'pending_manager' && leave.managerId != reviewerId) {
       throw Exception('هذا الطلب ينتظر قرار مدير آخر.');
     }
@@ -393,6 +519,7 @@ class LeaveService {
       'reviewedBy': reviewerId,
       'reviewedAt': FieldValue.serverTimestamp(),
       'reviewerComment': comment,
+      'reviewerName': reviewerName,
     });
 
     await AuditLogService.instance.record(

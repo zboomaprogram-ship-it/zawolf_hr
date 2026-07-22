@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../services/auth_service.dart';
 import '../../services/performance_service.dart';
+import '../../services/managed_employee_service.dart';
 import '../../models/user_model.dart';
 import '../../models/performance_model.dart';
 import '../../theme/theme.dart';
@@ -19,8 +19,8 @@ class RatePerformanceScreen extends StatefulWidget {
 }
 
 class _RatePerformanceScreenState extends State<RatePerformanceScreen> {
-  final FirebaseFirestore _db = FirebaseFirestore.instance;
   final PerformanceService _performanceService = PerformanceService();
+  final ManagedEmployeeService _managedEmployees = ManagedEmployeeService();
 
   List<UserModel> _teamMembers = [];
   UserModel? _selectedEmployee;
@@ -55,19 +55,14 @@ class _RatePerformanceScreenState extends State<RatePerformanceScreen> {
 
   Future<void> _fetchTeamMembers() async {
     final authService = Provider.of<AuthService>(context, listen: false);
-    final managerId = authService.currentUser?.uid;
-    if (managerId == null) return;
+    final reviewer = authService.currentUser;
+    if (reviewer == null) return;
 
     try {
-      final teamSnap = await _db
-          .collection('users')
-          .where('managerId', isEqualTo: managerId)
-          .get();
+      final employees = await _managedEmployees.loadForReviewer(reviewer);
 
       setState(() {
-        _teamMembers = teamSnap.docs
-            .map((doc) => UserModel.fromFirestore(doc))
-            .toList();
+        _teamMembers = employees;
         _loadingTeam = false;
         if (_teamMembers.isNotEmpty) {
           _selectedEmployee = _teamMembers.first;

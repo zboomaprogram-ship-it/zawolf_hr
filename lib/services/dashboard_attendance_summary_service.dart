@@ -81,6 +81,79 @@ class DashboardAttendanceSummaryService {
       (index) => DateTime(today.year, today.month, today.day - index),
     );
     final employees = await _loadEmployees(reviewer);
+    if (!_hasTeamScope(reviewer)) {
+      final firstDate = dates.last;
+      final firstKey = DateFormat('yyyy-MM-dd').format(firstDate);
+      final lastKey = DateFormat('yyyy-MM-dd').format(today);
+      final all = await Future.wait([
+        _safeQueryResult(
+          _db
+              .collection('attendance')
+              .where('date', isGreaterThanOrEqualTo: firstKey)
+              .where('date', isLessThanOrEqualTo: lastKey),
+        ),
+        _safeQueryResult(
+          _db
+              .collection('permissions')
+              .where('requestDate', isGreaterThanOrEqualTo: firstKey)
+              .where('requestDate', isLessThanOrEqualTo: lastKey),
+        ),
+        _safeQueryResult(
+          _db
+              .collection('leaves')
+              .where('status', isEqualTo: 'approved')
+              .where(
+                'startDate',
+                isLessThanOrEqualTo: Timestamp.fromDate(
+                  DateTime(today.year, today.month, today.day, 23, 59, 59),
+                ),
+              ),
+        ),
+      ]);
+      return Future.wait(
+        dates.map((date) {
+          final key = DateFormat('yyyy-MM-dd').format(date);
+          final endOfDay = DateTime(
+            date.year,
+            date.month,
+            date.day,
+            23,
+            59,
+            59,
+          );
+          return _loadDayDetailsForEmployees(
+            reviewer,
+            employees,
+            date,
+            prefetchedResults: [
+              _SummaryQueryResult(
+                all[0].docs.where((doc) => doc.data()?['date'] == key).toList(),
+              ),
+              _SummaryQueryResult(
+                all[1].docs
+                    .where(
+                      (doc) =>
+                          doc.data()?['requestDate'] == key &&
+                          doc.data()?['status'] == 'approved',
+                    )
+                    .toList(),
+              ),
+              _SummaryQueryResult(
+                all[2].docs.where((doc) {
+                  final data = doc.data();
+                  final start = (data?['startDate'] as Timestamp?)?.toDate();
+                  final end = (data?['endDate'] as Timestamp?)?.toDate();
+                  return start != null &&
+                      end != null &&
+                      !start.isAfter(endOfDay) &&
+                      !end.isBefore(DateTime(date.year, date.month, date.day));
+                }).toList(),
+              ),
+            ],
+          ).then((details) => details.summary);
+        }),
+      );
+    }
     // The previous implementation loaded all 30 days one after another. On a
     // real company account that made this page wait for a long Firestore chain.
     // Keep a small concurrency limit so the page is responsive without sending
@@ -135,8 +208,9 @@ class DashboardAttendanceSummaryService {
   Future<DashboardAttendanceDayDetails> _loadDayDetailsForEmployees(
     UserModel reviewer,
     List<UserModel> employees,
-    DateTime date,
-  ) async {
+    DateTime date, {
+    List<_SummaryQueryResult>? prefetchedResults,
+  }) async {
     final dateKey = DateFormat('yyyy-MM-dd').format(date);
     final isTeamScope = _hasTeamScope(reviewer);
 
@@ -157,9 +231,11 @@ class DashboardAttendanceSummaryService {
     }
 
     final employeeIds = employees.map((employee) => employee.uid).toSet();
-    final results = isTeamScope
-        ? await _loadManagerScopedDayData(employeeIds, dateKey, date)
-        : await _loadHrScopedDayData(dateKey, date);
+    final results =
+        prefetchedResults ??
+        (isTeamScope
+            ? await _loadManagerScopedDayData(employeeIds, dateKey, date)
+            : await _loadHrScopedDayData(dateKey, date));
 
     final attendanceByUser = <String, Map<String, dynamic>>{};
     for (final doc in results[0].docs) {
@@ -287,10 +363,7 @@ class DashboardAttendanceSummaryService {
         .collection('users')
         .where('isActive', isEqualTo: true)
         .get();
-    return snap.docs.map(UserModel.fromFirestore).where((employee) {
-      if (employee.role == EmployeeRole.superAdmin) return false;
-      return true;
-    }).toList();
+    return snap.docs.map(UserModel.fromFirestore).toList();
   }
 
   Future<List<_SummaryQueryResult>> _loadManagerScopedDayData(

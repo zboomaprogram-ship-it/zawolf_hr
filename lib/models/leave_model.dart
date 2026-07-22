@@ -8,7 +8,7 @@ class LeaveModel {
   final String department;
   final String locationId;
   final String managerId;
-  final String leaveType; // day_off | sick | casual | unpaid | exam | wfh
+  final String leaveType; // day_off | sick | casual | unpaid | exam | remote
   final DateTime startDate;
   final DateTime endDate;
   final int numberOfDays;
@@ -20,6 +20,7 @@ class LeaveModel {
   final DateTime? reviewedAt;
   final String? reviewedBy;
   final String? reviewerComment;
+  final String? reviewerName;
   final bool isRead;
 
   LeaveModel({
@@ -42,6 +43,7 @@ class LeaveModel {
     this.reviewedAt,
     this.reviewedBy,
     this.reviewerComment,
+    this.reviewerName,
     this.isRead = false,
   });
 
@@ -67,6 +69,7 @@ class LeaveModel {
       reviewedAt: (data['reviewedAt'] as Timestamp?)?.toDate(),
       reviewedBy: data['reviewedBy'] as String?,
       reviewerComment: data['reviewerComment'] as String?,
+      reviewerName: data['reviewerName'] as String?,
       isRead: data['isRead'] as bool? ?? false,
     );
   }
@@ -93,6 +96,7 @@ class LeaveModel {
       if (reviewedAt != null) 'reviewedAt': Timestamp.fromDate(reviewedAt!),
       if (reviewedBy != null) 'reviewedBy': reviewedBy,
       if (reviewerComment != null) 'reviewerComment': reviewerComment,
+      if (reviewerName != null) 'reviewerName': reviewerName,
       'isRead': isRead,
     };
   }

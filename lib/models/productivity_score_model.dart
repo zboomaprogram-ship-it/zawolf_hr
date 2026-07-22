@@ -7,6 +7,7 @@ class ProductivityScoreModel {
   final String employeeName;
   final String department;
   final String managerId;
+  final List<String> managerIds;
   final String monthKey;
   final double attendanceScore;
   final double punctualityScore;
@@ -31,6 +32,7 @@ class ProductivityScoreModel {
     required this.employeeName,
     required this.department,
     required this.managerId,
+    this.managerIds = const [],
     required this.monthKey,
     required this.attendanceScore,
     required this.punctualityScore,
@@ -66,6 +68,15 @@ class ProductivityScoreModel {
       employeeName: data['employeeName'] as String? ?? '',
       department: data['department'] as String? ?? '',
       managerId: data['managerId'] as String? ?? '',
+      managerIds:
+          (data['managerIds'] as List<dynamic>?)
+              ?.whereType<String>()
+              .where((id) => id.isNotEmpty)
+              .toList() ??
+          [
+            if ((data['managerId'] as String? ?? '').isNotEmpty)
+              data['managerId'] as String,
+          ],
       monthKey: data['monthKey'] as String? ?? '',
       attendanceScore: (data['attendanceScore'] as num?)?.toDouble() ?? 0,
       punctualityScore: (data['punctualityScore'] as num?)?.toDouble() ?? 0,
@@ -93,6 +104,7 @@ class ProductivityScoreModel {
       'employeeName': employeeName,
       'department': department,
       'managerId': managerId,
+      'managerIds': managerIds.isNotEmpty ? managerIds : [managerId],
       'monthKey': monthKey,
       'attendanceScore': attendanceScore,
       'punctualityScore': punctualityScore,

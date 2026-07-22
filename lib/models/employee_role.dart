@@ -15,6 +15,7 @@ class EmployeeRole {
   static bool canAccessReports(String? role) =>
       role == hrManager || role == superAdmin;
   static bool canActAsApprovalManager(String? role) =>
+      role == teamLeader ||
       role == manager ||
       role == hrAdmin ||
       role == hrManager ||

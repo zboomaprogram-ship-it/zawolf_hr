@@ -36,6 +36,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
 
   // Permission form fields
   String _permissionType = 'early_leave'; // early_leave | late_arrival
+  DateTime _permissionDate = DateTime.now();
   TimeOfDay _selectedTime = const TimeOfDay(hour: 14, minute: 0);
   int _permissionDurationHours = 2;
   final _permissionReasonController = TextEditingController();
@@ -92,6 +93,20 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
     }
   }
 
+  Future<void> _selectPermissionDate(BuildContext context) async {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _permissionDate.isBefore(today) ? today : _permissionDate,
+      firstDate: today,
+      lastDate: today.add(const Duration(days: 365)),
+    );
+    if (picked != null && picked != _permissionDate) {
+      setState(() => _permissionDate = picked);
+    }
+  }
+
   Future<void> _selectLeaveDateRange(BuildContext context) async {
     final DateTimeRange? picked = await showDateRangePicker(
       context: context,
@@ -115,9 +130,8 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
     final service = PermissionService();
 
     try {
-      final now = DateTime.now();
-      final dateStr = DateFormat('yyyy-MM-dd').format(now);
-      final monthKey = PayrollCycle.keyFor(now);
+      final dateStr = DateFormat('yyyy-MM-dd').format(_permissionDate);
+      final monthKey = PayrollCycle.keyFor(_permissionDate);
 
       final expectedTimeStr =
           '${_selectedTime.hour.toString().padLeft(2, '0')}:${_selectedTime.minute.toString().padLeft(2, '0')}';
@@ -156,6 +170,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
           ),
         );
         _permissionReasonController.clear();
+        setState(() => _permissionDate = DateTime.now());
         _tabController.animateTo(1); // switch to history tab
       }
     } catch (e) {
@@ -327,14 +342,20 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
   }
 
   // Cancel Request Action
-  Future<void> _cancelRequest(String collectionPath, String docId) async {
+  Future<bool> _cancelRequest(String collectionPath, String docId) async {
     final actorId =
         Provider.of<AuthService>(context, listen: false).currentUser?.uid ?? '';
     try {
-      await FirebaseFirestore.instance
-          .collection(collectionPath)
-          .doc(docId)
-          .update({'status': 'cancelled'});
+      if (collectionPath == 'permissions') {
+        await PermissionService().cancelPermission(docId, actorId);
+      } else if (collectionPath == 'leaves') {
+        await LeaveService().cancelLeave(docId, actorId);
+      } else {
+        await FirebaseFirestore.instance
+            .collection(collectionPath)
+            .doc(docId)
+            .update({'status': 'cancelled'});
+      }
       await AuditLogService.instance.record(
         actorId: actorId,
         action: 'request_cancelled',
@@ -346,13 +367,50 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
           context,
         ).showSnackBar(const SnackBar(content: Text('تم إلغاء الطلب بنجاح')));
       }
+      return true;
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text('فشل الإلغاء: $e')));
       }
+      return false;
     }
+  }
+
+  Future<void> _editLeaveRequest(LeaveModel request) async {
+    final cancelled = await _cancelRequest('leaves', request.leaveId);
+    if (!cancelled) return;
+    if (!mounted) return;
+    setState(() {
+      _requestTypeIndex = 1;
+      _leaveType = request.leaveType;
+      _leaveStart = request.startDate;
+      _leaveEnd = request.endDate;
+      _leaveReasonController.text = request.reason ?? '';
+      _workHandoverController.text = request.workHandoverTo;
+      _attachmentUrl = request.attachmentUrl;
+    });
+    _tabController.animateTo(0);
+  }
+
+  Future<void> _editPermissionRequest(PermissionModel request) async {
+    final cancelled = await _cancelRequest('permissions', request.permissionId);
+    if (!cancelled) return;
+    if (!mounted) return;
+    final time = request.expectedTime.split(':');
+    setState(() {
+      _requestTypeIndex = 0;
+      _permissionType = request.permissionType;
+      _permissionDate = DateTime.parse(request.requestDate);
+      _selectedTime = TimeOfDay(
+        hour: int.parse(time[0]),
+        minute: int.parse(time[1]),
+      );
+      _permissionDurationHours = (request.durationMinutes / 60).round();
+      _permissionReasonController.text = request.reason;
+    });
+    _tabController.animateTo(0);
   }
 
   @override
@@ -549,13 +607,17 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
           const SizedBox(height: 10),
           Row(
             children: [
-              _balanceItem('سنوية', balance.annual, ZaWolfColors.primaryCyan),
-              _balanceItem('مرضية', balance.sick, ZaWolfColors.permissionTeal),
-              _balanceItem('عارضة', balance.casual, ZaWolfColors.warning),
               _balanceItem(
-                'أيام إجازة',
+                'الرصيد الكلي',
                 balance.daysOff,
                 ZaWolfColors.dayoffPurple,
+              ),
+              Expanded(
+                child: Text(
+                  'الإجازة العارضة جزء من هذا الرصيد، والمرضية بلا رصيد محدد.',
+                  textAlign: TextAlign.center,
+                  style: theme.textTheme.bodySmall,
+                ),
               ),
             ],
           ),
@@ -673,7 +735,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
             ),
             const SizedBox(height: 16),
 
-            // Late arrival warning if selected
+            // Late arrival policy if selected
             if (_permissionType == 'late_arrival') ...[
               Container(
                 padding: const EdgeInsets.all(8),
@@ -691,7 +753,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        'ملاحظة: يجب تقديم إذن تأخير الحضور قبل موعد بداية العمل الرسمي لتفادي الرفض التلقائي.',
+                        'يمكن تقديم الطلب ليوم آخر أو بعد بداية الدوام. عند الموافقة النهائية يُعاد حساب أي خصم تلقائياً.',
                         style: theme.textTheme.bodySmall!.copyWith(
                           color: ZaWolfColors.warning,
                           fontSize: 10,
@@ -703,6 +765,28 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
               ),
               const SizedBox(height: 16),
             ],
+
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text('تاريخ الإذن:', style: theme.textTheme.bodyMedium),
+                TextButton.icon(
+                  onPressed: () => _selectPermissionDate(context),
+                  icon: const Icon(
+                    Icons.calendar_month,
+                    color: ZaWolfColors.permissionTeal,
+                  ),
+                  label: Text(
+                    DateFormat('yyyy/MM/dd').format(_permissionDate),
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      color: ZaWolfColors.permissionTeal,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const Divider(color: ZaWolfColors.surface02),
 
             // Time Picker
             Row(
@@ -861,6 +945,15 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
                   selected: _leaveType == LeaveTypePolicy.exam,
                   onSelected: (val) {
                     if (val) setState(() => _leaveType = LeaveTypePolicy.exam);
+                  },
+                ),
+                ChoiceChip(
+                  label: const Center(child: Text('عمل عن بعد')),
+                  selected: _leaveType == LeaveTypePolicy.remote,
+                  onSelected: (val) {
+                    if (val) {
+                      setState(() => _leaveType = LeaveTypePolicy.remote);
+                    }
                   },
                 ),
               ],
@@ -1443,20 +1536,45 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
                       req.reviewerComment!.isNotEmpty) ...[
                     const SizedBox(height: 8),
                     Text(
-                      'تعليق المدير: ${req.reviewerComment}',
+                      'سبب الرفض: ${req.reviewerComment}',
                       style: theme.textTheme.bodySmall!.copyWith(
                         color: ZaWolfColors.warning,
                       ),
                     ),
+                    if (req.reviewerName != null &&
+                        req.reviewerName!.isNotEmpty)
+                      Text(
+                        'تم الرفض بواسطة: ${req.reviewerName}',
+                        style: theme.textTheme.bodySmall,
+                      ),
                   ],
-                  if (req.status == 'pending') ...[
+                  if (req.status == 'pending' ||
+                      req.status == 'pending_hr' ||
+                      req.status == 'pending_manager' ||
+                      (req.status == 'approved' &&
+                          req.startDate.isAfter(DateTime.now()))) ...[
                     const SizedBox(height: 12),
-                    WolfButton(
-                      onPressed: () => _cancelRequest('leaves', req.leaveId),
-                      text: 'إلغاء الطلب',
-                      secondaryText: 'CANCEL REQUEST',
-                      variant: WolfButtonVariant.outline,
-                      height: 40,
+                    Row(
+                      children: [
+                        Expanded(
+                          child: WolfButton(
+                            onPressed: () =>
+                                _cancelRequest('leaves', req.leaveId),
+                            text: 'إلغاء',
+                            variant: WolfButtonVariant.outline,
+                            height: 40,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: WolfButton(
+                            onPressed: () => _editLeaveRequest(req),
+                            text: 'تعديل',
+                            variant: WolfButtonVariant.teal,
+                            height: 40,
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ],
@@ -1544,22 +1662,44 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
                       req.reviewerComment!.isNotEmpty) ...[
                     const SizedBox(height: 8),
                     Text(
-                      'تعليق المراجع: ${req.reviewerComment}',
+                      'سبب الرفض: ${req.reviewerComment}',
                       style: theme.textTheme.bodySmall!.copyWith(
                         color: ZaWolfColors.warning,
                       ),
                     ),
+                    if (req.reviewerName != null &&
+                        req.reviewerName!.isNotEmpty)
+                      Text(
+                        'تم الرفض بواسطة: ${req.reviewerName}',
+                        style: theme.textTheme.bodySmall,
+                      ),
                   ],
                   if (req.status == 'pending_hr' ||
-                      req.status == 'pending_manager') ...[
+                      req.status == 'pending_manager' ||
+                      (req.status == 'approved' &&
+                          _permissionHasNotStarted(req))) ...[
                     const SizedBox(height: 12),
-                    WolfButton(
-                      onPressed: () =>
-                          _cancelRequest('permissions', req.permissionId),
-                      text: 'إلغاء الطلب',
-                      secondaryText: 'CANCEL REQUEST',
-                      variant: WolfButtonVariant.outline,
-                      height: 40,
+                    Row(
+                      children: [
+                        Expanded(
+                          child: WolfButton(
+                            onPressed: () =>
+                                _cancelRequest('permissions', req.permissionId),
+                            text: 'إلغاء',
+                            variant: WolfButtonVariant.outline,
+                            height: 40,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: WolfButton(
+                            onPressed: () => _editPermissionRequest(req),
+                            text: 'تعديل',
+                            variant: WolfButtonVariant.teal,
+                            height: 40,
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ],
@@ -1569,6 +1709,22 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
         );
       },
     );
+  }
+
+  bool _permissionHasNotStarted(PermissionModel request) {
+    try {
+      final date = DateTime.parse(request.requestDate);
+      final time = request.expectedTime.split(':');
+      return DateTime(
+        date.year,
+        date.month,
+        date.day,
+        int.parse(time[0]),
+        int.parse(time[1]),
+      ).isAfter(DateTime.now());
+    } catch (_) {
+      return false;
+    }
   }
 
   Widget _buildEmptyState(String text) {

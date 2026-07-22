@@ -6,33 +6,45 @@ import '../models/employee_role.dart';
 import '../models/manager_approval_chain.dart';
 import 'audit_log_service.dart';
 import 'attendance_policy_service.dart';
+import 'request_approval_policy_service.dart';
+import 'role_notification_service.dart';
+import 'attendance_reconciliation_service.dart';
 import '../utils/payroll_cycle.dart';
 
 class PermissionService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
   final AttendancePolicyService _policyService = AttendancePolicyService();
+  final RequestApprovalPolicyService _approvalPolicyService =
+      RequestApprovalPolicyService();
+  final AttendanceReconciliationService _reconciliationService =
+      AttendanceReconciliationService();
 
   List<String> _approvalManagerIds(UserModel employee, String fallbackId) {
     return ManagerApprovalChain.orderedIds(
       employee.managerIds,
       fallbackId: fallbackId,
+      teamLeaderId: employee.teamLeaderId,
     );
   }
 
   List<String> _approvalManagerNames(UserModel employee, String? fallbackName) {
-    final names = employee.managerNames
-        .where((name) => name.trim().isNotEmpty)
-        .toList();
-    if (names.isNotEmpty) return names;
-    return fallbackName == null || fallbackName.trim().isEmpty
-        ? <String>[]
-        : <String>[fallbackName];
+    final ids = _approvalManagerIds(employee, employee.managerId ?? '');
+    return ManagerApprovalChain.orderedNames(
+      orderedIds: ids,
+      managerIds: employee.managerIds,
+      managerNames: employee.managerNames,
+      teamLeaderId: employee.teamLeaderId,
+      teamLeaderName: employee.teamLeaderName,
+      fallbackManagerId: employee.managerId,
+      fallbackManagerName: fallbackName,
+    );
   }
 
   Map<String, dynamic> _nextManagerApprovalUpdate({
     required Map<String, dynamic> data,
     required String reviewerId,
     required String reviewerRole,
+    required String finalStatus,
   }) {
     final managerIds =
         (data['managerIds'] as List<dynamic>?)
@@ -77,7 +89,7 @@ class PermissionService {
     }
 
     return {
-      'status': 'approved',
+      'status': finalStatus,
       'managerApprovalIndex': managerIds.isEmpty ? 0 : managerIds.length - 1,
       'managerApprovalTrail': FieldValue.arrayUnion([trail]),
       'reviewedBy': reviewerId,
@@ -102,7 +114,8 @@ class PermissionService {
   // Submit permission request with rule audits
   Future<void> submitPermission(PermissionModel req, UserModel employee) async {
     final now = DateTime.now();
-    final monthKey = PayrollCycle.keyFor(now);
+    final requestDay = DateTime.parse(req.requestDate);
+    final monthKey = PayrollCycle.keyFor(requestDay);
     final policyConfig = await _policyService.getPolicyConfig();
 
     // ── Rule 1: Validate quota (maximum 2 permissions OR 5 hours total) ──
@@ -123,12 +136,20 @@ class PermissionService {
     final newHours = req.durationMinutes / 60.0;
     final isExceedingQuota = usedCount >= 2 || (usedHours + newHours) > 5.0;
 
-    // ── Rule 2: Late arrival request must be submitted before work start ──
-    bool isLateSubmission = false;
+    // Submission after shift start remains visible for audit, but it no longer
+    // rejects the request. Final approval reconciles any attendance deduction.
+    var isLateSubmission = false;
     if (req.permissionType == 'late_arrival') {
       final workStartStr =
           employee.workSchedule.startTime ?? policyConfig.defaultStartTime;
-      final workStart = _parseTimeToday(workStartStr);
+      final startParts = workStartStr.split(':');
+      final workStart = DateTime(
+        requestDay.year,
+        requestDay.month,
+        requestDay.day,
+        int.parse(startParts[0]),
+        int.parse(startParts[1]),
+      );
       isLateSubmission = now.isAfter(workStart);
     }
 
@@ -152,18 +173,23 @@ class PermissionService {
       dayFraction: deduction.dayFraction,
     );
 
-    final managerIds = _approvalManagerIds(employee, req.managerId);
-    final managerNames = _approvalManagerNames(employee, employee.managerName);
-    if (!isLateSubmission && managerIds.isEmpty) {
+    final requiresHrOnlyApproval = employee.role == EmployeeRole.superAdmin;
+    final managerIds = requiresHrOnlyApproval
+        ? <String>[]
+        : _approvalManagerIds(employee, req.managerId);
+    final managerNames = requiresHrOnlyApproval
+        ? <String>[]
+        : _approvalManagerNames(employee, employee.managerName);
+    if (managerIds.isEmpty && !requiresHrOnlyApproval) {
       throw Exception(
         'لا يمكن إرسال الطلب قبل تعيين مدير مباشر للموظف من إدارة الحسابات.',
       );
     }
-    final firstManagerId = managerIds.isEmpty
-        ? req.managerId
-        : managerIds.first;
+    final firstManagerId = managerIds.isEmpty ? '' : managerIds.first;
     final permRef = _db.collection('permissions').doc();
-    final finalStatus = isLateSubmission ? 'invalid_late' : 'pending_manager';
+    final finalStatus = requiresHrOnlyApproval
+        ? 'pending_hr'
+        : 'pending_manager';
 
     final finalModel = PermissionModel(
       permissionId: permRef.id,
@@ -193,6 +219,28 @@ class PermissionService {
 
     await permRef.set({
       ...finalModel.toFirestore(),
+      'requestDateTimestamp': Timestamp.fromDate(
+        DateTime(
+          req.requestDate.isEmpty
+              ? now.year
+              : int.parse(req.requestDate.substring(0, 4)),
+          req.requestDate.isEmpty
+              ? now.month
+              : int.parse(req.requestDate.substring(5, 7)),
+          req.requestDate.isEmpty
+              ? now.day
+              : int.parse(req.requestDate.substring(8, 10)),
+        ),
+      ),
+      'expectedTimestamp': Timestamp.fromDate(
+        DateTime(
+          int.parse(req.requestDate.substring(0, 4)),
+          int.parse(req.requestDate.substring(5, 7)),
+          int.parse(req.requestDate.substring(8, 10)),
+          int.parse(req.expectedTime.substring(0, 2)),
+          int.parse(req.expectedTime.substring(3, 5)),
+        ),
+      ),
       'managerIds': managerIds,
       'managerNames': managerNames,
       'managerApprovalIndex': 0,
@@ -201,17 +249,15 @@ class PermissionService {
     });
 
     // ── Triggers notifications (No functions, direct Firestore write) ──
-    if (isLateSubmission) {
-      // Notify employee of auto-rejection
-      try {
-        await _createNotification(
-          recipientId: req.userId,
-          type: 'permission_invalid_late',
-          title: 'طلب إذن غير مقبول ❌',
-          body:
-              'لا يُعتد بطلب تأخير الحضور المقدَّم بعد بداية وقت العمل الرسمي وفق اللائحة.',
-        );
-      } catch (_) {}
+    if (requiresHrOnlyApproval) {
+      await RoleNotificationService.instance.notifyRole(
+        role: EmployeeRole.hrAdmin,
+        includeSuperAdmins: false,
+        type: 'permission_pending_hr',
+        title: 'طلب إذن لمالك النظام',
+        body: '${req.employeeName} أرسل طلب إذن وينتظر قرار HR.',
+        data: {'permissionId': permRef.id},
+      );
     } else {
       await _createNotification(
         recipientId: firstManagerId,
@@ -225,6 +271,50 @@ class PermissionService {
     }
   }
 
+  Future<void> cancelPermission(String permissionId, String userId) async {
+    final ref = _db.collection('permissions').doc(permissionId);
+    final userRef = _db.collection('users').doc(userId);
+    await _db.runTransaction((transaction) async {
+      final doc = await transaction.get(ref);
+      if (!doc.exists) throw Exception('طلب الإذن غير موجود.');
+      final permission = PermissionModel.fromFirestore(doc);
+      if (permission.userId != userId) {
+        throw Exception('غير مسموح بإلغاء الطلب.');
+      }
+      if (permission.status == 'rejected' || permission.status == 'cancelled') {
+        throw Exception('لا يمكن إلغاء هذا الطلب.');
+      }
+      final requestDay = DateTime.parse(permission.requestDate);
+      final expectedParts = permission.expectedTime.split(':');
+      final effectiveTime = DateTime(
+        requestDay.year,
+        requestDay.month,
+        requestDay.day,
+        int.parse(expectedParts[0]),
+        int.parse(expectedParts[1]),
+      );
+      final today = DateTime.now();
+      if (permission.status == 'approved' && !effectiveTime.isAfter(today)) {
+        throw Exception('لا يمكن إلغاء إذن بدأ موعده بالفعل.');
+      }
+      transaction.update(ref, {
+        'status': 'cancelled',
+        'cancelledAt': FieldValue.serverTimestamp(),
+        'cancelledBy': userId,
+        if (permission.status == 'approved') 'balanceRestored': true,
+      });
+      if (permission.status == 'approved') {
+        transaction.update(userRef, {
+          'permissionBalance.usedThisMonth': FieldValue.increment(-1),
+          'permissionBalance.usedHoursThisMonth': FieldValue.increment(
+            -(permission.durationMinutes / 60.0),
+          ),
+          'lastPermissionBalanceRestorationId': permissionId,
+        });
+      }
+    });
+  }
+
   // Assigned managers approve sequentially, from direct to highest manager.
   Future<void> approvePermission(String permissionId, String reviewerId) async {
     final docRef = _db.collection('permissions').doc(permissionId);
@@ -235,6 +325,19 @@ class PermissionService {
 
     final reviewerDoc = await _db.collection('users').doc(reviewerId).get();
     final reviewerRole = (reviewerDoc.data()?['role'] as String?) ?? 'employee';
+    final reviewerName =
+        (reviewerDoc.data()?['displayName'] as String?)?.trim() ?? '';
+    if (perm.status == 'pending_hr' && perm.userId == reviewerId) {
+      throw Exception('لا يمكن اعتماد طلبك الشخصي. يجب أن يراجعه HR آخر.');
+    }
+    final requesterDoc = await _db.collection('users').doc(perm.userId).get();
+    final requesterRole = requesterDoc.data()?['role'] as String? ?? '';
+    if (perm.status == 'pending_hr' &&
+        requesterRole == EmployeeRole.superAdmin &&
+        reviewerRole != EmployeeRole.hrAdmin &&
+        reviewerRole != EmployeeRole.hrManager) {
+      throw Exception('طلبات مالك النظام يراجعها HR أو مدير HR فقط.');
+    }
 
     if (perm.status == 'pending_hr') {
       final data = doc.data() ?? <String, dynamic>{};
@@ -248,19 +351,26 @@ class PermissionService {
               ?.whereType<String>()
               .toList() ??
           <String>[];
+      final approvalTrail =
+          (data['managerApprovalTrail'] as List<dynamic>?) ?? <dynamic>[];
+      final managersCompleted =
+          managerIds.isEmpty || approvalTrail.length >= managerIds.length;
       final firstManagerId = managerIds.isNotEmpty ? managerIds.first : '';
       final update = {
-        'status': firstManagerId.isEmpty ? 'approved' : 'pending_manager',
-        if (firstManagerId.isNotEmpty) 'managerId': firstManagerId,
-        if (managerNames.isNotEmpty) 'managerName': managerNames.first,
-        'managerApprovalIndex': 0,
+        'status': managersCompleted ? 'approved' : 'pending_manager',
+        if (!managersCompleted && firstManagerId.isNotEmpty)
+          'managerId': firstManagerId,
+        if (!managersCompleted && managerNames.isNotEmpty)
+          'managerName': managerNames.first,
+        if (!managersCompleted) 'managerApprovalIndex': 0,
         'hrReviewedBy': reviewerId,
         'hrReviewedAt': FieldValue.serverTimestamp(),
         'reviewedBy': reviewerId,
+        'reviewerName': reviewerName,
         'reviewedAt': FieldValue.serverTimestamp(),
       };
 
-      if (firstManagerId.isEmpty) {
+      if (managersCompleted) {
         final batch = _db.batch();
         batch.update(docRef, update);
         batch.update(_db.collection('users').doc(perm.userId), {
@@ -282,7 +392,7 @@ class PermissionService {
         metadata: {'userId': perm.userId, 'managerId': perm.managerId},
       );
 
-      if (firstManagerId.isNotEmpty) {
+      if (!managersCompleted && firstManagerId.isNotEmpty) {
         try {
           await _createNotification(
             recipientId: firstManagerId,
@@ -294,6 +404,7 @@ class PermissionService {
           );
         } catch (_) {}
       } else {
+        await _reconciliationService.reconcileApprovedPermission(perm);
         try {
           await _createNotification(
             recipientId: perm.userId,
@@ -326,11 +437,14 @@ class PermissionService {
     }
 
     final batch = _db.batch();
+    final approvalPolicy = await _approvalPolicyService.getPolicy();
     final nextUpdate = _nextManagerApprovalUpdate(
       data: doc.data() ?? <String, dynamic>{},
       reviewerId: reviewerId,
       reviewerRole: reviewerRole,
+      finalStatus: approvalPolicy.finalManagerApprovalStatus,
     );
+    nextUpdate['reviewerName'] = reviewerName;
 
     // 1. Update status
     batch.update(docRef, nextUpdate);
@@ -376,7 +490,20 @@ class PermissionService {
       return;
     }
 
+    if (nextUpdate['status'] == 'pending_hr') {
+      await RoleNotificationService.instance.notifyRole(
+        role: EmployeeRole.hrAdmin,
+        type: 'permission_pending_hr',
+        title: 'طلب إذن بانتظار مراجعة HR',
+        body:
+            'اكتملت موافقات المديرين على طلب ${perm.employeeName} وينتظر القرار النهائي من HR.',
+        data: {'permissionId': permissionId},
+      );
+      return;
+    }
+
     // 3. Notify employee
+    await _reconciliationService.reconcileApprovedPermission(perm);
     try {
       await _createNotification(
         recipientId: perm.userId,
@@ -407,7 +534,20 @@ class PermissionService {
 
     final reviewerDoc = await _db.collection('users').doc(reviewerId).get();
     final reviewerRole = (reviewerDoc.data()?['role'] as String?) ?? 'employee';
+    final reviewerName =
+        (reviewerDoc.data()?['displayName'] as String?)?.trim() ?? '';
     final isHrStage = perm.status == 'pending_hr'; // Legacy requests only.
+    if (isHrStage && perm.userId == reviewerId) {
+      throw Exception('لا يمكن رفض طلبك الشخصي. يجب أن يراجعه HR آخر.');
+    }
+    final requesterDoc = await _db.collection('users').doc(perm.userId).get();
+    final requesterRole = requesterDoc.data()?['role'] as String? ?? '';
+    if (isHrStage &&
+        requesterRole == EmployeeRole.superAdmin &&
+        reviewerRole != EmployeeRole.hrAdmin &&
+        reviewerRole != EmployeeRole.hrManager) {
+      throw Exception('طلبات مالك النظام يراجعها HR أو مدير HR فقط.');
+    }
     if (!isHrStage && perm.managerId != reviewerId) {
       throw Exception('هذا الطلب ينتظر قرار مدير آخر.');
     }
@@ -417,6 +557,7 @@ class PermissionService {
       'reviewedBy': reviewerId,
       'reviewedAt': FieldValue.serverTimestamp(),
       'reviewerComment': comment,
+      'reviewerName': reviewerName,
       if (isHrStage) 'hrReviewedBy': reviewerId,
       if (isHrStage) 'hrReviewedAt': FieldValue.serverTimestamp(),
       if (isHrStage) 'hrReviewerComment': comment,

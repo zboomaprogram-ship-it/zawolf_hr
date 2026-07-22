@@ -2,12 +2,16 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../components/wolf_card.dart';
+import '../../components/dynamic_dropdown.dart';
 import '../../components/wolf_input_field.dart';
 import '../../models/kpi_model.dart';
 import '../../models/employee_role.dart';
+import '../../models/location_model.dart';
 import '../../models/user_model.dart';
 import '../../services/auth_service.dart';
+import '../../services/department_service.dart';
 import '../../services/kpi_service.dart';
+import '../../services/location_service.dart';
 import '../../theme/theme.dart';
 import '../../utils/payroll_cycle.dart';
 
@@ -213,18 +217,38 @@ class _EmployeeKpiTab extends StatelessWidget {
                           );
                         }),
                         const Divider(),
-                        if (kpi.status == KpiStatus.active)
-                          FilledButton.icon(
-                            onPressed: () => _finalize(context, kpi),
-                            icon: const Icon(Icons.lock_outline),
-                            label: const Text('اعتماد وإغلاق النتيجة'),
-                          )
-                        else if (EmployeeRole.isHr(reviewer.role))
-                          OutlinedButton.icon(
-                            onPressed: () => _reopen(context, kpi),
-                            icon: const Icon(Icons.lock_outline),
-                            label: const Text('إعادة فتح النتيجة'),
-                          ),
+                        Row(
+                          children: [
+                            IconButton(
+                              tooltip: 'حذف KPI من الموظف',
+                              onPressed: () => _deleteKpi(context, kpi),
+                              icon: const Icon(
+                                Icons.delete_outline,
+                                color: ZaWolfColors.error,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: kpi.status == KpiStatus.active
+                                  ? FilledButton.icon(
+                                      onPressed: () => _finalize(context, kpi),
+                                      icon: const Icon(Icons.lock_outline),
+                                      label: const Text(
+                                        'اعتماد وإغلاق النتيجة',
+                                      ),
+                                    )
+                                  : EmployeeRole.isHr(reviewer.role)
+                                  ? OutlinedButton.icon(
+                                      onPressed: () => _reopen(context, kpi),
+                                      icon: const Icon(
+                                        Icons.lock_open_outlined,
+                                      ),
+                                      label: const Text('إعادة فتح النتيجة'),
+                                    )
+                                  : const SizedBox.shrink(),
+                            ),
+                          ],
+                        ),
                       ],
                     ),
                   ),
@@ -290,6 +314,35 @@ class _EmployeeKpiTab extends StatelessWidget {
   Future<void> _reopen(BuildContext context, EmployeeKpiModel kpi) async {
     try {
       await kpiService.reopenKpi(kpi: kpi, reviewer: reviewer);
+    } catch (error) {
+      if (context.mounted) _showError(context, error);
+    }
+  }
+
+  Future<void> _deleteKpi(BuildContext context, EmployeeKpiModel kpi) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('حذف KPI المعين'),
+        content: Text(
+          'سيتم حذف أهداف ${kpi.employeeName} لدورة ${kpi.monthKey} نهائياً. لا يمكن التراجع عن هذا الإجراء.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('إلغاء'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: ZaWolfColors.error),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('حذف'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      await kpiService.deleteEmployeeKpi(kpi: kpi, actor: reviewer);
     } catch (error) {
       if (context.mounted) _showError(context, error);
     }
@@ -372,6 +425,12 @@ class _TemplateCard extends StatelessWidget {
             style: theme.textTheme.bodySmall,
             textAlign: TextAlign.right,
           ),
+          if (template.companyName.isNotEmpty)
+            Text(
+              'الشركة: ${template.companyName}',
+              style: theme.textTheme.bodySmall,
+              textAlign: TextAlign.right,
+            ),
           const SizedBox(height: 10),
           ...template.metrics.map(
             (metric) => Text(
@@ -404,6 +463,16 @@ class _TemplateCard extends StatelessWidget {
               Text(template.isActive ? 'نشط' : 'مؤرشف'),
               const Spacer(),
               IconButton(
+                tooltip: 'حذف القالب',
+                onPressed: !canEdit
+                    ? null
+                    : () => _confirmDeleteTemplate(context),
+                icon: const Icon(
+                  Icons.delete_outline,
+                  color: ZaWolfColors.error,
+                ),
+              ),
+              IconButton(
                 tooltip: 'تعديل القالب',
                 onPressed: !canEdit
                     ? null
@@ -430,6 +499,35 @@ class _TemplateCard extends StatelessWidget {
       ),
     );
   }
+
+  Future<void> _confirmDeleteTemplate(BuildContext context) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('حذف قالب KPI'),
+        content: const Text(
+          'سيتم حذف القالب فقط. سجلات KPI التي سبق تعيينها للموظفين ستبقى كما هي حتى تحذفها بشكل منفصل.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('إلغاء'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: ZaWolfColors.error),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('حذف القالب'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      await kpiService.deleteTemplate(template: template, actor: reviewer);
+    } catch (error) {
+      if (context.mounted) _showError(context, error);
+    }
+  }
 }
 
 class _CreateTemplateSheet extends StatefulWidget {
@@ -449,13 +547,15 @@ class _CreateTemplateSheet extends StatefulWidget {
 
 class _CreateTemplateSheetState extends State<_CreateTemplateSheet> {
   final _title = TextEditingController();
-  final _department = TextEditingController();
   final _metricName = TextEditingController();
   final _unit = TextEditingController(text: 'عدد');
   final _target = TextEditingController();
   final _weight = TextEditingController(text: '100');
   final List<KpiMetricTemplate> _metrics = [];
   String _direction = KpiMetricDirection.higherIsBetter;
+  String? _department;
+  String? _companyLocationId;
+  String _companyName = '';
 
   @override
   void initState() {
@@ -463,7 +563,11 @@ class _CreateTemplateSheetState extends State<_CreateTemplateSheet> {
     final existing = widget.existingTemplate;
     if (existing != null) {
       _title.text = existing.title;
-      _department.text = existing.department;
+      _department = existing.department;
+      _companyLocationId = existing.companyLocationId.isEmpty
+          ? null
+          : existing.companyLocationId;
+      _companyName = existing.companyName;
       _metrics.addAll(existing.metrics);
     }
   }
@@ -471,7 +575,6 @@ class _CreateTemplateSheetState extends State<_CreateTemplateSheet> {
   @override
   void dispose() {
     _title.dispose();
-    _department.dispose();
     _metricName.dispose();
     _unit.dispose();
     _target.dispose();
@@ -500,7 +603,64 @@ class _CreateTemplateSheetState extends State<_CreateTemplateSheet> {
             const SizedBox(height: 12),
             WolfInputField(controller: _title, labelText: 'اسم القالب'),
             const SizedBox(height: 10),
-            WolfInputField(controller: _department, labelText: 'القسم'),
+            DynamicDropdown(
+              label: 'القسم / الإدارة',
+              actionLabel: 'قسم جديد',
+              dialogTitle: 'إضافة قسم جديد لكل النظام',
+              initialValue: _department,
+              onChanged: (value) => _department = value,
+              stream: DepartmentService.instance.watchDepartments(),
+              onAdd: DepartmentService.instance.addDepartment,
+              onInit: DepartmentService.instance.bootstrapDepartmentsIfNeeded,
+              canAdd: EmployeeRole.isHr(widget.reviewer.role),
+            ),
+            const SizedBox(height: 10),
+            StreamBuilder<List<LocationModel>>(
+              stream: LocationService().watchActiveLocations(),
+              builder: (context, snapshot) {
+                final locations = snapshot.data ?? const <LocationModel>[];
+                final knownIds = locations
+                    .map((location) => location.locationId)
+                    .toSet();
+                return DropdownButtonFormField<String>(
+                  key: ValueKey(
+                    '${_companyLocationId ?? 'all'}-${knownIds.length}',
+                  ),
+                  initialValue:
+                      _companyLocationId == null ||
+                          knownIds.contains(_companyLocationId)
+                      ? _companyLocationId
+                      : null,
+                  decoration: const InputDecoration(
+                    labelText: 'الشركة (اختياري)',
+                    helperText: 'القائمة مأخوذة من مواقع وفروع الشركة',
+                  ),
+                  items: [
+                    const DropdownMenuItem<String>(
+                      value: null,
+                      child: Text('كل الشركات / غير محدد'),
+                    ),
+                    ...locations.map(
+                      (location) => DropdownMenuItem<String>(
+                        value: location.locationId,
+                        child: Text(location.name),
+                      ),
+                    ),
+                  ],
+                  onChanged: (value) {
+                    final selected = value == null
+                        ? null
+                        : locations
+                              .where((location) => location.locationId == value)
+                              .firstOrNull;
+                    setState(() {
+                      _companyLocationId = selected?.locationId;
+                      _companyName = selected?.name ?? '';
+                    });
+                  },
+                );
+              },
+            ),
             const SizedBox(height: 16),
             Text(
               'المؤشرات',
@@ -628,7 +788,7 @@ class _CreateTemplateSheetState extends State<_CreateTemplateSheet> {
 
   Future<void> _save() async {
     if (_title.text.trim().length < 3 ||
-        _department.text.trim().isEmpty ||
+        (_department?.trim().isEmpty ?? true) ||
         _metrics.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -643,7 +803,9 @@ class _CreateTemplateSheetState extends State<_CreateTemplateSheet> {
         await widget.kpiService.createTemplate(
           creator: widget.reviewer,
           title: _title.text,
-          department: _department.text,
+          department: _department!,
+          companyLocationId: _companyLocationId ?? '',
+          companyName: _companyName,
           metrics: _metrics,
         );
       } else {
@@ -651,7 +813,9 @@ class _CreateTemplateSheetState extends State<_CreateTemplateSheet> {
           template: existing,
           editor: widget.reviewer,
           title: _title.text,
-          department: _department.text,
+          department: _department!,
+          companyLocationId: _companyLocationId ?? '',
+          companyName: _companyName,
           metrics: _metrics,
         );
       }
@@ -782,7 +946,7 @@ class _AssignKpiSheetState extends State<_AssignKpiSheet> {
                         (template) => DropdownMenuItem(
                           value: template,
                           child: Text(
-                            '${template.title} · ${template.department}',
+                            '${template.title} · ${template.department}${template.companyName.isEmpty ? '' : ' · ${template.companyName}'}',
                           ),
                         ),
                       )

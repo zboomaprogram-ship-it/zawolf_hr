@@ -265,6 +265,13 @@ class _NavigationWrapperState extends State<NavigationWrapper>
           path: '/team-leader/employees',
         ),
         NavigationItem(
+          icon: Icons.rule_outlined,
+          activeIcon: Icons.rule,
+          label: 'موافقات الفريق',
+          englishLabel: 'Approvals',
+          path: '/team-leader/requests',
+        ),
+        NavigationItem(
           icon: Icons.task_alt_outlined,
           activeIcon: Icons.task_alt,
           label: 'مهام الفريق',
@@ -752,9 +759,11 @@ class _NavigationWrapperState extends State<NavigationWrapper>
                 // Show badge for pending requests on manager/HR requests tabs
                 final isRequestsTab =
                     item.path == '/manager/requests' ||
-                    item.path == '/hr/requests';
+                    item.path == '/hr/requests' ||
+                    item.path == '/team-leader/requests';
                 if (isRequestsTab &&
                     (role == EmployeeRole.manager ||
+                        role == EmployeeRole.teamLeader ||
                         role == EmployeeRole.hrAdmin ||
                         role == EmployeeRole.hrManager ||
                         role == EmployeeRole.superAdmin)) {

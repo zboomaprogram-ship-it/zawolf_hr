@@ -22,6 +22,20 @@ void main() {
       );
     });
 
+    test('places the assigned team leader before managers', () {
+      expect(
+        ManagerApprovalChain.orderedIds([
+          'direct-manager',
+          'higher-manager',
+        ], teamLeaderId: 'team-leader'),
+        ['team-leader', 'direct-manager', 'higher-manager'],
+      );
+      expect(
+        EmployeeRole.canActAsApprovalManager(EmployeeRole.teamLeader),
+        isTrue,
+      );
+    });
+
     test('ignores a stale saved index and follows current manager id', () {
       expect(
         ManagerApprovalChain.nextIndex(

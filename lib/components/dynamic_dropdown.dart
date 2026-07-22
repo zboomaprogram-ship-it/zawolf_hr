@@ -10,6 +10,7 @@ class DynamicDropdown extends StatefulWidget {
   final Stream<List<String>> stream;
   final Future<void> Function(String) onAdd;
   final Future<void> Function() onInit;
+  final bool canAdd;
 
   const DynamicDropdown({
     super.key,
@@ -21,6 +22,7 @@ class DynamicDropdown extends StatefulWidget {
     required this.stream,
     required this.onAdd,
     required this.onInit,
+    this.canAdd = true,
   });
 
   @override
@@ -45,7 +47,10 @@ class _DynamicDropdownState extends State<DynamicDropdown> {
       builder: (context) {
         return AlertDialog(
           backgroundColor: ZaWolfColors.surface01,
-          title: Text(widget.dialogTitle, style: const TextStyle(color: Colors.white)),
+          title: Text(
+            widget.dialogTitle,
+            style: const TextStyle(color: Colors.white),
+          ),
           content: TextField(
             controller: controller,
             style: const TextStyle(color: Colors.white),
@@ -57,11 +62,17 @@ class _DynamicDropdownState extends State<DynamicDropdown> {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context),
-              child: const Text('إلغاء', style: TextStyle(color: ZaWolfColors.textSecondary)),
+              child: const Text(
+                'إلغاء',
+                style: TextStyle(color: ZaWolfColors.textSecondary),
+              ),
             ),
             TextButton(
               onPressed: () => Navigator.pop(context, controller.text.trim()),
-              child: const Text('إضافة', style: TextStyle(color: ZaWolfColors.primaryCyan)),
+              child: const Text(
+                'إضافة',
+                style: TextStyle(color: ZaWolfColors.primaryCyan),
+              ),
             ),
           ],
         );
@@ -92,17 +103,18 @@ class _DynamicDropdownState extends State<DynamicDropdown> {
                 fontWeight: FontWeight.w600,
               ),
             ),
-            TextButton.icon(
-              onPressed: _showAddDialog,
-              icon: const Icon(Icons.add, size: 16),
-              label: Text(widget.actionLabel),
-              style: TextButton.styleFrom(
-                foregroundColor: ZaWolfColors.primaryCyan,
-                padding: EdgeInsets.zero,
-                minimumSize: const Size(0, 0),
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            if (widget.canAdd)
+              TextButton.icon(
+                onPressed: _showAddDialog,
+                icon: const Icon(Icons.add, size: 16),
+                label: Text(widget.actionLabel),
+                style: TextButton.styleFrom(
+                  foregroundColor: ZaWolfColors.primaryCyan,
+                  padding: EdgeInsets.zero,
+                  minimumSize: const Size(0, 0),
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
               ),
-            ),
           ],
         ),
         const SizedBox(height: 8),
@@ -111,14 +123,18 @@ class _DynamicDropdownState extends State<DynamicDropdown> {
           builder: (context, snapshot) {
             final items = snapshot.data ?? [];
             if (!_isInitialized && items.isNotEmpty) {
-              if (_selectedValue != null && _selectedValue!.isNotEmpty && !items.contains(_selectedValue)) {
+              if (_selectedValue != null &&
+                  _selectedValue!.isNotEmpty &&
+                  !items.contains(_selectedValue)) {
                 items.add(_selectedValue!);
               }
               _isInitialized = true;
             }
 
             return DropdownButtonFormField<String>(
-              initialValue: (items.contains(_selectedValue)) ? _selectedValue : null,
+              initialValue: (items.contains(_selectedValue))
+                  ? _selectedValue
+                  : null,
               decoration: InputDecoration(
                 filled: true,
                 fillColor: ZaWolfColors.surface01,
@@ -126,7 +142,10 @@ class _DynamicDropdownState extends State<DynamicDropdown> {
                   borderRadius: BorderRadius.circular(8),
                   borderSide: BorderSide.none,
                 ),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 12,
+                ),
               ),
               dropdownColor: ZaWolfColors.surface02,
               style: const TextStyle(color: Colors.white),
@@ -142,7 +161,8 @@ class _DynamicDropdownState extends State<DynamicDropdown> {
                 });
                 widget.onChanged(val);
               },
-              validator: (val) => val == null || val.isEmpty ? 'هذا الحقل مطلوب' : null,
+              validator: (val) =>
+                  val == null || val.isEmpty ? 'هذا الحقل مطلوب' : null,
             );
           },
         ),

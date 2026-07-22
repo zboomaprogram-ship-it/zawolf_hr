@@ -1183,6 +1183,58 @@ class AttendanceService {
     await _reviewSalaryDeduction(attendanceId, reviewerId, 'rejected');
   }
 
+  Future<void> correctCheckInTime({
+    required String attendanceId,
+    required String reviewerId,
+    required DateTime correctedTime,
+    required String reason,
+  }) async {
+    if (reason.trim().isEmpty) {
+      throw Exception('يجب كتابة سبب تعديل وقت الحضور.');
+    }
+    final ref = _db.collection('attendance').doc(attendanceId);
+    final attendanceDoc = await ref.get();
+    if (!attendanceDoc.exists) throw Exception('سجل الحضور غير موجود.');
+    final current = AttendanceModel.fromFirestore(attendanceDoc);
+    final userDoc = await _db.collection('users').doc(current.userId).get();
+    if (!userDoc.exists) throw Exception('حساب الموظف غير موجود.');
+    final employee = UserModel.fromFirestore(userDoc);
+    final policy = await _policyService.getPolicyConfig();
+    final effectiveStart = await _effectiveCheckInStartTime(
+      employee: employee,
+      dateKey: current.date,
+      policyConfig: policy,
+      now: correctedTime,
+    );
+    final deduction = policy.evaluateLateArrival(
+      arrivalTime: correctedTime,
+      employeeStartTime: _formatTime(effectiveStart),
+    );
+    await ref.update({
+      'checkInTime': Timestamp.fromDate(correctedTime),
+      if (current.checkInTime != null &&
+          !attendanceDoc.data()!.containsKey('originalCheckInTime'))
+        'originalCheckInTime': Timestamp.fromDate(current.checkInTime!),
+      'status': deduction.status,
+      'isLate': deduction.isLate,
+      'lateMinutes': deduction.lateMinutes,
+      'salaryDeductionFraction': deduction.dayFraction,
+      'salaryDeductionAmount': policy.calculateSalaryDeductionAmount(
+        monthlySalary: employee.baseMonthlySalary,
+        dayFraction: deduction.dayFraction,
+      ),
+      'salaryCurrency': employee.salaryCurrency,
+      'salaryDeductionCode': deduction.code,
+      'salaryDeductionLabel': deduction.arabicLabel,
+      'salaryDeductionApprovalStatus': deduction.dayFraction > 0
+          ? 'pending_hr'
+          : 'none',
+      'checkInTimeCorrectedBy': reviewerId,
+      'checkInTimeCorrectedAt': FieldValue.serverTimestamp(),
+      'checkInTimeCorrectionReason': reason.trim(),
+    });
+  }
+
   Future<void> approveSecurityReview(
     String attendanceId,
     String reviewerId, {

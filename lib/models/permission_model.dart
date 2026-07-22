@@ -27,6 +27,7 @@ class PermissionModel {
   final DateTime? reviewedAt;
   final String? reviewedBy;
   final String? reviewerComment;
+  final String? reviewerName;
   final DateTime? hrReviewedAt;
   final String? hrReviewedBy;
   final String? hrReviewerComment;
@@ -61,6 +62,7 @@ class PermissionModel {
     this.reviewedAt,
     this.reviewedBy,
     this.reviewerComment,
+    this.reviewerName,
     this.hrReviewedAt,
     this.hrReviewedBy,
     this.hrReviewerComment,
@@ -102,6 +104,7 @@ class PermissionModel {
       reviewedAt: (data['reviewedAt'] as Timestamp?)?.toDate(),
       reviewedBy: data['reviewedBy'] as String?,
       reviewerComment: data['reviewerComment'] as String?,
+      reviewerName: data['reviewerName'] as String?,
       hrReviewedAt: (data['hrReviewedAt'] as Timestamp?)?.toDate(),
       hrReviewedBy: data['hrReviewedBy'] as String?,
       hrReviewerComment: data['hrReviewerComment'] as String?,
@@ -140,6 +143,7 @@ class PermissionModel {
       if (reviewedAt != null) 'reviewedAt': Timestamp.fromDate(reviewedAt!),
       if (reviewedBy != null) 'reviewedBy': reviewedBy,
       if (reviewerComment != null) 'reviewerComment': reviewerComment,
+      if (reviewerName != null) 'reviewerName': reviewerName,
       if (hrReviewedAt != null)
         'hrReviewedAt': Timestamp.fromDate(hrReviewedAt!),
       if (hrReviewedBy != null) 'hrReviewedBy': hrReviewedBy,

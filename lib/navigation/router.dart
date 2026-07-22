@@ -195,7 +195,7 @@ class ZaWolfRouter {
               path: '/assistant',
               builder: (context, state) => const SmartAssistantScreen(),
             ),
-            // Team Leader Routes (team visibility, no approval actions)
+            // Team Leader Routes
             GoRoute(
               path: '/team-leader/dashboard',
               builder: (context, state) => const TeamLeaderDashboardScreen(),
@@ -212,6 +212,10 @@ class ZaWolfRouter {
             GoRoute(
               path: '/team-leader/tasks',
               builder: (context, state) => const TeamLeaderTasksScreen(),
+            ),
+            GoRoute(
+              path: '/team-leader/requests',
+              builder: (context, state) => const RequestsManagementScreen(),
             ),
             GoRoute(
               path: '/team-leader/employee/:userId',

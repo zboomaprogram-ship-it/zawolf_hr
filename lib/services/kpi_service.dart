@@ -101,6 +101,8 @@ class KpiService {
     required UserModel creator,
     required String title,
     required String department,
+    String companyLocationId = '',
+    String companyName = '',
     required List<KpiMetricTemplate> metrics,
   }) async {
     _validateTemplate(title: title, department: department, metrics: metrics);
@@ -109,6 +111,8 @@ class KpiService {
       templateId: ref.id,
       title: title.trim(),
       department: department.trim(),
+      companyLocationId: companyLocationId.trim(),
+      companyName: companyName.trim(),
       createdBy: creator.uid,
       createdByName: creator.displayName,
       isActive: true,
@@ -120,7 +124,12 @@ class KpiService {
       action: 'kpi_template_created',
       targetCollection: 'kpiTemplates',
       targetId: ref.id,
-      metadata: {'department': department, 'metrics': metrics.length},
+      metadata: {
+        'department': department,
+        'companyLocationId': companyLocationId.trim(),
+        'companyName': companyName.trim(),
+        'metrics': metrics.length,
+      },
     );
   }
 
@@ -129,12 +138,16 @@ class KpiService {
     required UserModel editor,
     required String title,
     required String department,
+    String companyLocationId = '',
+    String companyName = '',
     required List<KpiMetricTemplate> metrics,
   }) async {
     _validateTemplate(title: title, department: department, metrics: metrics);
     await _db.collection('kpiTemplates').doc(template.templateId).update({
       'title': title.trim(),
       'department': department.trim(),
+      'companyLocationId': companyLocationId.trim(),
+      'companyName': companyName.trim(),
       'metrics': metrics.map((metric) => metric.toMap()).toList(),
       'updatedAt': FieldValue.serverTimestamp(),
     });
@@ -143,7 +156,12 @@ class KpiService {
       action: 'kpi_template_updated',
       targetCollection: 'kpiTemplates',
       targetId: template.templateId,
-      metadata: {'department': department.trim(), 'metrics': metrics.length},
+      metadata: {
+        'department': department.trim(),
+        'companyLocationId': companyLocationId.trim(),
+        'companyName': companyName.trim(),
+        'metrics': metrics.length,
+      },
     );
   }
 
@@ -162,6 +180,46 @@ class KpiService {
       targetCollection: 'kpiTemplates',
       targetId: template.templateId,
     );
+  }
+
+  Future<void> deleteTemplate({
+    required KpiTemplateModel template,
+    required UserModel actor,
+  }) async {
+    await _db.collection('kpiTemplates').doc(template.templateId).delete();
+    try {
+      await AuditLogService.instance.record(
+        actorId: actor.uid,
+        action: 'kpi_template_deleted',
+        targetCollection: 'kpiTemplates',
+        targetId: template.templateId,
+        metadata: {
+          'title': template.title,
+          'department': template.department,
+          'companyName': template.companyName,
+        },
+      );
+    } catch (_) {}
+  }
+
+  Future<void> deleteEmployeeKpi({
+    required EmployeeKpiModel kpi,
+    required UserModel actor,
+  }) async {
+    await _db.collection('employeeKpis').doc(kpi.employeeKpiId).delete();
+    try {
+      await AuditLogService.instance.record(
+        actorId: actor.uid,
+        action: 'employee_kpi_deleted',
+        targetCollection: 'employeeKpis',
+        targetId: kpi.employeeKpiId,
+        metadata: {
+          'userId': kpi.userId,
+          'employeeName': kpi.employeeName,
+          'monthKey': kpi.monthKey,
+        },
+      );
+    } catch (_) {}
   }
 
   Future<void> assignMonthlyKpi({

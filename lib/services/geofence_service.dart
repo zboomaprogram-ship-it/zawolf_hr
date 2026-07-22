@@ -1,5 +1,6 @@
 import 'package:geolocator/geolocator.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart';
 import '../models/user_model.dart';
 import '../models/location_model.dart';
 
@@ -165,6 +166,14 @@ class GeofenceService {
 
   Future<Position> _getReliablePosition({required bool allowLastKnown}) async {
     final samples = <Position>[];
+    Position? cachedPosition;
+    try {
+      cachedPosition = await Geolocator.getLastKnownPosition();
+      if (cachedPosition != null) _throwIfMocked(cachedPosition);
+    } catch (error) {
+      if (_isMockLocationError(error)) rethrow;
+    }
+
     try {
       final first = await Geolocator.getCurrentPosition(
         desiredAccuracy: LocationAccuracy.high,
@@ -172,7 +181,7 @@ class GeofenceService {
       );
       _throwIfMocked(first);
       if (_isFresh(first)) samples.add(first);
-      if (first.accuracy <= 20) return first;
+      if (_isFresh(first) && first.accuracy <= 25) return first;
 
       try {
         final second = await Geolocator.getCurrentPosition(
@@ -189,12 +198,33 @@ class GeofenceService {
       }
     } catch (error) {
       if (_isMockLocationError(error)) rethrow;
-      if (allowLastKnown) {
-        final lastKnown = await Geolocator.getLastKnownPosition();
-        if (lastKnown != null && _isFresh(lastKnown, maxAgeMinutes: 2)) {
-          return lastKnown;
+    }
+
+    // Some Android devices have an unhealthy Google fused-location provider
+    // even while GPS and internet are enabled. Retry through Android's native
+    // LocationManager before reporting location as unavailable.
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
+      try {
+        final nativePosition = await Geolocator.getCurrentPosition(
+          desiredAccuracy: LocationAccuracy.best,
+          forceAndroidLocationManager: true,
+          timeLimit: const Duration(seconds: 12),
+        );
+        _throwIfMocked(nativePosition);
+        if (_isFresh(nativePosition, maxAgeMinutes: 2)) {
+          return nativePosition;
         }
+      } catch (error) {
+        if (_isMockLocationError(error)) rethrow;
       }
+    }
+
+    if (cachedPosition != null &&
+        _isSafeCachedFallback(
+          cachedPosition,
+          strictLocationOnly: !allowLastKnown,
+        )) {
+      return cachedPosition;
     }
 
     try {
@@ -206,7 +236,7 @@ class GeofenceService {
       if (_isFresh(fallback)) return fallback;
     } catch (_) {}
     throw Exception(
-      'تعذر الحصول على موقع حديث ودقيق. فعّل الموقع الدقيق والإنترنت، وانتقل قرب نافذة أو مكان مفتوح ثم أعد المحاولة.',
+      'تعذر الحصول على قراءة GPS حديثة. فعّل الموقع الدقيق وميزة تحسين دقة الموقع من Google، ثم انتقل قرب نافذة واضغط تحديث.',
     );
   }
 
@@ -232,8 +262,11 @@ class GeofenceService {
           desiredAccuracy: LocationAccuracy.best,
           timeLimit: const Duration(seconds: 8),
         );
+        _throwIfMocked(candidate);
         if (_isFresh(candidate)) candidates.add(candidate);
-      } catch (_) {}
+      } catch (error) {
+        if (_isMockLocationError(error)) rethrow;
+      }
     }
     candidates.sort((a, b) {
       final aDistance = Geolocator.distanceBetween(
@@ -259,5 +292,15 @@ class GeofenceService {
   bool _isFresh(Position position, {int maxAgeMinutes = 1}) {
     final age = DateTime.now().difference(position.timestamp).abs();
     return age <= Duration(minutes: maxAgeMinutes);
+  }
+
+  bool _isSafeCachedFallback(
+    Position position, {
+    required bool strictLocationOnly,
+  }) {
+    final maxAgeMinutes = strictLocationOnly ? 2 : 5;
+    final maxAccuracyMeters = strictLocationOnly ? 25 : 50;
+    return _isFresh(position, maxAgeMinutes: maxAgeMinutes) &&
+        position.accuracy <= maxAccuracyMeters;
   }
 }

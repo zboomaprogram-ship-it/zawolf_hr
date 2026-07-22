@@ -43,7 +43,7 @@ class _ManagerDashboardScreenState extends State<ManagerDashboardScreen> {
         _db
             .collection('leaves')
             .where('managerId', isEqualTo: managerId)
-            .where('status', isEqualTo: 'pending')
+            .where('status', isEqualTo: 'pending_manager')
             .get(),
         _db
             .collection('permissions')

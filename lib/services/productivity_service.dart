@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../models/attendance_model.dart';
@@ -7,10 +9,12 @@ import '../models/productivity_score_model.dart';
 import '../models/task_model.dart';
 import '../models/user_model.dart';
 import 'audit_log_service.dart';
+import 'managed_employee_service.dart';
 import '../utils/payroll_cycle.dart';
 
 class ProductivityService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
+  final ManagedEmployeeService _managedEmployees = ManagedEmployeeService();
 
   Stream<ProductivityScoreModel?> watchCachedScore(
     String userId,
@@ -34,7 +38,10 @@ class ProductivityService {
         .collection('productivityScores')
         .where('monthKey', isEqualTo: monthKey);
     if (reviewer.role == EmployeeRole.manager) {
-      query = query.where('managerId', isEqualTo: reviewer.uid);
+      return _watchMergedRankings([
+        query.where('managerIds', arrayContains: reviewer.uid),
+        query.where('managerId', isEqualTo: reviewer.uid),
+      ]);
     }
     return query.snapshots().map((snapshot) {
       final scores = snapshot.docs
@@ -43,6 +50,51 @@ class ProductivityService {
       scores.sort((a, b) => b.overallScore.compareTo(a.overallScore));
       return scores;
     });
+  }
+
+  Stream<List<ProductivityScoreModel>> _watchMergedRankings(
+    List<Query<Map<String, dynamic>>> queries,
+  ) {
+    late StreamController<List<ProductivityScoreModel>> controller;
+    final snapshots = List<List<ProductivityScoreModel>?>.filled(
+      queries.length,
+      null,
+    );
+    final subscriptions = <StreamSubscription>[];
+
+    void emit() {
+      if (snapshots.any((items) => items == null)) return;
+      final byId = <String, ProductivityScoreModel>{};
+      for (final items in snapshots.whereType<List<ProductivityScoreModel>>()) {
+        for (final item in items) {
+          byId[item.scoreId] = item;
+        }
+      }
+      final scores = byId.values.toList()
+        ..sort((a, b) => b.overallScore.compareTo(a.overallScore));
+      controller.add(scores);
+    }
+
+    controller = StreamController<List<ProductivityScoreModel>>(
+      onListen: () {
+        for (var index = 0; index < queries.length; index++) {
+          subscriptions.add(
+            queries[index].snapshots().listen((snapshot) {
+              snapshots[index] = snapshot.docs
+                  .map(ProductivityScoreModel.fromFirestore)
+                  .toList();
+              emit();
+            }, onError: controller.addError),
+          );
+        }
+      },
+      onCancel: () async {
+        for (final subscription in subscriptions) {
+          await subscription.cancel();
+        }
+      },
+    );
+    return controller.stream;
   }
 
   Future<ProductivityScoreModel> calculateForUser(
@@ -142,6 +194,9 @@ class ProductivityService {
       employeeName: user.displayName,
       department: user.department,
       managerId: user.managerId ?? '',
+      managerIds: user.managerIds.isNotEmpty
+          ? user.managerIds
+          : [if ((user.managerId ?? '').isNotEmpty) user.managerId!],
       monthKey: monthKey,
       attendanceScore: attendanceScore,
       punctualityScore: punctualityScore,
@@ -184,20 +239,7 @@ class ProductivityService {
   }
 
   Future<int> refreshRanking(UserModel reviewer, String monthKey) async {
-    Query<Map<String, dynamic>> query = _db
-        .collection('users')
-        .where('isActive', isEqualTo: true);
-    if (reviewer.role == EmployeeRole.manager) {
-      query = query.where('managerId', isEqualTo: reviewer.uid);
-    }
-    final usersSnap = await query.get();
-    final users = usersSnap.docs.map(UserModel.fromFirestore).where((user) {
-      if (user.role == EmployeeRole.superAdmin) return false;
-      if (reviewer.role == EmployeeRole.manager) {
-        return user.managerId == reviewer.uid;
-      }
-      return true;
-    }).toList();
+    final users = await _managedEmployees.loadForReviewer(reviewer);
 
     for (final user in users) {
       await calculateAndCacheForUser(

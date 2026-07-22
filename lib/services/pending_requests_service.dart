@@ -30,16 +30,20 @@ class PendingRequestsService {
     pendingCount.value = 0;
 
     String targetStatus = 'pending_hr';
-    if (reviewer.role == EmployeeRole.manager) {
+    if (reviewer.role == EmployeeRole.manager ||
+        reviewer.role == EmployeeRole.teamLeader) {
       targetStatus = 'pending_manager';
     }
 
     // 1. Leaves
     Query<Map<String, dynamic>> leavesQuery = _db.collection('leaves');
-    if (EmployeeRole.canActAsApprovalManager(reviewer.role)) {
+    if (reviewer.role == EmployeeRole.manager ||
+        reviewer.role == EmployeeRole.teamLeader) {
       leavesQuery = leavesQuery
           .where('managerId', isEqualTo: reviewer.uid)
           .where('status', isEqualTo: 'pending_manager');
+    } else if (EmployeeRole.isHr(reviewer.role)) {
+      leavesQuery = leavesQuery.where('status', isEqualTo: 'pending_hr');
     }
 
     _leavesSub = leavesQuery.snapshots().listen(
@@ -57,10 +61,16 @@ class PendingRequestsService {
     Query<Map<String, dynamic>> permissionsQuery = _db.collection(
       'permissions',
     );
-    if (EmployeeRole.canActAsApprovalManager(reviewer.role)) {
+    if (reviewer.role == EmployeeRole.manager ||
+        reviewer.role == EmployeeRole.teamLeader) {
       permissionsQuery = permissionsQuery
           .where('managerId', isEqualTo: reviewer.uid)
           .where('status', isEqualTo: 'pending_manager');
+    } else if (EmployeeRole.isHr(reviewer.role)) {
+      permissionsQuery = permissionsQuery.where(
+        'status',
+        isEqualTo: 'pending_hr',
+      );
     }
 
     _permissionsSub = permissionsQuery.snapshots().listen(
@@ -76,7 +86,8 @@ class PendingRequestsService {
 
     // 3. Advances
     Query<Map<String, dynamic>> advancesQuery = _db.collection('advances');
-    if (reviewer.role == EmployeeRole.manager) {
+    if (reviewer.role == EmployeeRole.manager ||
+        reviewer.role == EmployeeRole.teamLeader) {
       advancesQuery = advancesQuery
           .where('managerId', isEqualTo: reviewer.uid)
           .where('status', isEqualTo: targetStatus);

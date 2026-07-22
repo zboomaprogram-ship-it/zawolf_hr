@@ -4,16 +4,43 @@ class ManagerApprovalChain {
   static List<String> orderedIds(
     Iterable<String> managerIds, {
     String? fallbackId,
+    String? teamLeaderId,
   }) {
     final ordered = <String>[];
     final seen = <String>{};
-    for (final rawId in managerIds) {
+    final candidates = <String>[
+      if (teamLeaderId != null) teamLeaderId,
+      ...managerIds,
+    ];
+    for (final rawId in candidates) {
       final id = rawId.trim();
       if (id.isNotEmpty && seen.add(id)) ordered.add(id);
     }
     final fallback = fallbackId?.trim() ?? '';
     if (ordered.isEmpty && fallback.isNotEmpty) ordered.add(fallback);
     return ordered;
+  }
+
+  static List<String> orderedNames({
+    required List<String> orderedIds,
+    required List<String> managerIds,
+    required List<String> managerNames,
+    String? teamLeaderId,
+    String? teamLeaderName,
+    String? fallbackManagerId,
+    String? fallbackManagerName,
+  }) {
+    return orderedIds.map((id) {
+      if (id == teamLeaderId && (teamLeaderName ?? '').trim().isNotEmpty) {
+        return teamLeaderName!.trim();
+      }
+      final index = managerIds.indexOf(id);
+      if (index >= 0 && index < managerNames.length) {
+        return managerNames[index].trim();
+      }
+      if (id == fallbackManagerId) return fallbackManagerName?.trim() ?? '';
+      return '';
+    }).toList();
   }
 
   static int currentIndex({
