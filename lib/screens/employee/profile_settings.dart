@@ -505,13 +505,29 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                       user.teamLeaderName!,
                       theme,
                     ),
-                  _buildProfileRow('تاريخ الانضمام', joinDateStr, theme),
+                  _buildProfileRow('تاريخ التعيين', joinDateStr, theme),
                 ],
               ),
             ),
             const SizedBox(height: 20),
 
             _buildLeaveBalanceCard(user, theme),
+            const SizedBox(height: 20),
+            WolfCard(
+              padding: EdgeInsets.zero,
+              onTap: () => context.go('/employee/deductions'),
+              child: const ListTile(
+                leading: Icon(
+                  Icons.receipt_long_outlined,
+                  color: ZaWolfColors.primaryCyan,
+                ),
+                title: Text('خصوماتي'),
+                subtitle: Text(
+                  'عرض الخصومات بالأيام وحالة مراجعة HR بدون مبالغ مالية',
+                ),
+                trailing: Icon(Icons.chevron_left),
+              ),
+            ),
             const SizedBox(height: 20),
 
             // Settings Panels
@@ -626,6 +642,17 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                             onPressed: () => _enablePushNotifications(user.uid),
                             icon: const Icon(Icons.refresh),
                           ),
+                  ),
+                  const Divider(color: ZaWolfColors.surface02, height: 1),
+                  ListTile(
+                    leading: const Icon(
+                      Icons.notifications_none,
+                      color: ZaWolfColors.primaryCyan,
+                    ),
+                    title: const Text('مركز الإشعارات'),
+                    subtitle: const Text('عرض التنبيهات والإعلانات السابقة'),
+                    trailing: const Icon(Icons.chevron_left),
+                    onTap: () => context.push('/notifications'),
                   ),
                   const Divider(color: ZaWolfColors.surface02, height: 1),
                   ListTile(
@@ -878,11 +905,9 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
   Widget _buildLeaveBalanceCard(UserModel user, ThemeData theme) {
     final balance = user.leaveBalance;
     final items = <({String label, int value, Color color})>[
-      (label: 'سنوية', value: balance.annual, color: ZaWolfColors.primaryCyan),
-      (label: 'مرضية', value: balance.sick, color: ZaWolfColors.permissionTeal),
       (label: 'عارضة', value: balance.casual, color: ZaWolfColors.warning),
       (
-        label: 'أيام إجازة',
+        label: 'الرصيد الكلي',
         value: balance.daysOff,
         color: ZaWolfColors.dayoffPurple,
       ),

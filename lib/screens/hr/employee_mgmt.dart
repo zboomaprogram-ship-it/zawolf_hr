@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:go_router/go_router.dart';
+import 'package:intl/intl.dart' hide TextDirection;
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import '../../services/auth_service.dart';
@@ -22,6 +23,7 @@ import '../../components/wolf_input_field.dart';
 import '../../components/dynamic_dropdown.dart';
 import '../../services/department_service.dart';
 import '../../services/job_title_service.dart';
+import '../../services/role_notification_service.dart';
 
 List<DropdownMenuItem<String>> _roleMenuItems({
   required bool canUseSuperAdmin,
@@ -441,7 +443,12 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
         return '${row[index]}'.trim();
       }
 
-      for (final requiredHeader in ['email', 'displayName', 'employeeId']) {
+      for (final requiredHeader in [
+        'email',
+        'displayName',
+        'employeeId',
+        'hiringDate',
+      ]) {
         final hasHeader = [
           requiredHeader,
           if (requiredHeader == 'displayName') 'Name',
@@ -506,6 +513,13 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
         final locationName = value(row, 'locationName');
         final monthlySalary =
             double.tryParse(value(row, 'baseMonthlySalary', ['Salary'])) ?? 0;
+        final hiringDateText = value(row, 'hiringDate', ['joinDate']);
+        final hiringDate = DateTime.tryParse(hiringDateText);
+        if (hiringDate == null) {
+          throw Exception(
+            'الصف $rowNumber: تاريخ التعيين مطلوب بصيغة YYYY-MM-DD.',
+          );
+        }
         final managerEmail = value(row, 'managerEmail').toLowerCase();
         final managerCodes = _splitImportList(
           value(row, 'managerCodes', ['managerCode', 'Manager Code']),
@@ -581,6 +595,7 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
           managerIds: resolvedSupervisorIds,
           managerNames: resolvedSupervisorNames,
           managerCodes: resolvedSupervisorCodes,
+          hiringDate: hiringDate,
         );
         if (_canBeSupervisor(role)) {
           managerByEmail[email.toLowerCase()] = createdUser;
@@ -1170,45 +1185,115 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
   }
 
   Future<void> _toggleActiveStatus(UserModel emp) async {
-    final confirm = await showDialog<bool>(
+    final actor = Provider.of<AuthService>(context, listen: false).currentUser;
+    if (actor == null) return;
+    final reasonController = TextEditingController();
+    final result = await showDialog<String?>(
       context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: ZaWolfColors.surface01,
-        title: Text(
-          emp.isActive ? 'تعطيل الحساب؟' : 'تفعيل الحساب؟',
-          style: const TextStyle(color: Colors.white),
-        ),
-        content: Text(
-          emp.isActive
-              ? 'هل تريد بالتأكيد تعطيل حساب الموظف ${emp.displayName}؟ لن يتمكن من تسجيل الدخول.'
-              : 'هل تريد تفعيل حساب الموظف ${emp.displayName}؟',
-          style: const TextStyle(color: ZaWolfColors.textSecondary),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text(
-              'إلغاء',
-              style: TextStyle(color: ZaWolfColors.textSecondary),
+      builder: (dialogContext) {
+        String? validationError;
+        return StatefulBuilder(
+          builder: (context, setDialogState) => AlertDialog(
+            backgroundColor: ZaWolfColors.surface01,
+            title: Text(
+              emp.isActive ? 'تعطيل الحساب؟' : 'تفعيل الحساب؟',
+              style: const TextStyle(color: Colors.white),
             ),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: Text(
-              emp.isActive ? 'تعطيل' : 'تفعيل',
-              style: TextStyle(
-                color: emp.isActive ? ZaWolfColors.error : ZaWolfColors.success,
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  emp.isActive
+                      ? 'لن يتمكن ${emp.displayName} من استخدام التطبيق حتى إعادة تفعيل الحساب.'
+                      : 'سيتمكن ${emp.displayName} من استخدام التطبيق مرة أخرى.',
+                  style: const TextStyle(color: ZaWolfColors.textSecondary),
+                ),
+                if (emp.isActive) ...[
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: reasonController,
+                    maxLines: 3,
+                    textDirection: TextDirection.rtl,
+                    decoration: InputDecoration(
+                      labelText: 'سبب التعطيل (مطلوب)',
+                      errorText: validationError,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: const Text(
+                  'إلغاء',
+                  style: TextStyle(color: ZaWolfColors.textSecondary),
+                ),
               ),
-            ),
+              TextButton(
+                onPressed: () {
+                  final reason = reasonController.text.trim();
+                  if (emp.isActive && reason.isEmpty) {
+                    setDialogState(
+                      () => validationError = 'اكتب سبب تعطيل الحساب.',
+                    );
+                    return;
+                  }
+                  Navigator.pop(dialogContext, emp.isActive ? reason : '');
+                },
+                child: Text(
+                  emp.isActive ? 'تعطيل' : 'تفعيل',
+                  style: TextStyle(
+                    color: emp.isActive
+                        ? ZaWolfColors.error
+                        : ZaWolfColors.success,
+                  ),
+                ),
+              ),
+            ],
           ),
-        ],
-      ),
+        );
+      },
     );
-    if (confirm == true) {
-      await _db.collection('users').doc(emp.uid).update({
-        'isActive': !emp.isActive,
-      });
+    if (result == null) return;
+
+    if (emp.isActive) {
+      try {
+        await RoleNotificationService.instance.createNotification(
+          recipientId: emp.uid,
+          type: 'account_deactivated',
+          title: 'تم تعطيل الحساب',
+          body: 'سبب التعطيل: $result',
+          data: const {'route': '/account-disabled'},
+        );
+      } catch (_) {
+        // The stored inactive state and reason remain authoritative.
+      }
     }
+
+    await _db
+        .collection('users')
+        .doc(emp.uid)
+        .update(
+          emp.isActive
+              ? {
+                  'isActive': false,
+                  'deactivationReason': result,
+                  'deactivatedBy': actor.uid,
+                  'deactivatedByName': actor.displayName,
+                  'deactivatedAt': FieldValue.serverTimestamp(),
+                  'updatedAt': FieldValue.serverTimestamp(),
+                }
+              : {
+                  'isActive': true,
+                  'deactivationReason': FieldValue.delete(),
+                  'deactivatedBy': FieldValue.delete(),
+                  'deactivatedByName': FieldValue.delete(),
+                  'deactivatedAt': FieldValue.delete(),
+                  'updatedAt': FieldValue.serverTimestamp(),
+                },
+        );
+    reasonController.dispose();
   }
 
   Future<void> _confirmDeleteEmployee(UserModel emp) async {
@@ -1474,7 +1559,8 @@ class _AddEmployeeDialogState extends State<AddEmployeeDialog> {
   final _jobTitleController = TextEditingController();
   final _codeController = TextEditingController();
   final _salaryController = TextEditingController(text: '0');
-  final _daysOffController = TextEditingController(text: '21');
+  final _daysOffController = TextEditingController(text: '15');
+  final _casualLeaveController = TextEditingController(text: '7');
 
   String _selectedRole = 'employee';
   String? _selectedDepartment;
@@ -1488,6 +1574,7 @@ class _AddEmployeeDialogState extends State<AddEmployeeDialog> {
   String _workStartTime = '09:00';
   String _workEndTime = '17:00';
   List<int> _workDays = [6, 7, 1, 2, 3, 4];
+  DateTime? _hiringDate;
 
   bool _isLoading = false;
   List<LocationModel> _locations = [];
@@ -1561,6 +1648,7 @@ class _AddEmployeeDialogState extends State<AddEmployeeDialog> {
     _codeController.dispose();
     _salaryController.dispose();
     _daysOffController.dispose();
+    _casualLeaveController.dispose();
     super.dispose();
   }
 
@@ -1640,6 +1728,12 @@ class _AddEmployeeDialogState extends State<AddEmployeeDialog> {
       );
       return;
     }
+    if (_hiringDate == null) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('تاريخ التعيين مطلوب.')));
+      return;
+    }
 
     setState(() {
       _isLoading = true;
@@ -1663,7 +1757,8 @@ class _AddEmployeeDialogState extends State<AddEmployeeDialog> {
         locationId: _selectedLocationId!,
         locationName: _selectedLocationName!,
         baseMonthlySalary: double.tryParse(_salaryController.text) ?? 0,
-        daysOffBalance: int.tryParse(_daysOffController.text) ?? 21,
+        daysOffBalance: int.tryParse(_daysOffController.text) ?? 15,
+        casualLeaveBalance: int.tryParse(_casualLeaveController.text) ?? 7,
         managerId: primaryManager?.uid,
         managerName: primaryManager?.displayName,
         managerIds: selectedManagers.map((manager) => manager.uid).toList(),
@@ -1681,6 +1776,7 @@ class _AddEmployeeDialogState extends State<AddEmployeeDialog> {
           endTime: _workEndTime,
           workDays: _workDays,
         ),
+        hiringDate: _hiringDate!,
       );
 
       if (mounted) {
@@ -1829,6 +1925,37 @@ class _AddEmployeeDialogState extends State<AddEmployeeDialog> {
                 ),
                 const SizedBox(height: 16),
 
+                ListTile(
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+                  shape: RoundedRectangleBorder(
+                    side: const BorderSide(color: ZaWolfColors.surface03),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  leading: const Icon(
+                    Icons.event_available_outlined,
+                    color: ZaWolfColors.primaryCyan,
+                  ),
+                  title: const Text('تاريخ التعيين'),
+                  subtitle: Text(
+                    _hiringDate == null
+                        ? 'مطلوب لحساب استحقاق الإجازات'
+                        : DateFormat('yyyy-MM-dd').format(_hiringDate!),
+                  ),
+                  trailing: const Icon(Icons.calendar_month_outlined),
+                  onTap: () async {
+                    final selected = await showDatePicker(
+                      context: context,
+                      initialDate: _hiringDate ?? DateTime.now(),
+                      firstDate: DateTime(1980),
+                      lastDate: DateTime.now(),
+                    );
+                    if (selected != null) {
+                      setState(() => _hiringDate = selected);
+                    }
+                  },
+                ),
+                const SizedBox(height: 16),
+
                 // Email
                 WolfInputField(
                   controller: _emailController,
@@ -1911,13 +2038,32 @@ class _AddEmployeeDialogState extends State<AddEmployeeDialog> {
                   controller: _daysOffController,
                   labelText: 'رصيد العطلات (بالأيام)',
                   englishLabel: 'Days Off Balance',
-                  hintText: '21',
+                  hintText: '15',
                   keyboardType: TextInputType.number,
                   validator: (val) {
                     if (val == null || val.trim().isEmpty) {
                       return 'الرصيد مطلوب';
                     }
                     if (int.tryParse(val) == null) return 'قيمة غير صالحة';
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 16),
+                WolfInputField(
+                  controller: _casualLeaveController,
+                  labelText: 'رصيد الإجازات العارضة',
+                  englishLabel: 'Casual Leave Balance',
+                  hintText: '7',
+                  keyboardType: TextInputType.number,
+                  validator: (val) {
+                    final balance = int.tryParse(val ?? '');
+                    if (balance == null || balance < 0) {
+                      return 'أدخل رصيداً صحيحاً';
+                    }
+                    final total = int.tryParse(_daysOffController.text) ?? 0;
+                    if (balance > total) {
+                      return 'رصيد العارضة لا يمكن أن يتجاوز الرصيد الكلي';
+                    }
                     return null;
                   },
                 ),
@@ -2196,6 +2342,7 @@ class _EditEmployeeDialogState extends State<EditEmployeeDialog> {
   late final TextEditingController _codeController;
   late final TextEditingController _salaryController;
   late final TextEditingController _daysOffController;
+  late final TextEditingController _casualLeaveController;
 
   String? _selectedDepartment;
   late String _selectedRole;
@@ -2209,6 +2356,7 @@ class _EditEmployeeDialogState extends State<EditEmployeeDialog> {
   late String _workStartTime;
   late String _workEndTime;
   late List<int> _workDays;
+  DateTime? _hiringDate;
 
   bool _isLoading = false;
   List<LocationModel> _locations = [];
@@ -2228,6 +2376,9 @@ class _EditEmployeeDialogState extends State<EditEmployeeDialog> {
     _daysOffController = TextEditingController(
       text: emp.leaveBalance.daysOff.toString(),
     );
+    _casualLeaveController = TextEditingController(
+      text: emp.leaveBalance.casual.toString(),
+    );
     _selectedDepartment = emp.department;
 
     _selectedRole = emp.role;
@@ -2242,6 +2393,7 @@ class _EditEmployeeDialogState extends State<EditEmployeeDialog> {
     _workDays = List<int>.from(
       emp.workSchedule.workDays ?? const [6, 7, 1, 2, 3, 4],
     );
+    _hiringDate = emp.joinDate;
     _selectedManagerIds = emp.managerIds.isNotEmpty
         ? List<String>.from(emp.managerIds)
         : [
@@ -2448,6 +2600,7 @@ class _EditEmployeeDialogState extends State<EditEmployeeDialog> {
     _codeController.dispose();
     _salaryController.dispose();
     _daysOffController.dispose();
+    _casualLeaveController.dispose();
     super.dispose();
   }
 
@@ -2500,9 +2653,13 @@ class _EditEmployeeDialogState extends State<EditEmployeeDialog> {
         'locationName': _selectedLocationName!,
         'baseMonthlySalary': double.tryParse(_salaryController.text) ?? 0,
         'salaryCurrency': widget.employee.salaryCurrency,
+        if (_hiringDate != null) 'joinDate': Timestamp.fromDate(_hiringDate!),
         'leaveBalance.daysOff':
             int.tryParse(_daysOffController.text) ??
             widget.employee.leaveBalance.daysOff,
+        'leaveBalance.casual':
+            int.tryParse(_casualLeaveController.text) ??
+            widget.employee.leaveBalance.casual,
         'managerId': primaryManager?.uid,
         'managerName': primaryManager?.displayName,
         'managerIds': selectedManagers.map((manager) => manager.uid).toList(),
@@ -2734,6 +2891,36 @@ class _EditEmployeeDialogState extends State<EditEmployeeDialog> {
                     return null;
                   },
                 ),
+                const SizedBox(height: 12),
+                ListTile(
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+                  shape: RoundedRectangleBorder(
+                    side: const BorderSide(color: ZaWolfColors.surface03),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  leading: const Icon(
+                    Icons.event_available_outlined,
+                    color: ZaWolfColors.primaryCyan,
+                  ),
+                  title: const Text('تاريخ التعيين'),
+                  subtitle: Text(
+                    _hiringDate == null
+                        ? 'غير مسجل - مطلوب لحساب الإجازات'
+                        : DateFormat('yyyy-MM-dd').format(_hiringDate!),
+                  ),
+                  trailing: const Icon(Icons.edit_calendar_outlined),
+                  onTap: () async {
+                    final selected = await showDatePicker(
+                      context: context,
+                      initialDate: _hiringDate ?? DateTime.now(),
+                      firstDate: DateTime(1970),
+                      lastDate: DateTime.now(),
+                    );
+                    if (selected != null && mounted) {
+                      setState(() => _hiringDate = selected);
+                    }
+                  },
+                ),
                 const SizedBox(height: 16),
 
                 WolfInputField(
@@ -2745,6 +2932,23 @@ class _EditEmployeeDialogState extends State<EditEmployeeDialog> {
                       return 'الرصيد مطلوب';
                     }
                     if (int.tryParse(val) == null) return 'قيمة غير صالحة';
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 16),
+                WolfInputField(
+                  controller: _casualLeaveController,
+                  labelText: 'رصيد الإجازات العارضة',
+                  keyboardType: TextInputType.number,
+                  validator: (val) {
+                    final balance = int.tryParse(val ?? '');
+                    if (balance == null || balance < 0) {
+                      return 'أدخل رصيداً صحيحاً';
+                    }
+                    final total = int.tryParse(_daysOffController.text) ?? 0;
+                    if (balance > total) {
+                      return 'رصيد العارضة لا يمكن أن يتجاوز الرصيد الكلي';
+                    }
                     return null;
                   },
                 ),

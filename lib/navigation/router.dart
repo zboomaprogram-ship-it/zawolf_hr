@@ -15,6 +15,7 @@ import '../screens/employee/employee_productivity_screen.dart';
 import '../screens/employee/employee_tasks_screen.dart';
 import '../screens/employee/employee_warnings_rewards_screen.dart';
 import '../screens/employee/employee_payroll_screen.dart';
+import '../screens/employee/employee_deductions_screen.dart';
 import '../screens/employee/profile_settings.dart';
 import '../screens/employee/performance_view.dart';
 import '../screens/employee/suggestions_screen.dart';
@@ -41,7 +42,9 @@ import '../screens/manager/rate_performance.dart';
 import '../screens/smart_assistant_screen.dart';
 import '../screens/hr/department_performance_screen.dart';
 import '../screens/shared/employee_insights_screen.dart';
+import '../screens/shared/notifications_screen.dart';
 import '../screens/shared/polls_screen.dart';
+import '../screens/account_disabled_screen.dart';
 import '../screens/team_leader/team_leader_dashboard.dart';
 import '../screens/team_leader/team_tasks_screen.dart';
 
@@ -56,6 +59,7 @@ class ZaWolfRouter {
         final loggingIn = state.matchedLocation == '/login';
         final onSplash = state.matchedLocation == '/splash';
         final viewingPrivacy = state.matchedLocation == '/privacy';
+        final viewingDisabled = state.matchedLocation == '/account-disabled';
 
         final authenticated = authService.isAuthenticated;
         if (authService.loading) {
@@ -71,6 +75,13 @@ class ZaWolfRouter {
             return '/login';
           }
           return null;
+        }
+
+        if (authService.currentUser?.isActive == false) {
+          return viewingDisabled ? null : '/account-disabled';
+        }
+        if (viewingDisabled) {
+          return '/splash';
         }
 
         // 2. Authenticated users should be sent to their dashboard if they hit splash or login
@@ -139,11 +150,19 @@ class ZaWolfRouter {
           path: '/privacy',
           builder: (context, state) => const PrivacyPolicyScreen(),
         ),
+        GoRoute(
+          path: '/account-disabled',
+          builder: (context, state) => const AccountDisabledScreen(),
+        ),
 
         // Shell Route to wrap dashboard screens with bottom navigation
         ShellRoute(
           builder: (context, state, child) => NavigationWrapper(child: child),
           routes: [
+            GoRoute(
+              path: '/notifications',
+              builder: (context, state) => const NotificationsScreen(),
+            ),
             GoRoute(
               path: '/polls',
               builder: (context, state) => const PollsScreen(),
@@ -192,6 +211,10 @@ class ZaWolfRouter {
               builder: (context, state) => const EmployeePayrollScreen(),
             ),
             GoRoute(
+              path: '/employee/deductions',
+              builder: (context, state) => const EmployeeDeductionsScreen(),
+            ),
+            GoRoute(
               path: '/assistant',
               builder: (context, state) => const SmartAssistantScreen(),
             ),
@@ -202,8 +225,9 @@ class ZaWolfRouter {
             ),
             GoRoute(
               path: '/team-leader/attendance-summary',
-              builder: (context, state) =>
-                  const AttendanceSummaryDetailsScreen(),
+              builder: (context, state) => AttendanceSummaryDetailsScreen(
+                initialStatus: state.uri.queryParameters['status'],
+              ),
             ),
             GoRoute(
               path: '/team-leader/employees',
@@ -230,8 +254,9 @@ class ZaWolfRouter {
             ),
             GoRoute(
               path: '/manager/attendance-summary',
-              builder: (context, state) =>
-                  const AttendanceSummaryDetailsScreen(),
+              builder: (context, state) => AttendanceSummaryDetailsScreen(
+                initialStatus: state.uri.queryParameters['status'],
+              ),
             ),
             GoRoute(
               path: '/manager/requests',
@@ -287,8 +312,9 @@ class ZaWolfRouter {
             ),
             GoRoute(
               path: '/hr/attendance-summary',
-              builder: (context, state) =>
-                  const AttendanceSummaryDetailsScreen(),
+              builder: (context, state) => AttendanceSummaryDetailsScreen(
+                initialStatus: state.uri.queryParameters['status'],
+              ),
             ),
             GoRoute(
               path: '/hr/requests',

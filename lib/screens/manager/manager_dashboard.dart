@@ -267,6 +267,9 @@ class _ManagerDashboardScreenState extends State<ManagerDashboardScreen> {
                       summary: summarySnapshot.data!,
                       onRefresh: _loadAttendanceSummary,
                       onTap: () => context.go('/manager/attendance-summary'),
+                      onCategoryTap: (status) => context.go(
+                        '/manager/attendance-summary?status=$status',
+                      ),
                     );
                   },
                 ),

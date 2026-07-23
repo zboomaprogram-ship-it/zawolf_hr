@@ -5,6 +5,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/employee_role.dart';
 import '../models/task_model.dart';
 import '../models/user_model.dart';
+import '../models/notification_route_policy.dart';
 import 'audit_log_service.dart';
 
 class TaskService {
@@ -318,7 +319,7 @@ class TaskService {
       'type': type,
       'title': title,
       'body': body,
-      'data': data ?? {},
+      'data': NotificationRoutePolicy.dataWithRoute(type, data),
       'isRead': false,
       'pushSent': false,
       'createdAt': FieldValue.serverTimestamp(),

@@ -20,6 +20,9 @@ service cloud.firestore {
     function isHRRole() { return role() == 'hr_admin'; }
     function isHRManagerRole() { return role() == 'hr_manager'; }
     function isSuperAdmin() { return role() == 'super_admin'; }
+    function isCompanyCeo() {
+      return userDocExists() && userDoc().get('employeeId', '') == 'CEO-100';
+    }
     function isHR() { return isHRRole() || isHRManagerRole() || isSuperAdmin(); }
     function isHRStaff() { return isHRRole() || isHRManagerRole(); }
     function isPrivilegedAdmin() { return isHRManagerRole() || isSuperAdmin(); }
@@ -50,6 +53,37 @@ service cloud.firestore {
     }
     function isAssignedTeamLeaderForUser(userId) {
       return isAssignedTeamLeaderFor(recipientDoc(userId));
+    }
+    function assignedManagerIds(userId) {
+      let employee = recipientDoc(userId);
+      let legacyManagerId = employee.get('managerId', '');
+      return employee.get('managerIds', []) is list
+          && employee.get('managerIds', []).size() > 0
+        ? employee.get('managerIds', [])
+        : (legacyManagerId is string && legacyManagerId.size() > 0
+          ? [legacyManagerId]
+          : []);
+    }
+    function hasValidAssignedApprovalManagers(userId) {
+      let employee = recipientDoc(userId);
+      let baseManagers = assignedManagerIds(userId);
+      let teamLeaderId = employee.get('teamLeaderId', '');
+      let managersWithoutLeader = baseManagers.removeAll([teamLeaderId]);
+      let submittedManagers = request.resource.data.managerIds;
+      return submittedManagers is list
+        && (
+          (
+            teamLeaderId is string
+            && teamLeaderId.size() > 0
+            && submittedManagers.size() == managersWithoutLeader.size() + 1
+            && submittedManagers[0] == teamLeaderId
+            && submittedManagers.removeAll([teamLeaderId]) == managersWithoutLeader
+          )
+          || (
+            (!(teamLeaderId is string) || teamLeaderId.size() == 0)
+            && submittedManagers == baseManagers
+          )
+        );
     }
     function recipientDoc(userId) {
       return get(userPath(userId)).data;
@@ -107,6 +141,36 @@ service cloud.firestore {
       // server-time checks separately below.
       return request.resource.data.userId == uid();
     }
+    function regularPermissionQuotaExhausted() {
+      let balance = recipientDoc(uid()).get('permissionBalance', {});
+      return balance.get('usedThisMonth', 0) >= 2
+        || balance.get('usedHoursThisMonth', 0) >= 5;
+    }
+    function permissionDeductionValuesValid() {
+      let deductible = request.resource.data.get('isDeductible', false);
+      let durationMinutes = request.resource.data.durationMinutes;
+      return (
+          deductible
+          && request.resource.data.get('isExceedingQuota', false) == true
+          && request.resource.data.salaryDeductionFraction
+            == (durationMinutes <= 120 ? 0.25 : 0.5)
+          && request.resource.data.salaryDeductionAmount >= 0
+          && request.resource.data.salaryDeductionCode
+            == (durationMinutes <= 120
+              ? 'deductible_permission_quarter_day'
+              : 'deductible_permission_half_day')
+          && request.resource.data.get(
+            'salaryDeductionApprovalStatus',
+            'none'
+          ) == 'pending_hr'
+        ) || (
+          !deductible
+          && request.resource.data.get('isExceedingQuota', false) == false
+          && request.resource.data.get('salaryDeductionFraction', 0) == 0
+          && request.resource.data.get('salaryDeductionApprovalStatus', 'none')
+            == 'none'
+        );
+    }
     function attendanceDeviceBelongsToCurrentUser(deviceId) {
       // Installed clients can briefly retain the previous attendance device
       // id after a profile refresh or device-id migration. The binding
@@ -148,6 +212,25 @@ service cloud.firestore {
         && get(leavePath).data.get('managerId', '') == userId
         && userId in get(leavePath).data.get('managerIds', []);
     }
+    function canNotifyResignationStageReviewer(userId) {
+      let resignationId = request.resource.data.get(
+        'data',
+        {}
+      ).get('resignationId', '');
+      let resignationPath =
+        /databases/$(database)/documents/resignations/$(resignationId);
+      return resignationId is string
+        && resignationId.size() > 0
+        && exists(resignationPath)
+        && get(resignationPath).data.get('userId', '') == uid()
+        && (
+          get(resignationPath).data.get('managerId', '') == userId
+          || (
+            get(resignationPath).data.get('status', '') == 'pending_hr'
+            && recipientDoc(userId).get('role', '') == 'hr_manager'
+          )
+        );
+    }
     function canCreateNotificationFor(userId) {
       return uid() == userId
         || isHR()
@@ -166,6 +249,8 @@ service cloud.firestore {
             'permission_pending_hr',
             'advance_pending_hr',
             'leave_request_submitted',
+            'resignation_pending_hr',
+            'warning_dismissal_review',
             'complaint_new',
             'attendance_security_review'
           ]
@@ -175,7 +260,8 @@ service cloud.firestore {
           request.resource.data.type in [
             'permission_pending_manager',
             'advance_pending_manager',
-            'leave_request_submitted'
+            'leave_request_submitted',
+            'resignation_pending_manager'
           ]
           && (
             userDoc().get('managerId', '') == userId
@@ -187,6 +273,10 @@ service cloud.firestore {
             || (
               request.resource.data.type == 'leave_request_submitted'
               && canNotifyLeaveStageManager(userId)
+            )
+            || (
+              request.resource.data.type == 'resignation_pending_manager'
+              && canNotifyResignationStageReviewer(userId)
             )
           )
         )
@@ -226,7 +316,9 @@ service cloud.firestore {
           )
         )
         || (
-          request.resource.data.type == 'warning_reward_created'
+          request.resource.data.type in [
+            'warning_reward_created', 'warning_final_chance'
+          ]
           && (
             isHR() ||
             (
@@ -350,10 +442,42 @@ service cloud.firestore {
         && getAfter(leavePath).data.get('status', '') == 'cancelled'
         && getAfter(leavePath).data.get('cancelledBy', '') == uid()
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-          'leaveBalance', 'lastLeaveBalanceRestorationId'
+          'leaveBalance', 'leaveBalance.daysOff', 'leaveBalance.casual',
+          'lastLeaveBalanceRestorationId'
         ])
         && request.resource.data.leaveBalance.daysOff
-          == resource.data.leaveBalance.daysOff + get(leavePath).data.numberOfDays;
+          == resource.data.leaveBalance.daysOff + get(leavePath).data.numberOfDays
+        && (
+          get(leavePath).data.get('leaveType', '') != 'casual'
+          || request.resource.data.leaveBalance.casual
+            == resource.data.leaveBalance.casual + get(leavePath).data.numberOfDays
+        );
+    }
+    function ownerCasualLeaveBalanceDeduction() {
+      let leaveId = request.resource.data.get(
+        'lastAutoApprovedCasualLeaveId',
+        ''
+      );
+      let leavePath = /databases/$(database)/documents/leaves/$(leaveId);
+      return leaveId is string
+        && leaveId.size() > 0
+        && existsAfter(leavePath)
+        && getAfter(leavePath).data.get('userId', '') == uid()
+        && getAfter(leavePath).data.get('leaveType', '') == 'casual'
+        && getAfter(leavePath).data.get('status', '') == 'approved'
+        && getAfter(leavePath).data.get('autoApproved', false) == true
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'leaveBalance', 'leaveBalance.daysOff', 'leaveBalance.casual',
+          'lastAutoApprovedCasualLeaveId'
+        ])
+        && request.resource.data.leaveBalance.daysOff
+          == resource.data.leaveBalance.daysOff
+            - getAfter(leavePath).data.numberOfDays
+        && request.resource.data.leaveBalance.casual
+          == resource.data.leaveBalance.casual
+            - getAfter(leavePath).data.numberOfDays
+        && request.resource.data.leaveBalance.daysOff >= 0
+        && request.resource.data.leaveBalance.casual >= 0;
     }
     function hrCanWriteUser() {
       return isHRRole()
@@ -362,16 +486,40 @@ service cloud.firestore {
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           'displayName', 'employeeId', 'department', 'position', 'role',
           'locationId', 'locationName', 'baseMonthlySalary', 'salaryCurrency',
-          'leaveBalance', 'leaveBalance.daysOff',
+          'leaveBalance', 'leaveBalance.daysOff', 'leaveBalance.casual',
           'permissionBalance', 'permissionBalance.usedThisMonth',
           'permissionBalance.usedHoursThisMonth', 'permissionBalance.lastResetMonth',
           'managerId', 'managerName', 'managerIds', 'managerNames',
           'managerCodes', 'teamLeaderId', 'teamLeaderName',
-          'isActive', 'workSchedule', 'updatedAt',
+          'isActive', 'joinDate', 'workSchedule', 'updatedAt',
+          'leaveEligibleFrom', 'leaveEntitlementQuota',
+          'leaveEntitlementStatus', 'leaveEntitlementPeriodKey',
+          'deactivationReason', 'deactivatedBy', 'deactivatedByName',
+          'deactivatedAt',
           'registeredAttendanceDeviceId',
           'registeredAttendanceDeviceLabel',
           'registeredAttendanceDeviceAt'
         ]);
+    }
+    function validAccountStatusChange() {
+      return request.resource.data.get('isActive', true)
+          == resource.data.get('isActive', true)
+        || (
+          request.resource.data.get('isActive', true) == false
+          && request.resource.data.get('deactivationReason', '') is string
+          && request.resource.data.get('deactivationReason', '').size() > 0
+          && request.resource.data.get('deactivatedBy', '') == uid()
+          && request.resource.data.get('deactivatedByName', '') is string
+          && request.resource.data.get('deactivatedByName', '').size() > 0
+          && request.resource.data.deactivatedAt == request.time
+        )
+        || (
+          request.resource.data.get('isActive', true) == true
+          && !request.resource.data.keys().hasAny([
+            'deactivationReason', 'deactivatedBy', 'deactivatedByName',
+            'deactivatedAt'
+          ])
+        );
     }
     function hrCanCreateUser() {
       return isHRRole()
@@ -382,7 +530,9 @@ service cloud.firestore {
           'baseMonthlySalary', 'salaryCurrency', 'managerId', 'managerName',
           'managerIds', 'managerNames', 'managerCodes', 'isActive',
           'teamLeaderId', 'teamLeaderName',
-          'joinDate', 'workSchedule', 'leaveBalance', 'permissionBalance',
+          'joinDate', 'workSchedule', 'leaveBalance', 'leaveBalance.casual', 'permissionBalance',
+          'leaveEligibleFrom', 'leaveEntitlementQuota',
+          'leaveEntitlementStatus', 'leaveEntitlementPeriodKey',
           'notificationTokens', 'unreadNotifications', 'createdAt',
           'updatedAt', 'passwordChangedAt'
         ]);
@@ -621,7 +771,11 @@ service cloud.firestore {
           <= resource.data.get('salaryDeductionAmount', 0);
     }
     function leaveHrReview() {
-      return isHR()
+      return isHRStaff()
+        && (
+          resource.data.get('managerIds', []).size() > 0
+          || isHRManagerRole()
+        )
         && uid() != resource.data.userId
         && (
           recipientDoc(resource.data.userId).get('role', '') != 'super_admin'
@@ -631,9 +785,13 @@ service cloud.firestore {
         && request.resource.data.diff(resource.data).affectedKeys()
           .hasOnly([
             'status', 'reviewedBy', 'reviewedAt', 'reviewerComment', 'reviewerName', 'isRead',
-            'managerId', 'managerName', 'managerApprovalIndex'
+            'managerId', 'managerName', 'managerApprovalIndex',
+            'approvalHistory', 'ceoId', 'ceoName',
+            'finalApproverId', 'finalApproverName', 'finalApprovalAt'
           ])
-        && request.resource.data.status in ['pending_manager', 'approved', 'rejected']
+        && request.resource.data.status in [
+          'pending_manager', 'pending_ceo', 'approved', 'rejected'
+        ]
         && request.resource.data.reviewedBy == uid();
     }
     function leaveManagerReview() {
@@ -644,9 +802,23 @@ service cloud.firestore {
         && request.resource.data.diff(resource.data).affectedKeys()
           .hasOnly([
             'status', 'reviewedBy', 'reviewedAt', 'reviewerComment', 'reviewerName', 'isRead',
-            'managerId', 'managerName', 'managerApprovalIndex', 'managerApprovalTrail'
+            'managerId', 'managerName', 'managerApprovalIndex',
+            'managerApprovalTrail', 'approvalHistory'
           ])
         && request.resource.data.status in ['pending_manager', 'pending_hr', 'approved', 'rejected']
+        && request.resource.data.reviewedBy == uid();
+    }
+    function leaveCeoReview() {
+      return isCompanyCeo()
+        && resource.data.status == 'pending_ceo'
+        && resource.data.get('ceoId', '') == uid()
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly([
+            'status', 'reviewedBy', 'reviewedAt', 'reviewerComment',
+            'reviewerName', 'approvalHistory', 'finalApproverId',
+            'finalApproverName', 'finalApprovalAt'
+          ])
+        && request.resource.data.status in ['approved', 'rejected']
         && request.resource.data.reviewedBy == uid();
     }
     function advanceHrReview() {
@@ -676,7 +848,11 @@ service cloud.firestore {
         && request.resource.data.reviewedBy == uid();
     }
     function permissionHrReview() {
-      return isHR()
+      return isHRStaff()
+        && (
+          resource.data.get('managerIds', []).size() > 0
+          || isHRManagerRole()
+        )
         && uid() != resource.data.userId
         && (
           recipientDoc(resource.data.userId).get('role', '') != 'super_admin'
@@ -687,11 +863,18 @@ service cloud.firestore {
           .hasOnly([
             'status', 'reviewedBy', 'reviewedAt', 'reviewerComment', 'reviewerName', 'isRead',
             'hrReviewedBy', 'hrReviewedAt', 'hrReviewerComment',
-            'managerId', 'managerName', 'managerApprovalIndex'
+            'managerId', 'managerName', 'managerApprovalIndex',
+            'salaryDeductionApprovalStatus', 'approvalHistory',
+            'finalApproverId', 'finalApproverName', 'finalApprovalAt'
           ])
         && request.resource.data.status in ['pending_manager', 'approved', 'rejected']
         && request.resource.data.reviewedBy == uid()
-        && request.resource.data.hrReviewedBy == uid();
+        && request.resource.data.hrReviewedBy == uid()
+        && (
+          request.resource.data.status != 'approved'
+          || resource.data.get('isDeductible', false) == false
+          || request.resource.data.salaryDeductionApprovalStatus == 'approved'
+        );
     }
     function permissionManagerReview() {
       return canActAsApprovalManager()
@@ -702,11 +885,16 @@ service cloud.firestore {
           .hasOnly([
             'status', 'reviewedBy', 'reviewedAt', 'reviewerComment', 'reviewerName', 'isRead',
             'managerReviewedBy', 'managerReviewedAt', 'managerReviewerComment',
-            'managerId', 'managerName', 'managerApprovalIndex', 'managerApprovalTrail'
+            'managerId', 'managerName', 'managerApprovalIndex', 'managerApprovalTrail',
+            'approvalHistory', 'finalApproverId', 'finalApproverName', 'finalApprovalAt'
           ])
         && request.resource.data.status in ['pending_manager', 'pending_hr', 'approved', 'rejected']
         && request.resource.data.reviewedBy == uid()
-        && request.resource.data.managerReviewedBy == uid();
+        && request.resource.data.managerReviewedBy == uid()
+        && (
+          resource.data.get('isDeductible', false) == false
+          || request.resource.data.status != 'approved'
+        );
     }
     function taskCreateKeys() {
       return request.resource.data.keys().hasOnly([
@@ -903,7 +1091,7 @@ service cloud.firestore {
         && request.resource.data.createdBy == uid()
         && request.resource.data.managerIds is list
         && request.resource.data.type in [
-          'warning', 'reward', 'bonus_recommendation', 'follow_up'
+          'warning', 'notice', 'reward', 'bonus_recommendation', 'follow_up'
         ]
         && request.resource.data.status in ['suggested', 'issued']
         && request.resource.data.title is string
@@ -992,8 +1180,16 @@ service cloud.firestore {
     }
 
     match /users/{userId} {
-      allow read: if isAuth() && isActive() && (
-        isOwner(userId) || isHR() || isAssignedManagerFor(resource.data) ||
+      allow get: if isAuth() && (
+        isOwner(userId) || (
+          isActive() && (
+            isHR() || isAssignedManagerFor(resource.data) ||
+            isAssignedTeamLeaderFor(resource.data)
+          )
+        )
+      );
+      allow list: if isAuth() && isActive() && (
+        isHR() || isAssignedManagerFor(resource.data) ||
         isAssignedTeamLeaderFor(resource.data)
       );
       allow update: if isAuth() && isActive() && (
@@ -1004,13 +1200,15 @@ service cloud.firestore {
         managerLeaveBalanceUpdate() ||
         (isOwner(userId) && ownerPermissionBalanceRestore()) ||
         (isOwner(userId) && ownerLeaveBalanceRestore()) ||
+        (isOwner(userId) && ownerCasualLeaveBalanceDeduction()) ||
         canIncrementUnreadOnly()
       );
       allow create: if isAuth() && isActive() && (
         isPrivilegedAdmin() || hrCanCreateUser()
       );
       allow update: if isAuth() && isActive() && (
-        isPrivilegedAdmin() || hrCanWriteUser()
+        (isPrivilegedAdmin() || hrCanWriteUser())
+        && validAccountStatusChange()
       );
       allow delete: if isAuth() && isActive() && (
         isPrivilegedAdmin() || (
@@ -1083,7 +1281,7 @@ service cloud.firestore {
         isMyManager(resource.data.managerId) ||
         isAssignedManagerForUser(resource.data.userId) ||
         isAssignedTeamLeaderForUser(resource.data.userId) ||
-        isHR()
+        isHRStaff()
       );
       allow create: if isAuth() && isActive()
         && isValidSelfCreate()
@@ -1122,12 +1320,23 @@ service cloud.firestore {
         isMyManager(resource.data.managerId) ||
         uid() in resource.data.get('managerIds', []) ||
         isAssignedTeamLeaderForUser(resource.data.userId) ||
-        isHR()
+        isHRStaff() ||
+        isCompanyCeo()
       );
       allow create: if isAuth() && isActive()
         && isValidSelfCreate()
-        && request.resource.data.status in ['pending_manager', 'pending_hr']
+        && request.resource.data.status in [
+          'pending_manager', 'pending_hr', 'approved'
+        ]
         && request.resource.data.managerIds is list
+        && (
+          (
+            request.resource.data.leaveType == 'casual'
+            && request.resource.data.status == 'approved'
+            && request.resource.data.get('autoApproved', false) == true
+          )
+          || hasValidAssignedApprovalManagers(uid())
+        )
         && (
           (
             request.resource.data.status == 'pending_manager'
@@ -1136,7 +1345,13 @@ service cloud.firestore {
           )
           || (
             request.resource.data.status == 'pending_hr'
-            && recipientDoc(request.resource.data.userId).get('role', '') == 'super_admin'
+            && request.resource.data.managerIds.size() == 0
+            && request.resource.data.managerId == ''
+          )
+          || (
+            request.resource.data.status == 'approved'
+            && request.resource.data.leaveType == 'casual'
+            && request.resource.data.get('autoApproved', false) == true
             && request.resource.data.managerIds.size() == 0
             && request.resource.data.managerId == ''
           )
@@ -1158,8 +1373,20 @@ service cloud.firestore {
             request.resource.data.leaveType == 'casual'
             && (
               !request.resource.data.keys().hasAny(['leaveBalanceKey'])
-              || request.resource.data.leaveBalanceKey in ['casual', 'daysOff']
+              || request.resource.data.leaveBalanceKey == 'casual'
             )
+            && (
+              !request.resource.data.keys().hasAny(['leaveBalanceKeys'])
+              || (
+                request.resource.data.get('leaveBalanceKeys', []).size() == 2
+                && 'casual' in request.resource.data.get('leaveBalanceKeys', [])
+                && 'daysOff' in request.resource.data.get('leaveBalanceKeys', [])
+              )
+            )
+            && request.resource.data.numberOfDays
+              <= recipientDoc(uid()).get('leaveBalance', {}).get('casual', 7)
+            && request.resource.data.numberOfDays
+              <= recipientDoc(uid()).get('leaveBalance', {}).get('daysOff', 0)
           )
           || (
             request.resource.data.leaveType == 'day_off'
@@ -1167,10 +1394,20 @@ service cloud.firestore {
               !request.resource.data.keys().hasAny(['leaveBalanceKey'])
               || request.resource.data.leaveBalanceKey == 'daysOff'
             )
+            && (
+              !request.resource.data.keys().hasAny(['leaveBalanceKeys'])
+              || (
+                request.resource.data.get('leaveBalanceKeys', []).size() == 1
+                && 'daysOff' in request.resource.data.get('leaveBalanceKeys', [])
+              )
+            )
+            && request.resource.data.numberOfDays
+              <= recipientDoc(uid()).get('leaveBalance', {}).get('daysOff', 0)
           )
           || (
             !(request.resource.data.leaveType in ['casual', 'day_off'])
             && !request.resource.data.keys().hasAny(['leaveBalanceKey'])
+            && !request.resource.data.keys().hasAny(['leaveBalanceKeys'])
           )
         )
         && request.resource.data.numberOfDays > 0
@@ -1196,13 +1433,17 @@ service cloud.firestore {
           'reason', 'attachmentUrl', 'workHandoverTo', 'status', 'submittedAt', 'isRead',
           'managerIds', 'managerNames', 'managerApprovalIndex',
           'managerApprovalTotal', 'managerApprovalTrail',
-          'deductsLeaveBalance', 'leaveBalanceKey',
-          'requiresFullDaySalaryDeduction'
+          'deductsLeaveBalance', 'leaveBalanceKey', 'leaveBalanceKeys',
+          'requiresFullDaySalaryDeduction', 'autoApproved',
+          'approvalHistory', 'requiresCeoApproval',
+          'originalLeaveType', 'probationConverted'
         ]);
       allow update: if isAuth() && isActive() && (
         (
           isOwner(resource.data.userId)
-          && resource.data.status in ['pending', 'pending_hr', 'pending_manager', 'approved']
+          && resource.data.status in [
+            'pending', 'pending_hr', 'pending_manager', 'pending_ceo', 'approved'
+          ]
           && request.resource.data.status == 'cancelled'
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
             'status', 'cancelledAt', 'cancelledBy', 'balanceRestored'
@@ -1212,11 +1453,7 @@ service cloud.firestore {
         ) ||
         leaveHrReview() ||
         leaveManagerReview() ||
-        (
-          isSuperAdmin()
-          && !isOwner(resource.data.userId)
-          && recipientDoc(resource.data.userId).get('role', '') != 'super_admin'
-        )
+        leaveCeoReview()
       );
       allow delete: if isAuth() && isActive() && isHR();
     }
@@ -1227,15 +1464,16 @@ service cloud.firestore {
         isMyManager(resource.data.managerId) ||
         uid() in resource.data.get('managerIds', []) ||
         isAssignedTeamLeaderForUser(resource.data.userId) ||
-        isHR()
+        isHRStaff()
       );
       allow create: if isAuth() && isActive()
         && isValidSelfCreate()
         && request.resource.data.status in ['pending_manager', 'pending_hr']
+        && request.resource.data.managerIds is list
+        && hasValidAssignedApprovalManagers(uid())
         && (
           (
             request.resource.data.status == 'pending_hr'
-            && recipientDoc(request.resource.data.userId).get('role', '') == 'super_admin'
             && request.resource.data.managerIds is list
             && request.resource.data.managerIds.size() == 0
             && request.resource.data.managerId == ''
@@ -1248,18 +1486,23 @@ service cloud.firestore {
             && request.resource.data.managerApprovalIndex == 0
           )
         )
-        && request.resource.data.permissionType in ['early_leave', 'late_arrival']
-        && request.resource.data.durationMinutes > 0
+        && request.resource.data.permissionType in [
+          'early_leave', 'late_arrival', 'mid_shift_exit'
+        ]
+        && request.resource.data.durationMinutes >= 60
+        && request.resource.data.durationMinutes <= 240
+        && permissionDeductionValuesValid()
         && request.resource.data.keys().hasOnly([
           'userId', 'employeeId', 'employeeName', 'department', 'locationId',
           'managerId', 'permissionType', 'requestDate', 'expectedTime',
           'requestDateTimestamp', 'expectedTimestamp',
           'durationMinutes', 'reason', 'status', 'isExceedingQuota',
-          'isSubmittedAfterWorkStart', 'salaryDeductionFraction',
+          'isDeductible', 'isSubmittedAfterWorkStart', 'salaryDeductionFraction',
           'salaryDeductionAmount', 'salaryCurrency', 'salaryDeductionCode',
-          'salaryDeductionLabel', 'monthKey', 'submittedAt', 'isRead',
+          'salaryDeductionLabel', 'salaryDeductionApprovalStatus',
+          'monthKey', 'submittedAt', 'isRead',
           'managerIds', 'managerNames', 'managerApprovalIndex',
-          'managerApprovalTotal', 'managerApprovalTrail'
+          'managerApprovalTotal', 'managerApprovalTrail', 'approvalHistory'
         ]);
       allow update: if isAuth() && isActive() && (
         (
@@ -1279,6 +1522,130 @@ service cloud.firestore {
         permissionManagerReview()
       );
       allow delete: if isAuth() && isActive() && isHR();
+    }
+
+    match /resignations/{resignationId} {
+      allow read: if isAuth() && isActive() && (
+        isOwner(resource.data.userId)
+        || uid() in resource.data.get('managerIds', [])
+        || isHRStaff()
+      );
+      allow create: if isAuth() && isActive()
+        && request.resource.data.userId == uid()
+        && request.resource.data.reason is string
+        && request.resource.data.reason.size() > 0
+        && request.resource.data.resignationDate is timestamp
+        && request.resource.data.resignationDate >= request.time
+        && request.resource.data.managerIds is list
+        && hasValidAssignedApprovalManagers(uid())
+        && (
+          (
+            request.resource.data.managerIds.size() > 0
+            && request.resource.data.status == 'pending_manager'
+            && request.resource.data.managerId
+              == request.resource.data.managerIds[0]
+          )
+          || (
+            request.resource.data.managerIds.size() == 0
+            && request.resource.data.status == 'pending_hr'
+            && request.resource.data.managerId == ''
+          )
+        )
+        && request.resource.data.keys().hasOnly([
+          'userId', 'employeeId', 'employeeName', 'department', 'reason',
+          'resignationDate', 'status', 'managerId', 'managerIds',
+          'managerNames', 'managerApprovalIndex', 'managerApprovalTotal',
+          'managerApprovalTrail', 'submittedAt', 'isRead'
+        ]);
+      allow update: if isAuth() && isActive() && (
+        (
+          resource.data.status == 'pending_manager'
+          && resource.data.managerId == uid()
+          && uid() in resource.data.get('managerIds', [])
+          && request.resource.data.status in [
+            'pending_manager', 'pending_hr', 'rejected'
+          ]
+        )
+        || (
+          resource.data.status == 'pending_hr'
+          && isHRManagerRole()
+          && uid() != resource.data.userId
+          && request.resource.data.status in ['approved', 'rejected']
+        )
+      )
+      && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+        'status', 'managerId', 'managerName', 'managerApprovalIndex',
+        'managerApprovalTrail', 'reviewedBy', 'reviewerName',
+        'reviewerComment', 'reviewedAt', 'isRead'
+      ])
+      && request.resource.data.reviewedBy == uid();
+      allow delete: if isAuth() && isActive() && isHRManagerRole();
+    }
+
+    match /administrativeRequests/{requestId} {
+      allow read: if isAuth() && isActive() && (
+        isOwner(resource.data.userId)
+        || resource.data.managerId == uid()
+        || uid() in resource.data.get('managerIds', [])
+        || isAssignedTeamLeaderForUser(resource.data.userId)
+        || isHRStaff()
+      );
+      allow create: if isAuth() && isActive()
+        && request.resource.data.userId == uid()
+        && request.resource.data.category in [
+          'personal_data', 'employment_status', 'software_subscription',
+          'equipment', 'other'
+        ]
+        && request.resource.data.notes is string
+        && request.resource.data.notes.size() > 0
+        && request.resource.data.managerIds is list
+        && hasValidAssignedApprovalManagers(uid())
+        && request.resource.data.status in ['pending_manager', 'pending_hr']
+        && (
+          (
+            request.resource.data.managerIds.size() > 0
+            && request.resource.data.status == 'pending_manager'
+            && request.resource.data.managerId
+              == request.resource.data.managerIds[0]
+          )
+          || (
+            request.resource.data.managerIds.size() == 0
+            && request.resource.data.status == 'pending_hr'
+            && request.resource.data.managerId == ''
+          )
+        )
+        && request.resource.data.keys().hasOnly([
+          'userId', 'employeeId', 'employeeName', 'department', 'category',
+          'categoryLabel', 'notes', 'attachmentUrl', 'status', 'managerId',
+          'managerIds', 'managerNames', 'managerApprovalIndex',
+          'managerApprovalTotal', 'managerApprovalTrail', 'approvalHistory',
+          'submittedAt', 'isRead'
+        ]);
+      allow update: if isAuth() && isActive() && (
+        (
+          resource.data.status == 'pending_manager'
+          && resource.data.managerId == uid()
+          && uid() in resource.data.get('managerIds', [])
+          && sequentialManagerDecision()
+          && request.resource.data.status in [
+            'pending_manager', 'pending_hr', 'rejected'
+          ]
+        )
+        || (
+          resource.data.status == 'pending_hr'
+          && isHRStaff()
+          && uid() != resource.data.userId
+          && request.resource.data.status in ['approved', 'rejected']
+        )
+      )
+      && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+        'status', 'managerId', 'managerName', 'managerApprovalIndex',
+        'managerApprovalTrail', 'approvalHistory', 'reviewedBy',
+        'reviewerName', 'reviewerComment', 'reviewedAt', 'finalApproverId',
+        'finalApproverName', 'finalApprovalAt', 'isRead'
+      ])
+      && request.resource.data.reviewedBy == uid();
+      allow delete: if isAuth() && isActive() && isHRManagerRole();
     }
 
     match /fieldAssignments/{assignmentId} {

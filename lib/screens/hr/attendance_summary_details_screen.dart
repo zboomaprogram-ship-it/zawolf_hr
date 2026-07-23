@@ -9,7 +9,9 @@ import '../../services/dashboard_attendance_summary_service.dart';
 import '../../theme/theme.dart';
 
 class AttendanceSummaryDetailsScreen extends StatefulWidget {
-  const AttendanceSummaryDetailsScreen({super.key});
+  const AttendanceSummaryDetailsScreen({super.key, this.initialStatus});
+
+  final String? initialStatus;
 
   @override
   State<AttendanceSummaryDetailsScreen> createState() =>
@@ -57,6 +59,12 @@ class _AttendanceSummaryDetailsScreenState
       body: user == null
           ? const Center(
               child: CircularProgressIndicator(color: ZaWolfColors.primaryCyan),
+            )
+          : widget.initialStatus != null
+          ? _TodayCategoryDetails(
+              service: _service,
+              user: user,
+              status: widget.initialStatus!,
             )
           : FutureBuilder<List<DashboardAttendanceSummary>>(
               future: _future,
@@ -377,6 +385,12 @@ class _AttendancePeopleSection extends StatelessWidget {
 
   String _detailText(DashboardAttendancePerson person, DateFormat timeFormat) {
     final parts = <String>[];
+    if (person.employee.department.isNotEmpty) {
+      parts.add(person.employee.department);
+    }
+    if (person.employee.position.isNotEmpty) {
+      parts.add(person.employee.position);
+    }
     if (person.employee.employeeId.isNotEmpty) {
       parts.add(person.employee.employeeId);
     }
@@ -389,6 +403,65 @@ class _AttendancePeopleSection extends StatelessWidget {
     if (person.lateMinutes > 0) parts.add('تأخير ${person.lateMinutes} د');
     if (person.needsCheckout) parts.add('لم يسجل الانصراف');
     return parts.isEmpty ? 'لا يوجد سجل حضور لهذا اليوم' : parts.join(' · ');
+  }
+}
+
+class _TodayCategoryDetails extends StatelessWidget {
+  const _TodayCategoryDetails({
+    required this.service,
+    required this.user,
+    required this.status,
+  });
+
+  final DashboardAttendanceSummaryService service;
+  final UserModel user;
+  final String status;
+
+  @override
+  Widget build(BuildContext context) {
+    final metadata = switch (status) {
+      'present' => ('حضر في الموعد', ZaWolfColors.success),
+      'late' => ('المتأخرون', ZaWolfColors.warning),
+      'permission' => ('لديهم إذن', ZaWolfColors.permissionTeal),
+      'day_off' => ('في إجازة', ZaWolfColors.dayoffPurple),
+      _ => ('لم يسجلوا الحضور', ZaWolfColors.error),
+    };
+    return FutureBuilder<DashboardAttendanceDayDetails>(
+      future: service.loadDayDetails(user, DateTime.now()),
+      builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return const Center(child: Text('تعذر تحميل تفاصيل الحضور.'));
+        }
+        if (!snapshot.hasData) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        final people = snapshot.data!.people
+            .where((person) => person.status == status)
+            .toList();
+        return ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            Text(
+              '${metadata.$1} · ${DateFormat('yyyy/MM/dd').format(DateTime.now())}',
+              textAlign: TextAlign.right,
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 12),
+            if (people.isEmpty)
+              const WolfCard(child: Center(child: Text('لا يوجد موظفون.')))
+            else
+              _AttendancePeopleSection(
+                title: metadata.$1,
+                color: metadata.$2,
+                people: people,
+              ),
+          ],
+        );
+      },
+    );
   }
 }
 

@@ -90,7 +90,8 @@ class RequestLogService {
     Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>> scopedDocs(
       String collection,
     ) async {
-      if (user.role == EmployeeRole.manager) {
+      if (user.role == EmployeeRole.manager ||
+          user.role == EmployeeRole.superAdmin) {
         final results = await Future.wait([
           _db
               .collection(collection)

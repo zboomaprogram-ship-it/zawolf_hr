@@ -6,6 +6,7 @@ import '../utils/payroll_cycle.dart';
 import '../models/user_model.dart';
 import '../models/attendance_model.dart';
 import '../models/attendance_policy.dart';
+import '../models/notification_route_policy.dart';
 import 'attendance_security_service.dart';
 import 'attendance_policy_service.dart';
 import 'audit_log_service.dart';
@@ -1310,7 +1311,10 @@ class AttendanceService {
       'body': status == 'approved'
           ? 'تم اعتماد حركة الحضور بعد مراجعة مؤشرات الموقع.'
           : 'تم رفض حركة الحضور بعد مراجعة مؤشرات الموقع. تواصل مع HR إذا احتجت توضيحاً.',
-      'data': {'attendanceId': attendanceId},
+      'data': NotificationRoutePolicy.dataWithRoute(
+        'attendance_security_reviewed',
+        {'attendanceId': attendanceId},
+      ),
       'isRead': false,
       'pushSent': false,
       'createdAt': FieldValue.serverTimestamp(),
@@ -1364,7 +1368,10 @@ class AttendanceService {
             'type': 'salary_deduction_reviewed',
             'title': title,
             'body': body,
-            'data': {'attendanceId': attendanceId},
+            'data': NotificationRoutePolicy.dataWithRoute(
+              'salary_deduction_reviewed',
+              {'attendanceId': attendanceId},
+            ),
             'isRead': false,
             'pushSent': false,
             'createdAt': FieldValue.serverTimestamp(),

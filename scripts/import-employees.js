@@ -180,7 +180,7 @@ function buildUserDoc(row, userRecord, supervisors) {
     managerNames: supervisors.map((item) => item.displayName),
     managerCodes: supervisors.map((item) => item.employeeId),
     isActive: true,
-    leaveBalance: { annual: 21, sick: 14, casual: 7, daysOff: 21 },
+    leaveBalance: { annual: 15, sick: 14, casual: 7, daysOff: 15 },
     permissionBalance: {
       usedThisMonth: 0,
       usedHoursThisMonth: 0,

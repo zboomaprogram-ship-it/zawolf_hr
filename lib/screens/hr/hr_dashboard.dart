@@ -189,6 +189,8 @@ class _HrDashboardScreenState extends State<HrDashboardScreen> {
                   summary: snapshot.data!,
                   onRefresh: _loadAttendanceSummary,
                   onTap: () => context.go('/hr/attendance-summary'),
+                  onCategoryTap: (status) =>
+                      context.go('/hr/attendance-summary?status=$status'),
                 );
               },
             ),

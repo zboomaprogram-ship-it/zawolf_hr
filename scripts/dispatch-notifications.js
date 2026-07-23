@@ -40,11 +40,14 @@ function initializeFirebase() {
 
 function routeForNotification(type) {
   const value = String(type || '');
+  if (value === 'hr_announcement') return '/notifications';
+  if (value === 'account_deactivated') return '/account-disabled';
+  if (value === 'warning_dismissal_review') return '/hr/employees';
   if (value === 'poll_created') return '/polls';
   if (value === 'attendance_security_review') return '/manager/requests';
   if (value === 'attendance_security_reviewed') return '/employee/dashboard';
   if (value === 'salary_deduction_pending') return '/manager/requests';
-  if (value === 'salary_deduction_reviewed') return '/employee/dashboard';
+  if (value === 'salary_deduction_reviewed') return '/employee/deductions';
   if (value === 'complaint_new') return '/manager/requests';
   if (value.includes('pending_hr') || value.includes('pending_manager')) {
     return '/manager/requests';
@@ -66,8 +69,11 @@ function routeForNotification(type) {
   if (value.includes('kpi') || value.includes('performance')) {
     return '/employee/kpi';
   }
+  if (value.includes('payroll') || value.includes('deduction')) {
+    return '/employee/deductions';
+  }
   if (value.includes('attendance')) return '/employee/dashboard';
-  return '/employee/dashboard';
+  return '/notifications';
 }
 
 function notificationPayload(doc, data) {

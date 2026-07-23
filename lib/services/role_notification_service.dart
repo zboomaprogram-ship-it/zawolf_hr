@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../models/employee_role.dart';
+import '../models/notification_route_policy.dart';
 
 class RoleNotificationService {
   RoleNotificationService._internal();
@@ -83,15 +84,20 @@ class RoleNotificationService {
       'type': type,
       'title': title,
       'body': body,
-      'data': data ?? {},
+      'data': NotificationRoutePolicy.dataWithRoute(type, data),
       'isRead': false,
       'pushSent': false,
       'createdAt': FieldValue.serverTimestamp(),
     });
 
-    await _db.collection('users').doc(recipientId).update({
-      'unreadNotifications': FieldValue.increment(1),
-    });
+    try {
+      await _db.collection('users').doc(recipientId).update({
+        'unreadNotifications': FieldValue.increment(1),
+      });
+    } catch (_) {
+      // The notification document is the source of truth. A stale unread
+      // counter must never make the primary request appear to have failed.
+    }
   }
 
   Future<void> _addDirectoryRecipients(Set<String> targets, String role) async {

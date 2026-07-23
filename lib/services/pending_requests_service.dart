@@ -31,18 +31,20 @@ class PendingRequestsService {
 
     String targetStatus = 'pending_hr';
     if (reviewer.role == EmployeeRole.manager ||
-        reviewer.role == EmployeeRole.teamLeader) {
+        reviewer.role == EmployeeRole.teamLeader ||
+        reviewer.role == EmployeeRole.superAdmin) {
       targetStatus = 'pending_manager';
     }
 
     // 1. Leaves
     Query<Map<String, dynamic>> leavesQuery = _db.collection('leaves');
     if (reviewer.role == EmployeeRole.manager ||
-        reviewer.role == EmployeeRole.teamLeader) {
+        reviewer.role == EmployeeRole.teamLeader ||
+        reviewer.role == EmployeeRole.superAdmin) {
       leavesQuery = leavesQuery
           .where('managerId', isEqualTo: reviewer.uid)
           .where('status', isEqualTo: 'pending_manager');
-    } else if (EmployeeRole.isHr(reviewer.role)) {
+    } else if (EmployeeRole.isHrStaff(reviewer.role)) {
       leavesQuery = leavesQuery.where('status', isEqualTo: 'pending_hr');
     }
 
@@ -62,11 +64,12 @@ class PendingRequestsService {
       'permissions',
     );
     if (reviewer.role == EmployeeRole.manager ||
-        reviewer.role == EmployeeRole.teamLeader) {
+        reviewer.role == EmployeeRole.teamLeader ||
+        reviewer.role == EmployeeRole.superAdmin) {
       permissionsQuery = permissionsQuery
           .where('managerId', isEqualTo: reviewer.uid)
           .where('status', isEqualTo: 'pending_manager');
-    } else if (EmployeeRole.isHr(reviewer.role)) {
+    } else if (EmployeeRole.isHrStaff(reviewer.role)) {
       permissionsQuery = permissionsQuery.where(
         'status',
         isEqualTo: 'pending_hr',

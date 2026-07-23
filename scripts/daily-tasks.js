@@ -92,12 +92,124 @@ function evaluateLateArrival(arrivalDate, effectiveStartTime, policy) {
   return { fraction: 1, code: 'full_day', label: 'خصم يوم كامل', status: 'late_full_day', lateMinutes, isLate: true };
 }
 
+function addUtcMonths(date, months) {
+  const day = date.getUTCDate();
+  const result = new Date(Date.UTC(
+    date.getUTCFullYear(),
+    date.getUTCMonth() + months,
+    1,
+  ));
+  const lastDay = new Date(Date.UTC(
+    result.getUTCFullYear(),
+    result.getUTCMonth() + 1,
+    0,
+  )).getUTCDate();
+  result.setUTCDate(Math.min(day, lastDay));
+  return result;
+}
+
+function entitlementPeriodStart(hiringDate, now, policy) {
+  const eligibleFrom = addUtcMonths(hiringDate, policy.probationMonths);
+  if (now < eligibleFrom) return { eligibleFrom, start: eligibleFrom, probation: true };
+  if (policy.renewalMode === 'company_cycle') {
+    let start = new Date(Date.UTC(
+      now.getUTCFullYear(),
+      Math.max(1, Math.min(12, policy.cycleMonth)) - 1,
+      Math.max(1, Math.min(28, policy.cycleDay)),
+    ));
+    if (start > now) start = new Date(Date.UTC(
+      start.getUTCFullYear() - 1,
+      start.getUTCMonth(),
+      start.getUTCDate(),
+    ));
+    return { eligibleFrom, start, probation: false };
+  }
+  let start = eligibleFrom;
+  while (addUtcMonths(start, 12) <= now) start = addUtcMonths(start, 12);
+  return { eligibleFrom, start, probation: false };
+}
+
+async function reconcileLeaveEntitlements(now) {
+  const policy = {
+    annualQuota: 15,
+    casualQuota: 7,
+    probationMonths: 6,
+    renewalMode: 'anniversary',
+    cycleMonth: 1,
+    cycleDay: 1,
+    carryOverEnabled: false,
+    maximumCarryOverDays: 0,
+  };
+  const company = await db.collection('companies').doc('zawolf').get();
+  if (company.exists) {
+    Object.assign(policy, company.data().leavePolicy || {});
+  }
+  const users = await db.collection('users').where('isActive', '==', true).get();
+  let batch = db.batch();
+  let operations = 0;
+  let updated = 0;
+  for (const userDoc of users.docs) {
+    const user = userDoc.data();
+    const hiringTimestamp = user.joinDate || user.hiringDate;
+    if (!hiringTimestamp) continue;
+    const hiringDate = hiringTimestamp.toDate
+      ? hiringTimestamp.toDate()
+      : new Date(hiringTimestamp);
+    if (Number.isNaN(hiringDate.getTime())) continue;
+    const period = entitlementPeriodStart(hiringDate, now, policy);
+    const periodKey = cairoDateStr(period.start);
+    const currentKey = user.leaveEntitlementPeriodKey || '';
+    const balance = user.leaveBalance || {};
+    const update = {
+      leaveEligibleFrom: admin.firestore.Timestamp.fromDate(period.eligibleFrom),
+      leaveEntitlementPeriodKey: periodKey,
+      leaveEntitlementQuota: policy.annualQuota,
+      leaveEntitlementStatus: period.probation ? 'probation' : 'eligible',
+      leaveEntitlementUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    };
+    if (period.probation) {
+      update['leaveBalance.annual'] = 0;
+      update['leaveBalance.daysOff'] = 0;
+      update['leaveBalance.casual'] = 0;
+    } else if (currentKey && currentKey !== periodKey) {
+      const carry = policy.carryOverEnabled
+        ? Math.min(
+          Math.max(0, Number(balance.daysOff || 0)),
+          Math.max(0, Number(policy.maximumCarryOverDays || 0)),
+        )
+        : 0;
+      update['leaveBalance.annual'] = policy.annualQuota + carry;
+      update['leaveBalance.daysOff'] = policy.annualQuota + carry;
+      update['leaveBalance.casual'] = policy.casualQuota;
+      update.leaveCarryOverDays = carry;
+      update.leaveRenewedAt = admin.firestore.FieldValue.serverTimestamp();
+    }
+    const needsMetadata = currentKey !== periodKey
+      || user.leaveEntitlementStatus !== update.leaveEntitlementStatus
+      || Number(user.leaveEntitlementQuota || 0) !== Number(policy.annualQuota);
+    const needsProbationReset = period.probation
+      && (Number(balance.daysOff || 0) !== 0 || Number(balance.casual || 0) !== 0);
+    if (!needsMetadata && !needsProbationReset) continue;
+    batch.update(userDoc.ref, update);
+    operations++;
+    updated++;
+    if (operations >= 400) {
+      await batch.commit();
+      batch = db.batch();
+      operations = 0;
+    }
+  }
+  if (operations > 0) await batch.commit();
+  console.log(`Leave entitlement reconciliation updated ${updated} user(s).`);
+}
+
 async function runDailyTasks() {
   console.log('Starting daily tasks...');
   
   // By default process yesterday, because absence and missed-checkout decisions
   // must happen after the workday has fully ended.
   const now = new Date();
+  await reconcileLeaveEntitlements(now);
   const cairoHour = Number(new Intl.DateTimeFormat('en-GB', {
     timeZone: 'Africa/Cairo',
     hour: '2-digit',

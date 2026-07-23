@@ -350,6 +350,30 @@
         { "fieldPath": "isRead", "order": "ASCENDING" },
         { "fieldPath": "pushSent", "order": "ASCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "administrativeRequests",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "userId", "order": "ASCENDING" },
+        { "fieldPath": "submittedAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "administrativeRequests",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "managerId", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "leaves",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "ceoId", "order": "ASCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []

@@ -42,13 +42,13 @@ class LeaveBalance {
 
   factory LeaveBalance.fromMap(Map<String, dynamic>? map) {
     if (map == null) {
-      return LeaveBalance(annual: 21, sick: 14, casual: 7, daysOff: 21);
+      return LeaveBalance(annual: 15, sick: 14, casual: 7, daysOff: 15);
     }
     return LeaveBalance(
-      annual: map['annual'] as int? ?? 21,
+      annual: map['annual'] as int? ?? 15,
       sick: map['sick'] as int? ?? 14,
       casual: map['casual'] as int? ?? 7,
-      daysOff: map['daysOff'] as int? ?? 21,
+      daysOff: map['daysOff'] as int? ?? 15,
     );
   }
 
@@ -119,7 +119,13 @@ class UserModel {
   final String? teamLeaderId;
   final String? teamLeaderName;
   final bool isActive;
+  final String? deactivationReason;
+  final String? deactivatedBy;
+  final String? deactivatedByName;
+  final DateTime? deactivatedAt;
   final DateTime? joinDate;
+
+  DateTime? get hiringDate => joinDate;
   final WorkSchedule workSchedule;
   final LeaveBalance leaveBalance;
   final PermissionBalance permissionBalance;
@@ -154,6 +160,10 @@ class UserModel {
     this.teamLeaderId,
     this.teamLeaderName,
     this.isActive = true,
+    this.deactivationReason,
+    this.deactivatedBy,
+    this.deactivatedByName,
+    this.deactivatedAt,
     this.joinDate,
     required this.workSchedule,
     required this.leaveBalance,
@@ -208,6 +218,10 @@ class UserModel {
       teamLeaderId: data['teamLeaderId'] as String?,
       teamLeaderName: data['teamLeaderName'] as String?,
       isActive: data['isActive'] as bool? ?? true,
+      deactivationReason: data['deactivationReason'] as String?,
+      deactivatedBy: data['deactivatedBy'] as String?,
+      deactivatedByName: data['deactivatedByName'] as String?,
+      deactivatedAt: (data['deactivatedAt'] as Timestamp?)?.toDate(),
       joinDate: (data['joinDate'] as Timestamp?)?.toDate(),
       workSchedule: WorkSchedule.fromMap(
         data['workSchedule'] as Map<String, dynamic>?,
@@ -257,6 +271,11 @@ class UserModel {
       if (teamLeaderId != null) 'teamLeaderId': teamLeaderId,
       if (teamLeaderName != null) 'teamLeaderName': teamLeaderName,
       'isActive': isActive,
+      if (deactivationReason != null) 'deactivationReason': deactivationReason,
+      if (deactivatedBy != null) 'deactivatedBy': deactivatedBy,
+      if (deactivatedByName != null) 'deactivatedByName': deactivatedByName,
+      if (deactivatedAt != null)
+        'deactivatedAt': Timestamp.fromDate(deactivatedAt!),
       if (joinDate != null) 'joinDate': Timestamp.fromDate(joinDate!),
       'workSchedule': workSchedule.toMap(),
       'leaveBalance': leaveBalance.toMap(),
@@ -304,6 +323,10 @@ class UserModel {
       'teamLeaderId': teamLeaderId,
       'teamLeaderName': teamLeaderName,
       'isActive': isActive,
+      'deactivationReason': deactivationReason,
+      'deactivatedBy': deactivatedBy,
+      'deactivatedByName': deactivatedByName,
+      'deactivatedAt': deactivatedAt?.millisecondsSinceEpoch,
       'joinDate': joinDate?.millisecondsSinceEpoch,
       'workSchedule': workSchedule.toMap(),
       'leaveBalance': leaveBalance.toMap(),
@@ -354,6 +377,10 @@ class UserModel {
       teamLeaderId: data['teamLeaderId'] as String?,
       teamLeaderName: data['teamLeaderName'] as String?,
       isActive: data['isActive'] as bool? ?? true,
+      deactivationReason: data['deactivationReason'] as String?,
+      deactivatedBy: data['deactivatedBy'] as String?,
+      deactivatedByName: data['deactivatedByName'] as String?,
+      deactivatedAt: readDate('deactivatedAt'),
       joinDate: readDate('joinDate'),
       workSchedule: WorkSchedule.fromMap(
         (data['workSchedule'] as Map?)?.cast<String, dynamic>(),
@@ -398,6 +425,10 @@ class UserModel {
     String? teamLeaderId,
     String? teamLeaderName,
     bool? isActive,
+    String? deactivationReason,
+    String? deactivatedBy,
+    String? deactivatedByName,
+    DateTime? deactivatedAt,
     DateTime? joinDate,
     WorkSchedule? workSchedule,
     LeaveBalance? leaveBalance,
@@ -433,6 +464,10 @@ class UserModel {
       teamLeaderId: teamLeaderId ?? this.teamLeaderId,
       teamLeaderName: teamLeaderName ?? this.teamLeaderName,
       isActive: isActive ?? this.isActive,
+      deactivationReason: deactivationReason ?? this.deactivationReason,
+      deactivatedBy: deactivatedBy ?? this.deactivatedBy,
+      deactivatedByName: deactivatedByName ?? this.deactivatedByName,
+      deactivatedAt: deactivatedAt ?? this.deactivatedAt,
       joinDate: joinDate ?? this.joinDate,
       workSchedule: workSchedule ?? this.workSchedule,
       leaveBalance: leaveBalance ?? this.leaveBalance,

@@ -46,6 +46,44 @@ void main() {
         1,
       );
     });
+
+    test('does not add a super admin unless explicitly assigned', () {
+      expect(
+        ManagerApprovalChain.orderedIds(['direct-manager', 'higher-manager']),
+        ['direct-manager', 'higher-manager'],
+      );
+      expect(
+        ManagerApprovalChain.orderedIds([
+          'direct-manager',
+          'assigned-super-admin',
+        ]),
+        ['direct-manager', 'assigned-super-admin'],
+      );
+    });
+
+    test('every managerless request uses the HR Manager fallback', () {
+      expect(
+        ManagerApprovalChain.usesHrFallback(
+          isSuperAdmin: true,
+          managerIds: const [],
+        ),
+        isTrue,
+      );
+      expect(
+        ManagerApprovalChain.usesHrFallback(
+          isSuperAdmin: true,
+          managerIds: const ['assigned-manager'],
+        ),
+        isFalse,
+      );
+      expect(
+        ManagerApprovalChain.usesHrFallback(
+          isSuperAdmin: false,
+          managerIds: const [],
+        ),
+        isTrue,
+      );
+    });
   });
 
   group('HR Manager capabilities', () {
@@ -63,6 +101,12 @@ void main() {
         isFalse,
       );
       expect(EmployeeRole.canAccessReports(EmployeeRole.hrAdmin), isFalse);
+    });
+
+    test('HR-stage reviewers exclude super admin', () {
+      expect(EmployeeRole.isHrStaff(EmployeeRole.hrAdmin), isTrue);
+      expect(EmployeeRole.isHrStaff(EmployeeRole.hrManager), isTrue);
+      expect(EmployeeRole.isHrStaff(EmployeeRole.superAdmin), isFalse);
     });
   });
 }

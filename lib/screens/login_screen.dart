@@ -84,12 +84,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
       final user = authService.currentUser;
       if (user != null && !user.isActive) {
-        await authService.signOut();
-        setState(() {
-          _errorMessage =
-              'عذراً، هذا الحساب تم تعطيله من قبل إدارة شؤون الموظفين.';
-          _isLoading = false;
-        });
+        context.go('/account-disabled');
         return;
       }
 

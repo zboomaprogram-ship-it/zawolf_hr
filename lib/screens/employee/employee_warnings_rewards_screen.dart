@@ -134,6 +134,8 @@ class _EmployeeRecordCard extends StatelessWidget {
         return ZaWolfColors.success;
       case WarningRewardType.followUp:
         return ZaWolfColors.warning;
+      case WarningRewardType.notice:
+        return ZaWolfColors.primaryBlue;
       default:
         return ZaWolfColors.error;
     }

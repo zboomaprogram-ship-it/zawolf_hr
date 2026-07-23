@@ -60,10 +60,10 @@ async function createHRAdmin() {
       isActive: true,
       joinDate: FieldValue.serverTimestamp(),
       leaveBalance: {
-        annual: 21,
+        annual: 15,
         sick: 14,
         casual: 7,
-        daysOff: 21
+        daysOff: 15
       },
       permissionBalance: {
         usedThisMonth: 0,

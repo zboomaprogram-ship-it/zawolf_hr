@@ -57,6 +57,10 @@ class _SplashScreenState extends State<SplashScreen>
     // Check authentication
     if (authService.isAuthenticated) {
       if (!mounted) return;
+      if (authService.currentUser?.isActive == false) {
+        context.go('/account-disabled');
+        return;
+      }
       final role = authService.currentUser?.role;
 
       final initialRoute = NotificationService.instance.initialRoute;

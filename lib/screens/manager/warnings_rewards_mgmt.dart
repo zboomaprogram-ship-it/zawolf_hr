@@ -319,6 +319,10 @@ class _CreateRecordSheetState extends State<_CreateRecordSheet> {
                   child: Text('إنذار'),
                 ),
                 DropdownMenuItem(
+                  value: WarningRewardType.notice,
+                  child: Text('لفت نظر (غير رسمي)'),
+                ),
+                DropdownMenuItem(
                   value: WarningRewardType.followUp,
                   child: Text('متابعة'),
                 ),

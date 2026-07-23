@@ -4,7 +4,7 @@ const path = require('path');
 const projectId = process.env.FIREBASE_PROJECT_ID || 'zawolf-hr-system-60317';
 const dryRun = process.env.DRY_RUN !== 'false';
 const verifyOnly = process.env.VERIFY_ONLY === 'true';
-const annualAllowance = Number(process.env.ANNUAL_LEAVE_ALLOWANCE || 21);
+const annualAllowance = Number(process.env.ANNUAL_LEAVE_ALLOWANCE || 15);
 const casualAllowance = Number(process.env.CASUAL_LEAVE_ALLOWANCE || 7);
 const firestoreBase = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents`;
 

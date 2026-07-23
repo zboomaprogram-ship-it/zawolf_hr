@@ -7,8 +7,8 @@ class EmployeeRole {
   static const superAdmin = 'super_admin';
 
   static bool isSuperAdmin(String? role) => role == superAdmin;
-  static bool isHr(String? role) =>
-      role == hrAdmin || role == hrManager || role == superAdmin;
+  static bool isHrStaff(String? role) => role == hrAdmin || role == hrManager;
+  static bool isHr(String? role) => isHrStaff(role) || role == superAdmin;
   static bool isHrManager(String? role) => role == hrManager;
   static bool canManagePrivilegedAccounts(String? role) =>
       role == hrManager || role == superAdmin;

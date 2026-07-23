@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/performance_model.dart';
 import '../models/attendance_model.dart';
+import '../models/notification_route_policy.dart';
 import 'audit_log_service.dart';
 import '../utils/payroll_cycle.dart';
 
@@ -182,7 +183,7 @@ class PerformanceService {
       'type': type,
       'title': title,
       'body': body,
-      'data': data ?? {},
+      'data': NotificationRoutePolicy.dataWithRoute(type, data),
       'isRead': false,
       'pushSent': false,
       'createdAt': FieldValue.serverTimestamp(),

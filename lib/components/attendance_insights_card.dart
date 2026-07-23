@@ -9,12 +9,14 @@ class AttendanceInsightsCard extends StatelessWidget {
   final DashboardAttendanceSummary summary;
   final VoidCallback? onRefresh;
   final VoidCallback? onTap;
+  final ValueChanged<String>? onCategoryTap;
 
   const AttendanceInsightsCard({
     super.key,
     required this.summary,
     this.onRefresh,
     this.onTap,
+    this.onCategoryTap,
   });
 
   @override
@@ -120,6 +122,7 @@ class AttendanceInsightsCard extends StatelessWidget {
                   percent: summary.percentOf(summary.present),
                   color: ZaWolfColors.success,
                   icon: Icons.check_circle_outline,
+                  onTap: () => onCategoryTap?.call('present'),
                 ),
                 _InsightTile(
                   label: 'متأخر',
@@ -127,6 +130,7 @@ class AttendanceInsightsCard extends StatelessWidget {
                   percent: summary.percentOf(summary.late),
                   color: ZaWolfColors.warning,
                   icon: Icons.schedule_outlined,
+                  onTap: () => onCategoryTap?.call('late'),
                 ),
                 _InsightTile(
                   label: 'إذن',
@@ -134,6 +138,7 @@ class AttendanceInsightsCard extends StatelessWidget {
                   percent: summary.percentOf(summary.permission),
                   color: ZaWolfColors.permissionTeal,
                   icon: Icons.assignment_turned_in_outlined,
+                  onTap: () => onCategoryTap?.call('permission'),
                 ),
                 _InsightTile(
                   label: 'إجازة',
@@ -141,6 +146,7 @@ class AttendanceInsightsCard extends StatelessWidget {
                   percent: summary.percentOf(summary.dayOff),
                   color: ZaWolfColors.dayoffPurple,
                   icon: Icons.beach_access_outlined,
+                  onTap: () => onCategoryTap?.call('day_off'),
                 ),
                 _InsightTile(
                   label: 'لم يسجل',
@@ -148,6 +154,7 @@ class AttendanceInsightsCard extends StatelessWidget {
                   percent: summary.percentOf(summary.notAttended),
                   color: ZaWolfColors.error,
                   icon: Icons.person_off_outlined,
+                  onTap: () => onCategoryTap?.call('not_attended'),
                 ),
               ];
 
@@ -204,6 +211,7 @@ class _InsightTile extends StatelessWidget {
   final double percent;
   final Color color;
   final IconData icon;
+  final VoidCallback? onTap;
 
   const _InsightTile({
     required this.label,
@@ -211,52 +219,60 @@ class _InsightTile extends StatelessWidget {
     required this.percent,
     required this.color,
     required this.icon,
+    this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(10),
-      decoration: BoxDecoration(
-        color: ZaWolfColors.surface02,
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: color.withValues(alpha: 0.24)),
-      ),
-      child: Row(
-        children: [
-          Text(
-            '${percent.toStringAsFixed(0)}%',
-            style: TextStyle(
-              color: color,
-              fontWeight: FontWeight.bold,
-              fontFamily: 'JetBrains Mono',
-            ),
+        child: Container(
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            color: ZaWolfColors.surface02,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: color.withValues(alpha: 0.24)),
           ),
-          const Spacer(),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
+          child: Row(
             children: [
               Text(
-                '$value',
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 18,
+                '${percent.toStringAsFixed(0)}%',
+                style: TextStyle(
+                  color: color,
                   fontWeight: FontWeight.bold,
                   fontFamily: 'JetBrains Mono',
                 ),
               ),
-              Text(
-                label,
-                style: const TextStyle(
-                  color: ZaWolfColors.textSecondary,
-                  fontSize: 11,
-                ),
+              const Spacer(),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text(
+                    '$value',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      fontFamily: 'JetBrains Mono',
+                    ),
+                  ),
+                  Text(
+                    label,
+                    style: const TextStyle(
+                      color: ZaWolfColors.textSecondary,
+                      fontSize: 11,
+                    ),
+                  ),
+                ],
               ),
+              const SizedBox(width: 8),
+              Icon(icon, color: color, size: 20),
             ],
           ),
-          const SizedBox(width: 8),
-          Icon(icon, color: color, size: 20),
-        ],
+        ),
       ),
     );
   }

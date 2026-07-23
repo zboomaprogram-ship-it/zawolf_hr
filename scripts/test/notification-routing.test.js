@@ -22,10 +22,12 @@ test('request and task notifications open the intended app areas', () => {
   assert.equal(routeForNotification('leave_approved'), '/employee/requests');
   assert.equal(routeForNotification('task_assigned'), '/employee/tasks');
   assert.equal(routeForNotification('poll_created'), '/polls');
+  assert.equal(routeForNotification('hr_announcement'), '/notifications');
   assert.equal(
     routeForNotification('salary_deduction_reviewed'),
-    '/employee/dashboard',
+    '/employee/deductions',
   );
+  assert.equal(routeForNotification('unknown_notification'), '/notifications');
 });
 
 test('detects unsubscribed OneSignal devices so they are not retried forever', () => {

@@ -1,16 +1,21 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../models/attendance_model.dart';
+import '../models/attendance_policy.dart';
 import '../models/employee_role.dart';
 import '../models/payroll_run_model.dart';
+import '../models/permission_model.dart';
 import '../models/user_model.dart';
 import '../models/warning_reward_model.dart';
 import '../models/advance_model.dart';
 import 'audit_log_service.dart';
 import '../utils/payroll_cycle.dart';
+import 'attendance_policy_service.dart';
 
 class PayrollService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
+  final AttendancePolicyService _attendancePolicyService =
+      AttendancePolicyService();
 
   Stream<List<PayrollRunModel>> watchPayrollRuns(String monthKey) {
     return _db
@@ -51,11 +56,19 @@ class PayrollService {
           .where('userId', isEqualTo: employee.uid)
           .where('monthKey', isEqualTo: monthKey)
           .get(),
+      _db
+          .collection('permissions')
+          .where('userId', isEqualTo: employee.uid)
+          .where('monthKey', isEqualTo: monthKey)
+          .get(),
+      _attendancePolicyService.getPolicyConfig(),
     ]);
 
-    final attendanceSnap = results[0];
-    final rewardSnap = results[1];
-    final advanceSnap = results[2];
+    final attendanceSnap = results[0] as QuerySnapshot<Map<String, dynamic>>;
+    final rewardSnap = results[1] as QuerySnapshot<Map<String, dynamic>>;
+    final advanceSnap = results[2] as QuerySnapshot<Map<String, dynamic>>;
+    final permissionSnap = results[3] as QuerySnapshot<Map<String, dynamic>>;
+    final attendancePolicy = results[4] as AttendancePolicyConfig;
 
     final attendance = attendanceSnap.docs
         .map((doc) => AttendanceModel.fromFirestore(doc))
@@ -66,16 +79,36 @@ class PayrollService {
     final advanceRecords = advanceSnap.docs
         .map((doc) => AdvanceModel.fromFirestore(doc))
         .toList();
+    final permissions = permissionSnap.docs
+        .map((doc) => PermissionModel.fromFirestore(doc))
+        .toList();
 
     final approvedDeductions = attendance.where(
       (log) =>
           log.salaryDeductionApprovalStatus == 'approved' &&
           log.salaryDeductionAmount > 0,
     );
-    final deductionTotal = approvedDeductions.fold<double>(
+    final attendanceDeductionTotal = approvedDeductions.fold<double>(
       0,
       (total, log) => total + log.salaryDeductionAmount,
     );
+    final approvedPermissionDeductions = permissions.where(
+      (permission) =>
+          permission.status == 'approved' &&
+          permission.isDeductible &&
+          permission.salaryDeductionApprovalStatus == 'approved' &&
+          permission.salaryDeductionFraction > 0,
+    );
+    final permissionDeductionTotal = approvedPermissionDeductions.fold<double>(
+      0,
+      (total, permission) =>
+          total +
+          attendancePolicy.calculateSalaryDeductionAmount(
+            monthlySalary: employee.baseMonthlySalary,
+            dayFraction: permission.salaryDeductionFraction,
+          ),
+    );
+    final deductionTotal = attendanceDeductionTotal + permissionDeductionTotal;
 
     final issuedBonusRecords = rewards.where((record) {
       final isBonusType =
@@ -120,7 +153,8 @@ class PayrollService {
       rewardsBonus: bonusTotal,
       advances: advanceTotal,
       netSalary: netSalary,
-      approvedDeductionCount: approvedDeductions.length,
+      approvedDeductionCount:
+          approvedDeductions.length + approvedPermissionDeductions.length,
       bonusRecordCount: issuedBonusRecords.length,
       advanceRecordCount: approvedAdvances.length,
       status: PayrollStatus.draft,

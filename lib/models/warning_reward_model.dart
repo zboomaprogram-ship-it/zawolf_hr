@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 class WarningRewardType {
   static const warning = 'warning';
+  static const notice = 'notice';
   static const reward = 'reward';
   static const bonusRecommendation = 'bonus_recommendation';
   static const followUp = 'follow_up';
@@ -14,6 +15,8 @@ class WarningRewardType {
         return 'ترشيح بونص';
       case followUp:
         return 'متابعة';
+      case notice:
+        return 'لفت نظر';
       default:
         return 'إنذار';
     }

@@ -6,6 +6,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/user_model.dart';
+import '../models/leave_entitlement_policy.dart';
 import '../models/employee_role.dart';
 import 'audit_log_service.dart';
 import 'notification_service.dart';
@@ -73,7 +74,9 @@ class AuthService with ChangeNotifier {
           _currentUser = cachedUser;
           _loading = false;
           notifyListeners();
-          unawaited(_startUserSessionServices(user.uid));
+          if (cachedUser.isActive) {
+            unawaited(_startUserSessionServices(user.uid));
+          }
           unawaited(
             fetchUserData(
               user.uid,
@@ -89,7 +92,7 @@ class AuthService with ChangeNotifier {
         notifyListeners();
         await fetchUserData(user.uid, sessionVersion: sessionVersion);
         if (sessionVersion != _authSessionVersion) return;
-        if (_currentUser != null) {
+        if (_currentUser?.isActive == true) {
           unawaited(_startUserSessionServices(user.uid));
         }
       }
@@ -125,13 +128,7 @@ class AuthService with ChangeNotifier {
       }
       if (doc.exists) {
         _currentUser = UserModel.fromFirestore(doc);
-        if (_currentUser!.isActive) {
-          await _cacheProfile(_currentUser!);
-        } else {
-          _currentUser = null;
-          await _clearCachedProfile();
-          unawaited(_auth.signOut());
-        }
+        await _cacheProfile(_currentUser!);
       } else {
         _currentUser = null;
         await _clearCachedProfile();
@@ -192,9 +189,11 @@ class AuthService with ChangeNotifier {
       final cachedUser = await _readCachedProfile(
         firebaseUser.uid,
       ).timeout(const Duration(seconds: 2));
-      if (cachedUser != null && cachedUser.isActive) {
+      if (cachedUser != null) {
         _currentUser = cachedUser;
-        unawaited(_startUserSessionServices(firebaseUser.uid));
+        if (cachedUser.isActive) {
+          unawaited(_startUserSessionServices(firebaseUser.uid));
+        }
       }
     } catch (_) {
       // The normal auth listener can still complete after this fallback.
@@ -242,11 +241,10 @@ class AuthService with ChangeNotifier {
       final user = _auth.currentUser;
       if (user != null) {
         await fetchUserData(user.uid);
-        if (_currentUser == null || !_currentUser!.isActive) {
-          await _auth.signOut();
-          throw Exception('Account is disabled');
+        if (_currentUser == null) throw Exception('Account profile not found');
+        if (_currentUser!.isActive) {
+          unawaited(_startUserSessionServices(user.uid));
         }
-        unawaited(_startUserSessionServices(user.uid));
       }
     } catch (e) {
       _loading = false;
@@ -329,7 +327,8 @@ class AuthService with ChangeNotifier {
     required String locationName,
     required double baseMonthlySalary,
     String salaryCurrency = 'EGP',
-    int daysOffBalance = 21,
+    int daysOffBalance = 15,
+    int casualLeaveBalance = 7,
     String? managerId,
     String? managerName,
     List<String> managerIds = const [],
@@ -338,6 +337,7 @@ class AuthService with ChangeNotifier {
     String? teamLeaderId,
     String? teamLeaderName,
     WorkSchedule? workSchedule,
+    required DateTime hiringDate,
   }) async {
     const initialPassword = 'ZW@0000';
     FirebaseApp? tempApp;
@@ -388,6 +388,10 @@ class AuthService with ChangeNotifier {
       final uid = userCred.user!.uid;
 
       // 3. Create the Firestore user profile document
+      final startsOnProbation = LeaveEntitlementPolicy.isOnProbation(
+        hiringDate,
+      );
+      final effectiveAnnualBalance = startsOnProbation ? 0 : daysOffBalance;
       final userModel = UserModel(
         uid: uid,
         email: email.trim(),
@@ -407,6 +411,7 @@ class AuthService with ChangeNotifier {
         managerCodes: managerCodes,
         teamLeaderId: teamLeaderId,
         teamLeaderName: teamLeaderName,
+        joinDate: hiringDate,
         workSchedule:
             workSchedule ??
             WorkSchedule(
@@ -415,10 +420,10 @@ class AuthService with ChangeNotifier {
               workDays: AttendancePolicy.saturdayToThursdayWorkDays,
             ),
         leaveBalance: LeaveBalance(
-          annual: 21,
+          annual: effectiveAnnualBalance,
           sick: 14,
-          casual: 7,
-          daysOff: daysOffBalance,
+          casual: casualLeaveBalance,
+          daysOff: effectiveAnnualBalance,
         ),
         permissionBalance: PermissionBalance(
           usedThisMonth: 0,
@@ -427,7 +432,21 @@ class AuthService with ChangeNotifier {
         ),
       );
 
-      await _db.collection('users').doc(uid).set(userModel.toFirestore());
+      final entitlementStart = startsOnProbation
+          ? LeaveEntitlementPolicy.eligibleFrom(hiringDate)!
+          : hiringDate;
+      await _db.collection('users').doc(uid).set({
+        ...userModel.toFirestore(),
+        'leaveEntitlementPeriodKey':
+            '${entitlementStart.year.toString().padLeft(4, '0')}-'
+            '${entitlementStart.month.toString().padLeft(2, '0')}-'
+            '${entitlementStart.day.toString().padLeft(2, '0')}',
+        'leaveEligibleFrom': Timestamp.fromDate(
+          LeaveEntitlementPolicy.eligibleFrom(hiringDate)!,
+        ),
+        'leaveEntitlementQuota': daysOffBalance,
+        'leaveEntitlementStatus': startsOnProbation ? 'probation' : 'eligible',
+      });
 
       await AuditLogService.instance.record(
         actorId: _auth.currentUser?.uid ?? '',

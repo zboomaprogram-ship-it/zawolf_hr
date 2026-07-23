@@ -79,7 +79,7 @@ async function runMonthlyTasks() {
     return;
   }
 
-  const [usersSnap, attendanceSnap, permissionsSnap, leavesSnap, rewardsSnap, advancesSnap] =
+  const [usersSnap, attendanceSnap, permissionsSnap, leavesSnap, rewardsSnap, advancesSnap, companySnap] =
     await Promise.all([
       db.collection('users').where('isActive', '==', true).get(),
       db.collection('attendance')
@@ -90,11 +90,18 @@ async function runMonthlyTasks() {
       db.collection('leaves').get(),
       db.collection('warningsRewards').where('monthKey', '==', closingCycle.key).get(),
       db.collection('advances').where('monthKey', '==', closingCycle.key).get(),
+      db.collection('companies').doc('zawolf').get(),
     ]);
 
   const attendanceByUser = groupByUser(attendanceSnap);
   const rewardsByUser = groupByUser(rewardsSnap);
   const advancesByUser = groupByUser(advancesSnap);
+  const permissionsByUser = groupByUser(permissionsSnap);
+  const payrollWorkDaysPerMonth = Number(
+    companySnap.data()?.attendancePolicy?.payrollWorkDaysPerMonth ||
+    companySnap.data()?.payrollWorkDaysPerMonth ||
+    26,
+  );
   const operations = [];
   let payrollEmployees = 0;
   let totalBaseSalary = 0;
@@ -123,6 +130,7 @@ async function runMonthlyTasks() {
     const attendance = attendanceByUser.get(userId) || [];
     const rewards = rewardsByUser.get(userId) || [];
     const advances = advancesByUser.get(userId) || [];
+    const permissions = permissionsByUser.get(userId) || [];
     const approvedDeductions = attendance.filter((item) =>
       item.salaryDeductionApprovalStatus === 'approved' &&
       Number(item.salaryDeductionAmount || 0) > 0,
@@ -133,8 +141,19 @@ async function runMonthlyTasks() {
       Number(item.amount || 0) > 0,
     );
     const approvedAdvances = advances.filter((item) => item.status === 'approved');
+    const approvedPermissionDeductions = permissions.filter((item) =>
+      item.status === 'approved' &&
+      item.isDeductible === true &&
+      item.salaryDeductionApprovalStatus === 'approved' &&
+      Number(item.salaryDeductionFraction || 0) > 0,
+    );
     const baseSalary = Number(user.baseMonthlySalary || 0);
-    const deductions = sum(approvedDeductions, (item) => item.salaryDeductionAmount);
+    const attendanceDeductions = sum(approvedDeductions, (item) => item.salaryDeductionAmount);
+    const permissionDeductions = sum(
+      approvedPermissionDeductions,
+      (item) => (baseSalary / payrollWorkDaysPerMonth) * Number(item.salaryDeductionFraction || 0),
+    );
+    const deductions = attendanceDeductions + permissionDeductions;
     const bonuses = sum(issuedBonuses, (item) => item.amount);
     const advanceTotal = sum(approvedAdvances, (item) => item.amount);
     const netSalary = Math.max(0, baseSalary - deductions + bonuses - advanceTotal);
@@ -159,7 +178,7 @@ async function runMonthlyTasks() {
       rewardsBonus: bonuses,
       advances: advanceTotal,
       netSalary,
-      approvedDeductionCount: approvedDeductions.length,
+      approvedDeductionCount: approvedDeductions.length + approvedPermissionDeductions.length,
       bonusRecordCount: issuedBonuses.length,
       advanceRecordCount: approvedAdvances.length,
       status: 'draft',

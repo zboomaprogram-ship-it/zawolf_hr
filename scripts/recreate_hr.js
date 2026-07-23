@@ -57,10 +57,10 @@ async function createHRUser() {
         workDays: [1, 2, 3, 4, 0]
       },
       leaveBalance: {
-        annual: 21,
+        annual: 15,
         sick: 14,
         casual: 7,
-        daysOff: 21
+        daysOff: 15
       },
       permissionBalance: {
         usedThisMonth: 0,

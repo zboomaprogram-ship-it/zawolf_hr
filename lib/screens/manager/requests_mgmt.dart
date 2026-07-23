@@ -18,10 +18,15 @@ import '../../models/user_model.dart';
 import '../../models/advance_model.dart';
 import '../../services/advance_service.dart';
 import '../../services/request_approval_policy_service.dart';
+import '../../services/resignation_service.dart';
+import '../../services/administrative_request_service.dart';
 import '../../models/request_approval_policy.dart';
+import '../../models/resignation_model.dart';
+import '../../models/administrative_request_model.dart';
 import '../../theme/theme.dart';
 import '../../components/wolf_card.dart';
 import '../../components/wolf_button.dart';
+import '../../components/request_approval_timeline.dart';
 import '../shared/requests_log_screen.dart';
 
 class RequestsManagementScreen extends StatefulWidget {
@@ -43,6 +48,9 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen>
   final AdvanceService _advanceService = AdvanceService();
   final RequestApprovalPolicyService _approvalPolicyService =
       RequestApprovalPolicyService();
+  final ResignationService _resignationService = ResignationService();
+  final AdministrativeRequestService _administrativeRequestService =
+      AdministrativeRequestService();
   bool _isSavingApprovalPolicy = false;
   String _salaryDeductionFilter = 'all';
   final Map<String, Stream<QuerySnapshot<Map<String, dynamic>>>> _streamCache =
@@ -51,7 +59,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 6, vsync: this);
+    _tabController = TabController(length: 8, vsync: this);
   }
 
   @override
@@ -127,6 +135,12 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen>
                       status: 'rejected',
                       reviewerId: reviewerId,
                       comment: commentController.text.trim(),
+                    );
+                  } else if (type == 'administrative') {
+                    await _administrativeRequestService.reject(
+                      requestId,
+                      authService.currentUser!,
+                      commentController.text.trim(),
                     );
                   }
 
@@ -205,6 +219,8 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen>
             Tab(text: 'خصومات التأخير'),
             Tab(text: 'مراجعة أمنية'),
             Tab(text: 'الشكاوى'),
+            Tab(text: 'الاستقالات'),
+            Tab(text: 'إدارية'),
           ],
         ),
       ),
@@ -222,11 +238,215 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen>
                 _buildSalaryDeductionsTab(manager, theme),
                 _buildSecurityReviewsTab(manager, theme),
                 _buildComplaintsTab(manager, theme),
+                _buildResignationsTab(manager, theme),
+                _buildAdministrativeRequestsTab(manager, theme),
               ],
             ),
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildAdministrativeRequestsTab(UserModel reviewer, ThemeData theme) {
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      stream: _administrativeRequestService.watchPending(reviewer),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        final docs = _visibleApprovalDocs(snapshot.data?.docs ?? [], reviewer);
+        if (docs.isEmpty) {
+          return _buildEmptyState('لا توجد طلبات إدارية معلقة');
+        }
+        return ListView.builder(
+          padding: const EdgeInsets.all(16),
+          itemCount: docs.length,
+          itemBuilder: (context, index) {
+            final doc = docs[index];
+            final request = AdministrativeRequestModel.fromFirestore(doc);
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: WolfCard(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildEmployeeHeader(
+                      request.employeeName,
+                      request.employeeId,
+                      request.department,
+                      theme,
+                    ),
+                    const SizedBox(height: 10),
+                    Text(
+                      AdministrativeRequestCategory.arabicLabel(
+                        request.category,
+                      ),
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    Text(request.notes),
+                    _buildRequestDateLine(
+                      label: 'تاريخ تقديم الطلب',
+                      date: request.submittedAt,
+                      fallback: request.submittedAt,
+                    ),
+                    if ((request.attachmentUrl ?? '').isNotEmpty)
+                      Text(
+                        request.attachmentUrl!,
+                        style: const TextStyle(color: ZaWolfColors.primaryCyan),
+                        textDirection: TextDirection.ltr,
+                      ),
+                    RequestApprovalTimeline(data: doc.data(), compact: true),
+                    const SizedBox(height: 10),
+                    _buildApprovalActions(
+                      onApprove: () async {
+                        try {
+                          await _administrativeRequestService.approve(
+                            request.id,
+                            reviewer,
+                          );
+                        } catch (error) {
+                          if (!context.mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('فشل الموافقة: $error')),
+                          );
+                        }
+                      },
+                      onReject: () => _showRejectionDialog(
+                        requestId: request.id,
+                        type: 'administrative',
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildResignationsTab(UserModel reviewer, ThemeData theme) {
+    return StreamBuilder<List<ResignationModel>>(
+      stream: _resignationService.watchPending(reviewer),
+      builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return Center(
+            child: Text(
+              'تعذر تحميل طلبات الاستقالة: ${snapshot.error}',
+              textAlign: TextAlign.center,
+            ),
+          );
+        }
+        if (!snapshot.hasData) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        final requests = snapshot.data!;
+        if (requests.isEmpty) {
+          return const Center(child: Text('لا توجد طلبات استقالة معلقة.'));
+        }
+        return ListView.builder(
+          padding: const EdgeInsets.all(16),
+          itemCount: requests.length,
+          itemBuilder: (context, index) {
+            final request = requests[index];
+            return WolfCard(
+              margin: const EdgeInsets.only(bottom: 12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    request.employeeName,
+                    style: theme.textTheme.titleLarge?.copyWith(
+                      color: Colors.white,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text('القسم: ${request.department}'),
+                  Text(
+                    'تاريخ الاستقالة: ${DateFormat('yyyy/MM/dd').format(request.resignationDate)}',
+                  ),
+                  const SizedBox(height: 8),
+                  Text('السبب: ${request.reason}'),
+                  const SizedBox(height: 14),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: WolfButton(
+                          onPressed: () => _resignationService.review(
+                            resignationId: request.resignationId,
+                            reviewer: reviewer,
+                            approve: true,
+                          ),
+                          text: 'موافقة',
+                          variant: WolfButtonVariant.teal,
+                          height: 42,
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: WolfButton(
+                          onPressed: () =>
+                              _rejectResignation(request, reviewer),
+                          text: 'رفض',
+                          variant: WolfButtonVariant.danger,
+                          height: 42,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _rejectResignation(
+    ResignationModel request,
+    UserModel reviewer,
+  ) async {
+    final controller = TextEditingController();
+    final reason = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('سبب رفض الاستقالة'),
+        content: TextField(
+          controller: controller,
+          minLines: 2,
+          maxLines: 4,
+          textDirection: TextDirection.rtl,
+          decoration: const InputDecoration(hintText: 'اكتب سبب الرفض...'),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('إلغاء'),
+          ),
+          TextButton(
+            onPressed: () {
+              if (controller.text.trim().isNotEmpty) {
+                Navigator.pop(dialogContext, controller.text.trim());
+              }
+            },
+            child: const Text('رفض'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (reason == null) return;
+    await _resignationService.review(
+      resignationId: request.resignationId,
+      reviewer: reviewer,
+      approve: false,
+      comment: reason,
     );
   }
 
@@ -293,7 +513,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen>
     List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
     UserModel reviewer,
   ) {
-    if (!EmployeeRole.isHr(reviewer.role)) return docs;
+    if (!EmployeeRole.isHrStaff(reviewer.role)) return docs;
     return docs.where((doc) {
       final data = doc.data();
       return data['status'] == 'pending_hr' ||
@@ -304,19 +524,22 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen>
   Stream<QuerySnapshot<Map<String, dynamic>>> _pendingStream(
     String collection,
     String reviewerId,
-    String role,
-  ) {
+    String role, {
+    String? employeeId,
+  }) {
     var query = _db.collection(collection) as Query<Map<String, dynamic>>;
     final usesManagerChain =
         collection == 'leaves' || collection == 'permissions';
-    if (usesManagerChain && EmployeeRole.isHr(role)) {
+    if (collection == 'leaves' && employeeId == 'CEO-100') {
+      query = query
+          .where('status', isEqualTo: 'pending_ceo')
+          .where('ceoId', isEqualTo: reviewerId);
+    } else if (usesManagerChain && EmployeeRole.isHrStaff(role)) {
       query = query.where('status', whereIn: ['pending_hr', 'pending_manager']);
     } else if (usesManagerChain && EmployeeRole.canActAsApprovalManager(role)) {
       query = query
           .where('status', isEqualTo: 'pending_manager')
           .where('managerId', isEqualTo: reviewerId);
-    } else if (role == EmployeeRole.superAdmin) {
-      query = query.where('status', whereIn: ['pending_hr', 'pending_manager']);
     } else {
       query = query.where('status', isEqualTo: 'pending_hr');
     }
@@ -325,7 +548,12 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen>
 
   Widget _buildLeavesTab(UserModel reviewer, ThemeData theme) {
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-      stream: _pendingStream('leaves', reviewer.uid, reviewer.role),
+      stream: _pendingStream(
+        'leaves',
+        reviewer.uid,
+        reviewer.role,
+        employeeId: reviewer.employeeId,
+      ),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(
@@ -409,6 +637,10 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen>
                         ],
                       ),
                     ],
+                    RequestApprovalTimeline(
+                      data: docs[index].data(),
+                      compact: true,
+                    ),
                     const SizedBox(height: 16),
                     _buildApprovalActions(
                       onApprove: () async {
@@ -451,7 +683,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen>
     UserModel reviewer,
   ) {
     var query = _db.collection('permissions') as Query<Map<String, dynamic>>;
-    if (EmployeeRole.isHr(reviewer.role)) {
+    if (EmployeeRole.isHrStaff(reviewer.role)) {
       query = query.where('status', whereIn: ['pending_hr', 'pending_manager']);
     } else if (EmployeeRole.canActAsApprovalManager(reviewer.role)) {
       query = query
@@ -526,7 +758,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen>
                           ),
                         ),
                         child: const Text(
-                          '⚠️ الموظف تجاوز الحد الشهري (إذنان / 5 ساعات) — قد يترتب على الموافقة خصم من الراتب',
+                          'إذن استقطاعي بعد استهلاك الرصيد الشهري — يتطلب موافقة HR ويُخصم من الراتب',
                           style: TextStyle(
                             color: ZaWolfColors.warning,
                             fontSize: 11,
@@ -544,7 +776,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen>
                     ),
                     const SizedBox(height: 12),
                     Text(
-                      'نوع الإذن: ${perm.permissionType == 'late_arrival' ? 'تأخير حضور' : 'مغادرة مبكرة'}',
+                      'نوع الإذن: ${perm.permissionType == 'late_arrival' ? 'تأخير حضور' : 'مغادرة مبكرة'}${perm.isDeductible ? ' · استقطاعي' : ''}',
                       style: theme.textTheme.titleMedium!.copyWith(
                         color: Colors.white,
                       ),
@@ -566,6 +798,10 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen>
                       'السبب: ${perm.reason}',
                       style: const TextStyle(color: ZaWolfColors.textSecondary),
                     ),
+                    RequestApprovalTimeline(
+                      data: docs[index].data(),
+                      compact: true,
+                    ),
                     const SizedBox(height: 8),
                     Text(
                       perm.status == 'pending_hr'
@@ -575,47 +811,25 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen>
                     ),
                     const SizedBox(height: 16),
 
-                    if (!perm.isSubmittedAfterWorkStart)
-                      _buildApprovalActions(
-                        onApprove: () async {
-                          try {
-                            await _permissionService.approvePermission(
-                              perm.permissionId,
-                              reviewer.uid,
-                            );
-                          } catch (e) {
-                            if (!context.mounted) return;
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text('فشل الموافقة: $e')),
-                            );
-                          }
-                        },
-                        onReject: () => _showRejectionDialog(
-                          requestId: perm.permissionId,
-                          type: 'permission',
-                        ),
-                      )
-                    else
-                      _buildApprovalActions(
-                        onApprove: () async {
-                          try {
-                            await _permissionService.rejectPermission(
-                              perm.permissionId,
-                              reviewer.uid,
-                              'تم تقديم طلب التأخير بعد بداية العمل',
-                            );
-                          } catch (e) {
-                            if (!context.mounted) return;
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text('فشل الإجراء: $e')),
-                            );
-                          }
-                        },
-                        onReject: () => _showRejectionDialog(
-                          requestId: perm.permissionId,
-                          type: 'permission',
-                        ),
+                    _buildApprovalActions(
+                      onApprove: () async {
+                        try {
+                          await _permissionService.approvePermission(
+                            perm.permissionId,
+                            reviewer.uid,
+                          );
+                        } catch (e) {
+                          if (!context.mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('فشل الموافقة: $e')),
+                          );
+                        }
+                      },
+                      onReject: () => _showRejectionDialog(
+                        requestId: perm.permissionId,
+                        type: 'permission',
                       ),
+                    ),
                   ],
                 ),
               ),

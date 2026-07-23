@@ -21,7 +21,7 @@ void main() {
         endTime: '17:00',
         workDays: const [1, 2, 3, 4, 5, 6],
       ),
-      leaveBalance: LeaveBalance(annual: 21, sick: 14, casual: 7, daysOff: 21),
+      leaveBalance: LeaveBalance(annual: 15, sick: 14, casual: 7, daysOff: 15),
       permissionBalance: PermissionBalance(
         usedThisMonth: 0,
         usedHoursThisMonth: 0,

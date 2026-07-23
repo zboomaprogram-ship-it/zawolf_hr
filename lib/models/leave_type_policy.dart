@@ -41,7 +41,7 @@ class LeaveTypePolicy {
       case sick:
         return 'لا تُخصم من رصيد الإجازات ولا يترتب عليها خصم راتب.';
       case casual:
-        return 'متاحة حتى صباح اليوم وتُخصم من رصيد الإجازات الكلي.';
+        return 'متاحة حتى صباح اليوم. تُخصم من رصيد العارضة (7 أيام) ومن رصيد الإجازات الكلي.';
       case unpaid:
         return 'لا تُخصم من رصيد الإجازات، ويُقترح خصم راتب يوم كامل عن كل يوم بعد موافقة HR.';
       case exam:
@@ -56,10 +56,22 @@ class LeaveTypePolicy {
   static String? balanceKey(String type) {
     switch (type) {
       case normal:
-      case casual:
         return 'daysOff';
+      case casual:
+        return 'casual';
       default:
         return null;
+    }
+  }
+
+  static List<String> balanceKeys(String type) {
+    switch (type) {
+      case normal:
+        return const ['daysOff'];
+      case casual:
+        return const ['casual', 'daysOff'];
+      default:
+        return const [];
     }
   }
 

@@ -4,7 +4,9 @@ import '../models/employee_role.dart';
 import '../models/productivity_score_model.dart';
 import '../models/user_model.dart';
 import '../models/warning_reward_model.dart';
+import '../models/notification_route_policy.dart';
 import 'audit_log_service.dart';
+import 'role_notification_service.dart';
 
 class WarningRewardService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
@@ -108,6 +110,9 @@ class WarningRewardService {
           data: {'recordId': ref.id},
         );
       } catch (_) {}
+      if (type == WarningRewardType.warning) {
+        await _sendWarningEscalationIfNeeded(employee);
+      }
     }
   }
 
@@ -183,6 +188,17 @@ class WarningRewardService {
         data: {'recordId': recordId},
       );
     } catch (_) {}
+    if (record.type == WarningRewardType.warning) {
+      final employeeDoc = await _db
+          .collection('users')
+          .doc(record.userId)
+          .get();
+      if (employeeDoc.exists) {
+        await _sendWarningEscalationIfNeeded(
+          UserModel.fromFirestore(employeeDoc),
+        );
+      }
+    }
   }
 
   Future<void> dismissSuggestion(String recordId, UserModel reviewer) async {
@@ -268,15 +284,58 @@ class WarningRewardService {
       'type': type,
       'title': title,
       'body': body,
-      'data': data ?? {},
+      'data': NotificationRoutePolicy.dataWithRoute(type, data),
       'isRead': false,
       'pushSent': false,
       'createdAt': FieldValue.serverTimestamp(),
     });
 
-    await _db.collection('users').doc(recipientId).update({
-      'unreadNotifications': FieldValue.increment(1),
-    });
+    try {
+      await _db.collection('users').doc(recipientId).update({
+        'unreadNotifications': FieldValue.increment(1),
+      });
+    } catch (_) {
+      // Keep the warning notification even if the cached badge counter cannot
+      // be updated under the recipient's current account rules.
+    }
+  }
+
+  Future<void> _sendWarningEscalationIfNeeded(UserModel employee) async {
+    final snapshot = await _db
+        .collection('warningsRewards')
+        .where('userId', isEqualTo: employee.uid)
+        .get();
+    final warningCount = snapshot.docs.where((doc) {
+      final data = doc.data();
+      return data['type'] == WarningRewardType.warning &&
+          data['status'] != WarningRewardStatus.dismissed &&
+          data['status'] != WarningRewardStatus.suggested;
+    }).length;
+
+    if (warningCount == 3) {
+      await _createNotification(
+        recipientId: employee.uid,
+        type: 'warning_final_chance',
+        title: 'تنبيه أخير',
+        body:
+            'وصلت إلى 3 إنذارات. هذا هو التنبيه الأخير، والإنذار التالي قد يؤدي إلى إنهاء الخدمة وتعطيل الحساب.',
+        data: {'warningCount': warningCount},
+      );
+    } else if (warningCount == 4) {
+      await RoleNotificationService.instance.notifyRole(
+        role: EmployeeRole.hrAdmin,
+        includeSuperAdmins: true,
+        type: 'warning_dismissal_review',
+        title: 'مراجعة تعطيل حساب موظف',
+        body:
+            '${employee.displayName} وصل إلى 4 إنذارات. راجع السجل واتخذ قرار التعطيل مع كتابة السبب.',
+        data: {
+          'employeeId': employee.uid,
+          'warningCount': warningCount,
+          'route': '/hr/employees',
+        },
+      );
+    }
   }
 }
 

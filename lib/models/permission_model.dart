@@ -8,7 +8,7 @@ class PermissionModel {
   final String department;
   final String locationId;
   final String managerId;
-  final String permissionType; // 'early_leave' | 'late_arrival'
+  final String permissionType; // early_leave | late_arrival | mid_shift_exit
   final String requestDate; // YYYY-MM-DD
   final String expectedTime; // HH:mm
   final int durationMinutes;
@@ -16,12 +16,14 @@ class PermissionModel {
   final String
   status; // 'pending_hr' | 'pending_manager' | 'approved' | 'rejected' | 'cancelled' | 'invalid_late'
   final bool isExceedingQuota;
+  final bool isDeductible;
   final bool isSubmittedAfterWorkStart;
   final double salaryDeductionFraction;
   final double salaryDeductionAmount;
   final String salaryCurrency;
   final String salaryDeductionCode;
   final String salaryDeductionLabel;
+  final String salaryDeductionApprovalStatus;
   final String monthKey; // YYYY-MM
   final DateTime? submittedAt;
   final DateTime? reviewedAt;
@@ -51,12 +53,14 @@ class PermissionModel {
     required this.reason,
     required this.status,
     required this.isExceedingQuota,
+    this.isDeductible = false,
     required this.isSubmittedAfterWorkStart,
     this.salaryDeductionFraction = 0,
     this.salaryDeductionAmount = 0,
     this.salaryCurrency = 'EGP',
     this.salaryDeductionCode = 'none',
     this.salaryDeductionLabel = 'لا يوجد خصم',
+    this.salaryDeductionApprovalStatus = 'none',
     required this.monthKey,
     this.submittedAt,
     this.reviewedAt,
@@ -89,6 +93,7 @@ class PermissionModel {
       reason: data['reason'] as String? ?? '',
       status: data['status'] as String? ?? 'pending_hr',
       isExceedingQuota: data['isExceedingQuota'] as bool? ?? false,
+      isDeductible: data['isDeductible'] as bool? ?? false,
       isSubmittedAfterWorkStart:
           data['isSubmittedAfterWorkStart'] as bool? ?? false,
       salaryDeductionFraction:
@@ -99,6 +104,8 @@ class PermissionModel {
       salaryDeductionCode: data['salaryDeductionCode'] as String? ?? 'none',
       salaryDeductionLabel:
           data['salaryDeductionLabel'] as String? ?? 'لا يوجد خصم',
+      salaryDeductionApprovalStatus:
+          data['salaryDeductionApprovalStatus'] as String? ?? 'none',
       monthKey: data['monthKey'] as String? ?? '',
       submittedAt: (data['submittedAt'] as Timestamp?)?.toDate(),
       reviewedAt: (data['reviewedAt'] as Timestamp?)?.toDate(),
@@ -130,12 +137,14 @@ class PermissionModel {
       'reason': reason,
       'status': status,
       'isExceedingQuota': isExceedingQuota,
+      'isDeductible': isDeductible,
       'isSubmittedAfterWorkStart': isSubmittedAfterWorkStart,
       'salaryDeductionFraction': salaryDeductionFraction,
       'salaryDeductionAmount': salaryDeductionAmount,
       'salaryCurrency': salaryCurrency,
       'salaryDeductionCode': salaryDeductionCode,
       'salaryDeductionLabel': salaryDeductionLabel,
+      'salaryDeductionApprovalStatus': salaryDeductionApprovalStatus,
       'monthKey': monthKey,
       'submittedAt': submittedAt != null
           ? Timestamp.fromDate(submittedAt!)

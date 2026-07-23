@@ -5,18 +5,25 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../theme/theme.dart';
 import '../../components/wolf_button.dart';
 import '../../components/wolf_input_field.dart';
+import '../../components/request_approval_timeline.dart';
 import '../../services/auth_service.dart';
 import '../../services/permission_service.dart';
 import '../../services/leave_service.dart';
 import '../../services/complaint_service.dart';
 import '../../services/audit_log_service.dart';
 import '../../services/advance_service.dart';
+import '../../services/resignation_service.dart';
+import '../../services/administrative_request_service.dart';
 import '../../models/permission_model.dart';
+import '../../models/permission_type_policy.dart';
 import '../../models/leave_model.dart';
 import '../../models/leave_type_policy.dart';
+import '../../models/leave_entitlement_policy.dart';
 import '../../models/advance_model.dart';
 import '../../models/complaint_model.dart';
 import '../../models/user_model.dart';
+import '../../models/resignation_model.dart';
+import '../../models/administrative_request_model.dart';
 import '../shared/requests_log_screen.dart';
 import '../../utils/payroll_cycle.dart';
 
@@ -33,12 +40,15 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
   final _formKeyPermission = GlobalKey<FormState>();
   final _formKeyLeave = GlobalKey<FormState>();
   final _formKeyComplaint = GlobalKey<FormState>();
+  final _formKeyResignation = GlobalKey<FormState>();
+  final _formKeyAdministrative = GlobalKey<FormState>();
 
   // Permission form fields
-  String _permissionType = 'early_leave'; // early_leave | late_arrival
+  String _permissionType = PermissionTypePolicy.earlyLeave;
   DateTime _permissionDate = DateTime.now();
   TimeOfDay _selectedTime = const TimeOfDay(hour: 14, minute: 0);
   int _permissionDurationHours = 2;
+  bool _isDeductiblePermission = false;
   final _permissionReasonController = TextEditingController();
 
   // Leave form fields
@@ -57,6 +67,11 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
   final _complaintTitleController = TextEditingController();
   final _complaintBodyController = TextEditingController();
   final _complaintAttachmentController = TextEditingController();
+  final _resignationReasonController = TextEditingController();
+  DateTime _resignationDate = DateTime.now().add(const Duration(days: 30));
+  String _administrativeCategory = AdministrativeRequestCategory.personalData;
+  final _administrativeNotesController = TextEditingController();
+  final _administrativeAttachmentController = TextEditingController();
 
   bool _loading = false;
   int _requestTypeIndex = 0;
@@ -78,6 +93,9 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
     _complaintTitleController.dispose();
     _complaintBodyController.dispose();
     _complaintAttachmentController.dispose();
+    _resignationReasonController.dispose();
+    _administrativeNotesController.dispose();
+    _administrativeAttachmentController.dispose();
     super.dispose();
   }
 
@@ -137,9 +155,10 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
           '${_selectedTime.hour.toString().padLeft(2, '0')}:${_selectedTime.minute.toString().padLeft(2, '0')}';
 
       final balance = employee.permissionBalance;
-      final bool exceededLimit =
-          balance.usedThisMonth >= 2 ||
-          (balance.usedHoursThisMonth + _permissionDurationHours) > 5.0;
+      final quotaExhausted = PermissionTypePolicy.isRegularQuotaExhausted(
+        usedCount: balance.usedThisMonth,
+        usedHours: balance.usedHoursThisMonth,
+      );
 
       final req = PermissionModel(
         permissionId: '',
@@ -155,7 +174,8 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
         durationMinutes: _permissionDurationHours * 60,
         reason: _permissionReasonController.text.trim(),
         status: 'pending',
-        isExceedingQuota: exceededLimit,
+        isExceedingQuota: quotaExhausted,
+        isDeductible: _isDeductiblePermission || quotaExhausted,
         isSubmittedAfterWorkStart: false,
         monthKey: monthKey,
       );
@@ -170,7 +190,10 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
           ),
         );
         _permissionReasonController.clear();
-        setState(() => _permissionDate = DateTime.now());
+        setState(() {
+          _permissionDate = DateTime.now();
+          _isDeductiblePermission = false;
+        });
         _tabController.animateTo(1); // switch to history tab
       }
     } catch (e) {
@@ -183,6 +206,40 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
             ),
           ),
         );
+      }
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _submitAdministrativeRequest(UserModel employee) async {
+    if (!_formKeyAdministrative.currentState!.validate()) return;
+    setState(() => _loading = true);
+    try {
+      await AdministrativeRequestService().submit(
+        employee: employee,
+        category: _administrativeCategory,
+        notes: _administrativeNotesController.text,
+        attachmentUrl: _administrativeAttachmentController.text.trim().isEmpty
+            ? null
+            : _administrativeAttachmentController.text.trim(),
+      );
+      _administrativeNotesController.clear();
+      _administrativeAttachmentController.clear();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            backgroundColor: ZaWolfColors.success,
+            content: Text('تم إرسال الطلب الإداري بنجاح'),
+          ),
+        );
+        _tabController.animateTo(1);
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('تعذر الإرسال: $error')));
       }
     } finally {
       if (mounted) setState(() => _loading = false);
@@ -341,6 +398,36 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
     }
   }
 
+  Future<void> _submitResignation(UserModel employee) async {
+    if (!_formKeyResignation.currentState!.validate()) return;
+    setState(() => _loading = true);
+    try {
+      await ResignationService().submit(
+        employee: employee,
+        reason: _resignationReasonController.text,
+        resignationDate: _resignationDate,
+      );
+      if (!mounted) return;
+      _resignationReasonController.clear();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('تم إرسال طلب الاستقالة بنجاح')),
+      );
+      _tabController.animateTo(1);
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: ZaWolfColors.error,
+          content: Text(
+            'فشل الإرسال: ${error.toString().replaceAll('Exception: ', '')}',
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
   // Cancel Request Action
   Future<bool> _cancelRequest(String collectionPath, String docId) async {
     final actorId =
@@ -408,6 +495,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
         minute: int.parse(time[1]),
       );
       _permissionDurationHours = (request.durationMinutes / 60).round();
+      _isDeductiblePermission = request.isDeductible;
       _permissionReasonController.text = request.reason;
     });
     _tabController.animateTo(0);
@@ -504,7 +592,9 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
                 0 => _buildPermissionForm(user, theme),
                 1 => _buildLeaveForm(user, theme),
                 2 => _buildAdvanceForm(user, theme),
-                _ => _buildComplaintForm(user, theme),
+                3 => _buildComplaintForm(user, theme),
+                4 => _buildResignationForm(user, theme),
+                _ => _buildAdministrativeRequestForm(user, theme),
               },
             ),
           ),
@@ -519,6 +609,8 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
       ('إجازة', Icons.event_available_outlined, ZaWolfColors.dayoffPurple),
       ('سلفة', Icons.account_balance_wallet_outlined, ZaWolfColors.warning),
       ('شكوى', Icons.feedback_outlined, ZaWolfColors.error),
+      ('استقالة', Icons.exit_to_app, ZaWolfColors.error),
+      ('طلب إداري', Icons.assignment_outlined, ZaWolfColors.primaryBlue),
     ];
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -587,6 +679,8 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
 
   Widget _buildLeaveBalanceSummary(UserModel user, ThemeData theme) {
     final balance = user.leaveBalance;
+    final isOnProbation = LeaveEntitlementPolicy.isOnProbation(user.hiringDate);
+    final eligibleFrom = LeaveEntitlementPolicy.eligibleFrom(user.hiringDate);
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
@@ -612,15 +706,29 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
                 balance.daysOff,
                 ZaWolfColors.dayoffPurple,
               ),
-              Expanded(
-                child: Text(
-                  'الإجازة العارضة جزء من هذا الرصيد، والمرضية بلا رصيد محدد.',
-                  textAlign: TextAlign.center,
-                  style: theme.textTheme.bodySmall,
-                ),
-              ),
+              _balanceItem('العارضة', balance.casual, ZaWolfColors.warning),
             ],
           ),
+          const SizedBox(height: 8),
+          Text(
+            'العارضة لها 7 أيام كحد ابتدائي وتُخصم أيضاً من الرصيد الكلي.',
+            textAlign: TextAlign.center,
+            style: theme.textTheme.bodySmall,
+          ),
+          if (user.hiringDate == null || isOnProbation) ...[
+            const SizedBox(height: 10),
+            Text(
+              user.hiringDate == null
+                  ? 'يلزم تسجيل تاريخ التعيين لدى HR قبل احتساب الإجازات السنوية.'
+                  : 'فترة التجربة مستمرة حتى ${DateFormat('yyyy/MM/dd').format(eligibleFrom!)}. الإجازة العادية خلال هذه الفترة تُعامل كإجازة بدون راتب.',
+              textAlign: TextAlign.right,
+              textDirection: TextDirection.rtl,
+              style: const TextStyle(
+                color: ZaWolfColors.warning,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -656,9 +764,11 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
 
   Widget _buildPermissionForm(UserModel user, ThemeData theme) {
     final balance = user.permissionBalance;
-    final bool exceededLimit =
-        balance.usedThisMonth >= 2 ||
-        (balance.usedHoursThisMonth + _permissionDurationHours) > 5.0;
+    final quotaExhausted = PermissionTypePolicy.isRegularQuotaExhausted(
+      usedCount: balance.usedThisMonth,
+      usedHours: balance.usedHoursThisMonth,
+    );
+    final deductibleSelected = quotaExhausted || _isDeductiblePermission;
 
     return Form(
       key: _formKeyPermission,
@@ -723,6 +833,21 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
                   checkmarkColor: Colors.white,
                 ),
                 ChoiceChip(
+                  label: const Center(child: Text('مغادرة والعودة')),
+                  selected:
+                      _permissionType == PermissionTypePolicy.midShiftExit,
+                  onSelected: (val) {
+                    if (val) {
+                      setState(
+                        () =>
+                            _permissionType = PermissionTypePolicy.midShiftExit,
+                      );
+                    }
+                  },
+                  selectedColor: ZaWolfColors.permissionTeal,
+                  checkmarkColor: Colors.white,
+                ),
+                ChoiceChip(
                   label: const Center(child: Text('تأخير حضور')),
                   selected: _permissionType == 'late_arrival',
                   onSelected: (val) {
@@ -734,6 +859,41 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
               ],
             ),
             const SizedBox(height: 16),
+
+            if (quotaExhausted) ...[
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: ZaWolfColors.warning.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: ZaWolfColors.warning.withValues(alpha: 0.45),
+                  ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    ChoiceChip(
+                      label: const Text('إذن استقطاعي'),
+                      selected: deductibleSelected,
+                      onSelected: (_) =>
+                          setState(() => _isDeductiblePermission = true),
+                      selectedColor: ZaWolfColors.warning,
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      _permissionDurationHours <= 2
+                          ? 'خصم ربع يوم من الراتب بعد موافقة HR.'
+                          : 'خصم نصف يوم من الراتب بعد موافقة HR.',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: ZaWolfColors.warning,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+            ],
 
             // Late arrival policy if selected
             if (_permissionType == 'late_arrival') ...[
@@ -793,9 +953,9 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
-                  _permissionType == 'early_leave'
-                      ? 'وقت المغادرة المتوقع:'
-                      : 'وقت الحضور المتوقع:',
+                  _permissionType == PermissionTypePolicy.lateArrival
+                      ? 'وقت الحضور المتوقع:'
+                      : 'وقت المغادرة المتوقع:',
                   style: theme.textTheme.bodyMedium,
                 ),
                 TextButton.icon(
@@ -815,6 +975,37 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
               ],
             ),
             const Divider(color: ZaWolfColors.surface02),
+            if (_permissionType == PermissionTypePolicy.midShiftExit) ...[
+              Builder(
+                builder: (context) {
+                  final departureMinutes =
+                      _selectedTime.hour * 60 + _selectedTime.minute;
+                  final returnMinutes =
+                      departureMinutes + (_permissionDurationHours * 60);
+                  final returnTime = TimeOfDay(
+                    hour: (returnMinutes ~/ 60) % 24,
+                    minute: returnMinutes % 60,
+                  );
+                  return Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        'وقت العودة المتوقع:',
+                        style: theme.textTheme.bodyMedium,
+                      ),
+                      Text(
+                        returnTime.format(context),
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          color: ZaWolfColors.permissionTeal,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  );
+                },
+              ),
+              const Divider(color: ZaWolfColors.surface02),
+            ],
 
             // Duration Slider
             Row(
@@ -843,8 +1034,8 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
             Slider(
               value: _permissionDurationHours.toDouble(),
               min: 1,
-              max: 5,
-              divisions: 4,
+              max: PermissionTypePolicy.maximumDurationHours.toDouble(),
+              divisions: PermissionTypePolicy.maximumDurationHours - 1,
               activeColor: ZaWolfColors.permissionTeal,
               onChanged: (val) {
                 setState(() {
@@ -865,7 +1056,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
             ),
             const SizedBox(height: 20),
 
-            if (exceededLimit) ...[
+            if (quotaExhausted) ...[
               Container(
                 padding: const EdgeInsets.all(8),
                 margin: const EdgeInsets.only(bottom: 12),
@@ -874,7 +1065,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Text(
-                  '⚠️ تنبيه: لقد تجاوزت الحد الشهري المسموح به. تقديم الإذن يستلزم موافقة إضافية وقد يؤثر على الراتب.',
+                  'تم استهلاك رصيد الأذونات العادية. هذا الطلب استقطاعي ويتطلب موافقة HR، وبحد أقصى نصف يوم.',
                   style: theme.textTheme.bodySmall!.copyWith(
                     color: ZaWolfColors.error,
                     fontSize: 10,
@@ -1214,7 +1405,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
 
   Widget _buildHistoryConsole(UserModel user, ThemeData theme) {
     return DefaultTabController(
-      length: 4,
+      length: 6,
       child: Column(
         children: [
           TabBar(
@@ -1224,6 +1415,8 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
               Tab(text: 'الأذونات'),
               Tab(text: 'السلف'),
               Tab(text: 'الشكاوى'),
+              Tab(text: 'الاستقالة'),
+              Tab(text: 'إدارية'),
             ],
             labelColor: ZaWolfColors.primaryCyan,
             unselectedLabelColor: ZaWolfColors.textSecondary,
@@ -1236,11 +1429,286 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
                 _buildPermissionsHistory(user.uid, theme),
                 _buildAdvancesHistory(user.uid, theme),
                 _buildComplaintsHistory(user.uid, theme),
+                _buildResignationsHistory(user.uid, theme),
+                _buildAdministrativeHistory(user.uid, theme),
               ],
             ),
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildAdministrativeRequestForm(UserModel user, ThemeData theme) {
+    return Form(
+      key: _formKeyAdministrative,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          DropdownButtonFormField<String>(
+            initialValue: _administrativeCategory,
+            decoration: const InputDecoration(labelText: 'نوع الطلب الإداري'),
+            dropdownColor: ZaWolfColors.surface01,
+            items: AdministrativeRequestCategory.values
+                .map(
+                  (value) => DropdownMenuItem(
+                    value: value,
+                    child: Text(
+                      AdministrativeRequestCategory.arabicLabel(value),
+                    ),
+                  ),
+                )
+                .toList(),
+            onChanged: (value) {
+              if (value != null) {
+                setState(() => _administrativeCategory = value);
+              }
+            },
+          ),
+          const SizedBox(height: 14),
+          TextFormField(
+            controller: _administrativeNotesController,
+            minLines: 4,
+            maxLines: 7,
+            textDirection: TextDirection.rtl,
+            decoration: const InputDecoration(
+              labelText: 'تفاصيل الطلب',
+              hintText: 'اكتب المطلوب والسبب والتفاصيل...',
+            ),
+            validator: (value) =>
+                (value?.trim().isEmpty ?? true) ? 'تفاصيل الطلب مطلوبة' : null,
+          ),
+          const SizedBox(height: 14),
+          TextFormField(
+            controller: _administrativeAttachmentController,
+            textDirection: TextDirection.ltr,
+            decoration: const InputDecoration(
+              labelText: 'رابط مرفق (اختياري)',
+              hintText: 'https://...',
+            ),
+            validator: (value) {
+              if (value == null || value.trim().isEmpty) return null;
+              final uri = Uri.tryParse(value.trim());
+              if (uri == null ||
+                  !['http', 'https'].contains(uri.scheme) ||
+                  uri.host.isEmpty) {
+                return 'أدخل رابطاً صحيحاً';
+              }
+              return null;
+            },
+          ),
+          const SizedBox(height: 20),
+          WolfButton(
+            onPressed: () => _submitAdministrativeRequest(user),
+            text: 'إرسال الطلب الإداري',
+            secondaryText: 'SUBMIT ADMIN REQUEST',
+            loading: _loading,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAdministrativeHistory(String userId, ThemeData theme) {
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      stream: AdministrativeRequestService().watchMine(userId),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        final docs = snapshot.data?.docs ?? const [];
+        if (docs.isEmpty) {
+          return _buildEmptyState('لا توجد طلبات إدارية سابقة.');
+        }
+        return ListView.builder(
+          padding: const EdgeInsets.all(16),
+          itemCount: docs.length,
+          itemBuilder: (context, index) {
+            final doc = docs[index];
+            final request = AdministrativeRequestModel.fromFirestore(doc);
+            return Container(
+              margin: const EdgeInsets.only(bottom: 12),
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: ZaWolfColors.surface01,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: ZaWolfColors.surface03),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(
+                        Icons.assignment_outlined,
+                        color: ZaWolfColors.primaryBlue,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          AdministrativeRequestCategory.arabicLabel(
+                            request.category,
+                          ),
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                      _buildStatusBadge(request.status),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'تاريخ الإرسال: ${DateFormat('yyyy/MM/dd · HH:mm').format(request.submittedAt)}',
+                  ),
+                  Text(request.notes),
+                  if ((request.attachmentUrl ?? '').isNotEmpty)
+                    Text(
+                      request.attachmentUrl!,
+                      style: const TextStyle(color: ZaWolfColors.primaryCyan),
+                      textDirection: TextDirection.ltr,
+                    ),
+                  RequestApprovalTimeline(data: doc.data(), compact: true),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildResignationForm(UserModel user, ThemeData theme) {
+    return Form(
+      key: _formKeyResignation,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: ZaWolfColors.error.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: ZaWolfColors.error.withValues(alpha: 0.45),
+              ),
+            ),
+            child: const Text(
+              'يُرسل الطلب إلى قائد الفريق ثم المديرين بالترتيب، وبعدهم مدير HR للقرار النهائي.',
+              textAlign: TextAlign.center,
+              textDirection: TextDirection.rtl,
+            ),
+          ),
+          const SizedBox(height: 16),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('تاريخ الاستقالة'),
+            subtitle: Text(DateFormat('yyyy/MM/dd').format(_resignationDate)),
+            trailing: const Icon(
+              Icons.calendar_month,
+              color: ZaWolfColors.primaryCyan,
+            ),
+            onTap: () async {
+              final picked = await showDatePicker(
+                context: context,
+                initialDate: _resignationDate,
+                firstDate: DateTime.now(),
+                lastDate: DateTime.now().add(const Duration(days: 730)),
+              );
+              if (picked != null && mounted) {
+                setState(() => _resignationDate = picked);
+              }
+            },
+          ),
+          const SizedBox(height: 12),
+          TextFormField(
+            controller: _resignationReasonController,
+            minLines: 4,
+            maxLines: 7,
+            textDirection: TextDirection.rtl,
+            decoration: const InputDecoration(
+              labelText: 'سبب الاستقالة',
+              hintText: 'اكتب سبب الاستقالة بوضوح...',
+            ),
+            validator: (value) =>
+                (value?.trim().isEmpty ?? true) ? 'سبب الاستقالة مطلوب' : null,
+          ),
+          const SizedBox(height: 20),
+          WolfButton(
+            onPressed: () => _submitResignation(user),
+            text: 'إرسال طلب الاستقالة',
+            secondaryText: 'SUBMIT RESIGNATION',
+            variant: WolfButtonVariant.danger,
+            loading: _loading,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildResignationsHistory(String userId, ThemeData theme) {
+    return StreamBuilder<List<ResignationModel>>(
+      stream: ResignationService().watchMine(userId),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        final requests = snapshot.data ?? const <ResignationModel>[];
+        if (requests.isEmpty) {
+          return _buildEmptyState('لا توجد طلبات استقالة سابقة.');
+        }
+        return ListView.builder(
+          padding: const EdgeInsets.all(16),
+          itemCount: requests.length,
+          itemBuilder: (context, index) {
+            final request = requests[index];
+            return Container(
+              margin: const EdgeInsets.only(bottom: 12),
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: ZaWolfColors.surface01,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: ZaWolfColors.surface03),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(Icons.exit_to_app, color: ZaWolfColors.error),
+                      const SizedBox(width: 8),
+                      const Expanded(
+                        child: Text(
+                          'طلب استقالة',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                      _buildStatusBadge(request.status),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    'التاريخ: ${DateFormat('yyyy/MM/dd').format(request.resignationDate)}',
+                  ),
+                  const SizedBox(height: 6),
+                  Text('السبب: ${request.reason}'),
+                  if ((request.reviewerComment ?? '').isNotEmpty) ...[
+                    const SizedBox(height: 6),
+                    Text(
+                      'رد الإدارة: ${request.reviewerComment}',
+                      style: const TextStyle(color: ZaWolfColors.warning),
+                    ),
+                  ],
+                ],
+              ),
+            );
+          },
+        );
+      },
     );
   }
 
@@ -1490,6 +1958,13 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
                     'الفترة: من $startStr إلى $endStr (${req.numberOfDays} أيام)',
                     style: theme.textTheme.bodyMedium,
                   ),
+                  if (req.submittedAt != null) ...[
+                    const SizedBox(height: 6),
+                    Text(
+                      'تاريخ التقديم: ${DateFormat('yyyy/MM/dd · hh:mm a').format(req.submittedAt!)}',
+                      style: theme.textTheme.bodySmall,
+                    ),
+                  ],
                   if (req.reason != null && req.reason!.isNotEmpty) ...[
                     const SizedBox(height: 8),
                     Text(
@@ -1548,9 +2023,16 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
                         style: theme.textTheme.bodySmall,
                       ),
                   ],
+                  RequestApprovalTimeline(
+                    data: Map<String, dynamic>.from(
+                      doc.data() as Map<String, dynamic>,
+                    ),
+                    compact: true,
+                  ),
                   if (req.status == 'pending' ||
                       req.status == 'pending_hr' ||
                       req.status == 'pending_manager' ||
+                      req.status == 'pending_ceo' ||
                       (req.status == 'approved' &&
                           req.startDate.isAfter(DateTime.now()))) ...[
                     const SizedBox(height: 12),
@@ -1609,6 +2091,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
             final doc = docs[index];
             final req = PermissionModel.fromFirestore(doc);
             final hours = req.durationMinutes / 60;
+            final permissionPeriod = _permissionPeriod(req);
 
             return Container(
               margin: const EdgeInsets.only(bottom: 12),
@@ -1633,9 +2116,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
                           ),
                           const SizedBox(width: 8),
                           Text(
-                            req.permissionType == 'early_leave'
-                                ? 'إذن مغادرة مبكرة'
-                                : 'إذن تأخير حضور',
+                            '${PermissionTypePolicy.arabicLabel(req.permissionType)}${req.isDeductible ? ' - استقطاعي' : ''}',
                             style: theme.textTheme.titleMedium!.copyWith(
                               color: Colors.white,
                               fontWeight: FontWeight.bold,
@@ -1648,9 +2129,23 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
                   ),
                   const SizedBox(height: 12),
                   Text(
-                    'اليوم: ${req.requestDate} · الوقت: ${req.expectedTime} (${hours.toInt()} س)',
+                    'اليوم: ${req.requestDate} · من ${permissionPeriod.$1} إلى ${permissionPeriod.$2} (${hours.toInt()} س)',
                     style: theme.textTheme.bodyMedium,
                   ),
+                  if (req.submittedAt != null) ...[
+                    const SizedBox(height: 6),
+                    Text(
+                      'تاريخ التقديم: ${DateFormat('yyyy/MM/dd · hh:mm a').format(req.submittedAt!)}',
+                      style: theme.textTheme.bodySmall,
+                    ),
+                  ],
+                  if (req.isDeductible) ...[
+                    const SizedBox(height: 6),
+                    Text(
+                      '${req.salaryDeductionLabel} · ${req.salaryDeductionAmount.toStringAsFixed(2)} ${req.salaryCurrency}',
+                      style: const TextStyle(color: ZaWolfColors.warning),
+                    ),
+                  ],
                   if (req.reason.isNotEmpty) ...[
                     const SizedBox(height: 8),
                     Text(
@@ -1674,6 +2169,12 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
                         style: theme.textTheme.bodySmall,
                       ),
                   ],
+                  RequestApprovalTimeline(
+                    data: Map<String, dynamic>.from(
+                      doc.data() as Map<String, dynamic>,
+                    ),
+                    compact: true,
+                  ),
                   if (req.status == 'pending_hr' ||
                       req.status == 'pending_manager' ||
                       (req.status == 'approved' &&
@@ -1727,6 +2228,28 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
     }
   }
 
+  (String, String) _permissionPeriod(PermissionModel request) {
+    final parts = request.expectedTime.split(':');
+    if (parts.length != 2) {
+      return (request.expectedTime, request.expectedTime);
+    }
+    final hour = int.tryParse(parts[0]);
+    final minute = int.tryParse(parts[1]);
+    if (hour == null || minute == null) {
+      return (request.expectedTime, request.expectedTime);
+    }
+    final anchor = DateTime(2000, 1, 1, hour, minute);
+    final duration = Duration(minutes: request.durationMinutes);
+    final start = request.permissionType == PermissionTypePolicy.lateArrival
+        ? anchor.subtract(duration)
+        : anchor;
+    final end = request.permissionType == PermissionTypePolicy.lateArrival
+        ? anchor
+        : anchor.add(duration);
+    final formatter = DateFormat('HH:mm');
+    return (formatter.format(start), formatter.format(end));
+  }
+
   Widget _buildEmptyState(String text) {
     return Center(
       child: Column(
@@ -1764,6 +2287,10 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
       case 'pending_manager':
         color = ZaWolfColors.warning;
         text = 'بانتظار المدير';
+        break;
+      case 'pending_ceo':
+        color = ZaWolfColors.warning;
+        text = 'بانتظار CEO';
         break;
       case 'cancelled':
         color = Colors.grey;

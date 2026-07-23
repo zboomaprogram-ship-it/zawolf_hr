@@ -123,6 +123,9 @@ class _TeamLeaderDashboardScreenState extends State<TeamLeaderDashboardScreen> {
                   summary: snapshot.data!,
                   onRefresh: () => _refresh(user),
                   onTap: () => context.go('/team-leader/attendance-summary'),
+                  onCategoryTap: (status) => context.go(
+                    '/team-leader/attendance-summary?status=$status',
+                  ),
                 );
               },
             ),

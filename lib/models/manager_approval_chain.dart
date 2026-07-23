@@ -69,4 +69,11 @@ class ManagerApprovalChain {
         ) +
         1;
   }
+
+  static bool usesHrFallback({
+    required bool isSuperAdmin,
+    required List<String> managerIds,
+  }) {
+    return managerIds.isEmpty;
+  }
 }

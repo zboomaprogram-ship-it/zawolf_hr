@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zawolf_hr/models/leave_model.dart';
 import 'package:zawolf_hr/models/leave_type_policy.dart';
+import 'package:zawolf_hr/models/user_model.dart';
 import 'package:zawolf_hr/services/leave_service.dart';
 
 LeaveModel request({
@@ -64,10 +65,29 @@ void main() {
     expect(() => LeaveService.validateRequest(sick, now: now), returnsNormally);
   });
 
-  test('normal and casual leave share the total leave balance', () {
+  test('casual leave consumes its own quota and the total leave balance', () {
     expect(LeaveTypePolicy.balanceKey('day_off'), 'daysOff');
-    expect(LeaveTypePolicy.balanceKey('casual'), 'daysOff');
+    expect(LeaveTypePolicy.balanceKey('casual'), 'casual');
+    expect(LeaveTypePolicy.balanceKeys('casual'), ['casual', 'daysOff']);
     expect(LeaveTypePolicy.balanceKey('sick'), isNull);
+  });
+
+  test('casual leave requires both balances to be available', () {
+    final casual = request(type: 'casual', start: DateTime(2026, 7, 20));
+    expect(
+      () => LeaveService.validateBalance(
+        casual,
+        LeaveBalance(annual: 15, sick: 14, casual: 0, daysOff: 10),
+      ),
+      throwsException,
+    );
+    expect(
+      () => LeaveService.validateBalance(
+        casual,
+        LeaveBalance(annual: 15, sick: 14, casual: 7, daysOff: 10),
+      ),
+      returnsNormally,
+    );
   });
 
   test('unpaid leave deducts salary but not leave balance', () {

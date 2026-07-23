@@ -7,6 +7,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:go_router/go_router.dart';
 import '../../theme/theme.dart';
 import '../../components/wolf_card.dart';
+import '../../components/employee_request_history_section.dart';
 import '../../services/auth_service.dart';
 import '../../services/attendance_service.dart';
 import '../../services/automatic_attendance_service.dart';
@@ -967,6 +968,9 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
                       ),
                     ],
                   ),
+                  const SizedBox(height: 28),
+
+                  EmployeeRequestHistorySection(userId: user.uid),
                   const SizedBox(height: 28),
 
                   // Recent Activity Feed

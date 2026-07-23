@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../models/complaint_model.dart';
 import '../models/user_model.dart';
+import '../models/notification_route_policy.dart';
 import 'role_notification_service.dart';
 
 class ComplaintService {
@@ -59,7 +60,9 @@ class ComplaintService {
       'type': 'complaint_reviewed',
       'title': 'تمت مراجعة الشكوى',
       'body': 'تمت مراجعة شكواك: ${complaint.title}',
-      'data': {'complaintId': complaintId},
+      'data': NotificationRoutePolicy.dataWithRoute('complaint_reviewed', {
+        'complaintId': complaintId,
+      }),
       'isRead': false,
       'pushSent': false,
       'createdAt': FieldValue.serverTimestamp(),
