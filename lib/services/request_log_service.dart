@@ -79,9 +79,12 @@ class RequestLogService {
     );
   }
 
-  Future<List<RequestLogItem>> getMonthlyLogs(UserModel user) async {
+  Future<List<RequestLogItem>> getMonthlyLogs(
+    UserModel user, {
+    PayrollCycle? selectedCycle,
+  }) async {
     final now = DateTime.now();
-    final cycle = PayrollCycle.forDate(now);
+    final cycle = selectedCycle ?? PayrollCycle.forDate(now);
     final cycleStart = Timestamp.fromDate(cycle.start);
     final cycleNextStart = Timestamp.fromDate(cycle.nextStart);
 

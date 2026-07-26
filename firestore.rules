@@ -1453,7 +1453,8 @@ service cloud.firestore {
           'deductsLeaveBalance', 'leaveBalanceKey', 'leaveBalanceKeys',
           'requiresFullDaySalaryDeduction', 'autoApproved',
           'approvalHistory', 'requiresCeoApproval',
-          'originalLeaveType', 'probationConverted', 'requiresHrApproval'
+          'originalLeaveType', 'probationConverted', 'requiresHrApproval',
+          'reviewedAt', 'reviewedBy', 'reviewerName', 'reviewerComment'
         ]);
       allow update: if isAuth() && isActive() && (
         (

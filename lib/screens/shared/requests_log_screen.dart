@@ -5,6 +5,7 @@ import '../../services/auth_service.dart';
 import '../../services/request_log_service.dart';
 import '../../theme/theme.dart';
 import '../../components/wolf_card.dart';
+import '../../utils/payroll_cycle.dart';
 
 class RequestsLogScreen extends StatefulWidget {
   const RequestsLogScreen({super.key});
@@ -17,6 +18,12 @@ class _RequestsLogScreenState extends State<RequestsLogScreen> {
   late Future<List<RequestLogItem>> _logsFuture;
   String _statusFilter = 'all'; // 'all' | 'approved' | 'rejected'
   String _typeFilter = 'all'; // 'all' | 'leave' | 'permission' | 'advance'
+  DateTime _selectedCycleDate = DateTime.now();
+
+  PayrollCycle get _selectedCycle => PayrollCycle.forDate(_selectedCycleDate);
+
+  bool get _isCurrentCycle =>
+      _selectedCycle.key == PayrollCycle.forDate(DateTime.now()).key;
 
   @override
   void initState() {
@@ -28,39 +35,105 @@ class _RequestsLogScreenState extends State<RequestsLogScreen> {
     final user = Provider.of<AuthService>(context, listen: false).currentUser;
     if (user != null) {
       setState(() {
-        _logsFuture = RequestLogService.instance.getMonthlyLogs(user);
+        _logsFuture = RequestLogService.instance.getMonthlyLogs(
+          user,
+          selectedCycle: _selectedCycle,
+        );
       });
     }
+  }
+
+  void _changeCycle(int monthOffset) {
+    final currentCycleEnd = DateTime(
+      _selectedCycle.end.year,
+      _selectedCycle.end.month,
+    );
+    final nextCycleEnd = DateTime(
+      currentCycleEnd.year,
+      currentCycleEnd.month + monthOffset,
+    );
+    setState(() {
+      _selectedCycleDate = DateTime(
+        nextCycleEnd.year,
+        nextCycleEnd.month,
+        PayrollCycle.closingDay,
+      );
+    });
+    _refreshLogs();
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('سجل طلبات الشهر'),
+        title: const Text('سجل الطلبات'),
         actions: [
           IconButton(icon: const Icon(Icons.refresh), onPressed: _refreshLogs),
         ],
       ),
       body: Column(
         children: [
-          // Banner informing users it's current payroll cycle only
+          // Payroll-cycle selector
           Container(
             width: double.infinity,
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             color: ZaWolfColors.primaryCyan.withValues(alpha: 0.1),
+            child: Row(
+              children: [
+                IconButton(
+                  tooltip: 'الدورة السابقة',
+                  onPressed: () => _changeCycle(-1),
+                  icon: const Icon(Icons.chevron_right),
+                  color: ZaWolfColors.primaryCyan,
+                ),
+                Expanded(
+                  child: Column(
+                    children: [
+                      Text(
+                        'دورة ${_selectedCycle.key}',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        _selectedCycle.arabicRangeLabel,
+                        style: const TextStyle(
+                          color: ZaWolfColors.primaryCyan,
+                          fontSize: 12,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  tooltip: 'الدورة التالية',
+                  onPressed: _isCurrentCycle ? null : () => _changeCycle(1),
+                  icon: const Icon(Icons.chevron_left),
+                  color: ZaWolfColors.primaryCyan,
+                  disabledColor: ZaWolfColors.textMuted,
+                ),
+              ],
+            ),
+          ),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            color: ZaWolfColors.surface01,
             child: const Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Icon(
                   Icons.info_outline,
-                  color: ZaWolfColors.primaryCyan,
-                  size: 18,
+                  color: ZaWolfColors.textMuted,
+                  size: 16,
                 ),
                 SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    'يعرض هذا السجل الطلبات التي تم البت فيها خلال دورة العمل الحالية (من 26 إلى 25).',
+                    'استخدم الأسهم لعرض طلبات أي دورة سابقة.',
                     style: TextStyle(
                       color: ZaWolfColors.primaryCyan,
                       fontSize: 12,
@@ -202,7 +275,7 @@ class _RequestsLogScreenState extends State<RequestsLogScreen> {
                         ),
                         SizedBox(height: 16),
                         Text(
-                          'لا توجد سجلات مطابقة للشهر الحالي.',
+                          'لا توجد سجلات مطابقة لهذه الدورة.',
                           style: TextStyle(color: ZaWolfColors.textMuted),
                         ),
                       ],

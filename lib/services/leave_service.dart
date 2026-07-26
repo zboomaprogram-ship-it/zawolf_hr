@@ -310,13 +310,12 @@ class LeaveService {
       isSuperAdmin: employee.role == EmployeeRole.superAdmin,
       managerIds: managerIds,
     );
-    if (managerIds.isEmpty && !usesHrFallback) {
+    final isAutoApprovedCasual = effectiveType == LeaveTypePolicy.casual;
+    if (!isAutoApprovedCasual && managerIds.isEmpty && !usesHrFallback) {
       throw Exception(
         'لا يمكن إرسال الطلب قبل تعيين مدير مباشر للموظف من إدارة الحسابات.',
       );
     }
-    final isAutoApprovedCasual =
-        effectiveType == LeaveTypePolicy.casual && req.numberOfDays <= 4;
     final approvalManagerIds = isAutoApprovedCasual ? <String>[] : managerIds;
     final approvalManagerNames = isAutoApprovedCasual
         ? <String>[]
@@ -371,13 +370,26 @@ class LeaveService {
           actorId: employee.uid,
           actorName: employee.displayName,
         ),
+        if (isAutoApprovedCasual)
+          _approvalEvent(
+            stage: 'auto_approved',
+            status: 'approved',
+            actorId: 'system',
+            actorName: 'النظام',
+          ),
       ],
-      'requiresCeoApproval': req.numberOfDays > 4,
+      'requiresCeoApproval': !isAutoApprovedCasual && req.numberOfDays > 4,
       if (probationConversion) ...{
         'originalLeaveType': req.leaveType,
         'probationConverted': true,
       },
-      if (isAutoApprovedCasual) 'autoApproved': true,
+      if (isAutoApprovedCasual) ...{
+        'autoApproved': true,
+        'reviewedAt': FieldValue.serverTimestamp(),
+        'reviewedBy': 'system',
+        'reviewerName': 'النظام (اعتماد تلقائي)',
+        'reviewerComment': 'تم اعتماد الإجازة العارضة تلقائياً.',
+      },
     };
 
     if (isAutoApprovedCasual) {
