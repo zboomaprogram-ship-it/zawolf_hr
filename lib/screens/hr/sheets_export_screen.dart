@@ -14,6 +14,7 @@ import '../../models/user_model.dart';
 import '../../theme/theme.dart';
 import '../../components/wolf_card.dart';
 import '../../components/wolf_button.dart';
+import '../../utils/csv_file_download.dart';
 import '../../utils/payroll_cycle.dart';
 
 class SheetsExportScreen extends StatefulWidget {
@@ -61,6 +62,17 @@ class _SheetsExportScreenState extends State<SheetsExportScreen> {
 
   Future<void> _shareCsvFile(String csv, String fileName) async {
     try {
+      if (await downloadCsvFile(csv, fileName)) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: ZaWolfColors.success,
+            content: Text('تم تنزيل ملف $fileName.csv في مجلد التنزيلات.'),
+          ),
+        );
+        return;
+      }
+
       final file = XFile.fromData(
         Uint8List.fromList([0xEF, 0xBB, 0xBF, ...utf8.encode(csv)]),
         mimeType: 'text/csv',
