@@ -1,0 +1,32 @@
+name: Diagnose Attendance Account
+
+on:
+  workflow_dispatch:
+    inputs:
+      account_email:
+        description: Firebase Authentication email to inspect
+        required: true
+        type: string
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v5
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+
+      - name: Install Dependencies
+        working-directory: ./scripts
+        run: npm ci
+
+      - name: Diagnose Account
+        working-directory: ./scripts
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          ACCOUNT_EMAIL: ${{ inputs.account_email }}
+        run: node diagnose-attendance-account.js
