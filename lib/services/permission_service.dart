@@ -140,6 +140,7 @@ class PermissionService {
     final requestDay = DateTime.parse(req.requestDate);
     final monthKey = PayrollCycle.keyFor(requestDay);
     final policyConfig = await _policyService.getPolicyConfig();
+    final approvalPolicy = await _approvalPolicyService.getPolicy();
 
     if (req.durationMinutes < PermissionTypePolicy.minimumDurationHours * 60 ||
         req.durationMinutes > PermissionTypePolicy.maximumDurationHours * 60) {
@@ -306,6 +307,10 @@ class PermissionService {
       'managerApprovalIndex': 0,
       'managerApprovalTotal': managerIds.length,
       'managerApprovalTrail': <Map<String, dynamic>>[],
+      'requiresHrApproval':
+          req.isDeductible ||
+          approvalPolicy.requireHrAfterManagerApproval ||
+          usesHrFallback,
       'approvalHistory': [
         _approvalEvent(
           stage: 'submitted',

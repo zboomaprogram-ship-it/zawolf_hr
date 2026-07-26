@@ -194,6 +194,20 @@ class AuthService with ChangeNotifier {
         if (cachedUser.isActive) {
           unawaited(_startUserSessionServices(firebaseUser.uid));
         }
+      } else {
+        // Firebase Auth has a valid persisted native session. Do not send the
+        // user to the password screen merely because a slow device has not
+        // written/read the profile cache yet.
+        final document = await _readUserDocument(
+          firebaseUser.uid,
+        ).timeout(const Duration(seconds: 10));
+        if (document.exists) {
+          _currentUser = UserModel.fromFirestore(document);
+          await _cacheProfile(_currentUser!);
+          if (_currentUser!.isActive) {
+            unawaited(_startUserSessionServices(firebaseUser.uid));
+          }
+        }
       }
     } catch (_) {
       // The normal auth listener can still complete after this fallback.

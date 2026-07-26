@@ -7,6 +7,7 @@ import '../services/auth_service.dart';
 import '../theme/theme.dart';
 import '../components/wolf_button.dart';
 import '../components/wolf_input_field.dart';
+import '../utils/user_facing_error.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -103,10 +104,10 @@ class _LoginScreenState extends State<LoginScreen> {
       }
     } catch (e) {
       setState(() {
-        _errorMessage =
-            'فشل تسجيل الدخول. يرجى التحقق من البيانات والمحاولة مرة أخرى.';
-        // Optional english message:
-        // _errorMessage = e.toString();
+        _errorMessage = userFacingError(
+          e,
+          fallback: 'فشل تسجيل الدخول. تحقق من البيانات ثم أعد المحاولة.',
+        );
       });
     } finally {
       if (mounted) {

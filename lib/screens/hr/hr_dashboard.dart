@@ -8,6 +8,7 @@ import '../../models/employee_role.dart';
 import '../../theme/theme.dart';
 import '../../components/attendance_insights_card.dart';
 import '../../components/wolf_card.dart';
+import '../../utils/user_facing_error.dart';
 
 class HrDashboardScreen extends StatefulWidget {
   const HrDashboardScreen({super.key});
@@ -173,6 +174,35 @@ class _HrDashboardScreenState extends State<HrDashboardScreen> {
             FutureBuilder<DashboardAttendanceSummary>(
               future: _attendanceSummaryFuture,
               builder: (context, snapshot) {
+                if (snapshot.hasError) {
+                  return WolfCard(
+                    child: Column(
+                      children: [
+                        const Icon(
+                          Icons.error_outline,
+                          color: ZaWolfColors.error,
+                          size: 34,
+                        ),
+                        const SizedBox(height: 10),
+                        Text(
+                          userFacingError(
+                            snapshot.error!,
+                            fallback:
+                                'تعذر تحميل ملخص الحضور. لم يتم عرض أرقام تقديرية.',
+                          ),
+                          textAlign: TextAlign.center,
+                          textDirection: TextDirection.rtl,
+                        ),
+                        const SizedBox(height: 10),
+                        TextButton.icon(
+                          onPressed: _loadAttendanceSummary,
+                          icon: const Icon(Icons.refresh),
+                          label: const Text('إعادة المحاولة'),
+                        ),
+                      ],
+                    ),
+                  );
+                }
                 if (!snapshot.hasData) {
                   return const WolfCard(
                     child: Center(

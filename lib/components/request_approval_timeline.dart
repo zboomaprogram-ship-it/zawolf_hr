@@ -2,6 +2,9 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart' hide TextDirection;
 
+import '../models/employee_role.dart';
+import '../models/request_approval_policy.dart';
+import '../services/request_approval_policy_service.dart';
 import '../theme/theme.dart';
 
 class RequestApprovalTimeline extends StatelessWidget {
@@ -13,6 +16,9 @@ class RequestApprovalTimeline extends StatelessWidget {
 
   final Map<String, dynamic> data;
   final bool compact;
+
+  static final Future<RequestApprovalPolicy> _approvalPolicy =
+      RequestApprovalPolicyService().getPolicy();
 
   DateTime? _date(dynamic value) {
     if (value is Timestamp) return value.toDate();
@@ -37,6 +43,20 @@ class RequestApprovalTimeline extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    return FutureBuilder<RequestApprovalPolicy>(
+      future: _approvalPolicy,
+      initialData: const RequestApprovalPolicy(),
+      builder: (context, snapshot) => _buildTimeline(
+        context,
+        snapshot.data ?? const RequestApprovalPolicy(),
+      ),
+    );
+  }
+
+  Widget _buildTimeline(
+    BuildContext context,
+    RequestApprovalPolicy approvalPolicy,
+  ) {
     final status = data['status'] as String? ?? 'pending';
     final managerNames = (data['managerNames'] as List<dynamic>? ?? const [])
         .whereType<String>()
@@ -47,6 +67,16 @@ class RequestApprovalTimeline extends StatelessWidget {
             .map((item) => Map<String, dynamic>.from(item))
             .toList();
     final requiresCeo = data['requiresCeoApproval'] == true;
+    final hrEvent = _event('hr');
+    final hasRecordedHrReview =
+        hrEvent != null ||
+        data['hrReviewedAt'] != null ||
+        status == 'pending_hr';
+    final showHrStage =
+        hasRecordedHrReview ||
+        data['requiresHrApproval'] == true ||
+        (data['requiresHrApproval'] == null &&
+            approvalPolicy.requireHrAfterManagerApproval);
     final stages = <_TimelineStage>[
       _TimelineStage(
         label: 'تم الإرسال',
@@ -61,23 +91,31 @@ class RequestApprovalTimeline extends StatelessWidget {
         _TimelineStage(
           label: i == 0 ? 'المدير المباشر' : 'المدير الأعلى',
           person: managerNames[i],
+          jobTitle: _roleLabel(
+            i < managerTrail.length
+                ? managerTrail[i]['reviewerRole'] as String?
+                : null,
+          ),
           icon: Icons.supervisor_account_outlined,
           state: _managerState(status, managerTrail, i),
           timestamp: i < managerTrail.length
               ? _date(managerTrail[i]['timestamp'])
               : null,
         ),
-      _TimelineStage(
-        label: 'الموارد البشرية',
-        person:
-            (_event('hr')?['actorName'] as String?) ??
-            (data['hrReviewerName'] as String?) ??
-            'HR',
-        icon: Icons.badge_outlined,
-        state: _namedStageState(status, 'hr', _event('hr')),
-        timestamp:
-            _date(_event('hr')?['timestamp']) ?? _date(data['hrReviewedAt']),
-      ),
+      if (showHrStage)
+        _TimelineStage(
+          label: 'الموارد البشرية',
+          person:
+              (hrEvent?['actorName'] as String?) ??
+              (data['hrReviewerName'] as String?) ??
+              'HR',
+          jobTitle:
+              _roleLabel(hrEvent?['actorRole'] as String?) ?? 'الموارد البشرية',
+          icon: Icons.badge_outlined,
+          state: _namedStageState(status, 'hr', hrEvent),
+          timestamp:
+              _date(hrEvent?['timestamp']) ?? _date(data['hrReviewedAt']),
+        ),
       if (requiresCeo)
         _TimelineStage(
           label: 'اعتماد CEO',
@@ -85,6 +123,7 @@ class RequestApprovalTimeline extends StatelessWidget {
               (_event('ceo')?['actorName'] as String?) ??
               (data['ceoName'] as String?) ??
               'CEO-100',
+          jobTitle: 'الرئيس التنفيذي',
           icon: Icons.workspace_premium_outlined,
           state: _namedStageState(status, 'ceo', _event('ceo')),
           timestamp: _date(_event('ceo')?['timestamp']),
@@ -99,6 +138,7 @@ class RequestApprovalTimeline extends StatelessWidget {
             data['finalApproverName'] as String? ??
             data['reviewerName'] as String? ??
             '',
+        jobTitle: _finalApproverRoleLabel(),
         icon: status == 'rejected'
             ? Icons.cancel_outlined
             : status == 'cancelled'
@@ -131,12 +171,7 @@ class RequestApprovalTimeline extends StatelessWidget {
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
             itemCount: stages.length,
-            separatorBuilder: (_, __) => Container(
-              width: 28,
-              height: 2,
-              margin: EdgeInsets.only(bottom: compact ? 68 : 82),
-              color: ZaWolfColors.surface03,
-            ),
+            separatorBuilder: (_, __) => _TimelineConnector(compact: compact),
             itemBuilder: (_, index) =>
                 _StageTile(stage: stages[index], compact: compact),
           ),
@@ -150,6 +185,29 @@ class RequestApprovalTimeline extends StatelessWidget {
           ),
       ],
     );
+  }
+
+  String? _finalApproverRoleLabel() {
+    if (_history.isEmpty) return null;
+    final event = _history.last;
+    return _roleLabel(event['actorRole'] as String?) ??
+        switch (event['stage']) {
+          'hr' => 'الموارد البشرية',
+          'ceo' => 'الرئيس التنفيذي',
+          'manager' => 'مدير',
+          _ => null,
+        };
+  }
+
+  String? _roleLabel(String? role) {
+    return switch (role) {
+      EmployeeRole.teamLeader => 'قائد فريق',
+      EmployeeRole.manager => 'مدير',
+      EmployeeRole.hrAdmin => 'مسؤول موارد بشرية',
+      EmployeeRole.hrManager => 'مدير الموارد البشرية',
+      EmployeeRole.superAdmin => 'مالك النظام',
+      _ => null,
+    };
   }
 
   _StageState _managerState(
@@ -192,6 +250,7 @@ class _TimelineStage {
     required this.person,
     required this.icon,
     required this.state,
+    this.jobTitle,
     this.timestamp,
   });
 
@@ -199,7 +258,40 @@ class _TimelineStage {
   final String person;
   final IconData icon;
   final _StageState state;
+  final String? jobTitle;
   final DateTime? timestamp;
+}
+
+class _TimelineConnector extends StatelessWidget {
+  const _TimelineConnector({required this.compact});
+
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 34,
+      child: Align(
+        alignment: Alignment.topCenter,
+        child: Padding(
+          padding: const EdgeInsets.only(top: 17),
+          child: Row(
+            textDirection: TextDirection.ltr,
+            children: [
+              const Expanded(
+                child: Divider(height: 1, color: ZaWolfColors.surface03),
+              ),
+              Icon(
+                Icons.arrow_forward_ios_rounded,
+                size: compact ? 10 : 12,
+                color: ZaWolfColors.textMuted,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class _StageTile extends StatelessWidget {
@@ -250,6 +342,17 @@ class _StageTile extends StatelessWidget {
               style: const TextStyle(
                 color: ZaWolfColors.textSecondary,
                 fontSize: 10,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          if (stage.jobTitle?.isNotEmpty == true)
+            Text(
+              stage.jobTitle!,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: ZaWolfColors.textMuted,
+                fontSize: 9,
               ),
               textAlign: TextAlign.center,
             ),

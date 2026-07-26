@@ -7,6 +7,7 @@ import '../../models/user_model.dart';
 import '../../services/auth_service.dart';
 import '../../services/dashboard_attendance_summary_service.dart';
 import '../../theme/theme.dart';
+import '../../utils/user_facing_error.dart';
 
 class AttendanceSummaryDetailsScreen extends StatefulWidget {
   const AttendanceSummaryDetailsScreen({super.key, this.initialStatus});
@@ -69,6 +70,38 @@ class _AttendanceSummaryDetailsScreenState
           : FutureBuilder<List<DashboardAttendanceSummary>>(
               future: _future,
               builder: (context, snapshot) {
+                if (snapshot.hasError) {
+                  return Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(
+                            Icons.error_outline,
+                            color: ZaWolfColors.error,
+                            size: 40,
+                          ),
+                          const SizedBox(height: 12),
+                          Text(
+                            userFacingError(
+                              snapshot.error!,
+                              fallback: 'تعذر تحميل تفاصيل الحضور.',
+                            ),
+                            textAlign: TextAlign.center,
+                            textDirection: TextDirection.rtl,
+                          ),
+                          const SizedBox(height: 12),
+                          FilledButton.icon(
+                            onPressed: () => _reload(user),
+                            icon: const Icon(Icons.refresh),
+                            label: const Text('إعادة المحاولة'),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                }
                 if (!snapshot.hasData) {
                   return const Center(
                     child: CircularProgressIndicator(

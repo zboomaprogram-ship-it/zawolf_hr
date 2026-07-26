@@ -454,21 +454,13 @@ class DashboardAttendanceSummaryService {
   Future<DocumentSnapshot<Map<String, dynamic>>?> _safeDocumentGet(
     DocumentReference<Map<String, dynamic>> reference,
   ) async {
-    try {
-      return await reference.get();
-    } on FirebaseException {
-      return null;
-    }
+    return reference.get();
   }
 
   Future<_SummaryQueryResult> _safeQueryResult(
     Query<Map<String, dynamic>> query,
   ) async {
-    try {
-      return _SummaryQueryResult.fromQuery(await query.get());
-    } on FirebaseException {
-      return const _SummaryQueryResult([]);
-    }
+    return _SummaryQueryResult.fromQuery(await query.get());
   }
 
   bool _isLateStatus(String status) {

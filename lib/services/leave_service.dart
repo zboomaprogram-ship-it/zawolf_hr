@@ -245,6 +245,7 @@ class LeaveService {
   // Submit leave request
   Future<void> submitLeaveRequest(LeaveModel req, UserModel employee) async {
     validateRequest(req);
+    final approvalPolicy = await _approvalPolicyService.getPolicy();
     if (req.leaveType == LeaveTypePolicy.normal &&
         employee.hiringDate == null) {
       throw Exception(
@@ -360,6 +361,9 @@ class LeaveService {
       'managerApprovalIndex': 0,
       'managerApprovalTotal': approvalManagerIds.length,
       'managerApprovalTrail': <Map<String, dynamic>>[],
+      'requiresHrApproval':
+          !isAutoApprovedCasual &&
+          (approvalPolicy.requireHrAfterManagerApproval || usesHrFallback),
       'approvalHistory': [
         _approvalEvent(
           stage: 'submitted',

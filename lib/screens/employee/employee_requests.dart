@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:intl/intl.dart' hide TextDirection;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../theme/theme.dart';
+import '../../utils/user_facing_error.dart';
 import '../../components/wolf_button.dart';
 import '../../components/wolf_input_field.dart';
 import '../../components/request_approval_timeline.dart';
@@ -201,9 +202,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             backgroundColor: ZaWolfColors.error,
-            content: Text(
-              'فشل الإرسال: ${e.toString().replaceAll('Exception: ', '')}',
-            ),
+            content: Text('فشل الإرسال: ${userFacingError(e)}'),
           ),
         );
       }
@@ -237,9 +236,12 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
       }
     } catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('تعذر الإرسال: $error')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: ZaWolfColors.error,
+            content: Text('تعذر الإرسال: ${userFacingError(error)}'),
+          ),
+        );
       }
     } finally {
       if (mounted) setState(() => _loading = false);
@@ -292,9 +294,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             backgroundColor: ZaWolfColors.error,
-            content: Text(
-              'فشل التقديم: ${e.toString().replaceAll('Exception: ', '')}',
-            ),
+            content: Text('فشل التقديم: ${userFacingError(e)}'),
           ),
         );
       }
@@ -345,9 +345,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             backgroundColor: ZaWolfColors.error,
-            content: Text(
-              'فشل التقديم: ${e.toString().replaceAll('Exception: ', '')}',
-            ),
+            content: Text('فشل التقديم: ${userFacingError(e)}'),
           ),
         );
       }
@@ -387,9 +385,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             backgroundColor: ZaWolfColors.error,
-            content: Text(
-              'فشل إرسال الشكوى: ${e.toString().replaceAll('Exception: ', '')}',
-            ),
+            content: Text('فشل إرسال الشكوى: ${userFacingError(e)}'),
           ),
         );
       }
@@ -418,9 +414,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           backgroundColor: ZaWolfColors.error,
-          content: Text(
-            'فشل الإرسال: ${error.toString().replaceAll('Exception: ', '')}',
-          ),
+          content: Text('فشل الإرسال: ${userFacingError(error)}'),
         ),
       );
     } finally {
@@ -457,9 +451,12 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
       return true;
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('فشل الإلغاء: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: ZaWolfColors.error,
+            content: Text('فشل الإلغاء: ${userFacingError(e)}'),
+          ),
+        );
       }
       return false;
     }

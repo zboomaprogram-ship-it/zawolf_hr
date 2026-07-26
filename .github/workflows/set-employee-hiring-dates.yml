@@ -1,0 +1,50 @@
+name: Set Employee Hiring Dates
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Preview without changing Firebase
+        required: true
+        default: 'true'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
+      include_inactive:
+        description: Also update inactive accounts
+        required: true
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
+      confirmation:
+        description: For a live run enter SET_ALL_HIRING_DATES_2026_01_01
+        required: false
+        type: string
+
+jobs:
+  migrate-hiring-dates:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v5
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+
+      - name: Install Dependencies
+        working-directory: ./scripts
+        run: npm ci
+
+      - name: Set Hiring Dates
+        working-directory: ./scripts
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          DRY_RUN: ${{ inputs.dry_run }}
+          INCLUDE_INACTIVE: ${{ inputs.include_inactive }}
+          MIGRATION_CONFIRMATION: ${{ inputs.confirmation }}
+        run: node set-employee-hiring-dates.js
