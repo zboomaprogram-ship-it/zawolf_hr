@@ -86,10 +86,15 @@ async function main() {
     const attendance = await db
       .collection('attendance')
       .where('userId', '==', id)
-      .orderBy('date', 'desc')
-      .limit(3)
       .get();
-    for (const item of attendance.docs) {
+    const recentAttendance = attendance.docs
+      .sort((left, right) => {
+        const leftDate = String(left.data().date || '');
+        const rightDate = String(right.data().date || '');
+        return rightDate.localeCompare(leftDate);
+      })
+      .slice(0, 3);
+    for (const item of recentAttendance) {
       const value = item.data();
       console.log(
         `ATTENDANCE | ${item.id} | date=${value.date || ''} | deviceId=${value.deviceId || ''} | protocol=${value.securityProtocolVersion ?? 'missing'}`,
