@@ -1,4 +1,5 @@
 const admin = require('firebase-admin');
+const { getAuth } = require('firebase-admin/auth');
 const {
   installFirestoreCompatibility,
   parseFirebaseServiceAccount,
@@ -34,7 +35,7 @@ async function main() {
 
   let authUser = null;
   try {
-    authUser = await admin.auth().getUserByEmail(email);
+    authUser = await getAuth().getUserByEmail(email);
   } catch (error) {
     if (error.code !== 'auth/user-not-found') throw error;
   }
