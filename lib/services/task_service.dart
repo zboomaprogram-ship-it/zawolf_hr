@@ -28,6 +28,14 @@ class TaskService {
         _db.collection('tasks').where('managerId', isEqualTo: reviewer.uid),
       ]);
     }
+    if (reviewer.role == EmployeeRole.teamLeader) {
+      return _watchMergedTaskQueries([
+        _db
+            .collection('tasks')
+            .where('managerIds', arrayContains: reviewer.uid),
+        _db.collection('tasks').where('createdBy', isEqualTo: reviewer.uid),
+      ]);
+    }
     final query = _db.collection('tasks');
     return query.snapshots().map(_tasksFromSnapshot);
   }
@@ -58,6 +66,19 @@ class TaskService {
         ..sort((a, b) => a.displayName.compareTo(b.displayName));
       return users;
     }
+    if (reviewer.role == EmployeeRole.teamLeader) {
+      final snap = await _db
+          .collection('users')
+          .where('teamLeaderId', isEqualTo: reviewer.uid)
+          .get();
+      final users =
+          snap.docs
+              .map(UserModel.fromFirestore)
+              .where((user) => user.isActive && user.uid != reviewer.uid)
+              .toList()
+            ..sort((a, b) => a.displayName.compareTo(b.displayName));
+      return users;
+    }
     final query = _db.collection('users').where('isActive', isEqualTo: true);
     final snap = await query.get();
     final users = snap.docs.map(UserModel.fromFirestore).where((user) {
@@ -81,6 +102,11 @@ class TaskService {
     required String priority,
   }) async {
     final ref = _db.collection('tasks').doc();
+    final managerIds = <String>{
+      ...assignee.managerIds,
+      if (assignee.managerId?.isNotEmpty == true) assignee.managerId!,
+      if (creator.role == EmployeeRole.teamLeader) creator.uid,
+    }.toList();
     final task = EmployeeTaskModel(
       taskId: ref.id,
       title: title.trim(),
@@ -90,9 +116,7 @@ class TaskService {
       assigneeEmployeeId: assignee.employeeId,
       department: assignee.department,
       managerId: assignee.managerId ?? creator.uid,
-      managerIds: assignee.managerIds.isNotEmpty
-          ? assignee.managerIds
-          : [assignee.managerId ?? creator.uid],
+      managerIds: managerIds.isEmpty ? [creator.uid] : managerIds,
       createdBy: creator.uid,
       createdByName: creator.displayName,
       priority: priority,

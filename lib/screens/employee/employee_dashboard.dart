@@ -321,6 +321,45 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
 
     return Scaffold(
       appBar: AppBar(
+        actions: [
+          IconButton(
+            tooltip: 'الإشعارات',
+            onPressed: () => context.push('/notifications'),
+            icon: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                const Icon(Icons.notifications_none_rounded),
+                if (user.unreadNotifications > 0)
+                  PositionedDirectional(
+                    top: -5,
+                    start: -8,
+                    child: Container(
+                      constraints: const BoxConstraints(
+                        minWidth: 17,
+                        minHeight: 17,
+                      ),
+                      padding: const EdgeInsets.symmetric(horizontal: 4),
+                      decoration: const BoxDecoration(
+                        color: ZaWolfColors.error,
+                        shape: BoxShape.circle,
+                      ),
+                      alignment: Alignment.center,
+                      child: Text(
+                        user.unreadNotifications > 99
+                            ? '99+'
+                            : '${user.unreadNotifications}',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 9,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ],
         title: Row(
           mainAxisSize: MainAxisSize.min,
           children: [

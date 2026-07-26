@@ -185,7 +185,7 @@ class _DaySummaryCard extends StatelessWidget {
           const SizedBox(height: 12),
           const Align(
             alignment: Alignment.centerLeft,
-            child: Icon(Icons.chevron_left, color: ZaWolfColors.primaryCyan),
+            child: Icon(Icons.chevron_right, color: ZaWolfColors.primaryCyan),
           ),
           const SizedBox(height: 4),
           _MiniBar(summary: summary),

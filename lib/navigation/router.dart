@@ -46,7 +46,6 @@ import '../screens/shared/notifications_screen.dart';
 import '../screens/shared/polls_screen.dart';
 import '../screens/account_disabled_screen.dart';
 import '../screens/team_leader/team_leader_dashboard.dart';
-import '../screens/team_leader/team_tasks_screen.dart';
 
 class ZaWolfRouter {
   static GoRouter getRouter(BuildContext context) {
@@ -235,7 +234,7 @@ class ZaWolfRouter {
             ),
             GoRoute(
               path: '/team-leader/tasks',
-              builder: (context, state) => const TeamLeaderTasksScreen(),
+              builder: (context, state) => const TasksManagementScreen(),
             ),
             GoRoute(
               path: '/team-leader/requests',

@@ -168,12 +168,19 @@ class RequestApprovalTimeline extends StatelessWidget {
         const SizedBox(height: 10),
         SizedBox(
           height: compact ? 112 : 132,
-          child: ListView.separated(
+          child: SingleChildScrollView(
             scrollDirection: Axis.horizontal,
-            itemCount: stages.length,
-            separatorBuilder: (_, __) => _TimelineConnector(compact: compact),
-            itemBuilder: (_, index) =>
-                _StageTile(stage: stages[index], compact: compact),
+            child: Row(
+              textDirection: TextDirection.rtl,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                for (var index = 0; index < stages.length; index++) ...[
+                  _StageTile(stage: stages[index], compact: compact),
+                  if (index < stages.length - 1)
+                    _TimelineConnector(compact: compact),
+                ],
+              ],
+            ),
           ),
         ),
         if (status == 'rejected' &&
@@ -278,13 +285,14 @@ class _TimelineConnector extends StatelessWidget {
           child: Row(
             textDirection: TextDirection.ltr,
             children: [
-              const Expanded(
-                child: Divider(height: 1, color: ZaWolfColors.surface03),
-              ),
               Icon(
-                Icons.arrow_forward_ios_rounded,
+                Icons.arrow_back_ios_new_rounded,
                 size: compact ? 10 : 12,
                 color: ZaWolfColors.textMuted,
+                textDirection: TextDirection.ltr,
+              ),
+              const Expanded(
+                child: Divider(height: 1, color: ZaWolfColors.surface03),
               ),
             ],
           ),

@@ -256,6 +256,13 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
 
     try {
       final days = _leaveEnd.difference(_leaveStart).inDays + 1;
+      final leaveType =
+          LeaveEntitlementPolicy.isOnProbation(
+            employee.hiringDate,
+            onDate: _leaveStart,
+          )
+          ? LeaveTypePolicy.unpaid
+          : _leaveType;
 
       final req = LeaveModel(
         leaveId: '',
@@ -265,7 +272,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
         department: employee.department,
         locationId: employee.locationId,
         managerId: employee.managerId ?? '',
-        leaveType: _leaveType,
+        leaveType: leaveType,
         startDate: _leaveStart,
         endDate: _leaveEnd,
         numberOfDays: days,
@@ -1086,6 +1093,13 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
 
   Widget _buildLeaveForm(UserModel user, ThemeData theme) {
     final requestedDays = _leaveEnd.difference(_leaveStart).inDays + 1;
+    final isOnProbation = LeaveEntitlementPolicy.isOnProbation(
+      user.hiringDate,
+      onDate: _leaveStart,
+    );
+    final selectedLeaveType = isOnProbation
+        ? LeaveTypePolicy.unpaid
+        : _leaveType;
 
     return Form(
       key: _formKeyLeave,
@@ -1098,57 +1112,65 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
               spacing: 8,
               runSpacing: 8,
               children: [
-                ChoiceChip(
-                  label: const Center(child: Text('مرضية')),
-                  selected: _leaveType == 'sick',
-                  onSelected: (val) {
-                    if (val) setState(() => _leaveType = 'sick');
-                  },
-                ),
-                ChoiceChip(
-                  label: const Center(child: Text('عارضة')),
-                  selected: _leaveType == 'casual',
-                  onSelected: (val) {
-                    if (val) setState(() => _leaveType = 'casual');
-                  },
-                ),
-                ChoiceChip(
-                  label: const Center(child: Text('إجازة عادية')),
-                  selected: _leaveType == 'day_off',
-                  onSelected: (val) {
-                    if (val) setState(() => _leaveType = 'day_off');
-                  },
-                ),
+                if (!isOnProbation) ...[
+                  ChoiceChip(
+                    label: const Center(child: Text('مرضية')),
+                    selected: selectedLeaveType == 'sick',
+                    onSelected: (val) {
+                      if (val) setState(() => _leaveType = 'sick');
+                    },
+                  ),
+                  ChoiceChip(
+                    label: const Center(child: Text('عارضة')),
+                    selected: selectedLeaveType == 'casual',
+                    onSelected: (val) {
+                      if (val) setState(() => _leaveType = 'casual');
+                    },
+                  ),
+                  ChoiceChip(
+                    label: const Center(child: Text('إجازة عادية')),
+                    selected: selectedLeaveType == 'day_off',
+                    onSelected: (val) {
+                      if (val) setState(() => _leaveType = 'day_off');
+                    },
+                  ),
+                ],
                 ChoiceChip(
                   label: const Center(child: Text('بدون راتب')),
-                  selected: _leaveType == LeaveTypePolicy.unpaid,
+                  selected: selectedLeaveType == LeaveTypePolicy.unpaid,
                   onSelected: (val) {
-                    if (val) {
+                    if (val && !isOnProbation) {
                       setState(() => _leaveType = LeaveTypePolicy.unpaid);
                     }
                   },
                 ),
-                ChoiceChip(
-                  label: const Center(child: Text('امتحان')),
-                  selected: _leaveType == LeaveTypePolicy.exam,
-                  onSelected: (val) {
-                    if (val) setState(() => _leaveType = LeaveTypePolicy.exam);
-                  },
-                ),
-                ChoiceChip(
-                  label: const Center(child: Text('عمل عن بعد')),
-                  selected: _leaveType == LeaveTypePolicy.remote,
-                  onSelected: (val) {
-                    if (val) {
-                      setState(() => _leaveType = LeaveTypePolicy.remote);
-                    }
-                  },
-                ),
+                if (!isOnProbation) ...[
+                  ChoiceChip(
+                    label: const Center(child: Text('امتحان')),
+                    selected: selectedLeaveType == LeaveTypePolicy.exam,
+                    onSelected: (val) {
+                      if (val) {
+                        setState(() => _leaveType = LeaveTypePolicy.exam);
+                      }
+                    },
+                  ),
+                  ChoiceChip(
+                    label: const Center(child: Text('عمل عن بعد')),
+                    selected: selectedLeaveType == LeaveTypePolicy.remote,
+                    onSelected: (val) {
+                      if (val) {
+                        setState(() => _leaveType = LeaveTypePolicy.remote);
+                      }
+                    },
+                  ),
+                ],
               ],
             ),
             const SizedBox(height: 8),
             Text(
-              LeaveTypePolicy.description(_leaveType),
+              isOnProbation
+                  ? 'خلال أول 6 أشهر تكون الإجازة بدون راتب. تظل أذونات الوقت متاحة بصورة طبيعية.'
+                  : LeaveTypePolicy.description(selectedLeaveType),
               style: theme.textTheme.bodySmall,
               textDirection: TextDirection.rtl,
             ),

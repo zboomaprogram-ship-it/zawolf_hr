@@ -926,6 +926,13 @@ service cloud.firestore {
               || uid() in recipientDoc(request.resource.data.assigneeId).get('managerIds', [])
             )
           )
+          ||
+          (
+            isTeamLeaderRole()
+            && uid() in request.resource.data.get('managerIds', [])
+            && recipientDoc(request.resource.data.assigneeId)
+              .get('teamLeaderId', '') == uid()
+          )
         );
     }
     function taskOwnerStatusUpdate() {
@@ -944,6 +951,12 @@ service cloud.firestore {
               resource.data.managerId == uid()
               || uid() in resource.data.get('managerIds', [])
             )
+          )
+          ||
+          (
+            isTeamLeaderRole()
+            && uid() in resource.data.get('managerIds', [])
+            && isAssignedTeamLeaderForUser(resource.data.assigneeId)
           )
         )
         && request.resource.data.diff(resource.data).affectedKeys()

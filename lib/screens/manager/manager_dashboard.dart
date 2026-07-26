@@ -295,7 +295,7 @@ class _ManagerDashboardScreenState extends State<ManagerDashboardScreen> {
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
                             const Icon(
-                              Icons.arrow_back_ios,
+                              Icons.arrow_forward_ios,
                               size: 16,
                               color: ZaWolfColors.warning,
                             ),

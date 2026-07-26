@@ -246,14 +246,14 @@ class LeaveService {
   Future<void> submitLeaveRequest(LeaveModel req, UserModel employee) async {
     validateRequest(req);
     final approvalPolicy = await _approvalPolicyService.getPolicy();
-    if (req.leaveType == LeaveTypePolicy.normal &&
+    if (req.leaveType != LeaveTypePolicy.unpaid &&
         employee.hiringDate == null) {
       throw Exception(
-        'يجب أن تسجل إدارة الموارد البشرية تاريخ التعيين قبل طلب إجازة سنوية.',
+        'يجب أن تسجل إدارة الموارد البشرية تاريخ التعيين قبل طلب إجازة.',
       );
     }
     final probationConversion =
-        req.leaveType == LeaveTypePolicy.normal &&
+        req.leaveType != LeaveTypePolicy.unpaid &&
         LeaveEntitlementPolicy.isOnProbation(
           employee.hiringDate,
           onDate: req.startDate,

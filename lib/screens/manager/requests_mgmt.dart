@@ -37,9 +37,7 @@ class RequestsManagementScreen extends StatefulWidget {
       _RequestsManagementScreenState();
 }
 
-class _RequestsManagementScreenState extends State<RequestsManagementScreen>
-    with SingleTickerProviderStateMixin {
-  late TabController _tabController;
+class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
   final LeaveService _leaveService = LeaveService();
   final PermissionService _permissionService = PermissionService();
@@ -55,18 +53,6 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen>
   String _salaryDeductionFilter = 'all';
   final Map<String, Stream<QuerySnapshot<Map<String, dynamic>>>> _streamCache =
       {};
-
-  @override
-  void initState() {
-    super.initState();
-    _tabController = TabController(length: 8, vsync: this);
-  }
-
-  @override
-  void dispose() {
-    _tabController.dispose();
-    super.dispose();
-  }
 
   Future<void> _showRejectionDialog({
     required String requestId,
@@ -182,68 +168,68 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen>
         ),
       );
     }
+    final canReviewSalaryDeductions = EmployeeRole.isHr(manager.role);
+    final tabs = <Tab>[
+      const Tab(text: 'الإجازات'),
+      const Tab(text: 'الأذونات'),
+      const Tab(text: 'السلف'),
+      if (canReviewSalaryDeductions) const Tab(text: 'خصومات التأخير'),
+      const Tab(text: 'مراجعة أمنية'),
+      const Tab(text: 'الشكاوى'),
+      const Tab(text: 'الاستقالات'),
+      const Tab(text: 'إدارية'),
+    ];
+    final tabViews = <Widget>[
+      _buildLeavesTab(manager, theme),
+      _buildPermissionsTab(manager, theme),
+      _buildAdvancesTab(manager, theme),
+      if (canReviewSalaryDeductions) _buildSalaryDeductionsTab(manager, theme),
+      _buildSecurityReviewsTab(manager, theme),
+      _buildComplaintsTab(manager, theme),
+      _buildResignationsTab(manager, theme),
+      _buildAdministrativeRequestsTab(manager, theme),
+    ];
 
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(
-          'طلبات الموافقة المعلقة',
-          style: theme.textTheme.headlineMedium,
-        ),
-        actions: [
-          IconButton(
-            icon: const Icon(
-              Icons.history_toggle_off,
-              color: ZaWolfColors.primaryCyan,
-            ),
-            tooltip: 'سجل طلبات الشهر الحالي',
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const RequestsLogScreen(),
-                ),
-              );
-            },
+    return DefaultTabController(
+      length: tabs.length,
+      child: Scaffold(
+        appBar: AppBar(
+          title: Text(
+            'طلبات الموافقة المعلقة',
+            style: theme.textTheme.headlineMedium,
           ),
-        ],
-        bottom: TabBar(
-          controller: _tabController,
-          labelColor: ZaWolfColors.primaryCyan,
-          unselectedLabelColor: ZaWolfColors.textSecondary,
-          indicatorColor: ZaWolfColors.primaryCyan,
-          isScrollable: true,
-          tabs: const [
-            Tab(text: 'الإجازات'),
-            Tab(text: 'الأذونات'),
-            Tab(text: 'السلف'),
-            Tab(text: 'خصومات التأخير'),
-            Tab(text: 'مراجعة أمنية'),
-            Tab(text: 'الشكاوى'),
-            Tab(text: 'الاستقالات'),
-            Tab(text: 'إدارية'),
+          actions: [
+            IconButton(
+              icon: const Icon(
+                Icons.history_toggle_off,
+                color: ZaWolfColors.primaryCyan,
+              ),
+              tooltip: 'سجل طلبات الشهر الحالي',
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const RequestsLogScreen(),
+                  ),
+                );
+              },
+            ),
+          ],
+          bottom: TabBar(
+            labelColor: ZaWolfColors.primaryCyan,
+            unselectedLabelColor: ZaWolfColors.textSecondary,
+            indicatorColor: ZaWolfColors.primaryCyan,
+            isScrollable: true,
+            tabs: tabs,
+          ),
+        ),
+        body: Column(
+          children: [
+            if (kIsWeb && manager.role == EmployeeRole.superAdmin)
+              _buildApprovalPolicyControl(manager),
+            Expanded(child: TabBarView(children: tabViews)),
           ],
         ),
-      ),
-      body: Column(
-        children: [
-          if (kIsWeb && manager.role == EmployeeRole.superAdmin)
-            _buildApprovalPolicyControl(manager),
-          Expanded(
-            child: TabBarView(
-              controller: _tabController,
-              children: [
-                _buildLeavesTab(manager, theme),
-                _buildPermissionsTab(manager, theme),
-                _buildAdvancesTab(manager, theme),
-                _buildSalaryDeductionsTab(manager, theme),
-                _buildSecurityReviewsTab(manager, theme),
-                _buildComplaintsTab(manager, theme),
-                _buildResignationsTab(manager, theme),
-                _buildAdministrativeRequestsTab(manager, theme),
-              ],
-            ),
-          ),
-        ],
       ),
     );
   }
@@ -252,6 +238,9 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen>
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
       stream: _administrativeRequestService.watchPending(reviewer),
       builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return _buildStreamError('تعذر تحميل الطلبات الإدارية');
+        }
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator());
         }
@@ -555,6 +544,9 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen>
         employeeId: reviewer.employeeId,
       ),
       builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return _buildStreamError('تعذر تحميل طلبات الإجازة');
+        }
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(
             child: CircularProgressIndicator(color: ZaWolfColors.primaryCyan),
@@ -699,6 +691,9 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen>
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
       stream: _permissionReviewStream(reviewer),
       builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return _buildStreamError('تعذر تحميل طلبات الأذونات');
+        }
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(
             child: CircularProgressIndicator(color: ZaWolfColors.primaryCyan),
@@ -1052,7 +1047,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen>
   }
 
   Widget _buildSalaryDeductionsTab(UserModel reviewer, ThemeData theme) {
-    if (reviewer.role == EmployeeRole.manager) {
+    if (!EmployeeRole.isHr(reviewer.role)) {
       return _buildEmptyState('خصومات الراتب تراجع من HR فقط');
     }
     return StreamBuilder<QuerySnapshot>(
@@ -1828,6 +1823,38 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen>
           const SizedBox(height: 16),
           Text(text, style: const TextStyle(color: Colors.white, fontSize: 16)),
         ],
+      ),
+    );
+  }
+
+  Widget _buildStreamError(String text) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(
+              Icons.cloud_off_outlined,
+              color: ZaWolfColors.warning,
+              size: 52,
+            ),
+            const SizedBox(height: 12),
+            Text(
+              text,
+              textAlign: TextAlign.center,
+              textDirection: TextDirection.rtl,
+              style: const TextStyle(color: Colors.white, fontSize: 16),
+            ),
+            const SizedBox(height: 6),
+            const Text(
+              'تحقق من الاتصال ثم أعد فتح الصفحة. لن تختفي الطلبات بصمت عند حدوث خطأ.',
+              textAlign: TextAlign.center,
+              textDirection: TextDirection.rtl,
+              style: TextStyle(color: ZaWolfColors.textSecondary),
+            ),
+          ],
+        ),
       ),
     );
   }

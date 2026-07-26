@@ -158,7 +158,7 @@ class _TeamMembersScreenState extends State<TeamMembersScreen> {
                         ),
                       ),
                       const Icon(
-                        Icons.chevron_left,
+                        Icons.chevron_right,
                         color: ZaWolfColors.primaryCyan,
                       ),
                     ],
