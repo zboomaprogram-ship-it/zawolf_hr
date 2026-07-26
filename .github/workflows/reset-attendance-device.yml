@@ -1,0 +1,43 @@
+name: Reset Attendance Device
+
+on:
+  workflow_dispatch:
+    inputs:
+      account_email:
+        description: Firebase Authentication email to repair
+        required: true
+        type: string
+      dry_run:
+        description: Run without changing Firebase
+        required: true
+        default: true
+        type: boolean
+      confirmation:
+        description: Use RESET_ATTENDANCE_DEVICE:email for a live reset
+        required: false
+        type: string
+
+jobs:
+  reset:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v5
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+
+      - name: Install Dependencies
+        working-directory: ./scripts
+        run: npm ci
+
+      - name: Reset Attendance Device
+        working-directory: ./scripts
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          ACCOUNT_EMAIL: ${{ inputs.account_email }}
+          DRY_RUN: ${{ inputs.dry_run }}
+          RESET_CONFIRMATION: ${{ inputs.confirmation }}
+        run: node reset-attendance-device.js
