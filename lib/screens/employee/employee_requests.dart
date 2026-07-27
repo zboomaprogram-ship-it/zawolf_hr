@@ -15,6 +15,8 @@ import '../../services/audit_log_service.dart';
 import '../../services/advance_service.dart';
 import '../../services/resignation_service.dart';
 import '../../services/administrative_request_service.dart';
+import '../../services/attendance_correction_request_service.dart';
+import '../../models/attendance_model.dart';
 import '../../models/permission_model.dart';
 import '../../models/permission_type_policy.dart';
 import '../../models/leave_model.dart';
@@ -43,6 +45,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
   final _formKeyComplaint = GlobalKey<FormState>();
   final _formKeyResignation = GlobalKey<FormState>();
   final _formKeyAdministrative = GlobalKey<FormState>();
+  final _formKeyAttendanceCorrection = GlobalKey<FormState>();
 
   // Permission form fields
   String _permissionType = PermissionTypePolicy.earlyLeave;
@@ -73,6 +76,9 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
   String _administrativeCategory = AdministrativeRequestCategory.personalData;
   final _administrativeNotesController = TextEditingController();
   final _administrativeAttachmentController = TextEditingController();
+  final _attendanceCorrectionReasonController = TextEditingController();
+  AttendanceModel? _selectedCorrectionAttendance;
+  TimeOfDay? _requestedCorrectionTime;
 
   bool _loading = false;
   int _requestTypeIndex = 0;
@@ -97,6 +103,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
     _resignationReasonController.dispose();
     _administrativeNotesController.dispose();
     _administrativeAttachmentController.dispose();
+    _attendanceCorrectionReasonController.dispose();
     super.dispose();
   }
 
@@ -240,6 +247,60 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
           SnackBar(
             backgroundColor: ZaWolfColors.error,
             content: Text('تعذر الإرسال: ${userFacingError(error)}'),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _submitAttendanceCorrection(UserModel employee) async {
+    if (!_formKeyAttendanceCorrection.currentState!.validate()) return;
+    final attendance = _selectedCorrectionAttendance;
+    final selectedTime = _requestedCorrectionTime;
+    if (attendance == null || selectedTime == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('اختر يوم الحضور والوقت الصحيح.')),
+      );
+      return;
+    }
+
+    final day = attendance.checkInTime!;
+    setState(() => _loading = true);
+    try {
+      await AttendanceCorrectionRequestService().submit(
+        employee: employee,
+        attendance: attendance,
+        requestedCheckInTime: DateTime(
+          day.year,
+          day.month,
+          day.day,
+          selectedTime.hour,
+          selectedTime.minute,
+        ),
+        reason: _attendanceCorrectionReasonController.text,
+      );
+      _attendanceCorrectionReasonController.clear();
+      setState(() {
+        _selectedCorrectionAttendance = null;
+        _requestedCorrectionTime = null;
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            backgroundColor: ZaWolfColors.success,
+            content: Text('تم إرسال طلب تصحيح الوقت إلى HR.'),
+          ),
+        );
+        _tabController.animateTo(1);
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: ZaWolfColors.error,
+            content: Text(userFacingError(error)),
           ),
         );
       }
@@ -598,7 +659,8 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
                 2 => _buildAdvanceForm(user, theme),
                 3 => _buildComplaintForm(user, theme),
                 4 => _buildResignationForm(user, theme),
-                _ => _buildAdministrativeRequestForm(user, theme),
+                5 => _buildAdministrativeRequestForm(user, theme),
+                _ => _buildAttendanceCorrectionForm(user, theme),
               },
             ),
           ),
@@ -615,6 +677,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
       ('شكوى', Icons.feedback_outlined, ZaWolfColors.error),
       ('استقالة', Icons.exit_to_app, ZaWolfColors.error),
       ('طلب إداري', Icons.assignment_outlined, ZaWolfColors.primaryBlue),
+      ('تصحيح حضور', Icons.edit_calendar_outlined, ZaWolfColors.success),
     ];
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -1422,9 +1485,129 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
     );
   }
 
+  Widget _buildAttendanceCorrectionForm(UserModel user, ThemeData theme) {
+    final service = AttendanceCorrectionRequestService();
+    return Form(
+      key: _formKeyAttendanceCorrection,
+      child: StreamBuilder<List<AttendanceModel>>(
+        stream: service.correctionEligibleAttendance(user.uid),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(
+              child: CircularProgressIndicator(color: ZaWolfColors.primaryCyan),
+            );
+          }
+          final records = snapshot.data ?? const <AttendanceModel>[];
+          if (records.isEmpty) {
+            return const Padding(
+              padding: EdgeInsets.symmetric(vertical: 36),
+              child: Text(
+                'لا توجد أيام تأخير أو خصم متاحة لطلب تصحيح وقتها.',
+                textAlign: TextAlign.center,
+              ),
+            );
+          }
+          final selected =
+              records.any(
+                (item) =>
+                    item.attendanceId ==
+                    _selectedCorrectionAttendance?.attendanceId,
+              )
+              ? _selectedCorrectionAttendance
+              : null;
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                'طلب تصحيح وقت الحضور',
+                style: theme.textTheme.titleLarge?.copyWith(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 6),
+              const Text(
+                'اختر يوماً تأخرت فيه أو نتج عنه خصم. يراجع HR الطلب قبل تعديل السجل وإعادة حساب الخصم.',
+                textDirection: TextDirection.rtl,
+              ),
+              const SizedBox(height: 18),
+              DropdownButtonFormField<AttendanceModel>(
+                initialValue: selected,
+                decoration: const InputDecoration(
+                  labelText: 'يوم الحضور',
+                  prefixIcon: Icon(Icons.event_note_outlined),
+                ),
+                items: records
+                    .map(
+                      (item) => DropdownMenuItem(
+                        value: item,
+                        child: Text(
+                          '${item.date} · ${item.checkInTime == null ? '--:--' : DateFormat('hh:mm a', 'ar').format(item.checkInTime!)}',
+                        ),
+                      ),
+                    )
+                    .toList(),
+                onChanged: (value) {
+                  setState(() {
+                    _selectedCorrectionAttendance = value;
+                    _requestedCorrectionTime = value?.checkInTime == null
+                        ? null
+                        : TimeOfDay.fromDateTime(value!.checkInTime!);
+                  });
+                },
+                validator: (value) =>
+                    value == null ? 'اختر سجل الحضور المطلوب' : null,
+              ),
+              const SizedBox(height: 14),
+              OutlinedButton.icon(
+                onPressed: selected == null
+                    ? null
+                    : () async {
+                        final picked = await showTimePicker(
+                          context: context,
+                          initialTime:
+                              _requestedCorrectionTime ??
+                              TimeOfDay.fromDateTime(selected.checkInTime!),
+                        );
+                        if (picked != null && mounted) {
+                          setState(() => _requestedCorrectionTime = picked);
+                        }
+                      },
+                icon: const Icon(Icons.access_time),
+                label: Text(
+                  _requestedCorrectionTime == null
+                      ? 'اختر وقت الوصول الصحيح'
+                      : 'الوقت الصحيح: ${_requestedCorrectionTime!.format(context)}',
+                ),
+              ),
+              const SizedBox(height: 14),
+              WolfInputField(
+                controller: _attendanceCorrectionReasonController,
+                labelText: 'سبب التصحيح',
+                englishLabel: 'Reason',
+                hintText: 'مثال: وصلت مبكراً وتعذر تسجيل الحضور',
+                maxLines: 3,
+                validator: (value) => (value?.trim().length ?? 0) < 5
+                    ? 'اكتب سبباً واضحاً'
+                    : null,
+              ),
+              const SizedBox(height: 20),
+              WolfButton(
+                onPressed: () => _submitAttendanceCorrection(user),
+                text: 'إرسال إلى HR',
+                secondaryText: 'SUBMIT CORRECTION',
+                loading: _loading,
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
   Widget _buildHistoryConsole(UserModel user, ThemeData theme) {
     return DefaultTabController(
-      length: 6,
+      length: 7,
       child: Column(
         children: [
           TabBar(
@@ -1436,6 +1619,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
               Tab(text: 'الشكاوى'),
               Tab(text: 'الاستقالة'),
               Tab(text: 'إدارية'),
+              Tab(text: 'تصحيح الحضور'),
             ],
             labelColor: ZaWolfColors.primaryCyan,
             unselectedLabelColor: ZaWolfColors.textSecondary,
@@ -1450,11 +1634,97 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
                 _buildComplaintsHistory(user.uid, theme),
                 _buildResignationsHistory(user.uid, theme),
                 _buildAdministrativeHistory(user.uid, theme),
+                _buildAttendanceCorrectionHistory(user.uid, theme),
               ],
             ),
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildAttendanceCorrectionHistory(String userId, ThemeData theme) {
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      stream: AttendanceCorrectionRequestService().requestsForEmployee(userId),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(
+            child: CircularProgressIndicator(color: ZaWolfColors.primaryCyan),
+          );
+        }
+        final docs = [...?snapshot.data?.docs];
+        docs.sort((a, b) {
+          final left = a.data()['submittedAt'] as Timestamp?;
+          final right = b.data()['submittedAt'] as Timestamp?;
+          return (right?.millisecondsSinceEpoch ?? 0).compareTo(
+            left?.millisecondsSinceEpoch ?? 0,
+          );
+        });
+        if (docs.isEmpty) {
+          return const Center(child: Text('لا توجد طلبات تصحيح وقت.'));
+        }
+        return ListView.separated(
+          padding: const EdgeInsets.all(16),
+          itemCount: docs.length,
+          separatorBuilder: (_, _) => const SizedBox(height: 10),
+          itemBuilder: (context, index) {
+            final data = docs[index].data();
+            final status = data['status'] as String? ?? 'pending_hr';
+            final statusText = switch (status) {
+              'approved' => 'مقبول',
+              'rejected' => 'مرفوض',
+              _ => 'بانتظار HR',
+            };
+            final statusColor = switch (status) {
+              'approved' => ZaWolfColors.success,
+              'rejected' => ZaWolfColors.error,
+              _ => ZaWolfColors.warning,
+            };
+            final original = data['originalCheckInTime'] as Timestamp?;
+            final requested = data['requestedCheckInTime'] as Timestamp?;
+            return Card(
+              child: Padding(
+                padding: const EdgeInsets.all(14),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(
+                          Icons.edit_calendar_outlined,
+                          color: ZaWolfColors.primaryCyan,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'تصحيح حضور ${data['attendanceDate'] ?? ''}',
+                            style: theme.textTheme.titleMedium,
+                          ),
+                        ),
+                        Text(
+                          statusText,
+                          style: TextStyle(
+                            color: statusColor,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'المسجل: ${original == null ? '--:--' : DateFormat('hh:mm a', 'ar').format(original.toDate())}'
+                      '  ←  المطلوب: ${requested == null ? '--:--' : DateFormat('hh:mm a', 'ar').format(requested.toDate())}',
+                    ),
+                    Text('السبب: ${data['reason'] ?? ''}'),
+                    if ((data['reviewerComment'] as String? ?? '').isNotEmpty)
+                      Text('رد HR: ${data['reviewerComment']}'),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
     );
   }
 

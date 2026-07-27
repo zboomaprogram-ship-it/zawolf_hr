@@ -20,6 +20,7 @@ import '../../services/advance_service.dart';
 import '../../services/request_approval_policy_service.dart';
 import '../../services/resignation_service.dart';
 import '../../services/administrative_request_service.dart';
+import '../../services/attendance_correction_request_service.dart';
 import '../../models/request_approval_policy.dart';
 import '../../models/resignation_model.dart';
 import '../../models/administrative_request_model.dart';
@@ -169,11 +170,13 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
       );
     }
     final canReviewSalaryDeductions = EmployeeRole.isHr(manager.role);
+    final canReviewTimeCorrections = EmployeeRole.isHrStaff(manager.role);
     final tabs = <Tab>[
       const Tab(text: 'الإجازات'),
       const Tab(text: 'الأذونات'),
       const Tab(text: 'السلف'),
       if (canReviewSalaryDeductions) const Tab(text: 'خصومات التأخير'),
+      if (canReviewTimeCorrections) const Tab(text: 'تصحيح الحضور'),
       const Tab(text: 'مراجعة أمنية'),
       const Tab(text: 'الشكاوى'),
       const Tab(text: 'الاستقالات'),
@@ -184,6 +187,8 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
       _buildPermissionsTab(manager, theme),
       _buildAdvancesTab(manager, theme),
       if (canReviewSalaryDeductions) _buildSalaryDeductionsTab(manager, theme),
+      if (canReviewTimeCorrections)
+        _buildAttendanceCorrectionsTab(manager, theme),
       _buildSecurityReviewsTab(manager, theme),
       _buildComplaintsTab(manager, theme),
       _buildResignationsTab(manager, theme),
@@ -1189,6 +1194,153 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
         );
       },
     );
+  }
+
+  Widget _buildAttendanceCorrectionsTab(UserModel reviewer, ThemeData theme) {
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      stream: AttendanceCorrectionRequestService().pendingForHr(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(
+            child: CircularProgressIndicator(color: ZaWolfColors.primaryCyan),
+          );
+        }
+        final docs = [...?snapshot.data?.docs];
+        docs.sort((a, b) {
+          final left = a.data()['submittedAt'] as Timestamp?;
+          final right = b.data()['submittedAt'] as Timestamp?;
+          return (right?.millisecondsSinceEpoch ?? 0).compareTo(
+            left?.millisecondsSinceEpoch ?? 0,
+          );
+        });
+        if (docs.isEmpty) {
+          return _buildEmptyState('لا توجد طلبات تصحيح حضور بانتظار HR');
+        }
+        return ListView.separated(
+          padding: const EdgeInsets.all(16),
+          itemCount: docs.length,
+          separatorBuilder: (_, _) => const SizedBox(height: 12),
+          itemBuilder: (context, index) {
+            final doc = docs[index];
+            final data = doc.data();
+            final original = data['originalCheckInTime'] as Timestamp?;
+            final requested = data['requestedCheckInTime'] as Timestamp?;
+            return WolfCard(
+              hasBorderGlow: true,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _buildEmployeeHeader(
+                    data['employeeName'] as String? ?? 'موظف',
+                    data['employeeId'] as String? ?? '',
+                    data['department'] as String? ?? '',
+                    theme,
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    'يوم الحضور: ${data['attendanceDate'] ?? ''}',
+                    style: theme.textTheme.titleMedium,
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    'الوقت المسجل: ${original == null ? '--:--' : DateFormat('hh:mm a', 'ar').format(original.toDate())}',
+                  ),
+                  Text(
+                    'الوقت المطلوب: ${requested == null ? '--:--' : DateFormat('hh:mm a', 'ar').format(requested.toDate())}',
+                    style: const TextStyle(
+                      color: ZaWolfColors.primaryCyan,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text('السبب: ${data['reason'] ?? ''}'),
+                  const SizedBox(height: 14),
+                  _buildApprovalActions(
+                    onApprove: () => _reviewAttendanceCorrection(
+                      requestId: doc.id,
+                      reviewer: reviewer,
+                      approve: true,
+                    ),
+                    onReject: () => _reviewAttendanceCorrection(
+                      requestId: doc.id,
+                      reviewer: reviewer,
+                      approve: false,
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _reviewAttendanceCorrection({
+    required String requestId,
+    required UserModel reviewer,
+    required bool approve,
+  }) async {
+    final commentController = TextEditingController();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(approve ? 'اعتماد تصحيح الحضور' : 'رفض تصحيح الحضور'),
+        content: TextField(
+          controller: commentController,
+          maxLines: 3,
+          decoration: InputDecoration(
+            hintText: approve
+                ? 'ملاحظة اختيارية للموظف'
+                : 'اكتب سبب الرفض للموظف',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('إلغاء'),
+          ),
+          FilledButton(
+            onPressed: () {
+              if (!approve && commentController.text.trim().isEmpty) return;
+              Navigator.pop(dialogContext, true);
+            },
+            child: Text(approve ? 'اعتماد' : 'رفض'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) {
+      commentController.dispose();
+      return;
+    }
+    try {
+      await AttendanceCorrectionRequestService().review(
+        requestId: requestId,
+        reviewer: reviewer,
+        approve: approve,
+        comment: commentController.text,
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              approve
+                  ? 'تم تصحيح الوقت وإعادة حساب الخصم.'
+                  : 'تم رفض طلب التصحيح.',
+            ),
+          ),
+        );
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('تعذر مراجعة الطلب: $error')));
+      }
+    } finally {
+      commentController.dispose();
+    }
   }
 
   Future<void> _correctArrivalTime(

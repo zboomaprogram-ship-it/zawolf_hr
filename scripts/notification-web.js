@@ -6,6 +6,9 @@ const {
 } = require('./dispatch-notifications');
 const { queueAttendanceReminders } = require('./attendance-reminders');
 const { processAutomaticAttendance } = require('./auto-attendance');
+const {
+  processManagerLeavePermissionBypasses,
+} = require('./manager-leave-permission-bypass');
 
 const port = Number(process.env.PORT || 3000);
 const dispatchSecret = process.env.NOTIFICATION_DISPATCH_SECRET || '';
@@ -145,9 +148,11 @@ async function handleDispatch(req, res, url) {
 
   const startedAt = new Date().toISOString();
   runningDispatch = (async () => {
+    const managerLeaveBypasses =
+      await processManagerLeavePermissionBypasses();
     const automaticAttendance = await processAutomaticAttendance();
     const push = await dispatchNotifications();
-    return { automaticAttendance, ...push };
+    return { managerLeaveBypasses, automaticAttendance, ...push };
   })();
   try {
     const result = await runningDispatch;
@@ -182,10 +187,12 @@ async function handleAttendanceReminders(req, res, url) {
     return;
   }
   runningDispatch = (async () => {
+    const managerLeaveBypasses =
+      await processManagerLeavePermissionBypasses();
     const automaticAttendance = await processAutomaticAttendance();
     const reminders = await queueAttendanceReminders();
     const push = await dispatchNotifications();
-    return { automaticAttendance, reminders, push };
+    return { managerLeaveBypasses, automaticAttendance, reminders, push };
   })();
   try {
     const result = await runningDispatch;
@@ -213,7 +220,10 @@ async function runBackgroundDispatch() {
   runningDispatch = (async () => {
     let reminders;
     let automaticAttendance;
+    let managerLeaveBypasses;
     try {
+      managerLeaveBypasses =
+        await processManagerLeavePermissionBypasses();
       automaticAttendance = await processAutomaticAttendance();
       reminders = await queueAttendanceReminders();
     } catch (error) {
@@ -223,14 +233,18 @@ async function runBackgroundDispatch() {
       reminders = { error: String(error.message || error) };
       if (isFirestoreQuotaError(error)) {
         pauseForFirestoreQuota(error);
-        return { reminders, push: { skipped: 'firestore_quota_exhausted' } };
+        return {
+          managerLeaveBypasses,
+          reminders,
+          push: { skipped: 'firestore_quota_exhausted' },
+        };
       }
     }
 
     if (reminders?.queued > 0 || automaticAttendance?.found > 0) {
       schedulePushDispatch('scheduled_work');
     }
-    return { automaticAttendance, reminders };
+    return { managerLeaveBypasses, automaticAttendance, reminders };
   })();
 
   try {

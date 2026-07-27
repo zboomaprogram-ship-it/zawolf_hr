@@ -13,7 +13,7 @@ class EmployeeRole {
   static bool canManagePrivilegedAccounts(String? role) =>
       role == hrManager || role == superAdmin;
   static bool canAccessReports(String? role) =>
-      role == hrManager || role == superAdmin;
+      role == hrAdmin || role == hrManager || role == superAdmin;
   static bool canActAsApprovalManager(String? role) =>
       role == teamLeader ||
       role == manager ||

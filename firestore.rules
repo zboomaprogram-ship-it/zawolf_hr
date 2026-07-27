@@ -256,7 +256,8 @@ service cloud.firestore {
             'resignation_pending_hr',
             'warning_dismissal_review',
             'complaint_new',
-            'attendance_security_review'
+            'attendance_security_review',
+            'attendance_correction_pending_hr'
           ]
           && recipientDoc(userId).get('role', '') in ['hr_admin', 'hr_manager', 'super_admin']
         )
@@ -1321,6 +1322,48 @@ service cloud.firestore {
       allow delete: if isAuth() && isActive() && isHR();
     }
 
+    match /attendanceCorrectionRequests/{requestId} {
+      allow read: if isAuth() && isActive() && (
+        isOwner(resource.data.userId) || isHRStaff()
+      );
+      allow create: if isAuth() && isActive()
+        && request.resource.data.userId == uid()
+        && request.resource.data.requestId == requestId
+        && request.resource.data.status == 'pending_hr'
+        && request.resource.data.reason is string
+        && request.resource.data.reason.size() >= 5
+        && request.resource.data.attendanceId is string
+        && exists(
+          /databases/$(database)/documents/attendance/$(request.resource.data.attendanceId)
+        )
+        && get(
+          /databases/$(database)/documents/attendance/$(request.resource.data.attendanceId)
+        ).data.userId == uid()
+        && get(
+          /databases/$(database)/documents/attendance/$(request.resource.data.attendanceId)
+        ).data.checkInTime == request.resource.data.originalCheckInTime
+        && request.resource.data.requestedCheckInTime is timestamp
+        && request.resource.data.originalCheckInTime is timestamp
+        && request.resource.data.requestedCheckInTime
+          <= request.resource.data.originalCheckInTime
+        && request.resource.data.submittedAt == request.time
+        && request.resource.data.keys().hasOnly([
+          'requestId', 'userId', 'employeeId', 'employeeName', 'department',
+          'attendanceId', 'attendanceDate', 'originalCheckInTime',
+          'requestedCheckInTime', 'reason', 'status', 'submittedAt', 'isRead'
+        ]);
+      allow update: if isAuth() && isActive() && isHRStaff()
+        && resource.data.status == 'pending_hr'
+        && request.resource.data.status in ['approved', 'rejected']
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'status', 'reviewedBy', 'reviewerName', 'reviewedAt',
+          'reviewerComment'
+        ])
+        && request.resource.data.reviewedBy == uid()
+        && request.resource.data.reviewedAt == request.time;
+      allow delete: if isAuth() && isActive() && isHRStaff();
+    }
+
     match /departments/{deptId} {
       allow read: if isAuth() && isActive();
       allow create, update, delete: if isAuth() && isActive() && isHR();
@@ -1547,7 +1590,7 @@ service cloud.firestore {
       allow read: if isAuth() && isActive() && (
         isOwner(resource.data.userId)
         || uid() in resource.data.get('managerIds', [])
-        || isHRStaff()
+        || isHR()
       );
       allow create: if isAuth() && isActive()
         && request.resource.data.userId == uid()
@@ -1607,7 +1650,7 @@ service cloud.firestore {
         || resource.data.managerId == uid()
         || uid() in resource.data.get('managerIds', [])
         || isAssignedTeamLeaderForUser(resource.data.userId)
-        || isHRStaff()
+        || isHR()
       );
       allow create: if isAuth() && isActive()
         && request.resource.data.userId == uid()

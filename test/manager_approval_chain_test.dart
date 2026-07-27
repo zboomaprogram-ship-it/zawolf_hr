@@ -95,12 +95,12 @@ void main() {
       expect(EmployeeRole.canAccessReports(EmployeeRole.hrManager), isTrue);
     });
 
-    test('normal HR cannot create privileged accounts or access reports', () {
+    test('normal HR can access reports but not privileged accounts', () {
       expect(
         EmployeeRole.canManagePrivilegedAccounts(EmployeeRole.hrAdmin),
         isFalse,
       );
-      expect(EmployeeRole.canAccessReports(EmployeeRole.hrAdmin), isFalse);
+      expect(EmployeeRole.canAccessReports(EmployeeRole.hrAdmin), isTrue);
     });
 
     test('HR-stage reviewers exclude super admin', () {

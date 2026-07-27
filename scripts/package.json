@@ -10,6 +10,7 @@
     "dispatch-notifications": "node dispatch-notifications.js",
     "attendance-reminders": "node attendance-reminders.js",
     "automatic-attendance": "node auto-attendance.js",
+    "manager-leave-permissions": "node manager-leave-permission-bypass.js",
     "sync-notification-recipients": "node sync-notification-recipients.js",
     "test": "node --test test/*.test.js",
     "start": "node notification-web.js"

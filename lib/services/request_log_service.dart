@@ -1,35 +1,53 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-import '../models/user_model.dart';
+
+import '../models/administrative_request_model.dart';
 import '../models/employee_role.dart';
-import '../models/leave_model.dart';
-import '../models/permission_model.dart';
-import '../models/advance_model.dart';
+import '../models/user_model.dart';
 import '../utils/payroll_cycle.dart';
 
 class RequestLogItem {
-  final String id;
-  final String employeeName;
-  final String type; // 'leave' | 'permission' | 'advance'
-  final String requestType;
-  final String status;
-  final DateTime reviewedAt;
-  final String reviewedBy;
-  final String details;
-  final String reason;
-  final String response;
-
-  RequestLogItem({
+  const RequestLogItem({
     required this.id,
+    required this.employeeId,
     required this.employeeName,
+    required this.department,
     required this.type,
     required this.requestType,
     required this.status,
+    required this.submittedAt,
     required this.reviewedAt,
     required this.reviewedBy,
     required this.details,
     required this.reason,
     required this.response,
   });
+
+  final String id;
+  final String employeeId;
+  final String employeeName;
+  final String department;
+  final String type;
+  final String requestType;
+  final String status;
+  final DateTime submittedAt;
+  final DateTime? reviewedAt;
+  final String reviewedBy;
+  final String details;
+  final String reason;
+  final String response;
+
+  bool get isPending => status.startsWith('pending');
+
+  String get statusLabel {
+    if (status == 'approved') return 'مقبول';
+    if (status == 'rejected') return 'مرفوض';
+    if (status == 'cancelled') return 'ملغي';
+    if (status == 'pending_manager') return 'بانتظار موافقة المدير';
+    if (status == 'pending_hr') return 'بانتظار موافقة الموارد البشرية';
+    if (status == 'pending_ceo') return 'بانتظار موافقة الرئيس التنفيذي';
+    if (status == 'pending') return 'قيد المراجعة';
+    return status;
+  }
 }
 
 class RequestLogService {
@@ -39,208 +57,248 @@ class RequestLogService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
   final Map<String, String> _reviewerNameCache = {};
 
+  DateTime? _date(dynamic value) => value is Timestamp ? value.toDate() : null;
+
   String _reviewerLabel(Map<String, dynamic> data, String reviewerId) {
     final savedName = (data['reviewerName'] as String?)?.trim() ?? '';
     if (savedName.isNotEmpty) return savedName;
-
-    final managerIds =
-        (data['managerIds'] as List<dynamic>?)?.whereType<String>().toList() ??
-        <String>[];
-    final managerNames =
-        (data['managerNames'] as List<dynamic>?)
-            ?.whereType<String>()
-            .toList() ??
-        <String>[];
-    final managerIndex = managerIds.indexOf(reviewerId);
-    if (managerIndex >= 0 && managerIndex < managerNames.length) {
-      final name = managerNames[managerIndex].trim();
-      if (name.isNotEmpty) return name;
-    }
-    if (data['hrReviewedBy'] == reviewerId) return 'الموارد البشرية';
-    if (data['managerReviewedBy'] == reviewerId) return 'المدير المباشر';
     final cached = _reviewerNameCache[reviewerId];
     if (cached != null && cached.isNotEmpty) return cached;
+    if (reviewerId.isEmpty) return '';
+    if (data['hrReviewedBy'] == reviewerId) return 'الموارد البشرية';
+    if (data['managerReviewedBy'] == reviewerId) return 'المدير المباشر';
     return reviewerId;
   }
 
   Future<void> _cacheReviewerNames(
     Iterable<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
   ) async {
-    final ids = docs
-        .map((doc) => doc.data()['reviewedBy'] as String? ?? '')
-        .where((id) => id.isNotEmpty && !_reviewerNameCache.containsKey(id))
-        .toSet();
+    final ids = <String>{};
+    for (final doc in docs) {
+      final data = doc.data();
+      for (final field in const [
+        'reviewedBy',
+        'hrReviewedBy',
+        'managerReviewedBy',
+        'ceoReviewedBy',
+      ]) {
+        final id = data[field] as String? ?? '';
+        if (id.isNotEmpty && !_reviewerNameCache.containsKey(id)) ids.add(id);
+      }
+    }
     await Future.wait(
       ids.map((id) async {
-        final doc = await _db.collection('users').doc(id).get();
-        final name = (doc.data()?['displayName'] as String?)?.trim() ?? '';
-        if (name.isNotEmpty) _reviewerNameCache[id] = name;
+        try {
+          final doc = await _db.collection('users').doc(id).get();
+          final name = (doc.data()?['displayName'] as String?)?.trim() ?? '';
+          if (name.isNotEmpty) _reviewerNameCache[id] = name;
+        } on FirebaseException {
+          // The history remains usable when a role cannot read an approver.
+        }
       }),
     );
+  }
+
+  bool _isInCycle(Map<String, dynamic> data, PayrollCycle cycle) {
+    final activityDate =
+        _date(data['submittedAt']) ??
+        _date(data['createdAt']) ??
+        _date(data['reviewedAt']);
+    return activityDate != null &&
+        !activityDate.isBefore(cycle.start) &&
+        activityDate.isBefore(cycle.nextStart);
+  }
+
+  Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>> _scopedDocs(
+    String collection,
+    UserModel user,
+    PayrollCycle cycle,
+  ) async {
+    if (EmployeeRole.isHr(user.role)) {
+      final snapshot = await _db
+          .collection(collection)
+          .where(
+            'submittedAt',
+            isGreaterThanOrEqualTo: Timestamp.fromDate(cycle.start),
+          )
+          .where('submittedAt', isLessThan: Timestamp.fromDate(cycle.nextStart))
+          .get();
+      return snapshot.docs;
+    }
+
+    if (user.role == EmployeeRole.manager ||
+        user.role == EmployeeRole.teamLeader) {
+      final results = await Future.wait([
+        _db
+            .collection(collection)
+            .where('managerIds', arrayContains: user.uid)
+            .get(),
+        _db
+            .collection(collection)
+            .where('managerId', isEqualTo: user.uid)
+            .get(),
+      ]);
+      final byId = <String, QueryDocumentSnapshot<Map<String, dynamic>>>{};
+      for (final doc in results.expand((snapshot) => snapshot.docs)) {
+        if (_isInCycle(doc.data(), cycle)) byId[doc.id] = doc;
+      }
+      return byId.values.toList();
+    }
+
+    final snapshot = await _db
+        .collection(collection)
+        .where('userId', isEqualTo: user.uid)
+        .get();
+    return snapshot.docs.where((doc) => _isInCycle(doc.data(), cycle)).toList();
   }
 
   Future<List<RequestLogItem>> getMonthlyLogs(
     UserModel user, {
     PayrollCycle? selectedCycle,
   }) async {
-    final now = DateTime.now();
-    final cycle = selectedCycle ?? PayrollCycle.forDate(now);
-    final cycleStart = Timestamp.fromDate(cycle.start);
-    final cycleNextStart = Timestamp.fromDate(cycle.nextStart);
+    final cycle = selectedCycle ?? PayrollCycle.forDate(DateTime.now());
+    final logs = <RequestLogItem>[];
 
-    final List<RequestLogItem> logs = [];
-
-    Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>> scopedDocs(
+    Future<void> fetch(
       String collection,
+      String type,
+      RequestLogItem Function(QueryDocumentSnapshot<Map<String, dynamic>> doc)
+      parse,
     ) async {
-      if (user.role == EmployeeRole.manager ||
-          user.role == EmployeeRole.superAdmin) {
-        final results = await Future.wait([
-          _db
-              .collection(collection)
-              .where('managerIds', arrayContains: user.uid)
-              .get(),
-          _db
-              .collection(collection)
-              .where('managerId', isEqualTo: user.uid)
-              .get(),
-        ]);
-        final byId = <String, QueryDocumentSnapshot<Map<String, dynamic>>>{};
-        for (final doc in results.expand((snapshot) => snapshot.docs)) {
-          final reviewedAt = (doc.data()['reviewedAt'] as Timestamp?)?.toDate();
-          if (reviewedAt != null &&
-              !reviewedAt.isBefore(cycle.start) &&
-              reviewedAt.isBefore(cycle.nextStart)) {
-            byId[doc.id] = doc;
-          }
-        }
-        return byId.values.toList();
+      try {
+        final docs = await _scopedDocs(collection, user, cycle);
+        await _cacheReviewerNames(docs);
+        logs.addAll(docs.map(parse));
+      } on FirebaseException catch (error) {
+        if (error.code != 'permission-denied') rethrow;
       }
-
-      Query<Map<String, dynamic>> query = _db
-          .collection(collection)
-          .where('reviewedAt', isGreaterThanOrEqualTo: cycleStart)
-          .where('reviewedAt', isLessThan: cycleNextStart);
-      if (user.role == EmployeeRole.employee ||
-          user.role == EmployeeRole.teamLeader) {
-        query = query.where('userId', isEqualTo: user.uid);
-      }
-      return (await query.get()).docs;
     }
 
-    // Query helper to fetch and parse
-    Future<void> fetchLeaves() async {
-      final docs = await scopedDocs('leaves');
-      await _cacheReviewerNames(docs);
-      for (final doc in docs) {
+    RequestLogItem genericItem(
+      QueryDocumentSnapshot<Map<String, dynamic>> doc, {
+      required String type,
+      required String requestType,
+      required String details,
+    }) {
+      final data = doc.data();
+      final submittedAt =
+          _date(data['submittedAt']) ??
+          _date(data['createdAt']) ??
+          _date(data['reviewedAt']) ??
+          cycle.start;
+      final reviewedBy = data['reviewedBy'] as String? ?? '';
+      return RequestLogItem(
+        id: doc.id,
+        employeeId: data['employeeId'] as String? ?? '',
+        employeeName: data['employeeName'] as String? ?? 'غير محدد',
+        department: data['department'] as String? ?? 'غير محدد',
+        type: type,
+        requestType: requestType,
+        status: data['status'] as String? ?? 'pending',
+        submittedAt: submittedAt,
+        reviewedAt: _date(data['reviewedAt']),
+        reviewedBy: _reviewerLabel(data, reviewedBy),
+        details: details,
+        reason: data['reason'] as String? ?? data['notes'] as String? ?? '',
+        response:
+            data['reviewerComment'] as String? ??
+            data['hrReviewerComment'] as String? ??
+            '',
+      );
+    }
+
+    await Future.wait([
+      fetch('leaves', 'leave', (doc) {
         final data = doc.data();
-        final model = LeaveModel.fromFirestore(doc);
-        if (model.status == 'approved' || model.status == 'rejected') {
-          logs.add(
-            RequestLogItem(
-              id: model.leaveId,
-              employeeName: model.employeeName,
-              type: 'leave',
-              requestType: _translateLeaveType(model.leaveType),
-              status: model.status,
-              reviewedAt: model.reviewedAt ?? now,
-              reviewedBy: _reviewerLabel(data, model.reviewedBy ?? ''),
-              details: '${model.numberOfDays} يوم',
-              reason: model.reason ?? '',
-              response: model.reviewerComment ?? '',
-            ),
-          );
-        }
-      }
-    }
-
-    Future<void> fetchPermissions() async {
-      final docs = await scopedDocs('permissions');
-      await _cacheReviewerNames(docs);
-      for (final doc in docs) {
+        return genericItem(
+          doc,
+          type: 'leave',
+          requestType: _translateLeaveType(
+            data['leaveType'] as String? ?? 'annual',
+          ),
+          details: '${data['numberOfDays'] as int? ?? 1} يوم',
+        );
+      }),
+      fetch('permissions', 'permission', (doc) {
         final data = doc.data();
-        final model = PermissionModel.fromFirestore(doc);
-        if (model.status == 'approved' || model.status == 'rejected') {
-          logs.add(
-            RequestLogItem(
-              id: model.permissionId,
-              employeeName: model.employeeName,
-              type: 'permission',
-              requestType: _translatePermissionType(model.permissionType),
-              status: model.status,
-              reviewedAt: model.reviewedAt ?? now,
-              reviewedBy: _reviewerLabel(data, model.reviewedBy ?? ''),
-              details: '${model.durationMinutes} دقيقة',
-              reason: model.reason,
-              response: model.reviewerComment ?? '',
-            ),
-          );
-        }
-      }
-    }
-
-    Future<void> fetchAdvances() async {
-      final docs = await scopedDocs('advances');
-      await _cacheReviewerNames(docs);
-      for (final doc in docs) {
+        return genericItem(
+          doc,
+          type: 'permission',
+          requestType: _translatePermissionType(
+            data['permissionType'] as String? ?? '',
+          ),
+          details: '${data['durationMinutes'] as int? ?? 0} دقيقة',
+        );
+      }),
+      fetch('attendanceCorrectionRequests', 'attendance_correction', (doc) {
         final data = doc.data();
-        final model = AdvanceModel.fromFirestore(doc);
-        if (model.status == 'approved' || model.status == 'rejected') {
-          logs.add(
-            RequestLogItem(
-              id: model.advanceId,
-              employeeName: model.employeeName,
-              type: 'advance',
-              requestType: 'سلفة مالية',
-              status: model.status,
-              reviewedAt: model.reviewedAt ?? now,
-              reviewedBy: _reviewerLabel(data, model.reviewedBy ?? ''),
-              details: '${model.amount} EGP',
-              reason: model.reason ?? '',
-              response: model.reviewerComment ?? '',
-            ),
-          );
-        }
-      }
-    }
+        final requested = _date(data['requestedCheckInTime']);
+        return genericItem(
+          doc,
+          type: 'attendance_correction',
+          requestType: 'تصحيح وقت حضور',
+          details:
+              '${data['attendanceDate'] as String? ?? ''}'
+              '${requested == null ? '' : ' · ${requested.hour.toString().padLeft(2, '0')}:${requested.minute.toString().padLeft(2, '0')}'}',
+        );
+      }),
+      fetch('advances', 'advance', (doc) {
+        final data = doc.data();
+        return genericItem(
+          doc,
+          type: 'advance',
+          requestType: 'سلفة مالية',
+          details: '${(data['amount'] as num?)?.toStringAsFixed(2) ?? '0'} EGP',
+        );
+      }),
+      fetch('administrativeRequests', 'administrative', (doc) {
+        final data = doc.data();
+        return genericItem(
+          doc,
+          type: 'administrative',
+          requestType: AdministrativeRequestCategory.arabicLabel(
+            data['category'] as String? ?? AdministrativeRequestCategory.other,
+          ),
+          details: 'طلب إداري',
+        );
+      }),
+      fetch('resignations', 'resignation', (doc) {
+        final data = doc.data();
+        final resignationDate = _date(data['resignationDate']);
+        return genericItem(
+          doc,
+          type: 'resignation',
+          requestType: 'استقالة',
+          details: resignationDate == null
+              ? 'طلب استقالة'
+              : '${resignationDate.year}/${resignationDate.month}/${resignationDate.day}',
+        );
+      }),
+    ]);
 
-    await Future.wait([fetchLeaves(), fetchPermissions(), fetchAdvances()]);
-
-    // Sort by reviewedAt descending
-    logs.sort((a, b) => b.reviewedAt.compareTo(a.reviewedAt));
+    logs.sort((a, b) => b.submittedAt.compareTo(a.submittedAt));
     return logs;
   }
 
   String _translateLeaveType(String type) {
-    switch (type) {
-      case 'annual':
-        return 'إجازة سنوية';
-      case 'sick':
-        return 'إجازة مرضية';
-      case 'casual':
-        return 'إجازة عارضة';
-      case 'day_off':
-        return 'مغادرة يوم';
-      case 'unpaid':
-        return 'إجازة بدون راتب';
-      case 'exam':
-        return 'إجازة امتحان';
-      case 'wfh':
-      case 'remote':
-        return 'عمل عن بعد';
-      default:
-        return 'إجازة';
-    }
+    return switch (type) {
+      'annual' || 'day_off' => 'إجازة اعتيادية',
+      'sick' => 'إجازة مرضية',
+      'casual' => 'إجازة عارضة',
+      'unpaid' => 'إجازة بدون راتب',
+      'exam' => 'إجازة امتحان',
+      'wfh' || 'remote' => 'عمل عن بعد',
+      _ => 'إجازة',
+    };
   }
 
   String _translatePermissionType(String type) {
-    switch (type) {
-      case 'early_leave':
-        return 'انصراف مبكر';
-      case 'late_arrival':
-        return 'تأخير صباحي';
-      default:
-        return 'إذن';
-    }
+    return switch (type) {
+      'early_leave' => 'انصراف مبكر',
+      'late_arrival' => 'تأخير حضور',
+      'mid_shift_exit' => 'خروج أثناء الدوام',
+      'deductible' => 'إذن استقطاعي',
+      _ => 'إذن',
+    };
   }
 }
