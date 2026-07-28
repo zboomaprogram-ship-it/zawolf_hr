@@ -490,6 +490,7 @@ service cloud.firestore {
         && request.resource.data.get('role', '') in ['employee', 'team_leader', 'manager']
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           'displayName', 'employeeId', 'department', 'position', 'role',
+          'organizationLevel', 'organizationDivisionId', 'organizationOrder',
           'locationId', 'locationName', 'baseMonthlySalary', 'salaryCurrency',
           'leaveBalance', 'leaveBalance.daysOff', 'leaveBalance.casual',
           'permissionBalance', 'permissionBalance.usedThisMonth',
@@ -532,6 +533,7 @@ service cloud.firestore {
         && request.resource.data.keys().hasOnly([
           'email', 'displayName', 'photoURL', 'role', 'employeeId',
           'department', 'position', 'locationId', 'locationName',
+          'organizationLevel', 'organizationDivisionId', 'organizationOrder',
           'baseMonthlySalary', 'salaryCurrency', 'managerId', 'managerName',
           'managerIds', 'managerNames', 'managerCodes', 'isActive',
           'teamLeaderId', 'teamLeaderName',
@@ -1294,7 +1296,25 @@ service cloud.firestore {
     }
 
     match /attendance/{attendanceId} {
-      allow read: if isAuth() && isActive() && (
+      // The dashboards probe the deterministic daily attendance id before an
+      // employee checks in. A missing document has no resource.data, so the
+      // normal ownership checks below cannot succeed. Permit reviewers to get
+      // only that non-existent slot; existing attendance records remain
+      // protected by assignment/role checks.
+      allow get: if isAuth() && isActive() && (
+        (
+          !exists(
+            /databases/$(database)/documents/attendance/$(attendanceId)
+          )
+          && canActAsApprovalManager()
+        )
+        || isOwner(resource.data.userId)
+        || isMyManager(resource.data.managerId)
+        || isAssignedManagerForUser(resource.data.userId)
+        || isAssignedTeamLeaderForUser(resource.data.userId)
+        || isHR()
+      );
+      allow list: if isAuth() && isActive() && (
         isOwner(resource.data.userId) ||
         isMyManager(resource.data.managerId) ||
         isAssignedManagerForUser(resource.data.userId) ||
@@ -1365,6 +1385,11 @@ service cloud.firestore {
     }
 
     match /departments/{deptId} {
+      allow read: if isAuth() && isActive();
+      allow create, update, delete: if isAuth() && isActive() && isHR();
+    }
+
+    match /organization_divisions/{divisionId} {
       allow read: if isAuth() && isActive();
       allow create, update, delete: if isAuth() && isActive() && isHR();
     }

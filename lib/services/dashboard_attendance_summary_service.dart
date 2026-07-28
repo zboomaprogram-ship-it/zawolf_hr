@@ -13,6 +13,7 @@ class DashboardAttendanceSummary {
   final int notAttended;
   final DateTime date;
   final bool teamScoped;
+  final bool isComplete;
 
   const DashboardAttendanceSummary({
     required this.totalEmployees,
@@ -23,6 +24,7 @@ class DashboardAttendanceSummary {
     required this.notAttended,
     required this.date,
     required this.teamScoped,
+    this.isComplete = true,
   });
 
   int get accounted => present + late + permission + dayOff + notAttended;
@@ -225,6 +227,7 @@ class DashboardAttendanceSummaryService {
           notAttended: 0,
           date: date,
           teamScoped: isTeamScope,
+          isComplete: true,
         ),
         people: const [],
       );
@@ -319,6 +322,7 @@ class DashboardAttendanceSummaryService {
         notAttended: count('not_attended'),
         date: date,
         teamScoped: isTeamScope,
+        isComplete: results.every((result) => result.isComplete),
       ),
       people: people,
     );
@@ -371,16 +375,23 @@ class DashboardAttendanceSummaryService {
     String dateKey,
     DateTime date,
   ) async {
-    final attendanceDocs = await Future.wait(
+    // Query by the employee id instead of reading the deterministic document
+    // directly. An employee who has not checked in has no attendance document;
+    // querying correctly returns an empty result without asking rules to
+    // authorize a non-existent resource.
+    final attendanceSnaps = await Future.wait(
       employeeIds.map(
-        (userId) => _safeDocumentGet(
-          _db.collection('attendance').doc('${userId}_$dateKey'),
+        (userId) => _safeQueryResult(
+          _db
+              .collection('attendance')
+              .where('userId', isEqualTo: userId)
+              .where('date', isEqualTo: dateKey),
         ),
       ),
     );
     final permissionSnaps = await Future.wait(
       employeeIds.map(
-        (userId) => _safeQueryResult(
+        (userId) => _bestEffortQueryResult(
           _db
               .collection('permissions')
               .where('userId', isEqualTo: userId)
@@ -391,7 +402,7 @@ class DashboardAttendanceSummaryService {
     );
     final leaveSnaps = await Future.wait(
       employeeIds.map(
-        (userId) => _safeQueryResult(
+        (userId) => _bestEffortQueryResult(
           _db
               .collection('leaves')
               .where('userId', isEqualTo: userId)
@@ -408,16 +419,16 @@ class DashboardAttendanceSummaryService {
 
     return [
       _SummaryQueryResult(
-        attendanceDocs
-            .whereType<DocumentSnapshot<Map<String, dynamic>>>()
-            .where((doc) => doc.exists)
-            .toList(),
+        attendanceSnaps.expand((snapshot) => snapshot.docs).toList(),
+        isComplete: attendanceSnaps.every((snapshot) => snapshot.isComplete),
       ),
       _SummaryQueryResult(
         permissionSnaps.expand((snapshot) => snapshot.docs).toList(),
+        isComplete: permissionSnaps.every((snapshot) => snapshot.isComplete),
       ),
       _SummaryQueryResult(
         leaveSnaps.expand((snapshot) => snapshot.docs).toList(),
+        isComplete: leaveSnaps.every((snapshot) => snapshot.isComplete),
       ),
     ];
   }
@@ -451,16 +462,26 @@ class DashboardAttendanceSummaryService {
     return results;
   }
 
-  Future<DocumentSnapshot<Map<String, dynamic>>?> _safeDocumentGet(
-    DocumentReference<Map<String, dynamic>> reference,
-  ) async {
-    return reference.get();
-  }
-
   Future<_SummaryQueryResult> _safeQueryResult(
     Query<Map<String, dynamic>> query,
   ) async {
     return _SummaryQueryResult.fromQuery(await query.get());
+  }
+
+  Future<_SummaryQueryResult> _bestEffortQueryResult(
+    Query<Map<String, dynamic>> query,
+  ) async {
+    try {
+      return await _safeQueryResult(query);
+    } on FirebaseException catch (error) {
+      if (error.code == 'permission-denied' ||
+          error.code == 'failed-precondition' ||
+          error.code == 'unavailable' ||
+          error.code == 'deadline-exceeded') {
+        return const _SummaryQueryResult([], isComplete: false);
+      }
+      rethrow;
+    }
   }
 
   bool _isLateStatus(String status) {
@@ -473,8 +494,9 @@ class DashboardAttendanceSummaryService {
 
 class _SummaryQueryResult {
   final List<DocumentSnapshot<Map<String, dynamic>>> docs;
+  final bool isComplete;
 
-  const _SummaryQueryResult(this.docs);
+  const _SummaryQueryResult(this.docs, {this.isComplete = true});
 
   factory _SummaryQueryResult.fromQuery(
     QuerySnapshot<Map<String, dynamic>> snapshot,

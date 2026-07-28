@@ -112,6 +112,41 @@ class AttendanceInsightsCard extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 14),
+          if (!summary.isComplete) ...[
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              decoration: BoxDecoration(
+                color: ZaWolfColors.warning.withValues(alpha: 0.10),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: ZaWolfColors.warning.withValues(alpha: 0.30),
+                ),
+              ),
+              child: const Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  Flexible(
+                    child: Text(
+                      'تم عرض بيانات الحضور المتاحة. بعض بيانات الإجازات أو الأذونات ستظهر بعد إعادة الاتصال.',
+                      textAlign: TextAlign.right,
+                      textDirection: TextDirection.rtl,
+                      style: TextStyle(
+                        color: ZaWolfColors.warning,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+                  SizedBox(width: 8),
+                  Icon(
+                    Icons.cloud_off_outlined,
+                    color: ZaWolfColors.warning,
+                    size: 18,
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 14),
+          ],
           LayoutBuilder(
             builder: (context, constraints) {
               final narrow = constraints.maxWidth < 520;

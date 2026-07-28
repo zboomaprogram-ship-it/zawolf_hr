@@ -47,28 +47,44 @@ class DepartmentService {
   }
 
   Stream<List<String>> watchDepartments() {
-    return _db.collection('departments').orderBy('name').snapshots().map(
-      (snap) {
-        return snap.docs.map((doc) => doc.data()['name'] as String).toList();
-      },
-    );
+    return _db.collection('departments').orderBy('name').snapshots().map((
+      snap,
+    ) {
+      return snap.docs.map((doc) => doc.data()['name'] as String).toList();
+    });
   }
 
   Future<void> addDepartment(String name) async {
     final cleanName = name.trim();
     if (cleanName.isEmpty) return;
-    
+
     // Check if exists
     final snap = await _db
         .collection('departments')
         .where('name', isEqualTo: cleanName)
         .get();
-        
+
     if (snap.docs.isEmpty) {
       await _db.collection('departments').add({
         'name': cleanName,
         'createdAt': FieldValue.serverTimestamp(),
       });
     }
+  }
+
+  Future<void> assignToDivision({
+    required String departmentName,
+    required String divisionId,
+  }) async {
+    final snapshot = await _db
+        .collection('departments')
+        .where('name', isEqualTo: departmentName.trim())
+        .limit(1)
+        .get();
+    if (snapshot.docs.isEmpty) return;
+    await snapshot.docs.first.reference.update({
+      'organizationDivisionId': divisionId,
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
   }
 }

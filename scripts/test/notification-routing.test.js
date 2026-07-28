@@ -4,12 +4,16 @@ const assert = require('node:assert/strict');
 const {
   routeForNotification,
   isUnsubscribedDeviceError,
+  reminderAction,
+  reminderDate,
+  attendanceCompletesReminder,
 } = require('../dispatch-notifications');
 const {
   isWorkDay,
   isReminderScanWindow,
   notificationFor,
   dueReminderPlans,
+  attendanceCompletedForReminder,
 } = require('../attendance-reminders');
 const { parseFirebaseServiceAccount } = require('../firebase-service-account');
 const { deductionFor, effectiveTimes, haversineMeters } = require('../auto-attendance');
@@ -125,6 +129,37 @@ test('attendance scans do not read employees outside the configured work window'
       reminderScanEndTime: '02:00',
     }),
     true,
+  );
+});
+
+test('attendance reminders stop once the matching action is complete', () => {
+  const attendance = {
+    checkInTime: { seconds: 1 },
+    checkOutTime: null,
+  };
+  assert.equal(
+    attendanceCompletedForReminder(attendance, 'check_in_late_warning'),
+    true,
+  );
+  assert.equal(
+    attendanceCompletedForReminder(attendance, 'check_out'),
+    false,
+  );
+  assert.equal(
+    reminderAction({ type: 'attendance_final_warning' }),
+    'check_in',
+  );
+  assert.equal(
+    reminderDate({ data: { date: '2026-07-28' } }),
+    '2026-07-28',
+  );
+  assert.equal(
+    attendanceCompletesReminder(attendance, 'check_in'),
+    true,
+  );
+  assert.equal(
+    attendanceCompletesReminder(attendance, 'check_out'),
+    false,
   );
 });
 

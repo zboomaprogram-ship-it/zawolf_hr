@@ -75,19 +75,26 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addObserver(this);
+    if (!kIsWeb) {
+      WidgetsBinding.instance.addObserver(this);
+    }
     _securityStatus = AppSecurityPolicyService.instance.loadStatus();
   }
 
   @override
   void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
+    if (!kIsWeb) {
+      WidgetsBinding.instance.removeObserver(this);
+    }
     super.dispose();
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) {
+    // Browser tab visibility changes must not replace the whole router with
+    // the security loading screen. The web session remains protected by the
+    // initial policy check and Firestore rules.
+    if (!kIsWeb && state == AppLifecycleState.resumed) {
       _retrySecurityCheck();
     }
   }

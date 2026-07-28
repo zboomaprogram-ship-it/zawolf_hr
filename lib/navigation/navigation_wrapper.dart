@@ -28,6 +28,9 @@ class _NavigationWrapperState extends State<NavigationWrapper>
   String? _currentUserUid;
   String? _attendanceAlarmCheckedForUid;
   UserModel? _alarmUser;
+  final List<String> _webRouteHistory = <String>[];
+  String? _lastWebRoute;
+  bool _webBackNavigationInProgress = false;
 
   @override
   void initState() {
@@ -156,8 +159,10 @@ class _NavigationWrapperState extends State<NavigationWrapper>
     }
     _checkRequiredAttendanceAlarm(user);
 
-    final String matchedLocation = GoRouterState.of(context).matchedLocation;
+    final routerState = GoRouterState.of(context);
+    final String matchedLocation = routerState.matchedLocation;
     final String role = user.role;
+    _recordWebRoute(routerState.uri.toString());
 
     // Define tabs based on role
     List<NavigationItem> items = [];
@@ -646,11 +651,15 @@ class _NavigationWrapperState extends State<NavigationWrapper>
         user: user,
         items: managementItems,
         matchedLocation: matchedLocation,
-        child: widget.child,
+        canGoBack:
+            _webRouteHistory.isNotEmpty ||
+            matchedLocation != _homeRouteForRole(role),
+        onBack: () => _navigateBackOnWeb(context, role),
         onSignOut: () async {
           await authService.signOut();
           if (context.mounted) context.go('/login');
         },
+        child: widget.child,
       );
     }
 
@@ -840,6 +849,45 @@ class _NavigationWrapperState extends State<NavigationWrapper>
     );
   }
 
+  void _recordWebRoute(String route) {
+    if (!kIsWeb || route == _lastWebRoute) return;
+    if (_webBackNavigationInProgress) {
+      _webBackNavigationInProgress = false;
+    } else if (_lastWebRoute != null) {
+      _webRouteHistory.add(_lastWebRoute!);
+      if (_webRouteHistory.length > 30) {
+        _webRouteHistory.removeAt(0);
+      }
+    }
+    _lastWebRoute = route;
+  }
+
+  void _navigateBackOnWeb(BuildContext context, String role) {
+    if (_webRouteHistory.isNotEmpty) {
+      final target = _webRouteHistory.removeLast();
+      _webBackNavigationInProgress = true;
+      context.go(target);
+      return;
+    }
+
+    final fallback = _homeRouteForRole(role);
+    if (GoRouterState.of(context).matchedLocation != fallback) {
+      _webBackNavigationInProgress = true;
+      context.go(fallback);
+    }
+  }
+
+  String _homeRouteForRole(String role) {
+    return switch (role) {
+      EmployeeRole.superAdmin ||
+      EmployeeRole.hrManager ||
+      EmployeeRole.hrAdmin => '/hr/dashboard',
+      EmployeeRole.manager => '/manager/dashboard',
+      EmployeeRole.teamLeader => '/team-leader/dashboard',
+      _ => '/employee/dashboard',
+    };
+  }
+
   void _showMoreSheet({
     required BuildContext context,
     required ThemeData theme,
@@ -955,6 +1003,8 @@ class _DesktopManagementShell extends StatelessWidget {
   final List<NavigationItem> items;
   final String matchedLocation;
   final Widget child;
+  final bool canGoBack;
+  final VoidCallback onBack;
   final Future<void> Function() onSignOut;
 
   const _DesktopManagementShell({
@@ -962,6 +1012,8 @@ class _DesktopManagementShell extends StatelessWidget {
     required this.items,
     required this.matchedLocation,
     required this.child,
+    required this.canGoBack,
+    required this.onBack,
     required this.onSignOut,
   });
 
@@ -1167,12 +1219,46 @@ class _DesktopManagementShell extends StatelessWidget {
             Expanded(
               child: ColoredBox(
                 color: ZaWolfColors.background,
-                child: Align(
-                  alignment: Alignment.topCenter,
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 1560),
-                    child: child,
-                  ),
+                child: Column(
+                  children: [
+                    Container(
+                      height: 48,
+                      padding: const EdgeInsets.symmetric(horizontal: 14),
+                      decoration: const BoxDecoration(
+                        color: ZaWolfColors.surface01,
+                        border: Border(
+                          bottom: BorderSide(color: ZaWolfColors.surface03),
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          IconButton(
+                            onPressed: canGoBack ? onBack : null,
+                            tooltip: 'رجوع',
+                            icon: const Icon(Icons.arrow_forward_rounded),
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            'رجوع',
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              color: canGoBack
+                                  ? ZaWolfColors.textSecondary
+                                  : ZaWolfColors.textMuted,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Expanded(
+                      child: Align(
+                        alignment: Alignment.topCenter,
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 1560),
+                          child: child,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),

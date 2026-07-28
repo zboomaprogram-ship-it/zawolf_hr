@@ -308,6 +308,31 @@ async function createReminder(db, { userId, dateKey, kind, notification }) {
   }
 }
 
+function attendanceCompletedForReminder(attendanceData, kind) {
+  if (kind.startsWith('check_in')) {
+    return attendanceData?.checkInTime != null;
+  }
+  return attendanceData?.checkOutTime != null || attendanceData?.checkInTime == null;
+}
+
+async function loadAttendanceForDate(db, userId, dateKey) {
+  const deterministic = await db
+    .collection('attendance')
+    .doc(`${userId}_${dateKey}`)
+    .get();
+  if (deterministic.exists) return deterministic.data();
+
+  // Older app releases occasionally wrote attendance with a generated id.
+  // Keep those users from receiving reminders after they have checked in.
+  const legacy = await db
+    .collection('attendance')
+    .where('userId', '==', userId)
+    .where('date', '==', dateKey)
+    .limit(1)
+    .get();
+  return legacy.empty ? null : legacy.docs[0].data();
+}
+
 async function queueAttendanceReminders() {
   initializeFirebase();
   const db = admin.firestore();
@@ -387,13 +412,17 @@ async function queueAttendanceReminders() {
 
     // Do not read one attendance document per active employee on every scan.
     // Attendance is needed only for an employee with a reminder due now.
-    const attendance = await db.collection('attendance').doc(`${userDoc.id}_${now.dateKey}`).get();
-    const attendanceData = attendance.exists ? attendance.data() : null;
+    const attendanceData = await loadAttendanceForDate(
+      db,
+      userDoc.id,
+      now.dateKey,
+    );
 
     for (const plan of duePlans) {
-      const isAlreadyDone = plan.kind.startsWith('check_in')
-        ? attendanceData?.checkInTime != null
-        : attendanceData?.checkOutTime != null || attendanceData?.checkInTime == null;
+      const isAlreadyDone = attendanceCompletedForReminder(
+        attendanceData,
+        plan.kind,
+      );
       if (isAlreadyDone) {
         alreadyCompleted++;
         continue;
@@ -424,5 +453,7 @@ module.exports = {
   loadActiveUsers,
   notificationFor,
   dueReminderPlans,
+  attendanceCompletedForReminder,
+  loadAttendanceForDate,
   queueAttendanceReminders,
 };

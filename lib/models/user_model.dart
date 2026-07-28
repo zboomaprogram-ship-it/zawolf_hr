@@ -107,6 +107,9 @@ class UserModel {
   final String employeeId;
   final String department;
   final String position;
+  final String organizationLevel;
+  final String? organizationDivisionId;
+  final int organizationOrder;
   final String locationId;
   final String locationName;
   final double baseMonthlySalary;
@@ -148,6 +151,9 @@ class UserModel {
     required this.employeeId,
     required this.department,
     required this.position,
+    this.organizationLevel = 'employee',
+    this.organizationDivisionId,
+    this.organizationOrder = 999,
     required this.locationId,
     required this.locationName,
     this.baseMonthlySalary = 0,
@@ -190,6 +196,9 @@ class UserModel {
       employeeId: data['employeeId'] as String? ?? '',
       department: data['department'] as String? ?? '',
       position: data['position'] as String? ?? '',
+      organizationLevel: data['organizationLevel'] as String? ?? 'employee',
+      organizationDivisionId: data['organizationDivisionId'] as String?,
+      organizationOrder: (data['organizationOrder'] as num?)?.toInt() ?? 999,
       locationId: data['locationId'] as String? ?? '',
       locationName: data['locationName'] as String? ?? '',
       baseMonthlySalary: (data['baseMonthlySalary'] as num?)?.toDouble() ?? 0,
@@ -259,6 +268,10 @@ class UserModel {
       'employeeId': employeeId,
       'department': department,
       'position': position,
+      'organizationLevel': organizationLevel,
+      if (organizationDivisionId != null)
+        'organizationDivisionId': organizationDivisionId,
+      'organizationOrder': organizationOrder,
       'locationId': locationId,
       'locationName': locationName,
       'baseMonthlySalary': baseMonthlySalary,
@@ -311,6 +324,9 @@ class UserModel {
       'employeeId': employeeId,
       'department': department,
       'position': position,
+      'organizationLevel': organizationLevel,
+      'organizationDivisionId': organizationDivisionId,
+      'organizationOrder': organizationOrder,
       'locationId': locationId,
       'locationName': locationName,
       'baseMonthlySalary': baseMonthlySalary,
@@ -365,6 +381,9 @@ class UserModel {
       employeeId: data['employeeId'] as String? ?? '',
       department: data['department'] as String? ?? '',
       position: data['position'] as String? ?? '',
+      organizationLevel: data['organizationLevel'] as String? ?? 'employee',
+      organizationDivisionId: data['organizationDivisionId'] as String?,
+      organizationOrder: (data['organizationOrder'] as num?)?.toInt() ?? 999,
       locationId: data['locationId'] as String? ?? '',
       locationName: data['locationName'] as String? ?? '',
       baseMonthlySalary: (data['baseMonthlySalary'] as num?)?.toDouble() ?? 0,
@@ -413,6 +432,9 @@ class UserModel {
     String? employeeId,
     String? department,
     String? position,
+    String? organizationLevel,
+    String? organizationDivisionId,
+    int? organizationOrder,
     String? locationId,
     String? locationName,
     double? baseMonthlySalary,
@@ -452,6 +474,10 @@ class UserModel {
       employeeId: employeeId ?? this.employeeId,
       department: department ?? this.department,
       position: position ?? this.position,
+      organizationLevel: organizationLevel ?? this.organizationLevel,
+      organizationDivisionId:
+          organizationDivisionId ?? this.organizationDivisionId,
+      organizationOrder: organizationOrder ?? this.organizationOrder,
       locationId: locationId ?? this.locationId,
       locationName: locationName ?? this.locationName,
       baseMonthlySalary: baseMonthlySalary ?? this.baseMonthlySalary,

@@ -16,6 +16,7 @@ import '../../services/sheets_export_service.dart';
 import '../../models/employee_role.dart';
 import '../../models/user_model.dart';
 import '../../models/location_model.dart';
+import '../../models/organization_structure.dart';
 import '../../theme/theme.dart';
 import '../../components/wolf_card.dart';
 import '../../components/wolf_button.dart';
@@ -122,6 +123,99 @@ class _SupervisorRef {
       uid: user.uid,
       name: user.displayName,
       code: user.employeeId,
+    );
+  }
+}
+
+class _OrganizationProfileFields extends StatelessWidget {
+  const _OrganizationProfileFields({
+    required this.organizationLevel,
+    required this.organizationDivisionId,
+    required this.onLevelChanged,
+    required this.onDivisionChanged,
+  });
+
+  final String organizationLevel;
+  final String? organizationDivisionId;
+  final ValueChanged<String> onLevelChanged;
+  final ValueChanged<String?> onDivisionChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: ZaWolfColors.surface01,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: ZaWolfColors.surface03),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Row(
+            children: [
+              Icon(
+                Icons.account_tree_outlined,
+                color: ZaWolfColors.primaryCyan,
+              ),
+              SizedBox(width: 8),
+              Text(
+                'الموقع في الهيكل الوظيفي',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          DropdownButtonFormField<String>(
+            initialValue: OrganizationLevel.values.contains(organizationLevel)
+                ? organizationLevel
+                : OrganizationLevel.employee,
+            decoration: const InputDecoration(labelText: 'المستوى التنظيمي'),
+            dropdownColor: ZaWolfColors.surface02,
+            items: OrganizationLevel.values
+                .map(
+                  (value) => DropdownMenuItem(
+                    value: value,
+                    child: Text(OrganizationLevel.arabicLabel(value)),
+                  ),
+                )
+                .toList(),
+            onChanged: (value) {
+              if (value != null) onLevelChanged(value);
+            },
+          ),
+          const SizedBox(height: 12),
+          DropdownButtonFormField<String?>(
+            initialValue:
+                OrganizationDefaults.divisions.any(
+                  (division) => division.id == organizationDivisionId,
+                )
+                ? organizationDivisionId
+                : null,
+            decoration: const InputDecoration(
+              labelText: 'القطاع التنظيمي',
+              helperText: 'يمكن نقل القسم كاملاً من شاشة الهيكل الوظيفي.',
+            ),
+            dropdownColor: ZaWolfColors.surface02,
+            items: [
+              const DropdownMenuItem<String?>(
+                value: null,
+                child: Text('يتبع القسم تلقائياً'),
+              ),
+              ...OrganizationDefaults.divisions.map(
+                (division) => DropdownMenuItem<String?>(
+                  value: division.id,
+                  child: Text(division.name),
+                ),
+              ),
+            ],
+            onChanged: onDivisionChanged,
+          ),
+        ],
+      ),
     );
   }
 }
@@ -1564,6 +1658,8 @@ class _AddEmployeeDialogState extends State<AddEmployeeDialog> {
 
   String _selectedRole = 'employee';
   String? _selectedDepartment;
+  String _selectedOrganizationLevel = OrganizationLevel.employee;
+  String? _selectedOrganizationDivisionId;
   String? _selectedLocationId;
   String? _selectedLocationName;
   String? _selectedManagerId;
@@ -1747,6 +1843,18 @@ class _AddEmployeeDialogState extends State<AddEmployeeDialog> {
           .whereType<UserModel>()
           .toList();
       final primaryManager = selectedManagers.firstOrNull;
+      final organizationLevel =
+          _selectedOrganizationLevel == OrganizationLevel.employee
+          ? OrganizationLevel.defaultFor(
+              employeeId: _codeController.text,
+              appRole: _selectedRole,
+            )
+          : _selectedOrganizationLevel;
+      final organizationDivisionId =
+          _selectedOrganizationDivisionId ??
+          OrganizationDefaults.inferDivisionId(
+            _selectedDepartment ?? 'General',
+          );
       final newEmp = await authService.createEmployeeAccount(
         email: _emailController.text.trim(),
         displayName: _nameController.text.trim(),
@@ -1778,6 +1886,11 @@ class _AddEmployeeDialogState extends State<AddEmployeeDialog> {
         ),
         hiringDate: _hiringDate!,
       );
+      await _db.collection('users').doc(newEmp.uid).update({
+        'organizationLevel': organizationLevel,
+        'organizationDivisionId': organizationDivisionId,
+        'organizationOrder': 999,
+      });
 
       if (mounted) {
         Navigator.pop(context);
@@ -1994,6 +2107,18 @@ class _AddEmployeeDialogState extends State<AddEmployeeDialog> {
                   stream: JobTitleService.instance.watchJobTitles(),
                   onAdd: JobTitleService.instance.addJobTitle,
                   onInit: JobTitleService.instance.bootstrapJobTitlesIfNeeded,
+                ),
+                const SizedBox(height: 16),
+
+                _OrganizationProfileFields(
+                  organizationLevel: _selectedOrganizationLevel,
+                  organizationDivisionId: _selectedOrganizationDivisionId,
+                  onLevelChanged: (value) {
+                    setState(() => _selectedOrganizationLevel = value);
+                  },
+                  onDivisionChanged: (value) {
+                    setState(() => _selectedOrganizationDivisionId = value);
+                  },
                 ),
                 const SizedBox(height: 16),
 
@@ -2345,6 +2470,8 @@ class _EditEmployeeDialogState extends State<EditEmployeeDialog> {
   late final TextEditingController _casualLeaveController;
 
   String? _selectedDepartment;
+  late String _selectedOrganizationLevel;
+  String? _selectedOrganizationDivisionId;
   late String _selectedRole;
   String? _selectedLocationId;
   String? _selectedLocationName;
@@ -2380,6 +2507,15 @@ class _EditEmployeeDialogState extends State<EditEmployeeDialog> {
       text: emp.leaveBalance.casual.toString(),
     );
     _selectedDepartment = emp.department;
+    _selectedOrganizationLevel = emp.organizationLevel == 'employee'
+        ? OrganizationLevel.defaultFor(
+            employeeId: emp.employeeId,
+            appRole: emp.role,
+          )
+        : emp.organizationLevel;
+    _selectedOrganizationDivisionId =
+        emp.organizationDivisionId ??
+        OrganizationDefaults.inferDivisionId(emp.department);
 
     _selectedRole = emp.role;
     _selectedLocationId = emp.locationId;
@@ -2643,11 +2779,19 @@ class _EditEmployeeDialogState extends State<EditEmployeeDialog> {
       final primaryManager = selectedManagers.isEmpty
           ? null
           : selectedManagers.first;
+      final organizationDivisionId =
+          _selectedOrganizationDivisionId ??
+          OrganizationDefaults.inferDivisionId(
+            _selectedDepartment ?? widget.employee.department,
+          );
       final updateData = {
         'displayName': _nameController.text.trim(),
         'employeeId': _codeController.text.trim(),
         'department': _selectedDepartment ?? widget.employee.department,
         'position': _jobTitleController.text.trim(),
+        'organizationLevel': _selectedOrganizationLevel,
+        'organizationDivisionId': organizationDivisionId,
+        'organizationOrder': widget.employee.organizationOrder,
         'role': effectiveRole,
         'locationId': _selectedLocationId!,
         'locationName': _selectedLocationName!,
@@ -2856,6 +3000,18 @@ class _EditEmployeeDialogState extends State<EditEmployeeDialog> {
                   stream: JobTitleService.instance.watchJobTitles(),
                   onAdd: JobTitleService.instance.addJobTitle,
                   onInit: JobTitleService.instance.bootstrapJobTitlesIfNeeded,
+                ),
+                const SizedBox(height: 16),
+
+                _OrganizationProfileFields(
+                  organizationLevel: _selectedOrganizationLevel,
+                  organizationDivisionId: _selectedOrganizationDivisionId,
+                  onLevelChanged: (value) {
+                    setState(() => _selectedOrganizationLevel = value);
+                  },
+                  onDivisionChanged: (value) {
+                    setState(() => _selectedOrganizationDivisionId = value);
+                  },
                 ),
                 const SizedBox(height: 16),
 

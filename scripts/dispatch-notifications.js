@@ -86,6 +86,70 @@ function notificationPayload(doc, data) {
   };
 }
 
+const CHECK_IN_REMINDER_TYPES = new Set([
+  'attendance_check_in_reminder',
+  'attendance_late_warning',
+  'attendance_final_warning',
+]);
+
+function reminderAction(data) {
+  const type = String(data?.type || '');
+  if (CHECK_IN_REMINDER_TYPES.has(type)) return 'check_in';
+  if (type === 'attendance_check_out_reminder') return 'check_out';
+  return null;
+}
+
+function reminderDate(data) {
+  const nested = data?.data && typeof data.data === 'object' ? data.data : {};
+  const value = String(nested.date || '');
+  return /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : null;
+}
+
+function attendanceCompletesReminder(attendanceData, action) {
+  if (!attendanceData || !action) return false;
+  if (action === 'check_in') return attendanceData.checkInTime != null;
+  return attendanceData.checkOutTime != null;
+}
+
+async function loadAttendanceForReminder(db, userId, dateKey) {
+  const deterministic = await db
+    .collection('attendance')
+    .doc(`${userId}_${dateKey}`)
+    .get();
+  if (deterministic.exists) return deterministic.data();
+
+  const legacy = await db
+    .collection('attendance')
+    .where('userId', '==', userId)
+    .where('date', '==', dateKey)
+    .limit(1)
+    .get();
+  return legacy.empty ? null : legacy.docs[0].data();
+}
+
+async function shouldSkipAttendanceReminder(db, item) {
+  const action = reminderAction(item.data);
+  const dateKey = reminderDate(item.data);
+  if (!action || !dateKey) return false;
+  const attendance = await loadAttendanceForReminder(
+    db,
+    item.userId,
+    dateKey,
+  );
+  return attendanceCompletesReminder(attendance, action);
+}
+
+async function markSkipped(db, item, reason) {
+  await item.ref.update({
+    pushSent: true,
+    isRead: true,
+    pushDeliveryStatus: 'skipped',
+    pushSkippedReason: reason,
+    pushFinishedAt: admin.firestore.FieldValue.serverTimestamp(),
+    pushClaimUntil: admin.firestore.FieldValue.delete(),
+  });
+}
+
 async function loadPendingNotifications(db) {
   const { batchSize, perUserLimit, maxAttempts } = dispatchConfig();
   // A collection-group query avoids scanning every user and then every user's
@@ -299,6 +363,15 @@ async function dispatchNotifications() {
     const payload = notificationPayload(item, item.data);
 
     try {
+      // Attendance may be recorded after a reminder was queued but before the
+      // dispatcher reaches OneSignal. Revalidate at the final delivery edge.
+      if (await shouldSkipAttendanceReminder(db, item)) {
+        await markSkipped(db, item, 'attendance_already_completed');
+        console.log(
+          `Skipped stale attendance reminder ${item.id} for ${item.userId}.`,
+        );
+        continue;
+      }
       const result = await sendPushToUsers([item.userId], title, body, payload);
       if (result.sent) {
         await markSent(db, [item], result);
@@ -339,5 +412,9 @@ module.exports = {
   notificationPayload,
   routeForNotification,
   isUnsubscribedDeviceError,
+  reminderAction,
+  reminderDate,
+  attendanceCompletesReminder,
+  shouldSkipAttendanceReminder,
   watchPendingNotifications,
 };
