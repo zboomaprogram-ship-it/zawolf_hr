@@ -1372,15 +1372,29 @@ service cloud.firestore {
           'attendanceId', 'attendanceDate', 'originalCheckInTime',
           'requestedCheckInTime', 'reason', 'status', 'submittedAt', 'isRead'
         ]);
-      allow update: if isAuth() && isActive() && isHRStaff()
-        && resource.data.status == 'pending_hr'
-        && request.resource.data.status in ['approved', 'rejected']
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-          'status', 'reviewedBy', 'reviewerName', 'reviewedAt',
-          'reviewerComment'
-        ])
-        && request.resource.data.reviewedBy == uid()
-        && request.resource.data.reviewedAt == request.time;
+      allow update: if isAuth() && isActive() && (
+        (
+          isOwner(resource.data.userId)
+          && resource.data.status == 'pending_hr'
+          && request.resource.data.status == 'cancelled'
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'status', 'cancelledAt', 'cancelledBy'
+          ])
+          && request.resource.data.cancelledBy == uid()
+          && request.resource.data.cancelledAt == request.time
+        )
+        || (
+          isHRStaff()
+          && resource.data.status == 'pending_hr'
+          && request.resource.data.status in ['approved', 'rejected']
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'status', 'reviewedBy', 'reviewerName', 'reviewedAt',
+            'reviewerComment'
+          ])
+          && request.resource.data.reviewedBy == uid()
+          && request.resource.data.reviewedAt == request.time
+        )
+      );
       allow delete: if isAuth() && isActive() && isHRStaff();
     }
 
@@ -1646,6 +1660,16 @@ service cloud.firestore {
         ]);
       allow update: if isAuth() && isActive() && (
         (
+          isOwner(resource.data.userId)
+          && resource.data.status in ['pending_manager', 'pending_hr']
+          && request.resource.data.status == 'cancelled'
+          && request.resource.data.cancelledBy == uid()
+          && request.resource.data.cancelledAt == request.time
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'status', 'cancelledAt', 'cancelledBy'
+          ])
+        )
+        || (
           resource.data.status == 'pending_manager'
           && resource.data.managerId == uid()
           && uid() in resource.data.get('managerIds', [])
@@ -1710,6 +1734,16 @@ service cloud.firestore {
         ]);
       allow update: if isAuth() && isActive() && (
         (
+          isOwner(resource.data.userId)
+          && resource.data.status in ['pending_manager', 'pending_hr']
+          && request.resource.data.status == 'cancelled'
+          && request.resource.data.cancelledBy == uid()
+          && request.resource.data.cancelledAt == request.time
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'status', 'cancelledAt', 'cancelledBy'
+          ])
+        )
+        || (
           resource.data.status == 'pending_manager'
           && resource.data.managerId == uid()
           && uid() in resource.data.get('managerIds', [])
@@ -1790,9 +1824,22 @@ service cloud.firestore {
       );
       allow create: if isAuth() && isActive()
         && request.resource.data.userId == uid()
-        && request.resource.data.employeeId == userDoc().get('employeeId', '')
-        && request.resource.data.employeeName == userDoc().get('displayName', '')
-        && request.resource.data.department == userDoc().get('department', '')
+        && request.resource.data.get('isAnonymous', false) is bool
+        && (
+          (
+            request.resource.data.get('isAnonymous', false) == false
+            && request.resource.data.employeeId == userDoc().get('employeeId', '')
+            && request.resource.data.employeeName == userDoc().get('displayName', '')
+            && request.resource.data.department == userDoc().get('department', '')
+          )
+          ||
+          (
+            request.resource.data.get('isAnonymous', false) == true
+            && request.resource.data.employeeId == ''
+            && request.resource.data.employeeName == 'مجهول'
+            && request.resource.data.department == ''
+          )
+        )
         && request.resource.data.status == 'new'
         && request.resource.data.title is string
         && request.resource.data.title.size() >= 3
@@ -1827,13 +1874,28 @@ service cloud.firestore {
         && request.resource.data.get('attachmentUrl', '') is string
         && request.resource.data.keys().hasOnly([
           'userId', 'employeeId', 'employeeName', 'department',
-          'title', 'body', 'attachmentUrl', 'status', 'submittedAt'
+          'title', 'body', 'attachmentUrl', 'isAnonymous', 'status',
+          'submittedAt'
         ]);
-      allow update: if isAuth() && isActive() && isHR()
-        && request.resource.data.diff(resource.data).affectedKeys()
-          .hasOnly(['status', 'reviewedBy', 'reviewedAt'])
-        && request.resource.data.status in ['reviewed', 'closed']
-        && request.resource.data.reviewedBy == uid();
+      allow update: if isAuth() && isActive() && (
+        (
+          isOwner(resource.data.userId)
+          && resource.data.status == 'new'
+          && request.resource.data.status == 'cancelled'
+          && request.resource.data.cancelledBy == uid()
+          && request.resource.data.cancelledAt == request.time
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'status', 'cancelledAt', 'cancelledBy'
+          ])
+        )
+        || (
+          isHR()
+          && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['status', 'reviewedBy', 'reviewedAt'])
+          && request.resource.data.status in ['reviewed', 'closed']
+          && request.resource.data.reviewedBy == uid()
+        )
+      );
       allow delete: if isAuth() && isActive() && isSuperAdmin();
     }
 

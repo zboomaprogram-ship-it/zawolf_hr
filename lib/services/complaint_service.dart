@@ -13,17 +13,19 @@ class ComplaintService {
     required String title,
     required String body,
     String? attachmentUrl,
+    bool isAnonymous = false,
   }) async {
     final ref = _db.collection('complaints').doc();
     final complaint = ComplaintModel(
       complaintId: ref.id,
       userId: employee.uid,
-      employeeId: employee.employeeId,
-      employeeName: employee.displayName,
-      department: employee.department,
+      employeeId: isAnonymous ? '' : employee.employeeId,
+      employeeName: isAnonymous ? 'مجهول' : employee.displayName,
+      department: isAnonymous ? '' : employee.department,
       title: title.trim(),
       body: body.trim(),
       attachmentUrl: attachmentUrl?.trim(),
+      isAnonymous: isAnonymous,
       status: 'new',
       submittedAt: DateTime.now(),
     );
@@ -33,7 +35,9 @@ class ComplaintService {
       role: 'hr_admin',
       type: 'complaint_new',
       title: 'شكوى جديدة',
-      body: '${employee.displayName}: ${title.trim()}',
+      body: isAnonymous
+          ? 'تم استلام شكوى مجهولة: ${title.trim()}'
+          : '${employee.displayName}: ${title.trim()}',
       data: {'complaintId': ref.id},
     );
   }

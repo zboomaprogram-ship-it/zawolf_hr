@@ -58,6 +58,7 @@ class ZaWolfRouter {
         final loggingIn = state.matchedLocation == '/login';
         final onSplash = state.matchedLocation == '/splash';
         final viewingPrivacy = state.matchedLocation == '/privacy';
+        final viewingTerms = state.matchedLocation == '/terms';
         final viewingDisabled = state.matchedLocation == '/account-disabled';
 
         final authenticated = authService.isAuthenticated;
@@ -70,7 +71,7 @@ class ZaWolfRouter {
 
         // 1. Unauthenticated users must log in
         if (!authenticated) {
-          if (!loggingIn && !onSplash && !viewingPrivacy) {
+          if (!loggingIn && !onSplash && !viewingPrivacy && !viewingTerms) {
             return '/login';
           }
           return null;
@@ -148,6 +149,10 @@ class ZaWolfRouter {
         GoRoute(
           path: '/privacy',
           builder: (context, state) => const PrivacyPolicyScreen(),
+        ),
+        GoRoute(
+          path: '/terms',
+          builder: (context, state) => const TermsConditionsScreen(),
         ),
         GoRoute(
           path: '/account-disabled',

@@ -17,6 +17,7 @@ class AttendanceCorrectionRequestService {
     return _db
         .collection('attendance')
         .where('userId', isEqualTo: userId)
+        .limit(120)
         .snapshots()
         .map((snapshot) {
           final items = snapshot.docs
@@ -24,9 +25,8 @@ class AttendanceCorrectionRequestService {
               .where(
                 (item) =>
                     item.checkInTime != null &&
-                    (item.isLate ||
-                        item.lateMinutes > 0 ||
-                        item.salaryDeductionFraction > 0),
+                    (item.isLate || item.lateMinutes > 0) &&
+                    item.salaryDeductionFraction > 0,
               )
               .toList();
           items.sort((a, b) => b.date.compareTo(a.date));
@@ -40,6 +40,7 @@ class AttendanceCorrectionRequestService {
     return _db
         .collection('attendanceCorrectionRequests')
         .where('userId', isEqualTo: userId)
+        .limit(50)
         .snapshots();
   }
 
@@ -47,7 +48,16 @@ class AttendanceCorrectionRequestService {
     return _db
         .collection('attendanceCorrectionRequests')
         .where('status', isEqualTo: 'pending_hr')
+        .limit(50)
         .snapshots();
+  }
+
+  Future<void> cancelRequest(String requestId, String userId) async {
+    await _db.collection('attendanceCorrectionRequests').doc(requestId).update({
+      'status': 'cancelled',
+      'cancelledAt': FieldValue.serverTimestamp(),
+      'cancelledBy': userId,
+    });
   }
 
   Future<void> submit({

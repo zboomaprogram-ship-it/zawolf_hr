@@ -71,6 +71,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
   final _complaintTitleController = TextEditingController();
   final _complaintBodyController = TextEditingController();
   final _complaintAttachmentController = TextEditingController();
+  bool _submitComplaintAnonymously = false;
   final _resignationReasonController = TextEditingController();
   DateTime _resignationDate = DateTime.now().add(const Duration(days: 30));
   String _administrativeCategory = AdministrativeRequestCategory.personalData;
@@ -314,6 +315,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
 
     setState(() => _loading = true);
     final service = LeaveService();
+    final authService = Provider.of<AuthService>(context, listen: false);
 
     try {
       final days = _leaveEnd.difference(_leaveStart).inDays + 1;
@@ -344,6 +346,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
       );
 
       await service.submitLeaveRequest(req, employee);
+      await authService.fetchUserData(employee.uid, showLoading: false);
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -434,6 +437,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
         attachmentUrl: _complaintAttachmentController.text.trim().isEmpty
             ? null
             : _complaintAttachmentController.text.trim(),
+        isAnonymous: _submitComplaintAnonymously,
       );
 
       if (mounted) {
@@ -446,6 +450,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
         _complaintTitleController.clear();
         _complaintBodyController.clear();
         _complaintAttachmentController.clear();
+        setState(() => _submitComplaintAnonymously = false);
         _tabController.animateTo(1);
       }
     } catch (e) {
@@ -492,18 +497,33 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
 
   // Cancel Request Action
   Future<bool> _cancelRequest(String collectionPath, String docId) async {
-    final actorId =
-        Provider.of<AuthService>(context, listen: false).currentUser?.uid ?? '';
+    final authService = Provider.of<AuthService>(context, listen: false);
+    final actorId = authService.currentUser?.uid ?? '';
     try {
       if (collectionPath == 'permissions') {
         await PermissionService().cancelPermission(docId, actorId);
       } else if (collectionPath == 'leaves') {
         await LeaveService().cancelLeave(docId, actorId);
-      } else {
+        await authService.fetchUserData(actorId, showLoading: false);
+      } else if (collectionPath == 'attendanceCorrectionRequests') {
+        await AttendanceCorrectionRequestService().cancelRequest(
+          docId,
+          actorId,
+        );
+      } else if (collectionPath == 'advances') {
         await FirebaseFirestore.instance
             .collection(collectionPath)
             .doc(docId)
             .update({'status': 'cancelled'});
+      } else {
+        await FirebaseFirestore.instance
+            .collection(collectionPath)
+            .doc(docId)
+            .update({
+              'status': 'cancelled',
+              'cancelledAt': FieldValue.serverTimestamp(),
+              'cancelledBy': actorId,
+            });
       }
       await AuditLogService.instance.record(
         actorId: actorId,
@@ -1431,6 +1451,45 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
               ),
             ),
             const SizedBox(height: 16),
+            Container(
+              decoration: BoxDecoration(
+                color: _submitComplaintAnonymously
+                    ? ZaWolfColors.primaryCyan.withValues(alpha: 0.08)
+                    : ZaWolfColors.surface01,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: _submitComplaintAnonymously
+                      ? ZaWolfColors.primaryCyan.withValues(alpha: 0.55)
+                      : ZaWolfColors.surface02,
+                ),
+              ),
+              child: SwitchListTile.adaptive(
+                value: _submitComplaintAnonymously,
+                activeTrackColor: ZaWolfColors.primaryCyan,
+                onChanged: _loading
+                    ? null
+                    : (value) {
+                        setState(() => _submitComplaintAnonymously = value);
+                      },
+                secondary: Icon(
+                  _submitComplaintAnonymously
+                      ? Icons.visibility_off_outlined
+                      : Icons.badge_outlined,
+                  color: _submitComplaintAnonymously
+                      ? ZaWolfColors.primaryCyan
+                      : ZaWolfColors.textSecondary,
+                ),
+                title: const Text(
+                  'إرسال الشكوى كمجهول',
+                  textDirection: TextDirection.rtl,
+                ),
+                subtitle: const Text(
+                  'لن يظهر اسمك أو كودك أو قسمك للمراجعين داخل التطبيق.',
+                  textDirection: TextDirection.rtl,
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
             WolfInputField(
               controller: _complaintTitleController,
               labelText: 'عنوان الشكوى',
@@ -1673,11 +1732,13 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
             final statusText = switch (status) {
               'approved' => 'مقبول',
               'rejected' => 'مرفوض',
+              'cancelled' => 'ملغي',
               _ => 'بانتظار HR',
             };
             final statusColor = switch (status) {
               'approved' => ZaWolfColors.success,
               'rejected' => ZaWolfColors.error,
+              'cancelled' => ZaWolfColors.textSecondary,
               _ => ZaWolfColors.warning,
             };
             final original = data['originalCheckInTime'] as Timestamp?;
@@ -1718,6 +1779,19 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
                     Text('السبب: ${data['reason'] ?? ''}'),
                     if ((data['reviewerComment'] as String? ?? '').isNotEmpty)
                       Text('رد HR: ${data['reviewerComment']}'),
+                    if (status == 'pending_hr') ...[
+                      const SizedBox(height: 12),
+                      WolfButton(
+                        onPressed: () => _cancelRequest(
+                          'attendanceCorrectionRequests',
+                          docs[index].id,
+                        ),
+                        text: 'إلغاء الطلب',
+                        secondaryText: 'CANCEL REQUEST',
+                        variant: WolfButtonVariant.outline,
+                        height: 40,
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -1859,6 +1933,17 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
                       textDirection: TextDirection.ltr,
                     ),
                   RequestApprovalTimeline(data: doc.data(), compact: true),
+                  if (request.status.startsWith('pending_')) ...[
+                    const SizedBox(height: 12),
+                    WolfButton(
+                      onPressed: () =>
+                          _cancelRequest('administrativeRequests', request.id),
+                      text: 'إلغاء الطلب',
+                      secondaryText: 'CANCEL REQUEST',
+                      variant: WolfButtonVariant.outline,
+                      height: 40,
+                    ),
+                  ],
                 ],
               ),
             );
@@ -1992,6 +2077,17 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
                       style: const TextStyle(color: ZaWolfColors.warning),
                     ),
                   ],
+                  if (request.status.startsWith('pending_')) ...[
+                    const SizedBox(height: 12),
+                    WolfButton(
+                      onPressed: () =>
+                          _cancelRequest('resignations', request.resignationId),
+                      text: 'إلغاء الطلب',
+                      secondaryText: 'CANCEL REQUEST',
+                      variant: WolfButtonVariant.outline,
+                      height: 40,
+                    ),
+                  ],
                 ],
               ),
             );
@@ -2007,6 +2103,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
           .collection('advances')
           .where('userId', isEqualTo: userId)
           .orderBy('submittedAt', descending: true)
+          .limit(50)
           .snapshots(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
@@ -2104,6 +2201,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
           .collection('complaints')
           .where('userId', isEqualTo: userId)
           .orderBy('submittedAt', descending: true)
+          .limit(50)
           .snapshots(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
@@ -2146,6 +2244,26 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
                     ],
                   ),
                   const SizedBox(height: 10),
+                  if (complaint.isAnonymous) ...[
+                    Row(
+                      children: [
+                        const Icon(
+                          Icons.visibility_off_outlined,
+                          color: ZaWolfColors.primaryCyan,
+                          size: 18,
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          'أرسلت هذه الشكوى كمجهول',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: ZaWolfColors.primaryCyan,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                  ],
                   Text(complaint.body, style: theme.textTheme.bodyMedium),
                   if (complaint.attachmentUrl != null &&
                       complaint.attachmentUrl!.isNotEmpty) ...[
@@ -2173,6 +2291,17 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
                       ],
                     ),
                   ],
+                  if (complaint.status == 'new') ...[
+                    const SizedBox(height: 12),
+                    WolfButton(
+                      onPressed: () =>
+                          _cancelRequest('complaints', complaint.complaintId),
+                      text: 'إلغاء الشكوى',
+                      secondaryText: 'CANCEL COMPLAINT',
+                      variant: WolfButtonVariant.outline,
+                      height: 40,
+                    ),
+                  ],
                 ],
               ),
             );
@@ -2188,6 +2317,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
           .collection('leaves')
           .where('userId', isEqualTo: userId)
           .orderBy('submittedAt', descending: true)
+          .limit(50)
           .snapshots(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
@@ -2363,6 +2493,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
           .collection('permissions')
           .where('userId', isEqualTo: userId)
           .orderBy('submittedAt', descending: true)
+          .limit(50)
           .snapshots(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
@@ -2464,8 +2595,11 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
                     ),
                     compact: true,
                   ),
-                  if (req.status == 'pending_hr' ||
+                  if (req.status == 'pending' ||
+                      req.status == 'pending_team_leader' ||
+                      req.status == 'pending_hr' ||
                       req.status == 'pending_manager' ||
+                      req.status == 'pending_ceo' ||
                       (req.status == 'approved' &&
                           _permissionHasNotStarted(req))) ...[
                     const SizedBox(height: 12),

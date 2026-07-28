@@ -174,6 +174,7 @@ class NotificationService {
         .doc(userId)
         .collection('items')
         .where('isRead', isEqualTo: false)
+        .limit(25)
         .snapshots()
         .listen((snapshot) {
           if (isInitial) {

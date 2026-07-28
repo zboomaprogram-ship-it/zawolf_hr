@@ -14,6 +14,7 @@ class ResignationService {
     return _db
         .collection('resignations')
         .where('userId', isEqualTo: userId)
+        .limit(50)
         .snapshots()
         .map((snapshot) {
           final values = snapshot.docs

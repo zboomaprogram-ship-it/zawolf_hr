@@ -408,15 +408,24 @@ class LeaveService {
           'lastAutoApprovedCasualLeaveId': reqRef.id,
         });
       });
-      await _createNotification(
-        recipientId: employee.uid,
-        type: 'leave_auto_approved',
-        title: 'تم اعتماد الإجازة العارضة',
-        body:
-            'تم اعتماد الإجازة العارضة تلقائياً وخصم ${req.numberOfDays} يوم من رصيد العارضة والرصيد الكلي.',
-        data: {'leaveId': reqRef.id},
-      );
-      await _reconciliationService.reconcileApprovedLeave(finalModel);
+      try {
+        await _createNotification(
+          recipientId: employee.uid,
+          notificationId: 'leave_auto_approved_${reqRef.id}',
+          type: 'leave_auto_approved',
+          title: 'تم اعتماد الإجازة العارضة',
+          body:
+              'تم اعتماد الإجازة العارضة تلقائياً وخصم ${req.numberOfDays} يوم من رصيد العارضة والرصيد الكلي.',
+          data: {'leaveId': reqRef.id},
+        );
+      } catch (_) {
+        // The approved leave must not be reported as failed after it was saved.
+      }
+      try {
+        await _reconciliationService.reconcileApprovedLeave(finalModel);
+      } catch (_) {
+        // Reconciliation can be retried independently without duplicating leave.
+      }
       return;
     }
 
@@ -861,6 +870,7 @@ class LeaveService {
   // Private Helper to create notification records
   Future<void> _createNotification({
     required String recipientId,
+    String? notificationId,
     required String type,
     required String title,
     required String body,
@@ -870,7 +880,7 @@ class LeaveService {
         .collection('notifications')
         .doc(recipientId)
         .collection('items')
-        .doc();
+        .doc(notificationId);
 
     await notifRef.set({
       'notificationId': notifRef.id,
@@ -883,8 +893,12 @@ class LeaveService {
       'createdAt': FieldValue.serverTimestamp(),
     });
 
-    await _db.collection('users').doc(recipientId).update({
-      'unreadNotifications': FieldValue.increment(1),
-    });
+    try {
+      await _db.collection('users').doc(recipientId).update({
+        'unreadNotifications': FieldValue.increment(1),
+      });
+    } catch (_) {
+      // Notification delivery does not depend on the denormalized badge counter.
+    }
   }
 }

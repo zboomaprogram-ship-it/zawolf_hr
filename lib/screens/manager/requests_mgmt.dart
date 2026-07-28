@@ -963,12 +963,58 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    _buildEmployeeHeader(
-                      complaint.employeeName,
-                      complaint.employeeId,
-                      complaint.department,
-                      theme,
-                    ),
+                    if (complaint.isAnonymous)
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: ZaWolfColors.primaryCyan.withValues(
+                            alpha: 0.08,
+                          ),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: ZaWolfColors.primaryCyan.withValues(
+                              alpha: 0.35,
+                            ),
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(
+                              Icons.visibility_off_outlined,
+                              color: ZaWolfColors.primaryCyan,
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'شكوى مجهولة',
+                                    style: theme.textTheme.titleMedium
+                                        ?.copyWith(
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                  ),
+                                  Text(
+                                    'هوية مقدم الشكوى غير ظاهرة للمراجعين',
+                                    style: theme.textTheme.bodySmall?.copyWith(
+                                      color: ZaWolfColors.textSecondary,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      )
+                    else
+                      _buildEmployeeHeader(
+                        complaint.employeeName,
+                        complaint.employeeId,
+                        complaint.department,
+                        theme,
+                      ),
                     const SizedBox(height: 12),
                     Text(
                       complaint.title,

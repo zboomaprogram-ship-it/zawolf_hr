@@ -16,6 +16,7 @@ import '../../services/organization_structure_service.dart';
 import '../../services/productivity_service.dart';
 import '../../theme/theme.dart';
 import '../../utils/payroll_cycle.dart';
+import '../shared/productivity_score_details_sheet.dart';
 
 class DepartmentPerformanceData {
   final String departmentName;
@@ -42,22 +43,45 @@ class _DepartmentPerformanceScreenState
   final ProductivityService _service = ProductivityService();
   late final String _monthKey = PayrollCycle.keyFor(DateTime.now());
   bool _refreshing = false;
+  bool _autoRefreshAttempted = false;
   Future<List<UserModel>>? _organizationFuture;
   String? _organizationReviewerId;
   int _organizationStructureVersion = 0;
 
-  Future<void> _refresh(UserModel reviewer) async {
+  Future<void> _refresh(
+    UserModel reviewer, {
+    bool showConfirmation = true,
+  }) async {
+    if (_refreshing) return;
     setState(() => _refreshing = true);
     try {
       final count = await _service.refreshRanking(reviewer, _monthKey);
-      if (mounted) {
+      if (mounted && showConfirmation) {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text('تم تحديث بيانات $count موظف.')));
       }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'تعذر تحديث أداء الأقسام. تحقق من الاتصال والصلاحيات ثم أعد المحاولة.',
+            ),
+          ),
+        );
+      }
     } finally {
       if (mounted) setState(() => _refreshing = false);
     }
+  }
+
+  void _refreshEmptyCacheOnce(UserModel reviewer) {
+    if (_autoRefreshAttempted || _refreshing) return;
+    _autoRefreshAttempted = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _refresh(reviewer, showConfirmation: false);
+    });
   }
 
   List<DepartmentPerformanceData> _aggregateDepartments(
@@ -162,10 +186,20 @@ class _DepartmentPerformanceScreenState
             child: CircularProgressIndicator(color: ZaWolfColors.primaryCyan),
           );
         }
+        if (snapshot.hasError) {
+          return Center(
+            child: OutlinedButton.icon(
+              onPressed: () => _refresh(reviewer),
+              icon: const Icon(Icons.refresh),
+              label: const Text('تعذر تحميل أداء الأقسام، أعد المحاولة'),
+            ),
+          );
+        }
         final scores = snapshot.data ?? [];
         final departments = _aggregateDepartments(scores, reviewer);
 
         if (departments.isEmpty) {
+          _refreshEmptyCacheOnce(reviewer);
           return Center(
             child: Padding(
               padding: const EdgeInsets.all(24),
@@ -179,7 +213,9 @@ class _DepartmentPerformanceScreenState
                   ),
                   const SizedBox(height: 14),
                   Text(
-                    'لا توجد بيانات للأقسام في شهر $_monthKey\nاضغط تحديث لتوليد التقارير',
+                    _refreshing
+                        ? 'جارٍ تجهيز بيانات الأقسام لشهر $_monthKey لأول مرة…'
+                        : 'لا توجد بيانات للأقسام في شهر $_monthKey',
                     style: theme.textTheme.titleMedium,
                     textAlign: TextAlign.center,
                   ),
@@ -227,6 +263,19 @@ class _DepartmentPerformanceScreenState
               return Padding(
                 padding: const EdgeInsets.only(bottom: 12),
                 child: WolfCard(
+                  onTap: () => showDepartmentProductivityDetails(
+                    context,
+                    department: dept.departmentName,
+                    scores: scores
+                        .where(
+                          (score) =>
+                              (score.department.trim().isEmpty
+                                  ? 'غير محدد'
+                                  : score.department) ==
+                              dept.departmentName,
+                        )
+                        .toList(),
+                  ),
                   child: Row(
                     children: [
                       _RankBadge(rank: rank),
@@ -264,6 +313,12 @@ class _DepartmentPerformanceScreenState
                           fontWeight: FontWeight.bold,
                           fontSize: 18,
                         ),
+                      ),
+                      const SizedBox(width: 4),
+                      const Icon(
+                        Icons.chevron_left,
+                        color: ZaWolfColors.textMuted,
+                        size: 20,
                       ),
                     ],
                   ),

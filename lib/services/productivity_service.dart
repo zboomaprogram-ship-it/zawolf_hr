@@ -241,11 +241,21 @@ class ProductivityService {
   Future<int> refreshRanking(UserModel reviewer, String monthKey) async {
     final users = await _managedEmployees.loadForReviewer(reviewer);
 
-    for (final user in users) {
-      await calculateAndCacheForUser(
-        user: user,
-        monthKey: monthKey,
-        actorId: reviewer.uid,
+    // Keep concurrency bounded: much faster than a fully sequential refresh,
+    // without creating a burst large enough to overwhelm Firestore.
+    const batchSize = 4;
+    for (var offset = 0; offset < users.length; offset += batchSize) {
+      final end = (offset + batchSize).clamp(0, users.length);
+      await Future.wait(
+        users
+            .sublist(offset, end)
+            .map(
+              (user) => calculateAndCacheForUser(
+                user: user,
+                monthKey: monthKey,
+                actorId: reviewer.uid,
+              ),
+            ),
       );
     }
     return users.length;

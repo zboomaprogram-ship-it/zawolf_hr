@@ -9,6 +9,7 @@ class ComplaintModel {
   final String title;
   final String body;
   final String? attachmentUrl;
+  final bool isAnonymous;
   final String status; // 'new' | 'reviewed' | 'closed'
   final DateTime? submittedAt;
   final DateTime? reviewedAt;
@@ -23,6 +24,7 @@ class ComplaintModel {
     required this.title,
     required this.body,
     this.attachmentUrl,
+    this.isAnonymous = false,
     required this.status,
     this.submittedAt,
     this.reviewedAt,
@@ -40,6 +42,7 @@ class ComplaintModel {
       title: data['title'] as String? ?? '',
       body: data['body'] as String? ?? '',
       attachmentUrl: data['attachmentUrl'] as String?,
+      isAnonymous: data['isAnonymous'] as bool? ?? false,
       status: data['status'] as String? ?? 'new',
       submittedAt: (data['submittedAt'] as Timestamp?)?.toDate(),
       reviewedAt: (data['reviewedAt'] as Timestamp?)?.toDate(),
@@ -57,6 +60,7 @@ class ComplaintModel {
       'body': body,
       if (attachmentUrl != null && attachmentUrl!.trim().isNotEmpty)
         'attachmentUrl': attachmentUrl!.trim(),
+      'isAnonymous': isAnonymous,
       'status': status,
       'submittedAt': submittedAt != null
           ? Timestamp.fromDate(submittedAt!)

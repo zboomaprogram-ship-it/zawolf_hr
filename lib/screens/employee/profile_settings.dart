@@ -711,6 +711,19 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                     trailing: const Icon(Icons.chevron_right),
                     onTap: () => context.push('/privacy'),
                   ),
+                  const Divider(color: ZaWolfColors.surface02, height: 1),
+                  ListTile(
+                    leading: const Icon(
+                      Icons.gavel_outlined,
+                      color: ZaWolfColors.primaryCyan,
+                    ),
+                    title: const Text('الشروط والأحكام'),
+                    subtitle: const Text(
+                      'قواعد استخدام النظام ومسؤوليات الحساب',
+                    ),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () => context.push('/terms'),
+                  ),
                 ],
               ),
             ),

@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../services/location_service.dart';
+import '../../services/google_maps_loader_stub.dart'
+    if (dart.library.js_interop) '../../services/google_maps_loader_web.dart';
 import '../../models/location_model.dart';
 import '../../theme/theme.dart';
 import '../../components/wolf_card.dart';
@@ -665,11 +668,13 @@ class FullScreenLocationPicker extends StatefulWidget {
 class _FullScreenLocationPickerState extends State<FullScreenLocationPicker> {
   GoogleMapController? _controller;
   late LatLng _selectedPosition;
+  late final Future<void> _mapReady;
 
   @override
   void initState() {
     super.initState();
     _selectedPosition = widget.initialPosition;
+    _mapReady = GoogleMapsLoader.ensureLoaded();
   }
 
   @override
@@ -687,6 +692,14 @@ class _FullScreenLocationPickerState extends State<FullScreenLocationPicker> {
         (bounds.northeast.longitude + bounds.southwest.longitude) / 2,
       );
     });
+  }
+
+  Future<void> _openExternalMap() async {
+    final uri = Uri.parse(
+      'https://www.google.com/maps/search/?api=1&query='
+      '${_selectedPosition.latitude},${_selectedPosition.longitude}',
+    );
+    await launchUrl(uri, mode: LaunchMode.externalApplication);
   }
 
   @override
@@ -725,77 +738,173 @@ class _FullScreenLocationPickerState extends State<FullScreenLocationPicker> {
           ),
         ],
       ),
-      body: Stack(
-        children: [
-          GoogleMap(
-            initialCameraPosition: CameraPosition(
-              target: widget.initialPosition,
-              zoom: 16,
-            ),
-            markers: {marker},
-            circles: {circle},
-            onMapCreated: (controller) {
-              _controller = controller;
-            },
-            onTap: (position) {
-              setState(() {
-                _selectedPosition = position;
-              });
-            },
-            myLocationButtonEnabled: true,
-            myLocationEnabled: true,
-            zoomControlsEnabled: true,
-            compassEnabled: true,
-            mapToolbarEnabled: true,
-          ),
-          Positioned(
-            left: 16,
-            right: 16,
-            bottom: 20 + MediaQuery.of(context).padding.bottom,
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                color: ZaWolfColors.surface01.withValues(alpha: 0.92),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: ZaWolfColors.surface02),
+      body: FutureBuilder<void>(
+        future: _mapReady,
+        builder: (context, snapshot) => Stack(
+          children: [
+            if (snapshot.connectionState == ConnectionState.waiting)
+              const ColoredBox(
+                color: ZaWolfColors.surface01,
+                child: Center(
+                  child: CircularProgressIndicator(
+                    color: ZaWolfColors.primaryCyan,
+                  ),
+                ),
+              )
+            else if (snapshot.hasError)
+              _MapLoadFailure(
+                onOpenExternalMap: _openExternalMap,
+                onKeepCoordinates: () =>
+                    Navigator.pop(context, _selectedPosition),
+              )
+            else
+              GoogleMap(
+                initialCameraPosition: CameraPosition(
+                  target: widget.initialPosition,
+                  zoom: 16,
+                ),
+                markers: {marker},
+                circles: {circle},
+                onMapCreated: (controller) {
+                  _controller = controller;
+                },
+                onTap: (position) {
+                  setState(() {
+                    _selectedPosition = position;
+                  });
+                },
+                myLocationButtonEnabled: true,
+                myLocationEnabled: true,
+                zoomControlsEnabled: true,
+                compassEnabled: true,
+                mapToolbarEnabled: true,
               ),
-              child: Padding(
-                padding: const EdgeInsets.all(14),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Text(
-                      '${_selectedPosition.latitude.toStringAsFixed(7)}, ${_selectedPosition.longitude.toStringAsFixed(7)}',
-                      style: const TextStyle(color: Colors.white),
-                      textDirection: TextDirection.ltr,
-                    ),
-                    const SizedBox(height: 10),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: OutlinedButton.icon(
-                            onPressed: _pickVisibleCenter,
-                            icon: const Icon(Icons.center_focus_strong),
-                            label: const Text('اختيار مركز الخريطة'),
+            Positioned(
+              left: 16,
+              right: 16,
+              bottom: 20 + MediaQuery.of(context).padding.bottom,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: ZaWolfColors.surface01.withValues(alpha: 0.92),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: ZaWolfColors.surface02),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.all(14),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Text(
+                        '${_selectedPosition.latitude.toStringAsFixed(7)}, ${_selectedPosition.longitude.toStringAsFixed(7)}',
+                        style: const TextStyle(color: Colors.white),
+                        textDirection: TextDirection.ltr,
+                      ),
+                      const SizedBox(height: 10),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: snapshot.hasError
+                                  ? _openExternalMap
+                                  : _pickVisibleCenter,
+                              icon: const Icon(Icons.center_focus_strong),
+                              label: Text(
+                                snapshot.hasError
+                                    ? 'فتح خرائط Google'
+                                    : 'اختيار مركز الخريطة',
+                              ),
+                            ),
                           ),
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: ElevatedButton.icon(
-                            onPressed: () =>
-                                Navigator.pop(context, _selectedPosition),
-                            icon: const Icon(Icons.check),
-                            label: const Text('حفظ'),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: ElevatedButton.icon(
+                              onPressed: () =>
+                                  Navigator.pop(context, _selectedPosition),
+                              icon: const Icon(Icons.check),
+                              label: const Text('حفظ'),
+                            ),
                           ),
-                        ),
-                      ],
-                    ),
-                  ],
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _MapLoadFailure extends StatelessWidget {
+  const _MapLoadFailure({
+    required this.onOpenExternalMap,
+    required this.onKeepCoordinates,
+  });
+
+  final VoidCallback onOpenExternalMap;
+  final VoidCallback onKeepCoordinates;
+
+  @override
+  Widget build(BuildContext context) {
+    return ColoredBox(
+      color: ZaWolfColors.background,
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 520),
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(
+                  Icons.map_outlined,
+                  size: 58,
+                  color: ZaWolfColors.warning,
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'تعذر تحميل خريطة Google',
+                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'تحقق من اتصال الإنترنت وتفعيل Maps JavaScript API '
+                  'وسماح مفتاح الويب لنطاق الموقع.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: ZaWolfColors.textSecondary,
+                    height: 1.6,
+                  ),
+                ),
+                const SizedBox(height: 18),
+                Wrap(
+                  alignment: WrapAlignment.center,
+                  spacing: 10,
+                  runSpacing: 10,
+                  children: [
+                    OutlinedButton.icon(
+                      onPressed: onOpenExternalMap,
+                      icon: const Icon(Icons.open_in_new),
+                      label: const Text('فتح خرائط Google'),
+                    ),
+                    ElevatedButton.icon(
+                      onPressed: onKeepCoordinates,
+                      icon: const Icon(Icons.check),
+                      label: const Text('استخدام الإحداثيات الحالية'),
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
-        ],
+        ),
       ),
     );
   }

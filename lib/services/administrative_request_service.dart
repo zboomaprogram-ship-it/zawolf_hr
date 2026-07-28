@@ -111,6 +111,7 @@ class AdministrativeRequestService {
         .collection('administrativeRequests')
         .where('userId', isEqualTo: userId)
         .orderBy('submittedAt', descending: true)
+        .limit(50)
         .snapshots();
   }
 

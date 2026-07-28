@@ -8,6 +8,7 @@ import '../../services/auth_service.dart';
 import '../../services/productivity_service.dart';
 import '../../theme/theme.dart';
 import '../../utils/payroll_cycle.dart';
+import '../shared/productivity_score_details_sheet.dart';
 
 class ProductivityRankingScreen extends StatefulWidget {
   const ProductivityRankingScreen({super.key});
@@ -21,19 +22,42 @@ class _ProductivityRankingScreenState extends State<ProductivityRankingScreen> {
   final ProductivityService _service = ProductivityService();
   late final String _monthKey = PayrollCycle.keyFor(DateTime.now());
   bool _refreshing = false;
+  bool _autoRefreshAttempted = false;
 
-  Future<void> _refresh(UserModel reviewer) async {
+  Future<void> _refresh(
+    UserModel reviewer, {
+    bool showConfirmation = true,
+  }) async {
+    if (_refreshing) return;
     setState(() => _refreshing = true);
     try {
       final count = await _service.refreshRanking(reviewer, _monthKey);
-      if (mounted) {
+      if (mounted && showConfirmation) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('تم تحديث إنتاجية $count موظف.')),
+        );
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'تعذر تحديث الإنتاجية. تحقق من الاتصال والصلاحيات ثم أعد المحاولة.',
+            ),
+          ),
         );
       }
     } finally {
       if (mounted) setState(() => _refreshing = false);
     }
+  }
+
+  void _refreshEmptyCacheOnce(UserModel reviewer) {
+    if (_autoRefreshAttempted || _refreshing) return;
+    _autoRefreshAttempted = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _refresh(reviewer, showConfirmation: false);
+    });
   }
 
   @override
@@ -73,8 +97,12 @@ class _ProductivityRankingScreenState extends State<ProductivityRankingScreen> {
               child: CircularProgressIndicator(color: ZaWolfColors.primaryCyan),
             );
           }
+          if (snapshot.hasError) {
+            return _LoadError(onRetry: () => _refresh(reviewer));
+          }
           final scores = snapshot.data ?? [];
           if (scores.isEmpty) {
+            _refreshEmptyCacheOnce(reviewer);
             return Center(
               child: Padding(
                 padding: const EdgeInsets.all(24),
@@ -88,7 +116,9 @@ class _ProductivityRankingScreenState extends State<ProductivityRankingScreen> {
                     ),
                     const SizedBox(height: 14),
                     Text(
-                      'اضغط تحديث لحساب ترتيب شهر $_monthKey',
+                      _refreshing
+                          ? 'جارٍ تجهيز ترتيب شهر $_monthKey لأول مرة…'
+                          : 'لا توجد بيانات متاحة لشهر $_monthKey',
                       style: theme.textTheme.titleMedium,
                       textAlign: TextAlign.center,
                     ),
@@ -134,6 +164,7 @@ class _ProductivityRankingScreenState extends State<ProductivityRankingScreen> {
                 return Padding(
                   padding: const EdgeInsets.only(bottom: 12),
                   child: WolfCard(
+                    onTap: () => showProductivityScoreDetails(context, score),
                     child: Row(
                       children: [
                         _RankBadge(rank: rank),
@@ -172,6 +203,12 @@ class _ProductivityRankingScreenState extends State<ProductivityRankingScreen> {
                             fontSize: 18,
                           ),
                         ),
+                        const SizedBox(width: 4),
+                        const Icon(
+                          Icons.chevron_left,
+                          color: ZaWolfColors.textMuted,
+                          size: 20,
+                        ),
                       ],
                     ),
                   ),
@@ -188,6 +225,23 @@ class _ProductivityRankingScreenState extends State<ProductivityRankingScreen> {
     if (value >= 85) return ZaWolfColors.success;
     if (value >= 70) return ZaWolfColors.warning;
     return ZaWolfColors.error;
+  }
+}
+
+class _LoadError extends StatelessWidget {
+  const _LoadError({required this.onRetry});
+
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: OutlinedButton.icon(
+        onPressed: onRetry,
+        icon: const Icon(Icons.refresh),
+        label: const Text('تعذر تحميل الإنتاجية، أعد المحاولة'),
+      ),
+    );
   }
 }
 
