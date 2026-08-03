@@ -27,6 +27,8 @@ class DashboardAttendanceSummary {
     this.isComplete = true,
   });
 
+  int get attended => present + late;
+
   int get accounted => present + late + permission + dayOff + notAttended;
 
   double percentOf(int value) {

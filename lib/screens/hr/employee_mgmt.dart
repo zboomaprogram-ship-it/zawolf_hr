@@ -25,6 +25,8 @@ import '../../components/dynamic_dropdown.dart';
 import '../../services/department_service.dart';
 import '../../services/job_title_service.dart';
 import '../../services/role_notification_service.dart';
+import '../../models/employee_deletion_request.dart';
+import '../../services/employee_deletion_request_service.dart';
 
 List<DropdownMenuItem<String>> _roleMenuItems({
   required bool canUseSuperAdmin,
@@ -214,6 +216,105 @@ class _OrganizationProfileFields extends StatelessWidget {
             ],
             onChanged: onDivisionChanged,
           ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SalesAnalyticsFields extends StatelessWidget {
+  const _SalesAnalyticsFields({
+    required this.enabled,
+    required this.role,
+    required this.agentKeyController,
+    required this.companyController,
+    required this.onEnabledChanged,
+    required this.onRoleChanged,
+  });
+
+  final bool enabled;
+  final String role;
+  final TextEditingController agentKeyController;
+  final TextEditingController companyController;
+  final ValueChanged<bool> onEnabledChanged;
+  final ValueChanged<String> onRoleChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: ZaWolfColors.surface01,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: ZaWolfColors.surface03),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            secondary: const Icon(
+              Icons.query_stats,
+              color: ZaWolfColors.primaryCyan,
+            ),
+            title: const Text(
+              'ربط مؤشرات المبيعات',
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            subtitle: const Text(
+              'يُحدّث KPI والمهام الشهرية تلقائياً من نظام المبيعات.',
+              style: TextStyle(color: ZaWolfColors.textSecondary),
+            ),
+            value: enabled,
+            onChanged: onEnabledChanged,
+          ),
+          if (enabled) ...[
+            const SizedBox(height: 12),
+            DropdownButtonFormField<String>(
+              initialValue: role == 'tele_sales' ? 'tele_sales' : 'sales',
+              decoration: const InputDecoration(labelText: 'نوع مؤشر المبيعات'),
+              dropdownColor: ZaWolfColors.surface02,
+              items: const [
+                DropdownMenuItem(value: 'sales', child: Text('Sales')),
+                DropdownMenuItem(
+                  value: 'tele_sales',
+                  child: Text('Tele-sales'),
+                ),
+              ],
+              onChanged: (value) {
+                if (value != null) onRoleChanged(value);
+              },
+            ),
+            const SizedBox(height: 12),
+            TextFormField(
+              controller: agentKeyController,
+              textDirection: TextDirection.ltr,
+              decoration: const InputDecoration(
+                labelText: 'مفتاح الموظف في Sales API',
+                helperText:
+                    'اكتب مفتاحاً فريداً كما يظهر في API، مثل S8 أو TSR3.',
+              ),
+              validator: (value) {
+                if (enabled && (value == null || value.trim().isEmpty)) {
+                  return 'مفتاح الموظف في Sales API مطلوب';
+                }
+                return null;
+              },
+            ),
+            const SizedBox(height: 12),
+            TextFormField(
+              controller: companyController,
+              textDirection: TextDirection.ltr,
+              decoration: const InputDecoration(
+                labelText: 'Company key (اختياري)',
+                helperText:
+                    'يُحفظ للربط المستقبلي؛ الفلتر الحالي عام من الخادم.',
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -812,6 +913,11 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
         ),
         actions: [
           IconButton(
+            tooltip: 'طلبات إنهاء الحسابات',
+            onPressed: _showDeletionRequests,
+            icon: const Icon(Icons.person_remove_outlined),
+          ),
+          IconButton(
             tooltip: 'استيراد جماعي',
             onPressed: _showBulkImportSheet,
             icon: const Icon(Icons.upload_file),
@@ -1391,36 +1497,273 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
   }
 
   Future<void> _confirmDeleteEmployee(UserModel emp) async {
-    final confirm = await showDialog<bool>(
+    final actor = Provider.of<AuthService>(context, listen: false).currentUser;
+    if (actor == null) return;
+    final reasonController = TextEditingController();
+    final reason = await showDialog<String>(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (dialogContext) => AlertDialog(
         backgroundColor: ZaWolfColors.surface01,
-        title: const Text('حذف الحساب؟', style: TextStyle(color: Colors.white)),
-        content: Text(
-          'هل تريد بالتأكيد حذف حساب الموظف ${emp.displayName} بشكل نهائي؟\n\nتنبيه: سيتم مسح بياناته من التطبيق، ولكن يجب عليك حذف بريده الإلكتروني يدوياً من Firebase Console.',
-          style: const TextStyle(color: ZaWolfColors.textSecondary),
-          textDirection: TextDirection.rtl,
+        title: const Text(
+          'طلب إنهاء الحساب',
+          style: TextStyle(color: Colors.white),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'لن يُحذف ${emp.displayName} فورًا. سيمر الطلب بمسار الموافقات، ثم يُعطل الحساب مع الاحتفاظ بالسجلات.',
+              style: const TextStyle(color: ZaWolfColors.textSecondary),
+              textDirection: TextDirection.rtl,
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: reasonController,
+              maxLines: 3,
+              textDirection: TextDirection.rtl,
+              decoration: const InputDecoration(labelText: 'سبب الإنهاء'),
+            ),
+          ],
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context, false),
+            onPressed: () => Navigator.pop(dialogContext),
             child: const Text(
               'إلغاء',
               style: TextStyle(color: ZaWolfColors.textSecondary),
             ),
           ),
           TextButton(
-            onPressed: () => Navigator.pop(context, true),
+            onPressed: () {
+              final value = reasonController.text.trim();
+              if (value.isNotEmpty) Navigator.pop(dialogContext, value);
+            },
             child: const Text(
-              'حذف',
+              'إرسال للموافقة',
               style: TextStyle(color: ZaWolfColors.error),
             ),
           ),
         ],
       ),
     );
-    if (confirm == true) {
-      await _db.collection('users').doc(emp.uid).delete();
+    reasonController.dispose();
+    if (reason == null || reason.isEmpty) return;
+    try {
+      await EmployeeDeletionRequestService().requestDeletion(
+        employee: emp,
+        requester: actor,
+        reason: reason,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('تم إرسال طلب إنهاء الحساب للموافقة.')),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(error.toString().replaceFirst('Bad state: ', '')),
+        ),
+      );
+    }
+  }
+
+  Future<void> _showDeletionRequests() async {
+    final actor = Provider.of<AuthService>(context, listen: false).currentUser;
+    if (actor == null) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: ZaWolfColors.surface01,
+      builder: (sheetContext) => SafeArea(
+        child: SizedBox(
+          height: MediaQuery.sizeOf(sheetContext).height * .75,
+          child: StreamBuilder<List<EmployeeDeletionRequest>>(
+            stream: EmployeeDeletionRequestService().watchPending(),
+            builder: (context, snapshot) {
+              final requests = snapshot.data ?? const [];
+              return Column(
+                children: [
+                  const Padding(
+                    padding: EdgeInsets.all(20),
+                    child: Text(
+                      'طلبات إنهاء الحسابات',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 22,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    child: requests.isEmpty
+                        ? const Center(child: Text('لا توجد طلبات معلقة.'))
+                        : ListView.separated(
+                            padding: const EdgeInsets.all(16),
+                            itemCount: requests.length,
+                            separatorBuilder: (_, __) => const Divider(),
+                            itemBuilder: (context, index) {
+                              final request = requests[index];
+                              final canReview =
+                                  request.requesterId != actor.uid &&
+                                  ((request.status == 'pending_hr_manager' &&
+                                          actor.role ==
+                                              EmployeeRole.hrManager) ||
+                                      (request.status ==
+                                              'pending_super_admin' &&
+                                          actor.role ==
+                                              EmployeeRole.superAdmin));
+                              final pendingLabel =
+                                  request.status == 'pending_hr_manager'
+                                  ? 'بانتظار اعتماد مدير HR'
+                                  : 'بانتظار الاعتماد النهائي من مالك النظام';
+                              return Container(
+                                padding: const EdgeInsets.all(16),
+                                decoration: BoxDecoration(
+                                  color: ZaWolfColors.surface02,
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(
+                                    color: ZaWolfColors.surface03,
+                                  ),
+                                ),
+                                child: Column(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.stretch,
+                                  children: [
+                                    Text(
+                                      request.employeeName,
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 17,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      request.reason,
+                                      style: const TextStyle(
+                                        color: ZaWolfColors.textSecondary,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 6),
+                                    Text(
+                                      'مقدم الطلب: ${request.requesterName}',
+                                      style: const TextStyle(
+                                        color: ZaWolfColors.textMuted,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 14),
+                                    if (canReview)
+                                      Row(
+                                        children: [
+                                          Expanded(
+                                            child: WolfButton(
+                                              height: 46,
+                                              variant:
+                                                  WolfButtonVariant.outline,
+                                              text: 'رفض الطلب',
+                                              onPressed: () => _reviewDeletion(
+                                                request,
+                                                actor,
+                                                false,
+                                              ),
+                                            ),
+                                          ),
+                                          const SizedBox(width: 12),
+                                          Expanded(
+                                            child: WolfButton(
+                                              height: 46,
+                                              variant: WolfButtonVariant.danger,
+                                              text: 'اعتماد وإيقاف الحساب',
+                                              onPressed: () => _reviewDeletion(
+                                                request,
+                                                actor,
+                                                true,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      )
+                                    else
+                                      Align(
+                                        alignment: Alignment.centerRight,
+                                        child: Text(
+                                          pendingLabel,
+                                          style: const TextStyle(
+                                            color: ZaWolfColors.warning,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                              );
+                            },
+                          ),
+                  ),
+                ],
+              );
+            },
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _reviewDeletion(
+    EmployeeDeletionRequest request,
+    UserModel actor,
+    bool approve,
+  ) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: ZaWolfColors.surface02,
+        title: Text(approve ? 'تأكيد إيقاف الحساب' : 'تأكيد رفض الطلب'),
+        content: Text(
+          approve
+              ? 'سيتم إيقاف حساب ${request.employeeName}. لن يستطيع تسجيل الدخول، وستبقى سجلاته محفوظة للمراجعة.'
+              : 'سيتم رفض طلب إنهاء حساب ${request.employeeName}.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('إلغاء'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: approve
+                  ? ZaWolfColors.error
+                  : ZaWolfColors.warning,
+            ),
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: Text(approve ? 'إيقاف الحساب' : 'رفض الطلب'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      await EmployeeDeletionRequestService().review(
+        request: request,
+        reviewer: actor,
+        approve: approve,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            approve ? 'تمت معالجة طلب إنهاء الحساب.' : 'تم رفض الطلب.',
+          ),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(error.toString().replaceFirst('Bad state: ', '')),
+        ),
+      );
     }
   }
 
@@ -1655,6 +1998,8 @@ class _AddEmployeeDialogState extends State<AddEmployeeDialog> {
   final _salaryController = TextEditingController(text: '0');
   final _daysOffController = TextEditingController(text: '15');
   final _casualLeaveController = TextEditingController(text: '7');
+  final _salesAgentKeyController = TextEditingController();
+  final _salesCompanyController = TextEditingController();
 
   String _selectedRole = 'employee';
   String? _selectedDepartment;
@@ -1671,6 +2016,8 @@ class _AddEmployeeDialogState extends State<AddEmployeeDialog> {
   String _workEndTime = '17:00';
   List<int> _workDays = [6, 7, 1, 2, 3, 4];
   DateTime? _hiringDate;
+  bool _salesAnalyticsEnabled = false;
+  String _salesAnalyticsRole = 'sales';
 
   bool _isLoading = false;
   List<LocationModel> _locations = [];
@@ -1745,6 +2092,8 @@ class _AddEmployeeDialogState extends State<AddEmployeeDialog> {
     _salaryController.dispose();
     _daysOffController.dispose();
     _casualLeaveController.dispose();
+    _salesAgentKeyController.dispose();
+    _salesCompanyController.dispose();
     super.dispose();
   }
 
@@ -1890,6 +2239,14 @@ class _AddEmployeeDialogState extends State<AddEmployeeDialog> {
         'organizationLevel': organizationLevel,
         'organizationDivisionId': organizationDivisionId,
         'organizationOrder': 999,
+        'salesAnalyticsEnabled': _salesAnalyticsEnabled,
+        'salesAnalyticsRole': _salesAnalyticsEnabled ? _salesAnalyticsRole : '',
+        'salesAnalyticsAgentKey': _salesAnalyticsEnabled
+            ? _salesAgentKeyController.text.trim()
+            : '',
+        'salesAnalyticsCompany': _salesAnalyticsEnabled
+            ? _salesCompanyController.text.trim()
+            : '',
       });
 
       if (mounted) {
@@ -2135,6 +2492,20 @@ class _AddEmployeeDialogState extends State<AddEmployeeDialog> {
                   onAdd: DepartmentService.instance.addDepartment,
                   onInit:
                       DepartmentService.instance.bootstrapDepartmentsIfNeeded,
+                ),
+                const SizedBox(height: 16),
+
+                _SalesAnalyticsFields(
+                  enabled: _salesAnalyticsEnabled,
+                  role: _salesAnalyticsRole,
+                  agentKeyController: _salesAgentKeyController,
+                  companyController: _salesCompanyController,
+                  onEnabledChanged: (value) {
+                    setState(() => _salesAnalyticsEnabled = value);
+                  },
+                  onRoleChanged: (value) {
+                    setState(() => _salesAnalyticsRole = value);
+                  },
                 ),
                 const SizedBox(height: 16),
 
@@ -2468,6 +2839,8 @@ class _EditEmployeeDialogState extends State<EditEmployeeDialog> {
   late final TextEditingController _salaryController;
   late final TextEditingController _daysOffController;
   late final TextEditingController _casualLeaveController;
+  late final TextEditingController _salesAgentKeyController;
+  late final TextEditingController _salesCompanyController;
 
   String? _selectedDepartment;
   late String _selectedOrganizationLevel;
@@ -2484,6 +2857,8 @@ class _EditEmployeeDialogState extends State<EditEmployeeDialog> {
   late String _workEndTime;
   late List<int> _workDays;
   DateTime? _hiringDate;
+  late bool _salesAnalyticsEnabled;
+  late String _salesAnalyticsRole;
 
   bool _isLoading = false;
   List<LocationModel> _locations = [];
@@ -2506,6 +2881,16 @@ class _EditEmployeeDialogState extends State<EditEmployeeDialog> {
     _casualLeaveController = TextEditingController(
       text: emp.leaveBalance.casual.toString(),
     );
+    _salesAgentKeyController = TextEditingController(
+      text: emp.salesAnalyticsAgentKey,
+    );
+    _salesCompanyController = TextEditingController(
+      text: emp.salesAnalyticsCompany,
+    );
+    _salesAnalyticsEnabled = emp.salesAnalyticsEnabled;
+    _salesAnalyticsRole = emp.salesAnalyticsRole.isEmpty
+        ? 'sales'
+        : emp.salesAnalyticsRole;
     _selectedDepartment = emp.department;
     _selectedOrganizationLevel = emp.organizationLevel == 'employee'
         ? OrganizationLevel.defaultFor(
@@ -2737,6 +3122,8 @@ class _EditEmployeeDialogState extends State<EditEmployeeDialog> {
     _salaryController.dispose();
     _daysOffController.dispose();
     _casualLeaveController.dispose();
+    _salesAgentKeyController.dispose();
+    _salesCompanyController.dispose();
     super.dispose();
   }
 
@@ -2821,6 +3208,14 @@ class _EditEmployeeDialogState extends State<EditEmployeeDialog> {
           endTime: _workEndTime,
           workDays: _workDays,
         ).toMap(),
+        'salesAnalyticsEnabled': _salesAnalyticsEnabled,
+        'salesAnalyticsRole': _salesAnalyticsEnabled ? _salesAnalyticsRole : '',
+        'salesAnalyticsAgentKey': _salesAnalyticsEnabled
+            ? _salesAgentKeyController.text.trim()
+            : '',
+        'salesAnalyticsCompany': _salesAnalyticsEnabled
+            ? _salesCompanyController.text.trim()
+            : '',
       };
 
       await _db.collection('users').doc(widget.employee.uid).update(updateData);
@@ -3028,6 +3423,20 @@ class _EditEmployeeDialogState extends State<EditEmployeeDialog> {
                   onAdd: DepartmentService.instance.addDepartment,
                   onInit:
                       DepartmentService.instance.bootstrapDepartmentsIfNeeded,
+                ),
+                const SizedBox(height: 16),
+
+                _SalesAnalyticsFields(
+                  enabled: _salesAnalyticsEnabled,
+                  role: _salesAnalyticsRole,
+                  agentKeyController: _salesAgentKeyController,
+                  companyController: _salesCompanyController,
+                  onEnabledChanged: (value) {
+                    setState(() => _salesAnalyticsEnabled = value);
+                  },
+                  onRoleChanged: (value) {
+                    setState(() => _salesAnalyticsRole = value);
+                  },
                 ),
                 const SizedBox(height: 16),
 

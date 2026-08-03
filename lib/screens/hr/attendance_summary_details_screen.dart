@@ -453,6 +453,7 @@ class _TodayCategoryDetails extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final metadata = switch (status) {
+      'attended' => ('الحضور', ZaWolfColors.primaryCyan),
       'present' => ('حضر في الموعد', ZaWolfColors.success),
       'late' => ('المتأخرون', ZaWolfColors.warning),
       'permission' => ('لديهم إذن', ZaWolfColors.permissionTeal),
@@ -469,7 +470,11 @@ class _TodayCategoryDetails extends StatelessWidget {
           return const Center(child: CircularProgressIndicator());
         }
         final people = snapshot.data!.people
-            .where((person) => person.status == status)
+            .where(
+              (person) => status == 'attended'
+                  ? person.status == 'present' || person.status == 'late'
+                  : person.status == status,
+            )
             .toList();
         return ListView(
           padding: const EdgeInsets.all(16),

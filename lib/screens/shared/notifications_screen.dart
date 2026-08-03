@@ -94,7 +94,23 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     }
 
     return Scaffold(
-      appBar: AppBar(title: const Text('الإشعارات والإعلانات')),
+      appBar: AppBar(
+        title: const Text('الإشعارات والإعلانات'),
+        actions: [
+          IconButton(
+            tooltip: 'تحديد الكل كمقروء',
+            onPressed:
+                _notifications.any(
+                  (item) =>
+                      item.data()['isRead'] != true &&
+                      !_locallyRead.contains(item.id),
+                )
+                ? _markAllRead
+                : null,
+            icon: const Icon(Icons.done_all),
+          ),
+        ],
+      ),
       body: _loading
           ? const Center(
               child: CircularProgressIndicator(color: ZaWolfColors.primaryCyan),
@@ -231,7 +247,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     if (notification.data()['isRead'] != true) {
       setState(() => _locallyRead.add(notification.id));
       try {
-        await notification.reference.update({'isRead': true});
+        await _markRead(notification.reference);
       } catch (_) {}
     }
     if (!mounted) return;
@@ -283,6 +299,54 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       type: type,
     );
     if (route != '/notifications' && mounted) context.go(route);
+  }
+
+  Future<void> _markRead(DocumentReference<Map<String, dynamic>> ref) async {
+    final userId = _loadedUserId;
+    if (userId == null) return;
+    final userRef = FirebaseFirestore.instance.collection('users').doc(userId);
+    await FirebaseFirestore.instance.runTransaction((transaction) async {
+      final notification = await transaction.get(ref);
+      if (!notification.exists || notification.data()?['isRead'] == true) {
+        return;
+      }
+      final user = await transaction.get(userRef);
+      final unread =
+          (user.data()?['unreadNotifications'] as num?)?.toInt() ?? 0;
+      transaction.update(ref, {'isRead': true});
+      if (user.exists) {
+        transaction.update(userRef, {
+          'unreadNotifications': unread > 0 ? unread - 1 : 0,
+        });
+      }
+    });
+  }
+
+  Future<void> _markAllRead() async {
+    final userId = _loadedUserId;
+    if (userId == null) return;
+    final db = FirebaseFirestore.instance;
+    while (true) {
+      final unread = await db
+          .collection('notifications')
+          .doc(userId)
+          .collection('items')
+          .where('isRead', isEqualTo: false)
+          .limit(400)
+          .get();
+      if (unread.docs.isEmpty) break;
+      final batch = db.batch();
+      for (final item in unread.docs) {
+        batch.update(item.reference, {'isRead': true});
+      }
+      batch.update(db.collection('users').doc(userId), {
+        'unreadNotifications': 0,
+      });
+      await batch.commit();
+      if (unread.docs.length < 400) break;
+    }
+    if (!mounted) return;
+    setState(() => _locallyRead.addAll(_notifications.map((item) => item.id)));
   }
 }
 

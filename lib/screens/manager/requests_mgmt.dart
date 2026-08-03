@@ -1106,7 +1106,11 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
         'attendance|salary-deduction|${reviewer.uid}',
         _db
             .collection('attendance')
-            .where('salaryDeductionApprovalStatus', isEqualTo: 'pending_hr'),
+            .where(
+              'salaryDeductionApprovalStatus',
+              whereIn: const ['pending_hr', 'approved', 'reversed'],
+            )
+            .limit(200),
       ),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
@@ -1124,7 +1128,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
         final items = _filterSalaryDeductions(allItems);
 
         if (allItems.isEmpty) {
-          return _buildEmptyState('لا توجد خصومات راتب بانتظار HR');
+          return _buildEmptyState('لا توجد خصومات راتب مسجلة');
         }
 
         return ListView(
@@ -1202,35 +1206,64 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                           'قيمة الخصم: ${attendance.salaryDeductionAmount.toStringAsFixed(2)} ${attendance.salaryCurrency}',
                           style: const TextStyle(color: ZaWolfColors.warning),
                         ),
-                        const SizedBox(height: 16),
-                        _buildApprovalActions(
-                          onApprove: () async {
-                            try {
-                              await _attendanceService.approveSalaryDeduction(
-                                attendance.attendanceId,
-                                reviewer.uid,
-                              );
-                            } catch (e) {
-                              if (!context.mounted) return;
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(content: Text('فشل الموافقة: $e')),
-                              );
-                            }
-                          },
-                          onReject: () async {
-                            try {
-                              await _attendanceService.rejectSalaryDeduction(
-                                attendance.attendanceId,
-                                reviewer.uid,
-                              );
-                            } catch (e) {
-                              if (!context.mounted) return;
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(content: Text('فشل الرفض: $e')),
-                              );
-                            }
-                          },
+                        const SizedBox(height: 6),
+                        _SalaryDeductionStatus(
+                          status: attendance.salaryDeductionApprovalStatus,
                         ),
+                        if (attendance
+                                .salaryDeductionReversalReason
+                                ?.isNotEmpty ??
+                            false)
+                          Text(
+                            'سبب إلغاء الخصم: ${attendance.salaryDeductionReversalReason}',
+                            style: const TextStyle(
+                              color: ZaWolfColors.textSecondary,
+                            ),
+                          ),
+                        const SizedBox(height: 16),
+                        if (attendance.salaryDeductionApprovalStatus ==
+                            'pending_hr')
+                          _buildApprovalActions(
+                            onApprove: () async {
+                              try {
+                                await _attendanceService.approveSalaryDeduction(
+                                  attendance.attendanceId,
+                                  reviewer.uid,
+                                );
+                              } catch (e) {
+                                if (!context.mounted) return;
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(content: Text('فشل الموافقة: $e')),
+                                );
+                              }
+                            },
+                            onReject: () async {
+                              try {
+                                await _attendanceService.rejectSalaryDeduction(
+                                  attendance.attendanceId,
+                                  reviewer.uid,
+                                );
+                              } catch (e) {
+                                if (!context.mounted) return;
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(content: Text('فشل الرفض: $e')),
+                                );
+                              }
+                            },
+                          )
+                        else if (attendance.salaryDeductionApprovalStatus ==
+                            'approved')
+                          SizedBox(
+                            width: double.infinity,
+                            child: OutlinedButton.icon(
+                              onPressed: () => _reverseSalaryDeduction(
+                                attendance: attendance,
+                                reviewer: reviewer,
+                              ),
+                              icon: const Icon(Icons.undo),
+                              label: const Text('إلغاء الخصم المعتمد'),
+                            ),
+                          ),
                       ],
                     ),
                   ),
@@ -1481,6 +1514,9 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
     required List<AttendanceModel> visibleItems,
     required UserModel reviewer,
   }) {
+    final pendingItems = visibleItems
+        .where((item) => item.salaryDeductionApprovalStatus == 'pending_hr')
+        .toList();
     return WolfCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1499,7 +1535,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
           ),
           const SizedBox(height: 12),
           Text(
-            'المعروض: ${visibleItems.length} خصم',
+            'المعروض: ${visibleItems.length} · بانتظار المراجعة: ${pendingItems.length}',
             style: theme.textTheme.bodySmall,
             textAlign: TextAlign.right,
             textDirection: TextDirection.rtl,
@@ -1509,10 +1545,10 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
             children: [
               Expanded(
                 child: WolfButton(
-                  onPressed: visibleItems.isEmpty
+                  onPressed: pendingItems.isEmpty
                       ? null
                       : () => _reviewVisibleSalaryDeductions(
-                          items: visibleItems,
+                          items: pendingItems,
                           reviewer: reviewer,
                           approve: false,
                         ),
@@ -1525,10 +1561,10 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
               const SizedBox(width: 12),
               Expanded(
                 child: WolfButton(
-                  onPressed: visibleItems.isEmpty
+                  onPressed: pendingItems.isEmpty
                       ? null
                       : () => _reviewVisibleSalaryDeductions(
-                          items: visibleItems,
+                          items: pendingItems,
                           reviewer: reviewer,
                           approve: true,
                         ),
@@ -1567,6 +1603,10 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
     required UserModel reviewer,
     required bool approve,
   }) async {
+    final pendingItems = items
+        .where((item) => item.salaryDeductionApprovalStatus == 'pending_hr')
+        .toList();
+    if (pendingItems.isEmpty) return;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -1576,7 +1616,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
           textDirection: TextDirection.rtl,
         ),
         content: Text(
-          'سيتم تطبيق الإجراء على ${items.length} خصم حسب الفلتر الحالي.',
+          'سيتم تطبيق الإجراء على ${pendingItems.length} خصم معلق حسب الفلتر الحالي.',
           textDirection: TextDirection.rtl,
         ),
         actions: [
@@ -1595,7 +1635,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
 
     var success = 0;
     var failed = 0;
-    for (final item in items) {
+    for (final item in pendingItems) {
       try {
         if (approve) {
           await _attendanceService.approveSalaryDeduction(
@@ -1623,6 +1663,61 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
         ),
       ),
     );
+  }
+
+  Future<void> _reverseSalaryDeduction({
+    required AttendanceModel attendance,
+    required UserModel reviewer,
+  }) async {
+    final reasonController = TextEditingController();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('إلغاء خصم معتمد', textDirection: TextDirection.rtl),
+        content: TextField(
+          controller: reasonController,
+          minLines: 2,
+          maxLines: 4,
+          textDirection: TextDirection.rtl,
+          decoration: const InputDecoration(
+            labelText: 'سبب الإلغاء',
+            hintText: 'اكتب سبب تصحيح القرار',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('تراجع'),
+          ),
+          FilledButton(
+            onPressed: () {
+              if (reasonController.text.trim().length < 5) return;
+              Navigator.pop(dialogContext, true);
+            },
+            child: const Text('إلغاء الخصم'),
+          ),
+        ],
+      ),
+    );
+    final reason = reasonController.text.trim();
+    reasonController.dispose();
+    if (confirmed != true || reason.length < 5) return;
+    try {
+      await _attendanceService.reverseSalaryDeduction(
+        attendanceId: attendance.attendanceId,
+        reviewerId: reviewer.uid,
+        reason: reason,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('تم إلغاء الخصم المعتمد وتسجيل السبب.')),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('تعذر إلغاء الخصم: $error')));
+    }
   }
 
   Widget _buildSecurityReviewsTab(UserModel reviewer, ThemeData theme) {
@@ -2073,4 +2168,34 @@ class _SecurityReviewItem {
     required this.checkout,
     required this.docId,
   });
+}
+
+class _SalaryDeductionStatus extends StatelessWidget {
+  const _SalaryDeductionStatus({required this.status});
+
+  final String status;
+
+  @override
+  Widget build(BuildContext context) {
+    final (label, color, icon) = switch (status) {
+      'approved' => ('خصم معتمد', ZaWolfColors.success, Icons.check_circle),
+      'reversed' => ('تم إلغاء الخصم', ZaWolfColors.primaryCyan, Icons.undo),
+      'rejected' => ('مرفوض', ZaWolfColors.error, Icons.cancel),
+      _ => ('بانتظار HR', ZaWolfColors.warning, Icons.schedule),
+    };
+    return Align(
+      alignment: Alignment.centerRight,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            label,
+            style: TextStyle(color: color, fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(width: 6),
+          Icon(icon, size: 17, color: color),
+        ],
+      ),
+    );
+  }
 }

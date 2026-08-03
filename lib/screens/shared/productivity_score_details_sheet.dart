@@ -4,16 +4,25 @@ import 'package:intl/intl.dart' as intl;
 import '../../models/productivity_score_model.dart';
 import '../../theme/theme.dart';
 
+typedef BehaviorScoreUpdater =
+    Future<void> Function(
+      ProductivityScoreModel score,
+      double value,
+      String reason,
+    );
+
 Future<void> showProductivityScoreDetails(
   BuildContext context,
-  ProductivityScoreModel score,
-) {
+  ProductivityScoreModel score, {
+  BehaviorScoreUpdater? onUpdateBehavior,
+}) {
   return showModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
     backgroundColor: ZaWolfColors.surface01,
     useSafeArea: true,
-    builder: (context) => _ScoreDetailsSheet(score: score),
+    builder: (context) =>
+        _ScoreDetailsSheet(score: score, onUpdateBehavior: onUpdateBehavior),
   );
 }
 
@@ -21,6 +30,7 @@ Future<void> showDepartmentProductivityDetails(
   BuildContext context, {
   required String department,
   required List<ProductivityScoreModel> scores,
+  BehaviorScoreUpdater? onUpdateBehavior,
 }) {
   final sorted = [...scores]
     ..sort((a, b) => b.overallScore.compareTo(a.overallScore));
@@ -65,7 +75,12 @@ Future<void> showDepartmentProductivityDetails(
                     subtitle: Text(
                       '${score.employeeId} · ${score.statusLabel}',
                     ),
-                    children: [_ScoreBreakdown(score: score)],
+                    children: [
+                      _ScoreBreakdown(
+                        score: score,
+                        onUpdateBehavior: onUpdateBehavior,
+                      ),
+                    ],
                   );
                 },
               ),
@@ -78,9 +93,10 @@ Future<void> showDepartmentProductivityDetails(
 }
 
 class _ScoreDetailsSheet extends StatelessWidget {
-  const _ScoreDetailsSheet({required this.score});
+  const _ScoreDetailsSheet({required this.score, this.onUpdateBehavior});
 
   final ProductivityScoreModel score;
+  final BehaviorScoreUpdater? onUpdateBehavior;
 
   @override
   Widget build(BuildContext context) {
@@ -133,7 +149,10 @@ class _ScoreDetailsSheet extends StatelessWidget {
                     ],
                   ),
                   const SizedBox(height: 20),
-                  _ScoreBreakdown(score: score),
+                  _ScoreBreakdown(
+                    score: score,
+                    onUpdateBehavior: onUpdateBehavior,
+                  ),
                   const SizedBox(height: 18),
                   const Divider(color: ZaWolfColors.surface03),
                   _MetricLine(
@@ -225,31 +244,83 @@ class _SheetHeader extends StatelessWidget {
 }
 
 class _ScoreBreakdown extends StatelessWidget {
-  const _ScoreBreakdown({required this.score});
+  const _ScoreBreakdown({required this.score, this.onUpdateBehavior});
 
   final ProductivityScoreModel score;
+  final BehaviorScoreUpdater? onUpdateBehavior;
 
   @override
   Widget build(BuildContext context) {
     return Column(
       children: [
-        _ScoreBar(label: 'الحضور', value: score.attendanceScore),
-        _ScoreBar(label: 'الالتزام بالمواعيد', value: score.punctualityScore),
-        if (score.hasTaskData)
-          _ScoreBar(label: 'إنجاز المهام', value: score.taskCompletionScore),
-        if (score.hasTaskQualityData)
-          _ScoreBar(label: 'جودة المهام', value: score.taskQualityScore),
-        if (score.hasKpiData) _ScoreBar(label: 'KPI', value: score.kpiScore),
-        if (!score.hasTaskData || !score.hasKpiData)
-          const Padding(
-            padding: EdgeInsets.only(top: 8),
-            child: Text(
-              'المكونات غير المتاحة لا تدخل في المتوسط النهائي.',
-              style: TextStyle(color: ZaWolfColors.textMuted, fontSize: 12),
+        _ScoreBar(label: 'KPI · وزن 70%', value: score.kpiScore),
+        _ScoreBar(
+          label: 'الحضور والانضباط · وزن 15%',
+          value: score.attendanceComponentScore,
+        ),
+        _ScoreBar(label: 'السلوك · وزن 15%', value: score.behaviorScore),
+        if (onUpdateBehavior != null)
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton.icon(
+              onPressed: () => _editBehavior(context),
+              icon: const Icon(Icons.edit_note),
+              label: const Text('تعديل تقييم السلوك'),
             ),
           ),
       ],
     );
+  }
+
+  Future<void> _editBehavior(BuildContext context) async {
+    var value = score.behaviorScore;
+    final reasonController = TextEditingController();
+    final result = await showDialog<(double, String)>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setState) => AlertDialog(
+          title: const Text('تعديل تقييم السلوك'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text('${value.toStringAsFixed(0)}%'),
+              Slider(
+                value: value,
+                min: 0,
+                max: 100,
+                divisions: 20,
+                onChanged: (next) => setState(() => value = next),
+              ),
+              TextField(
+                controller: reasonController,
+                minLines: 2,
+                maxLines: 3,
+                decoration: const InputDecoration(
+                  labelText: 'سبب التعديل',
+                  hintText: 'اكتب سببًا واضحًا للموظف',
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('إلغاء'),
+            ),
+            FilledButton(
+              onPressed: () {
+                final reason = reasonController.text.trim();
+                if (reason.length < 3) return;
+                Navigator.pop(dialogContext, (value, reason));
+              },
+              child: const Text('حفظ'),
+            ),
+          ],
+        ),
+      ),
+    );
+    reasonController.dispose();
+    if (result != null) await onUpdateBehavior!(score, result.$1, result.$2);
   }
 }
 

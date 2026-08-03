@@ -5,9 +5,12 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../services/auth_service.dart';
 import '../../services/dashboard_attendance_summary_service.dart';
 import '../../models/employee_role.dart';
+import '../../models/sales_kpi_summary.dart';
 import '../../theme/theme.dart';
 import '../../components/attendance_insights_card.dart';
+import '../../components/sales_kpi_summary_card.dart';
 import '../../components/wolf_card.dart';
+import '../../services/sales_kpi_integration_service.dart';
 import '../../utils/user_facing_error.dart';
 
 class HrDashboardScreen extends StatefulWidget {
@@ -25,6 +28,7 @@ class _HrDashboardScreenState extends State<HrDashboardScreen> {
   int _locationsCount = 0;
   bool _loadingCounts = true;
   Future<DashboardAttendanceSummary>? _attendanceSummaryFuture;
+  String? _selectedSalesKpiPeriod;
 
   @override
   void initState() {
@@ -61,6 +65,84 @@ class _HrDashboardScreenState extends State<HrDashboardScreen> {
     setState(() {
       _attendanceSummaryFuture = _summaryService.loadForReviewer(user);
     });
+  }
+
+  Future<void> _editSalesKpiPeriod(
+    SalesKpiSummary current,
+    String actorId,
+  ) async {
+    final periodController = TextEditingController(text: current.periodKey);
+    final startController = TextEditingController(text: current.periodStart);
+    final endController = TextEditingController(text: current.periodEnd);
+    String? error;
+    final submitted = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('تعديل فترة مؤشرات المبيعات'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: periodController,
+                decoration: const InputDecoration(
+                  labelText: 'رمز الفترة (مثال: 2026-08)',
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: startController,
+                decoration: const InputDecoration(labelText: 'من YYYY-MM-DD'),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: endController,
+                decoration: InputDecoration(
+                  labelText: 'إلى YYYY-MM-DD',
+                  errorText: error,
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('إلغاء'),
+            ),
+            FilledButton(
+              onPressed: () {
+                final start = DateTime.tryParse(startController.text.trim());
+                final end = DateTime.tryParse(endController.text.trim());
+                if (periodController.text.trim().isEmpty ||
+                    start == null ||
+                    end == null ||
+                    end.isBefore(start)) {
+                  setDialogState(
+                    () => error = 'تأكد من رمز الفترة والتاريخين وترتيبهما.',
+                  );
+                  return;
+                }
+                Navigator.pop(dialogContext, true);
+              },
+              child: const Text('حفظ'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (submitted != true || !mounted) return;
+    await SalesKpiIntegrationService().updateActivePeriod(
+      periodKey: periodController.text.trim(),
+      startDate: startController.text.trim(),
+      endDate: endController.text.trim(),
+      actorId: actorId,
+    );
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('تم حفظ الفترة. ستظهر بياناتها بعد المزامنة التالية.'),
+      ),
+    );
   }
 
   @override
@@ -225,6 +307,43 @@ class _HrDashboardScreenState extends State<HrDashboardScreen> {
               },
             ),
             const SizedBox(height: 24),
+
+            if (hrAdmin.role == EmployeeRole.hrManager ||
+                hrAdmin.role == EmployeeRole.superAdmin)
+              StreamBuilder<SalesKpiSummary?>(
+                stream: SalesKpiIntegrationService().watchCurrentSummary(),
+                builder: (context, currentSnapshot) {
+                  final current = currentSnapshot.data;
+                  if (current == null) return const SizedBox.shrink();
+                  return StreamBuilder<List<SalesKpiSummary>>(
+                    stream: SalesKpiIntegrationService().watchSummaryHistory(),
+                    builder: (context, historySnapshot) {
+                      final history = <SalesKpiSummary>[
+                        current,
+                        ...?historySnapshot.data?.where(
+                          (item) => item.periodKey != current.periodKey,
+                        ),
+                      ];
+                      final selected = history.firstWhere(
+                        (item) => item.periodKey == _selectedSalesKpiPeriod,
+                        orElse: () => current,
+                      );
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 24),
+                        child: SalesKpiSummaryCard(
+                          summary: selected,
+                          history: history,
+                          onPeriodChanged: (value) => setState(
+                            () => _selectedSalesKpiPeriod = value.periodKey,
+                          ),
+                          onEditPeriod: () =>
+                              _editSalesKpiPeriod(current, hrAdmin.uid),
+                        ),
+                      );
+                    },
+                  );
+                },
+              ),
 
             // HR Administrative Quick Actions Grid
             Text(

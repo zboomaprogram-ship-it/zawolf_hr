@@ -9,6 +9,7 @@ const { processAutomaticAttendance } = require('./auto-attendance');
 const {
   processManagerLeavePermissionBypasses,
 } = require('./manager-leave-permission-bypass');
+const { syncSalesKpis } = require('./sync-sales-kpis');
 
 const port = Number(process.env.PORT || 3000);
 const dispatchSecret = process.env.NOTIFICATION_DISPATCH_SECRET || '';
@@ -24,7 +25,12 @@ const pushFallbackIntervalMs = Math.max(
   30 * 60 * 1000,
   Number(process.env.NOTIFICATION_FALLBACK_INTERVAL_MS || 60 * 60 * 1000),
 );
+const salesKpiSyncIntervalMs = Math.max(
+  6 * 60 * 60 * 1000,
+  Number(process.env.SALES_KPI_SYNC_INTERVAL_MS || 24 * 60 * 60 * 1000),
+);
 let runningDispatch = null;
+let runningSalesKpiSync = null;
 let firestoreQuotaBlockedUntil = 0;
 let pendingDispatchTimer = null;
 let notificationUnsubscribe = null;
@@ -33,6 +39,8 @@ const diagnostics = {
   lastPushResult: null,
   lastReminderAt: null,
   lastReminderResult: null,
+  lastSalesKpiAt: null,
+  lastSalesKpiResult: null,
   listenerError: null,
 };
 
@@ -263,6 +271,25 @@ async function runBackgroundDispatch() {
   }
 }
 
+async function runScheduledSalesKpiSync() {
+  if (!process.env.SALES_API_KEY || runningSalesKpiSync) return;
+  runningSalesKpiSync = syncSalesKpis();
+  try {
+    const result = await runningSalesKpiSync;
+    diagnostics.lastSalesKpiAt = new Date().toISOString();
+    diagnostics.lastSalesKpiResult = result;
+    console.log('Scheduled Sales KPI sync:', result);
+  } catch (error) {
+    diagnostics.lastSalesKpiAt = new Date().toISOString();
+    diagnostics.lastSalesKpiResult = {
+      error: String(error.message || error),
+    };
+    console.error('Scheduled Sales KPI sync failed:', error);
+  } finally {
+    runningSalesKpiSync = null;
+  }
+}
+
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
 
@@ -290,6 +317,45 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (url.pathname === '/sales-kpi/sync') {
+    if (!isAuthorized(req, url)) {
+      sendJson(res, 401, { ok: false, error: 'Unauthorized' });
+      return;
+    }
+    if (runningSalesKpiSync) {
+      sendJson(res, 202, {
+        ok: true,
+        status: 'already_running',
+        message: 'A Sales KPI sync is already in progress.',
+      });
+      return;
+    }
+    try {
+      runningSalesKpiSync = syncSalesKpis({
+        startDate: url.searchParams.get('startDate') || undefined,
+        endDate: url.searchParams.get('endDate') || undefined,
+        company: url.searchParams.get('company') || undefined,
+      });
+      const result = await runningSalesKpiSync;
+      diagnostics.lastSalesKpiAt = new Date().toISOString();
+      diagnostics.lastSalesKpiResult = result;
+      sendJson(res, 200, { ok: true, ...result });
+    } catch (error) {
+      console.error('Sales KPI sync failed:', error);
+      diagnostics.lastSalesKpiAt = new Date().toISOString();
+      diagnostics.lastSalesKpiResult = {
+        error: String(error.message || error),
+      };
+      sendJson(res, 500, {
+        ok: false,
+        error: String(error.message || error),
+      });
+    } finally {
+      runningSalesKpiSync = null;
+    }
+    return;
+  }
+
   sendJson(res, 404, { ok: false, error: 'Not found' });
 });
 
@@ -304,4 +370,11 @@ server.listen(port, '0.0.0.0', () => {
     () => schedulePushDispatch('hourly_fallback'),
     pushFallbackIntervalMs,
   );
+  if (process.env.SALES_API_KEY) {
+    setTimeout(() => void runScheduledSalesKpiSync(), 30 * 1000);
+    setInterval(
+      () => void runScheduledSalesKpiSync(),
+      salesKpiSyncIntervalMs,
+    );
+  }
 });

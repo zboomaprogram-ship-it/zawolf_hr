@@ -284,6 +284,13 @@ class _NavigationWrapperState extends State<NavigationWrapper>
           path: '/team-leader/tasks',
         ),
         NavigationItem(
+          icon: Icons.campaign_outlined,
+          activeIcon: Icons.campaign,
+          label: 'إعلان للفريق',
+          englishLabel: 'Team Announcement',
+          path: '/hr/announcements',
+        ),
+        NavigationItem(
           icon: Icons.check_circle_outline,
           activeIcon: Icons.check_circle,
           label: 'مهامي',
@@ -334,6 +341,13 @@ class _NavigationWrapperState extends State<NavigationWrapper>
           label: 'المهام',
           englishLabel: 'Tasks',
           path: '/manager/tasks',
+        ),
+        NavigationItem(
+          icon: Icons.campaign_outlined,
+          activeIcon: Icons.campaign,
+          label: 'إعلان للفريق',
+          englishLabel: 'Team Announcement',
+          path: '/hr/announcements',
         ),
         NavigationItem(
           icon: Icons.people_outline,
@@ -544,6 +558,13 @@ class _NavigationWrapperState extends State<NavigationWrapper>
           label: 'المهام',
           englishLabel: 'Tasks',
           path: '/manager/tasks',
+        ),
+        NavigationItem(
+          icon: Icons.campaign_outlined,
+          activeIcon: Icons.campaign,
+          label: 'الإعلانات',
+          englishLabel: 'Announcements',
+          path: '/hr/announcements',
         ),
         NavigationItem(
           icon: Icons.flag_outlined,

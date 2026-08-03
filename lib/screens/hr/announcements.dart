@@ -1,10 +1,15 @@
-import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import 'package:provider/provider.dart';
+
 import '../../components/wolf_button.dart';
 import '../../components/wolf_input_field.dart';
+import '../../models/employee_role.dart';
 import '../../models/location_model.dart';
+import '../../models/user_model.dart';
+import '../../services/auth_service.dart';
+import '../../services/managed_employee_service.dart';
 import '../../theme/theme.dart';
 
 class AnnouncementsScreen extends StatefulWidget {
@@ -17,43 +22,104 @@ class AnnouncementsScreen extends StatefulWidget {
 class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
   final _formKey = GlobalKey<FormState>();
   final FirebaseFirestore _db = FirebaseFirestore.instance;
-
   final _titleController = TextEditingController();
   final _bodyController = TextEditingController();
-  final _departmentController = TextEditingController();
 
+  bool _initialized = false;
   bool _isLoading = false;
+  bool _isLoadingAudience = true;
+  UserModel? _actor;
   List<LocationModel> _locations = [];
-  List<QueryDocumentSnapshot<Map<String, dynamic>>> _employees = [];
+  List<UserModel> _employees = [];
+  List<String> _departments = [];
   final Set<String> _selectedEmployeeIds = {};
+  final Set<String> _selectedDepartments = {};
 
-  String _targetGroup = 'all'; // all | managers_only | location | department
+  String _targetGroup = 'all';
   String? _selectedLocationId;
   String? _selectedLocationName;
 
+  bool get _isScopedSender =>
+      _actor?.role == EmployeeRole.manager ||
+      _actor?.role == EmployeeRole.teamLeader;
+
+  bool get _canPublish =>
+      _actor != null && (EmployeeRole.isHr(_actor!.role) || _isScopedSender);
+
   @override
-  void initState() {
-    super.initState();
-    _fetchLocations();
-    _fetchEmployees();
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_initialized) return;
+    _initialized = true;
+    _actor = context.read<AuthService>().currentUser;
+    _targetGroup = _isScopedSender ? 'team' : 'all';
+    _loadAudience();
   }
 
-  Future<void> _fetchEmployees() async {
+  Future<void> _loadAudience() async {
+    final actor = _actor;
+    if (actor == null) {
+      if (mounted) setState(() => _isLoadingAudience = false);
+      return;
+    }
+
     try {
-      final snapshot = await _db
-          .collection('users')
-          .where('isActive', isEqualTo: true)
-          .get();
+      final employeeFuture = _isScopedSender
+          ? ManagedEmployeeService().loadForReviewer(actor)
+          : _fetchAllActiveEmployees();
+      final results = await Future.wait<Object>([
+        employeeFuture,
+        if (!_isScopedSender) _fetchActiveLocations(),
+        if (!_isScopedSender) _fetchDepartmentNames(),
+      ]);
+      final employees = results.first as List<UserModel>;
+      final departmentNames = <String>{
+        ...employees
+            .map((employee) => employee.department.trim())
+            .where((name) => name.isNotEmpty),
+        if (!_isScopedSender) ...(results.last as List<String>),
+      }.toList()..sort();
+
       if (!mounted) return;
       setState(() {
-        _employees = snapshot.docs
-          ..sort((a, b) {
-            final left = a.data()['displayName'] as String? ?? '';
-            final right = b.data()['displayName'] as String? ?? '';
-            return left.compareTo(right);
-          });
+        _employees = employees;
+        _departments = departmentNames;
+        if (!_isScopedSender) {
+          _locations = results[1] as List<LocationModel>;
+        }
+        _isLoadingAudience = false;
       });
-    } catch (_) {}
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _isLoadingAudience = false);
+      _showError('تعذر تحميل الفئات المستهدفة. أعد المحاولة.');
+    }
+  }
+
+  Future<List<UserModel>> _fetchAllActiveEmployees() async {
+    final snapshot = await _db
+        .collection('users')
+        .where('isActive', isEqualTo: true)
+        .get();
+    final employees = snapshot.docs.map(UserModel.fromFirestore).toList()
+      ..sort((a, b) => a.displayName.compareTo(b.displayName));
+    return employees;
+  }
+
+  Future<List<LocationModel>> _fetchActiveLocations() async {
+    final snapshot = await _db
+        .collection('locations')
+        .where('isActive', isEqualTo: true)
+        .get();
+    return snapshot.docs.map(LocationModel.fromFirestore).toList();
+  }
+
+  Future<List<String>> _fetchDepartmentNames() async {
+    final snapshot = await _db.collection('departments').orderBy('name').get();
+    return snapshot.docs
+        .map((doc) => (doc.data()['name'] as String? ?? '').trim())
+        .where((name) => name.isNotEmpty)
+        .toList();
   }
 
   Future<void> _selectEmployees() async {
@@ -68,8 +134,8 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
             child: Column(
               children: [
                 ListTile(
-                  title: const Text(
-                    'اختر الموظفين',
+                  title: Text(
+                    _isScopedSender ? 'اختر من فريقك' : 'اختر الموظفين',
                     textDirection: TextDirection.rtl,
                   ),
                   subtitle: Text(
@@ -83,7 +149,7 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
                       } else {
                         workingSelection
                           ..clear()
-                          ..addAll(_employees.map((doc) => doc.id));
+                          ..addAll(_employees.map((employee) => employee.uid));
                       }
                     }),
                     child: Text(
@@ -95,31 +161,32 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
                 ),
                 const Divider(height: 1),
                 Expanded(
-                  child: ListView.builder(
-                    itemCount: _employees.length,
-                    itemBuilder: (context, index) {
-                      final employee = _employees[index];
-                      final data = employee.data();
-                      return CheckboxListTile(
-                        value: workingSelection.contains(employee.id),
-                        title: Text(
-                          data['displayName'] as String? ?? 'موظف',
-                          textDirection: TextDirection.rtl,
+                  child: _employees.isEmpty
+                      ? const Center(child: Text('لا يوجد موظفون مسندون إليك'))
+                      : ListView.builder(
+                          itemCount: _employees.length,
+                          itemBuilder: (context, index) {
+                            final employee = _employees[index];
+                            return CheckboxListTile(
+                              value: workingSelection.contains(employee.uid),
+                              title: Text(
+                                employee.displayName,
+                                textDirection: TextDirection.rtl,
+                              ),
+                              subtitle: Text(
+                                '${employee.employeeId} · ${employee.department}',
+                                textDirection: TextDirection.rtl,
+                              ),
+                              onChanged: (selected) => setSheetState(() {
+                                if (selected == true) {
+                                  workingSelection.add(employee.uid);
+                                } else {
+                                  workingSelection.remove(employee.uid);
+                                }
+                              }),
+                            );
+                          },
                         ),
-                        subtitle: Text(
-                          '${data['employeeId'] ?? ''} · ${data['department'] ?? ''}',
-                          textDirection: TextDirection.rtl,
-                        ),
-                        onChanged: (selected) => setSheetState(() {
-                          if (selected == true) {
-                            workingSelection.add(employee.id);
-                          } else {
-                            workingSelection.remove(employee.id);
-                          }
-                        }),
-                      );
-                    },
-                  ),
                 ),
                 Padding(
                   padding: const EdgeInsets.all(16),
@@ -144,100 +211,199 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
     );
   }
 
-  Future<void> _fetchLocations() async {
-    try {
-      final locSnap = await _db
-          .collection('locations')
-          .where('isActive', isEqualTo: true)
-          .get();
-      setState(() {
-        _locations = locSnap.docs
-            .map((doc) => LocationModel.fromFirestore(doc))
-            .toList();
-      });
-    } catch (_) {}
+  Future<void> _selectDepartments() async {
+    final workingSelection = Set<String>.from(_selectedDepartments);
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setSheetState) => SafeArea(
+          child: SizedBox(
+            height: MediaQuery.sizeOf(context).height * 0.72,
+            child: Column(
+              children: [
+                ListTile(
+                  title: const Text(
+                    'اختر الأقسام والإدارات',
+                    textDirection: TextDirection.rtl,
+                  ),
+                  subtitle: Text(
+                    'تم اختيار ${workingSelection.length}',
+                    textDirection: TextDirection.rtl,
+                  ),
+                  trailing: TextButton(
+                    onPressed: () => setSheetState(() {
+                      if (workingSelection.length == _departments.length) {
+                        workingSelection.clear();
+                      } else {
+                        workingSelection
+                          ..clear()
+                          ..addAll(_departments);
+                      }
+                    }),
+                    child: Text(
+                      workingSelection.length == _departments.length
+                          ? 'إلغاء الكل'
+                          : 'تحديد الكل',
+                    ),
+                  ),
+                ),
+                const Divider(height: 1),
+                Expanded(
+                  child: _departments.isEmpty
+                      ? const Center(child: Text('لا توجد أقسام مسجلة'))
+                      : ListView.builder(
+                          itemCount: _departments.length,
+                          itemBuilder: (context, index) {
+                            final department = _departments[index];
+                            return CheckboxListTile(
+                              value: workingSelection.contains(department),
+                              title: Text(
+                                department,
+                                textDirection: TextDirection.rtl,
+                              ),
+                              onChanged: (selected) => setSheetState(() {
+                                if (selected == true) {
+                                  workingSelection.add(department);
+                                } else {
+                                  workingSelection.remove(department);
+                                }
+                              }),
+                            );
+                          },
+                        ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: FilledButton.icon(
+                    onPressed: () {
+                      setState(() {
+                        _selectedDepartments
+                          ..clear()
+                          ..addAll(workingSelection);
+                      });
+                      Navigator.pop(context);
+                    },
+                    icon: const Icon(Icons.check),
+                    label: const Text('تأكيد الأقسام'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
-  @override
-  void dispose() {
-    _titleController.dispose();
-    _bodyController.dispose();
-    _departmentController.dispose();
-    super.dispose();
+  List<DropdownMenuItem<String>> _targetItems() {
+    if (_isScopedSender) {
+      return [
+        DropdownMenuItem(
+          value: 'team',
+          child: Text(
+            _actor?.role == EmployeeRole.teamLeader
+                ? 'جميع أعضاء فريقي'
+                : 'جميع الموظفين المسندين إليّ',
+          ),
+        ),
+        const DropdownMenuItem(
+          value: 'selected',
+          child: Text('اختيار موظف أو أكثر من فريقي'),
+        ),
+      ];
+    }
+    return const [
+      DropdownMenuItem(value: 'all', child: Text('جميع الموظفين (الكل)')),
+      DropdownMenuItem(
+        value: 'selected',
+        child: Text('موظف واحد أو عدة موظفين'),
+      ),
+      DropdownMenuItem(
+        value: 'managers_only',
+        child: Text('المدراء المباشرين فقط'),
+      ),
+      DropdownMenuItem(value: 'location', child: Text('فرع أو موقع محدد')),
+      DropdownMenuItem(value: 'department', child: Text('قسم أو عدة أقسام')),
+    ];
+  }
+
+  List<UserModel> _resolveRecipients() {
+    var users = List<UserModel>.from(_employees);
+    if (_targetGroup == 'managers_only') {
+      users = users
+          .where(
+            (user) =>
+                user.role == EmployeeRole.manager ||
+                user.role == EmployeeRole.teamLeader,
+          )
+          .toList();
+    } else if (_targetGroup == 'location' && _selectedLocationId != null) {
+      users = users
+          .where((user) => user.locationId == _selectedLocationId)
+          .toList();
+    } else if (_targetGroup == 'selected') {
+      if (_selectedEmployeeIds.isEmpty) {
+        throw Exception('اختر موظفاً واحداً على الأقل.');
+      }
+      users = users
+          .where((user) => _selectedEmployeeIds.contains(user.uid))
+          .toList();
+    } else if (_targetGroup == 'department') {
+      if (_selectedDepartments.isEmpty) {
+        throw Exception('اختر قسماً واحداً على الأقل.');
+      }
+      final normalized = _selectedDepartments
+          .map((name) => name.trim().toLowerCase())
+          .toSet();
+      users = users
+          .where(
+            (user) => normalized.contains(user.department.trim().toLowerCase()),
+          )
+          .toList();
+    }
+    return users;
   }
 
   Future<void> _publishAnnouncement() async {
+    if (!_canPublish) {
+      _showError('لا تملك صلاحية إرسال الإعلانات.');
+      return;
+    }
     if (!_formKey.currentState!.validate()) return;
 
-    setState(() {
-      _isLoading = true;
-    });
-
-    final title = _titleController.text.trim();
-    final body = _bodyController.text.trim();
-    final deptFilter = _departmentController.text.trim();
-
+    setState(() => _isLoading = true);
     try {
-      // The active directory is loaded once for selection. Filtering locally
-      // avoids fragile composite indexes and keeps one/many/all identical.
-      var users = List<QueryDocumentSnapshot<Map<String, dynamic>>>.from(
-        _employees,
-      );
+      if (_employees.isEmpty) await _loadAudience();
+      final users = _resolveRecipients();
       if (users.isEmpty) {
-        await _fetchEmployees();
-        users = List<QueryDocumentSnapshot<Map<String, dynamic>>>.from(
-          _employees,
-        );
-      }
-      if (_targetGroup == 'managers_only') {
-        users = users.where((doc) => doc.data()['role'] == 'manager').toList();
-      } else if (_targetGroup == 'location' && _selectedLocationId != null) {
-        users = users
-            .where((doc) => doc.data()['locationId'] == _selectedLocationId)
-            .toList();
+        throw Exception('لا يوجد موظفون يطابقون الفئة المستهدفة.');
       }
 
-      if (_targetGroup == 'selected') {
-        if (_selectedEmployeeIds.isEmpty) {
-          throw Exception('اختر موظفاً واحداً على الأقل.');
-        }
-        users = users
-            .where((doc) => _selectedEmployeeIds.contains(doc.id))
-            .toList();
-      }
-
-      // Filter by department client side
-      if (_targetGroup == 'department' && deptFilter.isNotEmpty) {
-        users = users.where((doc) {
-          final data = doc.data();
-          final userDept = data['department'] as String? ?? '';
-          return userDept.toLowerCase() == deptFilter.toLowerCase();
-        }).toList();
-      }
-
-      if (users.isEmpty) {
-        throw Exception('لا يوجد موظفون مسجلون يطابقون الفئة المستهدفة.');
-      }
-
-      // Write to global announcements history for archival/future views
+      final actor = _actor!;
+      final title = _titleController.text.trim();
+      final body = _bodyController.text.trim();
+      final recipientIds = users.map((user) => user.uid).toList();
       final globalAnnRef = _db.collection('announcements').doc();
+
       await globalAnnRef.set({
         'announcementId': globalAnnRef.id,
         'title': title,
         'body': body,
         'targetGroup': _targetGroup,
-        if (_targetGroup == 'selected')
-          'targetUserIds': _selectedEmployeeIds.toList(),
-        'recipientCount': users.length,
+        'targetUserIds': recipientIds,
+        'recipientCount': recipientIds.length,
+        'audienceScope': _isScopedSender ? 'assigned_team' : 'organization',
         if (_targetGroup == 'location')
           'targetLocationName': _selectedLocationName,
-        if (_targetGroup == 'department') 'targetDepartment': deptFilter,
-        'createdBy': FirebaseAuth.instance.currentUser?.uid ?? '',
+        if (_targetGroup == 'department')
+          'targetDepartments': _selectedDepartments.toList(),
+        'createdBy': actor.uid,
+        'createdByName': actor.displayName,
+        'createdByRole': actor.role,
         'createdAt': FieldValue.serverTimestamp(),
       });
 
-      // Each recipient needs two writes. Chunking keeps every Firestore batch
-      // comfortably below the 500-operation limit.
       const recipientsPerBatch = 200;
       for (
         var offset = 0;
@@ -246,14 +412,12 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
       ) {
         final end = (offset + recipientsPerBatch).clamp(0, users.length);
         final batch = _db.batch();
-        for (final userDoc in users.sublist(offset, end)) {
-          final userId = userDoc.id;
+        for (final user in users.sublist(offset, end)) {
           final notifRef = _db
               .collection('notifications')
-              .doc(userId)
+              .doc(user.uid)
               .collection('items')
               .doc();
-
           batch.set(notifRef, {
             'notificationId': notifRef.id,
             'type': 'hr_announcement',
@@ -267,7 +431,7 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
             'pushSent': false,
             'createdAt': FieldValue.serverTimestamp(),
           });
-          batch.update(_db.collection('users').doc(userId), {
+          batch.update(_db.collection('users').doc(user.uid), {
             'unreadNotifications': FieldValue.increment(1),
           });
         }
@@ -276,216 +440,209 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
 
       _titleController.clear();
       _bodyController.clear();
-      _departmentController.clear();
-
+      setState(() {
+        _selectedEmployeeIds.clear();
+        _selectedDepartments.clear();
+      });
       if (mounted) {
-        String successMsg = 'تم نشر وبث الإعلان للفئة المستهدفة بنجاح. 📢';
-        if (_targetGroup == 'all') {
-          successMsg = 'تم نشر وبث الإعلان العام لجميع الموظفين بنجاح. 📢';
-        }
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
+          const SnackBar(
             backgroundColor: ZaWolfColors.success,
             content: Text(
-              successMsg,
-              style: const TextStyle(fontWeight: FontWeight.bold),
+              'تم إرسال الإعلان للفئة المحددة بنجاح.',
+              style: TextStyle(fontWeight: FontWeight.bold),
             ),
           ),
         );
       }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            backgroundColor: ZaWolfColors.error,
-            content: Text(
-              'خطأ أثناء نشر الإعلان: ${e.toString().replaceAll('Exception: ', '')}',
-            ),
-          ),
-        );
-      }
+    } catch (error) {
+      _showError(
+        'خطأ أثناء نشر الإعلان: '
+        '${error.toString().replaceAll('Exception: ', '')}',
+      );
     } finally {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
-      }
+      if (mounted) setState(() => _isLoading = false);
     }
+  }
+
+  void _showError(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(backgroundColor: ZaWolfColors.error, content: Text(message)),
+    );
+  }
+
+  @override
+  void dispose() {
+    _titleController.dispose();
+    _bodyController.dispose();
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final scopedLabel = _actor?.role == EmployeeRole.teamLeader
+        ? 'إعلان للفريق'
+        : 'إعلان للموظفين المسندين إليك';
 
     return Scaffold(
       appBar: AppBar(
-        title: Text('بث إعلان إداري', style: theme.textTheme.headlineMedium),
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16.0),
-        child: Form(
-          key: _formKey,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text(
-                'نشر إشعار إداري مستهدف',
-                style: theme.textTheme.titleLarge!.copyWith(
-                  color: Colors.white,
-                  fontWeight: FontWeight.bold,
-                ),
-                textDirection: TextDirection.rtl,
-              ),
-              const SizedBox(height: 4),
-              Text(
-                'يمكنك نشر الإعلان وبثه لجميع الموظفين، أو لفرع محدد، أو إدارة معينة، أو المدراء فقط.',
-                style: theme.textTheme.bodyMedium,
-                textDirection: TextDirection.rtl,
-              ),
-              const SizedBox(height: 24),
-
-              OutlinedButton.icon(
-                onPressed: () => context.go('/polls'),
-                icon: const Icon(Icons.assessment_outlined),
-                label: const Text('إنشاء تصويت وعرض النتائج'),
-              ),
-              const SizedBox(height: 20),
-
-              // Target Selector Dropdown
-              DropdownButtonFormField<String>(
-                initialValue: _targetGroup,
-                decoration: const InputDecoration(
-                  labelText: 'الفئة المستهدفة بالإعلان',
-                  prefixIcon: Icon(
-                    Icons.group,
-                    color: ZaWolfColors.primaryCyan,
-                  ),
-                ),
-                items: const [
-                  DropdownMenuItem(
-                    value: 'all',
-                    child: Text('جميع الموظفين (الكل)'),
-                  ),
-                  DropdownMenuItem(
-                    value: 'selected',
-                    child: Text('موظف واحد أو عدة موظفين'),
-                  ),
-                  DropdownMenuItem(
-                    value: 'managers_only',
-                    child: Text('المدراء المباشرين فقط'),
-                  ),
-                  DropdownMenuItem(
-                    value: 'location',
-                    child: Text('فرع أو موقع محدد'),
-                  ),
-                  DropdownMenuItem(
-                    value: 'department',
-                    child: Text('إدارة أو قسم محدد'),
-                  ),
-                ],
-                onChanged: (val) {
-                  setState(() {
-                    _targetGroup = val ?? 'all';
-                  });
-                },
-              ),
-              const SizedBox(height: 16),
-
-              if (_targetGroup == 'selected') ...[
-                OutlinedButton.icon(
-                  onPressed: _selectEmployees,
-                  icon: const Icon(Icons.people_alt_outlined),
-                  label: Text(
-                    _selectedEmployeeIds.isEmpty
-                        ? 'اختيار الموظفين'
-                        : 'المحددون: ${_selectedEmployeeIds.length}',
-                  ),
-                ),
-                const SizedBox(height: 16),
-              ],
-
-              // Conditional Location Dropdown
-              if (_targetGroup == 'location') ...[
-                DropdownButtonFormField<String>(
-                  initialValue: _selectedLocationId,
-                  decoration: const InputDecoration(
-                    labelText: 'اختر الفرع المستهدف',
-                    prefixIcon: Icon(
-                      Icons.location_on,
-                      color: ZaWolfColors.primaryCyan,
-                    ),
-                  ),
-                  items: _locations.map((loc) {
-                    return DropdownMenuItem(
-                      value: loc.locationId,
-                      child: Text(loc.name),
-                    );
-                  }).toList(),
-                  onChanged: (val) {
-                    setState(() {
-                      _selectedLocationId = val;
-                      _selectedLocationName = _locations
-                          .firstWhere((l) => l.locationId == val)
-                          .name;
-                    });
-                  },
-                  validator: (val) =>
-                      val == null ? 'يرجى اختيار الفرع المستهدف' : null,
-                ),
-                const SizedBox(height: 16),
-              ],
-
-              // Conditional Department Input
-              if (_targetGroup == 'department') ...[
-                WolfInputField(
-                  controller: _departmentController,
-                  labelText: 'اسم القسم / الإدارة',
-                  englishLabel: 'Department Name',
-                  hintText: 'مثال: المبيعات / التقنية',
-                  validator: (val) => val == null || val.isEmpty
-                      ? 'يرجى كتابة اسم القسم المستهدف'
-                      : null,
-                ),
-                const SizedBox(height: 16),
-              ],
-
-              // Title
-              WolfInputField(
-                controller: _titleController,
-                labelText: 'عنوان الإعلان',
-                englishLabel: 'Announcement Title',
-                hintText: 'مثال: إجازة عيد الأضحى المبارك',
-                validator: (val) => val == null || val.isEmpty
-                    ? 'يرجى كتابة عنوان الإعلان'
-                    : null,
-              ),
-              const SizedBox(height: 20),
-
-              // Body
-              WolfInputField(
-                controller: _bodyController,
-                labelText: 'محتوى الإعلان التفصيلي',
-                englishLabel: 'Announcement Body',
-                hintText: 'اكتب تفاصيل الإعلان هنا للموظفين...',
-                maxLines: 5,
-                validator: (val) => val == null || val.isEmpty
-                    ? 'يرجى كتابة تفاصيل محتوى الإعلان'
-                    : null,
-              ),
-              const SizedBox(height: 32),
-
-              // Publish Actions
-              WolfButton(
-                onPressed: _publishAnnouncement,
-                text: 'نشر وبث الإعلان الآن',
-                secondaryText: 'BROADCAST ANNOUNCEMENT',
-                loading: _isLoading,
-                height: 56,
-              ),
-            ],
-          ),
+        title: Text(
+          _isScopedSender ? scopedLabel : 'بث إعلان إداري',
+          style: theme.textTheme.headlineMedium,
         ),
       ),
+      body: _isLoadingAudience
+          ? const Center(child: CircularProgressIndicator())
+          : !_canPublish
+          ? const Center(child: Text('لا تملك صلاحية الوصول لهذه الصفحة.'))
+          : SingleChildScrollView(
+              padding: const EdgeInsets.all(16),
+              child: Form(
+                key: _formKey,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(
+                      _isScopedSender
+                          ? 'أرسل إعلاناً لجميع أعضاء فريقك أو لأعضاء محددين.'
+                          : 'أرسل إعلاناً لجميع الموظفين أو اختر عدة أقسام أو موظفين.',
+                      style: theme.textTheme.bodyMedium,
+                      textDirection: TextDirection.rtl,
+                    ),
+                    const SizedBox(height: 20),
+                    if (!_isScopedSender) ...[
+                      OutlinedButton.icon(
+                        onPressed: () => context.go('/polls'),
+                        icon: const Icon(Icons.assessment_outlined),
+                        label: const Text('إنشاء تصويت وعرض النتائج'),
+                      ),
+                      const SizedBox(height: 20),
+                    ],
+                    DropdownButtonFormField<String>(
+                      initialValue: _targetGroup,
+                      decoration: const InputDecoration(
+                        labelText: 'الفئة المستهدفة بالإعلان',
+                        prefixIcon: Icon(
+                          Icons.group,
+                          color: ZaWolfColors.primaryCyan,
+                        ),
+                      ),
+                      items: _targetItems(),
+                      onChanged: (value) =>
+                          setState(() => _targetGroup = value ?? _targetGroup),
+                    ),
+                    const SizedBox(height: 16),
+                    if (_targetGroup == 'selected') ...[
+                      OutlinedButton.icon(
+                        onPressed: _selectEmployees,
+                        icon: const Icon(Icons.people_alt_outlined),
+                        label: Text(
+                          _selectedEmployeeIds.isEmpty
+                              ? 'اختيار الموظفين'
+                              : 'المحددون: ${_selectedEmployeeIds.length}',
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                    ],
+                    if (_targetGroup == 'location') ...[
+                      DropdownButtonFormField<String>(
+                        initialValue: _selectedLocationId,
+                        decoration: const InputDecoration(
+                          labelText: 'اختر الفرع المستهدف',
+                          prefixIcon: Icon(
+                            Icons.location_on,
+                            color: ZaWolfColors.primaryCyan,
+                          ),
+                        ),
+                        items: _locations
+                            .map(
+                              (location) => DropdownMenuItem(
+                                value: location.locationId,
+                                child: Text(location.name),
+                              ),
+                            )
+                            .toList(),
+                        onChanged: (value) {
+                          setState(() {
+                            _selectedLocationId = value;
+                            _selectedLocationName = _locations
+                                .firstWhere(
+                                  (location) => location.locationId == value,
+                                )
+                                .name;
+                          });
+                        },
+                        validator: (value) =>
+                            value == null ? 'يرجى اختيار الفرع المستهدف' : null,
+                      ),
+                      const SizedBox(height: 16),
+                    ],
+                    if (_targetGroup == 'department') ...[
+                      OutlinedButton.icon(
+                        onPressed: _selectDepartments,
+                        icon: const Icon(Icons.domain_outlined),
+                        label: Text(
+                          _selectedDepartments.isEmpty
+                              ? 'اختيار قسم أو عدة أقسام'
+                              : 'الأقسام المحددة: ${_selectedDepartments.length}',
+                        ),
+                      ),
+                      if (_selectedDepartments.isNotEmpty) ...[
+                        const SizedBox(height: 8),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: _selectedDepartments
+                              .map(
+                                (department) => InputChip(
+                                  label: Text(department),
+                                  onDeleted: () => setState(
+                                    () =>
+                                        _selectedDepartments.remove(department),
+                                  ),
+                                ),
+                              )
+                              .toList(),
+                        ),
+                      ],
+                      const SizedBox(height: 16),
+                    ],
+                    WolfInputField(
+                      controller: _titleController,
+                      labelText: 'عنوان الإعلان',
+                      englishLabel: 'Announcement Title',
+                      hintText: 'مثال: اجتماع الفريق الأسبوعي',
+                      validator: (value) =>
+                          value == null || value.trim().isEmpty
+                          ? 'يرجى كتابة عنوان الإعلان'
+                          : null,
+                    ),
+                    const SizedBox(height: 20),
+                    WolfInputField(
+                      controller: _bodyController,
+                      labelText: 'محتوى الإعلان التفصيلي',
+                      englishLabel: 'Announcement Body',
+                      hintText: 'اكتب تفاصيل الإعلان هنا...',
+                      maxLines: 5,
+                      validator: (value) =>
+                          value == null || value.trim().isEmpty
+                          ? 'يرجى كتابة تفاصيل الإعلان'
+                          : null,
+                    ),
+                    const SizedBox(height: 32),
+                    WolfButton(
+                      onPressed: _publishAnnouncement,
+                      text: 'نشر وبث الإعلان الآن',
+                      secondaryText: 'BROADCAST ANNOUNCEMENT',
+                      loading: _isLoading,
+                      height: 56,
+                    ),
+                  ],
+                ),
+              ),
+            ),
     );
   }
 }

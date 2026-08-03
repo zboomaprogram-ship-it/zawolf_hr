@@ -1184,6 +1184,68 @@ class AttendanceService {
     await _reviewSalaryDeduction(attendanceId, reviewerId, 'rejected');
   }
 
+  Future<void> reverseSalaryDeduction({
+    required String attendanceId,
+    required String reviewerId,
+    required String reason,
+  }) async {
+    final normalizedReason = reason.trim();
+    if (normalizedReason.length < 5) {
+      throw Exception('اكتب سبب إلغاء الخصم بوضوح (5 أحرف على الأقل).');
+    }
+
+    final ref = _db.collection('attendance').doc(attendanceId);
+    String userId = '';
+    await _db.runTransaction((transaction) async {
+      final snapshot = await transaction.get(ref);
+      if (!snapshot.exists) throw Exception('سجل الحضور غير موجود.');
+      final data = snapshot.data()!;
+      if (data['salaryDeductionApprovalStatus'] != 'approved') {
+        throw Exception('يمكن إلغاء الخصم المعتمد فقط.');
+      }
+      userId = data['userId'] as String? ?? '';
+      transaction.update(ref, {
+        'salaryDeductionApprovalStatus': 'reversed',
+        'salaryDeductionReversedBy': reviewerId,
+        'salaryDeductionReversedAt': FieldValue.serverTimestamp(),
+        'salaryDeductionReversalReason': normalizedReason,
+      });
+    });
+
+    try {
+      await AuditLogService.instance.record(
+        actorId: reviewerId,
+        action: 'salary_deduction_reversed',
+        targetCollection: 'attendance',
+        targetId: attendanceId,
+        metadata: {'reason': normalizedReason},
+      );
+    } catch (_) {}
+
+    if (userId.isEmpty) return;
+    final notifRef = _db
+        .collection('notifications')
+        .doc(userId)
+        .collection('items')
+        .doc();
+    await notifRef.set({
+      'notificationId': notifRef.id,
+      'type': 'salary_deduction_reversed',
+      'title': 'تم إلغاء الخصم المعتمد',
+      'body': 'ألغت الموارد البشرية خصم الحضور. السبب: $normalizedReason',
+      'data': NotificationRoutePolicy.dataWithRoute(
+        'salary_deduction_reviewed',
+        {'attendanceId': attendanceId},
+      ),
+      'isRead': false,
+      'pushSent': false,
+      'createdAt': FieldValue.serverTimestamp(),
+    });
+    await _db.collection('users').doc(userId).update({
+      'unreadNotifications': FieldValue.increment(1),
+    });
+  }
+
   Future<void> correctCheckInTime({
     required String attendanceId,
     required String reviewerId,

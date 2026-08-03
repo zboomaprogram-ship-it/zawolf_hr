@@ -2,16 +2,19 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../components/wolf_card.dart';
+import '../../components/sales_kpi_details_panel.dart';
 import '../../components/dynamic_dropdown.dart';
 import '../../components/wolf_input_field.dart';
 import '../../models/kpi_model.dart';
 import '../../models/employee_role.dart';
 import '../../models/location_model.dart';
+import '../../models/sales_kpi_summary.dart';
 import '../../models/user_model.dart';
 import '../../services/auth_service.dart';
 import '../../services/department_service.dart';
 import '../../services/kpi_service.dart';
 import '../../services/location_service.dart';
+import '../../services/sales_kpi_integration_service.dart';
 import '../../theme/theme.dart';
 import '../../utils/payroll_cycle.dart';
 
@@ -40,12 +43,13 @@ class _KpiManagementScreenState extends State<KpiManagementScreen> {
     }
 
     return DefaultTabController(
-      length: 2,
+      length: 3,
       child: Scaffold(
         appBar: AppBar(
           title: Text('إدارة KPI', style: theme.textTheme.headlineMedium),
           bottom: const TabBar(
             tabs: [
+              Tab(text: 'لوحة الفريق'),
               Tab(text: 'أهداف الموظفين'),
               Tab(text: 'القوالب'),
             ],
@@ -71,6 +75,11 @@ class _KpiManagementScreenState extends State<KpiManagementScreen> {
         ),
         body: TabBarView(
           children: [
+            _ProviderDashboardTab(
+              reviewer: reviewer,
+              monthKey: _monthKey,
+              kpiService: _kpiService,
+            ),
             _EmployeeKpiTab(
               reviewer: reviewer,
               monthKey: _monthKey,
@@ -115,6 +124,389 @@ class _KpiManagementScreenState extends State<KpiManagementScreen> {
         reviewer: reviewer,
         kpiService: _kpiService,
         monthKey: _monthKey,
+      ),
+    );
+  }
+}
+
+class _ProviderDashboardTab extends StatefulWidget {
+  final UserModel reviewer;
+  final String monthKey;
+  final KpiService kpiService;
+
+  const _ProviderDashboardTab({
+    required this.reviewer,
+    required this.monthKey,
+    required this.kpiService,
+  });
+
+  @override
+  State<_ProviderDashboardTab> createState() => _ProviderDashboardTabState();
+}
+
+class _ProviderDashboardTabState extends State<_ProviderDashboardTab> {
+  String _department = 'all';
+  final SalesKpiIntegrationService _salesIntegration =
+      SalesKpiIntegrationService();
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<List<EmployeeKpiModel>>(
+      stream: widget.kpiService.watchManagedKpis(
+        widget.reviewer,
+        widget.monthKey,
+      ),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(
+            child: CircularProgressIndicator(color: ZaWolfColors.primaryCyan),
+          );
+        }
+        final providerRecords = (snapshot.data ?? [])
+            .where((record) => record.providerDetails.isNotEmpty)
+            .toList();
+        if (!EmployeeRole.isHr(widget.reviewer.role)) {
+          return _buildDashboard(context, providerRecords, null);
+        }
+        return StreamBuilder<SalesKpiSummary?>(
+          stream: _salesIntegration.watchCurrentSummary(),
+          builder: (context, summarySnapshot) {
+            if (summarySnapshot.connectionState == ConnectionState.waiting &&
+                !summarySnapshot.hasData) {
+              return const Center(
+                child: CircularProgressIndicator(
+                  color: ZaWolfColors.primaryCyan,
+                ),
+              );
+            }
+            return _buildDashboard(
+              context,
+              providerRecords,
+              summarySnapshot.data,
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildDashboard(
+    BuildContext context,
+    List<EmployeeKpiModel> providerRecords,
+    SalesKpiSummary? summary,
+  ) {
+    final external = summary?.agents ?? const <SalesKpiAgentSummary>[];
+    final visibleExternal = _department == 'all'
+        ? external
+        : external.where((agent) => agent.kind == _department).toList();
+    final visibleRecords = _department == 'all'
+        ? providerRecords
+        : providerRecords
+              .where((record) => record.providerDepartment == _department)
+              .toList();
+    final useExternal = external.isNotEmpty;
+    final salesCount = useExternal
+        ? summary!.availableSalesAgents
+        : providerRecords.where((r) => r.providerDepartment == 'sales').length;
+    final teleCount = useExternal
+        ? summary!.availableTeleSalesAgents
+        : providerRecords
+              .where((r) => r.providerDepartment == 'tele_sales')
+              .length;
+    final totalCount = useExternal ? external.length : providerRecords.length;
+    final average = useExternal
+        ? (_department == 'sales'
+              ? summary!.salesAverageKpi
+              : _department == 'tele_sales'
+              ? summary!.teleSalesAverageKpi
+              : external.isEmpty
+              ? 0.0
+              : external.fold<double>(0, (sum, a) => sum + a.finalKpi) /
+                    external.length)
+        : visibleRecords.isEmpty
+        ? 0.0
+        : visibleRecords.fold<double>(
+                0,
+                (total, record) => total + record.overallProgress,
+              ) /
+              visibleRecords.length;
+
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        if (summary != null &&
+            summary.apiAgentCount > 0 &&
+            !summary.apiIdentityMappingReady) ...[
+          _KpiIdentityWarning(summary: summary),
+          const SizedBox(height: 14),
+        ],
+        WolfCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                'مؤشرات الفريق المتصلة',
+                textAlign: TextAlign.right,
+                style: Theme.of(
+                  context,
+                ).textTheme.titleLarge?.copyWith(color: Colors.white),
+              ),
+              const SizedBox(height: 12),
+              SegmentedButton<String>(
+                segments: [
+                  ButtonSegment(
+                    value: 'all',
+                    label: Text('الكل ($totalCount)'),
+                    icon: const Icon(Icons.dashboard_outlined),
+                  ),
+                  ButtonSegment(
+                    value: 'sales',
+                    label: Text('المبيعات ($salesCount)'),
+                    icon: const Icon(Icons.payments_outlined),
+                  ),
+                  ButtonSegment(
+                    value: 'tele_sales',
+                    label: Text('الهاتف ($teleCount)'),
+                    icon: const Icon(Icons.support_agent_outlined),
+                  ),
+                ],
+                selected: {_department},
+                showSelectedIcon: false,
+                onSelectionChanged: (value) =>
+                    setState(() => _department = value.first),
+              ),
+              const SizedBox(height: 14),
+              Row(
+                children: [
+                  _DashboardStat(
+                    label: 'متوسط KPI',
+                    value: '${average.toStringAsFixed(1)}%',
+                    color: ZaWolfColors.perfGold,
+                  ),
+                  const SizedBox(width: 10),
+                  _DashboardStat(
+                    label: 'الموظفون',
+                    value:
+                        '${useExternal ? visibleExternal.length : visibleRecords.length}',
+                    color: ZaWolfColors.primaryCyan,
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 14),
+        if (useExternal && visibleExternal.isNotEmpty)
+          ...visibleExternal.map(
+            (agent) => Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: _ExternalAgentCard(agent: agent),
+            ),
+          )
+        else if (visibleRecords.isEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 80),
+            child: Text(
+              totalCount == 0
+                  ? EmployeeRole.isHr(widget.reviewer.role)
+                        ? 'لا توجد بيانات KPI متصلة في هذه الدورة'
+                        : 'لا توجد مؤشرات مرتبطة بحسابات فريقك. يجب أن يرسل مصدر KPI كود الموظف الثابت idEmp لعرض بيانات كل موظف بأمان.'
+                  : 'لا توجد بيانات في هذا القسم',
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+          )
+        else
+          ...visibleRecords.map(
+            (record) => Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(8),
+                onTap: () => showModalBottomSheet<void>(
+                  context: context,
+                  isScrollControlled: true,
+                  backgroundColor: ZaWolfColors.background,
+                  builder: (context) => DraggableScrollableSheet(
+                    expand: false,
+                    initialChildSize: 0.85,
+                    minChildSize: 0.5,
+                    maxChildSize: 0.95,
+                    builder: (context, controller) => ListView(
+                      controller: controller,
+                      padding: const EdgeInsets.all(16),
+                      children: [SalesKpiDetailsPanel(kpi: record)],
+                    ),
+                  ),
+                ),
+                child: SalesKpiDetailsPanel(kpi: record, compact: true),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+class _KpiIdentityWarning extends StatelessWidget {
+  final SalesKpiSummary summary;
+
+  const _KpiIdentityWarning({required this.summary});
+
+  @override
+  Widget build(BuildContext context) {
+    final missing = summary.apiMissingAgentIdCount;
+    final total = summary.apiAgentCount;
+    return Semantics(
+      label: 'تحذير ربط بيانات مؤشرات الأداء بالموظفين',
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: ZaWolfColors.warning.withValues(alpha: 0.1),
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(
+            color: ZaWolfColors.warning.withValues(alpha: 0.55),
+          ),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Icon(Icons.link_off_outlined, color: ZaWolfColors.warning),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text(
+                    'بيانات الأقسام متاحة، وربط الموظفين غير مكتمل',
+                    textAlign: TextAlign.right,
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      color: ZaWolfColors.warning,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'مصدر KPI أعاد $missing من $total سجل بدون كود موظف ثابت. لن يربط النظام الأسماء تلقائياً لتجنب إسناد نتائج إلى موظف غير صحيح. يجب أن يعيد المصدر idEmp صالحاً لكل سجل.',
+                    textAlign: TextAlign.right,
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ExternalAgentCard extends StatelessWidget {
+  final SalesKpiAgentSummary agent;
+
+  const _ExternalAgentCard({required this.agent});
+
+  @override
+  Widget build(BuildContext context) {
+    final ratio = agent.target <= 0 ? 0.0 : agent.actual / agent.target;
+    final color = agent.isMapped ? ZaWolfColors.success : ZaWolfColors.warning;
+    return WolfCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Text(
+                '${agent.finalKpi.toStringAsFixed(1)}%',
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                  color: ZaWolfColors.perfGold,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const Spacer(),
+              Expanded(
+                flex: 3,
+                child: Text(
+                  agent.mappedEmployeeName.isNotEmpty
+                      ? agent.mappedEmployeeName
+                      : agent.name,
+                  textAlign: TextAlign.right,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Icon(
+                agent.kind == 'sales'
+                    ? Icons.payments_outlined
+                    : Icons.support_agent,
+                color: ZaWolfColors.primaryCyan,
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          LinearProgressIndicator(
+            value: ratio.clamp(0, 1),
+            minHeight: 8,
+            color: color,
+            backgroundColor: ZaWolfColors.surface03,
+          ),
+          const SizedBox(height: 8),
+          Text(
+            '${agent.actual.toStringAsFixed(0)} / ${agent.target.toStringAsFixed(0)} · '
+            '${agent.isMapped ? 'مرتبط: ${agent.mappedEmployeeId}' : 'غير مرتبط بحساب موظف'} · ${agent.key}',
+            textAlign: TextAlign.right,
+            style: Theme.of(
+              context,
+            ).textTheme.bodySmall?.copyWith(color: color),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DashboardStat extends StatelessWidget {
+  final String label;
+  final String value;
+  final Color color;
+
+  const _DashboardStat({
+    required this.label,
+    required this.value,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: Container(
+        constraints: const BoxConstraints(minHeight: 76),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: ZaWolfColors.surface02,
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(color: color.withValues(alpha: 0.35)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            Text(label, style: Theme.of(context).textTheme.bodySmall),
+            const SizedBox(height: 4),
+            Directionality(
+              textDirection: TextDirection.ltr,
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  value,
+                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                    color: color,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

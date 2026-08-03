@@ -152,7 +152,15 @@ class AttendanceInsightsCard extends StatelessWidget {
               final narrow = constraints.maxWidth < 520;
               final cards = [
                 _InsightTile(
-                  label: 'حاضر',
+                  label: 'الحضور',
+                  value: summary.attended,
+                  percent: summary.percentOf(summary.attended),
+                  color: ZaWolfColors.primaryCyan,
+                  icon: Icons.groups_2_outlined,
+                  onTap: () => onCategoryTap?.call('attended'),
+                ),
+                _InsightTile(
+                  label: 'في الموعد',
                   value: summary.present,
                   percent: summary.percentOf(summary.present),
                   color: ZaWolfColors.success,

@@ -141,6 +141,10 @@ class UserModel {
   final String? registeredAttendanceDeviceLabel;
   final DateTime? registeredAttendanceDeviceAt;
   final String? initialPassword; // Local visual support on account creation
+  final bool salesAnalyticsEnabled;
+  final String salesAnalyticsRole;
+  final String salesAnalyticsAgentKey;
+  final String salesAnalyticsCompany;
 
   UserModel({
     required this.uid,
@@ -183,6 +187,10 @@ class UserModel {
     this.registeredAttendanceDeviceLabel,
     this.registeredAttendanceDeviceAt,
     this.initialPassword,
+    this.salesAnalyticsEnabled = false,
+    this.salesAnalyticsRole = '',
+    this.salesAnalyticsAgentKey = '',
+    this.salesAnalyticsCompany = '',
   });
 
   factory UserModel.fromFirestore(DocumentSnapshot doc) {
@@ -256,6 +264,10 @@ class UserModel {
           data['registeredAttendanceDeviceLabel'] as String?,
       registeredAttendanceDeviceAt:
           (data['registeredAttendanceDeviceAt'] as Timestamp?)?.toDate(),
+      salesAnalyticsEnabled: data['salesAnalyticsEnabled'] as bool? ?? false,
+      salesAnalyticsRole: data['salesAnalyticsRole'] as String? ?? '',
+      salesAnalyticsAgentKey: data['salesAnalyticsAgentKey'] as String? ?? '',
+      salesAnalyticsCompany: data['salesAnalyticsCompany'] as String? ?? '',
     );
   }
 
@@ -309,6 +321,13 @@ class UserModel {
         'registeredAttendanceDeviceAt': Timestamp.fromDate(
           registeredAttendanceDeviceAt!,
         ),
+      if (salesAnalyticsEnabled) 'salesAnalyticsEnabled': true,
+      if (salesAnalyticsRole.isNotEmpty)
+        'salesAnalyticsRole': salesAnalyticsRole,
+      if (salesAnalyticsAgentKey.isNotEmpty)
+        'salesAnalyticsAgentKey': salesAnalyticsAgentKey,
+      if (salesAnalyticsCompany.isNotEmpty)
+        'salesAnalyticsCompany': salesAnalyticsCompany,
     };
   }
 
@@ -356,6 +375,10 @@ class UserModel {
       'registeredAttendanceDeviceLabel': registeredAttendanceDeviceLabel,
       'registeredAttendanceDeviceAt':
           registeredAttendanceDeviceAt?.millisecondsSinceEpoch,
+      'salesAnalyticsEnabled': salesAnalyticsEnabled,
+      'salesAnalyticsRole': salesAnalyticsRole,
+      'salesAnalyticsAgentKey': salesAnalyticsAgentKey,
+      'salesAnalyticsCompany': salesAnalyticsCompany,
     };
   }
 
@@ -420,6 +443,10 @@ class UserModel {
       registeredAttendanceDeviceLabel:
           data['registeredAttendanceDeviceLabel'] as String?,
       registeredAttendanceDeviceAt: readDate('registeredAttendanceDeviceAt'),
+      salesAnalyticsEnabled: data['salesAnalyticsEnabled'] as bool? ?? false,
+      salesAnalyticsRole: data['salesAnalyticsRole'] as String? ?? '',
+      salesAnalyticsAgentKey: data['salesAnalyticsAgentKey'] as String? ?? '',
+      salesAnalyticsCompany: data['salesAnalyticsCompany'] as String? ?? '',
     );
   }
 
@@ -464,6 +491,10 @@ class UserModel {
     String? registeredAttendanceDeviceLabel,
     DateTime? registeredAttendanceDeviceAt,
     String? initialPassword,
+    bool? salesAnalyticsEnabled,
+    String? salesAnalyticsRole,
+    String? salesAnalyticsAgentKey,
+    String? salesAnalyticsCompany,
   }) {
     return UserModel(
       uid: uid ?? this.uid,
@@ -511,6 +542,13 @@ class UserModel {
       registeredAttendanceDeviceAt:
           registeredAttendanceDeviceAt ?? this.registeredAttendanceDeviceAt,
       initialPassword: initialPassword ?? this.initialPassword,
+      salesAnalyticsEnabled:
+          salesAnalyticsEnabled ?? this.salesAnalyticsEnabled,
+      salesAnalyticsRole: salesAnalyticsRole ?? this.salesAnalyticsRole,
+      salesAnalyticsAgentKey:
+          salesAnalyticsAgentKey ?? this.salesAnalyticsAgentKey,
+      salesAnalyticsCompany:
+          salesAnalyticsCompany ?? this.salesAnalyticsCompany,
     );
   }
 

@@ -253,13 +253,13 @@ void main() {
   });
 
   group('Productivity score', () {
-    test('does not invent scores when tasks or KPI are missing', () {
+    test('keeps the fixed KPI weight when KPI data is missing', () {
       final score = ProductivityScoreModel.calculateAvailableOverall(
         attendanceScore: 100,
         punctualityScore: 80,
       );
 
-      expect(score, 92.5);
+      expect(score, 28.5);
     });
 
     test('calculates weighted productivity score', () {
@@ -271,7 +271,7 @@ void main() {
         kpiScore: 75,
       );
 
-      expect(score, 82);
+      expect(score, 80.25);
     });
 
     test('clamps productivity score to 100', () {

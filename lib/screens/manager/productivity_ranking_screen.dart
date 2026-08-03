@@ -164,7 +164,20 @@ class _ProductivityRankingScreenState extends State<ProductivityRankingScreen> {
                 return Padding(
                   padding: const EdgeInsets.only(bottom: 12),
                   child: WolfCard(
-                    onTap: () => showProductivityScoreDetails(context, score),
+                    onTap: () => showProductivityScoreDetails(
+                      context,
+                      score,
+                      onUpdateBehavior: (score, value, reason) async {
+                        await _service.updateBehaviorScore(
+                          employeeUserId: score.userId,
+                          reviewer: reviewer,
+                          monthKey: score.monthKey,
+                          behaviorScore: value,
+                          reason: reason,
+                        );
+                        if (context.mounted) Navigator.of(context).pop();
+                      },
+                    ),
                     child: Row(
                       children: [
                         _RankBadge(rank: rank),

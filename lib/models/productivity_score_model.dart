@@ -14,6 +14,7 @@ class ProductivityScoreModel {
   final double taskCompletionScore;
   final double taskQualityScore;
   final double kpiScore;
+  final double behaviorScore;
   final bool hasTaskData;
   final bool hasTaskQualityData;
   final bool hasKpiData;
@@ -39,6 +40,7 @@ class ProductivityScoreModel {
     required this.taskCompletionScore,
     required this.taskQualityScore,
     required this.kpiScore,
+    this.behaviorScore = 100,
     this.hasTaskData = true,
     this.hasTaskQualityData = true,
     this.hasKpiData = true,
@@ -84,6 +86,7 @@ class ProductivityScoreModel {
           (data['taskCompletionScore'] as num?)?.toDouble() ?? 0,
       taskQualityScore: (data['taskQualityScore'] as num?)?.toDouble() ?? 0,
       kpiScore: (data['kpiScore'] as num?)?.toDouble() ?? 0,
+      behaviorScore: (data['behaviorScore'] as num?)?.toDouble() ?? 100,
       hasTaskData: data['hasTaskData'] as bool? ?? true,
       hasTaskQualityData: data['hasTaskQualityData'] as bool? ?? true,
       hasKpiData: data['hasKpiData'] as bool? ?? true,
@@ -111,6 +114,8 @@ class ProductivityScoreModel {
       'taskCompletionScore': taskCompletionScore,
       'taskQualityScore': taskQualityScore,
       'kpiScore': kpiScore,
+      'behaviorScore': behaviorScore,
+      'attendanceComponentScore': attendanceComponentScore,
       'hasTaskData': hasTaskData,
       'hasTaskQualityData': hasTaskQualityData,
       'hasKpiData': hasKpiData,
@@ -132,13 +137,13 @@ class ProductivityScoreModel {
     required double taskCompletionScore,
     required double taskQualityScore,
     required double kpiScore,
+    double behaviorScore = 100,
   }) {
+    final attendanceComponent = (attendanceScore + punctualityScore) / 2;
     final value =
-        (attendanceScore * 0.25) +
-        (punctualityScore * 0.15) +
-        (taskCompletionScore * 0.25) +
-        (taskQualityScore * 0.15) +
-        (kpiScore * 0.20);
+        (kpiScore * 0.70) +
+        (attendanceComponent * 0.15) +
+        (behaviorScore * 0.15);
     return value.clamp(0, 100).toDouble();
   }
 
@@ -148,23 +153,18 @@ class ProductivityScoreModel {
     double? taskCompletionScore,
     double? taskQualityScore,
     double? kpiScore,
+    double behaviorScore = 100,
   }) {
-    final components = <(double, double)>[
-      (attendanceScore, 0.25),
-      (punctualityScore, 0.15),
-      if (taskCompletionScore != null) (taskCompletionScore, 0.25),
-      if (taskQualityScore != null) (taskQualityScore, 0.15),
-      if (kpiScore != null) (kpiScore, 0.20),
-    ];
-    final totalWeight = components.fold<double>(
-      0,
-      (total, item) => total + item.$2,
+    return calculateOverall(
+      attendanceScore: attendanceScore,
+      punctualityScore: punctualityScore,
+      taskCompletionScore: taskCompletionScore ?? 0,
+      taskQualityScore: taskQualityScore ?? 0,
+      kpiScore: kpiScore ?? 0,
+      behaviorScore: behaviorScore,
     );
-    if (totalWeight == 0) return 0;
-    final weighted = components.fold<double>(
-      0,
-      (total, item) => total + (item.$1 * item.$2),
-    );
-    return (weighted / totalWeight).clamp(0, 100).toDouble();
   }
+
+  double get attendanceComponentScore =>
+      ((attendanceScore + punctualityScore) / 2).clamp(0, 100).toDouble();
 }

@@ -1,0 +1,35 @@
+name: Repair Firebase User Identities
+
+on:
+  workflow_dispatch:
+    inputs:
+      account_email:
+        description: Optional account email; leave empty to inspect all users
+        required: false
+        type: string
+      dry_run:
+        description: Preview changes without writing to Firebase
+        required: true
+        default: true
+        type: boolean
+
+jobs:
+  repair-user-identities:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: scripts/package-lock.json
+      - name: Install script dependencies
+        working-directory: scripts
+        run: npm ci
+      - name: Repair identities
+        working-directory: scripts
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          ACCOUNT_EMAIL: ${{ inputs.account_email }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: node repair-user-identities.js

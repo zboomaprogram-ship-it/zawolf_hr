@@ -79,11 +79,13 @@ class AppSecurityStatus {
   final AppSecurityPolicy policy;
   final int currentBuild;
   final String version;
+  final bool policyVerified;
 
   const AppSecurityStatus({
     required this.policy,
     required this.currentBuild,
     required this.version,
+    required this.policyVerified,
   });
 
   bool get updateRequired =>
@@ -103,6 +105,7 @@ class AppSecurityPolicyService {
     final package = await PackageInfo.fromPlatform();
     final currentBuild = int.tryParse(package.buildNumber) ?? 0;
     AppSecurityPolicy? policy;
+    var policyVerified = false;
 
     try {
       final snapshot = await _db
@@ -113,21 +116,33 @@ class AppSecurityPolicyService {
               source: serverOnly ? Source.server : Source.serverAndCache,
             ),
           );
-      policy = AppSecurityPolicy.fromMap(snapshot.data());
+      final data = snapshot.data();
+      if (!snapshot.exists || data == null) {
+        throw StateError('Missing app security policy');
+      }
+      policy = AppSecurityPolicy.fromMap(data);
+      policyVerified = true;
       await _cache(policy);
     } catch (_) {
       policy = await _loadCached();
+      policyVerified = policy != null;
     }
 
     return AppSecurityStatus(
       policy: policy ?? const AppSecurityPolicy(),
       currentBuild: currentBuild,
       version: package.version,
+      policyVerified: kIsWeb || policyVerified,
     );
   }
 
   Future<AppSecurityPolicy> assertAttendanceClientAllowed() async {
     final status = await loadStatus();
+    if (!status.policyVerified) {
+      throw Exception(
+        'تعذر التحقق من سياسة أمان التطبيق. تحقق من الإنترنت ثم أعد المحاولة.',
+      );
+    }
     if (status.updateRequired) {
       throw Exception(status.policy.messageAr);
     }

@@ -153,7 +153,14 @@ class PermissionService {
         .collection('permissions')
         .where('userId', isEqualTo: req.userId)
         .where('monthKey', isEqualTo: monthKey)
-        .where('status', whereIn: ['approved', 'pending_hr', 'pending_manager'])
+        .where('status', whereIn: const [
+          'pending',
+          'pending_team_leader',
+          'pending_manager',
+          'pending_hr',
+          'pending_ceo',
+          'approved',
+        ])
         .get();
 
     final regularDocs = monthlyDocs.docs

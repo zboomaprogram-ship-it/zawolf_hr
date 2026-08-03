@@ -236,6 +236,29 @@ class _EmployeeTaskCard extends StatelessWidget {
               textDirection: TextDirection.rtl,
             ),
           ],
+          if (task.source == 'sales_analytics_api' &&
+              task.targetValue != null) ...[
+            const SizedBox(height: 10),
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: ZaWolfColors.primaryCyan.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(
+                  color: ZaWolfColors.primaryCyan.withValues(alpha: 0.25),
+                ),
+              ),
+              child: Text(
+                'هدف المرحلة ${task.milestoneNumber}: '
+                '${task.targetValue!.toStringAsFixed(1)} ${task.targetUnit}',
+                textAlign: TextAlign.right,
+                textDirection: TextDirection.rtl,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: ZaWolfColors.primaryCyan,
+                ),
+              ),
+            ),
+          ],
           const SizedBox(height: 12),
           Text(
             'آخر موعد: $dueText',
@@ -273,7 +296,11 @@ class _EmployeeTaskCard extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: 8),
-                const Icon(Icons.link, color: ZaWolfColors.primaryCyan, size: 16),
+                const Icon(
+                  Icons.link,
+                  color: ZaWolfColors.primaryCyan,
+                  size: 16,
+                ),
                 const SizedBox(width: 4),
                 Text(
                   'المرفق:',

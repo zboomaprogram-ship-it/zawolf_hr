@@ -100,6 +100,8 @@ class _RequestsLogScreenState extends State<RequestsLogScreen> {
         'نوع الطلب',
         'الحالة',
         'تاريخ التقديم',
+        'موعد تنفيذ الطلب',
+        'نهاية الطلب',
         'تاريخ الرد',
         'المراجع',
         'التفاصيل',
@@ -115,6 +117,8 @@ class _RequestsLogScreenState extends State<RequestsLogScreen> {
           item.requestType,
           item.statusLabel,
           dateFormat.format(item.submittedAt),
+          item.occursAt == null ? '' : dateFormat.format(item.occursAt!),
+          item.occursEndAt == null ? '' : dateFormat.format(item.occursEndAt!),
           item.reviewedAt == null ? '' : dateFormat.format(item.reviewedAt!),
           item.reviewedBy,
           item.details,
@@ -573,6 +577,17 @@ class _RequestLogCard extends StatelessWidget {
             'تاريخ التقديم: ${dateFormat.format(item.submittedAt)}',
             style: const TextStyle(color: ZaWolfColors.textMuted, fontSize: 11),
           ),
+          if (item.occursAt != null)
+            Text(
+              'موعد تنفيذ الطلب: ${dateFormat.format(item.occursAt!)}'
+              '${item.occursEndAt == null ? '' : ' حتى ${dateFormat.format(item.occursEndAt!)}'}',
+              style: const TextStyle(
+                color: ZaWolfColors.primaryCyan,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+              textDirection: TextDirection.rtl,
+            ),
           if (item.reviewedAt != null)
             Text(
               'تاريخ الرد: ${dateFormat.format(item.reviewedAt!)}'

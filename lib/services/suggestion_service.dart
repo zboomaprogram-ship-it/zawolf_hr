@@ -27,7 +27,7 @@ class SuggestionService {
     );
 
     try {
-      await _notifyManagers(
+      await _notifyReviewers(
         title: 'مقترح جديد',
         body: '${employee.displayName} أرسل مقترحاً: ${title.trim()}',
         suggestionId: ref.id,
@@ -48,11 +48,28 @@ class SuggestionService {
   }
 
   Future<void> markReviewed(String suggestionId, String reviewerId) async {
-    await _db.collection('suggestions').doc(suggestionId).update({
+    final ref = _db.collection('suggestions').doc(suggestionId);
+    final snapshot = await ref.get();
+    final suggestion = snapshot.exists
+        ? SuggestionModel.fromFirestore(snapshot)
+        : null;
+
+    await ref.update({
       'status': 'reviewed',
       'reviewedBy': reviewerId,
       'reviewedAt': FieldValue.serverTimestamp(),
     });
+
+    if (suggestion == null || suggestion.userId.isEmpty) return;
+    try {
+      await RoleNotificationService.instance.createNotification(
+        recipientId: suggestion.userId,
+        type: 'suggestion_reviewed',
+        title: 'تمت مراجعة مقترحك',
+        body: 'تمت مراجعة المقترح: ${suggestion.title}',
+        data: {'suggestionId': suggestionId, 'route': '/employee/suggestions'},
+      );
+    } catch (_) {}
   }
 
   List<SuggestionModel> _sortedSuggestions(QuerySnapshot snapshot) {
@@ -67,7 +84,7 @@ class SuggestionService {
     return suggestions;
   }
 
-  Future<void> _notifyManagers({
+  Future<void> _notifyReviewers({
     required String title,
     required String body,
     required String suggestionId,
@@ -77,7 +94,14 @@ class SuggestionService {
       type: 'suggestion_new',
       title: title,
       body: body,
-      data: {'suggestionId': suggestionId},
+      data: {'suggestionId': suggestionId, 'route': '/manager/suggestions'},
+    );
+    await RoleNotificationService.instance.notifyRole(
+      role: 'hr',
+      type: 'suggestion_new',
+      title: title,
+      body: body,
+      data: {'suggestionId': suggestionId, 'route': '/manager/suggestions'},
     );
   }
 }

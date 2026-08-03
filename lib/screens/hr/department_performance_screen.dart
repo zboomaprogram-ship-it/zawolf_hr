@@ -76,8 +76,20 @@ class _DepartmentPerformanceScreenState
     }
   }
 
-  void _refreshEmptyCacheOnce(UserModel reviewer) {
+  void _refreshStaleCacheOnce(
+    UserModel reviewer,
+    List<ProductivityScoreModel> scores,
+  ) {
     if (_autoRefreshAttempted || _refreshing) return;
+    final now = DateTime.now();
+    final stale =
+        scores.isEmpty ||
+        scores.any((score) {
+          final calculatedAt = score.calculatedAt;
+          return calculatedAt == null ||
+              now.difference(calculatedAt).inMinutes >= 30;
+        });
+    if (!stale) return;
     _autoRefreshAttempted = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _refresh(reviewer, showConfirmation: false);
@@ -196,10 +208,10 @@ class _DepartmentPerformanceScreenState
           );
         }
         final scores = snapshot.data ?? [];
+        _refreshStaleCacheOnce(reviewer, scores);
         final departments = _aggregateDepartments(scores, reviewer);
 
         if (departments.isEmpty) {
-          _refreshEmptyCacheOnce(reviewer);
           return Center(
             child: Padding(
               padding: const EdgeInsets.all(24),
@@ -275,6 +287,15 @@ class _DepartmentPerformanceScreenState
                               dept.departmentName,
                         )
                         .toList(),
+                    onUpdateBehavior: (score, value, reason) async {
+                      await _service.updateBehaviorScore(
+                        employeeUserId: score.userId,
+                        reviewer: reviewer,
+                        monthKey: score.monthKey,
+                        behaviorScore: value,
+                        reason: reason,
+                      );
+                    },
                   ),
                   child: Row(
                     children: [

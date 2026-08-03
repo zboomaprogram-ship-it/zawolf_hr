@@ -5,6 +5,7 @@ import 'package:intl/intl.dart' hide TextDirection;
 import '../../components/wolf_card.dart';
 import '../../models/performance_model.dart';
 import '../../models/user_model.dart';
+import '../../services/attendance_period_summary_service.dart';
 import '../../theme/theme.dart';
 
 class EmployeeInsightsScreen extends StatefulWidget {
@@ -18,62 +19,25 @@ class EmployeeInsightsScreen extends StatefulWidget {
 
 class _EmployeeInsightsScreenState extends State<EmployeeInsightsScreen> {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
-  late final Future<_EmployeeAttendanceOverview> _attendanceFuture;
-
-  @override
-  void initState() {
-    super.initState();
-    _attendanceFuture = _loadAttendanceOverview();
-  }
-
-  Future<_EmployeeAttendanceOverview> _loadAttendanceOverview() async {
+  Future<_EmployeeAttendanceOverview> _loadAttendanceOverview(
+    UserModel employee,
+  ) async {
     final today = DateTime.now();
-    final days = List.generate(
-      30,
-      (index) => DateTime(today.year, today.month, today.day - index),
-    );
-    final docs = await Future.wait(
-      days.map((day) {
-        final key = DateFormat('yyyy-MM-dd').format(day);
-        return _db
-            .collection('attendance')
-            .doc('${widget.employeeUid}_$key')
-            .get();
-      }),
-    );
-    final records = docs
-        .where((doc) => doc.exists)
-        .map((doc) => doc.data()!)
-        .toList();
-    final absent = records.where((item) => item['status'] == 'absent').length;
-    final late = records
-        .where(
-          (item) =>
-              item['isLate'] == true || _isLate(item['status'] as String?),
-        )
-        .length;
-    final present = records
-        .where(
-          (item) => item['checkInTime'] != null && item['status'] != 'absent',
-        )
-        .length;
-    records.sort(
-      (a, b) =>
-          (b['date'] as String? ?? '').compareTo(a['date'] as String? ?? ''),
+    final summary = await AttendancePeriodSummaryService().loadForUser(
+      user: employee,
+      start: today.subtract(const Duration(days: 29)),
+      end: today,
     );
     return _EmployeeAttendanceOverview(
-      present: present,
-      late: late,
-      absent: absent,
-      recent: records.take(10).toList(),
+      present: summary.presentDays,
+      late: summary.lateDays,
+      absent: summary.absentDays,
+      recent: summary.days
+          .where((day) => day.isExpectedWorkDay || day.attendance != null)
+          .take(10)
+          .toList(),
     );
   }
-
-  static bool _isLate(String? status) =>
-      status == 'late' ||
-      status == 'late_quarter_day' ||
-      status == 'late_half_day' ||
-      status == 'late_full_day';
 
   @override
   Widget build(BuildContext context) {
@@ -187,7 +151,7 @@ class _EmployeeInsightsScreenState extends State<EmployeeInsightsScreen> {
                 ),
                 const SizedBox(height: 8),
                 FutureBuilder<_EmployeeAttendanceOverview>(
-                  future: _attendanceFuture,
+                  future: _loadAttendanceOverview(employee),
                   builder: (context, snapshot) {
                     if (snapshot.hasError) {
                       return _message('تعذر تحميل سجل الحضور.');
@@ -359,22 +323,15 @@ class _EmployeeInsightsScreenState extends State<EmployeeInsightsScreen> {
     ),
   );
 
-  Widget _attendanceRow(Map<String, dynamic> item) {
-    final status = item['status'] as String? ?? 'present';
-    final checkIn = item['checkInTime'] as Timestamp?;
-    final label = status == 'absent'
-        ? 'غائب'
-        : (_isLate(status) || item['isLate'] == true ? 'متأخر' : 'حاضر');
+  Widget _attendanceRow(AttendancePeriodDay item) {
+    final label = item.isAbsent ? 'غائب' : (item.isLate ? 'متأخر' : 'حاضر');
     return ListTile(
       contentPadding: EdgeInsets.zero,
-      title: Text(
-        item['date'] as String? ?? '',
-        style: const TextStyle(color: Colors.white),
-      ),
+      title: Text(item.dateKey, style: const TextStyle(color: Colors.white)),
       subtitle: Text(
-        checkIn == null
+        item.attendance?.checkInTime == null
             ? 'لم يسجل حضوراً'
-            : 'حضور ${DateFormat('hh:mm a').format(checkIn.toDate())}',
+            : 'حضور ${DateFormat('hh:mm a').format(item.attendance!.checkInTime!)}',
       ),
       trailing: Text(
         label,
@@ -395,7 +352,7 @@ class _EmployeeAttendanceOverview {
   final int present;
   final int late;
   final int absent;
-  final List<Map<String, dynamic>> recent;
+  final List<AttendancePeriodDay> recent;
   const _EmployeeAttendanceOverview({
     required this.present,
     required this.late,

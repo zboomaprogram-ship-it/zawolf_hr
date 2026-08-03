@@ -28,6 +28,9 @@ class AttendanceModel {
   final String salaryDeductionApprovalStatus;
   final String? salaryDeductionReviewedBy;
   final DateTime? salaryDeductionReviewedAt;
+  final String? salaryDeductionReversalReason;
+  final String? salaryDeductionReversedBy;
+  final DateTime? salaryDeductionReversedAt;
   final String? deviceId;
   final String? deviceLabel;
   final bool biometricVerified;
@@ -80,6 +83,9 @@ class AttendanceModel {
     this.salaryDeductionApprovalStatus = 'none',
     this.salaryDeductionReviewedBy,
     this.salaryDeductionReviewedAt,
+    this.salaryDeductionReversalReason,
+    this.salaryDeductionReversedBy,
+    this.salaryDeductionReversedAt,
     this.deviceId,
     this.deviceLabel,
     this.biometricVerified = false,
@@ -140,6 +146,11 @@ class AttendanceModel {
       salaryDeductionReviewedBy: data['salaryDeductionReviewedBy'] as String?,
       salaryDeductionReviewedAt:
           (data['salaryDeductionReviewedAt'] as Timestamp?)?.toDate(),
+      salaryDeductionReversalReason:
+          data['salaryDeductionReversalReason'] as String?,
+      salaryDeductionReversedBy: data['salaryDeductionReversedBy'] as String?,
+      salaryDeductionReversedAt:
+          (data['salaryDeductionReversedAt'] as Timestamp?)?.toDate(),
       deviceId: data['deviceId'] as String?,
       deviceLabel: data['deviceLabel'] as String?,
       biometricVerified: data['biometricVerified'] as bool? ?? false,
@@ -221,6 +232,14 @@ class AttendanceModel {
       if (salaryDeductionReviewedAt != null)
         'salaryDeductionReviewedAt': Timestamp.fromDate(
           salaryDeductionReviewedAt!,
+        ),
+      if (salaryDeductionReversalReason != null)
+        'salaryDeductionReversalReason': salaryDeductionReversalReason,
+      if (salaryDeductionReversedBy != null)
+        'salaryDeductionReversedBy': salaryDeductionReversedBy,
+      if (salaryDeductionReversedAt != null)
+        'salaryDeductionReversedAt': Timestamp.fromDate(
+          salaryDeductionReversedAt!,
         ),
       if (deviceId != null) 'deviceId': deviceId,
       if (deviceLabel != null) 'deviceLabel': deviceLabel,

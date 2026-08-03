@@ -1,6 +1,14 @@
 {
   "indexes": [
     {
+      "collectionGroup": "employeeKpis",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "teamLeaderId", "order": "ASCENDING" },
+        { "fieldPath": "monthKey", "order": "ASCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "attendance",
       "queryScope": "COLLECTION",
       "fields": [

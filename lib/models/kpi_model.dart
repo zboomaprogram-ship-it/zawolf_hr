@@ -129,6 +129,9 @@ class KpiTemplateModel {
 }
 
 class EmployeeKpiMetric {
+  final String key;
+  final String source;
+  final bool editable;
   final String name;
   final String unit;
   final double target;
@@ -139,6 +142,9 @@ class EmployeeKpiMetric {
   final String managerComment;
 
   const EmployeeKpiMetric({
+    this.key = '',
+    this.source = 'manual',
+    this.editable = true,
     required this.name,
     required this.unit,
     required this.target,
@@ -165,6 +171,9 @@ class EmployeeKpiMetric {
 
   factory EmployeeKpiMetric.fromMap(Map<String, dynamic> map) {
     return EmployeeKpiMetric(
+      key: map['key'] as String? ?? '',
+      source: map['source'] as String? ?? 'manual',
+      editable: map['editable'] as bool? ?? true,
       name: map['name'] as String? ?? '',
       unit: map['unit'] as String? ?? '',
       target: (map['target'] as num?)?.toDouble() ?? 0,
@@ -178,6 +187,9 @@ class EmployeeKpiMetric {
 
   Map<String, dynamic> toMap() {
     return {
+      'key': key,
+      'source': source,
+      'editable': editable,
       'name': name,
       'unit': unit,
       'target': target,
@@ -195,6 +207,9 @@ class EmployeeKpiMetric {
     String? managerComment,
   }) {
     return EmployeeKpiMetric(
+      key: key,
+      source: source,
+      editable: editable,
       name: name,
       unit: unit,
       target: target,
@@ -216,6 +231,7 @@ class EmployeeKpiModel {
   final String department;
   final String managerId;
   final List<String> managerIds;
+  final String teamLeaderId;
   final String monthKey;
   final String status;
   final List<EmployeeKpiMetric> metrics;
@@ -225,6 +241,15 @@ class EmployeeKpiModel {
   final DateTime? updatedAt;
   final String finalizedBy;
   final DateTime? finalizedAt;
+  final String externalSource;
+  final String periodStart;
+  final String periodEnd;
+  final DateTime? lastSyncedAt;
+  final String syncStatus;
+  final String providerType;
+  final String providerDepartment;
+  final String providerAgentKey;
+  final Map<String, dynamic> providerDetails;
 
   const EmployeeKpiModel({
     required this.employeeKpiId,
@@ -235,6 +260,7 @@ class EmployeeKpiModel {
     required this.department,
     required this.managerId,
     this.managerIds = const [],
+    this.teamLeaderId = '',
     required this.monthKey,
     required this.status,
     required this.metrics,
@@ -244,6 +270,15 @@ class EmployeeKpiModel {
     this.updatedAt,
     this.finalizedBy = '',
     this.finalizedAt,
+    this.externalSource = '',
+    this.periodStart = '',
+    this.periodEnd = '',
+    this.lastSyncedAt,
+    this.syncStatus = '',
+    this.providerType = '',
+    this.providerDepartment = '',
+    this.providerAgentKey = '',
+    this.providerDetails = const {},
   });
 
   factory EmployeeKpiModel.fromFirestore(DocumentSnapshot doc) {
@@ -264,6 +299,7 @@ class EmployeeKpiModel {
             if ((data['managerId'] as String? ?? '').isNotEmpty)
               data['managerId'] as String,
           ],
+      teamLeaderId: data['teamLeaderId'] as String? ?? '',
       monthKey: data['monthKey'] as String? ?? '',
       status: data['status'] as String? ?? 'active',
       metrics:
@@ -279,6 +315,17 @@ class EmployeeKpiModel {
       updatedAt: (data['updatedAt'] as Timestamp?)?.toDate(),
       finalizedBy: data['finalizedBy'] as String? ?? '',
       finalizedAt: (data['finalizedAt'] as Timestamp?)?.toDate(),
+      externalSource: data['externalSource'] as String? ?? '',
+      periodStart: data['periodStart'] as String? ?? '',
+      periodEnd: data['periodEnd'] as String? ?? '',
+      lastSyncedAt: (data['lastSyncedAt'] as Timestamp?)?.toDate(),
+      syncStatus: data['syncStatus'] as String? ?? '',
+      providerType: data['providerType'] as String? ?? '',
+      providerDepartment: data['providerDepartment'] as String? ?? '',
+      providerAgentKey: data['providerAgentKey'] as String? ?? '',
+      providerDetails: data['providerDetails'] is Map
+          ? Map<String, dynamic>.from(data['providerDetails'] as Map)
+          : const {},
     );
   }
 
@@ -291,6 +338,7 @@ class EmployeeKpiModel {
       'department': department,
       'managerId': managerId,
       'managerIds': managerIds.isNotEmpty ? managerIds : [managerId],
+      if (teamLeaderId.isNotEmpty) 'teamLeaderId': teamLeaderId,
       'monthKey': monthKey,
       'status': status,
       'metrics': metrics.map((metric) => metric.toMap()).toList(),
@@ -304,6 +352,17 @@ class EmployeeKpiModel {
           : Timestamp.fromDate(updatedAt!),
       if (finalizedBy.isNotEmpty) 'finalizedBy': finalizedBy,
       if (finalizedAt != null) 'finalizedAt': Timestamp.fromDate(finalizedAt!),
+      if (externalSource.isNotEmpty) 'externalSource': externalSource,
+      if (periodStart.isNotEmpty) 'periodStart': periodStart,
+      if (periodEnd.isNotEmpty) 'periodEnd': periodEnd,
+      if (lastSyncedAt != null)
+        'lastSyncedAt': Timestamp.fromDate(lastSyncedAt!),
+      if (syncStatus.isNotEmpty) 'syncStatus': syncStatus,
+      if (providerType.isNotEmpty) 'providerType': providerType,
+      if (providerDepartment.isNotEmpty)
+        'providerDepartment': providerDepartment,
+      if (providerAgentKey.isNotEmpty) 'providerAgentKey': providerAgentKey,
+      if (providerDetails.isNotEmpty) 'providerDetails': providerDetails,
     };
   }
 

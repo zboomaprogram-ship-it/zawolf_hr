@@ -2,19 +2,22 @@ import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 
-import '../models/attendance_model.dart';
 import '../models/employee_role.dart';
 import '../models/kpi_model.dart';
 import '../models/productivity_score_model.dart';
 import '../models/task_model.dart';
 import '../models/user_model.dart';
 import 'audit_log_service.dart';
+import 'attendance_period_summary_service.dart';
 import 'managed_employee_service.dart';
+import 'role_notification_service.dart';
 import '../utils/payroll_cycle.dart';
 
 class ProductivityService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
   final ManagedEmployeeService _managedEmployees = ManagedEmployeeService();
+  final AttendancePeriodSummaryService _attendanceSummary =
+      AttendancePeriodSummaryService();
 
   Stream<ProductivityScoreModel?> watchCachedScore(
     String userId,
@@ -103,12 +106,11 @@ class ProductivityService {
   ) async {
     final cycle = PayrollCycle.forKey(monthKey);
     final results = await Future.wait([
-      _db
-          .collection('attendance')
-          .where('userId', isEqualTo: user.uid)
-          .where('date', isGreaterThanOrEqualTo: cycle.startDateKey)
-          .where('date', isLessThan: cycle.nextStartDateKey)
-          .get(),
+      _attendanceSummary.loadForUser(
+        user: user,
+        start: cycle.start,
+        end: cycle.end,
+      ),
       _db
           .collection('tasks')
           .where('assigneeId', isEqualTo: user.uid)
@@ -126,26 +128,29 @@ class ProductivityService {
           .get(),
     ]);
 
-    final attendanceDocs = results[0];
-    final taskDocs = results[1];
-    final kpiDocs = results[2];
+    final attendanceSummary = results[0] as AttendancePeriodSummary;
+    final taskDocs = results[1] as QuerySnapshot<Map<String, dynamic>>;
+    final kpiDocs = results[2] as QuerySnapshot<Map<String, dynamic>>;
 
-    final attendance = attendanceDocs.docs
-        .map((doc) => AttendanceModel.fromFirestore(doc))
-        .toList();
     final tasks = taskDocs.docs.map(EmployeeTaskModel.fromFirestore).toList();
     final kpi = kpiDocs.docs.isEmpty
         ? null
         : EmployeeKpiModel.fromFirestore(kpiDocs.docs.first);
 
-    final absentDays = attendance
-        .where((item) => item.status == 'absent')
-        .length;
-    final lateDays = attendance
-        .where((item) => item.isLate || item.status == 'late')
-        .length;
-    final attendanceScore = (100 - (absentDays * 10)).clamp(0, 100).toDouble();
-    final punctualityScore = (100 - (lateDays * 5)).clamp(0, 100).toDouble();
+    final absentDays = attendanceSummary.absentDays;
+    final lateDays = attendanceSummary.lateDays;
+    final expectedDays = attendanceSummary.expectedDays;
+    final attendanceScore = expectedDays == 0
+        ? 0.0
+        : ((expectedDays - absentDays) / expectedDays * 100)
+              .clamp(0, 100)
+              .toDouble();
+    final attendedDays = attendanceSummary.presentDays;
+    final punctualityScore = attendedDays == 0
+        ? 0.0
+        : ((attendedDays - lateDays) / attendedDays * 100)
+              .clamp(0, 100)
+              .toDouble();
 
     final activeTasks = tasks
         .where((task) => task.status != TaskStatus.cancelled)
@@ -179,12 +184,19 @@ class ProductivityService {
               .toDouble();
     final hasKpiData = kpi != null;
     final kpiScore = (kpi?.overallProgress ?? 0).clamp(0, 100).toDouble();
+    final existingScore = await _db
+        .collection('productivityScores')
+        .doc('${user.uid}_$monthKey')
+        .get();
+    final behaviorScore =
+        (existingScore.data()?['behaviorScore'] as num?)?.toDouble() ?? 100;
     final overall = ProductivityScoreModel.calculateAvailableOverall(
       attendanceScore: attendanceScore,
       punctualityScore: punctualityScore,
       taskCompletionScore: hasTaskData ? taskCompletionScore : null,
       taskQualityScore: hasTaskQualityData ? taskQualityScore : null,
       kpiScore: hasKpiData ? kpiScore : null,
+      behaviorScore: behaviorScore,
     );
 
     return ProductivityScoreModel(
@@ -203,6 +215,7 @@ class ProductivityService {
       taskCompletionScore: taskCompletionScore,
       taskQualityScore: taskQualityScore,
       kpiScore: kpiScore,
+      behaviorScore: behaviorScore,
       hasTaskData: hasTaskData,
       hasTaskQualityData: hasTaskQualityData,
       hasKpiData: hasKpiData,
@@ -224,7 +237,7 @@ class ProductivityService {
     await _db
         .collection('productivityScores')
         .doc(score.scoreId)
-        .set(score.toFirestore());
+        .set(score.toFirestore(), SetOptions(merge: true));
     await AuditLogService.instance.record(
       actorId: actorId,
       action: 'productivity_score_calculated',
@@ -235,6 +248,84 @@ class ProductivityService {
         'monthKey': monthKey,
         'overallScore': score.overallScore,
       },
+    );
+  }
+
+  Future<void> updateBehaviorScore({
+    required String employeeUserId,
+    required UserModel reviewer,
+    required String monthKey,
+    required double behaviorScore,
+    required String reason,
+  }) async {
+    final normalizedReason = reason.trim();
+    if (behaviorScore < 0 || behaviorScore > 100) {
+      throw ArgumentError('Behavior score must be between 0 and 100.');
+    }
+    if (normalizedReason.length < 3) {
+      throw ArgumentError('A behavior adjustment reason is required.');
+    }
+
+    final managed = await _managedEmployees.loadForReviewer(reviewer);
+    final employee = managed.cast<UserModel?>().firstWhere(
+      (user) => user?.uid == employeeUserId,
+      orElse: () => null,
+    );
+    if (employee == null) {
+      throw StateError('You cannot edit this employee.');
+    }
+
+    final ref = _db
+        .collection('productivityScores')
+        .doc('${employee.uid}_$monthKey');
+    var snapshot = await ref.get();
+    if (!snapshot.exists) {
+      await calculateAndCacheForUser(
+        user: employee,
+        monthKey: monthKey,
+        actorId: reviewer.uid,
+      );
+      snapshot = await ref.get();
+    }
+    if (!snapshot.exists) {
+      throw StateError('Productivity score is unavailable.');
+    }
+
+    final current = ProductivityScoreModel.fromFirestore(snapshot);
+    final overall = ProductivityScoreModel.calculateAvailableOverall(
+      attendanceScore: current.attendanceScore,
+      punctualityScore: current.punctualityScore,
+      kpiScore: current.hasKpiData ? current.kpiScore : null,
+      behaviorScore: behaviorScore,
+    );
+    await ref.update({
+      'behaviorScore': behaviorScore,
+      'overallScore': overall,
+      'behaviorUpdatedBy': reviewer.uid,
+      'behaviorUpdatedName': reviewer.displayName,
+      'behaviorReason': normalizedReason,
+      'behaviorUpdatedAt': FieldValue.serverTimestamp(),
+    });
+
+    await AuditLogService.instance.record(
+      actorId: reviewer.uid,
+      action: 'productivity_behavior_adjusted',
+      targetCollection: 'productivityScores',
+      targetId: ref.id,
+      metadata: {
+        'userId': employee.uid,
+        'monthKey': monthKey,
+        'behaviorScore': behaviorScore,
+        'reason': normalizedReason,
+      },
+    );
+    await RoleNotificationService.instance.createNotification(
+      recipientId: employee.uid,
+      type: 'productivity_behavior_updated',
+      title: 'تحديث تقييم السلوك',
+      body:
+          'تم تحديث تقييم السلوك إلى ${behaviorScore.toStringAsFixed(0)}%. السبب: $normalizedReason',
+      data: {'monthKey': monthKey, 'userId': employee.uid},
     );
   }
 

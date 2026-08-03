@@ -29,6 +29,8 @@ class AuthService with ChangeNotifier {
 
   static const _cachedProfileKey = 'zawolf.auth.cached_profile.v1';
 
+  static String _profileCacheKey(String uid) => '$_cachedProfileKey.$uid';
+
   UserModel? get currentUser => _currentUser;
   bool get loading => _loading;
   bool get isAuthenticated => _currentUser != null;
@@ -131,7 +133,7 @@ class AuthService with ChangeNotifier {
         await _cacheProfile(_currentUser!);
       } else {
         _currentUser = null;
-        await _clearCachedProfile();
+        await _clearCachedProfile(uid);
       }
     } catch (e) {
       if (sessionVersion != null && sessionVersion != _authSessionVersion) {
@@ -157,7 +159,9 @@ class AuthService with ChangeNotifier {
   Future<UserModel?> _readCachedProfile(String uid) async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final raw = prefs.getString(_cachedProfileKey);
+      final raw =
+          prefs.getString(_profileCacheKey(uid)) ??
+          prefs.getString(_cachedProfileKey);
       if (raw == null || raw.isEmpty) return null;
 
       final data = jsonDecode(raw);
@@ -219,11 +223,16 @@ class AuthService with ChangeNotifier {
 
   Future<void> _cacheProfile(UserModel user) async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_cachedProfileKey, jsonEncode(user.toSessionCache()));
+    final encoded = jsonEncode(user.toSessionCache());
+    await prefs.setString(_profileCacheKey(user.uid), encoded);
+    // Keep the legacy key during migration for installed builds that have not
+    // received this change yet. Reads always prefer the UID-scoped entry.
+    await prefs.setString(_cachedProfileKey, encoded);
   }
 
-  Future<void> _clearCachedProfile() async {
+  Future<void> _clearCachedProfile([String? uid]) async {
     final prefs = await SharedPreferences.getInstance();
+    if (uid != null) await prefs.remove(_profileCacheKey(uid));
     await prefs.remove(_cachedProfileKey);
   }
 
@@ -283,7 +292,7 @@ class AuthService with ChangeNotifier {
       unawaited(RequiredAttendanceAlarmService.instance.disable(signingOutUid));
     }
     notifyListeners();
-    await _clearCachedProfile();
+    await _clearCachedProfile(signingOutUid);
     await _auth.signOut();
   }
 

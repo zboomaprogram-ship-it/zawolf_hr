@@ -71,6 +71,7 @@ class MyApp extends StatefulWidget {
 
 class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   late Future<AppSecurityStatus> _securityStatus;
+  bool _resumeSecurityCheckInFlight = false;
 
   @override
   void initState() {
@@ -95,7 +96,31 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     // the security loading screen. The web session remains protected by the
     // initial policy check and Firestore rules.
     if (!kIsWeb && state == AppLifecycleState.resumed) {
-      _retrySecurityCheck();
+      unawaited(_refreshSecurityStatusOnResume());
+    }
+  }
+
+  Future<void> _refreshSecurityStatusOnResume() async {
+    if (_resumeSecurityCheckInFlight) return;
+    _resumeSecurityCheckInFlight = true;
+    try {
+      final status = await AppSecurityPolicyService.instance.loadStatus(
+        serverOnly: true,
+      );
+      if (!mounted || (status.policyVerified && !status.updateRequired)) return;
+
+      // Keep the current provider and router trees alive during ordinary
+      // resume checks. Replacing them with a loading MaterialApp restarts the
+      // navigation flow at /splash and makes a backgrounded app look closed.
+      setState(() {
+        _securityStatus = Future<AppSecurityStatus>.value(status);
+      });
+    } catch (error) {
+      if (kDebugMode) {
+        debugPrint('Resume security policy refresh failed: $error');
+      }
+    } finally {
+      _resumeSecurityCheckInFlight = false;
     }
   }
 
@@ -126,9 +151,11 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
           );
         }
         final status = snapshot.data;
-        if (status?.updateRequired ?? false) {
+        if (!kIsWeb &&
+            status != null &&
+            (!status.policyVerified || status.updateRequired)) {
           return RequiredUpdateScreen(
-            status: status!,
+            status: status,
             onRetry: _retrySecurityCheck,
           );
         }

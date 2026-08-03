@@ -15,6 +15,8 @@ class RequestLogItem {
     required this.requestType,
     required this.status,
     required this.submittedAt,
+    required this.occursAt,
+    required this.occursEndAt,
     required this.reviewedAt,
     required this.reviewedBy,
     required this.details,
@@ -30,6 +32,8 @@ class RequestLogItem {
   final String requestType;
   final String status;
   final DateTime submittedAt;
+  final DateTime? occursAt;
+  final DateTime? occursEndAt;
   final DateTime? reviewedAt;
   final String reviewedBy;
   final String details;
@@ -57,7 +61,26 @@ class RequestLogService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
   final Map<String, String> _reviewerNameCache = {};
 
-  DateTime? _date(dynamic value) => value is Timestamp ? value.toDate() : null;
+  DateTime? _date(dynamic value) {
+    if (value is Timestamp) return value.toDate();
+    if (value is DateTime) return value;
+    if (value is String) return DateTime.tryParse(value);
+    return null;
+  }
+
+  DateTime? _combineDateAndTime(dynamic dateValue, dynamic timeValue) {
+    final date =
+        _date(dateValue) ??
+        (dateValue is String ? DateTime.tryParse(dateValue) : null);
+    if (date == null) return null;
+    if (timeValue is! String || timeValue.trim().isEmpty) return date;
+    final parts = timeValue.trim().split(':');
+    if (parts.length < 2) return date;
+    final hour = int.tryParse(parts[0]);
+    final minute = int.tryParse(parts[1]);
+    if (hour == null || minute == null) return date;
+    return DateTime(date.year, date.month, date.day, hour, minute);
+  }
 
   String _reviewerLabel(Map<String, dynamic> data, String reviewerId) {
     final savedName = (data['reviewerName'] as String?)?.trim() ?? '';
@@ -179,6 +202,8 @@ class RequestLogService {
       required String type,
       required String requestType,
       required String details,
+      DateTime? occursAt,
+      DateTime? occursEndAt,
     }) {
       final data = doc.data();
       final submittedAt =
@@ -196,6 +221,8 @@ class RequestLogService {
         requestType: requestType,
         status: data['status'] as String? ?? 'pending',
         submittedAt: submittedAt,
+        occursAt: occursAt,
+        occursEndAt: occursEndAt,
         reviewedAt: _date(data['reviewedAt']),
         reviewedBy: _reviewerLabel(data, reviewedBy),
         details: details,
@@ -217,10 +244,17 @@ class RequestLogService {
             data['leaveType'] as String? ?? 'annual',
           ),
           details: '${data['numberOfDays'] as int? ?? 1} يوم',
+          occursAt: _date(data['startDate']),
+          occursEndAt: _date(data['endDate']),
         );
       }),
       fetch('permissions', 'permission', (doc) {
         final data = doc.data();
+        final occursAt = _combineDateAndTime(
+          data['requestDate'] ?? data['date'],
+          data['expectedTime'] ?? data['startTime'],
+        );
+        final duration = (data['durationMinutes'] as num?)?.toInt() ?? 0;
         return genericItem(
           doc,
           type: 'permission',
@@ -228,6 +262,8 @@ class RequestLogService {
             data['permissionType'] as String? ?? '',
           ),
           details: '${data['durationMinutes'] as int? ?? 0} دقيقة',
+          occursAt: occursAt,
+          occursEndAt: occursAt?.add(Duration(minutes: duration)),
         );
       }),
       fetch('attendanceCorrectionRequests', 'attendance_correction', (doc) {
@@ -240,6 +276,7 @@ class RequestLogService {
           details:
               '${data['attendanceDate'] as String? ?? ''}'
               '${requested == null ? '' : ' · ${requested.hour.toString().padLeft(2, '0')}:${requested.minute.toString().padLeft(2, '0')}'}',
+          occursAt: requested ?? _date(data['attendanceDate']),
         );
       }),
       fetch('advances', 'advance', (doc) {
@@ -272,6 +309,7 @@ class RequestLogService {
           details: resignationDate == null
               ? 'طلب استقالة'
               : '${resignationDate.year}/${resignationDate.month}/${resignationDate.day}',
+          occursAt: resignationDate,
         );
       }),
     ]);

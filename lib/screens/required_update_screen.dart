@@ -26,6 +26,7 @@ class RequiredUpdateScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final unavailable = !status.policyVerified;
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       theme: ZaWolfTheme.darkTheme,
@@ -41,20 +42,28 @@ class RequiredUpdateScreen extends StatelessWidget {
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      const Icon(
-                        Icons.security_update_good_outlined,
+                      Icon(
+                        unavailable
+                            ? Icons.cloud_off_outlined
+                            : Icons.security_update_good_outlined,
                         size: 72,
-                        color: ZaWolfColors.primaryCyan,
+                        color: unavailable
+                            ? ZaWolfColors.warning
+                            : ZaWolfColors.primaryCyan,
                       ),
                       const SizedBox(height: 24),
                       Text(
-                        'تحديث أمني مطلوب',
+                        unavailable
+                            ? 'تعذر التحقق من الإصدار'
+                            : 'تحديث أمني مطلوب',
                         style: Theme.of(context).textTheme.headlineMedium,
                         textAlign: TextAlign.center,
                       ),
                       const SizedBox(height: 12),
                       Text(
-                        status.policy.messageAr,
+                        unavailable
+                            ? 'تعذر الاتصال بسياسة أمان التطبيق. تحقق من الإنترنت ثم أعد المحاولة.'
+                            : status.policy.messageAr,
                         style: Theme.of(context).textTheme.bodyLarge,
                         textAlign: TextAlign.center,
                       ),
@@ -64,19 +73,22 @@ class RequiredUpdateScreen extends StatelessWidget {
                         style: Theme.of(context).textTheme.bodySmall,
                       ),
                       const SizedBox(height: 28),
-                      SizedBox(
-                        width: double.infinity,
-                        child: FilledButton.icon(
-                          onPressed: () => _openStore(context),
-                          icon: const Icon(Icons.system_update_alt),
-                          label: const Text('تحديث التطبيق'),
+                      if (!unavailable)
+                        SizedBox(
+                          width: double.infinity,
+                          child: FilledButton.icon(
+                            onPressed: () => _openStore(context),
+                            icon: const Icon(Icons.system_update_alt),
+                            label: const Text('تحديث التطبيق'),
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: 10),
-                      TextButton.icon(
+                      SizedBox(height: unavailable ? 20 : 10),
+                      OutlinedButton.icon(
                         onPressed: onRetry,
                         icon: const Icon(Icons.refresh),
-                        label: const Text('تحقق مرة أخرى'),
+                        label: Text(
+                          unavailable ? 'إعادة الاتصال' : 'تحقق مرة أخرى',
+                        ),
                       ),
                     ],
                   ),

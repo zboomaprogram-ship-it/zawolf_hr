@@ -11,6 +11,8 @@
     "attendance-reminders": "node attendance-reminders.js",
     "automatic-attendance": "node auto-attendance.js",
     "manager-leave-permissions": "node manager-leave-permission-bypass.js",
+    "repair-user-identities": "node repair-user-identities.js",
+    "sync-sales-kpis": "node sync-sales-kpis.js",
     "sync-notification-recipients": "node sync-notification-recipients.js",
     "test": "node --test test/*.test.js",
     "start": "node notification-web.js"

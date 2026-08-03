@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../components/wolf_card.dart';
+import '../../components/sales_kpi_details_panel.dart';
 import '../../models/kpi_model.dart';
 import '../../services/auth_service.dart';
 import '../../services/kpi_service.dart';
@@ -64,6 +65,7 @@ class EmployeeKpiScreen extends StatelessWidget {
             );
           }
           final kpi = records.first;
+          final isApiKpi = kpi.externalSource == 'sales_analytics_api';
           return ListView(
             padding: const EdgeInsets.all(16),
             children: [
@@ -88,6 +90,32 @@ class EmployeeKpiScreen extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 8),
+                    if (isApiKpi) ...[
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 6,
+                        ),
+                        decoration: BoxDecoration(
+                          color: ZaWolfColors.primaryCyan.withValues(
+                            alpha: 0.1,
+                          ),
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(
+                            color: ZaWolfColors.primaryCyan.withValues(
+                              alpha: 0.35,
+                            ),
+                          ),
+                        ),
+                        child: const Text(
+                          'متصل بنظام المبيعات · يتم التحديث تلقائياً',
+                          textAlign: TextAlign.center,
+                          textDirection: TextDirection.rtl,
+                          style: TextStyle(color: ZaWolfColors.primaryCyan),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                    ],
                     Text(
                       '${kpi.overallProgress.toStringAsFixed(1)}%',
                       style: theme.textTheme.displaySmall?.copyWith(
@@ -107,6 +135,10 @@ class EmployeeKpiScreen extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 16),
+              if (kpi.providerDetails.isNotEmpty) ...[
+                SalesKpiDetailsPanel(kpi: kpi),
+                const SizedBox(height: 16),
+              ],
               ...kpi.metrics.map(
                 (metric) => Padding(
                   padding: const EdgeInsets.only(bottom: 12),
@@ -114,12 +146,28 @@ class EmployeeKpiScreen extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        Text(
-                          metric.name,
-                          style: theme.textTheme.titleLarge?.copyWith(
-                            color: Colors.white,
-                          ),
-                          textAlign: TextAlign.right,
+                        Row(
+                          children: [
+                            if (!metric.editable)
+                              const Tooltip(
+                                message: 'يتم تحديثه تلقائياً',
+                                child: Icon(
+                                  Icons.lock_clock_outlined,
+                                  color: ZaWolfColors.primaryCyan,
+                                  size: 18,
+                                ),
+                              ),
+                            if (!metric.editable) const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                metric.name,
+                                style: theme.textTheme.titleLarge?.copyWith(
+                                  color: Colors.white,
+                                ),
+                                textAlign: TextAlign.right,
+                              ),
+                            ),
+                          ],
                         ),
                         const SizedBox(height: 8),
                         Text(

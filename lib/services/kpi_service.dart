@@ -40,6 +40,14 @@ class KpiService {
     UserModel reviewer,
     String monthKey,
   ) {
+    if (reviewer.role == EmployeeRole.teamLeader) {
+      return _db
+          .collection('employeeKpis')
+          .where('monthKey', isEqualTo: monthKey)
+          .where('teamLeaderId', isEqualTo: reviewer.uid)
+          .snapshots()
+          .map(_employeeKpisFromSnapshot);
+    }
     if (reviewer.role == EmployeeRole.manager) {
       return _watchMergedKpiQueries([
         _db
@@ -59,6 +67,19 @@ class KpiService {
   }
 
   Future<List<UserModel>> loadAssignableEmployees(UserModel reviewer) async {
+    if (reviewer.role == EmployeeRole.teamLeader) {
+      final snap = await _db
+          .collection('users')
+          .where('teamLeaderId', isEqualTo: reviewer.uid)
+          .get();
+      final users =
+          snap.docs
+              .map(UserModel.fromFirestore)
+              .where((user) => user.isActive)
+              .toList()
+            ..sort((a, b) => a.displayName.compareTo(b.displayName));
+      return users;
+    }
     if (reviewer.role == EmployeeRole.manager) {
       final results = await Future.wait([
         _db
@@ -254,6 +275,7 @@ class KpiService {
       managerIds: employee.managerIds.isNotEmpty
           ? employee.managerIds
           : [employee.managerId ?? creator.uid],
+      teamLeaderId: employee.teamLeaderId ?? '',
       monthKey: monthKey,
       status: 'active',
       metrics: metrics,
@@ -335,6 +357,9 @@ class KpiService {
     }
     if (metricIndex < 0 || metricIndex >= kpi.metrics.length) {
       throw Exception('المؤشر غير صحيح');
+    }
+    if (!kpi.metrics[metricIndex].editable) {
+      throw Exception('هذا المؤشر يتم تحديثه تلقائياً من نظام المبيعات.');
     }
     final metrics = [...kpi.metrics];
     metrics[metricIndex] = metrics[metricIndex].copyWith(
