@@ -2084,11 +2084,23 @@ service cloud.firestore {
       allow create, update: if isAuth() && isActive() && isHR()
         && settingsId == 'current'
         && request.resource.data.keys().hasOnly([
-          'periodKey', 'startDate', 'endDate', 'updatedBy', 'updatedAt'
+          'periodKey', 'startDate', 'endDate', 'company', 'sales',
+          'teleSales', 'entryChannel', 'salesTarget', 'teleTarget',
+          'idEmp', 'cumulative', 'updatedBy', 'updatedAt'
         ])
         && request.resource.data.periodKey is string
         && request.resource.data.startDate is string
         && request.resource.data.endDate is string
+        && request.resource.data.company is string
+        && (request.resource.data.sales is string
+          || request.resource.data.sales is list)
+        && (request.resource.data.teleSales is string
+          || request.resource.data.teleSales is list)
+        && request.resource.data.entryChannel is string
+        && request.resource.data.salesTarget is number
+        && request.resource.data.teleTarget is number
+        && request.resource.data.idEmp is string
+        && request.resource.data.cumulative is bool
         && request.resource.data.updatedBy == uid();
       allow delete: if false;
     }

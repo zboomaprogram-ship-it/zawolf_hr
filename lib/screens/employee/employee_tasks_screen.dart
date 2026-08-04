@@ -8,8 +8,22 @@ import '../../services/auth_service.dart';
 import '../../services/task_service.dart';
 import '../../theme/theme.dart';
 
-class EmployeeTasksScreen extends StatelessWidget {
+class EmployeeTasksScreen extends StatefulWidget {
   const EmployeeTasksScreen({super.key});
+
+  @override
+  State<EmployeeTasksScreen> createState() => _EmployeeTasksScreenState();
+}
+
+class _EmployeeTasksScreenState extends State<EmployeeTasksScreen> {
+  final _searchController = TextEditingController();
+  String _statusFilter = 'open';
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -49,6 +63,27 @@ class EmployeeTasksScreen extends StatelessWidget {
               .where((task) => task.status == TaskStatus.done)
               .length;
 
+          final query = _searchController.text.trim().toLowerCase();
+          final filteredTasks = tasks.where((task) {
+            final matchesSearch =
+                query.isEmpty ||
+                task.title.toLowerCase().contains(query) ||
+                task.description.toLowerCase().contains(query);
+            final matchesStatus = switch (_statusFilter) {
+              'open' =>
+                task.status != TaskStatus.done &&
+                    task.status != TaskStatus.cancelled,
+              'done' => task.status == TaskStatus.done,
+              'late' =>
+                task.status == TaskStatus.late ||
+                    (DateTime.now().isAfter(task.dueDate) &&
+                        task.status != TaskStatus.done &&
+                        task.status != TaskStatus.cancelled),
+              _ => true,
+            };
+            return matchesSearch && matchesStatus;
+          }).toList()..sort((a, b) => a.dueDate.compareTo(b.dueDate));
+
           return RefreshIndicator(
             color: ZaWolfColors.primaryCyan,
             onRefresh: () async {},
@@ -75,7 +110,33 @@ class EmployeeTasksScreen extends StatelessWidget {
                   ],
                 ),
                 const SizedBox(height: 16),
-                if (tasks.isEmpty)
+                TextField(
+                  controller: _searchController,
+                  onChanged: (_) => setState(() {}),
+                  textDirection: TextDirection.rtl,
+                  decoration: const InputDecoration(
+                    hintText: 'ابحث في عنوان أو وصف المهمة',
+                    prefixIcon: Icon(Icons.search),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: SegmentedButton<String>(
+                    segments: const [
+                      ButtonSegment(value: 'open', label: Text('المفتوحة')),
+                      ButtonSegment(value: 'late', label: Text('المتأخرة')),
+                      ButtonSegment(value: 'done', label: Text('المكتملة')),
+                      ButtonSegment(value: 'all', label: Text('الكل')),
+                    ],
+                    selected: {_statusFilter},
+                    showSelectedIcon: false,
+                    onSelectionChanged: (value) =>
+                        setState(() => _statusFilter = value.first),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                if (filteredTasks.isEmpty)
                   WolfCard(
                     child: Padding(
                       padding: const EdgeInsets.symmetric(vertical: 28),
@@ -88,7 +149,9 @@ class EmployeeTasksScreen extends StatelessWidget {
                           ),
                           const SizedBox(height: 12),
                           Text(
-                            'لا توجد مهام مسندة حالياً',
+                            tasks.isEmpty
+                                ? 'لا توجد مهام مسندة حالياً'
+                                : 'لا توجد مهام تطابق الفلتر',
                             style: theme.textTheme.titleMedium,
                             textAlign: TextAlign.center,
                           ),
@@ -97,7 +160,7 @@ class EmployeeTasksScreen extends StatelessWidget {
                     ),
                   )
                 else
-                  ...tasks.map(
+                  ...filteredTasks.map(
                     (task) => Padding(
                       padding: const EdgeInsets.only(bottom: 12),
                       child: _EmployeeTaskCard(
@@ -205,26 +268,29 @@ class _EmployeeTaskCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Row(
+          Text(
+            task.title,
+            style: theme.textTheme.titleLarge?.copyWith(color: Colors.white),
+            textAlign: TextAlign.right,
+            textDirection: TextDirection.rtl,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            alignment: WrapAlignment.end,
             children: [
+              _Chip(
+                text: TaskPriority.arabicLabel(task.priority),
+                color: _priorityColor(task.priority),
+              ),
               _Chip(
                 text: isOverdue
                     ? 'متأخرة'
                     : TaskStatus.arabicLabel(task.status),
                 color: statusColor,
-              ),
-              const SizedBox(width: 8),
-              _Chip(
-                text: TaskPriority.arabicLabel(task.priority),
-                color: _priorityColor(task.priority),
-              ),
-              const Spacer(),
-              Text(
-                task.title,
-                style: theme.textTheme.titleLarge?.copyWith(
-                  color: Colors.white,
-                ),
-                textAlign: TextAlign.right,
               ),
             ],
           ),

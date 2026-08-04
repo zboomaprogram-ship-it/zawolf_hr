@@ -176,6 +176,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
       const Tab(text: 'الأذونات'),
       const Tab(text: 'السلف'),
       if (canReviewSalaryDeductions) const Tab(text: 'خصومات التأخير'),
+      if (canReviewSalaryDeductions) const Tab(text: 'إلغاء خصم معتمد'),
       if (canReviewTimeCorrections) const Tab(text: 'تصحيح الحضور'),
       const Tab(text: 'مراجعة أمنية'),
       const Tab(text: 'الشكاوى'),
@@ -186,7 +187,10 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
       _buildLeavesTab(manager, theme),
       _buildPermissionsTab(manager, theme),
       _buildAdvancesTab(manager, theme),
-      if (canReviewSalaryDeductions) _buildSalaryDeductionsTab(manager, theme),
+      if (canReviewSalaryDeductions)
+        _buildSalaryDeductionsTab(manager, theme, reversalOnly: false),
+      if (canReviewSalaryDeductions)
+        _buildSalaryDeductionsTab(manager, theme, reversalOnly: true),
       if (canReviewTimeCorrections)
         _buildAttendanceCorrectionsTab(manager, theme),
       _buildSecurityReviewsTab(manager, theme),
@@ -1097,7 +1101,11 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
     );
   }
 
-  Widget _buildSalaryDeductionsTab(UserModel reviewer, ThemeData theme) {
+  Widget _buildSalaryDeductionsTab(
+    UserModel reviewer,
+    ThemeData theme, {
+    required bool reversalOnly,
+  }) {
     if (!EmployeeRole.isHr(reviewer.role)) {
       return _buildEmptyState('خصومات الراتب تراجع من HR فقط');
     }
@@ -1119,16 +1127,26 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
           );
         }
 
-        final allItems =
+        final loadedItems =
             snapshot.data?.docs
                 .map((doc) => AttendanceModel.fromFirestore(doc))
                 .toList() ??
             [];
+        final allItems = loadedItems.where((attendance) {
+          final status = attendance.salaryDeductionApprovalStatus;
+          return reversalOnly
+              ? status == 'approved' || status == 'reversed'
+              : status == 'pending_hr';
+        }).toList();
         allItems.sort((a, b) => b.date.compareTo(a.date));
         final items = _filterSalaryDeductions(allItems);
 
         if (allItems.isEmpty) {
-          return _buildEmptyState('لا توجد خصومات راتب مسجلة');
+          return _buildEmptyState(
+            reversalOnly
+                ? 'لا توجد خصومات معتمدة قابلة للإلغاء'
+                : 'لا توجد خصومات تنتظر مراجعة HR',
+          );
         }
 
         return ListView(
@@ -1251,8 +1269,9 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                               }
                             },
                           )
-                        else if (attendance.salaryDeductionApprovalStatus ==
-                            'approved')
+                        else if (reversalOnly &&
+                            attendance.salaryDeductionApprovalStatus ==
+                                'approved')
                           SizedBox(
                             width: double.infinity,
                             child: OutlinedButton.icon(

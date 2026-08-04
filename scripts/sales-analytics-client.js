@@ -76,15 +76,32 @@ function requiredConfig() {
     apiKey,
     baseUrl: String(process.env.SALES_API_BASE_URL || DEFAULT_BASE_URL)
       .replace(/\/+$/, ''),
-    timeoutMs: Math.max(5000, Number(process.env.SALES_API_TIMEOUT_MS || 20000)),
+    // The provider aggregates an entire month of sales data. Twenty seconds
+    // was too short in production and caused avoidable failed KPI syncs.
+    timeoutMs: Math.max(5000, Number(process.env.SALES_API_TIMEOUT_MS || 60000)),
+    maxAttempts: Math.min(
+      3,
+      Math.max(1, Number(process.env.SALES_API_MAX_ATTEMPTS || 2)),
+    ),
   };
+}
+
+function isRetryable(error) {
+  return error?.name === 'AbortError' ||
+    String(error?.message || '').includes('timed out') ||
+    error?.statusCode === 429 ||
+    Number(error?.statusCode) >= 500;
+}
+
+function wait(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 async function fetchSalesAnalytics(params, fetchImpl = globalThis.fetch) {
   if (typeof fetchImpl !== 'function') {
     throw new SalesAnalyticsError('This Node runtime does not provide fetch.');
   }
-  const { apiKey, baseUrl, timeoutMs } = requiredConfig();
+  const { apiKey, baseUrl, timeoutMs, maxAttempts } = requiredConfig();
   const url = new URL(`${baseUrl}/api/v1/sales-analytics`);
   for (const [key, value] of Object.entries(params)) {
     if (value !== undefined && value !== null && value !== '') {
@@ -100,52 +117,57 @@ async function fetchSalesAnalytics(params, fetchImpl = globalThis.fetch) {
     url.searchParams.set('cumulative', 'true');
   }
 
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    const response = await fetchImpl(url, {
-      headers: {
-        accept: 'application/json',
-        authorization: `Bearer ${apiKey}`,
-      },
-      signal: controller.signal,
-    });
-    const text = await response.text();
-    let body;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
     try {
-      body = text ? JSON.parse(text) : {};
-    } catch (_) {
-      throw new SalesAnalyticsError(
-        `Sales Analytics returned invalid JSON (${response.status}).`,
-        response.status,
-      );
+      const response = await fetchImpl(url, {
+        headers: {
+          accept: 'application/json',
+          authorization: `Bearer ${apiKey}`,
+        },
+        signal: controller.signal,
+      });
+      const text = await response.text();
+      let body;
+      try {
+        body = text ? JSON.parse(text) : {};
+      } catch (_) {
+        throw new SalesAnalyticsError(
+          `Sales Analytics returned invalid JSON (${response.status}).`,
+          response.status,
+        );
+      }
+      if (!response.ok) {
+        const apiError = body?.error;
+        throw new SalesAnalyticsError(
+          body?.message ||
+            apiError?.message ||
+            (typeof apiError === 'string' ? apiError : '') ||
+            `Sales Analytics failed (${response.status}).`,
+          response.status,
+        );
+      }
+      if (body?.success === false || !body?.summary) {
+        throw new SalesAnalyticsError(
+          body?.message || 'Sales Analytics returned an incomplete response.',
+          response.status,
+        );
+      }
+      body.integrationDiagnostics = analyzeIdentityContract(body, params.idEmp);
+      return body;
+    } catch (error) {
+      const normalized = error?.name === 'AbortError'
+        ? new SalesAnalyticsError('Sales Analytics request timed out.')
+        : error;
+      if (attempt >= maxAttempts || !isRetryable(normalized)) throw normalized;
+      await wait(500 * attempt);
+    } finally {
+      clearTimeout(timeout);
     }
-    if (!response.ok) {
-      const apiError = body?.error;
-      throw new SalesAnalyticsError(
-        body?.message ||
-          apiError?.message ||
-          (typeof apiError === 'string' ? apiError : '') ||
-          `Sales Analytics failed (${response.status}).`,
-        response.status,
-      );
-    }
-    if (body?.success === false || !body?.summary) {
-      throw new SalesAnalyticsError(
-        body?.message || 'Sales Analytics returned an incomplete response.',
-        response.status,
-      );
-    }
-    body.integrationDiagnostics = analyzeIdentityContract(body, params.idEmp);
-    return body;
-  } catch (error) {
-    if (error?.name === 'AbortError') {
-      throw new SalesAnalyticsError('Sales Analytics request timed out.');
-    }
-    throw error;
-  } finally {
-    clearTimeout(timeout);
   }
+
+  throw new SalesAnalyticsError('Sales Analytics request failed.');
 }
 
 module.exports = {

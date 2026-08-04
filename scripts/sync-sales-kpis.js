@@ -564,12 +564,8 @@ async function loadTaskCalendarContext(db, cycle, userIds, now) {
 async function syncSalesKpis(input = {}) {
   initializeFirebase();
   const db = admin.firestore();
-  let configuredPeriod = null;
-  if (!input.startDate || !input.endDate) {
-    const periodDoc = await db.collection('salesKpiSettings').doc('current').get();
-    const value = periodDoc.data();
-    if (value?.startDate && value?.endDate) configuredPeriod = value;
-  }
+  const periodDoc = await db.collection('salesKpiSettings').doc('current').get();
+  const configuredPeriod = periodDoc.data() || {};
   const requestedPeriod = input.startDate && input.endDate
     ? input
     : configuredPeriod;
@@ -583,14 +579,34 @@ async function syncSalesKpis(input = {}) {
         monthKey: requestedPeriod.periodKey || requestedPeriod.endDate.slice(0, 7),
       }
     : cycleFor(input.now);
-  const api = await fetchSalesAnalytics({
+  const configuredValue = (key, fallback) => {
+    if (input[key] !== undefined && input[key] !== null && input[key] !== '') {
+      return input[key];
+    }
+    if (configuredPeriod[key] !== undefined && configuredPeriod[key] !== null && configuredPeriod[key] !== '') {
+      return configuredPeriod[key];
+    }
+    return fallback;
+  };
+  const filters = {
     startDate: cycle.startDate,
     endDate: cycle.endDate,
-    company: input.company || process.env.SALES_API_COMPANY || 'ALL',
-    salesTarget: input.salesTarget || process.env.SALES_API_SALES_TARGET,
-    teleTarget: input.teleTarget || process.env.SALES_API_TELE_TARGET,
-    cumulative: true,
-  });
+    company: configuredValue('company', process.env.SALES_API_COMPANY || 'ALL'),
+    sales: configuredValue('sales', 'ALL'),
+    teleSales: configuredValue('teleSales', 'ALL'),
+    entryChannel: configuredValue('entryChannel', 'ALL'),
+    salesTarget: configuredValue(
+      'salesTarget',
+      process.env.SALES_API_SALES_TARGET || 20000,
+    ),
+    teleTarget: configuredValue(
+      'teleTarget',
+      process.env.SALES_API_TELE_TARGET || 50,
+    ),
+    idEmp: configuredValue('idEmp', ''),
+    cumulative: configuredValue('cumulative', true) !== false,
+  };
+  const api = await fetchSalesAnalytics(filters);
   const usersSnap = await db.collection('users').get();
   const activeUserDocs = usersSnap.docs.filter((doc) => doc.data().isActive !== false);
   const candidateUserDocs = activeUserDocs.filter((doc) => {
@@ -660,6 +676,8 @@ async function syncSalesKpis(input = {}) {
     periodKey: cycle.monthKey,
     periodStart: cycle.startDate,
     periodEnd: cycle.endDate,
+    filters: api.filters || filters,
+    options: api.options || {},
     totalLeads: number(summary.totalLeads),
     confirmedMeetings: number(summary.confirmedMeetings),
     closings: number(summary.closings),

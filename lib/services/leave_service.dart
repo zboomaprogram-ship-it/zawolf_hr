@@ -378,7 +378,9 @@ class LeaveService {
             actorName: 'النظام',
           ),
       ],
-      'requiresCeoApproval': !isAutoApprovedCasual && req.numberOfDays > 4,
+      'requiresCeoApproval':
+          !isAutoApprovedCasual &&
+          LeaveTypePolicy.requiresCeoApproval(req.leaveType, req.numberOfDays),
       if (probationConversion) ...{
         'originalLeaveType': req.leaveType,
         'probationConverted': true,
@@ -503,7 +505,11 @@ class LeaveService {
     final reviewerName =
         (reviewerDoc.data()?['displayName'] as String?)?.trim() ?? '';
     final requiresCeoApproval =
-        (data['requiresCeoApproval'] as bool?) ?? leave.numberOfDays > 4;
+        (data['requiresCeoApproval'] as bool?) ??
+        LeaveTypePolicy.requiresCeoApproval(
+          leave.leaveType,
+          leave.numberOfDays,
+        );
 
     if (leave.status == 'pending_ceo') {
       final reviewerCode =

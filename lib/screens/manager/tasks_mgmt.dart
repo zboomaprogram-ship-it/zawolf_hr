@@ -19,7 +19,15 @@ class TasksManagementScreen extends StatefulWidget {
 
 class _TasksManagementScreenState extends State<TasksManagementScreen> {
   final TaskService _taskService = TaskService();
+  final TextEditingController _searchController = TextEditingController();
   String _filter = 'open';
+  String _assigneeFilter = 'all';
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -61,6 +69,9 @@ class _TasksManagementScreenState extends State<TasksManagementScreen> {
             );
           }
           final allTasks = snapshot.data ?? [];
+          final assignees = <String, String>{
+            for (final task in allTasks) task.assigneeId: task.assigneeName,
+          };
           final tasks = _filteredTasks(allTasks);
           final overdue = allTasks
               .where(
@@ -112,6 +123,39 @@ class _TasksManagementScreenState extends State<TasksManagementScreen> {
                 ],
               ),
               const SizedBox(height: 16),
+              TextField(
+                controller: _searchController,
+                onChanged: (_) => setState(() {}),
+                decoration: const InputDecoration(
+                  prefixIcon: Icon(Icons.search),
+                  hintText: 'بحث بالموظف أو عنوان المهمة',
+                ),
+              ),
+              const SizedBox(height: 10),
+              DropdownButtonFormField<String>(
+                initialValue: assignees.containsKey(_assigneeFilter)
+                    ? _assigneeFilter
+                    : 'all',
+                decoration: const InputDecoration(
+                  prefixIcon: Icon(Icons.person_search),
+                  labelText: 'الموظف',
+                ),
+                items: [
+                  const DropdownMenuItem(
+                    value: 'all',
+                    child: Text('كل الموظفين'),
+                  ),
+                  ...assignees.entries.map(
+                    (entry) => DropdownMenuItem(
+                      value: entry.key,
+                      child: Text(entry.value),
+                    ),
+                  ),
+                ],
+                onChanged: (value) =>
+                    setState(() => _assigneeFilter = value ?? 'all'),
+              ),
+              const SizedBox(height: 12),
               SegmentedButton<String>(
                 segments: const [
                   ButtonSegment(value: 'open', label: Text('مفتوحة')),
@@ -159,9 +203,19 @@ class _TasksManagementScreenState extends State<TasksManagementScreen> {
 
   List<EmployeeTaskModel> _filteredTasks(List<EmployeeTaskModel> tasks) {
     final now = DateTime.now();
+    final query = _searchController.text.trim().toLowerCase();
+    final scoped = tasks.where((task) {
+      if (_assigneeFilter != 'all' && task.assigneeId != _assigneeFilter) {
+        return false;
+      }
+      if (query.isEmpty) return true;
+      return task.title.toLowerCase().contains(query) ||
+          task.assigneeName.toLowerCase().contains(query) ||
+          task.description.toLowerCase().contains(query);
+    }).toList();
     switch (_filter) {
       case 'late':
-        return tasks
+        return scoped
             .where(
               (task) =>
                   now.isAfter(task.dueDate) &&
@@ -170,11 +224,11 @@ class _TasksManagementScreenState extends State<TasksManagementScreen> {
             )
             .toList();
       case 'done':
-        return tasks.where((task) => task.status == TaskStatus.done).toList();
+        return scoped.where((task) => task.status == TaskStatus.done).toList();
       case 'all':
-        return tasks;
+        return scoped;
       default:
-        return tasks
+        return scoped
             .where(
               (task) =>
                   task.status != TaskStatus.done &&
@@ -274,7 +328,11 @@ class _ManagerTaskCard extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: 8),
-                const Icon(Icons.link, color: ZaWolfColors.primaryCyan, size: 16),
+                const Icon(
+                  Icons.link,
+                  color: ZaWolfColors.primaryCyan,
+                  size: 16,
+                ),
                 const SizedBox(width: 4),
                 Text(
                   'المرفق من الموظف:',

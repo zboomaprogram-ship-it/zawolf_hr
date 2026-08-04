@@ -135,17 +135,23 @@ class RequestLogService {
   Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>> _scopedDocs(
     String collection,
     UserModel user,
-    PayrollCycle cycle,
-  ) async {
+    PayrollCycle cycle, {
+    required bool allTime,
+  }) async {
     if (EmployeeRole.isHr(user.role)) {
-      final snapshot = await _db
-          .collection(collection)
-          .where(
-            'submittedAt',
-            isGreaterThanOrEqualTo: Timestamp.fromDate(cycle.start),
-          )
-          .where('submittedAt', isLessThan: Timestamp.fromDate(cycle.nextStart))
-          .get();
+      final base = _db.collection(collection);
+      final snapshot = allTime
+          ? await base.limit(2000).get()
+          : await base
+                .where(
+                  'submittedAt',
+                  isGreaterThanOrEqualTo: Timestamp.fromDate(cycle.start),
+                )
+                .where(
+                  'submittedAt',
+                  isLessThan: Timestamp.fromDate(cycle.nextStart),
+                )
+                .get();
       return snapshot.docs;
     }
 
@@ -163,7 +169,7 @@ class RequestLogService {
       ]);
       final byId = <String, QueryDocumentSnapshot<Map<String, dynamic>>>{};
       for (final doc in results.expand((snapshot) => snapshot.docs)) {
-        if (_isInCycle(doc.data(), cycle)) byId[doc.id] = doc;
+        if (allTime || _isInCycle(doc.data(), cycle)) byId[doc.id] = doc;
       }
       return byId.values.toList();
     }
@@ -172,12 +178,15 @@ class RequestLogService {
         .collection(collection)
         .where('userId', isEqualTo: user.uid)
         .get();
-    return snapshot.docs.where((doc) => _isInCycle(doc.data(), cycle)).toList();
+    return allTime
+        ? snapshot.docs
+        : snapshot.docs.where((doc) => _isInCycle(doc.data(), cycle)).toList();
   }
 
   Future<List<RequestLogItem>> getMonthlyLogs(
     UserModel user, {
     PayrollCycle? selectedCycle,
+    bool allTime = false,
   }) async {
     final cycle = selectedCycle ?? PayrollCycle.forDate(DateTime.now());
     final logs = <RequestLogItem>[];
@@ -189,7 +198,12 @@ class RequestLogService {
       parse,
     ) async {
       try {
-        final docs = await _scopedDocs(collection, user, cycle);
+        final docs = await _scopedDocs(
+          collection,
+          user,
+          cycle,
+          allTime: allTime,
+        );
         await _cacheReviewerNames(docs);
         logs.addAll(docs.map(parse));
       } on FirebaseException catch (error) {

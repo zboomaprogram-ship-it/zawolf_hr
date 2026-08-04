@@ -1,9 +1,12 @@
 const http = require('http');
 const { URL } = require('url');
+const admin = require('firebase-admin');
 const {
   dispatchNotifications,
   watchPendingNotifications,
+  initializeFirebase,
 } = require('./dispatch-notifications');
+const { createRuntimeLease } = require('./runtime-lease');
 const { queueAttendanceReminders } = require('./attendance-reminders');
 const { processAutomaticAttendance } = require('./auto-attendance');
 const {
@@ -17,6 +20,8 @@ const backgroundIntervalMs = Math.max(
   5 * 60 * 1000,
   Number(process.env.NOTIFICATION_DISPATCH_INTERVAL_MS || 5 * 60 * 1000),
 );
+const backgroundSchedulerEnabled =
+  process.env.NOTIFICATION_BACKGROUND_SCHEDULER_ENABLED !== 'false';
 const quotaBackoffMs = Math.max(
   15 * 60 * 1000,
   Number(process.env.FIRESTORE_QUOTA_BACKOFF_MS || 60 * 60 * 1000),
@@ -34,6 +39,8 @@ let runningSalesKpiSync = null;
 let firestoreQuotaBlockedUntil = 0;
 let pendingDispatchTimer = null;
 let notificationUnsubscribe = null;
+let notificationListenerOwner = false;
+let runtimeLease = null;
 const diagnostics = {
   lastPushAt: null,
   lastPushResult: null,
@@ -56,6 +63,30 @@ function pauseForFirestoreQuota(error) {
   );
 }
 
+function getRuntimeLease() {
+  if (!runtimeLease) {
+    initializeFirebase();
+    runtimeLease = createRuntimeLease(admin.firestore(), admin, {
+      leaseMs: Math.max(7 * 60 * 1000, backgroundIntervalMs + 60 * 1000),
+    });
+  }
+  return runtimeLease;
+}
+
+async function withRuntimeLease(name, task) {
+  const lease = getRuntimeLease();
+  if (!(await lease.acquire(name))) {
+    return { skipped: 'another_worker_running' };
+  }
+  try {
+    return await task();
+  } finally {
+    await lease.release(name).catch((error) => {
+      console.warn(`Could not release runtime lease ${name}:`, error);
+    });
+  }
+}
+
 function schedulePushDispatch(reason = 'firestore_trigger', delayMs = 750) {
   if (Date.now() < firestoreQuotaBlockedUntil) return;
   if (pendingDispatchTimer) clearTimeout(pendingDispatchTimer);
@@ -71,7 +102,10 @@ async function runTriggeredPush(reason) {
     schedulePushDispatch(reason, 2000);
     return;
   }
-  runningDispatch = dispatchNotifications();
+  runningDispatch = withRuntimeLease(
+    'notification_dispatch',
+    () => dispatchNotifications(),
+  );
   try {
     const result = await runningDispatch;
     diagnostics.lastPushAt = new Date().toISOString();
@@ -93,8 +127,19 @@ async function runTriggeredPush(reason) {
 }
 
 function startNotificationListener() {
-  if (notificationUnsubscribe) notificationUnsubscribe();
+  void ensureNotificationListenerLeader();
+}
+
+async function ensureNotificationListenerLeader() {
   try {
+    if (!(await getRuntimeLease().acquire('notification_listener'))) {
+      if (notificationUnsubscribe) notificationUnsubscribe();
+      notificationUnsubscribe = null;
+      notificationListenerOwner = false;
+      return;
+    }
+    notificationListenerOwner = true;
+    if (notificationUnsubscribe) return;
     notificationUnsubscribe = watchPendingNotifications({
       onPending: (count) => {
         diagnostics.listenerError = null;
@@ -107,16 +152,17 @@ function startNotificationListener() {
         diagnostics.listenerError = String(error.message || error);
         notificationUnsubscribe = null;
         setTimeout(
-          startNotificationListener,
+          () => void ensureNotificationListenerLeader(),
           quotaError ? quotaBackoffMs : 60 * 1000,
         );
       },
     });
   } catch (error) {
+    notificationListenerOwner = false;
     diagnostics.listenerError = String(error.message || error);
     console.error('Could not start pending notification listener:', error);
     notificationUnsubscribe = null;
-    setTimeout(startNotificationListener, 60 * 1000);
+    setTimeout(() => void ensureNotificationListenerLeader(), 60 * 1000);
   }
 }
 
@@ -155,13 +201,13 @@ async function handleDispatch(req, res, url) {
   }
 
   const startedAt = new Date().toISOString();
-  runningDispatch = (async () => {
+  runningDispatch = withRuntimeLease('background_attendance', async () => {
     const managerLeaveBypasses =
       await processManagerLeavePermissionBypasses();
     const automaticAttendance = await processAutomaticAttendance();
     const push = await dispatchNotifications();
     return { managerLeaveBypasses, automaticAttendance, ...push };
-  })();
+  });
   try {
     const result = await runningDispatch;
     diagnostics.lastPushAt = new Date().toISOString();
@@ -194,14 +240,14 @@ async function handleAttendanceReminders(req, res, url) {
     sendJson(res, 202, { ok: true, status: 'already_running' });
     return;
   }
-  runningDispatch = (async () => {
+  runningDispatch = withRuntimeLease('background_attendance', async () => {
     const managerLeaveBypasses =
       await processManagerLeavePermissionBypasses();
     const automaticAttendance = await processAutomaticAttendance();
     const reminders = await queueAttendanceReminders();
     const push = await dispatchNotifications();
     return { managerLeaveBypasses, automaticAttendance, reminders, push };
-  })();
+  });
   try {
     const result = await runningDispatch;
     diagnostics.lastReminderAt = new Date().toISOString();
@@ -225,7 +271,7 @@ async function runBackgroundDispatch() {
   if (runningDispatch) return;
   if (Date.now() < firestoreQuotaBlockedUntil) return;
 
-  runningDispatch = (async () => {
+  runningDispatch = withRuntimeLease('background_attendance', async () => {
     let reminders;
     let automaticAttendance;
     let managerLeaveBypasses;
@@ -273,7 +319,7 @@ async function runBackgroundDispatch() {
 
 async function runScheduledSalesKpiSync() {
   if (!process.env.SALES_API_KEY || runningSalesKpiSync) return;
-  runningSalesKpiSync = syncSalesKpis();
+  runningSalesKpiSync = withRuntimeLease('sales_kpi_sync', () => syncSalesKpis());
   try {
     const result = await runningSalesKpiSync;
     diagnostics.lastSalesKpiAt = new Date().toISOString();
@@ -297,7 +343,11 @@ const server = http.createServer(async (req, res) => {
     sendJson(res, 200, {
       ok: true,
       service: 'zawolf-notification-dispatcher',
-      notificationListener: notificationUnsubscribe ? 'connected' : 'starting',
+      notificationListener: notificationListenerOwner && notificationUnsubscribe
+        ? 'connected'
+        : 'standby',
+      backgroundScheduler: backgroundSchedulerEnabled ? 'internal' : 'external_cron',
+      workerId: runtimeLease?.owner || null,
       firestoreQuotaBlockedUntil: firestoreQuotaBlockedUntil
         ? new Date(firestoreQuotaBlockedUntil).toISOString()
         : null,
@@ -331,11 +381,13 @@ const server = http.createServer(async (req, res) => {
       return;
     }
     try {
-      runningSalesKpiSync = syncSalesKpis({
-        startDate: url.searchParams.get('startDate') || undefined,
-        endDate: url.searchParams.get('endDate') || undefined,
-        company: url.searchParams.get('company') || undefined,
-      });
+      runningSalesKpiSync = withRuntimeLease('sales_kpi_sync', () =>
+        syncSalesKpis({
+          startDate: url.searchParams.get('startDate') || undefined,
+          endDate: url.searchParams.get('endDate') || undefined,
+          company: url.searchParams.get('company') || undefined,
+        }),
+      );
       const result = await runningSalesKpiSync;
       diagnostics.lastSalesKpiAt = new Date().toISOString();
       diagnostics.lastSalesKpiResult = result;
@@ -364,8 +416,15 @@ server.listen(port, '0.0.0.0', () => {
   // Firestore wakes the push dispatcher as soon as a notification document is
   // created. Scheduled work remains on a five-minute clock for attendance.
   startNotificationListener();
-  setTimeout(() => void runBackgroundDispatch(), 5000);
-  setInterval(() => void runBackgroundDispatch(), backgroundIntervalMs);
+  // Hostinger may briefly run more than one Node worker during deployment or
+  // restarts. Renew the lease so exactly one worker retains the listener.
+  setInterval(() => void ensureNotificationListenerLeader(), 2 * 60 * 1000);
+  if (backgroundSchedulerEnabled) {
+    setTimeout(() => void runBackgroundDispatch(), 5000);
+    setInterval(() => void runBackgroundDispatch(), backgroundIntervalMs);
+  } else {
+    console.log('Background attendance scheduler is disabled; expecting external cron.');
+  }
   setInterval(
     () => schedulePushDispatch('hourly_fallback'),
     pushFallbackIntervalMs,

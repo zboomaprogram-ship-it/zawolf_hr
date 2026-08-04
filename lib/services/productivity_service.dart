@@ -37,6 +37,20 @@ class ProductivityService {
     UserModel reviewer,
     String monthKey,
   ) {
+    if (reviewer.role == EmployeeRole.teamLeader) {
+      return Stream.fromFuture(
+        _managedEmployees.loadForReviewer(reviewer),
+      ).asyncExpand((employees) {
+        final references = employees
+            .map(
+              (employee) => _db
+                  .collection('productivityScores')
+                  .doc('${employee.uid}_$monthKey'),
+            )
+            .toList();
+        return _watchScoreDocuments(references);
+      });
+    }
     Query<Map<String, dynamic>> query = _db
         .collection('productivityScores')
         .where('monthKey', isEqualTo: monthKey);
@@ -53,6 +67,47 @@ class ProductivityService {
       scores.sort((a, b) => b.overallScore.compareTo(a.overallScore));
       return scores;
     });
+  }
+
+  Stream<List<ProductivityScoreModel>> _watchScoreDocuments(
+    List<DocumentReference<Map<String, dynamic>>> references,
+  ) {
+    if (references.isEmpty) return Stream.value(const []);
+
+    late StreamController<List<ProductivityScoreModel>> controller;
+    final snapshots = <String, ProductivityScoreModel?>{};
+    final loaded = <String>{};
+    final subscriptions = <StreamSubscription>[];
+
+    void emit() {
+      if (loaded.length != references.length) return;
+      final scores =
+          snapshots.values.whereType<ProductivityScoreModel>().toList()
+            ..sort((a, b) => b.overallScore.compareTo(a.overallScore));
+      controller.add(scores);
+    }
+
+    controller = StreamController<List<ProductivityScoreModel>>(
+      onListen: () {
+        for (final reference in references) {
+          subscriptions.add(
+            reference.snapshots().listen((document) {
+              loaded.add(reference.id);
+              snapshots[reference.id] = document.exists
+                  ? ProductivityScoreModel.fromFirestore(document)
+                  : null;
+              emit();
+            }, onError: controller.addError),
+          );
+        }
+      },
+      onCancel: () async {
+        for (final subscription in subscriptions) {
+          await subscription.cancel();
+        }
+      },
+    );
+    return controller.stream;
   }
 
   Stream<List<ProductivityScoreModel>> _watchMergedRankings(

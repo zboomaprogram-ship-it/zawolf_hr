@@ -73,4 +73,21 @@ void main() {
       expect(summary.effectiveTeleSalesMappedEmployees, 1);
     },
   );
+
+  test('unmapped API identities do not count as linked employees', () {
+    final summary = SalesKpiSummary.fromMap({
+      'agentSummaries': [
+        {'kind': 'sales', 'externalId': 'S10'},
+        {
+          'kind': 'sales',
+          'externalId': 'S4',
+          'mappedUserId': 'user-1',
+          'mappedEmployeeId': 'BD-1206',
+        },
+      ],
+    });
+
+    expect(summary.effectiveMappedEmployees, 1);
+    expect(summary.effectiveSalesMappedEmployees, 1);
+  });
 }

@@ -78,4 +78,6 @@ class LeaveTypePolicy {
   static bool get requiresReason => true;
   static bool requiresTwoDayNotice(String type) => type == normal;
   static bool requiresFullDaySalaryDeduction(String type) => type == unpaid;
+  static bool requiresCeoApproval(String type, int numberOfDays) =>
+      type == remote || numberOfDays > 4;
 }

@@ -38,6 +38,34 @@ class SalesKpiIntegrationService {
         });
   }
 
+  Stream<SalesKpiFilters?> watchFilters() {
+    return _db
+        .collection('salesKpiSettings')
+        .doc('current')
+        .snapshots()
+        .map((snapshot) {
+          final data = snapshot.data();
+          return snapshot.exists && data != null
+              ? SalesKpiFilters.fromMap(data)
+              : null;
+        });
+  }
+
+  Future<void> updateFilters({
+    required SalesKpiFilters filters,
+    required String actorId,
+  }) {
+    final periodKey = filters.startDate.length >= 7
+        ? filters.startDate.substring(0, 7)
+        : '';
+    return _db.collection('salesKpiSettings').doc('current').set({
+      ...filters.toMap(),
+      'periodKey': periodKey,
+      'updatedBy': actorId,
+      'updatedAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
+  }
+
   Future<void> updateActivePeriod({
     required String periodKey,
     required String startDate,

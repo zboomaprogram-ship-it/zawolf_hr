@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../models/kpi_model.dart';
+import '../models/sales_kpi_summary.dart';
 import '../theme/theme.dart';
 
 class SalesKpiDetailsPanel extends StatelessWidget {
@@ -18,11 +19,59 @@ class SalesKpiDetailsPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final details = kpi.providerDetails;
+    return _SalesKpiMetricsContent(
+      details: kpi.providerDetails,
+      isTeleSales:
+          kpi.providerDepartment == 'tele_sales' ||
+          kpi.providerDetails['kind'] == 'tele_sales',
+      employeeName: kpi.employeeName,
+      compact: compact,
+    );
+  }
+}
+
+class SalesKpiAgentDetailsPanel extends StatelessWidget {
+  final SalesKpiAgentSummary agent;
+  final bool compact;
+
+  const SalesKpiAgentDetailsPanel({
+    super.key,
+    required this.agent,
+    this.compact = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return _SalesKpiMetricsContent(
+      details: agent.providerDetails,
+      isTeleSales: agent.kind == 'tele_sales',
+      employeeName: agent.mappedEmployeeName.isNotEmpty
+          ? agent.mappedEmployeeName
+          : agent.name,
+      employeeCode: agent.mappedEmployeeId,
+      compact: compact,
+    );
+  }
+}
+
+class _SalesKpiMetricsContent extends StatelessWidget {
+  final Map<String, dynamic> details;
+  final bool isTeleSales;
+  final String employeeName;
+  final String employeeCode;
+  final bool compact;
+
+  const _SalesKpiMetricsContent({
+    required this.details,
+    required this.isTeleSales,
+    required this.employeeName,
+    this.employeeCode = '',
+    required this.compact,
+  });
+
+  @override
+  Widget build(BuildContext context) {
     if (details.isEmpty) return const SizedBox.shrink();
-    final isTeleSales =
-        kpi.providerDepartment == 'tele_sales' ||
-        details['kind'] == 'tele_sales';
     final metrics = isTeleSales
         ? _teleSalesMetrics(details)
         : _salesMetrics(details);
@@ -55,7 +104,9 @@ class SalesKpiDetailsPanel extends StatelessWidget {
                     ).textTheme.titleLarge?.copyWith(color: Colors.white),
                   ),
                   Text(
-                    kpi.employeeName,
+                    employeeCode.isEmpty
+                        ? employeeName
+                        : '$employeeName · $employeeCode',
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
                 ],

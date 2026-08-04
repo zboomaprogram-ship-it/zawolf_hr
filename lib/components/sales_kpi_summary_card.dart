@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 
 import '../models/sales_kpi_summary.dart';
 import '../theme/theme.dart';
+import 'sales_kpi_details_panel.dart';
 import 'wolf_card.dart';
 
 class SalesKpiSummaryCard extends StatelessWidget {
@@ -556,7 +557,7 @@ class _AgentSummaryTile extends StatelessWidget {
         builder: (context) => SafeArea(
           child: Padding(
             padding: const EdgeInsets.all(20),
-            child: _AgentDetails(agent: agent, currency: currency),
+            child: _AgentDetails(agent: agent),
           ),
         ),
       ),
@@ -615,55 +616,13 @@ class _AgentSummaryTile extends StatelessWidget {
 
 class _AgentDetails extends StatelessWidget {
   final SalesKpiAgentSummary agent;
-  final String currency;
 
-  const _AgentDetails({required this.agent, required this.currency});
+  const _AgentDetails({required this.agent});
 
   @override
   Widget build(BuildContext context) {
-    final entries = agent.providerDetails.entries
-        .where((entry) => entry.key != 'kind' && entry.key != 'currency')
-        .toList();
     return SingleChildScrollView(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(
-            agent.mappedEmployeeName.isNotEmpty
-                ? agent.mappedEmployeeName
-                : agent.name,
-            textAlign: TextAlign.right,
-            style: Theme.of(context).textTheme.headlineSmall,
-          ),
-          const SizedBox(height: 4),
-          Text(
-            '${agent.kind == 'sales' ? 'المبيعات' : 'المبيعات الهاتفية'} · '
-            '${agent.isMapped ? 'مرتبط بحساب الموظف' : 'يحتاج ربط بحساب الموظف'}',
-            textAlign: TextAlign.right,
-          ),
-          const SizedBox(height: 16),
-          Wrap(
-            spacing: 10,
-            runSpacing: 10,
-            children: entries
-                .map(
-                  (entry) => SizedBox(
-                    width: 190,
-                    child: _MetricTile(
-                      label: entry.key,
-                      value: entry.value is num
-                          ? NumberFormat.decimalPattern(
-                              'en_US',
-                            ).format(entry.value)
-                          : '${entry.value}',
-                      color: ZaWolfColors.primaryCyan,
-                    ),
-                  ),
-                )
-                .toList(),
-          ),
-        ],
-      ),
+      child: SalesKpiAgentDetailsPanel(agent: agent),
     );
   }
 }

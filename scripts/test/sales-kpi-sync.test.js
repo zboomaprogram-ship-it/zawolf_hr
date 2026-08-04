@@ -44,6 +44,37 @@ test('Sales Analytics requests aggregate duplicate source rows by default', asyn
   assert.equal(requestedUrl.searchParams.get('idEmp'), 'BD-1201');
 });
 
+test('Sales Analytics retries one transient timeout before failing', async () => {
+  const previousKey = process.env.SALES_API_KEY;
+  const previousAttempts = process.env.SALES_API_MAX_ATTEMPTS;
+  process.env.SALES_API_KEY = 'test-key';
+  process.env.SALES_API_MAX_ATTEMPTS = '2';
+  let calls = 0;
+  try {
+    const response = await fetchSalesAnalytics(
+      { startDate: '2026-07-01', endDate: '2026-07-31' },
+      async () => {
+        calls += 1;
+        if (calls === 1) {
+          const error = new Error('temporary upstream timeout');
+          error.name = 'AbortError';
+          throw error;
+        }
+        return new Response(JSON.stringify({ success: true, summary: {} }), {
+          status: 200,
+        });
+      },
+    );
+    assert.equal(calls, 2);
+    assert.equal(response.success, true);
+  } finally {
+    if (previousKey == null) delete process.env.SALES_API_KEY;
+    else process.env.SALES_API_KEY = previousKey;
+    if (previousAttempts == null) delete process.env.SALES_API_MAX_ATTEMPTS;
+    else process.env.SALES_API_MAX_ATTEMPTS = previousAttempts;
+  }
+});
+
 test('cycleFor uses the company cycle from the 26th through the 25th', () => {
   const beforeClose = cycleFor(new Date('2026-07-15T08:00:00Z'));
   assert.equal(beforeClose.monthKey, '2026-07');

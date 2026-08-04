@@ -1,5 +1,148 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+class SalesKpiAgentOption {
+  final String code;
+  final String id;
+  final String name;
+
+  const SalesKpiAgentOption({
+    required this.code,
+    required this.id,
+    required this.name,
+  });
+
+  bool get isLinked => id.trim().isNotEmpty;
+
+  factory SalesKpiAgentOption.fromMap(Map<String, dynamic> map) {
+    return SalesKpiAgentOption(
+      code: map['code']?.toString() ?? '',
+      id: map['id']?.toString() ?? '',
+      name: map['name']?.toString() ?? '',
+    );
+  }
+
+  Map<String, dynamic> toMap() => {'code': code, 'id': id, 'name': name};
+}
+
+class SalesKpiFilterOptions {
+  final List<String> companies;
+  final List<SalesKpiAgentOption> salesAgents;
+  final List<SalesKpiAgentOption> teleSalesAgents;
+  final List<String> entryChannels;
+
+  const SalesKpiFilterOptions({
+    this.companies = const [],
+    this.salesAgents = const [],
+    this.teleSalesAgents = const [],
+    this.entryChannels = const [],
+  });
+
+  List<SalesKpiAgentOption> get linkedSalesAgents =>
+      salesAgents.where((agent) => agent.isLinked).toList();
+  List<SalesKpiAgentOption> get linkedTeleSalesAgents =>
+      teleSalesAgents.where((agent) => agent.isLinked).toList();
+
+  factory SalesKpiFilterOptions.fromMap(Map<String, dynamic> map) {
+    List<String> strings(String key) => (map[key] as List? ?? const [])
+        .map((item) => item.toString())
+        .where((item) => item.trim().isNotEmpty)
+        .toList();
+    List<SalesKpiAgentOption> agents(String key) =>
+        (map[key] as List? ?? const [])
+            .whereType<Map>()
+            .map(
+              (item) => SalesKpiAgentOption.fromMap(
+                Map<String, dynamic>.from(item),
+              ),
+            )
+            .toList();
+
+    return SalesKpiFilterOptions(
+      companies: strings('companies'),
+      salesAgents: agents('salesAgents'),
+      teleSalesAgents: agents('teleSalesAgents'),
+      entryChannels: strings('entryChannels'),
+    );
+  }
+}
+
+class SalesKpiFilters {
+  final String startDate;
+  final String endDate;
+  final String company;
+  final List<String> sales;
+  final List<String> teleSales;
+  final String entryChannel;
+  final double salesTarget;
+  final double teleTarget;
+  final String idEmp;
+  final bool cumulative;
+
+  const SalesKpiFilters({
+    this.startDate = '',
+    this.endDate = '',
+    this.company = 'ALL',
+    this.sales = const [],
+    this.teleSales = const [],
+    this.entryChannel = 'ALL',
+    this.salesTarget = 20000,
+    this.teleTarget = 50,
+    this.idEmp = '',
+    this.cumulative = true,
+  });
+
+  factory SalesKpiFilters.fromMap(Map<String, dynamic> map) {
+    List<String> values(String key) {
+      final value = map[key];
+      if (value is List) {
+        return value
+            .map((item) => item.toString())
+            .where((item) => item.isNotEmpty && item != 'ALL' && item != 'NONE')
+            .toList();
+      }
+      final text = value?.toString() ?? '';
+      if (text.isEmpty || text == 'ALL' || text == 'NONE') return const [];
+      return text
+          .split(',')
+          .map((item) => item.trim())
+          .where((item) => item.isNotEmpty)
+          .toList();
+    }
+
+    double number(String key, double fallback) {
+      final value = map[key];
+      if (value is num) return value.toDouble();
+      return double.tryParse(value?.toString() ?? '') ?? fallback;
+    }
+
+    return SalesKpiFilters(
+      startDate: map['startDate']?.toString() ?? '',
+      endDate: map['endDate']?.toString() ?? '',
+      company: map['company']?.toString() ?? 'ALL',
+      sales: values('sales'),
+      teleSales: values('teleSales'),
+      entryChannel: map['entryChannel']?.toString() ?? 'ALL',
+      salesTarget: number('salesTarget', 20000),
+      teleTarget: number('teleTarget', 50),
+      idEmp: map['idEmp']?.toString() ?? '',
+      cumulative: map['cumulative'] != false,
+    );
+  }
+
+  Map<String, dynamic> toMap() => {
+    'startDate': startDate,
+    'endDate': endDate,
+    'company': company,
+    'sales': sales.isEmpty ? 'ALL' : sales,
+    'teleSales': teleSales.isEmpty ? 'ALL' : teleSales,
+    'entryChannel': entryChannel,
+    'salesTarget': salesTarget,
+    'teleTarget': teleTarget,
+    'idEmp': idEmp,
+    'cumulative': cumulative,
+  };
+}
+
 class SalesKpiAgentSummary {
   final String kind;
   final String key;
@@ -90,6 +233,8 @@ class SalesKpiSummary {
   final bool apiIdentityMappingReady;
   final List<String> integrationWarnings;
   final List<String> unmappedApiAgentKeys;
+  final SalesKpiFilters filters;
+  final SalesKpiFilterOptions options;
   final DateTime? syncedAt;
 
   const SalesKpiSummary({
@@ -133,6 +278,8 @@ class SalesKpiSummary {
     this.apiIdentityMappingReady = false,
     this.integrationWarnings = const [],
     this.unmappedApiAgentKeys = const [],
+    this.filters = const SalesKpiFilters(),
+    this.options = const SalesKpiFilterOptions(),
     this.syncedAt,
   });
 
@@ -235,6 +382,12 @@ class SalesKpiSummary {
       unmappedApiAgentKeys: (map['unmappedApiAgentKeys'] as List? ?? const [])
           .map((item) => item.toString())
           .toList(),
+      filters: SalesKpiFilters.fromMap(
+        Map<String, dynamic>.from(map['filters'] as Map? ?? const {}),
+      ),
+      options: SalesKpiFilterOptions.fromMap(
+        Map<String, dynamic>.from(map['options'] as Map? ?? const {}),
+      ),
       syncedAt: (map['syncedAt'] as Timestamp?)?.toDate(),
     );
   }

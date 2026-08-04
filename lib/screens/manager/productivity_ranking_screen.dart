@@ -20,9 +20,49 @@ class ProductivityRankingScreen extends StatefulWidget {
 
 class _ProductivityRankingScreenState extends State<ProductivityRankingScreen> {
   final ProductivityService _service = ProductivityService();
-  late final String _monthKey = PayrollCycle.keyFor(DateTime.now());
+  final TextEditingController _searchController = TextEditingController();
+  late String _monthKey = PayrollCycle.keyFor(DateTime.now());
+  String _department = 'all';
+  String _scoreBand = 'all';
   bool _refreshing = false;
   bool _autoRefreshAttempted = false;
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  void _changeCycle(int offset) {
+    final cycle = PayrollCycle.forKey(_monthKey);
+    final target = DateTime(cycle.end.year, cycle.end.month + offset);
+    setState(() {
+      _monthKey = PayrollCycle.forDate(
+        DateTime(target.year, target.month, PayrollCycle.closingDay),
+      ).key;
+      _department = 'all';
+      _autoRefreshAttempted = false;
+    });
+  }
+
+  List<ProductivityScoreModel> _filtered(List<ProductivityScoreModel> scores) {
+    final query = _searchController.text.trim().toLowerCase();
+    return scores.where((score) {
+      final matchesSearch =
+          query.isEmpty ||
+          score.employeeName.toLowerCase().contains(query) ||
+          score.employeeId.toLowerCase().contains(query);
+      final matchesDepartment =
+          _department == 'all' || score.department == _department;
+      final matchesScore = switch (_scoreBand) {
+        'excellent' => score.overallScore >= 85,
+        'good' => score.overallScore >= 70 && score.overallScore < 85,
+        'follow_up' => score.overallScore < 70,
+        _ => true,
+      };
+      return matchesSearch && matchesDepartment && matchesScore;
+    }).toList();
+  }
 
   Future<void> _refresh(
     UserModel reviewer, {
@@ -128,6 +168,14 @@ class _ProductivityRankingScreenState extends State<ProductivityRankingScreen> {
             );
           }
 
+          final departments =
+              scores
+                  .map((score) => score.department)
+                  .where((value) => value.trim().isNotEmpty)
+                  .toSet()
+                  .toList()
+                ..sort();
+          final filtered = _filtered(scores);
           final best = scores.first;
           final needsFollowUp = [...scores]
             ..sort((a, b) => a.overallScore.compareTo(b.overallScore));
@@ -135,6 +183,106 @@ class _ProductivityRankingScreenState extends State<ProductivityRankingScreen> {
           return ListView(
             padding: const EdgeInsets.all(16),
             children: [
+              _PeriodSelector(
+                monthKey: _monthKey,
+                canGoNext: _monthKey != PayrollCycle.keyFor(DateTime.now()),
+                onPrevious: () => _changeCycle(-1),
+                onNext: () => _changeCycle(1),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _searchController,
+                onChanged: (_) => setState(() {}),
+                decoration: InputDecoration(
+                  labelText: 'بحث بالاسم أو كود الموظف',
+                  prefixIcon: const Icon(Icons.search),
+                  suffixIcon: _searchController.text.isEmpty
+                      ? null
+                      : IconButton(
+                          tooltip: 'مسح البحث',
+                          onPressed: () {
+                            _searchController.clear();
+                            setState(() {});
+                          },
+                          icon: const Icon(Icons.close),
+                        ),
+                ),
+              ),
+              const SizedBox(height: 10),
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  final width = constraints.maxWidth > 680
+                      ? (constraints.maxWidth - 10) / 2
+                      : constraints.maxWidth;
+                  return Wrap(
+                    spacing: 10,
+                    runSpacing: 10,
+                    children: [
+                      SizedBox(
+                        width: width,
+                        child: DropdownButtonFormField<String>(
+                          initialValue: departments.contains(_department)
+                              ? _department
+                              : 'all',
+                          decoration: const InputDecoration(labelText: 'القسم'),
+                          items: [
+                            const DropdownMenuItem(
+                              value: 'all',
+                              child: Text('جميع الأقسام'),
+                            ),
+                            ...departments.map(
+                              (value) => DropdownMenuItem(
+                                value: value,
+                                child: Text(
+                                  value,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ),
+                          ],
+                          onChanged: (value) =>
+                              setState(() => _department = value ?? 'all'),
+                        ),
+                      ),
+                      SizedBox(
+                        width: width,
+                        child: DropdownButtonFormField<String>(
+                          initialValue: _scoreBand,
+                          decoration: const InputDecoration(
+                            labelText: 'مستوى الأداء',
+                          ),
+                          items: const [
+                            DropdownMenuItem(
+                              value: 'all',
+                              child: Text('جميع المستويات'),
+                            ),
+                            DropdownMenuItem(
+                              value: 'excellent',
+                              child: Text('ممتاز 85% فأكثر'),
+                            ),
+                            DropdownMenuItem(
+                              value: 'good',
+                              child: Text('جيد من 70% إلى 84%'),
+                            ),
+                            DropdownMenuItem(
+                              value: 'follow_up',
+                              child: Text('يحتاج متابعة أقل من 70%'),
+                            ),
+                          ],
+                          onChanged: (value) =>
+                              setState(() => _scoreBand = value ?? 'all'),
+                        ),
+                      ),
+                    ],
+                  );
+                },
+              ),
+              const SizedBox(height: 8),
+              Text(
+                '${filtered.length} من ${scores.length} موظف',
+                style: theme.textTheme.bodySmall,
+              ),
+              const SizedBox(height: 12),
               Row(
                 children: [
                   Expanded(
@@ -158,7 +306,14 @@ class _ProductivityRankingScreenState extends State<ProductivityRankingScreen> {
                 ],
               ),
               const SizedBox(height: 16),
-              ...scores.asMap().entries.map((entry) {
+              if (filtered.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 48),
+                  child: Center(
+                    child: Text('لا توجد نتائج مطابقة للفلاتر الحالية.'),
+                  ),
+                ),
+              ...filtered.asMap().entries.map((entry) {
                 final rank = entry.key + 1;
                 final score = entry.value;
                 return Padding(
@@ -253,6 +408,61 @@ class _LoadError extends StatelessWidget {
         onPressed: onRetry,
         icon: const Icon(Icons.refresh),
         label: const Text('تعذر تحميل الإنتاجية، أعد المحاولة'),
+      ),
+    );
+  }
+}
+
+class _PeriodSelector extends StatelessWidget {
+  const _PeriodSelector({
+    required this.monthKey,
+    required this.canGoNext,
+    required this.onPrevious,
+    required this.onNext,
+  });
+
+  final String monthKey;
+  final bool canGoNext;
+  final VoidCallback onPrevious;
+  final VoidCallback onNext;
+
+  @override
+  Widget build(BuildContext context) {
+    final cycle = PayrollCycle.forKey(monthKey);
+    return WolfCard(
+      child: Row(
+        children: [
+          IconButton(
+            tooltip: 'الدورة السابقة',
+            onPressed: onPrevious,
+            icon: const Icon(Icons.chevron_right),
+          ),
+          Expanded(
+            child: Column(
+              children: [
+                Text(
+                  'دورة الرواتب $monthKey',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                Text(
+                  cycle.arabicRangeLabel,
+                  style: const TextStyle(
+                    color: ZaWolfColors.textMuted,
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          IconButton(
+            tooltip: 'الدورة التالية',
+            onPressed: canGoNext ? onNext : null,
+            icon: const Icon(Icons.chevron_left),
+          ),
+        ],
       ),
     );
   }

@@ -494,11 +494,20 @@ class OfflineAttendanceQueueService {
 
   Future<void> _ensureDeviceBinding(OfflineAttendanceAction action) async {
     final userRef = _db.collection('users').doc(action.userId);
+    final deviceRef = _db
+        .collection('attendanceDevices')
+        .doc(AttendanceSecurityService.deviceDocumentId(action.deviceId));
 
     await _db.runTransaction((transaction) async {
       final userSnap = await transaction.get(userRef);
+      final deviceSnap = await transaction.get(deviceRef);
       if (!userSnap.exists) {
         throw StateError('User not found while syncing attendance.');
+      }
+      if (deviceSnap.exists) {
+        final deviceData = deviceSnap.data() ?? <String, dynamic>{};
+        if (deviceData['userId'] == action.userId) return;
+        throw StateError('Attendance device belongs to another account.');
       }
       final userData = userSnap.data() ?? <String, dynamic>{};
       final registeredDeviceId =

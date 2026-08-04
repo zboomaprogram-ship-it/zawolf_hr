@@ -195,7 +195,11 @@ class _ProviderDashboardTabState extends State<_ProviderDashboardTab> {
     List<EmployeeKpiModel> providerRecords,
     SalesKpiSummary? summary,
   ) {
-    final external = summary?.agents ?? const <SalesKpiAgentSummary>[];
+    // Unmapped API identities are integration diagnostics, not employees.
+    // Excluding them keeps team counts, averages and lists accurate.
+    final external = (summary?.agents ?? const <SalesKpiAgentSummary>[])
+        .where((agent) => agent.isMapped)
+        .toList();
     final visibleExternal = _department == 'all'
         ? external
         : external.where((agent) => agent.kind == _department).toList();

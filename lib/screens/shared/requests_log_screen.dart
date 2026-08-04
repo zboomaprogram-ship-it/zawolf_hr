@@ -28,6 +28,7 @@ class _RequestsLogScreenState extends State<RequestsLogScreen> {
   String _departmentFilter = 'all';
   String _requestFilter = 'all';
   DateTime _selectedCycleDate = DateTime.now();
+  bool _allTime = false;
 
   PayrollCycle get _selectedCycle => PayrollCycle.forDate(_selectedCycleDate);
   bool get _isCurrentCycle =>
@@ -52,6 +53,7 @@ class _RequestsLogScreenState extends State<RequestsLogScreen> {
       _logsFuture = RequestLogService.instance.getMonthlyLogs(
         user,
         selectedCycle: _selectedCycle,
+        allTime: _allTime,
       );
     });
   }
@@ -138,7 +140,9 @@ class _RequestsLogScreenState extends State<RequestsLogScreen> {
       return;
     }
     final csv = _createCsv(logs);
-    final fileName = 'سجل_الطلبات_${_selectedCycle.key}';
+    final fileName = _allTime
+        ? 'سجل_الطلبات_كامل'
+        : 'سجل_الطلبات_${_selectedCycle.key}';
     try {
       if (await downloadCsvFile(csv, fileName)) {
         if (!mounted) return;
@@ -205,9 +209,14 @@ class _RequestsLogScreenState extends State<RequestsLogScreen> {
 
           return Column(
             children: [
-              _CycleSelector(
+              _PeriodSelector(
+                allTime: _allTime,
                 cycle: _selectedCycle,
                 isCurrent: _isCurrentCycle,
+                onModeChanged: (allTime) {
+                  _allTime = allTime;
+                  _refreshLogs();
+                },
                 onPrevious: () => _changeCycle(-1),
                 onNext: () => _changeCycle(1),
               ),
@@ -241,6 +250,7 @@ class _RequestsLogScreenState extends State<RequestsLogScreen> {
                 onNameChanged: (_) => setState(() {}),
                 onExport: () => _export(filtered),
               ),
+              _RequestSummary(logs: filtered),
               Expanded(
                 child: filtered.isEmpty
                     ? const _EmptyState()
@@ -265,16 +275,20 @@ class _RequestsLogScreenState extends State<RequestsLogScreen> {
   }
 }
 
-class _CycleSelector extends StatelessWidget {
-  const _CycleSelector({
+class _PeriodSelector extends StatelessWidget {
+  const _PeriodSelector({
+    required this.allTime,
     required this.cycle,
     required this.isCurrent,
+    required this.onModeChanged,
     required this.onPrevious,
     required this.onNext,
   });
 
+  final bool allTime;
   final PayrollCycle cycle;
   final bool isCurrent;
+  final ValueChanged<bool> onModeChanged;
   final VoidCallback onPrevious;
   final VoidCallback onNext;
 
@@ -284,39 +298,123 @@ class _CycleSelector extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       color: ZaWolfColors.primaryCyan.withValues(alpha: 0.1),
-      child: Row(
+      child: Column(
         children: [
-          IconButton(
-            tooltip: 'الدورة السابقة',
-            onPressed: onPrevious,
-            icon: const Icon(Icons.chevron_right),
+          SegmentedButton<bool>(
+            segments: const [
+              ButtonSegment(value: false, label: Text('هذه الدورة')),
+              ButtonSegment(value: true, label: Text('كل السجل')),
+            ],
+            selected: {allTime},
+            onSelectionChanged: (values) => onModeChanged(values.first),
           ),
-          Expanded(
+          if (!allTime)
+            Row(
+              children: [
+                IconButton(
+                  tooltip: 'الدورة السابقة',
+                  onPressed: onPrevious,
+                  icon: const Icon(Icons.chevron_right),
+                ),
+                Expanded(
+                  child: Column(
+                    children: [
+                      Text(
+                        'دورة ${cycle.key}',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      Text(
+                        cycle.arabicRangeLabel,
+                        style: const TextStyle(
+                          color: ZaWolfColors.primaryCyan,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  tooltip: 'الدورة التالية',
+                  onPressed: isCurrent ? null : onNext,
+                  icon: const Icon(Icons.chevron_left),
+                ),
+              ],
+            )
+          else
+            const Padding(
+              padding: EdgeInsets.only(top: 6),
+              child: Text(
+                'يعرض السجل التاريخي الكامل حسب صلاحياتك',
+                style: TextStyle(color: ZaWolfColors.textMuted, fontSize: 12),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _RequestSummary extends StatelessWidget {
+  const _RequestSummary({required this.logs});
+
+  final List<RequestLogItem> logs;
+
+  @override
+  Widget build(BuildContext context) {
+    final pending = logs.where((item) => item.isPending).length;
+    final approved = logs.where((item) => item.status == 'approved').length;
+    final rejected = logs.where((item) => item.status == 'rejected').length;
+    final leaves = logs.where((item) => item.type == 'leave').length;
+    final permissions = logs.where((item) => item.type == 'permission').length;
+    final values = [
+      ('الإجمالي', logs.length, ZaWolfColors.primaryCyan),
+      ('إجازات', leaves, Colors.purpleAccent),
+      ('أذونات', permissions, Colors.lightBlueAccent),
+      ('معلق', pending, ZaWolfColors.warning),
+      ('مقبول', approved, ZaWolfColors.success),
+      ('مرفوض', rejected, ZaWolfColors.error),
+    ];
+    return SizedBox(
+      height: 68,
+      child: ListView.separated(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        scrollDirection: Axis.horizontal,
+        itemCount: values.length,
+        separatorBuilder: (_, _) => const SizedBox(width: 8),
+        itemBuilder: (_, index) {
+          final value = values[index];
+          return Container(
+            width: 92,
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            decoration: BoxDecoration(
+              color: value.$3.withValues(alpha: 0.1),
+              border: Border.all(color: value.$3.withValues(alpha: 0.35)),
+              borderRadius: BorderRadius.circular(6),
+            ),
             child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Text(
-                  'دورة ${cycle.key}',
-                  style: const TextStyle(
-                    color: Colors.white,
+                  '${value.$2}',
+                  style: TextStyle(
+                    color: value.$3,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
                 Text(
-                  cycle.arabicRangeLabel,
+                  value.$1,
                   style: const TextStyle(
-                    color: ZaWolfColors.primaryCyan,
-                    fontSize: 12,
+                    color: ZaWolfColors.textSecondary,
+                    fontSize: 11,
                   ),
                 ),
               ],
             ),
-          ),
-          IconButton(
-            tooltip: 'الدورة التالية',
-            onPressed: isCurrent ? null : onNext,
-            icon: const Icon(Icons.chevron_left),
-          ),
-        ],
+          );
+        },
       ),
     );
   }

@@ -106,6 +106,12 @@ void main() {
     expect(LeaveTypePolicy.supportedTypes, contains('remote'));
   });
 
+  test('remote day and long leave require CEO approval', () {
+    expect(LeaveTypePolicy.requiresCeoApproval('remote', 1), isTrue);
+    expect(LeaveTypePolicy.requiresCeoApproval('day_off', 5), isTrue);
+    expect(LeaveTypePolicy.requiresCeoApproval('day_off', 4), isFalse);
+  });
+
   test('every leave request requires a reason', () {
     expect(
       () => LeaveService.validateRequest(
