@@ -1743,6 +1743,7 @@ service cloud.firestore {
           'managerApprovalTrail', 'submittedAt', 'isRead'
         ]);
       allow update: if isAuth() && isActive() && (
+        // Employee cancels their own pending resignation
         (
           isOwner(resource.data.userId)
           && resource.data.status in ['pending_manager', 'pending_hr']
@@ -1753,6 +1754,7 @@ service cloud.firestore {
             'status', 'cancelledAt', 'cancelledBy'
           ])
         )
+        // Manager reviews a pending_manager resignation
         || (
           resource.data.status == 'pending_manager'
           && resource.data.managerId == uid()
@@ -1760,20 +1762,27 @@ service cloud.firestore {
           && request.resource.data.status in [
             'pending_manager', 'pending_hr', 'rejected'
           ]
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'status', 'managerId', 'managerName', 'managerApprovalIndex',
+            'managerApprovalTrail', 'reviewedBy', 'reviewerName',
+            'reviewerComment', 'reviewedAt', 'isRead'
+          ])
+          && request.resource.data.reviewedBy == uid()
         )
+        // HR manager gives final decision on pending_hr resignation
         || (
           resource.data.status == 'pending_hr'
           && isHRManagerRole()
           && uid() != resource.data.userId
           && request.resource.data.status in ['approved', 'rejected']
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'status', 'managerId', 'managerName', 'managerApprovalIndex',
+            'managerApprovalTrail', 'reviewedBy', 'reviewerName',
+            'reviewerComment', 'reviewedAt', 'isRead'
+          ])
+          && request.resource.data.reviewedBy == uid()
         )
-      )
-      && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-        'status', 'managerId', 'managerName', 'managerApprovalIndex',
-        'managerApprovalTrail', 'reviewedBy', 'reviewerName',
-        'reviewerComment', 'reviewedAt', 'isRead'
-      ])
-      && request.resource.data.reviewedBy == uid();
+      );
       allow delete: if isAuth() && isActive() && isHRManagerRole();
     }
 
