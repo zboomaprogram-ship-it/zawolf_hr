@@ -253,12 +253,20 @@ class _ScoreBreakdown extends StatelessWidget {
   Widget build(BuildContext context) {
     return Column(
       children: [
-        _ScoreBar(label: 'KPI · وزن 70%', value: score.kpiScore),
+        if (score.hasKpiData)
+          _ScoreBar(label: 'KPI · وزن 70%', value: score.kpiScore)
+        else
+          const _ScoreBar(label: 'KPI · غير مطبق (بدون KPI مسند)', value: 0),
         _ScoreBar(
-          label: 'الحضور والانضباط · وزن 15%',
+          label: score.hasKpiData
+              ? 'الحضور والانضباط · وزن 15%'
+              : 'الحضور والانضباط · وزن 50%',
           value: score.attendanceComponentScore,
         ),
-        _ScoreBar(label: 'السلوك · وزن 15%', value: score.behaviorScore),
+        _ScoreBar(
+          label: score.hasKpiData ? 'السلوك · وزن 15%' : 'السلوك · وزن 50%',
+          value: score.behaviorScore,
+        ),
         if (onUpdateBehavior != null)
           Align(
             alignment: Alignment.centerLeft,

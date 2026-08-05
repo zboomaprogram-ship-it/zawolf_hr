@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../models/attendance_model.dart';
+import '../models/manual_deduction_model.dart';
 import '../models/permission_model.dart';
 import 'attendance_service.dart';
 
@@ -24,7 +25,9 @@ class EmployeeDeductionEntry {
   });
 
   String get fractionLabel {
-    if (dayFraction >= 1) return 'يوم كامل';
+    if (dayFraction >= 3.0) return '3 أيام';
+    if (dayFraction >= 2.0) return 'يومان';
+    if (dayFraction >= 1.0) return 'يوم كامل';
     if (dayFraction >= 0.5) return 'نصف يوم';
     return 'ربع يوم';
   }
@@ -32,9 +35,11 @@ class EmployeeDeductionEntry {
   String get approvalLabel {
     switch (approvalStatus) {
       case 'approved':
-        return 'اعتمده HR';
+        return 'معتمد';
       case 'rejected':
-        return 'ألغاه HR';
+        return 'ملغى';
+      case 'pending_manager':
+        return 'بانتظار موافقة المدير';
       default:
         return 'بانتظار مراجعة HR';
     }
@@ -58,6 +63,7 @@ class EmployeeDeductionService {
     return Stream.multi((controller) {
       var attendance = <AttendanceModel>[];
       var permissions = <PermissionModel>[];
+      var manualDeductions = <ManualDeductionModel>[];
 
       void emit() {
         final entries = <EmployeeDeductionEntry>[
@@ -72,6 +78,9 @@ class EmployeeDeductionService {
                     item.salaryDeductionFraction > 0,
               )
               .map(_fromPermission),
+          ...manualDeductions
+              .where((item) => item.monthKey == monthKey)
+              .map(_fromManualDeduction),
         ]..sort((a, b) => b.date.compareTo(a.date));
         if (!controller.isClosed) controller.add(entries);
       }
@@ -82,6 +91,7 @@ class EmployeeDeductionService {
             attendance = items;
             emit();
           }, onError: controller.addError);
+
       final permissionSub = _db
           .collection('permissions')
           .where('userId', isEqualTo: userId)
@@ -93,9 +103,21 @@ class EmployeeDeductionService {
             emit();
           }, onError: controller.addError);
 
+      final manualSub = _db
+          .collection('manual_deductions')
+          .where('userId', isEqualTo: userId)
+          .snapshots()
+          .listen((snapshot) {
+            manualDeductions = snapshot.docs
+                .map(ManualDeductionModel.fromFirestore)
+                .toList();
+            emit();
+          }, onError: controller.addError);
+
       controller.onCancel = () async {
         await attendanceSub.cancel();
         await permissionSub.cancel();
+        await manualSub.cancel();
       };
     });
   }
@@ -122,6 +144,17 @@ class EmployeeDeductionService {
       reasonLabel: item.salaryDeductionLabel,
       dayFraction: item.salaryDeductionFraction,
       approvalStatus: status,
+    );
+  }
+
+  EmployeeDeductionEntry _fromManualDeduction(ManualDeductionModel item) {
+    return EmployeeDeductionEntry(
+      id: item.id,
+      date: item.dateKey,
+      sourceLabel: 'خصم إداري',
+      reasonLabel: item.reason,
+      dayFraction: item.dayFraction,
+      approvalStatus: item.status,
     );
   }
 

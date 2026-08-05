@@ -7,6 +7,8 @@ import '../models/user_model.dart';
 import '../models/attendance_model.dart';
 import '../models/attendance_policy.dart';
 import '../models/notification_route_policy.dart';
+import 'attendance_period_summary_service.dart';
+import 'managed_employee_service.dart';
 import 'attendance_security_service.dart';
 import 'attendance_policy_service.dart';
 import 'audit_log_service.dart';
@@ -1177,6 +1179,69 @@ class AttendanceService {
     String reviewerId,
   ) async {
     await _reviewSalaryDeduction(attendanceId, reviewerId, 'rejected');
+  }
+
+  Future<int> syncAbsenceDeductionsForMonth({
+    required UserModel reviewer,
+    String? monthKey,
+  }) async {
+    final targetMonth =
+        monthKey ?? DateFormat('yyyy-MM').format(DateTime.now());
+    final cycle = PayrollCycle.forKey(targetMonth);
+    final summaryService = AttendancePeriodSummaryService(firestore: _db);
+    final policy = await _policyService.getPolicyConfig();
+
+    final managedEmployees =
+        await ManagedEmployeeService().loadForReviewer(reviewer);
+    var generatedCount = 0;
+
+    for (final employee in managedEmployees) {
+      final summary = await summaryService.loadForUser(
+        user: employee,
+        start: cycle.start,
+        end: cycle.end,
+      );
+
+      final absentDays = summary.days.where((day) => day.isAbsent).toList();
+      for (final day in absentDays) {
+        final docId = '${employee.uid}_${day.dateKey}';
+        final ref = _db.collection('attendance').doc(docId);
+        final snap = await ref.get();
+
+        if (!snap.exists ||
+            snap.data()?['salaryDeductionApprovalStatus'] == null ||
+            snap.data()?['salaryDeductionApprovalStatus'] == 'none') {
+          final salaryDeductionAmount = policy.calculateSalaryDeductionAmount(
+            monthlySalary: employee.baseMonthlySalary,
+            dayFraction: 1.0,
+          );
+
+          await ref.set({
+            'attendanceId': docId,
+            'userId': employee.uid,
+            'employeeId': employee.employeeId,
+            'employeeName': employee.displayName,
+            'department': employee.department,
+            'managerId': employee.managerId ?? '',
+            'managerIds': employee.managerIds,
+            'date': day.dateKey,
+            'status': 'absent',
+            'isLate': false,
+            'lateMinutes': 0,
+            'salaryDeductionFraction': 1.0,
+            'salaryDeductionAmount': salaryDeductionAmount,
+            'salaryCurrency': employee.salaryCurrency,
+            'salaryDeductionCode': 'ABSENCE',
+            'salaryDeductionLabel': 'خصم غياب (يوم كامل)',
+            'salaryDeductionApprovalStatus': 'pending_hr',
+            'createdAt': FieldValue.serverTimestamp(),
+          }, SetOptions(merge: true));
+
+          generatedCount++;
+        }
+      }
+    }
+    return generatedCount;
   }
 
   Future<void> reverseSalaryDeduction({

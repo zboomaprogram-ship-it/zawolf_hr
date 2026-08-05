@@ -289,8 +289,12 @@ class DashboardAttendanceSummaryService {
         lateMinutes = (attendance['lateMinutes'] as num?)?.toInt() ?? 0;
         if (attendanceStatus == 'on-leave') {
           status = 'day_off';
-        } else if (attendanceStatus == 'absent' || !hasRealCheckIn) {
+        } else if (attendanceStatus == 'absent') {
           status = 'not_attended';
+        } else if (!hasRealCheckIn) {
+          status = employee.workSchedule.isWorkDay(date)
+              ? 'not_attended'
+              : 'day_off';
         } else if (isLate || _isLateStatus(attendanceStatus)) {
           status = 'late';
         } else {
@@ -299,6 +303,8 @@ class DashboardAttendanceSummaryService {
       } else if (permissionUsers.contains(employee.uid)) {
         status = 'permission';
       } else if (dayOffUsers.contains(employee.uid)) {
+        status = 'day_off';
+      } else if (!employee.workSchedule.isWorkDay(date)) {
         status = 'day_off';
       }
       people.add(

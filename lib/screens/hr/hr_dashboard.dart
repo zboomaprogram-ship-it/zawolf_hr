@@ -9,6 +9,7 @@ import '../../models/sales_kpi_summary.dart';
 import '../../theme/theme.dart';
 import '../../components/attendance_insights_card.dart';
 import '../../components/sales_kpi_summary_card.dart';
+import '../../components/sales_kpi_filter_sheet.dart';
 import '../../components/wolf_card.dart';
 import '../../services/sales_kpi_integration_service.dart';
 import '../../utils/user_facing_error.dart';
@@ -71,78 +72,27 @@ class _HrDashboardScreenState extends State<HrDashboardScreen> {
     SalesKpiSummary current,
     String actorId,
   ) async {
-    final periodController = TextEditingController(text: current.periodKey);
-    final startController = TextEditingController(text: current.periodStart);
-    final endController = TextEditingController(text: current.periodEnd);
-    String? error;
-    final submitted = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          title: const Text('تعديل فترة مؤشرات المبيعات'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: periodController,
-                decoration: const InputDecoration(
-                  labelText: 'رمز الفترة (مثال: 2026-08)',
-                ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: startController,
-                decoration: const InputDecoration(labelText: 'من YYYY-MM-DD'),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: endController,
-                decoration: InputDecoration(
-                  labelText: 'إلى YYYY-MM-DD',
-                  errorText: error,
-                ),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext, false),
-              child: const Text('إلغاء'),
-            ),
-            FilledButton(
-              onPressed: () {
-                final start = DateTime.tryParse(startController.text.trim());
-                final end = DateTime.tryParse(endController.text.trim());
-                if (periodController.text.trim().isEmpty ||
-                    start == null ||
-                    end == null ||
-                    end.isBefore(start)) {
-                  setDialogState(
-                    () => error = 'تأكد من رمز الفترة والتاريخين وترتيبهما.',
-                  );
-                  return;
-                }
-                Navigator.pop(dialogContext, true);
-              },
-              child: const Text('حفظ'),
-            ),
-          ],
-        ),
-      ),
-    );
-    if (submitted != true || !mounted) return;
-    await SalesKpiIntegrationService().updateActivePeriod(
-      periodKey: periodController.text.trim(),
-      startDate: startController.text.trim(),
-      endDate: endController.text.trim(),
-      actorId: actorId,
-    );
+    final service = SalesKpiIntegrationService();
+    final currentFilters = await service.watchFilters().first ??
+        SalesKpiFilters(
+          startDate: current.periodStart,
+          endDate: current.periodEnd,
+        );
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('تم حفظ الفترة. ستظهر بياناتها بعد المزامنة التالية.'),
-      ),
+    final updated = await showSalesKpiFilterSheet(
+      context,
+      initial: currentFilters,
+      options: current.options,
     );
+    if (updated != null && mounted) {
+      await service.updateFilters(filters: updated, actorId: actorId);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('تم حفظ الفلاتر والفترة بنجاح وتم ربطها بالمزامنة.'),
+        ),
+      );
+    }
   }
 
   @override

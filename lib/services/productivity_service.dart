@@ -196,13 +196,13 @@ class ProductivityService {
     final lateDays = attendanceSummary.lateDays;
     final expectedDays = attendanceSummary.expectedDays;
     final attendanceScore = expectedDays == 0
-        ? 0.0
+        ? 100.0
         : ((expectedDays - absentDays) / expectedDays * 100)
               .clamp(0, 100)
               .toDouble();
     final attendedDays = attendanceSummary.presentDays;
     final punctualityScore = attendedDays == 0
-        ? 0.0
+        ? 100.0
         : ((attendedDays - lateDays) / attendedDays * 100)
               .clamp(0, 100)
               .toDouble();
@@ -252,6 +252,7 @@ class ProductivityService {
       taskQualityScore: hasTaskQualityData ? taskQualityScore : null,
       kpiScore: hasKpiData ? kpiScore : null,
       behaviorScore: behaviorScore,
+      hasKpiData: hasKpiData,
     );
 
     return ProductivityScoreModel(

@@ -77,12 +77,14 @@ class _ProductivityRankingScreenState extends State<ProductivityRankingScreen> {
           SnackBar(content: Text('تم تحديث إنتاجية $count موظف.')),
         );
       }
-    } catch (_) {
+    } catch (e, stackTrace) {
+      debugPrint('Error refreshing productivity: $e');
+      debugPrint(stackTrace.toString());
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
+          SnackBar(
             content: Text(
-              'تعذر تحديث الإنتاجية. تحقق من الاتصال والصلاحيات ثم أعد المحاولة.',
+              'تعذر تحديث الإنتاجية: $e',
             ),
           ),
         );

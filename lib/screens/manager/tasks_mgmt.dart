@@ -123,37 +123,56 @@ class _TasksManagementScreenState extends State<TasksManagementScreen> {
                 ],
               ),
               const SizedBox(height: 16),
-              TextField(
-                controller: _searchController,
-                onChanged: (_) => setState(() {}),
-                decoration: const InputDecoration(
-                  prefixIcon: Icon(Icons.search),
-                  hintText: 'بحث بالموظف أو عنوان المهمة',
-                ),
-              ),
-              const SizedBox(height: 10),
-              DropdownButtonFormField<String>(
-                initialValue: assignees.containsKey(_assigneeFilter)
-                    ? _assigneeFilter
-                    : 'all',
-                decoration: const InputDecoration(
-                  prefixIcon: Icon(Icons.person_search),
-                  labelText: 'الموظف',
-                ),
-                items: [
-                  const DropdownMenuItem(
-                    value: 'all',
-                    child: Text('كل الموظفين'),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    flex: 2,
+                    child: TextField(
+                      controller: _searchController,
+                      onChanged: (_) => setState(() {}),
+                      decoration: const InputDecoration(
+                        prefixIcon: Icon(Icons.search),
+                        hintText: 'بحث بالموظف أو عنوان المهمة',
+                        border: OutlineInputBorder(),
+                        isDense: true,
+                      ),
+                    ),
                   ),
-                  ...assignees.entries.map(
-                    (entry) => DropdownMenuItem(
-                      value: entry.key,
-                      child: Text(entry.value),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: DropdownButtonFormField<String>(
+                      initialValue: assignees.containsKey(_assigneeFilter)
+                          ? _assigneeFilter
+                          : 'all',
+                      decoration: const InputDecoration(
+                        prefixIcon: Icon(Icons.person_search, size: 20),
+                        labelText: 'الموظف',
+                        border: OutlineInputBorder(),
+                        isDense: true,
+                        contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                      ),
+                      items: [
+                        const DropdownMenuItem(
+                          value: 'all',
+                          child: Text('الكل'),
+                        ),
+                        ...assignees.entries.map(
+                          (entry) => DropdownMenuItem(
+                            value: entry.key,
+                            child: Text(
+                              entry.value,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ),
+                      ],
+                      onChanged: (value) =>
+                          setState(() => _assigneeFilter = value ?? 'all'),
                     ),
                   ),
                 ],
-                onChanged: (value) =>
-                    setState(() => _assigneeFilter = value ?? 'all'),
               ),
               const SizedBox(height: 12),
               SegmentedButton<String>(
@@ -226,14 +245,26 @@ class _TasksManagementScreenState extends State<TasksManagementScreen> {
       case 'done':
         return scoped.where((task) => task.status == TaskStatus.done).toList();
       case 'all':
-        return scoped;
+        final endOfToday = DateTime(now.year, now.month, now.day, 23, 59, 59);
+        return scoped.where((task) {
+          final isFutureKpiTask = task.dueDate.isAfter(endOfToday) &&
+              (task.source == 'sales_analytics_api' ||
+                  task.progressMode == 'cumulative_daily' ||
+                  task.periodKey.isNotEmpty);
+          return !isFutureKpiTask;
+        }).toList();
       default:
+        final endOfToday = DateTime(now.year, now.month, now.day, 23, 59, 59);
         return scoped
-            .where(
-              (task) =>
+            .where((task) {
+              final isFutureKpiTask = task.dueDate.isAfter(endOfToday) &&
+                  (task.source == 'sales_analytics_api' ||
+                      task.progressMode == 'cumulative_daily' ||
+                      task.periodKey.isNotEmpty);
+              return !isFutureKpiTask &&
                   task.status != TaskStatus.done &&
-                  task.status != TaskStatus.cancelled,
-            )
+                  task.status != TaskStatus.cancelled;
+            })
             .toList();
     }
   }

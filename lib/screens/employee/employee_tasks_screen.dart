@@ -64,13 +64,19 @@ class _EmployeeTasksScreenState extends State<EmployeeTasksScreen> {
               .length;
 
           final query = _searchController.text.trim().toLowerCase();
+          final now = DateTime.now();
+          final endOfToday = DateTime(now.year, now.month, now.day, 23, 59, 59);
           final filteredTasks = tasks.where((task) {
             final matchesSearch =
                 query.isEmpty ||
                 task.title.toLowerCase().contains(query) ||
                 task.description.toLowerCase().contains(query);
+            final isFutureKpiTask = task.dueDate.isAfter(endOfToday) &&
+                (task.source == 'sales_analytics_api' ||
+                    task.progressMode == 'cumulative_daily');
             final matchesStatus = switch (_statusFilter) {
               'open' =>
+                !isFutureKpiTask &&
                 task.status != TaskStatus.done &&
                     task.status != TaskStatus.cancelled,
               'done' => task.status == TaskStatus.done,

@@ -24,6 +24,9 @@ import '../../services/attendance_correction_request_service.dart';
 import '../../models/request_approval_policy.dart';
 import '../../models/resignation_model.dart';
 import '../../models/administrative_request_model.dart';
+import '../../models/manual_deduction_model.dart';
+import '../../services/manual_deduction_service.dart';
+import '../../services/task_service.dart';
 import '../../theme/theme.dart';
 import '../../components/wolf_card.dart';
 import '../../components/wolf_button.dart';
@@ -52,6 +55,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
       AdministrativeRequestService();
   bool _isSavingApprovalPolicy = false;
   String _salaryDeductionFilter = 'all';
+  String _searchQuery = '';
   final Map<String, Stream<QuerySnapshot<Map<String, dynamic>>>> _streamCache =
       {};
 
@@ -156,6 +160,310 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
     );
   }
 
+  Future<void> _showModificationDialog({
+    required String requestId,
+    required String collection,
+    required String userId,
+    required String requestTitle,
+    Map<String, dynamic>? currentData,
+  }) async {
+    final commentController = TextEditingController();
+    final reasonController = TextEditingController(
+      text: (currentData?['reason'] ?? currentData?['notes'] ?? '').toString(),
+    );
+    final amountController = TextEditingController(
+      text: (currentData?['amount'] ?? '').toString(),
+    );
+    final durationController = TextEditingController(
+      text: (currentData?['durationMinutes'] ?? 60).toString(),
+    );
+    var mode = 'direct'; // 'direct' or 'request'
+    DateTime startDate = (currentData?['startDate'] as Timestamp?)?.toDate() ?? DateTime.now();
+    DateTime endDate = (currentData?['endDate'] as Timestamp?)?.toDate() ?? DateTime.now();
+    DateTime resignationDate = (currentData?['resignationDate'] as Timestamp?)?.toDate() ?? DateTime.now();
+    String leaveType = (currentData?['leaveType'] as String?) ?? 'casual';
+
+    final formKey = GlobalKey<FormState>();
+
+    await showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              backgroundColor: ZaWolfColors.surface01,
+              title: Text('تعديل $requestTitle', textDirection: TextDirection.rtl),
+              content: SingleChildScrollView(
+                child: SizedBox(
+                  width: 440,
+                  child: Form(
+                    key: formKey,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        SegmentedButton<String>(
+                          segments: const [
+                            ButtonSegment(
+                              value: 'direct',
+                              label: Text('تعديل مباشر (HR/إدارة)'),
+                              icon: Icon(Icons.edit),
+                            ),
+                            ButtonSegment(
+                              value: 'request',
+                              label: Text('طلب تعديل من الموظف'),
+                              icon: Icon(Icons.send),
+                            ),
+                          ],
+                          selected: {mode},
+                          onSelectionChanged: (val) => setDialogState(() => mode = val.first),
+                        ),
+                        const SizedBox(height: 16),
+                        if (mode == 'request') ...[
+                          TextFormField(
+                            controller: commentController,
+                            textDirection: TextDirection.rtl,
+                            maxLines: 3,
+                            style: const TextStyle(color: Colors.white),
+                            decoration: const InputDecoration(
+                              labelText: 'تعليمات التعديل للموظف',
+                              hintText: 'اكتب ما تطلب من الموظف تعديله في الطلب...',
+                            ),
+                            validator: (val) {
+                              if (mode == 'request' && (val == null || val.trim().isEmpty)) {
+                                return 'يرجى كتابة تعليمات التعديل.';
+                              }
+                              return null;
+                            },
+                          ),
+                        ] else ...[
+                          if (collection == 'leaves') ...[
+                            ListTile(
+                              contentPadding: EdgeInsets.zero,
+                              title: const Text('فترة الإجازة'),
+                              subtitle: Text(
+                                '${DateFormat('yyyy/MM/dd').format(startDate)}  ←  ${DateFormat('yyyy/MM/dd').format(endDate)}',
+                              ),
+                              trailing: const Icon(Icons.calendar_today, color: ZaWolfColors.primaryCyan),
+                              onTap: () async {
+                                final picked = await showDateRangePicker(
+                                  context: context,
+                                  initialDateRange: DateTimeRange(start: startDate, end: endDate),
+                                  firstDate: DateTime(2020),
+                                  lastDate: DateTime.now().add(const Duration(days: 730)),
+                                );
+                                if (picked != null) {
+                                  setDialogState(() {
+                                    startDate = picked.start;
+                                    endDate = picked.end;
+                                  });
+                                }
+                              },
+                            ),
+                            const SizedBox(height: 8),
+                            DropdownButtonFormField<String>(
+                              initialValue: leaveType,
+                              decoration: const InputDecoration(labelText: 'نوع الإجازة'),
+                              dropdownColor: ZaWolfColors.surface02,
+                              items: const [
+                                DropdownMenuItem(value: 'casual', child: Text('عارضة')),
+                                DropdownMenuItem(value: 'annual', child: Text('سنوية')),
+                                DropdownMenuItem(value: 'unpaid', child: Text('بدون أجر')),
+                                DropdownMenuItem(value: 'sick', child: Text('مرضية')),
+                              ],
+                              onChanged: (val) => setDialogState(() => leaveType = val ?? 'casual'),
+                            ),
+                          ],
+                          if (collection == 'permissions') ...[
+                            TextFormField(
+                              controller: durationController,
+                              keyboardType: TextInputType.number,
+                              decoration: const InputDecoration(
+                                labelText: 'مدة الإذن (بالدقائق)',
+                                hintText: '60, 120, 180...',
+                              ),
+                            ),
+                          ],
+                          if (collection == 'advances') ...[
+                            TextFormField(
+                              controller: amountController,
+                              keyboardType: TextInputType.number,
+                              decoration: const InputDecoration(
+                                labelText: 'مبلغ السلفة',
+                              ),
+                              validator: (val) {
+                                if (mode == 'direct' && (double.tryParse(val ?? '') ?? 0) <= 0) {
+                                  return 'أدخل مبلغاً صحيحاً للسلفة.';
+                                }
+                                return null;
+                              },
+                            ),
+                          ],
+                          if (collection == 'resignations') ...[
+                            ListTile(
+                              contentPadding: EdgeInsets.zero,
+                              title: const Text('تاريخ الاستقالة'),
+                              subtitle: Text(DateFormat('yyyy/MM/dd').format(resignationDate)),
+                              trailing: const Icon(Icons.calendar_today, color: ZaWolfColors.primaryCyan),
+                              onTap: () async {
+                                final picked = await showDatePicker(
+                                  context: context,
+                                  initialDate: resignationDate,
+                                  firstDate: DateTime(2020),
+                                  lastDate: DateTime.now().add(const Duration(days: 730)),
+                                );
+                                if (picked != null) {
+                                  setDialogState(() => resignationDate = picked);
+                                }
+                              },
+                            ),
+                          ],
+                          const SizedBox(height: 10),
+                          TextFormField(
+                            controller: reasonController,
+                            textDirection: TextDirection.rtl,
+                            maxLines: 3,
+                            style: const TextStyle(color: Colors.white),
+                            decoration: const InputDecoration(
+                              labelText: 'السبب / الملاحظات المعدلة',
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('إلغاء'),
+                ),
+                FilledButton.icon(
+                  icon: Icon(mode == 'direct' ? Icons.check : Icons.send),
+                  label: Text(mode == 'direct' ? 'حفظ التعديل المباشر' : 'إرسال للموظف'),
+                  onPressed: () async {
+                    if (!formKey.currentState!.validate()) return;
+                    final authService = Provider.of<AuthService>(context, listen: false);
+                    final reviewer = authService.currentUser;
+                    if (reviewer == null) return;
+
+                    try {
+                      if (mode == 'request') {
+                        final comment = commentController.text.trim();
+                        await _db.collection(collection).doc(requestId).update({
+                          'status': 'needs_modification',
+                          'reviewerComment': comment,
+                          'reviewedBy': reviewer.uid,
+                          'reviewerName': reviewer.displayName,
+                          'reviewedAt': FieldValue.serverTimestamp(),
+                        });
+                        await _sendModificationNotif(
+                          userId: userId,
+                          title: 'مطلوب تعديل الطلب ⚠️',
+                          body: 'طلبت الإدارة تعديل $requestTitle: $comment',
+                          requestId: requestId,
+                          collection: collection,
+                        );
+                      } else {
+                        final patch = <String, dynamic>{
+                          'adminModifiedBy': reviewer.uid,
+                          'adminModifiedName': reviewer.displayName,
+                          'adminModifiedAt': FieldValue.serverTimestamp(),
+                        };
+                        if (collection == 'leaves') {
+                          final days = endDate.difference(startDate).inDays + 1;
+                          patch['startDate'] = Timestamp.fromDate(startDate);
+                          patch['endDate'] = Timestamp.fromDate(endDate);
+                          patch['numberOfDays'] = days > 0 ? days : 1;
+                          patch['leaveType'] = leaveType;
+                          patch['reason'] = reasonController.text.trim();
+                        } else if (collection == 'permissions') {
+                          final mins = int.tryParse(durationController.text.trim()) ?? 60;
+                          patch['durationMinutes'] = mins;
+                          patch['reason'] = reasonController.text.trim();
+                        } else if (collection == 'advances') {
+                          final amt = double.tryParse(amountController.text.trim()) ?? 0;
+                          patch['amount'] = amt;
+                          patch['reason'] = reasonController.text.trim();
+                        } else if (collection == 'resignations') {
+                          patch['resignationDate'] = Timestamp.fromDate(resignationDate);
+                          patch['reason'] = reasonController.text.trim();
+                        } else if (collection == 'administrativeRequests') {
+                          patch['notes'] = reasonController.text.trim();
+                        }
+
+                        await _db.collection(collection).doc(requestId).update(patch);
+                        await _sendModificationNotif(
+                          userId: userId,
+                          title: 'تم تعديل بيانات طلبك ✏️',
+                          body: 'قامت الإدارة بتحديث بيانات $requestTitle مباشرة.',
+                          requestId: requestId,
+                          collection: collection,
+                        );
+                      }
+
+                      if (context.mounted) {
+                        Navigator.pop(ctx);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              mode == 'direct'
+                                  ? 'تم حفظ وتحديث بيانات الطلب مباشرة بنجاح.'
+                                  : 'تم إرسال إشعار طلب التعديل للموظف بنجاح.',
+                            ),
+                          ),
+                        );
+                      }
+                    } catch (e) {
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('فشل التعديل: $e')),
+                        );
+                      }
+                    }
+                  },
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _sendModificationNotif({
+    required String userId,
+    required String title,
+    required String body,
+    required String requestId,
+    required String collection,
+  }) async {
+    final notifRef = _db
+        .collection('notifications')
+        .doc(userId)
+        .collection('items')
+        .doc();
+    await notifRef.set({
+      'notificationId': notifRef.id,
+      'type': 'request_modification_update',
+      'title': title,
+      'body': body,
+      'data': {
+        'route': '/employee/requests',
+        'requestId': requestId,
+        'collection': collection,
+      },
+      'isRead': false,
+      'pushSent': false,
+      'createdAt': FieldValue.serverTimestamp(),
+    });
+    await _db.collection('users').doc(userId).update({
+      'unreadNotifications': FieldValue.increment(1),
+    }).catchError((_) {});
+  }
+
   @override
   Widget build(BuildContext context) {
     final authService = Provider.of<AuthService>(context);
@@ -176,7 +484,9 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
       const Tab(text: 'الأذونات'),
       const Tab(text: 'السلف'),
       if (canReviewSalaryDeductions) const Tab(text: 'خصومات التأخير'),
+      if (canReviewSalaryDeductions) const Tab(text: 'خصومات الغياب'),
       if (canReviewSalaryDeductions) const Tab(text: 'إلغاء خصم معتمد'),
+      const Tab(text: 'خصومات إدارية'),
       if (canReviewTimeCorrections) const Tab(text: 'تصحيح الحضور'),
       const Tab(text: 'مراجعة أمنية'),
       const Tab(text: 'الشكاوى'),
@@ -188,9 +498,12 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
       _buildPermissionsTab(manager, theme),
       _buildAdvancesTab(manager, theme),
       if (canReviewSalaryDeductions)
-        _buildSalaryDeductionsTab(manager, theme, reversalOnly: false),
+        _buildSalaryDeductionsTab(manager, theme, reversalOnly: false, absenceOnly: false),
+      if (canReviewSalaryDeductions)
+        _buildSalaryDeductionsTab(manager, theme, reversalOnly: false, absenceOnly: true),
       if (canReviewSalaryDeductions)
         _buildSalaryDeductionsTab(manager, theme, reversalOnly: true),
+      _buildManualDeductionsTab(manager, theme),
       if (canReviewTimeCorrections)
         _buildAttendanceCorrectionsTab(manager, theme),
       _buildSecurityReviewsTab(manager, theme),
@@ -236,10 +549,366 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
           children: [
             if (kIsWeb && manager.role == EmployeeRole.superAdmin)
               _buildApprovalPolicyControl(manager),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              child: TextField(
+                decoration: const InputDecoration(
+                  prefixIcon: Icon(Icons.search),
+                  hintText: 'بحث باسم الموظف أو القسم',
+                  border: OutlineInputBorder(),
+                  isDense: true,
+                ),
+                onChanged: (value) => setState(() => _searchQuery = value.trim().toLowerCase()),
+              ),
+            ),
             Expanded(child: TabBarView(children: tabViews)),
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildManualDeductionsTab(UserModel reviewer, ThemeData theme) {
+    final service = ManualDeductionService();
+    return StreamBuilder<List<ManualDeductionModel>>(
+      stream: service.watchManagedDeductions(reviewer),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator(color: ZaWolfColors.primaryCyan));
+        }
+        final allItems = snapshot.data ?? [];
+        final items = allItems.where((item) {
+          if (_searchQuery.isEmpty) return true;
+          return item.employeeName.toLowerCase().contains(_searchQuery) ||
+              item.employeeId.toLowerCase().contains(_searchQuery) ||
+              item.reason.toLowerCase().contains(_searchQuery);
+        }).toList();
+
+        return ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            Align(
+              alignment: Alignment.centerRight,
+              child: FilledButton.icon(
+                onPressed: () => _showCreateManualDeductionDialog(reviewer),
+                icon: const Icon(Icons.add),
+                label: const Text('إضافة طلب خصم إداري'),
+                style: FilledButton.styleFrom(
+                  backgroundColor: ZaWolfColors.error,
+                  foregroundColor: Colors.white,
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            if (items.isEmpty)
+              const WolfCard(
+                child: Padding(
+                  padding: EdgeInsets.all(24),
+                  child: Center(
+                    child: Text('لا توجد طلبات خصم إداري حالياً', textDirection: TextDirection.rtl),
+                  ),
+                ),
+              )
+            else
+              ...items.map((item) => _buildManualDeductionCard(item, reviewer, theme, service)),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildManualDeductionCard(
+    ManualDeductionModel item,
+    UserModel reviewer,
+    ThemeData theme,
+    ManualDeductionService service,
+  ) {
+    final isHr = EmployeeRole.isHr(reviewer.role);
+    final isSuperAdmin = reviewer.role == EmployeeRole.superAdmin;
+    final isMyTeam = item.managerIds.contains(reviewer.uid) || item.managerId == reviewer.uid;
+
+    final canApprove = isSuperAdmin ||
+        (isHr && item.status == 'pending_hr') ||
+        (isMyTeam && item.status == 'pending_manager');
+
+    final statusColor = switch (item.status) {
+      'approved' => ZaWolfColors.error,
+      'rejected' => ZaWolfColors.success,
+      'pending_manager' => ZaWolfColors.warning,
+      _ => ZaWolfColors.permissionTeal,
+    };
+
+    final statusLabel = switch (item.status) {
+      'approved' => 'معتمد',
+      'rejected' => 'مرفوض',
+      'pending_manager' => 'بانتظار موافقة المدير',
+      _ => 'بانتظار اعتماد HR',
+    };
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: WolfCard(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: statusColor.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: statusColor.withValues(alpha: 0.40)),
+                  ),
+                  child: Text(
+                    statusLabel,
+                    style: TextStyle(color: statusColor, fontWeight: FontWeight.bold),
+                  ),
+                ),
+                const Spacer(),
+                Text(
+                  item.employeeName,
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                  ),
+                  textDirection: TextDirection.rtl,
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'مقدار الخصم: ${item.fractionLabel} · بتاريخ ${item.dateKey}',
+              style: const TextStyle(color: ZaWolfColors.warning, fontWeight: FontWeight.w600),
+              textDirection: TextDirection.rtl,
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'السبب: ${item.reason}',
+              style: const TextStyle(color: Colors.white70),
+              textDirection: TextDirection.rtl,
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'أنشأ الطلب: ${item.createdByName} (${item.createdByRole == 'hr' ? 'HR' : 'مدير'})',
+              style: const TextStyle(color: ZaWolfColors.textMuted, fontSize: 12),
+              textDirection: TextDirection.rtl,
+            ),
+            if (canApprove && (item.status == 'pending_hr' || item.status == 'pending_manager')) ...[
+              const SizedBox(height: 12),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  OutlinedButton.icon(
+                    onPressed: () async {
+                      try {
+                        await service.rejectDeduction(
+                          deductionId: item.id,
+                          reviewer: reviewer,
+                          reason: 'تم الرفض بواسطة ${reviewer.displayName}',
+                        );
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('تم رفض طلب الخصم.')),
+                          );
+                        }
+                      } catch (e) {
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('خطأ: $e')),
+                          );
+                        }
+                      }
+                    },
+                    icon: const Icon(Icons.close, color: ZaWolfColors.error),
+                    label: const Text('رفض', style: TextStyle(color: ZaWolfColors.error)),
+                  ),
+                  const SizedBox(width: 10),
+                  FilledButton.icon(
+                    onPressed: () async {
+                      try {
+                        await service.approveDeduction(
+                          deductionId: item.id,
+                          reviewer: reviewer,
+                        );
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('تم اعتماد خصم الراتب وإرسال الإشعارات بنجاح.')),
+                          );
+                        }
+                      } catch (e) {
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('خطأ: $e')),
+                          );
+                        }
+                      }
+                    },
+                    icon: const Icon(Icons.check),
+                    label: const Text('اعتماد الخصم'),
+                    style: FilledButton.styleFrom(backgroundColor: ZaWolfColors.error),
+                  ),
+                ],
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showCreateManualDeductionDialog(UserModel reviewer) async {
+    final taskService = TaskService();
+    final employees = await taskService.loadAssignableEmployees(reviewer);
+    if (employees.isEmpty && !EmployeeRole.isHr(reviewer.role)) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('لا يوجد موظفون تابعون لك لإسناد الخصم.')),
+        );
+      }
+      return;
+    }
+
+    UserModel? selectedUser = employees.isNotEmpty ? employees.first : null;
+    DateTime selectedDate = DateTime.now();
+    double selectedFraction = 1.0;
+    final reasonController = TextEditingController();
+    final formKey = GlobalKey<FormState>();
+
+    if (!mounted) return;
+
+    await showDialog(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (dialogContext, setDialogState) {
+            return AlertDialog(
+              backgroundColor: ZaWolfColors.surface01,
+              title: const Text('إضافة طلب خصم إداري جديد', textDirection: TextDirection.rtl),
+              content: SingleChildScrollView(
+                child: Form(
+                  key: formKey,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const Text('اختر الموظف:', style: TextStyle(color: ZaWolfColors.textMuted), textDirection: TextDirection.rtl),
+                      const SizedBox(height: 6),
+                      DropdownButtonFormField<UserModel>(
+                        value: selectedUser,
+                        isExpanded: true,
+                        dropdownColor: ZaWolfColors.surface02,
+                        items: employees.map((emp) {
+                          return DropdownMenuItem(
+                            value: emp,
+                            child: Text(
+                              '${emp.displayName} (${emp.employeeId.isNotEmpty ? emp.employeeId : emp.department})',
+                              textDirection: TextDirection.rtl,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          );
+                        }).toList(),
+                        onChanged: (val) => setDialogState(() => selectedUser = val),
+                        validator: (val) => val == null ? 'يرجى اختيار الموظف' : null,
+                      ),
+                      const SizedBox(height: 14),
+                      const Text('تاريخ الخصم:', style: TextStyle(color: ZaWolfColors.textMuted), textDirection: TextDirection.rtl),
+                      const SizedBox(height: 6),
+                      OutlinedButton.icon(
+                        onPressed: () async {
+                          final picked = await showDatePicker(
+                            context: dialogContext,
+                            initialDate: selectedDate,
+                            firstDate: DateTime(2025),
+                            lastDate: DateTime(2030),
+                          );
+                          if (picked != null) {
+                            setDialogState(() => selectedDate = picked);
+                          }
+                        },
+                        icon: const Icon(Icons.calendar_today),
+                        label: Text(DateFormat('yyyy-MM-dd').format(selectedDate)),
+                      ),
+                      const SizedBox(height: 14),
+                      const Text('مقدار الخصم:', style: TextStyle(color: ZaWolfColors.textMuted), textDirection: TextDirection.rtl),
+                      const SizedBox(height: 6),
+                      DropdownButtonFormField<double>(
+                        value: selectedFraction,
+                        dropdownColor: ZaWolfColors.surface02,
+                        items: const [
+                          DropdownMenuItem(value: 0.25, child: Text('ربع يوم (0.25)')),
+                          DropdownMenuItem(value: 0.50, child: Text('نصف يوم (0.50)')),
+                          DropdownMenuItem(value: 1.00, child: Text('يوم كامل (1.00)')),
+                          DropdownMenuItem(value: 2.00, child: Text('يومان (2.00)')),
+                          DropdownMenuItem(value: 3.00, child: Text('ثلاثة أيام (3.00)')),
+                        ],
+                        onChanged: (val) {
+                          if (val != null) {
+                            setDialogState(() => selectedFraction = val);
+                          }
+                        },
+                      ),
+                      const SizedBox(height: 14),
+                      TextFormField(
+                        controller: reasonController,
+                        textDirection: TextDirection.rtl,
+                        maxLines: 3,
+                        style: const TextStyle(color: Colors.white),
+                        decoration: const InputDecoration(
+                          hintText: 'أدخل سبب الخصم تفصيلياً (مطلوب)',
+                          hintStyle: TextStyle(color: ZaWolfColors.textMuted),
+                        ),
+                        validator: (val) => val == null || val.trim().isEmpty ? 'يرجى كتابة سبب الخصم' : null,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogContext),
+                  child: const Text('إلغاء'),
+                ),
+                FilledButton(
+                  onPressed: () async {
+                    if (!formKey.currentState!.validate() || selectedUser == null) return;
+                    try {
+                      final service = ManualDeductionService();
+                      await service.createDeductionRequest(
+                        creator: reviewer,
+                        targetEmployee: selectedUser!,
+                        date: selectedDate,
+                        dayFraction: selectedFraction,
+                        reason: reasonController.text.trim(),
+                      );
+                      if (context.mounted) {
+                        Navigator.pop(dialogContext);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              EmployeeRole.isHr(reviewer.role)
+                                  ? 'تم إنشاء طلب الخصم بنجاح وتحويله للمدير للموافقة.'
+                                  : 'تم إنشاء طلب الخصم بنجاح وتحويله لـ HR للاعتماد.',
+                            ),
+                          ),
+                        );
+                      }
+                    } catch (e) {
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('فشل إنشاء طلب الخصم: $e')),
+                        );
+                      }
+                    }
+                  },
+                  style: FilledButton.styleFrom(backgroundColor: ZaWolfColors.error),
+                  child: const Text('إرسال الطلب'),
+                ),
+              ],
+            );
+          },
+        );
+      },
     );
   }
 
@@ -343,7 +1012,13 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
         if (!snapshot.hasData) {
           return const Center(child: CircularProgressIndicator());
         }
-        final requests = snapshot.data!;
+        var requests = snapshot.data!;
+        if (_searchQuery.isNotEmpty) {
+          requests = requests.where((r) => 
+            r.employeeName.toLowerCase().contains(_searchQuery) || 
+            r.department.toLowerCase().contains(_searchQuery)
+          ).toList();
+        }
         if (requests.isEmpty) {
           return const Center(child: Text('لا توجد طلبات استقالة معلقة.'));
         }
@@ -385,7 +1060,21 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                           height: 42,
                         ),
                       ),
-                      const SizedBox(width: 10),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: WolfButton(
+                          onPressed: () => _showModificationDialog(
+                            requestId: request.resignationId,
+                            collection: 'resignations',
+                            userId: request.userId,
+                            requestTitle: 'طلب الاستقالة',
+                          ),
+                          text: 'طلب تعديل',
+                          variant: WolfButtonVariant.purple,
+                          height: 42,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
                       Expanded(
                         child: WolfButton(
                           onPressed: () =>
@@ -511,12 +1200,23 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
     List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
     UserModel reviewer,
   ) {
-    if (!EmployeeRole.isHrStaff(reviewer.role)) return docs;
-    return docs.where((doc) {
-      final data = doc.data();
-      return data['status'] == 'pending_hr' ||
-          data['managerId'] == reviewer.uid;
-    }).toList();
+    var filtered = docs;
+    if (EmployeeRole.isHrStaff(reviewer.role)) {
+      filtered = docs.where((doc) {
+        final data = doc.data();
+        return data['status'] == 'pending_hr' ||
+            data['managerId'] == reviewer.uid;
+      }).toList();
+    }
+    if (_searchQuery.isNotEmpty) {
+      filtered = filtered.where((doc) {
+        final data = doc.data();
+        final name = (data['employeeName'] ?? '').toString().toLowerCase();
+        final dept = (data['department'] ?? '').toString().toLowerCase();
+        return name.contains(_searchQuery) || dept.contains(_searchQuery);
+      }).toList();
+    }
+    return filtered;
   }
 
   Stream<QuerySnapshot<Map<String, dynamic>>> _pendingStream(
@@ -661,6 +1361,12 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                       onReject: () => _showRejectionDialog(
                         requestId: leave.leaveId,
                         type: 'leave',
+                      ),
+                      onModify: () => _showModificationDialog(
+                        requestId: leave.leaveId,
+                        collection: 'leaves',
+                        userId: leave.userId,
+                        requestTitle: 'طلب الإجازة',
                       ),
                     ),
                     const SizedBox(height: 8),
@@ -833,6 +1539,12 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                         requestId: perm.permissionId,
                         type: 'permission',
                       ),
+                      onModify: () => _showModificationDialog(
+                        requestId: perm.permissionId,
+                        collection: 'permissions',
+                        userId: perm.userId,
+                        requestTitle: 'طلب الإذن',
+                      ),
                     ),
                   ],
                 ),
@@ -913,6 +1625,12 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                       onReject: () => _showRejectionDialog(
                         requestId: advance.advanceId,
                         type: 'advance',
+                      ),
+                      onModify: () => _showModificationDialog(
+                        requestId: advance.advanceId,
+                        collection: 'advances',
+                        userId: advance.userId,
+                        requestTitle: 'طلب السلفة',
                       ),
                     ),
                     const SizedBox(height: 8),
@@ -1105,6 +1823,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
     UserModel reviewer,
     ThemeData theme, {
     required bool reversalOnly,
+    bool absenceOnly = false,
   }) {
     if (!EmployeeRole.isHr(reviewer.role)) {
       return _buildEmptyState('خصومات الراتب تراجع من HR فقط');
@@ -1134,24 +1853,62 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
             [];
         final allItems = loadedItems.where((attendance) {
           final status = attendance.salaryDeductionApprovalStatus;
-          return reversalOnly
-              ? status == 'approved' || status == 'reversed'
-              : status == 'pending_hr';
+          if (reversalOnly) {
+            return status == 'approved' || status == 'reversed';
+          }
+          final isPending = status == 'pending_hr';
+          if (!isPending) return false;
+
+          final isAbsence = attendance.salaryDeductionFraction >= 1.0 ||
+              attendance.status == 'absent' ||
+              attendance.salaryDeductionCode == 'ABSENCE' ||
+              attendance.salaryDeductionCode == 'full_day';
+
+          return absenceOnly ? isAbsence : !isAbsence;
         }).toList();
         allItems.sort((a, b) => b.date.compareTo(a.date));
         final items = _filterSalaryDeductions(allItems);
 
         if (allItems.isEmpty) {
-          return _buildEmptyState(
-            reversalOnly
-                ? 'لا توجد خصومات معتمدة قابلة للإلغاء'
-                : 'لا توجد خصومات تنتظر مراجعة HR',
+          return Column(
+            children: [
+              if (absenceOnly)
+                Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: WolfButton(
+                    onPressed: () => _syncAbsences(reviewer),
+                    text: 'مزامنة وتوليد غياب الشهر الحالي',
+                    secondaryText: 'SYNC ABSENCE DEDUCTIONS',
+                    variant: WolfButtonVariant.teal,
+                    height: 44,
+                  ),
+                ),
+              Expanded(
+                child: _buildEmptyState(
+                  reversalOnly
+                      ? 'لا توجد خصومات معتمدة قابلة للإلغاء'
+                      : (absenceOnly
+                          ? 'لا توجد خصومات غياب تنتظر مراجعة HR'
+                          : 'لا توجد خصومات تأخير تنتظر مراجعة HR'),
+                ),
+              ),
+            ],
           );
         }
 
         return ListView(
           padding: const EdgeInsets.all(16),
           children: [
+            if (absenceOnly) ...[
+              WolfButton(
+                onPressed: () => _syncAbsences(reviewer),
+                text: 'مزامنة وتوليد غياب الشهر الحالي',
+                secondaryText: 'SYNC ABSENCE DEDUCTIONS',
+                variant: WolfButtonVariant.teal,
+                height: 44,
+              ),
+              const SizedBox(height: 12),
+            ],
             _buildSalaryDeductionToolbar(
               theme: theme,
               visibleItems: items,
@@ -1292,6 +2049,38 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
         );
       },
     );
+  }
+
+  Future<void> _syncAbsences(UserModel reviewer) async {
+    try {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('جاري فحص ومزامنة غياب الموظفين...')),
+      );
+      final count = await _attendanceService.syncAbsenceDeductionsForMonth(
+        reviewer: reviewer,
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              count > 0
+                  ? 'تم توليد $count خصم غياب (يوم كامل) بنجاح.'
+                  : 'جميع أيام الغياب محدثة ولا يوجد غياب جديد غير مسجل.',
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: ZaWolfColors.error,
+            content: Text('فشل المزامنة: $e'),
+          ),
+        );
+      }
+    }
   }
 
   Widget _buildAttendanceCorrectionsTab(UserModel reviewer, ThemeData theme) {
@@ -2014,6 +2803,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
   Widget _buildApprovalActions({
     required VoidCallback onApprove,
     required VoidCallback onReject,
+    VoidCallback? onModify,
   }) {
     return Row(
       children: [
@@ -2026,7 +2816,19 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
             height: 48,
           ),
         ),
-        const SizedBox(width: 16),
+        if (onModify != null) ...[
+          const SizedBox(width: 8),
+          Expanded(
+            child: WolfButton(
+              onPressed: onModify,
+              text: 'طلب تعديل',
+              secondaryText: 'MODIFY',
+              variant: WolfButtonVariant.purple,
+              height: 48,
+            ),
+          ),
+        ],
+        const SizedBox(width: 8),
         Expanded(
           child: WolfButton(
             onPressed: onApprove,

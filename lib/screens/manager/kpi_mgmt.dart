@@ -516,7 +516,7 @@ class _DashboardStat extends StatelessWidget {
   }
 }
 
-class _EmployeeKpiTab extends StatelessWidget {
+class _EmployeeKpiTab extends StatefulWidget {
   final UserModel reviewer;
   final String monthKey;
   final KpiService kpiService;
@@ -528,18 +528,48 @@ class _EmployeeKpiTab extends StatelessWidget {
   });
 
   @override
+  State<_EmployeeKpiTab> createState() => _EmployeeKpiTabState();
+}
+
+class _EmployeeKpiTabState extends State<_EmployeeKpiTab> {
+  String _searchQuery = '';
+  String _departmentFilter = 'all';
+  String? _statusFilter;
+
+  @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return StreamBuilder<List<EmployeeKpiModel>>(
-      stream: kpiService.watchManagedKpis(reviewer, monthKey),
+      stream: widget.kpiService.watchManagedKpis(widget.reviewer, widget.monthKey),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(
             child: CircularProgressIndicator(color: ZaWolfColors.primaryCyan),
           );
         }
-        final records = snapshot.data ?? [];
-        if (records.isEmpty) {
+        var records = snapshot.data ?? [];
+        if (_searchQuery.isNotEmpty) {
+          records = records.where((kpi) => 
+            kpi.employeeName.toLowerCase().contains(_searchQuery.toLowerCase()) || 
+            kpi.department.toLowerCase().contains(_searchQuery.toLowerCase())).toList();
+        }
+        if (_statusFilter != null) {
+          records = records.where((kpi) => kpi.status == _statusFilter).toList();
+        }
+        if (_departmentFilter != 'all') {
+          records = records.where((kpi) => kpi.department == _departmentFilter).toList();
+        }
+
+        final departments = {'all': 'الكل'};
+        if (snapshot.hasData) {
+          for (final record in snapshot.data!) {
+            if (record.department.isNotEmpty) {
+              departments[record.department] = record.department;
+            }
+          }
+        }
+
+        if (records.isEmpty && (snapshot.data?.isEmpty ?? true)) {
           return Center(
             child: Text(
               'لا توجد أهداف KPI لهذا الشهر',
@@ -547,9 +577,83 @@ class _EmployeeKpiTab extends StatelessWidget {
             ),
           );
         }
-        return ListView(
-          padding: const EdgeInsets.all(16),
-          children: records
+
+        return Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                children: [
+                  Expanded(
+                    flex: 2,
+                    child: TextField(
+                      decoration: const InputDecoration(
+                        labelText: 'بحث بالاسم أو القسم',
+                        prefixIcon: Icon(Icons.search),
+                        border: OutlineInputBorder(),
+                        isDense: true,
+                      ),
+                      onChanged: (value) => setState(() => _searchQuery = value),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: DropdownButtonFormField<String?>(
+                      initialValue: _statusFilter,
+                      decoration: const InputDecoration(
+                        border: OutlineInputBorder(),
+                        isDense: true,
+                        contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                      ),
+                      items: const [
+                        DropdownMenuItem(value: null, child: Text('الكل')),
+                        DropdownMenuItem(value: KpiStatus.active, child: Text('نشط')),
+                        DropdownMenuItem(value: KpiStatus.finalized, child: Text('معتمد')),
+                      ],
+                      onChanged: (value) => setState(() => _statusFilter = value),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Row(
+                children: departments.entries.map((entry) {
+                  final isSelected = _departmentFilter == entry.key;
+                  return Padding(
+                    padding: const EdgeInsets.only(left: 8),
+                    child: ChoiceChip(
+                      label: Text(entry.value),
+                      selected: isSelected,
+                      selectedColor: ZaWolfColors.primaryCyan.withOpacity(0.2),
+                      labelStyle: TextStyle(
+                        color: isSelected ? ZaWolfColors.primaryCyan : Colors.white70,
+                        fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                      ),
+                      onSelected: (selected) {
+                        if (selected) {
+                          setState(() => _departmentFilter = entry.key);
+                        }
+                      },
+                    ),
+                  );
+                }).toList(),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Expanded(
+              child: records.isEmpty
+                  ? Center(
+                      child: Text(
+                        'لا توجد نتائج',
+                        style: theme.textTheme.titleMedium,
+                      ),
+                    )
+                  : ListView(
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                      children: records
               .map(
                 (kpi) => Padding(
                   padding: const EdgeInsets.only(bottom: 12),
@@ -571,7 +675,7 @@ class _EmployeeKpiTab extends StatelessWidget {
                                   ),
                                 ),
                                 Text(
-                                  '$monthKey · ${kpi.department}',
+                                  '${widget.monthKey} · ${kpi.department}',
                                   style: theme.textTheme.bodySmall,
                                 ),
                                 const SizedBox(height: 4),
@@ -633,7 +737,7 @@ class _EmployeeKpiTab extends StatelessWidget {
                                         'اعتماد وإغلاق النتيجة',
                                       ),
                                     )
-                                  : EmployeeRole.isHr(reviewer.role)
+                                  : EmployeeRole.isHr(widget.reviewer.role)
                                   ? OutlinedButton.icon(
                                       onPressed: () => _reopen(context, kpi),
                                       icon: const Icon(
@@ -651,6 +755,9 @@ class _EmployeeKpiTab extends StatelessWidget {
                 ),
               )
               .toList(),
+                    ),
+            ),
+          ],
         );
       },
     );
@@ -670,11 +777,11 @@ class _EmployeeKpiTab extends StatelessWidget {
         borderRadius: BorderRadius.vertical(top: Radius.circular(8)),
       ),
       builder: (_) => _UpdateProgressSheet(
-        reviewer: reviewer,
+        reviewer: widget.reviewer,
         employeeKpiId: kpi.employeeKpiId,
         metricIndex: metricIndex,
         metric: metric,
-        kpiService: kpiService,
+        kpiService: widget.kpiService,
       ),
     );
   }
@@ -701,7 +808,7 @@ class _EmployeeKpiTab extends StatelessWidget {
     );
     if (confirmed != true) return;
     try {
-      await kpiService.finalizeKpi(kpi: kpi, reviewer: reviewer);
+      await widget.kpiService.finalizeKpi(kpi: kpi, reviewer: widget.reviewer);
     } catch (error) {
       if (context.mounted) _showError(context, error);
     }
@@ -709,7 +816,7 @@ class _EmployeeKpiTab extends StatelessWidget {
 
   Future<void> _reopen(BuildContext context, EmployeeKpiModel kpi) async {
     try {
-      await kpiService.reopenKpi(kpi: kpi, reviewer: reviewer);
+      await widget.kpiService.reopenKpi(kpi: kpi, reviewer: widget.reviewer);
     } catch (error) {
       if (context.mounted) _showError(context, error);
     }
@@ -738,7 +845,7 @@ class _EmployeeKpiTab extends StatelessWidget {
     );
     if (confirmed != true) return;
     try {
-      await kpiService.deleteEmployeeKpi(kpi: kpi, actor: reviewer);
+      await widget.kpiService.deleteEmployeeKpi(kpi: kpi, actor: widget.reviewer);
     } catch (error) {
       if (context.mounted) _showError(context, error);
     }

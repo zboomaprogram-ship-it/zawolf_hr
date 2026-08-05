@@ -151,7 +151,7 @@ class SalesKpiSummaryCard extends StatelessWidget {
             const SizedBox(height: 16),
             _PeriodHistoryChart(history: history),
           ],
-          if (summary.agents.isNotEmpty) ...[
+          if (summary.agents.where((a) => a.isMapped).isNotEmpty) ...[
             const SizedBox(height: 16),
             Text(
               'أداء الموظفين من نظام المبيعات',
@@ -159,7 +159,7 @@ class SalesKpiSummaryCard extends StatelessWidget {
               style: theme.textTheme.titleMedium?.copyWith(color: Colors.white),
             ),
             const SizedBox(height: 10),
-            ...summary.agents.map(
+            ...summary.agents.where((a) => a.isMapped).map(
               (agent) => Padding(
                 padding: const EdgeInsets.only(bottom: 8),
                 child: _AgentSummaryTile(

@@ -206,13 +206,13 @@ class _SalesKpiFilterSheetState extends State<_SalesKpiFilterSheet> {
                         ),
                         _AgentSelector(
                           title: 'موظفو المبيعات',
-                          agents: widget.options.linkedSalesAgents,
+                          agents: widget.options.salesAgents,
                           selected: _sales,
                           onChanged: (value) => setState(() => _sales = value),
                         ),
                         _AgentSelector(
                           title: 'موظفو المبيعات الهاتفية',
-                          agents: widget.options.linkedTeleSalesAgents,
+                          agents: widget.options.teleSalesAgents,
                           selected: _teleSales,
                           onChanged: (value) =>
                               setState(() => _teleSales = value),
@@ -330,13 +330,20 @@ class _SalesKpiFilterSheetState extends State<_SalesKpiFilterSheet> {
     required List<String> values,
     required ValueChanged<String> onChanged,
   }) {
+    final uniqueValues = values
+        .where((item) => item.trim().isNotEmpty && item != 'ALL')
+        .toSet()
+        .toList();
+    final selectedValue =
+        (value == 'ALL' || uniqueValues.contains(value)) ? value : 'ALL';
+
     return DropdownButtonFormField<String>(
-      initialValue: value,
+      initialValue: selectedValue,
       decoration: _decoration(label),
       dropdownColor: ZaWolfColors.surface02,
       items: [
         const DropdownMenuItem(value: 'ALL', child: Text('الكل')),
-        ...values.map(
+        ...uniqueValues.map(
           (item) => DropdownMenuItem(value: item, child: Text(item)),
         ),
       ],

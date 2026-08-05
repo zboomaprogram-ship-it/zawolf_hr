@@ -18,6 +18,14 @@ class WorkSchedule {
     );
   }
 
+  bool isWorkDay(DateTime date) {
+    if (workDays == null || workDays!.isEmpty) {
+      const defaultWorkDays = [6, 7, 1, 2, 3, 4];
+      return defaultWorkDays.contains(date.weekday);
+    }
+    return workDays!.contains(date.weekday);
+  }
+
   Map<String, dynamic> toMap() {
     return {
       if (startTime != null) 'startTime': startTime,

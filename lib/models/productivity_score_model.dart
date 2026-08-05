@@ -138,8 +138,13 @@ class ProductivityScoreModel {
     required double taskQualityScore,
     required double kpiScore,
     double behaviorScore = 100,
+    bool hasKpiData = true,
   }) {
     final attendanceComponent = (attendanceScore + punctualityScore) / 2;
+    if (!hasKpiData) {
+      final value = (attendanceComponent * 0.50) + (behaviorScore * 0.50);
+      return value.clamp(0, 100).toDouble();
+    }
     final value =
         (kpiScore * 0.70) +
         (attendanceComponent * 0.15) +
@@ -154,6 +159,7 @@ class ProductivityScoreModel {
     double? taskQualityScore,
     double? kpiScore,
     double behaviorScore = 100,
+    bool hasKpiData = true,
   }) {
     return calculateOverall(
       attendanceScore: attendanceScore,
@@ -162,6 +168,7 @@ class ProductivityScoreModel {
       taskQualityScore: taskQualityScore ?? 0,
       kpiScore: kpiScore ?? 0,
       behaviorScore: behaviorScore,
+      hasKpiData: hasKpiData && kpiScore != null,
     );
   }
 

@@ -46,6 +46,7 @@ class SalesKpiFilterOptions {
     List<String> strings(String key) => (map[key] as List? ?? const [])
         .map((item) => item.toString())
         .where((item) => item.trim().isNotEmpty)
+        .toSet()
         .toList();
     List<SalesKpiAgentOption> agents(String key) =>
         (map[key] as List? ?? const [])
@@ -57,11 +58,27 @@ class SalesKpiFilterOptions {
             )
             .toList();
 
+    final parsedCompanies = strings('companies');
+    final parsedChannels = strings('entryChannels');
+
     return SalesKpiFilterOptions(
-      companies: strings('companies'),
+      companies: parsedCompanies.isNotEmpty
+          ? parsedCompanies
+          : const ['Daad', 'Elbatt', 'Mohrek', 'Rabhan', 'Sapaq'],
       salesAgents: agents('salesAgents'),
       teleSalesAgents: agents('teleSalesAgents'),
-      entryChannels: strings('entryChannels'),
+      entryChannels: parsedChannels.isNotEmpty
+          ? parsedChannels
+          : const [
+              '-',
+              'Cold',
+              'Hot leads',
+              'Hot leads - Influencer',
+              'Hot leads - Notion',
+              'Hunt - Cold',
+              'R&D Data',
+              'Warm - Hot leads',
+            ],
     );
   }
 }
@@ -283,20 +300,43 @@ class SalesKpiSummary {
     this.syncedAt,
   });
 
-  double get effectiveSalesActual => salesDepartmentActual > 0
-      ? salesDepartmentActual
-      : (salesActual > 0 ? salesActual : totalPrice);
+  double get effectiveSalesActual {
+    if (agents.isNotEmpty) {
+      final mapped = agents.where((a) => a.kind == 'sales' && a.isMapped);
+      if (mapped.isNotEmpty) return mapped.fold(0.0, (sum, a) => sum + a.actual);
+    }
+    return salesDepartmentActual > 0
+        ? salesDepartmentActual
+        : (salesActual > 0 ? salesActual : totalPrice);
+  }
 
-  double get effectiveSalesTarget =>
-      salesDepartmentTarget > 0 ? salesDepartmentTarget : salesTarget;
+  double get effectiveSalesTarget {
+    if (agents.isNotEmpty) {
+      final mapped = agents.where((a) => a.kind == 'sales' && a.isMapped);
+      if (mapped.isNotEmpty) return mapped.fold(0.0, (sum, a) => sum + a.target);
+    }
+    return salesDepartmentTarget > 0 ? salesDepartmentTarget : salesTarget;
+  }
 
-  double get effectiveTeleSalesActual => teleSalesDepartmentActual > 0
-      ? teleSalesDepartmentActual
-      : (teleSalesActual > 0 ? teleSalesActual : confirmedMeetings.toDouble());
+  double get effectiveTeleSalesActual {
+    if (agents.isNotEmpty) {
+      final mapped = agents.where((a) => a.kind == 'tele_sales' && a.isMapped);
+      if (mapped.isNotEmpty) return mapped.fold(0.0, (sum, a) => sum + a.actual);
+    }
+    return teleSalesDepartmentActual > 0
+        ? teleSalesDepartmentActual
+        : (teleSalesActual > 0 ? teleSalesActual : confirmedMeetings.toDouble());
+  }
 
-  double get effectiveTeleSalesTarget => teleSalesDepartmentTarget > 0
-      ? teleSalesDepartmentTarget
-      : teleSalesTarget;
+  double get effectiveTeleSalesTarget {
+    if (agents.isNotEmpty) {
+      final mapped = agents.where((a) => a.kind == 'tele_sales' && a.isMapped);
+      if (mapped.isNotEmpty) return mapped.fold(0.0, (sum, a) => sum + a.target);
+    }
+    return teleSalesDepartmentTarget > 0
+        ? teleSalesDepartmentTarget
+        : teleSalesTarget;
+  }
 
   int get effectiveSalesMappedEmployees {
     if (salesMappedEmployees > 0) return salesMappedEmployees;
@@ -331,6 +371,50 @@ class SalesKpiSummary {
     int readInt(String key) => (map[key] as num?)?.toInt() ?? 0;
     double readDouble(String key) => (map[key] as num?)?.toDouble() ?? 0;
 
+    final parsedOptions = SalesKpiFilterOptions.fromMap(
+      Map<String, dynamic>.from(map['options'] as Map? ?? const {}),
+    );
+    final agentList = (map['agentSummaries'] as List? ?? const [])
+        .whereType<Map>()
+        .map(
+          (item) =>
+              SalesKpiAgentSummary.fromMap(Map<String, dynamic>.from(item)),
+        )
+        .toList();
+
+    final salesAgents = parsedOptions.salesAgents.isNotEmpty
+        ? parsedOptions.salesAgents
+        : agentList
+            .where((a) => a.kind == 'sales')
+            .map(
+              (a) => SalesKpiAgentOption(
+                code: a.key,
+                id: a.externalId,
+                name: a.name,
+              ),
+            )
+            .toList();
+
+    final teleSalesAgents = parsedOptions.teleSalesAgents.isNotEmpty
+        ? parsedOptions.teleSalesAgents
+        : agentList
+            .where((a) => a.kind == 'tele_sales')
+            .map(
+              (a) => SalesKpiAgentOption(
+                code: a.key,
+                id: a.externalId,
+                name: a.name,
+              ),
+            )
+            .toList();
+
+    final effectiveOptions = SalesKpiFilterOptions(
+      companies: parsedOptions.companies,
+      salesAgents: salesAgents,
+      teleSalesAgents: teleSalesAgents,
+      entryChannels: parsedOptions.entryChannels,
+    );
+
     return SalesKpiSummary(
       periodKey: map['periodKey'] as String? ?? '',
       periodStart: map['periodStart'] as String? ?? '',
@@ -361,13 +445,7 @@ class SalesKpiSummary {
       teleSalesAverageKpi: readDouble('teleSalesAverageKpi'),
       availableSalesAgents: readInt('availableSalesAgents'),
       availableTeleSalesAgents: readInt('availableTeleSalesAgents'),
-      agents: (map['agentSummaries'] as List? ?? const [])
-          .whereType<Map>()
-          .map(
-            (item) =>
-                SalesKpiAgentSummary.fromMap(Map<String, dynamic>.from(item)),
-          )
-          .toList(),
+      agents: agentList,
       currency: map['currency'] as String? ?? 'SAR',
       mappedEmployees: readInt('mappedEmployees'),
       unmatchedEmployees: readInt('unmatchedEmployees'),
@@ -385,9 +463,7 @@ class SalesKpiSummary {
       filters: SalesKpiFilters.fromMap(
         Map<String, dynamic>.from(map['filters'] as Map? ?? const {}),
       ),
-      options: SalesKpiFilterOptions.fromMap(
-        Map<String, dynamic>.from(map['options'] as Map? ?? const {}),
-      ),
+      options: effectiveOptions,
       syncedAt: (map['syncedAt'] as Timestamp?)?.toDate(),
     );
   }

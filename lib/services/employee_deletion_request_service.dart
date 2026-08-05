@@ -38,6 +38,39 @@ class EmployeeDeletionRequestService {
     if (employee.uid == requester.uid) {
       throw StateError('لا يمكنك طلب حذف حسابك من هذه الشاشة.');
     }
+
+    // Only Admin (Super Admin) can delete/deactivate user directly without sending a request
+    if (requester.role == EmployeeRole.superAdmin) {
+      final employeeRef = _db.collection('users').doc(employee.uid);
+      await employeeRef.update({
+        'isActive': false,
+        'deactivationReason': reason.trim(),
+        'deactivatedBy': requester.uid,
+        'deactivatedByName': requester.displayName,
+        'deactivatedAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+
+      // Clear/Approve any pending deletion requests for this user
+      final existing = await _db
+          .collection('employeeDeletionRequests')
+          .where('employeeId', isEqualTo: employee.uid)
+          .get();
+      for (final doc in existing.docs) {
+        final st = doc.data()['status'];
+        if (st == 'pending_hr_manager' || st == 'pending_super_admin') {
+          await doc.reference.update({
+            'status': 'approved',
+            'approvedBy': requester.uid,
+            'approvedByName': requester.displayName,
+            'reviewedAt': FieldValue.serverTimestamp(),
+            'updatedAt': FieldValue.serverTimestamp(),
+          });
+        }
+      }
+      return;
+    }
+
     if (employee.role == EmployeeRole.superAdmin ||
         employee.role == EmployeeRole.hrManager ||
         employee.role == EmployeeRole.hrAdmin) {

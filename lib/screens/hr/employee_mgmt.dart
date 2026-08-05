@@ -1499,20 +1499,24 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
   Future<void> _confirmDeleteEmployee(UserModel emp) async {
     final actor = Provider.of<AuthService>(context, listen: false).currentUser;
     if (actor == null) return;
+    final isSuperAdmin = actor.role == EmployeeRole.superAdmin;
     final reasonController = TextEditingController();
+
     final reason = await showDialog<String>(
       context: context,
       builder: (dialogContext) => AlertDialog(
         backgroundColor: ZaWolfColors.surface01,
-        title: const Text(
-          'طلب إنهاء الحساب',
-          style: TextStyle(color: Colors.white),
+        title: Text(
+          isSuperAdmin ? 'إيقاف وحذف الحساب' : 'طلب إنهاء الحساب',
+          style: const TextStyle(color: Colors.white),
         ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(
-              'لن يُحذف ${emp.displayName} فورًا. سيمر الطلب بمسار الموافقات، ثم يُعطل الحساب مع الاحتفاظ بالسجلات.',
+              isSuperAdmin
+                  ? 'بصفتك الأدمن الرئيسي، سيتم إيقاف وحذف حساب ${emp.displayName} فوراً بدون الحاجة لتقديم طلب موافقة.'
+                  : 'لن يُحذف ${emp.displayName} فورًا. سيمر الطلب بمسار الموافقات، ثم يُعطل الحساب مع الاحتفاظ بالسجلات.',
               style: const TextStyle(color: ZaWolfColors.textSecondary),
               textDirection: TextDirection.rtl,
             ),
@@ -1538,9 +1542,9 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
               final value = reasonController.text.trim();
               if (value.isNotEmpty) Navigator.pop(dialogContext, value);
             },
-            child: const Text(
-              'إرسال للموافقة',
-              style: TextStyle(color: ZaWolfColors.error),
+            child: Text(
+              isSuperAdmin ? 'إيقاف وحذف مباشر' : 'إرسال للموافقة',
+              style: const TextStyle(color: ZaWolfColors.error),
             ),
           ),
         ],
@@ -1556,7 +1560,13 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
       );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('تم إرسال طلب إنهاء الحساب للموافقة.')),
+        SnackBar(
+          content: Text(
+            isSuperAdmin
+                ? 'تم إيقاف وحذف حساب الموظف مباشرة بنجاح.'
+                : 'تم إرسال طلب إنهاء الحساب للموافقة.',
+          ),
+        ),
       );
     } catch (error) {
       if (!mounted) return;
