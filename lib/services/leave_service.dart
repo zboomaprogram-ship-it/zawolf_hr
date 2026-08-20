@@ -8,7 +8,6 @@ import '../models/leave_model.dart';
 import '../models/leave_type_policy.dart';
 import '../models/leave_entitlement_policy.dart';
 import '../models/manager_approval_chain.dart';
-import '../models/notification_route_policy.dart';
 import 'audit_log_service.dart';
 import 'request_approval_policy_service.dart';
 import 'role_notification_service.dart';
@@ -71,6 +70,15 @@ class LeaveService {
         throw Exception('رصيد الإجازات الكلي غير كافٍ.');
       }
     }
+  }
+
+  static bool dateRangesOverlap(LeaveModel first, LeaveModel second) {
+    return first.startDate.isBefore(
+          second.endDate.add(const Duration(days: 1)),
+        ) &&
+        first.endDate.isAfter(
+          second.startDate.subtract(const Duration(days: 1)),
+        );
   }
 
   String _attachmentContentType(String pathOrExtension) {
@@ -289,17 +297,22 @@ class LeaveService {
           'status',
           whereIn: ['approved', 'pending_hr', 'pending_manager', 'pending_ceo'],
         )
+        .where(
+          'startDate',
+          isLessThanOrEqualTo: Timestamp.fromDate(req.endDate),
+        )
         .get();
 
     for (final doc in overlaps.docs) {
       final existing = LeaveModel.fromFirestore(doc);
-      if (req.startDate.isBefore(
-            existing.endDate.add(const Duration(days: 1)),
-          ) &&
-          req.endDate.isAfter(
-            existing.startDate.subtract(const Duration(days: 1)),
-          )) {
-        throw Exception('يوجد طلب إجازة متداخل آخر بالفعل في هذه التواريخ.');
+      if (dateRangesOverlap(req, existing)) {
+        throw Exception(
+          'يوجد طلب إجازة آخر متداخل من '
+          '${existing.startDate.year}-${existing.startDate.month.toString().padLeft(2, '0')}-${existing.startDate.day.toString().padLeft(2, '0')} '
+          'إلى '
+          '${existing.endDate.year}-${existing.endDate.month.toString().padLeft(2, '0')}-${existing.endDate.day.toString().padLeft(2, '0')}. '
+          'اختر تواريخ أخرى غير متداخلة.',
+        );
       }
     }
 
@@ -440,7 +453,7 @@ class LeaveService {
         type: 'leave_request_submitted',
         title: 'طلب إجازة بدون مدير معيّن',
         body:
-            '${req.employeeName} أرسل ${LeaveTypePolicy.arabicLabel(req.leaveType)} وينتظر قرار مدير HR.',
+            '${req.employeeName} أرسل ${LeaveTypePolicy.arabicLabel(req.leaveType)} وينتظر قرار HR.',
         data: {'leaveId': reqRef.id},
       );
     } else {
@@ -546,21 +559,23 @@ class LeaveService {
       if (leave.userId == reviewerId) {
         throw Exception('لا يمكن اعتماد طلبك الشخصي. يجب أن يراجعه HR آخر.');
       }
-      if (!EmployeeRole.isHrStaff(role)) {
-        throw Exception('هذه المرحلة يراجعها HR أو مدير HR فقط.');
+      if (!EmployeeRole.isHr(role)) {
+        throw Exception('هذه المرحلة يراجعها HR فقط.');
       }
       final managerIds =
           (data['managerIds'] as List<dynamic>?)
               ?.whereType<String>()
               .toList() ??
           const <String>[];
-      if (managerIds.isEmpty && role != EmployeeRole.hrManager) {
-        throw Exception('الطلبات بدون مدير معيّن يراجعها مدير HR فقط.');
+      if (managerIds.isEmpty &&
+          requesterRole == EmployeeRole.superAdmin &&
+          role != EmployeeRole.hrManager) {
+        throw Exception('الطلبات بدون مدير معيّن يراجعها HR فقط.');
       }
       if (requesterRole == EmployeeRole.superAdmin &&
           role != EmployeeRole.hrAdmin &&
           role != EmployeeRole.hrManager) {
-        throw Exception('طلبات مالك النظام يراجعها HR أو مدير HR فقط.');
+        throw Exception('طلبات مالك النظام يراجعها HR فقط.');
       }
     }
 
@@ -569,7 +584,7 @@ class LeaveService {
     bool isFinalApproval = false;
     Map<String, dynamic> update;
 
-    if (EmployeeRole.isHrStaff(role)) {
+    if (EmployeeRole.isHr(role)) {
       if (leave.status == 'pending_hr') {
         final managerIds =
             (data['managerIds'] as List<dynamic>?)
@@ -669,17 +684,23 @@ class LeaveService {
 
     await batch.commit();
 
-    await AuditLogService.instance.record(
-      actorId: reviewerId,
-      action: 'leave_approved',
-      targetCollection: 'leaves',
-      targetId: leaveId,
-      metadata: {
-        'userId': leave.userId,
-        'numberOfDays': leave.numberOfDays,
-        'leaveType': leave.leaveType,
-      },
-    );
+    // The approval is committed above. Audit/notification/reconciliation are
+    // follow-up work and must never make the UI report a failed approval after
+    // the leave was already saved. That previously led reviewers to retry and
+    // create duplicate approval history entries.
+    try {
+      await AuditLogService.instance.record(
+        actorId: reviewerId,
+        action: 'leave_approved',
+        targetCollection: 'leaves',
+        targetId: leaveId,
+        metadata: {
+          'userId': leave.userId,
+          'numberOfDays': leave.numberOfDays,
+          'leaveType': leave.leaveType,
+        },
+      );
+    } catch (_) {}
 
     if (update['status'] == 'pending_manager') {
       final nextManagerId = update['managerId'] as String?;
@@ -727,7 +748,9 @@ class LeaveService {
     }
 
     // 3. Notify employee
-    await _reconciliationService.reconcileApprovedLeave(leave);
+    try {
+      await _reconciliationService.reconcileApprovedLeave(leave);
+    } catch (_) {}
     try {
       await _createNotification(
         recipientId: leave.userId,
@@ -761,14 +784,18 @@ class LeaveService {
           'leaveBalance.$key': FieldValue.increment(-leave.numberOfDays),
       });
     }
-    await _reconciliationService.reconcileApprovedLeave(leave);
-    await _createNotification(
-      recipientId: leave.userId,
-      type: 'leave_approved',
-      title: 'تم قبول طلب الإجازة',
-      body: 'تم اعتماد إجازتك لمدة ${leave.numberOfDays} يوم.',
-      data: {'leaveId': leave.leaveId, 'route': '/employee/requests'},
-    );
+    try {
+      await _reconciliationService.reconcileApprovedLeave(leave);
+    } catch (_) {}
+    try {
+      await _createNotification(
+        recipientId: leave.userId,
+        type: 'leave_approved',
+        title: 'تم قبول طلب الإجازة',
+        body: 'تم اعتماد إجازتك لمدة ${leave.numberOfDays} يوم.',
+        data: {'leaveId': leave.leaveId, 'route': '/employee/requests'},
+      );
+    } catch (_) {}
   }
 
   // Reject Leave
@@ -802,21 +829,23 @@ class LeaveService {
       if (leave.userId == reviewerId) {
         throw Exception('لا يمكن رفض طلبك الشخصي. يجب أن يراجعه HR آخر.');
       }
-      if (!EmployeeRole.isHrStaff(reviewerRole)) {
-        throw Exception('هذه المرحلة يراجعها HR أو مدير HR فقط.');
+      if (!EmployeeRole.isHr(reviewerRole)) {
+        throw Exception('هذه المرحلة يراجعها HR فقط.');
       }
       final managerIds =
           (doc.data()?['managerIds'] as List<dynamic>?)
               ?.whereType<String>()
               .toList() ??
           const <String>[];
-      if (managerIds.isEmpty && reviewerRole != EmployeeRole.hrManager) {
-        throw Exception('الطلبات بدون مدير معيّن يراجعها مدير HR فقط.');
+      if (managerIds.isEmpty &&
+          requesterRole == EmployeeRole.superAdmin &&
+          reviewerRole != EmployeeRole.hrManager) {
+        throw Exception('الطلبات بدون مدير معيّن يراجعها HR فقط.');
       }
       if (requesterRole == EmployeeRole.superAdmin &&
           reviewerRole != EmployeeRole.hrAdmin &&
           reviewerRole != EmployeeRole.hrManager) {
-        throw Exception('طلبات مالك النظام يراجعها HR أو مدير HR فقط.');
+        throw Exception('طلبات مالك النظام يراجعها HR فقط.');
       }
     }
     if (leave.status == 'pending_manager' && leave.managerId != reviewerId) {
@@ -882,29 +911,13 @@ class LeaveService {
     required String body,
     Map<String, dynamic>? data,
   }) async {
-    final notifRef = _db
-        .collection('notifications')
-        .doc(recipientId)
-        .collection('items')
-        .doc(notificationId);
-
-    await notifRef.set({
-      'notificationId': notifRef.id,
-      'type': type,
-      'title': title,
-      'body': body,
-      'data': NotificationRoutePolicy.dataWithRoute(type, data),
-      'isRead': false,
-      'pushSent': false,
-      'createdAt': FieldValue.serverTimestamp(),
-    });
-
-    try {
-      await _db.collection('users').doc(recipientId).update({
-        'unreadNotifications': FieldValue.increment(1),
-      });
-    } catch (_) {
-      // Notification delivery does not depend on the denormalized badge counter.
-    }
+    await RoleNotificationService.instance.createNotification(
+      recipientId: recipientId,
+      type: type,
+      title: title,
+      body: body,
+      data: data,
+      eventId: notificationId,
+    );
   }
 }

@@ -95,7 +95,7 @@ function parseCsv(text) {
 function normalizeRole(role) {
   const value = String(role || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
   if (['hr', 'hradmin', 'hr_admin'].includes(value)) return 'hr_admin';
-  if (['hrmanager', 'hr_manager'].includes(value)) return 'hr_manager';
+  if (['hrmanager', 'hr_manager'].includes(value)) return 'hr_admin';
   if (['super', 'superadmin', 'super_admin', 'ceo', 'owner'].includes(value)) {
     return 'super_admin';
   }
@@ -104,7 +104,7 @@ function normalizeRole(role) {
 }
 
 function canBeSupervisor(role) {
-  return ['manager', 'hr_admin', 'hr_manager', 'super_admin'].includes(role);
+  return ['manager', 'hr_admin', 'super_admin'].includes(role);
 }
 
 function splitList(value) {

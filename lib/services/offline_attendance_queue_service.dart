@@ -7,10 +7,16 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/attendance_model.dart';
 import 'attendance_security_service.dart';
-import 'role_notification_service.dart';
+import 'attendance_gateway_service.dart';
 import 'app_security_policy_service.dart';
 
 enum OfflineAttendanceActionType { checkIn, checkOut }
+
+/// A queued action either remains retriable, is confirmed by the server, or is
+/// deliberately discarded because the server's current check-out policy no
+/// longer permits it. A disabled check-out is not an error and must never be
+/// replayed into a later enabled period.
+enum _OfflineSyncResult { synced, checkoutDisabled }
 
 class OfflineAttendanceAction {
   final String id;
@@ -303,6 +309,10 @@ class OfflineAttendanceAction {
         locationDistanceMeters: distanceMeters,
         locationAllowedRadiusMeters: allowedRadius,
         locationCapturedOffline: true,
+        checkoutPolicyEnabled: existing.checkoutPolicyEnabled,
+        checkoutPolicyRevision: existing.checkoutPolicyRevision,
+        checkoutPolicyEvaluatedAt: existing.checkoutPolicyEvaluatedAt,
+        checkoutPolicyDecisionPoint: existing.checkoutPolicyDecisionPoint,
         status: existing.status,
       );
     }
@@ -359,7 +369,7 @@ class OfflineAttendanceQueueService {
   static const _queueKey = 'offline_attendance_queue_v1';
   static const _deviceBindingPrefix = 'attendance_device_owner_';
 
-  final FirebaseFirestore _db = FirebaseFirestore.instance;
+  final AttendanceGatewayService _gateway = AttendanceGatewayService();
   final Connectivity _connectivity = Connectivity();
   final StreamController<void> _changes = StreamController<void>.broadcast();
 
@@ -448,7 +458,10 @@ class OfflineAttendanceQueueService {
     final remaining = <OfflineAttendanceAction>[];
     for (final action in actions) {
       try {
-        await _syncAction(action);
+        final result = await _syncAction(action);
+        if (result == _OfflineSyncResult.checkoutDisabled) {
+          continue;
+        }
       } catch (_) {
         remaining.add(action);
       }
@@ -456,73 +469,16 @@ class OfflineAttendanceQueueService {
     await _saveActions(remaining);
   }
 
-  Future<void> _syncAction(OfflineAttendanceAction action) async {
-    await _ensureDeviceBinding(action);
-    final ref = _db.collection('attendance').doc(action.attendanceId);
-    if (action.type == OfflineAttendanceActionType.checkIn) {
-      final existing = await ref.get();
-      if (!existing.exists) {
-        await ref.set(action.toCheckInFirestore());
-        await _notifySecurityReviewIfNeeded(action);
-      }
-      return;
+  Future<_OfflineSyncResult> _syncAction(OfflineAttendanceAction action) async {
+    // The HTTP gateway is the only authority allowed to replay attendance.
+    // In particular, never add a client-side Firestore fallback here: a stale
+    // queued check-out must be evaluated against the policy at replay time.
+    final result = await _gateway.submitWithReceipt(action.toJson());
+    if (action.type == OfflineAttendanceActionType.checkOut &&
+        result['status'] == 'checkout_disabled') {
+      return _OfflineSyncResult.checkoutDisabled;
     }
-
-    final existing = await ref.get();
-    if (!existing.exists) {
-      throw StateError('Cannot sync checkout before check-in.');
-    }
-    await ref.update(action.toCheckOutFirestore());
-    await _notifySecurityReviewIfNeeded(action);
-  }
-
-  Future<void> _notifySecurityReviewIfNeeded(
-    OfflineAttendanceAction action,
-  ) async {
-    if (action.securityReviewStatus != 'pending_hr') return;
-    await RoleNotificationService.instance.notifyRole(
-      role: 'hr_admin',
-      type: 'attendance_security_review',
-      title: action.type == OfflineAttendanceActionType.checkOut
-          ? 'انصراف يحتاج مراجعة أمنية'
-          : 'حضور يحتاج مراجعة أمنية',
-      body:
-          '${action.employeeName}: ${action.locationRiskMessage ?? 'تم تسجيل حركة حضور بمؤشرات موقع غير معتادة.'}',
-      data: {'attendanceId': action.attendanceId},
-    );
-  }
-
-  Future<void> _ensureDeviceBinding(OfflineAttendanceAction action) async {
-    final userRef = _db.collection('users').doc(action.userId);
-    final deviceRef = _db
-        .collection('attendanceDevices')
-        .doc(AttendanceSecurityService.deviceDocumentId(action.deviceId));
-
-    await _db.runTransaction((transaction) async {
-      final userSnap = await transaction.get(userRef);
-      final deviceSnap = await transaction.get(deviceRef);
-      if (!userSnap.exists) {
-        throw StateError('User not found while syncing attendance.');
-      }
-      if (deviceSnap.exists) {
-        final deviceData = deviceSnap.data() ?? <String, dynamic>{};
-        if (deviceData['userId'] == action.userId) return;
-        throw StateError('Attendance device belongs to another account.');
-      }
-      final userData = userSnap.data() ?? <String, dynamic>{};
-      final registeredDeviceId =
-          (userData['registeredAttendanceDeviceId'] as String?)?.trim() ?? '';
-      if (registeredDeviceId.isNotEmpty) {
-        if (registeredDeviceId != action.deviceId) {
-          throw StateError('Attendance device belongs to another account.');
-        }
-        return;
-      }
-
-      throw StateError(
-        'Attendance device must be registered online before offline attendance can sync.',
-      );
-    });
+    return _OfflineSyncResult.synced;
   }
 
   Future<void> _saveActions(List<OfflineAttendanceAction> actions) async {

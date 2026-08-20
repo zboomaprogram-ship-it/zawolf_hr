@@ -38,12 +38,14 @@ import '../screens/hr/attendance_summary_details_screen.dart';
 import '../screens/hr/employee_mgmt.dart';
 import '../screens/hr/announcements.dart';
 import '../screens/hr/sheets_export_screen.dart';
+import '../screens/hr/google_workspace_screen.dart';
 import '../screens/manager/rate_performance.dart';
 import '../screens/smart_assistant_screen.dart';
 import '../screens/hr/department_performance_screen.dart';
 import '../screens/shared/employee_insights_screen.dart';
 import '../screens/shared/notifications_screen.dart';
 import '../screens/shared/polls_screen.dart';
+import '../screens/shared/company_workspace_center_screen.dart';
 import '../screens/account_disabled_screen.dart';
 import '../screens/team_leader/team_leader_dashboard.dart';
 
@@ -88,8 +90,7 @@ class ZaWolfRouter {
         if (loggingIn || onSplash) {
           final role = authService.currentUser?.role;
           if (role == EmployeeRole.superAdmin) return '/hr/dashboard';
-          if (role == EmployeeRole.hrManager) return '/hr/dashboard';
-          if (role == EmployeeRole.hrAdmin) return '/hr/dashboard';
+          if (EmployeeRole.isHrStaff(role)) return '/hr/dashboard';
           if (role == EmployeeRole.manager) return '/manager/dashboard';
           if (role == EmployeeRole.teamLeader) {
             return '/team-leader/dashboard';
@@ -110,7 +111,7 @@ class ZaWolfRouter {
           return '/hr/dashboard';
         }
 
-        if (role == EmployeeRole.superAdmin || role == EmployeeRole.hrManager) {
+        if (role == EmployeeRole.superAdmin) {
           return null;
         }
 
@@ -128,7 +129,7 @@ class ZaWolfRouter {
           if (goingToHr) {
             return '/manager/dashboard';
           }
-        } else if (role == EmployeeRole.hrAdmin) {
+        } else if (EmployeeRole.isHrStaff(role)) {
           // HR users cannot access manager-only paths.
           if (goingToManager) {
             return '/hr/dashboard';
@@ -170,6 +171,10 @@ class ZaWolfRouter {
             GoRoute(
               path: '/polls',
               builder: (context, state) => const PollsScreen(),
+            ),
+            GoRoute(
+              path: '/workspace',
+              builder: (context, state) => const CompanyWorkspaceCenterScreen(),
             ),
             // Employee Routes
             GoRoute(
@@ -341,6 +346,10 @@ class ZaWolfRouter {
             GoRoute(
               path: '/hr/reports',
               builder: (context, state) => const SheetsExportScreen(),
+            ),
+            GoRoute(
+              path: '/hr/google-workspace',
+              builder: (context, state) => const GoogleWorkspaceScreen(),
             ),
             GoRoute(
               path: '/hr/payroll',

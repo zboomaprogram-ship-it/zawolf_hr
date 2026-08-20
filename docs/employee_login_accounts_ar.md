@@ -90,3 +90,7 @@
 - إذا لم تتمكن من تسجيل الدخول، تواصل مع HR.
 - تسجيل الحضور والانصراف يحتاج تفعيل الموقع على الهاتف.
 - أول مدير مذكور للموظف هو المدير الأساسي للموافقات.
+
+
+
+We will make the company folder structure through the ZaWolf backend using the service account. ok do it 

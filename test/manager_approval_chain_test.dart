@@ -61,7 +61,7 @@ void main() {
       );
     });
 
-    test('every managerless request uses the HR Manager fallback', () {
+    test('every managerless request uses the HR fallback', () {
       expect(
         ManagerApprovalChain.usesHrFallback(
           isSuperAdmin: true,
@@ -86,26 +86,27 @@ void main() {
     });
   });
 
-  group('HR Manager capabilities', () {
-    test('can manage privileged accounts and access reports', () {
-      expect(
-        EmployeeRole.canManagePrivilegedAccounts(EmployeeRole.hrManager),
-        isTrue,
-      );
-      expect(EmployeeRole.canAccessReports(EmployeeRole.hrManager), isTrue);
-    });
-
-    test('normal HR can access reports but not privileged accounts', () {
+  group('Unified HR capabilities', () {
+    test('normal HR can manage privileged accounts and access reports', () {
       expect(
         EmployeeRole.canManagePrivilegedAccounts(EmployeeRole.hrAdmin),
-        isFalse,
+        isTrue,
       );
       expect(EmployeeRole.canAccessReports(EmployeeRole.hrAdmin), isTrue);
     });
 
+    test('legacy HR Manager is normalized to normal HR', () {
+      expect(
+        EmployeeRole.normalize(EmployeeRole.legacyHrManager),
+        EmployeeRole.hrAdmin,
+      );
+      expect(EmployeeRole.isHrStaff(EmployeeRole.legacyHrManager), isTrue);
+      expect(EmployeeRole.arabicLabel(EmployeeRole.hrAdmin), 'مسؤول HR');
+    });
+
     test('HR-stage reviewers exclude super admin', () {
       expect(EmployeeRole.isHrStaff(EmployeeRole.hrAdmin), isTrue);
-      expect(EmployeeRole.isHrStaff(EmployeeRole.hrManager), isTrue);
+      expect(EmployeeRole.isHrStaff(EmployeeRole.legacyHrManager), isTrue);
       expect(EmployeeRole.isHrStaff(EmployeeRole.superAdmin), isFalse);
     });
   });

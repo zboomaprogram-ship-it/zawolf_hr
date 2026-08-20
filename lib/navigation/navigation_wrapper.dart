@@ -653,6 +653,16 @@ class _NavigationWrapperState extends State<NavigationWrapper>
       ];
     }
 
+    items.add(
+      NavigationItem(
+        icon: Icons.folder_shared_outlined,
+        activeIcon: Icons.folder_shared,
+        label: 'ملفات الشركة',
+        englishLabel: 'Company Files',
+        path: '/workspace',
+      ),
+    );
+
     final isManagementRole =
         role == EmployeeRole.manager ||
         role == EmployeeRole.hrAdmin ||
@@ -1270,15 +1280,7 @@ class _DesktopManagementShell extends StatelessWidget {
                         ],
                       ),
                     ),
-                    Expanded(
-                      child: Align(
-                        alignment: Alignment.topCenter,
-                        child: ConstrainedBox(
-                          constraints: const BoxConstraints(maxWidth: 1560),
-                          child: child,
-                        ),
-                      ),
-                    ),
+                    Expanded(child: SizedBox.expand(child: child)),
                   ],
                 ),
               ),

@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'employee_role.dart';
 
 class WorkSchedule {
   final String? startTime;
@@ -208,7 +209,7 @@ class UserModel {
       email: data['email'] as String? ?? '',
       displayName: data['displayName'] as String? ?? '',
       photoURL: data['photoURL'] as String?,
-      role: data['role'] as String? ?? 'employee',
+      role: EmployeeRole.normalize(data['role'] as String?),
       employeeId: data['employeeId'] as String? ?? '',
       department: data['department'] as String? ?? '',
       position: data['position'] as String? ?? '',
@@ -408,7 +409,7 @@ class UserModel {
       email: data['email'] as String? ?? '',
       displayName: data['displayName'] as String? ?? '',
       photoURL: data['photoURL'] as String?,
-      role: data['role'] as String? ?? 'employee',
+      role: EmployeeRole.normalize(data['role'] as String?),
       employeeId: data['employeeId'] as String? ?? '',
       department: data['department'] as String? ?? '',
       position: data['position'] as String? ?? '',

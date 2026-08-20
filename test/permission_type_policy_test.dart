@@ -40,4 +40,40 @@ void main() {
       'مغادرة والعودة أثناء الدوام',
     );
   });
+
+  test('late and early permission times follow schedule and duration', () {
+    expect(
+      PermissionTypePolicy.resolveExpectedMinutes(
+        permissionType: PermissionTypePolicy.lateArrival,
+        durationMinutes: 120,
+        workStartMinutes: 9 * 60,
+        workEndMinutes: 17 * 60,
+        selectedMinutes: 14 * 60,
+      ),
+      11 * 60,
+    );
+    expect(
+      PermissionTypePolicy.resolveExpectedMinutes(
+        permissionType: PermissionTypePolicy.earlyLeave,
+        durationMinutes: 120,
+        workStartMinutes: 9 * 60,
+        workEndMinutes: 17 * 60,
+        selectedMinutes: 14 * 60,
+      ),
+      15 * 60,
+    );
+  });
+
+  test('mid-shift permission keeps the employee-selected departure time', () {
+    expect(
+      PermissionTypePolicy.resolveExpectedMinutes(
+        permissionType: PermissionTypePolicy.midShiftExit,
+        durationMinutes: 60,
+        workStartMinutes: 9 * 60,
+        workEndMinutes: 17 * 60,
+        selectedMinutes: 13 * 60 + 30,
+      ),
+      13 * 60 + 30,
+    );
+  });
 }

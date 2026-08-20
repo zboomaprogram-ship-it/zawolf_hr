@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -76,11 +74,6 @@ class RequiredAttendanceAlarmService {
       RequiredAttendanceAlarmService._();
 
   final FirebaseFirestore _db = FirebaseFirestore.instance;
-  final List<StreamSubscription<QuerySnapshot<Map<String, dynamic>>>>
-  _subscriptions = [];
-  Timer? _resyncDebounce;
-  String? _watchedUid;
-
   String alarmUserId(String userId) => 'required_attendance_$userId';
 
   String _promptedKey(String userId) =>
@@ -105,10 +98,34 @@ class RequiredAttendanceAlarmService {
 
   Future<PersonalAlarmSettings> enableFor(UserModel user) async {
     final ownerId = alarmUserId(user.uid);
+    final today = DateTime.now();
+    final horizon = DateTime(
+      today.year,
+      today.month,
+      today.day + 30,
+      23,
+      59,
+      59,
+    );
+    String dateKey(DateTime value) =>
+        '${value.year.toString().padLeft(4, '0')}-'
+        '${value.month.toString().padLeft(2, '0')}-'
+        '${value.day.toString().padLeft(2, '0')}';
     final snapshots = await Future.wait([
-      _db.collection('leaves').where('userId', isEqualTo: user.uid).get(),
-      _db.collection('permissions').where('userId', isEqualTo: user.uid).get(),
-      _db.collection('companyDayOffs').get(),
+      _db
+          .collection('leaves')
+          .where('userId', isEqualTo: user.uid)
+          .where('status', isEqualTo: 'approved')
+          .where('startDate', isLessThanOrEqualTo: Timestamp.fromDate(horizon))
+          .get(),
+      _db
+          .collection('permissions')
+          .where('userId', isEqualTo: user.uid)
+          .where('status', isEqualTo: 'approved')
+          .where('requestDate', isGreaterThanOrEqualTo: dateKey(today))
+          .where('requestDate', isLessThanOrEqualTo: dateKey(horizon))
+          .get(),
+      _db.collection('companyDayOffs').where('isActive', isEqualTo: true).get(),
     ]);
 
     final approvedLeaves = snapshots[0].docs
@@ -174,60 +191,13 @@ class RequiredAttendanceAlarmService {
     return true;
   }
 
-  void startWatching(UserModel user) {
-    if (_watchedUid == user.uid) return;
-    stopWatching();
-    _watchedUid = user.uid;
-    void changed(QuerySnapshot<Map<String, dynamic>> _) {
-      _resyncDebounce?.cancel();
-      _resyncDebounce = Timer(const Duration(seconds: 1), () {
-        if (_watchedUid == user.uid) {
-          unawaited(_refreshSilently(user));
-        }
-      });
-    }
-
-    void ignoredError(Object _, StackTrace __) {}
-    _subscriptions.add(
-      _db
-          .collection('leaves')
-          .where('userId', isEqualTo: user.uid)
-          .snapshots()
-          .listen(changed, onError: ignoredError),
-    );
-    _subscriptions.add(
-      _db
-          .collection('permissions')
-          .where('userId', isEqualTo: user.uid)
-          .snapshots()
-          .listen(changed, onError: ignoredError),
-    );
-    _subscriptions.add(
-      _db
-          .collection('companyDayOffs')
-          .snapshots()
-          .listen(changed, onError: ignoredError),
-    );
+  void startWatching(UserModel _) {
+    // The 30-day schedule is refreshed when the authenticated shell starts.
+    // Persistent collection listeners previously read the same history again
+    // and each initial snapshot triggered three more full queries.
   }
 
-  void stopWatching() {
-    _watchedUid = null;
-    _resyncDebounce?.cancel();
-    _resyncDebounce = null;
-    for (final subscription in _subscriptions) {
-      unawaited(subscription.cancel());
-    }
-    _subscriptions.clear();
-  }
-
-  Future<void> _refreshSilently(UserModel user) async {
-    try {
-      await enableFor(user);
-    } catch (_) {
-      // The current schedule remains installed if a transient Firestore read
-      // fails. The next snapshot or app start retries the refresh.
-    }
-  }
+  void stopWatching() {}
 
   Future<void> disable(String userId) async {
     stopWatching();

@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'dart:io';
 import 'package:zawolf_hr/models/leave_model.dart';
 import 'package:zawolf_hr/models/leave_type_policy.dart';
 import 'package:zawolf_hr/models/user_model.dart';
@@ -119,6 +120,32 @@ void main() {
         now: now,
       ),
       throwsException,
+    );
+  });
+
+  test('employees can submit separate non-overlapping day-off requests', () {
+    final first = request(type: 'day_off', start: DateTime(2026, 7, 22));
+    final second = request(type: 'day_off', start: DateTime(2026, 7, 24));
+    expect(LeaveService.dateRangesOverlap(first, second), isFalse);
+  });
+
+  test('overlapping leave dates are still rejected', () {
+    final first = request(type: 'day_off', start: DateTime(2026, 7, 22));
+    final sameDay = request(type: 'day_off', start: DateTime(2026, 7, 22));
+    expect(LeaveService.dateRangesOverlap(first, sameDay), isTrue);
+  });
+
+  test('early leave, late arrival, and official leave remain selectable', () {
+    final requestScreen = File(
+      'lib/screens/employee/employee_requests.dart',
+    ).readAsStringSync();
+
+    expect(requestScreen, contains("_permissionType == 'early_leave'"));
+    expect(requestScreen, contains("_permissionType == 'late_arrival'"));
+    expect(requestScreen, contains("selectedLeaveType == 'day_off'"));
+    expect(
+      requestScreen,
+      contains('الإذن بالمغادرة المبكرة متاح حتى عند إيقاف تسجيل الانصراف'),
     );
   });
 }

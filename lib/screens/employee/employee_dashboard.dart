@@ -10,6 +10,8 @@ import '../../components/wolf_card.dart';
 import '../../components/employee_request_history_section.dart';
 import '../../services/auth_service.dart';
 import '../../services/attendance_service.dart';
+import '../../services/attendance_gateway_service.dart';
+import '../../services/offline_attendance_queue_service.dart';
 import '../../services/automatic_attendance_service.dart';
 import '../../services/company_day_off_service.dart';
 import '../../services/geofence_service.dart';
@@ -18,6 +20,7 @@ import '../../models/attendance_policy.dart';
 import '../../models/company_day_off_status.dart';
 import '../../models/user_model.dart';
 import '../../utils/payroll_cycle.dart';
+import '../../features/attendance_checkin/attendance_checkin.dart';
 import 'checkin_confirm_modal.dart';
 
 class EmployeeDashboardScreen extends StatefulWidget {
@@ -29,6 +32,11 @@ class EmployeeDashboardScreen extends StatefulWidget {
 }
 
 class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
+  static const _pilotEmployeeScopeId = String.fromEnvironment(
+    'ATTENDANCE_CHECKIN_PILOT_USER_ID',
+    defaultValue: '',
+  );
+
   GeofenceResult? _geofenceResult;
   bool _checkingLocation = false;
   String? _locationError;
@@ -43,6 +51,8 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
   DateTime _now = DateTime.now();
   AttendancePolicyConfig _policyConfig = const AttendancePolicyConfig();
   DateTime? _checkoutAllowedFrom;
+  bool _checkoutEnabled = false;
+  AttendanceCheckInPilot? _checkInPilot;
 
   @override
   void initState() {
@@ -56,8 +66,13 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
   @override
   void dispose() {
     _clockTimer?.cancel();
+    final pilot = _checkInPilot;
+    if (pilot != null) unawaited(pilot.close());
     super.dispose();
   }
+
+  bool _isCheckInPilotEnabledFor(UserModel employee) =>
+      _pilotEmployeeScopeId.isNotEmpty && _pilotEmployeeScopeId == employee.uid;
 
   @override
   void didChangeDependencies() {
@@ -96,6 +111,12 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
         AutomaticAttendanceService.instance
             .configureFor(user)
             .catchError((_) {});
+        if (_isCheckInPilotEnabledFor(user)) {
+          _checkInPilot ??= AttendanceCheckInPilot.create();
+          _checkInPilot!.cubit.synchronizePending(user.uid).whenComplete(() {
+            if (mounted) setState(() {});
+          });
+        }
       });
     }
   }
@@ -177,11 +198,16 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
       final results = await Future.wait([
         service.policyConfigForDisplay(),
         service.checkoutAllowedFromForDisplay(user),
+        AttendanceGatewayService().checkoutPolicy(),
       ]);
       if (!mounted) return;
       setState(() {
         _policyConfig = results[0] as AttendancePolicyConfig;
         _checkoutAllowedFrom = results[1] as DateTime;
+        final policyResponse = results[2] as Map<String, dynamic>;
+        final checkoutPolicy = policyResponse['policy'];
+        _checkoutEnabled =
+            checkoutPolicy is Map && checkoutPolicy['enabled'] == true;
         _now = DateTime.now();
       });
     } catch (_) {
@@ -189,6 +215,7 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
       setState(() {
         _policyConfig = const AttendancePolicyConfig();
         _checkoutAllowedFrom = null;
+        _checkoutEnabled = false;
         _now = DateTime.now();
       });
     }
@@ -203,11 +230,25 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
     });
 
     final attendanceService = AttendanceService();
+    final useCheckInPilot =
+        expectedAction == AttendanceActionIntent.checkIn &&
+        _isCheckInPilotEnabledFor(employee);
     try {
+      if (useCheckInPilot) {
+        _checkInPilot ??= AttendanceCheckInPilot.create();
+      }
       await attendanceService.handleCheckInOrCheckOut(
         employee,
         expectedAction: expectedAction,
+        reliableCheckInSubmitter: useCheckInPilot
+            ? (verifiedAction) => _submitReliableCheckIn(verifiedAction)
+            : null,
       );
+      if (useCheckInPilot &&
+          _checkInPilot!.cubit.state.status != CheckInViewStatus.saved) {
+        if (mounted) _showReliableCheckInFeedback();
+        return;
+      }
       await Future.wait([
         _checkCurrentGeofence(),
         _checkCompanyDayOff(),
@@ -290,16 +331,82 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
     }
   }
 
+  Future<bool> _submitReliableCheckIn(
+    OfflineAttendanceAction verifiedAction,
+  ) async {
+    final pilot = _checkInPilot;
+    if (pilot == null) return false;
+    final payload = Map<String, Object?>.from(verifiedAction.toJson());
+    await pilot.cubit.submit(
+      CheckInAction(
+        actionId: verifiedAction.attendanceId,
+        employeeScopeId: verifiedAction.userId,
+        dateKey: verifiedAction.date,
+        capturedAt: verifiedAction.eventTime,
+        payload: payload,
+      ),
+    );
+    return pilot.cubit.state.status == CheckInViewStatus.saved;
+  }
+
+  void _showReliableCheckInFeedback() {
+    final pilot = _checkInPilot;
+    if (pilot == null) return;
+    showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: ZaWolfColors.surface01,
+        title: const Text(
+          'حالة تسجيل الحضور',
+          style: TextStyle(color: Colors.white),
+        ),
+        content: CheckInStatusFeedback(
+          state: pilot.cubit.state,
+          failureMessage: pilot.cubit.safeFailureMessage(),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('حسناً'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _retryReliableCheckIn(String employeeScopeId) async {
+    final pilot = _checkInPilot;
+    if (pilot == null) return;
+
+    await pilot.cubit.synchronizePending(employeeScopeId);
+    if (mounted) setState(() {});
+  }
+
   String _friendlyAttendanceError(Object error) {
     final raw = error.toString().replaceAll('Exception: ', '');
+    if (raw.contains('resource-exhausted') ||
+        raw.contains('resource_exhausted') ||
+        raw.contains('quota') ||
+        raw.contains('RESOURCE_EXHAUSTED')) {
+      return 'تم حفظ حضورك محلياً على الجهاز بنجاح لتجاوز الحد اليومي لقواعد البيانات، وستتم المزامنة تلقائياً عند تجديد الحد.';
+    }
+    if (raw.contains('cloud_firestore/unavailable') ||
+        raw.contains('service is currently unavailable') ||
+        raw.contains('deadline-exceeded') ||
+        raw.contains('aborted')) {
+      return 'خدمة الحضور مشغولة مؤقتاً. أعدنا المحاولة تلقائياً، لكن لم يتم تأكيد الحفظ بعد. انتظر دقيقة واحدة مع بقاء الإنترنت وGPS مفعّلين ثم أعد المحاولة. لن يُسجَّل حضور مكرر.';
+    }
     if (raw.contains('TimeoutException') ||
         raw.contains('Future not completed')) {
       return 'تعذر تحديد موقعك خلال الوقت المحدد. فعّل GPS، افتح الإنترنت، وانتقل لمكان أقرب لإشارة الموقع ثم أعد المحاولة.';
     }
     if (raw.contains('permission-denied')) {
-      return 'لا توجد صلاحية كافية لتنفيذ العملية. حدّث التطبيق وتأكد من نشر قواعد Firebase الأخيرة، أو تواصل مع الإدارة.';
+      return 'تعذر حفظ الحضور بسبب إعداد أمان الحساب أو ربط الجهاز. لم يتم تسجيل العملية. أعد فتح التطبيق مرة واحدة؛ وإذا تكرر الخطأ، يراجع HR حالة الحساب وجهاز الحضور من شاشة الموظف.';
     }
-    return raw;
+    // Never expose provider, transport, or rule text to an employee. The
+    // diagnostic is retained server-side; this screen gives a clear safe next
+    // action instead.
+    return 'تعذر تأكيد الحضور الآن. تحقق من اتصال الإنترنت والموقع، ثم أعد المحاولة. لن يُسجَّل حضور مكرر.';
   }
 
   String _formatGateTime(DateTime value) {
@@ -436,13 +543,24 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
               _now.isBefore(checkoutAllowedFrom);
           final checkoutExpired =
               hasCheckedIn && !hasCheckedOut && _now.isAfter(latestCheckoutAt);
+          final checkoutPolicyDisabled =
+              hasCheckedIn && !hasCheckedOut && !_checkoutEnabled;
+          final pilotState = _isCheckInPilotEnabledFor(user)
+              ? _checkInPilot?.cubit.state
+              : null;
+          final pilotAwaitingConfirmation =
+              pilotState?.status == CheckInViewStatus.pendingSync ||
+              pilotState?.status == CheckInViewStatus.requiresStatusCheck ||
+              pilotState?.status == CheckInViewStatus.submitting;
           final bool checkInDisabledForDayOff =
               !hasTodayRecord && _dayOffStatus.isDayOff;
           final bool actionDisabled =
               _actionLoading ||
+              pilotAwaitingConfirmation ||
               hasCheckedOut ||
               checkInDisabledForDayOff ||
               checkInNotOpenYet ||
+              checkoutPolicyDisabled ||
               checkoutNotOpenYet ||
               checkoutExpired;
           final expectedAction = hasCheckedIn
@@ -456,6 +574,8 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
               ? 'يفتح ${_formatGateTime(checkInOpenAt)}'
               : checkoutExpired
               ? 'انتهى اليوم'
+              : checkoutPolicyDisabled
+              ? 'تم تسجيل الحضور'
               : checkoutNotOpenYet
               ? 'يفتح ${_formatGateTime(checkoutAllowedFrom)}'
               : hasCheckedIn
@@ -469,6 +589,8 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
               ? 'CHECK IN LATER'
               : checkoutExpired
               ? 'CHECKOUT CLOSED'
+              : checkoutPolicyDisabled
+              ? 'CHECK-IN SAVED'
               : checkoutNotOpenYet
               ? 'CHECK OUT AT ${_formatGateTime(checkoutAllowedFrom)}'
               : hasCheckedIn
@@ -478,7 +600,10 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
               ? Icons.lock_clock
               : checkInDisabledForDayOff
               ? Icons.event_busy
-              : checkInNotOpenYet || checkoutNotOpenYet || checkoutExpired
+              : checkInNotOpenYet ||
+                    checkoutPolicyDisabled ||
+                    checkoutNotOpenYet ||
+                    checkoutExpired
               ? Icons.schedule
               : hasCheckedIn
               ? Icons.logout
@@ -802,6 +927,17 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
                     ),
                   ),
                   const SizedBox(height: 24),
+
+                  if (pilotAwaitingConfirmation) ...[
+                    CheckInStatusFeedback(
+                      state: pilotState!,
+                      failureMessage: _checkInPilot!.cubit.safeFailureMessage(),
+                      onRetry: () {
+                        unawaited(_retryReliableCheckIn(user.uid));
+                      },
+                    ),
+                    const SizedBox(height: 16),
+                  ],
 
                   if (_checkingDayOff || checkInDisabledForDayOff) ...[
                     WolfCard(

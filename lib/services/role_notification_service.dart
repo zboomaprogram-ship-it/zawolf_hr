@@ -16,6 +16,7 @@ class RoleNotificationService {
     required String title,
     required String body,
     Map<String, dynamic>? data,
+    String? eventId,
     bool includeSuperAdmins = true,
   }) async {
     try {
@@ -31,6 +32,7 @@ class RoleNotificationService {
           title: title,
           body: body,
           data: data,
+          eventId: eventId,
         );
       }
     } catch (_) {
@@ -45,7 +47,7 @@ class RoleNotificationService {
     final targets = <String>{};
     await _addDirectoryRecipients(targets, role);
     if (role == EmployeeRole.hrAdmin) {
-      await _addDirectoryRecipients(targets, EmployeeRole.hrManager);
+      await _addDirectoryRecipients(targets, EmployeeRole.legacyHrManager);
     }
     if (includeSuperAdmins && role != EmployeeRole.superAdmin) {
       await _addDirectoryRecipients(targets, EmployeeRole.superAdmin);
@@ -58,7 +60,7 @@ class RoleNotificationService {
     // protected by Firestore rules.
     await _addUserQueryRecipients(targets, role);
     if (role == EmployeeRole.hrAdmin) {
-      await _addUserQueryRecipients(targets, EmployeeRole.hrManager);
+      await _addUserQueryRecipients(targets, EmployeeRole.legacyHrManager);
     }
     if (includeSuperAdmins && role != EmployeeRole.superAdmin) {
       await _addUserQueryRecipients(targets, EmployeeRole.superAdmin);
@@ -72,23 +74,35 @@ class RoleNotificationService {
     required String title,
     required String body,
     Map<String, dynamic>? data,
+    String? eventId,
   }) async {
-    final notifRef = _db
+    final resolvedEventId = eventId ?? _eventIdFromData(type, data);
+    final items = _db
         .collection('notifications')
         .doc(recipientId)
-        .collection('items')
-        .doc();
+        .collection('items');
+    final notifRef = resolvedEventId == null
+        ? items.doc()
+        : items.doc(_stableId('$recipientId:$resolvedEventId'));
 
-    await notifRef.set({
-      'notificationId': notifRef.id,
-      'type': type,
-      'title': title,
-      'body': body,
-      'data': NotificationRoutePolicy.dataWithRoute(type, data),
-      'isRead': false,
-      'pushSent': false,
-      'createdAt': FieldValue.serverTimestamp(),
-    });
+    try {
+      await notifRef.set({
+        'notificationId': notifRef.id,
+        'type': type,
+        'title': title,
+        'body': body,
+        'data': NotificationRoutePolicy.dataWithRoute(type, data),
+        'isRead': false,
+        'pushSent': false,
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+    } on FirebaseException catch (error) {
+      // Notification senders can create recipient items but cannot read or
+      // update them. A repeated stable event therefore reaches the update
+      // rule and is denied, which safely means it was already queued.
+      if (resolvedEventId != null && error.code == 'permission-denied') return;
+      rethrow;
+    }
 
     try {
       await _db.collection('users').doc(recipientId).update({
@@ -98,6 +112,37 @@ class RoleNotificationService {
       // The notification document is the source of truth. A stale unread
       // counter must never make the primary request appear to have failed.
     }
+  }
+
+  String? _eventIdFromData(String type, Map<String, dynamic>? data) {
+    if (data == null) return null;
+    const keys = <String>[
+      'permissionId',
+      'leaveId',
+      'fieldMissionId',
+      'administrativeRequestId',
+      'attendanceId',
+      'advanceId',
+      'resignationId',
+      'requestId',
+      'taskId',
+      'deductionId',
+    ];
+    for (final key in keys) {
+      final value = data[key]?.toString().trim();
+      if (value != null && value.isNotEmpty) return '$type:$key:$value';
+    }
+    return null;
+  }
+
+  String _stableId(String value) {
+    // FNV-1a is stable across processes, unlike String.hashCode on web.
+    var hash = 0x811c9dc5;
+    for (final unit in value.codeUnits) {
+      hash ^= unit;
+      hash = (hash * 0x01000193) & 0xffffffff;
+    }
+    return 'event_${hash.toRadixString(16).padLeft(8, '0')}';
   }
 
   Future<void> _addDirectoryRecipients(Set<String> targets, String role) async {

@@ -16,6 +16,10 @@ class NotificationRoutePolicy {
       return '/employee/deductions';
     }
     if (value == 'complaint_new') return '/manager/requests';
+    if (value == 'administrative_request_submitted' ||
+        value == 'field_mission_pending_ceo') {
+      return '/manager/requests';
+    }
     if (value.contains('pending_hr') || value.contains('pending_manager')) {
       return '/manager/requests';
     }

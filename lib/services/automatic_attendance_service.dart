@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -15,10 +16,13 @@ class AutomaticAttendanceService {
 
   static const _channel = MethodChannel('zawolf_hr/automatic_attendance');
 
-  // Public App Store and Google Play builds intentionally use foreground-only
-  // location. Employee geofencing in the background is not an acceptable use
-  // of the public-store background-location capability.
-  bool get isSupported => false;
+  // Both platforms use operating-system region monitoring. The setting is
+  // explicit opt-in and the server remains responsible for deciding whether a
+  // boundary event is a valid attendance action.
+  bool get isSupported =>
+      !kIsWeb &&
+      (defaultTargetPlatform == TargetPlatform.android ||
+          defaultTargetPlatform == TargetPlatform.iOS);
 
   Future<bool> isEnabledFor(String userId) async {
     final preferences = await SharedPreferences.getInstance();
@@ -40,6 +44,11 @@ class AutomaticAttendanceService {
     var permission = await Geolocator.checkPermission();
     if (permission == LocationPermission.denied) {
       permission = await Geolocator.requestPermission();
+    }
+    if (defaultTargetPlatform == TargetPlatform.iOS &&
+        permission == LocationPermission.whileInUse) {
+      await _channel.invokeMethod<bool>('requestIosAlwaysPermission');
+      permission = await Geolocator.checkPermission();
     }
     if (permission != LocationPermission.always) {
       throw Exception(
@@ -73,7 +82,10 @@ class AutomaticAttendanceService {
     if (location == null || !location.isActive) return;
     final boundDeviceId = deviceId ?? user.registeredAttendanceDeviceId;
     if (boundDeviceId == null || boundDeviceId.trim().isEmpty) return;
-    await _channel.invokeMethod<void>('configureAndroidGeofence', {
+    final method = defaultTargetPlatform == TargetPlatform.iOS
+        ? 'configureIosGeofence'
+        : 'configureAndroidGeofence';
+    await _channel.invokeMethod<void>(method, {
       'userId': user.uid,
       'employeeId': user.employeeId,
       'deviceId': boundDeviceId,
@@ -88,7 +100,10 @@ class AutomaticAttendanceService {
 
   Future<void> disable(String userId) async {
     if (isSupported) {
-      await _channel.invokeMethod<void>('disableAndroidGeofence');
+      final method = defaultTargetPlatform == TargetPlatform.iOS
+          ? 'disableIosGeofence'
+          : 'disableAndroidGeofence';
+      await _channel.invokeMethod<void>(method);
     }
     final preferences = await SharedPreferences.getInstance();
     await preferences.remove('automatic_attendance_enabled_$userId');

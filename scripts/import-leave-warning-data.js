@@ -282,7 +282,7 @@ async function promoteFaten(token, users) {
     throw new Error(`Expected one Faten account, found ${matches.length}.`);
   }
   const user = matches[0];
-  console.log(`${dryRun ? 'WOULD_PROMOTE' : 'PROMOTE'} | ${user.displayName} | ${user.email} | ${user.role} -> hr_manager`);
+  console.log(`${dryRun ? 'WOULD_UPDATE' : 'UPDATE'} | ${user.displayName} | ${user.email} | ${user.role} -> hr_admin`);
   if (dryRun) return;
   const query = new URLSearchParams();
   query.append('updateMask.fieldPaths', 'role');
@@ -291,7 +291,7 @@ async function promoteFaten(token, users) {
     method: 'PATCH',
     body: JSON.stringify({
       fields: {
-        role: stringValue('hr_manager'),
+        role: stringValue('hr_admin'),
         updatedAt: { timestampValue: new Date().toISOString() },
       },
     }),
@@ -335,14 +335,14 @@ async function verifyImport(token, resolved, users, missing) {
   const faten = users.find(
     (user) => String(user.email || '').trim().toLowerCase() === 'faten.magdy@seginvest.com',
   );
-  if (!faten || faten.role !== 'hr_manager') {
+  if (!faten || faten.role !== 'hr_admin') {
     errors.push('Faten is not stored as hr_manager.');
   }
   if (errors.length > 0) {
     errors.forEach((error) => console.error(`VERIFY_ERROR | ${error}`));
     throw new Error(`Verification failed with ${errors.length} error(s).`);
   }
-  console.log(`Verification passed: ${resolved.length} leave records, 10 warning/notice records, Faten role hr_manager, ${missing.length} missing.`);
+  console.log(`Verification passed: ${resolved.length} leave records, 10 warning/notice records, Faten role hr_admin, ${missing.length} missing.`);
 }
 
 async function main() {

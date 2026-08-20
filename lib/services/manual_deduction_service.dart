@@ -14,11 +14,16 @@ class ManualDeductionService {
   Stream<List<ManualDeductionModel>> watchAllDeductions() {
     return _db
         .collection('manual_deductions')
+        .limit(100)
         .snapshots()
-        .map((snap) => snap.docs.map(ManualDeductionModel.fromFirestore).toList());
+        .map(
+          (snap) => snap.docs.map(ManualDeductionModel.fromFirestore).toList(),
+        );
   }
 
-  Stream<List<ManualDeductionModel>> watchManagedDeductions(UserModel reviewer) {
+  Stream<List<ManualDeductionModel>> watchManagedDeductions(
+    UserModel reviewer,
+  ) {
     if (reviewer.role == EmployeeRole.superAdmin ||
         reviewer.role == EmployeeRole.hrAdmin ||
         reviewer.role == EmployeeRole.hrManager) {
@@ -28,8 +33,11 @@ class ManualDeductionService {
     return _db
         .collection('manual_deductions')
         .where('managerIds', arrayContains: reviewer.uid)
+        .limit(100)
         .snapshots()
-        .map((snap) => snap.docs.map(ManualDeductionModel.fromFirestore).toList());
+        .map(
+          (snap) => snap.docs.map(ManualDeductionModel.fromFirestore).toList(),
+        );
   }
 
   Future<void> createDeductionRequest({
@@ -61,7 +69,8 @@ class ManualDeductionService {
 
     final managerIds = <String>{
       ...targetEmployee.managerIds,
-      if (targetEmployee.managerId?.isNotEmpty == true) targetEmployee.managerId!,
+      if (targetEmployee.managerId?.isNotEmpty == true)
+        targetEmployee.managerId!,
     }.toList();
 
     final model = ManualDeductionModel(
@@ -110,7 +119,8 @@ class ManualDeductionService {
           recipientId: mgrId,
           type: 'salary_deduction_pending',
           title: 'طلب خصم إداري بانتظار موافقتك',
-          body: 'أنشأ HR طلب خصم إداري لـ (${targetEmployee.displayName}) قدره $fractionLabel - السبب: $reason',
+          body:
+              'أنشأ HR طلب خصم إداري لـ (${targetEmployee.displayName}) قدره $fractionLabel - السبب: $reason',
           route: '/manager/requests',
           data: {'deductionId': ref.id},
         );
@@ -125,7 +135,8 @@ class ManualDeductionService {
           recipientId: doc.id,
           type: 'salary_deduction_pending',
           title: 'طلب خصم إداري بانتظار الاعتماد',
-          body: 'أنشأ المدير ${creator.displayName} طلب خصم إداري لـ (${targetEmployee.displayName}) قدره $fractionLabel - السبب: $reason',
+          body:
+              'أنشأ المدير ${creator.displayName} طلب خصم إداري لـ (${targetEmployee.displayName}) قدره $fractionLabel - السبب: $reason',
           route: '/manager/requests',
           data: {'deductionId': ref.id},
         );
@@ -135,7 +146,8 @@ class ManualDeductionService {
         recipientId: targetEmployee.uid,
         type: 'salary_deduction_approved',
         title: 'خصم راتب إداري',
-        body: 'تم تسجيل خصم إداري قدره ($fractionLabel) بتاريخ $dateKey - السبب: $reason',
+        body:
+            'تم تسجيل خصم إداري قدره ($fractionLabel) بتاريخ $dateKey - السبب: $reason',
         route: '/employee/deductions',
         data: {'deductionId': ref.id},
       );
@@ -172,7 +184,8 @@ class ManualDeductionService {
       recipientId: deduction.userId,
       type: 'salary_deduction_approved',
       title: 'تم اعتماد خصم راتب إداري',
-      body: 'تم اعتماد خصم راتب إداري قدره (${deduction.fractionLabel}) بتاريخ ${deduction.dateKey} - السبب: ${deduction.reason}',
+      body:
+          'تم اعتماد خصم راتب إداري قدره (${deduction.fractionLabel}) بتاريخ ${deduction.dateKey} - السبب: ${deduction.reason}',
       route: '/employee/deductions',
       data: {'deductionId': deductionId},
     );

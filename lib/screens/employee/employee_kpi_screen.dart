@@ -31,7 +31,7 @@ class EmployeeKpiScreen extends StatelessWidget {
         title: Text('أهداف KPI', style: theme.textTheme.headlineMedium),
       ),
       body: StreamBuilder<List<EmployeeKpiModel>>(
-        stream: KpiService().watchMyKpis(user.uid, monthKey),
+        stream: KpiService().watchMyKpis(user, monthKey),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(

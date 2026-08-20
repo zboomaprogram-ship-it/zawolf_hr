@@ -7,6 +7,25 @@ class PermissionTypePolicy {
   static const int minimumDurationHours = 1;
   static const int maximumDurationHours = 4;
 
+  static int resolveExpectedMinutes({
+    required String permissionType,
+    required int durationMinutes,
+    required int workStartMinutes,
+    required int workEndMinutes,
+    required int selectedMinutes,
+  }) {
+    if (durationMinutes < minimumDurationHours * 60 ||
+        durationMinutes > maximumDurationHours * 60) {
+      throw ArgumentError.value(durationMinutes, 'durationMinutes');
+    }
+    final resolved = switch (permissionType) {
+      lateArrival => workStartMinutes + durationMinutes,
+      earlyLeave => workEndMinutes - durationMinutes,
+      _ => selectedMinutes,
+    };
+    return resolved.clamp(0, 1439);
+  }
+
   static bool isRegularQuotaExhausted({
     required int usedCount,
     required double usedHours,

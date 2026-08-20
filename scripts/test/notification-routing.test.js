@@ -7,13 +7,16 @@ const {
   reminderAction,
   reminderDate,
   attendanceCompletesReminder,
+  isCheckoutReminderSuppressed,
 } = require('../dispatch-notifications');
+const { stableIdempotencyKey } = require('../onesignal');
 const {
   isWorkDay,
   isReminderScanWindow,
   notificationFor,
   dueReminderPlans,
   attendanceCompletedForReminder,
+  plansForCheckoutPolicy,
 } = require('../attendance-reminders');
 const { parseFirebaseServiceAccount } = require('../firebase-service-account');
 const { deductionFor, effectiveTimes, haversineMeters } = require('../auto-attendance');
@@ -32,6 +35,16 @@ test('request and task notifications open the intended app areas', () => {
     '/employee/deductions',
   );
   assert.equal(routeForNotification('unknown_notification'), '/notifications');
+});
+
+test('OneSignal retries reuse a stable UUID idempotency key', () => {
+  const first = stableIdempotencyKey('employee-1:notification-1');
+  const second = stableIdempotencyKey('employee-1:notification-1');
+  assert.equal(first, second);
+  assert.match(
+    first,
+    /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-a[0-9a-f]{3}-[0-9a-f]{12}$/,
+  );
 });
 
 test('detects unsubscribed OneSignal devices so they are not retried forever', () => {
@@ -161,6 +174,55 @@ test('attendance reminders stop once the matching action is complete', () => {
     attendanceCompletesReminder(attendance, 'check_out'),
     false,
   );
+});
+
+test('legacy reminder planning contains a checkout reminder and automatic attendance honors early leave', () => {
+  const plans = dueReminderPlans([
+    { kind: 'check_in_start', notification: { targetMinutes: 9 * 60 } },
+    { kind: 'check_out', notification: { targetMinutes: 17 * 60 } },
+  ], 17 * 60);
+  assert.deepEqual(plans.map((plan) => plan.kind), ['check_out']);
+
+  const times = effectiveTimes(
+    { workSchedule: { startTime: '09:00', endTime: '17:00' } },
+    {},
+    [{ permissionType: 'early_leave', durationMinutes: 120 }],
+  );
+  assert.equal(times.end, 15 * 60);
+});
+
+test('disabled checkout policy removes checkout plans and stale checkout pushes', () => {
+  const plans = [
+    { kind: 'check_in_start', notification: { targetMinutes: 9 * 60 } },
+    { kind: 'check_out', notification: { targetMinutes: 17 * 60 } },
+  ];
+  assert.deepEqual(
+    plansForCheckoutPolicy(plans, { enabled: false }).map((plan) => plan.kind),
+    ['check_in_start'],
+  );
+  assert.equal(
+    isCheckoutReminderSuppressed(
+      { type: 'attendance_check_out_reminder' },
+      { enabled: false },
+    ),
+    true,
+  );
+  assert.equal(
+    isCheckoutReminderSuppressed(
+      { type: 'attendance_check_out_reminder' },
+      { enabled: true },
+    ),
+    false,
+  );
+});
+
+test('daily task gates missed-checkout deductions by the stored policy snapshot', () => {
+  const fs = require('node:fs');
+  const source = fs.readFileSync(require.resolve('../daily-tasks'), 'utf8');
+  assert.match(source, /resolveCheckoutPolicyAt/);
+  assert.match(source, /checkoutPolicyEnabled/);
+  assert.match(source, /if \(attendanceCheckoutPolicy\.enabled && log\.checkInTime && !log\.checkOutTime\)/);
+  assert.match(source, /attendanceCheckoutPolicy\.enabled && log\.checkOutTime/);
 });
 
 test('normalizes Hostinger escaped Firebase service-account JSON', () => {

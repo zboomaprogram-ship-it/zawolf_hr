@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'dart:io';
 import 'package:zawolf_hr/models/request_approval_policy.dart';
 
 void main() {
@@ -16,5 +17,21 @@ void main() {
 
     expect(policy.requireHrAfterManagerApproval, isTrue);
     expect(policy.finalManagerApprovalStatus, 'pending_hr');
+  });
+
+  test('early leave approval remains in the normal approval path', () {
+    final source = File(
+      'lib/services/permission_service.dart',
+    ).readAsStringSync();
+
+    expect(source, contains('reconcileApprovedPermission(perm)'));
+    expect(source, contains('PermissionTypePolicy.earlyLeave'));
+    expect(source, contains('checkoutPolicyDecisionPoint'));
+
+    final directHrSource = File(
+      'lib/services/hr_direct_request_service.dart',
+    ).readAsStringSync();
+    expect(directHrSource, contains('checkoutPolicyDecisionPoint'));
+    expect(directHrSource, contains('PermissionTypePolicy.earlyLeave'));
   });
 }

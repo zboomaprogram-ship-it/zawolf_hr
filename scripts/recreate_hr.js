@@ -42,7 +42,7 @@ async function createHRUser() {
       role: 'hr_admin',
       employeeId: 'HR-201',
       department: 'Human Resources',
-      position: 'HR Manager',
+      position: 'HR',
       locationId: 'Zawolf',
       locationName: 'Zawolf',
       baseMonthlySalary: 0,

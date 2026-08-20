@@ -43,6 +43,7 @@ class DashboardAttendancePerson {
   final DateTime? checkInTime;
   final DateTime? checkOutTime;
   final int lateMinutes;
+  final bool? checkoutPolicyEnabled;
 
   const DashboardAttendancePerson({
     required this.employee,
@@ -50,12 +51,17 @@ class DashboardAttendancePerson {
     this.checkInTime,
     this.checkOutTime,
     this.lateMinutes = 0,
+    this.checkoutPolicyEnabled,
   });
 
   bool get needsCheckout =>
       (status == 'present' || status == 'late') &&
       checkInTime != null &&
-      checkOutTime == null;
+      checkOutTime == null &&
+      checkoutPolicyEnabled != false;
+
+  bool get checkoutNotRequired =>
+      checkInTime != null && checkoutPolicyEnabled == false;
 }
 
 class DashboardAttendanceDayDetails {
@@ -280,13 +286,24 @@ class DashboardAttendanceSummaryService {
       DateTime? checkInTime;
       DateTime? checkOutTime;
       var lateMinutes = 0;
-      if (attendance != null) {
+      bool? checkoutPolicyEnabled;
+      if (dayOffUsers.contains(employee.uid)) {
+        status = 'day_off';
+      } else if (permissionUsers.contains(employee.uid)) {
+        // An approved time permission remains visible in the company status
+        // even when the employee has already checked in for that day.
+        status = 'permission';
+        checkInTime = (attendance?['checkInTime'] as Timestamp?)?.toDate();
+        checkOutTime = (attendance?['checkOutTime'] as Timestamp?)?.toDate();
+        checkoutPolicyEnabled = attendance?['checkoutPolicyEnabled'] as bool?;
+      } else if (attendance != null) {
         final hasRealCheckIn = attendance['checkInTime'] != null;
         final attendanceStatus = attendance['status'] as String? ?? 'present';
         final isLate = attendance['isLate'] as bool? ?? false;
         checkInTime = (attendance['checkInTime'] as Timestamp?)?.toDate();
         checkOutTime = (attendance['checkOutTime'] as Timestamp?)?.toDate();
         lateMinutes = (attendance['lateMinutes'] as num?)?.toInt() ?? 0;
+        checkoutPolicyEnabled = attendance['checkoutPolicyEnabled'] as bool?;
         if (attendanceStatus == 'on-leave') {
           status = 'day_off';
         } else if (attendanceStatus == 'absent') {
@@ -300,10 +317,6 @@ class DashboardAttendanceSummaryService {
         } else {
           status = 'present';
         }
-      } else if (permissionUsers.contains(employee.uid)) {
-        status = 'permission';
-      } else if (dayOffUsers.contains(employee.uid)) {
-        status = 'day_off';
       } else if (!employee.workSchedule.isWorkDay(date)) {
         status = 'day_off';
       }
@@ -314,6 +327,7 @@ class DashboardAttendanceSummaryService {
           checkInTime: checkInTime,
           checkOutTime: checkOutTime,
           lateMinutes: lateMinutes,
+          checkoutPolicyEnabled: checkoutPolicyEnabled,
         ),
       );
     }
@@ -383,37 +397,37 @@ class DashboardAttendanceSummaryService {
     String dateKey,
     DateTime date,
   ) async {
-    // Query by the employee id instead of reading the deterministic document
-    // directly. An employee who has not checked in has no attendance document;
-    // querying correctly returns an empty result without asking rules to
-    // authorize a non-existent resource.
+    // Firestore charges a minimum read for an empty query. Querying once per
+    // employee made a 30-day team report fan out to 3 × employees × days.
+    // Batch the managed ids into Firestore's supported whereIn size instead.
+    final idBatches = _batches(employeeIds.toList(), 30);
     final attendanceSnaps = await Future.wait(
-      employeeIds.map(
-        (userId) => _safeQueryResult(
+      idBatches.map(
+        (userIds) => _safeQueryResult(
           _db
               .collection('attendance')
-              .where('userId', isEqualTo: userId)
+              .where('userId', whereIn: userIds)
               .where('date', isEqualTo: dateKey),
         ),
       ),
     );
     final permissionSnaps = await Future.wait(
-      employeeIds.map(
-        (userId) => _bestEffortQueryResult(
+      idBatches.map(
+        (userIds) => _bestEffortQueryResult(
           _db
               .collection('permissions')
-              .where('userId', isEqualTo: userId)
+              .where('userId', whereIn: userIds)
               .where('requestDate', isEqualTo: dateKey)
               .where('status', isEqualTo: 'approved'),
         ),
       ),
     );
     final leaveSnaps = await Future.wait(
-      employeeIds.map(
-        (userId) => _bestEffortQueryResult(
+      idBatches.map(
+        (userIds) => _bestEffortQueryResult(
           _db
               .collection('leaves')
-              .where('userId', isEqualTo: userId)
+              .where('userId', whereIn: userIds)
               .where('status', isEqualTo: 'approved')
               .where(
                 'startDate',
@@ -438,6 +452,13 @@ class DashboardAttendanceSummaryService {
         leaveSnaps.expand((snapshot) => snapshot.docs).toList(),
         isComplete: leaveSnaps.every((snapshot) => snapshot.isComplete),
       ),
+    ];
+  }
+
+  List<List<T>> _batches<T>(List<T> values, int size) {
+    return [
+      for (var offset = 0; offset < values.length; offset += size)
+        values.sublist(offset, (offset + size).clamp(0, values.length)),
     ];
   }
 

@@ -540,7 +540,10 @@ class _EmployeeKpiTabState extends State<_EmployeeKpiTab> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return StreamBuilder<List<EmployeeKpiModel>>(
-      stream: widget.kpiService.watchManagedKpis(widget.reviewer, widget.monthKey),
+      stream: widget.kpiService.watchManagedKpis(
+        widget.reviewer,
+        widget.monthKey,
+      ),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(
@@ -549,15 +552,27 @@ class _EmployeeKpiTabState extends State<_EmployeeKpiTab> {
         }
         var records = snapshot.data ?? [];
         if (_searchQuery.isNotEmpty) {
-          records = records.where((kpi) => 
-            kpi.employeeName.toLowerCase().contains(_searchQuery.toLowerCase()) || 
-            kpi.department.toLowerCase().contains(_searchQuery.toLowerCase())).toList();
+          records = records
+              .where(
+                (kpi) =>
+                    kpi.employeeName.toLowerCase().contains(
+                      _searchQuery.toLowerCase(),
+                    ) ||
+                    kpi.department.toLowerCase().contains(
+                      _searchQuery.toLowerCase(),
+                    ),
+              )
+              .toList();
         }
         if (_statusFilter != null) {
-          records = records.where((kpi) => kpi.status == _statusFilter).toList();
+          records = records
+              .where((kpi) => kpi.status == _statusFilter)
+              .toList();
         }
         if (_departmentFilter != 'all') {
-          records = records.where((kpi) => kpi.department == _departmentFilter).toList();
+          records = records
+              .where((kpi) => kpi.department == _departmentFilter)
+              .toList();
         }
 
         final departments = {'all': 'الكل'};
@@ -593,7 +608,8 @@ class _EmployeeKpiTabState extends State<_EmployeeKpiTab> {
                         border: OutlineInputBorder(),
                         isDense: true,
                       ),
-                      onChanged: (value) => setState(() => _searchQuery = value),
+                      onChanged: (value) =>
+                          setState(() => _searchQuery = value),
                     ),
                   ),
                   const SizedBox(width: 10),
@@ -603,14 +619,24 @@ class _EmployeeKpiTabState extends State<_EmployeeKpiTab> {
                       decoration: const InputDecoration(
                         border: OutlineInputBorder(),
                         isDense: true,
-                        contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                        contentPadding: EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 10,
+                        ),
                       ),
                       items: const [
                         DropdownMenuItem(value: null, child: Text('الكل')),
-                        DropdownMenuItem(value: KpiStatus.active, child: Text('نشط')),
-                        DropdownMenuItem(value: KpiStatus.finalized, child: Text('معتمد')),
+                        DropdownMenuItem(
+                          value: KpiStatus.active,
+                          child: Text('نشط'),
+                        ),
+                        DropdownMenuItem(
+                          value: KpiStatus.finalized,
+                          child: Text('معتمد'),
+                        ),
                       ],
-                      onChanged: (value) => setState(() => _statusFilter = value),
+                      onChanged: (value) =>
+                          setState(() => _statusFilter = value),
                     ),
                   ),
                 ],
@@ -627,10 +653,16 @@ class _EmployeeKpiTabState extends State<_EmployeeKpiTab> {
                     child: ChoiceChip(
                       label: Text(entry.value),
                       selected: isSelected,
-                      selectedColor: ZaWolfColors.primaryCyan.withOpacity(0.2),
+                      selectedColor: ZaWolfColors.primaryCyan.withValues(
+                        alpha: 0.2,
+                      ),
                       labelStyle: TextStyle(
-                        color: isSelected ? ZaWolfColors.primaryCyan : Colors.white70,
-                        fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                        color: isSelected
+                            ? ZaWolfColors.primaryCyan
+                            : Colors.white70,
+                        fontWeight: isSelected
+                            ? FontWeight.bold
+                            : FontWeight.normal,
                       ),
                       onSelected: (selected) {
                         if (selected) {
@@ -654,107 +686,122 @@ class _EmployeeKpiTabState extends State<_EmployeeKpiTab> {
                   : ListView(
                       padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
                       children: records
-              .map(
-                (kpi) => Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
-                  child: WolfCard(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        Row(
-                          children: [
-                            _ProgressBadge(value: kpi.overallProgress),
-                            const Spacer(),
-                            Column(
-                              crossAxisAlignment: CrossAxisAlignment.end,
-                              children: [
-                                Text(
-                                  kpi.employeeName,
-                                  style: theme.textTheme.titleLarge?.copyWith(
-                                    color: Colors.white,
-                                  ),
-                                ),
-                                Text(
-                                  '${widget.monthKey} · ${kpi.department}',
-                                  style: theme.textTheme.bodySmall,
-                                ),
-                                const SizedBox(height: 4),
-                                _StatusChip(status: kpi.status),
-                              ],
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 12),
-                        ...kpi.metrics.asMap().entries.map((entry) {
-                          final index = entry.key;
-                          final metric = entry.value;
-                          return ListTile(
-                            contentPadding: EdgeInsets.zero,
-                            title: Text(
-                              metric.name,
-                              textAlign: TextAlign.right,
-                            ),
-                            subtitle: Text(
-                              '${metric.actual.toStringAsFixed(0)} / ${metric.target.toStringAsFixed(0)} ${metric.unit}\n'
-                              '${KpiMetricDirection.arabicLabel(metric.direction)} · وزن ${metric.weight.toStringAsFixed(0)}%',
-                              textAlign: TextAlign.right,
-                            ),
-                            leading: IconButton(
-                              tooltip: 'تحديث',
-                              icon: const Icon(
-                                Icons.edit,
-                                color: ZaWolfColors.primaryCyan,
-                              ),
-                              onPressed: kpi.status == KpiStatus.finalized
-                                  ? null
-                                  : () => _showProgressSheet(
-                                      context,
-                                      kpi,
-                                      index,
-                                      metric,
+                          .map(
+                            (kpi) => Padding(
+                              padding: const EdgeInsets.only(bottom: 12),
+                              child: WolfCard(
+                                child: Column(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.stretch,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        _ProgressBadge(
+                                          value: kpi.overallProgress,
+                                        ),
+                                        const Spacer(),
+                                        Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.end,
+                                          children: [
+                                            Text(
+                                              kpi.employeeName,
+                                              style: theme.textTheme.titleLarge
+                                                  ?.copyWith(
+                                                    color: Colors.white,
+                                                  ),
+                                            ),
+                                            Text(
+                                              '${widget.monthKey} · ${kpi.department}',
+                                              style: theme.textTheme.bodySmall,
+                                            ),
+                                            const SizedBox(height: 4),
+                                            _StatusChip(status: kpi.status),
+                                          ],
+                                        ),
+                                      ],
                                     ),
-                            ),
-                          );
-                        }),
-                        const Divider(),
-                        Row(
-                          children: [
-                            IconButton(
-                              tooltip: 'حذف KPI من الموظف',
-                              onPressed: () => _deleteKpi(context, kpi),
-                              icon: const Icon(
-                                Icons.delete_outline,
-                                color: ZaWolfColors.error,
+                                    const SizedBox(height: 12),
+                                    ...kpi.metrics.asMap().entries.map((entry) {
+                                      final index = entry.key;
+                                      final metric = entry.value;
+                                      return ListTile(
+                                        contentPadding: EdgeInsets.zero,
+                                        title: Text(
+                                          metric.name,
+                                          textAlign: TextAlign.right,
+                                        ),
+                                        subtitle: Text(
+                                          '${metric.actual.toStringAsFixed(0)} / ${metric.target.toStringAsFixed(0)} ${metric.unit}\n'
+                                          '${KpiMetricDirection.arabicLabel(metric.direction)} · وزن ${metric.weight.toStringAsFixed(0)}%',
+                                          textAlign: TextAlign.right,
+                                        ),
+                                        leading: IconButton(
+                                          tooltip: 'تحديث',
+                                          icon: const Icon(
+                                            Icons.edit,
+                                            color: ZaWolfColors.primaryCyan,
+                                          ),
+                                          onPressed:
+                                              kpi.status == KpiStatus.finalized
+                                              ? null
+                                              : () => _showProgressSheet(
+                                                  context,
+                                                  kpi,
+                                                  index,
+                                                  metric,
+                                                ),
+                                        ),
+                                      );
+                                    }),
+                                    const Divider(),
+                                    Row(
+                                      children: [
+                                        IconButton(
+                                          tooltip: 'حذف KPI من الموظف',
+                                          onPressed: () =>
+                                              _deleteKpi(context, kpi),
+                                          icon: const Icon(
+                                            Icons.delete_outline,
+                                            color: ZaWolfColors.error,
+                                          ),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Expanded(
+                                          child: kpi.status == KpiStatus.active
+                                              ? FilledButton.icon(
+                                                  onPressed: () =>
+                                                      _finalize(context, kpi),
+                                                  icon: const Icon(
+                                                    Icons.lock_outline,
+                                                  ),
+                                                  label: const Text(
+                                                    'اعتماد وإغلاق النتيجة',
+                                                  ),
+                                                )
+                                              : EmployeeRole.isHr(
+                                                  widget.reviewer.role,
+                                                )
+                                              ? OutlinedButton.icon(
+                                                  onPressed: () =>
+                                                      _reopen(context, kpi),
+                                                  icon: const Icon(
+                                                    Icons.lock_open_outlined,
+                                                  ),
+                                                  label: const Text(
+                                                    'إعادة فتح النتيجة',
+                                                  ),
+                                                )
+                                              : const SizedBox.shrink(),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
                               ),
                             ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: kpi.status == KpiStatus.active
-                                  ? FilledButton.icon(
-                                      onPressed: () => _finalize(context, kpi),
-                                      icon: const Icon(Icons.lock_outline),
-                                      label: const Text(
-                                        'اعتماد وإغلاق النتيجة',
-                                      ),
-                                    )
-                                  : EmployeeRole.isHr(widget.reviewer.role)
-                                  ? OutlinedButton.icon(
-                                      onPressed: () => _reopen(context, kpi),
-                                      icon: const Icon(
-                                        Icons.lock_open_outlined,
-                                      ),
-                                      label: const Text('إعادة فتح النتيجة'),
-                                    )
-                                  : const SizedBox.shrink(),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              )
-              .toList(),
+                          )
+                          .toList(),
                     ),
             ),
           ],
@@ -845,7 +892,10 @@ class _EmployeeKpiTabState extends State<_EmployeeKpiTab> {
     );
     if (confirmed != true) return;
     try {
-      await widget.kpiService.deleteEmployeeKpi(kpi: kpi, actor: widget.reviewer);
+      await widget.kpiService.deleteEmployeeKpi(
+        kpi: kpi,
+        actor: widget.reviewer,
+      );
     } catch (error) {
       if (context.mounted) _showError(context, error);
     }

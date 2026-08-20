@@ -371,18 +371,15 @@ class AuthService with ChangeNotifier {
         EmployeeRole.teamLeader,
         EmployeeRole.manager,
         EmployeeRole.hrAdmin,
-        EmployeeRole.hrManager,
         EmployeeRole.superAdmin,
       ];
       if (!allowedRoles.contains(role)) {
         throw Exception('Invalid employee role');
       }
-      if ((role == EmployeeRole.superAdmin ||
-              role == EmployeeRole.hrManager ||
-              role == EmployeeRole.hrAdmin) &&
+      if ((role == EmployeeRole.superAdmin || EmployeeRole.isHrStaff(role)) &&
           !EmployeeRole.canManagePrivilegedAccounts(_currentUser?.role)) {
         throw Exception(
-          'Only HR manager or super admin can create admin accounts',
+          'Only HR or super admin can create admin accounts',
         );
       }
       if (email.trim().isEmpty ||

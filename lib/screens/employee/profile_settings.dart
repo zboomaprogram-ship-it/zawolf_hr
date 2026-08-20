@@ -576,7 +576,7 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                       ),
                       title: const Text('الحضور التلقائي بالموقع'),
                       subtitle: const Text(
-                        'يسجل الحضور عند دخول الفرع والانصراف عند المغادرة بعد وقت الدوام. يتطلب إذن الموقع دائماً.',
+                        'اختياري: يستخدم نطاق فرعك فقط لتسجيل الدخول والخروج، ولا يتتبع مسارك المستمر. يتطلب إذن الموقع دائماً ويمكن إيقافه في أي وقت.',
                       ),
                       trailing: _loadingAutomaticAttendance
                           ? const SizedBox(

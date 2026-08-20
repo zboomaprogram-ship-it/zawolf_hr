@@ -24,6 +24,21 @@ upload `node_modules`; Hostinger installs dependencies with `npm install`.
 - `NOTIFICATION_DISPATCH_SECRET`: a long private value used by protected routes
 - `SALES_API_KEY`: Sales Analytics API bearer key
 
+For the optional private Google Sheets test, also set:
+
+- `GOOGLE_SHEETS_SERVICE_ACCOUNT`: complete Google service-account JSON
+- `GOOGLE_SHEETS_TEST_SPREADSHEET_ID`: the fixed test spreadsheet ID
+- `GOOGLE_SHEETS_TEST_TAB=Employee_Test_Data`: exact test tab name
+- `GOOGLE_DRIVE_TEST_FOLDER_ID`: dedicated restricted Drive test folder ID
+- `GOOGLE_HR_REPORTS_SPREADSHEET_ID`: blank private workbook used for daily HR reports
+- `GOOGLE_WORKSPACE_ALLOWED_ORIGINS`: optional comma-separated web domains
+  allowed to call the Google Workspace routes. Firebase Hosting defaults are
+  already included; add a custom website domain here when one is used.
+
+This Google credential is different from `FIREBASE_SERVICE_ACCOUNT`. Never put
+either credential in Flutter, Git, or a downloadable ZIP. See
+`docs/google_sheets_setup.md` for the restricted sharing and smoke-test steps.
+
 ## Optional environment variables
 
 - `NOTIFICATION_DISPATCH_BATCH_SIZE=100`
@@ -50,3 +65,16 @@ Notification events are created by the app in Firestore. This service listens
 to that queue and sends them through OneSignal, so request approvals/rejections,
 tasks, KPI events, warnings, suggestions, attendance, account-deletion requests,
 and administrative events all use the same delivery path.
+
+## One-time HR role migration
+
+After deploying the unified HR-role release, run the migration first as a
+preview and then apply it:
+
+```text
+DRY_RUN=true npm run migrate-hr-role
+DRY_RUN=false npm run migrate-hr-role
+```
+
+It converts stored `hr_manager` users to `hr_admin`. The application and rules
+continue accepting the legacy value during the rollout.

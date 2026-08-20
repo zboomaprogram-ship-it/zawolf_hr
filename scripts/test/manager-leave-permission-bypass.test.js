@@ -1,76 +1,100 @@
-const test = require('node:test');
-const assert = require('node:assert/strict');
+const test = require("node:test");
+const assert = require("node:assert/strict");
 
 const {
   isEligiblePermissionCandidate,
   nextApprovalStage,
-} = require('../manager-leave-permission-bypass');
+  permissionCycleForRequestDate,
+  shouldUpdateActivePermissionBalance,
+} = require("../manager-leave-permission-bypass");
 
-test('manager leave bypass applies only to same-day time permissions', () => {
+test("manager leave bypass applies only to same-day time permissions", () => {
   const base = {
-    requestDate: '2026-07-27',
-    managerId: 'manager-1',
+    requestDate: "2026-07-27",
+    managerId: "manager-1",
   };
 
   assert.equal(
     isEligiblePermissionCandidate(
-      {...base, permissionType: 'late_arrival'},
-      '2026-07-27',
+      { ...base, permissionType: "late_arrival" },
+      "2026-07-27",
     ),
     true,
   );
   assert.equal(
     isEligiblePermissionCandidate(
-      {...base, permissionType: 'late_arrival'},
-      '2026-07-28',
+      { ...base, permissionType: "late_arrival" },
+      "2026-07-28",
     ),
     false,
   );
   assert.equal(
     isEligiblePermissionCandidate(
-      {...base, permissionType: 'annual_leave'},
-      '2026-07-27',
+      { ...base, permissionType: "annual_leave" },
+      "2026-07-27",
     ),
     false,
   );
 });
 
-test('manager leave bypass continues to the next assigned manager', () => {
+test("manager leave bypass continues to the next assigned manager", () => {
   assert.deepEqual(
     nextApprovalStage({
-      managerIds: ['direct', 'higher'],
-      managerId: 'direct',
+      managerIds: ["direct", "higher"],
+      managerId: "direct",
       managerApprovalIndex: 0,
       requiresHrApproval: true,
     }),
     {
-      status: 'pending_manager',
-      managerId: 'higher',
+      status: "pending_manager",
+      managerId: "higher",
       managerApprovalIndex: 1,
     },
   );
 });
 
-test('manager leave bypass continues to HR when policy requires HR', () => {
+test("manager leave bypass continues to HR when policy requires HR", () => {
   assert.equal(
     nextApprovalStage({
-      managerIds: ['direct'],
-      managerId: 'direct',
+      managerIds: ["direct"],
+      managerId: "direct",
       managerApprovalIndex: 0,
       requiresHrApproval: true,
     }).status,
-    'pending_hr',
+    "pending_hr",
   );
 });
 
-test('manager leave bypass finalizes when HR is not required', () => {
+test("manager leave bypass finalizes when HR is not required", () => {
   assert.equal(
     nextApprovalStage({
-      managerIds: ['direct'],
-      managerId: 'direct',
+      managerIds: ["direct"],
+      managerId: "direct",
       managerApprovalIndex: 0,
       requiresHrApproval: false,
     }).status,
-    'approved',
+    "approved",
+  );
+});
+
+test("late approval cannot consume the next payroll cycle balance", () => {
+  const oldPermission = { requestDate: "2026-07-22" };
+  const employeeInNewCycle = {
+    permissionBalance: { lastResetMonth: "2026-08" },
+  };
+  assert.equal(
+    permissionCycleForRequestDate(oldPermission.requestDate),
+    "2026-07",
+  );
+  assert.equal(
+    shouldUpdateActivePermissionBalance(oldPermission, employeeInNewCycle),
+    false,
+  );
+  assert.equal(
+    shouldUpdateActivePermissionBalance(
+      { requestDate: "2026-07-26" },
+      employeeInNewCycle,
+    ),
+    true,
   );
 });

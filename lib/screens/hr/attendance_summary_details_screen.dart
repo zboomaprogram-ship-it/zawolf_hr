@@ -433,6 +433,9 @@ class _AttendancePeopleSection extends StatelessWidget {
     if (person.checkOutTime != null) {
       parts.add('انصراف ${timeFormat.format(person.checkOutTime!)}');
     }
+    if (person.checkoutNotRequired) {
+      parts.add('لا ينطبق تسجيل الانصراف (سياسة HR)');
+    }
     if (person.lateMinutes > 0) parts.add('تأخير ${person.lateMinutes} د');
     if (person.needsCheckout) parts.add('لم يسجل الانصراف');
     return parts.isEmpty ? 'لا يوجد سجل حضور لهذا اليوم' : parts.join(' · ');

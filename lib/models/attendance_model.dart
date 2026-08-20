@@ -53,6 +53,13 @@ class AttendanceModel {
   final double? checkoutLocationAllowedRadiusMeters;
   final bool checkoutLocationMocked;
   final bool checkoutLocationCapturedOffline;
+
+  /// Snapshot of the HR checkout policy at the time this attendance record
+  /// was evaluated. Null is retained for records created before snapshots.
+  final bool? checkoutPolicyEnabled;
+  final int? checkoutPolicyRevision;
+  final DateTime? checkoutPolicyEvaluatedAt;
+  final String? checkoutPolicyDecisionPoint;
   final int securityProtocolVersion;
   final String
   status; // 'present' | 'late' | 'absent' | 'half-day' | 'on-leave'
@@ -108,6 +115,10 @@ class AttendanceModel {
     this.checkoutLocationAllowedRadiusMeters,
     this.checkoutLocationMocked = false,
     this.checkoutLocationCapturedOffline = false,
+    this.checkoutPolicyEnabled,
+    this.checkoutPolicyRevision,
+    this.checkoutPolicyEvaluatedAt,
+    this.checkoutPolicyDecisionPoint,
     this.securityProtocolVersion = currentSecurityProtocolVersion,
     required this.status,
   });
@@ -192,6 +203,12 @@ class AttendanceModel {
       checkoutLocationMocked: data['checkoutLocationMocked'] as bool? ?? false,
       checkoutLocationCapturedOffline:
           data['checkoutLocationCapturedOffline'] as bool? ?? false,
+      checkoutPolicyEnabled: data['checkoutPolicyEnabled'] as bool?,
+      checkoutPolicyRevision: (data['checkoutPolicyRevision'] as num?)?.toInt(),
+      checkoutPolicyEvaluatedAt:
+          (data['checkoutPolicyEvaluatedAt'] as Timestamp?)?.toDate(),
+      checkoutPolicyDecisionPoint:
+          data['checkoutPolicyDecisionPoint'] as String?,
       securityProtocolVersion:
           (data['securityProtocolVersion'] as num?)?.toInt() ?? 0,
       status: data['status'] as String? ?? 'present',
@@ -276,6 +293,16 @@ class AttendanceModel {
       if (checkoutLocationMocked) 'checkoutLocationMocked': true,
       if (checkoutLocationCapturedOffline)
         'checkoutLocationCapturedOffline': true,
+      if (checkoutPolicyEnabled != null)
+        'checkoutPolicyEnabled': checkoutPolicyEnabled,
+      if (checkoutPolicyRevision != null)
+        'checkoutPolicyRevision': checkoutPolicyRevision,
+      if (checkoutPolicyEvaluatedAt != null)
+        'checkoutPolicyEvaluatedAt': Timestamp.fromDate(
+          checkoutPolicyEvaluatedAt!,
+        ),
+      if (checkoutPolicyDecisionPoint != null)
+        'checkoutPolicyDecisionPoint': checkoutPolicyDecisionPoint,
       'securityProtocolVersion': securityProtocolVersion,
       'status': status,
     };

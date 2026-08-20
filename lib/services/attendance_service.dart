@@ -16,10 +16,18 @@ import 'company_day_off_service.dart';
 import 'geofence_service.dart';
 import 'field_assignment_service.dart';
 import 'offline_attendance_queue_service.dart';
+import 'attendance_gateway_service.dart';
 import 'role_notification_service.dart';
 import 'app_security_policy_service.dart';
 
 enum AttendanceActionIntent { checkIn, checkOut }
+
+/// Receives an already validated legacy check-in action at the migration seam.
+/// Returning true means the canonical server receipt was confirmed; false means
+/// the pilot retained the action locally and the legacy offline queue must not
+/// receive a second copy.
+typedef ReliableCheckInSubmitter =
+    Future<bool> Function(OfflineAttendanceAction action);
 
 class AttendanceService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
@@ -32,11 +40,14 @@ class AttendanceService {
       FieldAssignmentService();
   final OfflineAttendanceQueueService _offlineQueue =
       OfflineAttendanceQueueService.instance;
+  final AttendanceGatewayService _attendanceGateway =
+      AttendanceGatewayService();
 
   // Handle employee Check-In or Check-Out
   Future<void> handleCheckInOrCheckOut(
     UserModel employee, {
     AttendanceActionIntent? expectedAction,
+    ReliableCheckInSubmitter? reliableCheckInSubmitter,
   }) async {
     final securityPolicy = await AppSecurityPolicyService.instance
         .assertAttendanceClientAllowed();
@@ -46,16 +57,15 @@ class AttendanceService {
     final policyConfig = await _policyService.getPolicyConfig();
     final requiresLiveConnection = !policyConfig.requiresBiometric;
 
-    if (requiresLiveConnection && !online) {
-      throw Exception(
-        'تسجيل الحضور بالموقع فقط يتطلب اتصالاً بالإنترنت للتحقق من الوقت والموقع مباشرة. اتصل بالإنترنت ثم أعد المحاولة.',
-      );
-    }
-
     if (online) {
       try {
         await _offlineQueue.syncPendingActions();
-        await _flagMissedCheckouts(employee, todayStr);
+        // A check-in must remain smooth even if the policy endpoint is down.
+        // Missed-checkout work is optional and only runs when the server says
+        // the company has explicitly enabled check-out.
+        if (await _checkoutIsEnabledOrFalse()) {
+          await _flagMissedCheckouts(employee, todayStr);
+        }
       } catch (error) {
         // Connectivity can be present while Firestore is temporarily
         // unavailable. Do not prevent a new verified attendance action.
@@ -68,6 +78,10 @@ class AttendanceService {
     final actualAction = isCheckIn
         ? AttendanceActionIntent.checkIn
         : AttendanceActionIntent.checkOut;
+
+    if (actualAction == AttendanceActionIntent.checkOut) {
+      await _assertCheckoutEnabled();
+    }
 
     if (expectedAction != null && expectedAction != actualAction) {
       if (expectedAction == AttendanceActionIntent.checkIn) {
@@ -241,14 +255,9 @@ class AttendanceService {
     final effectiveLocationRisk = locationRisk.withSecurityFallback(
       securityResult.deviceCredentialFallbackUsed,
     );
-    await _ensureAttendanceDeviceBinding(
-      employee,
-      securityResult,
-      // The binding method itself only permits this fallback for a transient
-      // Firestore outage; permanent permission and device-binding failures
-      // continue to block attendance.
-      allowOfflineFallback: !requiresLiveConnection,
-    );
+    // The server binds the device atomically with the attendance event.  A
+    // direct client Firestore transaction here can fail on a valid account
+    // because of a stale rule/session, so it must not block check-in.
 
     if (isCheckIn) {
       // ── CHECK-IN LOGIC ──
@@ -306,57 +315,19 @@ class AttendanceService {
         locationRiskMessage: effectiveLocationRisk.message,
         status: deduction.status,
       );
-      final attendanceLog = AttendanceModel(
-        attendanceId: logRef.id,
-        userId: employee.uid,
-        employeeId: employee.employeeId,
-        employeeName: employee.displayName,
-        locationId: employee.locationId,
-        locationName: employee.locationName,
-        managerId: employee.managerId,
-        date: todayStr,
-        checkInTime: now,
-        checkInLocation: GeoPoint(
-          geoResult.position.latitude,
-          geoResult.position.longitude,
-        ),
-        localCheckInTime: now,
-        isWithinGeofence: geoResult.isWithinZone || allowsExternalWork,
-        isLate: deduction.isLate,
-        lateMinutes: deduction.lateMinutes,
-        salaryDeductionFraction: deduction.dayFraction,
-        salaryDeductionAmount: salaryDeductionAmount,
-        salaryCurrency: employee.salaryCurrency,
-        salaryDeductionCode: deduction.code,
-        salaryDeductionLabel: deduction.arabicLabel,
-        salaryDeductionApprovalStatus: deduction.dayFraction > 0
-            ? 'pending_hr'
-            : 'none',
-        deviceId: securityResult.deviceId,
-        deviceLabel: securityResult.deviceLabel,
-        biometricVerified: securityResult.biometricVerified,
-        securityReviewStatus: effectiveLocationRisk.securityReviewStatus,
-        locationRiskLevel: effectiveLocationRisk.level,
-        locationRiskReasons: effectiveLocationRisk.reasons,
-        locationRiskMessage: effectiveLocationRisk.message,
-        locationAccuracyMeters: geoResult.accuracyMeters,
-        locationDistanceMeters: geoResult.distanceMeters,
-        locationAllowedRadiusMeters: geoResult.allowedRadius,
-        locationMocked: geoResult.isMocked,
-        locationCapturedOffline: !online,
-        status: deduction.status,
-      );
-
       var savedOnline = online;
-      if (online) {
+      if (reliableCheckInSubmitter != null) {
+        savedOnline = await reliableCheckInSubmitter(offlineAction);
+      } else if (online) {
         try {
-          await logRef.set(attendanceLog.toFirestore());
+          await _attendanceGateway.submit(offlineAction.toJson());
+          await _offlineQueue.rememberLocalDeviceOwner(
+            deviceId: securityResult.deviceId,
+            userId: employee.uid,
+          );
         } catch (error) {
-          if (!_isTemporaryFirestoreFailure(error)) rethrow;
-          if (requiresLiveConnection) {
-            throw Exception(
-              'تعذر الاتصال بخدمة الحضور الآن. لم يتم حفظ حضورك بدون إنترنت؛ أعد المحاولة عند عودة الاتصال.',
-            );
+          if (error is AttendanceGatewayException && !error.isTemporary) {
+            rethrow;
           }
           savedOnline = false;
           await _offlineQueue.queue(offlineAction);
@@ -478,28 +449,14 @@ class AttendanceService {
       var savedOnline = online && checkInDoc != null;
       if (savedOnline) {
         try {
-          await checkInDoc.reference.update({
-            'checkOutTime': Timestamp.fromDate(now),
-            'checkOutLocation': GeoPoint(
-              geoResult.position.latitude,
-              geoResult.position.longitude,
-            ),
-            'localCheckOutTime': Timestamp.fromDate(now),
-            'totalWorkHours': totalWorkHours,
-            'checkOutDeviceId': securityResult.deviceId,
-            'checkOutDeviceLabel': securityResult.deviceLabel,
-            'checkOutBiometricVerified': securityResult.biometricVerified,
-            'securityProtocolVersion':
-                AppSecurityPolicy.currentAttendanceProtocolVersion,
-            ...effectiveLocationRisk.toCheckoutFirestorePatch(geoResult),
-            ...earlyCheckoutDeduction.patch,
-          });
+          await _attendanceGateway.submit(offlineAction.toJson());
+          await _offlineQueue.rememberLocalDeviceOwner(
+            deviceId: securityResult.deviceId,
+            userId: employee.uid,
+          );
         } catch (error) {
-          if (!_isTemporaryFirestoreFailure(error)) rethrow;
-          if (requiresLiveConnection) {
-            throw Exception(
-              'تعذر الاتصال بخدمة الحضور الآن. لم يتم حفظ انصرافك بدون إنترنت؛ أعد المحاولة عند عودة الاتصال.',
-            );
+          if (error is AttendanceGatewayException && !error.isTemporary) {
+            rethrow;
           }
           savedOnline = false;
           await _offlineQueue.queue(offlineAction);
@@ -529,6 +486,36 @@ class AttendanceService {
     }
   }
 
+  Future<void> _assertCheckoutEnabled() async {
+    try {
+      if (!await _checkoutIsEnabledOrFalse(rethrowUnauthenticated: true)) {
+        throw Exception(
+          'تسجيل الانصراف غير مفعّل حالياً. تم حفظ حضورك ولا يلزم إجراء إضافي.',
+        );
+      }
+    } on AttendanceGatewayException catch (error) {
+      if (error.code == 'unauthenticated') rethrow;
+      throw Exception(
+        'تعذر التحقق من حالة الانصراف الآن. لا يلزم تسجيل انصراف حتى يتم التأكيد من HR.',
+      );
+    }
+  }
+
+  Future<bool> _checkoutIsEnabledOrFalse({
+    bool rethrowUnauthenticated = false,
+  }) async {
+    try {
+      final result = await _attendanceGateway.checkoutPolicy();
+      final rawPolicy = result['policy'];
+      return rawPolicy is Map && rawPolicy['enabled'] == true;
+    } on AttendanceGatewayException catch (error) {
+      if (rethrowUnauthenticated && error.code == 'unauthenticated') rethrow;
+      return false;
+    } catch (_) {
+      return false;
+    }
+  }
+
   Future<Map<String, dynamic>?> _approvedLeaveOnDate(
     String userId,
     DateTime date,
@@ -555,19 +542,21 @@ class AttendanceService {
     return _offlineQueue.syncPendingActions();
   }
 
-  /// Binds the current trusted device before automatic attendance is enabled.
-  /// This deliberately uses the same one-device-per-account transaction as
-  /// manual attendance, without prompting for biometrics.
+  /// Binds the current trusted device through the attendance server before
+  /// automatic attendance is enabled.
   Future<AttendanceSecurityResult> prepareAutomaticAttendance(
     UserModel employee,
   ) async {
     final security = await _securityService.verifyForAttendance(
       requireBiometric: false,
     );
-    await _ensureAttendanceDeviceBinding(
-      employee,
-      security,
-      allowOfflineFallback: false,
+    await _attendanceGateway.bindDevice(
+      deviceId: security.deviceId,
+      deviceLabel: security.deviceLabel,
+    );
+    await _offlineQueue.rememberLocalDeviceOwner(
+      deviceId: security.deviceId,
+      userId: employee.uid,
     );
     return security;
   }
@@ -580,13 +569,41 @@ class AttendanceService {
         'deadline-exceeded',
         'aborted',
         'resource-exhausted',
+        'resource_exhausted',
         'internal',
       }.contains(error.code);
     }
     final message = error.toString().toLowerCase();
     return message.contains('cloud_firestore/unavailable') ||
         message.contains('service is currently unavailable') ||
-        message.contains('deadline-exceeded');
+        message.contains('deadline-exceeded') ||
+        message.contains('resource-exhausted') ||
+        message.contains('resource_exhausted') ||
+        message.contains('resource has been exhausted') ||
+        message.contains('quota');
+  }
+
+  Future<T> _retryTransientFirestore<T>(
+    Future<T> Function() action, {
+    int attempts = 3,
+  }) async {
+    Object? lastError;
+    for (var attempt = 0; attempt < attempts; attempt++) {
+      try {
+        return await action();
+      } catch (error) {
+        lastError = error;
+        if (!_isTemporaryFirestoreFailure(error) || attempt == attempts - 1) {
+          rethrow;
+        }
+        // Short exponential backoff: 0.6s, 1.2s.  Attendance remains a
+        // single deterministic document write, so this is retry-safe.
+        await Future<void>.delayed(
+          Duration(milliseconds: 600 * (1 << attempt)),
+        );
+      }
+    }
+    throw lastError ?? StateError('تعذر الاتصال بخدمة الحضور.');
   }
 
   Future<AttendancePolicyConfig> policyConfigForDisplay() {
@@ -764,7 +781,9 @@ class AttendanceService {
   ) async {
     final attendanceId = '${userId}_$todayStr';
     try {
-      final doc = await _db.collection('attendance').doc(attendanceId).get();
+      final doc = await _retryTransientFirestore(
+        () => _db.collection('attendance').doc(attendanceId).get(),
+      );
       if (doc.exists) {
         return _TodayAttendanceLookup(
           doc: doc,
@@ -799,6 +818,9 @@ class AttendanceService {
     return const _TodayAttendanceLookup();
   }
 
+  // Kept only for a short compatibility window for queued legacy clients.
+  // New attendance and automatic-attendance flows bind through the server.
+  // ignore: unused_element
   Future<void> _ensureAttendanceDeviceBinding(
     UserModel employee,
     AttendanceSecurityResult securityResult, {
@@ -1191,8 +1213,9 @@ class AttendanceService {
     final summaryService = AttendancePeriodSummaryService(firestore: _db);
     final policy = await _policyService.getPolicyConfig();
 
-    final managedEmployees =
-        await ManagedEmployeeService().loadForReviewer(reviewer);
+    final managedEmployees = await ManagedEmployeeService().loadForReviewer(
+      reviewer,
+    );
     var generatedCount = 0;
 
     for (final employee in managedEmployees) {
@@ -1283,27 +1306,13 @@ class AttendanceService {
     } catch (_) {}
 
     if (userId.isEmpty) return;
-    final notifRef = _db
-        .collection('notifications')
-        .doc(userId)
-        .collection('items')
-        .doc();
-    await notifRef.set({
-      'notificationId': notifRef.id,
-      'type': 'salary_deduction_reversed',
-      'title': 'تم إلغاء الخصم المعتمد',
-      'body': 'ألغت الموارد البشرية خصم الحضور. السبب: $normalizedReason',
-      'data': NotificationRoutePolicy.dataWithRoute(
-        'salary_deduction_reviewed',
-        {'attendanceId': attendanceId},
-      ),
-      'isRead': false,
-      'pushSent': false,
-      'createdAt': FieldValue.serverTimestamp(),
-    });
-    await _db.collection('users').doc(userId).update({
-      'unreadNotifications': FieldValue.increment(1),
-    });
+    await RoleNotificationService.instance.createNotification(
+      recipientId: userId,
+      type: 'salary_deduction_reversed',
+      title: 'تم إلغاء الخصم المعتمد',
+      body: 'ألغت الموارد البشرية خصم الحضور. السبب: $normalizedReason',
+      data: {'attendanceId': attendanceId},
+    );
   }
 
   Future<void> correctCheckInTime({
@@ -1311,6 +1320,9 @@ class AttendanceService {
     required String reviewerId,
     required DateTime correctedTime,
     required String reason,
+    String? correctionRequestId,
+    String? reviewerName,
+    String reviewerComment = '',
   }) async {
     if (reason.trim().isEmpty) {
       throw Exception('يجب كتابة سبب تعديل وقت الحضور.');
@@ -1319,6 +1331,9 @@ class AttendanceService {
     final attendanceDoc = await ref.get();
     if (!attendanceDoc.exists) throw Exception('سجل الحضور غير موجود.');
     final current = AttendanceModel.fromFirestore(attendanceDoc);
+    if (current.userId == reviewerId) {
+      throw Exception('لا يمكنك تصحيح سجل الحضور الخاص بك.');
+    }
     final userDoc = await _db.collection('users').doc(current.userId).get();
     if (!userDoc.exists) throw Exception('حساب الموظف غير موجود.');
     final employee = UserModel.fromFirestore(userDoc);
@@ -1333,11 +1348,21 @@ class AttendanceService {
       arrivalTime: correctedTime,
       employeeStartTime: _formatTime(effectiveStart),
     );
-    await ref.update({
+    final initialCheckIn = current.checkInTime;
+    if (initialCheckIn == null) {
+      throw Exception('سجل الحضور لا يحتوي على وقت دخول.');
+    }
+    if (correctedTime.year != initialCheckIn.year ||
+        correctedTime.month != initialCheckIn.month ||
+        correctedTime.day != initialCheckIn.day) {
+      throw Exception('وقت التصحيح يجب أن يكون في يوم الحضور نفسه.');
+    }
+    if (correctedTime.isAfter(initialCheckIn)) {
+      throw Exception('وقت التصحيح لا يمكن أن يكون بعد الوقت المسجل.');
+    }
+
+    final baseCorrectionPatch = <String, dynamic>{
       'checkInTime': Timestamp.fromDate(correctedTime),
-      if (current.checkInTime != null &&
-          !attendanceDoc.data()!.containsKey('originalCheckInTime'))
-        'originalCheckInTime': Timestamp.fromDate(current.checkInTime!),
       'status': deduction.status,
       'isLate': deduction.isLate,
       'lateMinutes': deduction.lateMinutes,
@@ -1355,6 +1380,89 @@ class AttendanceService {
       'checkInTimeCorrectedBy': reviewerId,
       'checkInTimeCorrectedAt': FieldValue.serverTimestamp(),
       'checkInTimeCorrectionReason': reason.trim(),
+    };
+
+    final requestRef = correctionRequestId == null
+        ? null
+        : _db
+              .collection('attendanceCorrectionRequests')
+              .doc(correctionRequestId);
+    await _db.runTransaction((transaction) async {
+      final freshAttendance = await transaction.get(ref);
+      if (!freshAttendance.exists) throw Exception('سجل الحضور غير موجود.');
+      final freshCheckIn = freshAttendance.data()?['checkInTime'];
+      if (freshCheckIn is! Timestamp ||
+          freshCheckIn.toDate() != initialCheckIn) {
+        throw Exception(
+          'تم تعديل سجل الحضور من مكان آخر. حدّث الطلب وأعد المراجعة.',
+        );
+      }
+      final freshData = freshAttendance.data()!;
+
+      if (requestRef != null) {
+        final requestSnapshot = await transaction.get(requestRef);
+        final requestData = requestSnapshot.data();
+        if (!requestSnapshot.exists || requestData?['status'] != 'pending_hr') {
+          throw Exception('الطلب غير موجود أو تمت مراجعته بالفعل.');
+        }
+        final requested = requestData?['requestedCheckInTime'];
+        final original = requestData?['originalCheckInTime'];
+        if (requestData?['attendanceId'] != attendanceId ||
+            requestData?['userId'] != current.userId ||
+            requested is! Timestamp ||
+            requested.toDate() != correctedTime ||
+            original is! Timestamp ||
+            original.toDate() != initialCheckIn) {
+          throw Exception('بيانات طلب التصحيح لا تطابق سجل الحضور.');
+        }
+        if (requestData?['userId'] == reviewerId) {
+          throw Exception('لا يمكنك مراجعة طلب التصحيح الخاص بك.');
+        }
+        transaction.update(requestRef, {
+          'status': 'approved',
+          'reviewedBy': reviewerId,
+          'reviewerName': reviewerName ?? '',
+          'reviewedAt': FieldValue.serverTimestamp(),
+          'reviewerComment': reviewerComment.trim(),
+        });
+      }
+
+      final correctionPatch = <String, dynamic>{...baseCorrectionPatch};
+      if (!freshData.containsKey('originalCheckInTime')) {
+        correctionPatch['originalCheckInTime'] = Timestamp.fromDate(
+          initialCheckIn,
+        );
+      }
+
+      // Attendance currently stores one effective salary deduction per day.
+      // Keep a stronger independent checkout deduction instead of erasing it
+      // when HR corrects the arrival time.
+      final existingCode = freshData['salaryDeductionCode'] as String? ?? '';
+      final existingApproval =
+          freshData['salaryDeductionApprovalStatus'] as String? ?? 'none';
+      final existingFraction =
+          (freshData['salaryDeductionFraction'] as num?)?.toDouble() ?? 0;
+      final isActiveCheckoutDeduction =
+          const {
+            'early_checkout_quarter_day',
+            'late_checkout_after_11_quarter_day',
+            'missed_checkout_quarter_day',
+          }.contains(existingCode) &&
+          const {'pending_hr', 'approved'}.contains(existingApproval) &&
+          existingFraction >= deduction.dayFraction;
+      if (isActiveCheckoutDeduction) {
+        for (final key in const [
+          'salaryDeductionFraction',
+          'salaryDeductionAmount',
+          'salaryCurrency',
+          'salaryDeductionCode',
+          'salaryDeductionLabel',
+          'salaryDeductionApprovalStatus',
+        ]) {
+          correctionPatch[key] = freshData[key];
+        }
+      }
+      transaction.update(ref, correctionPatch);
     });
   }
 
@@ -1390,6 +1498,17 @@ class AttendanceService {
     String status, {
     required bool checkout,
   }) async {
+    if (checkout) {
+      final attendance = await _db
+          .collection('attendance')
+          .doc(attendanceId)
+          .get();
+      if (attendance.data()?['checkoutPolicyEnabled'] == false) {
+        throw Exception(
+          'لا تنطبق مراجعة الانصراف على فترة تم فيها إيقاف تسجيل الانصراف.',
+        );
+      }
+    }
     final update = checkout
         ? {
             'checkoutSecurityReviewStatus': status,
@@ -1451,7 +1570,16 @@ class AttendanceService {
     String reviewerId,
     String status,
   ) async {
-    await _db.collection('attendance').doc(attendanceId).update({
+    final attendanceRef = _db.collection('attendance').doc(attendanceId);
+    final attendance = await attendanceRef.get();
+    final data = attendance.data() ?? <String, dynamic>{};
+    if (data['checkoutPolicyEnabled'] == false &&
+        _isCheckoutOnlyDeduction(data['salaryDeductionCode'])) {
+      throw Exception(
+        'لا ينطبق خصم الانصراف على فترة تم فيها إيقاف تسجيل الانصراف.',
+      );
+    }
+    await attendanceRef.update({
       'salaryDeductionApprovalStatus': status,
       'salaryDeductionReviewedBy': reviewerId,
       'salaryDeductionReviewedAt': FieldValue.serverTimestamp(),
@@ -1504,6 +1632,14 @@ class AttendanceService {
         }
       }
     } catch (_) {}
+  }
+
+  bool _isCheckoutOnlyDeduction(Object? code) {
+    return const {
+      'early_checkout_quarter_day',
+      'late_checkout_after_11_quarter_day',
+      'missed_checkout_quarter_day',
+    }.contains(code);
   }
 
   Future<void> _notifyRole({

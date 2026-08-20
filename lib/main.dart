@@ -171,6 +171,9 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
                 debugShowCheckedModeBanner: false,
                 theme: ZaWolfTheme.darkTheme,
                 routerConfig: router,
+                builder: (context, child) => kIsWeb
+                    ? SelectionArea(child: child ?? const SizedBox.shrink())
+                    : child ?? const SizedBox.shrink(),
               );
             },
           ),

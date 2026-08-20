@@ -62,6 +62,7 @@ void main() {
 
       expect(csv, contains('"Sara, ""Ops"""'));
       expect(csv, contains('حاضر'));
+      expect(csv, contains('لم يسجل الانصراف'));
     });
 
     test('includes leave status translations', () async {
@@ -253,14 +254,17 @@ void main() {
   });
 
   group('Productivity score', () {
-    test('keeps the fixed KPI weight when KPI data is missing', () {
-      final score = ProductivityScoreModel.calculateAvailableOverall(
-        attendanceScore: 100,
-        punctualityScore: 80,
-      );
+    test(
+      'uses available attendance and behavior scores when KPI data is missing',
+      () {
+        final score = ProductivityScoreModel.calculateAvailableOverall(
+          attendanceScore: 100,
+          punctualityScore: 80,
+        );
 
-      expect(score, 28.5);
-    });
+        expect(score, 95.0);
+      },
+    );
 
     test('calculates weighted productivity score', () {
       final score = ProductivityScoreModel.calculateOverall(

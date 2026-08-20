@@ -3,9 +3,9 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/administrative_request_model.dart';
 import '../models/employee_role.dart';
 import '../models/manager_approval_chain.dart';
-import '../models/notification_route_policy.dart';
 import '../models/user_model.dart';
 import 'role_notification_service.dart';
+import 'package:intl/intl.dart';
 
 class AdministrativeRequestService {
   AdministrativeRequestService({FirebaseFirestore? firestore})
@@ -106,26 +106,116 @@ class AdministrativeRequestService {
     }
   }
 
+  Future<void> submitFieldMission({
+    required UserModel employee,
+    required DateTime date,
+    required String startTime,
+    required String endTime,
+    required String siteName,
+    required String reason,
+    required bool requiresReturnToOffice,
+    required bool requiresCheckout,
+  }) async {
+    if (siteName.trim().isEmpty || reason.trim().isEmpty) {
+      throw Exception('مكان المهمة وسببها مطلوبان.');
+    }
+    if (startTime.compareTo(endTime) >= 0) {
+      throw Exception('وقت نهاية المهمة يجب أن يكون بعد وقت البداية.');
+    }
+    final managerIds = ManagerApprovalChain.orderedIds(
+      employee.managerIds,
+      fallbackId: employee.managerId,
+      teamLeaderId: employee.teamLeaderId,
+    );
+    if (managerIds.isEmpty) {
+      throw Exception('يجب تعيين مدير للموظف قبل إرسال مهمة ميدانية.');
+    }
+    final managerNames = ManagerApprovalChain.orderedNames(
+      orderedIds: managerIds,
+      managerIds: employee.managerIds,
+      managerNames: employee.managerNames,
+      teamLeaderId: employee.teamLeaderId,
+      teamLeaderName: employee.teamLeaderName,
+      fallbackManagerId: employee.managerId,
+      fallbackManagerName: employee.managerName,
+    );
+    final ref = _db.collection('administrativeRequests').doc();
+    await ref.set({
+      'userId': employee.uid,
+      'employeeId': employee.employeeId,
+      'employeeName': employee.displayName,
+      'department': employee.department,
+      'locationId': employee.locationId,
+      'category': AdministrativeRequestCategory.fieldMission,
+      'categoryLabel': AdministrativeRequestCategory.arabicLabel(
+        AdministrativeRequestCategory.fieldMission,
+      ),
+      'notes': reason.trim(),
+      'attachmentUrl': null,
+      'missionDate': DateFormat('yyyy-MM-dd').format(date),
+      'startTime': startTime,
+      'endTime': endTime,
+      'siteName': siteName.trim(),
+      'requiresReturnToOffice': requiresReturnToOffice,
+      'requiresCheckout': requiresCheckout,
+      'requiresCeoApproval': true,
+      'status': 'pending_manager',
+      'managerId': managerIds.first,
+      'managerIds': managerIds,
+      'managerNames': managerNames,
+      'managerApprovalIndex': 0,
+      'managerApprovalTotal': managerIds.length,
+      'managerApprovalTrail': <Map<String, dynamic>>[],
+      'approvalHistory': [
+        _event(
+          stage: 'submitted',
+          status: 'completed',
+          actorId: employee.uid,
+          actorName: employee.displayName,
+        ),
+      ],
+      'submittedAt': FieldValue.serverTimestamp(),
+      'isRead': false,
+    });
+    await RoleNotificationService.instance.createNotification(
+      recipientId: managerIds.first,
+      type: 'administrative_request_submitted',
+      title: 'مهمة ميدانية بانتظار موافقتك',
+      body: '${employee.displayName} يطلب مهمة ميدانية في ${siteName.trim()}.',
+      data: {'administrativeRequestId': ref.id},
+    );
+  }
+
   Stream<QuerySnapshot<Map<String, dynamic>>> watchMine(String userId) {
     return _db
         .collection('administrativeRequests')
         .where('userId', isEqualTo: userId)
         .orderBy('submittedAt', descending: true)
-        .limit(50)
+        .limit(25)
         .snapshots();
   }
 
   Stream<QuerySnapshot<Map<String, dynamic>>> watchPending(UserModel reviewer) {
-    if (EmployeeRole.isHrStaff(reviewer.role)) {
+    if (reviewer.employeeId.trim().toUpperCase() == 'CEO-100') {
+      return _db
+          .collection('administrativeRequests')
+          .where('status', isEqualTo: 'pending_ceo')
+          .where('ceoId', isEqualTo: reviewer.uid)
+          .limit(100)
+          .snapshots();
+    }
+    if (EmployeeRole.isHr(reviewer.role)) {
       return _db
           .collection('administrativeRequests')
           .where('status', whereIn: ['pending_hr', 'pending_manager'])
+          .limit(100)
           .snapshots();
     }
     return _db
         .collection('administrativeRequests')
         .where('status', isEqualTo: 'pending_manager')
         .where('managerId', isEqualTo: reviewer.uid)
+        .limit(100)
         .snapshots();
   }
 
@@ -135,11 +225,43 @@ class AdministrativeRequestService {
     if (!snapshot.exists) throw Exception('الطلب الإداري غير موجود.');
     final data = snapshot.data()!;
     final status = data['status'] as String? ?? '';
-    if (status == 'pending_hr') {
-      if (!EmployeeRole.isHrStaff(reviewer.role)) {
-        throw Exception('هذه المرحلة خاصة بالموارد البشرية.');
+    final isFieldMission =
+        data['category'] == AdministrativeRequestCategory.fieldMission;
+    if (status == 'pending_ceo') {
+      if (reviewer.employeeId.trim().toUpperCase() != 'CEO-100' ||
+          data['ceoId'] != reviewer.uid) {
+        throw Exception('هذه المرحلة متاحة لحساب CEO-100 فقط.');
       }
       await ref.update({
+        'status': 'pending_hr',
+        'reviewedBy': reviewer.uid,
+        'reviewerName': reviewer.displayName,
+        'reviewedAt': FieldValue.serverTimestamp(),
+        'approvalHistory': FieldValue.arrayUnion([
+          _event(
+            stage: 'ceo',
+            status: 'approved',
+            actorId: reviewer.uid,
+            actorName: reviewer.displayName,
+          ),
+        ]),
+      });
+      await RoleNotificationService.instance.notifyRole(
+        role: EmployeeRole.hrAdmin,
+        includeSuperAdmins: false,
+        type: 'administrative_request_submitted',
+        title: 'مهمة ميدانية بانتظار اعتماد HR',
+        body: 'اعتمد CEO-100 مهمة ${data['employeeName']}.',
+        data: {'administrativeRequestId': requestId},
+      );
+      return;
+    }
+    if (status == 'pending_hr') {
+      if (!EmployeeRole.isHr(reviewer.role)) {
+        throw Exception('هذه المرحلة خاصة بالموارد البشرية.');
+      }
+      final batch = _db.batch();
+      batch.update(ref, {
         'status': 'approved',
         'reviewedBy': reviewer.uid,
         'reviewerName': reviewer.displayName,
@@ -156,6 +278,27 @@ class AdministrativeRequestService {
           ),
         ]),
       });
+      if (isFieldMission) {
+        final assignmentRef = _db.collection('fieldAssignments').doc(requestId);
+        batch.set(assignmentRef, {
+          'userId': data['userId'],
+          'employeeId': data['employeeId'],
+          'employeeName': data['employeeName'],
+          'department': data['department'],
+          'locationId': data['locationId'] ?? '',
+          'date': data['missionDate'],
+          'startTime': data['startTime'],
+          'endTime': data['endTime'],
+          'reason': data['notes'],
+          'siteName': data['siteName'],
+          'requiresReturnToOffice': data['requiresReturnToOffice'] ?? true,
+          'requiresCheckout': data['requiresCheckout'] ?? true,
+          'status': 'active',
+          'createdBy': reviewer.uid,
+          'createdAt': FieldValue.serverTimestamp(),
+        });
+      }
+      await batch.commit();
       await _notify(
         data['userId'] as String,
         'تم قبول الطلب الإداري',
@@ -175,7 +318,23 @@ class AdministrativeRequestService {
         .toList();
     final index = (data['managerApprovalIndex'] as num?)?.toInt() ?? 0;
     final next = index + 1;
-    final nextStatus = next < ids.length ? 'pending_manager' : 'pending_hr';
+    var nextStatus = next < ids.length ? 'pending_manager' : 'pending_hr';
+    String? ceoId;
+    String? ceoName;
+    if (isFieldMission && next >= ids.length) {
+      final ceo = await _db
+          .collection('users')
+          .where('employeeId', isEqualTo: 'CEO-100')
+          .where('isActive', isEqualTo: true)
+          .limit(1)
+          .get();
+      if (ceo.docs.isEmpty) {
+        throw Exception('لا يوجد حساب نشط بكود CEO-100.');
+      }
+      nextStatus = 'pending_ceo';
+      ceoId = ceo.docs.first.id;
+      ceoName = ceo.docs.first.data()['displayName'] as String? ?? 'CEO';
+    }
     await ref.update({
       'status': nextStatus,
       if (next < ids.length) 'managerId': ids[next],
@@ -203,6 +362,8 @@ class AdministrativeRequestService {
       'reviewedBy': reviewer.uid,
       'reviewerName': reviewer.displayName,
       'reviewedAt': FieldValue.serverTimestamp(),
+      if (ceoId != null) 'ceoId': ceoId,
+      if (ceoName != null) 'ceoName': ceoName,
     });
     if (next < ids.length) {
       await _notify(
@@ -210,6 +371,14 @@ class AdministrativeRequestService {
         'طلب إداري بانتظار موافقتك',
         '${data['employeeName']} حصل على موافقة سابقة.',
         requestId,
+      );
+    } else if (nextStatus == 'pending_ceo') {
+      await RoleNotificationService.instance.createNotification(
+        recipientId: ceoId!,
+        type: 'field_mission_pending_ceo',
+        title: 'مهمة ميدانية بانتظار اعتماد CEO',
+        body: 'اكتملت موافقات المديرين على مهمة ${data['employeeName']}.',
+        data: {'administrativeRequestId': requestId},
       );
     } else {
       await RoleNotificationService.instance.notifyRole(
@@ -235,7 +404,10 @@ class AdministrativeRequestService {
     final status = data['status'] as String? ?? '';
     final allowed =
         (status == 'pending_manager' && data['managerId'] == reviewer.uid) ||
-        (status == 'pending_hr' && EmployeeRole.isHrStaff(reviewer.role));
+        (status == 'pending_ceo' &&
+            reviewer.employeeId.trim().toUpperCase() == 'CEO-100' &&
+            data['ceoId'] == reviewer.uid) ||
+        (status == 'pending_hr' && EmployeeRole.isHr(reviewer.role));
     if (!allowed) throw Exception('غير مسموح بمراجعة هذا الطلب.');
     await ref.update({
       'status': 'rejected',
@@ -248,7 +420,9 @@ class AdministrativeRequestService {
       'finalApprovalAt': FieldValue.serverTimestamp(),
       'approvalHistory': FieldValue.arrayUnion([
         _event(
-          stage: status == 'pending_hr' ? 'hr' : 'manager',
+          stage: status == 'pending_hr'
+              ? 'hr'
+              : (status == 'pending_ceo' ? 'ceo' : 'manager'),
           status: 'rejected',
           actorId: reviewer.uid,
           actorName: reviewer.displayName,
@@ -270,26 +444,15 @@ class AdministrativeRequestService {
     String body,
     String requestId,
   ) async {
-    final ref = _db
-        .collection('notifications')
-        .doc(userId)
-        .collection('items')
-        .doc();
-    await ref.set({
-      'notificationId': ref.id,
-      'type': 'administrative_request_update',
-      'title': title,
-      'body': body,
-      'data': NotificationRoutePolicy.dataWithRoute(
-        'administrative_request_update',
-        {'administrativeRequestId': requestId, 'route': '/employee/requests'},
-      ),
-      'isRead': false,
-      'pushSent': false,
-      'createdAt': FieldValue.serverTimestamp(),
-    });
-    await _db.collection('users').doc(userId).update({
-      'unreadNotifications': FieldValue.increment(1),
-    });
+    await RoleNotificationService.instance.createNotification(
+      recipientId: userId,
+      type: 'administrative_request_update',
+      title: title,
+      body: body,
+      data: {
+        'administrativeRequestId': requestId,
+        'route': '/employee/requests',
+      },
+    );
   }
 }

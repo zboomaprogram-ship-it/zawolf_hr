@@ -2,7 +2,6 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/advance_model.dart';
 import '../models/user_model.dart';
 import '../models/employee_role.dart';
-import '../models/notification_route_policy.dart';
 import 'audit_log_service.dart';
 import 'role_notification_service.dart';
 
@@ -289,26 +288,13 @@ class AdvanceService {
     required String body,
     Map<String, dynamic>? data,
   }) async {
-    final notifRef = _db
-        .collection('notifications')
-        .doc(recipientId)
-        .collection('items')
-        .doc();
-
-    await notifRef.set({
-      'notificationId': notifRef.id,
-      'type': type,
-      'title': title,
-      'body': body,
-      'data': NotificationRoutePolicy.dataWithRoute(type, data),
-      'isRead': false,
-      'pushSent': false,
-      'createdAt': FieldValue.serverTimestamp(),
-    });
-
-    await _db.collection('users').doc(recipientId).update({
-      'unreadNotifications': FieldValue.increment(1),
-    });
+    await RoleNotificationService.instance.createNotification(
+      recipientId: recipientId,
+      type: type,
+      title: title,
+      body: body,
+      data: data,
+    );
   }
 
   Future<void> _notifyRole({

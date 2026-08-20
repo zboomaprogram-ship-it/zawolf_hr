@@ -52,9 +52,8 @@ class SalesKpiFilterOptions {
         (map[key] as List? ?? const [])
             .whereType<Map>()
             .map(
-              (item) => SalesKpiAgentOption.fromMap(
-                Map<String, dynamic>.from(item),
-              ),
+              (item) =>
+                  SalesKpiAgentOption.fromMap(Map<String, dynamic>.from(item)),
             )
             .toList();
 
@@ -303,7 +302,9 @@ class SalesKpiSummary {
   double get effectiveSalesActual {
     if (agents.isNotEmpty) {
       final mapped = agents.where((a) => a.kind == 'sales' && a.isMapped);
-      if (mapped.isNotEmpty) return mapped.fold(0.0, (sum, a) => sum + a.actual);
+      if (mapped.isNotEmpty) {
+        return mapped.fold(0.0, (total, agent) => total + agent.actual);
+      }
     }
     return salesDepartmentActual > 0
         ? salesDepartmentActual
@@ -313,7 +314,9 @@ class SalesKpiSummary {
   double get effectiveSalesTarget {
     if (agents.isNotEmpty) {
       final mapped = agents.where((a) => a.kind == 'sales' && a.isMapped);
-      if (mapped.isNotEmpty) return mapped.fold(0.0, (sum, a) => sum + a.target);
+      if (mapped.isNotEmpty) {
+        return mapped.fold(0.0, (total, agent) => total + agent.target);
+      }
     }
     return salesDepartmentTarget > 0 ? salesDepartmentTarget : salesTarget;
   }
@@ -321,17 +324,23 @@ class SalesKpiSummary {
   double get effectiveTeleSalesActual {
     if (agents.isNotEmpty) {
       final mapped = agents.where((a) => a.kind == 'tele_sales' && a.isMapped);
-      if (mapped.isNotEmpty) return mapped.fold(0.0, (sum, a) => sum + a.actual);
+      if (mapped.isNotEmpty) {
+        return mapped.fold(0.0, (total, agent) => total + agent.actual);
+      }
     }
     return teleSalesDepartmentActual > 0
         ? teleSalesDepartmentActual
-        : (teleSalesActual > 0 ? teleSalesActual : confirmedMeetings.toDouble());
+        : (teleSalesActual > 0
+              ? teleSalesActual
+              : confirmedMeetings.toDouble());
   }
 
   double get effectiveTeleSalesTarget {
     if (agents.isNotEmpty) {
       final mapped = agents.where((a) => a.kind == 'tele_sales' && a.isMapped);
-      if (mapped.isNotEmpty) return mapped.fold(0.0, (sum, a) => sum + a.target);
+      if (mapped.isNotEmpty) {
+        return mapped.fold(0.0, (total, agent) => total + agent.target);
+      }
     }
     return teleSalesDepartmentTarget > 0
         ? teleSalesDepartmentTarget
@@ -385,28 +394,28 @@ class SalesKpiSummary {
     final salesAgents = parsedOptions.salesAgents.isNotEmpty
         ? parsedOptions.salesAgents
         : agentList
-            .where((a) => a.kind == 'sales')
-            .map(
-              (a) => SalesKpiAgentOption(
-                code: a.key,
-                id: a.externalId,
-                name: a.name,
-              ),
-            )
-            .toList();
+              .where((a) => a.kind == 'sales')
+              .map(
+                (a) => SalesKpiAgentOption(
+                  code: a.key,
+                  id: a.externalId,
+                  name: a.name,
+                ),
+              )
+              .toList();
 
     final teleSalesAgents = parsedOptions.teleSalesAgents.isNotEmpty
         ? parsedOptions.teleSalesAgents
         : agentList
-            .where((a) => a.kind == 'tele_sales')
-            .map(
-              (a) => SalesKpiAgentOption(
-                code: a.key,
-                id: a.externalId,
-                name: a.name,
-              ),
-            )
-            .toList();
+              .where((a) => a.kind == 'tele_sales')
+              .map(
+                (a) => SalesKpiAgentOption(
+                  code: a.key,
+                  id: a.externalId,
+                  name: a.name,
+                ),
+              )
+              .toList();
 
     final effectiveOptions = SalesKpiFilterOptions(
       companies: parsedOptions.companies,

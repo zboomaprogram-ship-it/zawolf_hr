@@ -14,7 +14,7 @@ class ResignationService {
     return _db
         .collection('resignations')
         .where('userId', isEqualTo: userId)
-        .limit(50)
+        .limit(25)
         .snapshots()
         .map((snapshot) {
           final values = snapshot.docs
@@ -38,9 +38,13 @@ class ResignationService {
           .where('status', isEqualTo: 'pending_manager')
           .where('managerId', isEqualTo: reviewer.uid);
     }
-    return query.snapshots().map(
-      (snapshot) => snapshot.docs.map(ResignationModel.fromFirestore).toList(),
-    );
+    return query
+        .limit(100)
+        .snapshots()
+        .map(
+          (snapshot) =>
+              snapshot.docs.map(ResignationModel.fromFirestore).toList(),
+        );
   }
 
   Future<void> submit({
@@ -123,7 +127,7 @@ class ResignationService {
 
     if (request.status == 'pending_hr') {
       if (reviewer.role != EmployeeRole.hrManager) {
-        throw Exception('القرار النهائي للاستقالة متاح لمدير HR فقط.');
+        throw Exception('القرار النهائي للاستقالة متاح لـ HR فقط.');
       }
       await ref.update({
         'status': approve ? 'approved' : 'rejected',

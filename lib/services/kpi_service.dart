@@ -27,13 +27,139 @@ class KpiService {
     });
   }
 
-  Stream<List<EmployeeKpiModel>> watchMyKpis(String userId, String monthKey) {
-    return _db
+  Stream<List<EmployeeKpiModel>> watchMyKpis(UserModel user, String monthKey) {
+    final ownQuery = _db
         .collection('employeeKpis')
-        .where('userId', isEqualTo: userId)
-        .where('monthKey', isEqualTo: monthKey)
-        .snapshots()
-        .map(_employeeKpisFromSnapshot);
+        .where('userId', isEqualTo: user.uid)
+        .where('monthKey', isEqualTo: monthKey);
+    if (user.role != EmployeeRole.teamLeader &&
+        user.role != EmployeeRole.manager &&
+        !EmployeeRole.isHr(user.role)) {
+      return ownQuery.snapshots().map(_employeeKpisFromSnapshot);
+    }
+
+    final base = _db
+        .collection('employeeKpis')
+        .where('monthKey', isEqualTo: monthKey);
+    final teamQueries = <Query<Map<String, dynamic>>>[
+      if (user.role == EmployeeRole.teamLeader)
+        base.where('teamLeaderId', isEqualTo: user.uid)
+      else ...[
+        base.where('managerIds', arrayContains: user.uid),
+        base.where('managerId', isEqualTo: user.uid),
+        base.where('teamLeaderId', isEqualTo: user.uid),
+      ],
+    ];
+    return _watchPersonalAndTeamKpis(user, monthKey, ownQuery, teamQueries);
+  }
+
+  Stream<List<EmployeeKpiModel>> _watchPersonalAndTeamKpis(
+    UserModel user,
+    String monthKey,
+    Query<Map<String, dynamic>> ownQuery,
+    List<Query<Map<String, dynamic>>> teamQueries,
+  ) {
+    late StreamController<List<EmployeeKpiModel>> controller;
+    List<EmployeeKpiModel>? own;
+    final teamResults = List<List<EmployeeKpiModel>?>.filled(
+      teamQueries.length,
+      null,
+    );
+    final subscriptions = <StreamSubscription>[];
+
+    void emit() {
+      if (own == null || teamResults.any((items) => items == null)) return;
+      final byId = <String, EmployeeKpiModel>{};
+      for (final item in teamResults.whereType<List<EmployeeKpiModel>>().expand(
+        (items) => items,
+      )) {
+        if (item.userId != user.uid) byId[item.employeeKpiId] = item;
+      }
+      final team = byId.values.toList();
+      if (team.isEmpty) {
+        controller.add(own!);
+        return;
+      }
+      final average =
+          team.fold<double>(0, (total, item) => total + item.overallProgress) /
+          team.length;
+      final personal = own!.isEmpty ? null : own!.first;
+      controller.add([
+        EmployeeKpiModel(
+          employeeKpiId: personal?.employeeKpiId ?? '${user.uid}_$monthKey',
+          templateId: personal?.templateId ?? 'team_leader_aggregate',
+          userId: user.uid,
+          employeeId: personal?.employeeId ?? user.employeeId,
+          employeeName: personal?.employeeName ?? user.displayName,
+          department: personal?.department ?? user.department,
+          managerId: personal?.managerId ?? user.managerId ?? '',
+          managerIds: personal?.managerIds ?? user.managerIds,
+          teamLeaderId: personal?.teamLeaderId ?? user.teamLeaderId ?? '',
+          monthKey: monthKey,
+          status: personal?.status ?? 'active',
+          metrics:
+              personal?.metrics ??
+              [
+                EmployeeKpiMetric(
+                  key: 'team_avg',
+                  source: 'team_aggregate',
+                  editable: false,
+                  name: 'متوسط أداء الفريق (Team KPI)',
+                  unit: '%',
+                  target: 100,
+                  actual: average,
+                  weight: 100,
+                  direction: KpiMetricDirection.higherIsBetter,
+                ),
+              ],
+          overallProgress: average,
+          createdBy: personal?.createdBy ?? 'system',
+          createdAt: personal?.createdAt,
+          updatedAt: personal?.updatedAt,
+          finalizedBy: personal?.finalizedBy ?? '',
+          finalizedAt: personal?.finalizedAt,
+          externalSource: personal?.externalSource ?? 'team_aggregate',
+          periodStart: personal?.periodStart ?? '',
+          periodEnd: personal?.periodEnd ?? '',
+          lastSyncedAt: personal?.lastSyncedAt,
+          syncStatus: personal?.syncStatus ?? '',
+          providerType: personal?.providerType ?? 'team_aggregate',
+          providerDepartment: personal?.providerDepartment ?? '',
+          providerAgentKey: personal?.providerAgentKey ?? '',
+          providerDetails: {
+            ...?personal?.providerDetails,
+            'isTeamLeaderKpi': true,
+            'teamMemberCount': team.length,
+            'teamAverageKpi': average,
+          },
+        ),
+      ]);
+    }
+
+    controller = StreamController<List<EmployeeKpiModel>>(
+      onListen: () {
+        subscriptions.add(
+          ownQuery.snapshots().listen((snapshot) {
+            own = _employeeKpisFromSnapshot(snapshot);
+            emit();
+          }, onError: controller.addError),
+        );
+        for (var index = 0; index < teamQueries.length; index++) {
+          subscriptions.add(
+            teamQueries[index].snapshots().listen((snapshot) {
+              teamResults[index] = _employeeKpisFromSnapshot(snapshot);
+              emit();
+            }, onError: controller.addError),
+          );
+        }
+      },
+      onCancel: () async {
+        for (final subscription in subscriptions) {
+          await subscription.cancel();
+        }
+      },
+    );
+    return controller.stream;
   }
 
   Stream<List<EmployeeKpiModel>> watchManagedKpis(

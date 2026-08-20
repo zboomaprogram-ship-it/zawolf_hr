@@ -211,7 +211,6 @@ class RequestApprovalTimeline extends StatelessWidget {
       EmployeeRole.teamLeader => 'قائد فريق',
       EmployeeRole.manager => 'مدير',
       EmployeeRole.hrAdmin => 'مسؤول موارد بشرية',
-      EmployeeRole.hrManager => 'مدير الموارد البشرية',
       EmployeeRole.superAdmin => 'مالك النظام',
       _ => null,
     };

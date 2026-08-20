@@ -44,7 +44,9 @@
 	<key>NSAlarmKitUsageDescription</key>
 	<string>يستخدم ZaWolf HR المنبه لتذكيرك بتسجيل الحضور في بداية الدوام.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>يستخدم التطبيق موقعك أثناء فتح شاشة الحضور فقط للتحقق من وجودك داخل نطاق فرع العمل عند تسجيل الحضور أو الانصراف يدوياً.</string>
+	<string>يستخدم ZaWolf HR موقعك أثناء استخدام التطبيق للتحقق من وجودك داخل نطاق فرع العمل عند تسجيل الحضور أو الانصراف.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>عند تفعيل الحضور التلقائي باختيارك، يستخدم ZaWolf HR نطاق موقع فرعك في الخلفية لتسجيل الدخول أو الخروج عند عبور حدود الفرع. لا يتتبع التطبيق مسارك المستمر، ويمكنك إيقاف الميزة من الملف الشخصي في أي وقت.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>يستخدم التطبيق مكتبة الصور لرفع المستندات والصور المطلوبة.</string>
 	<key>UIApplicationSupportsIndirectInputEvents</key>

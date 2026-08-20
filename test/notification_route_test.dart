@@ -29,6 +29,17 @@ void main() {
     expect(service.routeForType('unknown_notification'), '/notifications');
   });
 
+  test('administrative and field mission approvals open management', () {
+    expect(
+      service.routeForType('administrative_request_submitted'),
+      '/manager/requests',
+    );
+    expect(
+      service.routeForType('field_mission_pending_ceo'),
+      '/manager/requests',
+    );
+  });
+
   test('unknown push routes fall back to a valid route for the type', () {
     expect(
       service.safeRoute('/route-that-does-not-exist', type: 'hr_announcement'),

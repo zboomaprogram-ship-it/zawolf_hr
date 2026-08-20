@@ -1,4 +1,7 @@
+import 'dart:async';
+
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:http/http.dart' as http;
 
 String userFacingError(
   Object error, {
@@ -21,16 +24,28 @@ String userFacingError(
   if (error is FirebaseException) {
     return switch (error.code) {
       'permission-denied' =>
-        'لا تملك صلاحية تنفيذ هذه العملية. حدّث بيانات الحساب ثم أعد المحاولة.',
-      'unavailable' || 'deadline-exceeded' =>
-        'الخدمة غير متاحة مؤقتاً. تحقق من الإنترنت ثم أعد المحاولة.',
+        'تعذر حفظ الطلب بسبب صلاحيات الحساب. أغلق الشاشة وافتحها مرة أخرى، وإن استمرت المشكلة تواصل مع HR.',
+      'unavailable' ||
+      'deadline-exceeded' ||
+      'cancelled' ||
+      'aborted' => 'لم يتم حفظ الطلب. تحقق من الإنترنت ثم حاول مرة أخرى.',
       'failed-precondition' =>
-        'تعذر إكمال الطلب بسبب إعداد ناقص. أعد المحاولة أو تواصل مع الإدارة.',
-      'resource-exhausted' => 'الخدمة مشغولة حالياً. حاول مرة أخرى بعد قليل.',
+        'يحتاج إعداد النظام إلى تحديث لإكمال هذا الطلب. أرسل صورة الخطأ إلى HR.',
+      'resource-exhausted' =>
+        'تم الوصول إلى حد استخدام الخدمة مؤقتاً. لم يتم حفظ الطلب؛ حاول لاحقاً.',
       'already-exists' => 'تم تسجيل هذا الطلب بالفعل.',
       'not-found' => 'لم تعد البيانات المطلوبة موجودة.',
+      'unauthenticated' => 'انتهت جلسة الدخول. سجل الدخول مرة أخرى.',
+      'invalid-argument' =>
+        'بعض بيانات الطلب غير صحيحة. راجع التواريخ والوقت والسبب.',
       _ => fallback,
     };
+  }
+
+  if (error is http.ClientException ||
+      error is TimeoutException ||
+      error.toString().contains('Failed to fetch')) {
+    return 'تعذر الاتصال بالخدمة مؤقتاً. لم يتم تنفيذ أي تعديل؛ تحقق من الإنترنت ثم أعد المحاولة.';
   }
 
   final message = error.toString().replaceFirst('Exception: ', '').trim();

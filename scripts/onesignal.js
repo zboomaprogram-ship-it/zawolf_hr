@@ -1,11 +1,17 @@
 const ONESIGNAL_APP_ID = process.env.ONESIGNAL_APP_ID;
 const ONESIGNAL_REST_API_KEY = process.env.ONESIGNAL_REST_API_KEY;
+const crypto = require('crypto');
 
 function isOneSignalConfigured() {
   return Boolean(ONESIGNAL_APP_ID && ONESIGNAL_REST_API_KEY);
 }
 
-async function sendPushToUsers(userIds, title, body, data = {}) {
+function stableIdempotencyKey(value) {
+  const hex = crypto.createHash('sha256').update(String(value)).digest('hex');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-4${hex.slice(13, 16)}-a${hex.slice(17, 20)}-${hex.slice(20, 32)}`;
+}
+
+async function sendPushToUsers(userIds, title, body, data = {}, options = {}) {
   const ids = [...new Set(userIds.filter(Boolean))];
   if (!ids.length || !isOneSignalConfigured()) {
     return { sent: false, reason: 'OneSignal is not configured or no users' };
@@ -25,6 +31,9 @@ async function sendPushToUsers(userIds, title, body, data = {}) {
       headings: { en: title, ar: title },
       contents: { en: body, ar: body },
       data,
+      ...(options.idempotencyKey
+        ? { idempotency_key: stableIdempotencyKey(options.idempotencyKey) }
+        : {}),
     }),
   });
 
@@ -38,4 +47,8 @@ async function sendPushToUsers(userIds, title, body, data = {}) {
   return { sent: true, response: json };
 }
 
-module.exports = { isOneSignalConfigured, sendPushToUsers };
+module.exports = {
+  isOneSignalConfigured,
+  sendPushToUsers,
+  stableIdempotencyKey,
+};

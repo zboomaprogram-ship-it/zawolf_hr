@@ -44,5 +44,14 @@ app.*.map.json
 /android/app/profile
 /android/app/release
 node_modules/
-/plan
 /docs
+
+# Local deployment bundles and employee-data exports. These artifacts may
+# contain production source snapshots or personal data and must not be
+# committed. Keep intentional fixtures under test/fixtures instead.
+/*.zip
+/*.csv
+/*.xlsx
+/*.xls
+/*.ods
+/.tmp_*/

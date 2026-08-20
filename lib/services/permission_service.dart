@@ -5,21 +5,110 @@ import '../models/attendance_policy.dart';
 import '../models/employee_role.dart';
 import '../models/manager_approval_chain.dart';
 import '../models/permission_type_policy.dart';
-import '../models/notification_route_policy.dart';
 import 'audit_log_service.dart';
 import 'attendance_policy_service.dart';
 import 'request_approval_policy_service.dart';
 import 'role_notification_service.dart';
 import 'attendance_reconciliation_service.dart';
+import 'attendance_gateway_service.dart';
 import '../utils/payroll_cycle.dart';
+import '../utils/permission_cycle_accounting.dart';
 
 class PermissionService {
+  PermissionService({AttendanceGatewayService? attendanceGateway})
+    : _attendanceGateway = attendanceGateway ?? AttendanceGatewayService();
+
   final FirebaseFirestore _db = FirebaseFirestore.instance;
   final AttendancePolicyService _policyService = AttendancePolicyService();
   final RequestApprovalPolicyService _approvalPolicyService =
       RequestApprovalPolicyService();
   final AttendanceReconciliationService _reconciliationService =
       AttendanceReconciliationService();
+  final AttendanceGatewayService _attendanceGateway;
+
+  static const _quotaStatuses = <String>{
+    'pending',
+    'pending_team_leader',
+    'pending_manager',
+    'pending_hr',
+    'pending_ceo',
+    'approved',
+  };
+
+  PermissionCycleUsage _usageFromDocs(
+    Iterable<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
+  ) {
+    var count = 0;
+    var hours = 0.0;
+    for (final doc in docs) {
+      final data = doc.data();
+      if (!_quotaStatuses.contains('${data['status']}') ||
+          data['isDeductible'] == true) {
+        continue;
+      }
+      count++;
+      hours += (data['durationMinutes'] as num? ?? 0).toDouble() / 60.0;
+    }
+    return PermissionCycleUsage(usedCount: count, usedHours: hours);
+  }
+
+  Stream<PermissionCycleUsage> watchCycleUsage({
+    required String userId,
+    required String cycleKey,
+  }) {
+    return _db
+        .collection('permissions')
+        .where('userId', isEqualTo: userId)
+        .where('monthKey', isEqualTo: cycleKey)
+        .snapshots()
+        .map((snapshot) => _usageFromDocs(snapshot.docs));
+  }
+
+  bool _updatesActiveBalance(
+    PermissionModel permission,
+    Map<String, dynamic>? userData,
+  ) {
+    final balance = userData?['permissionBalance'];
+    final activeCycleKey = balance is Map
+        ? '${balance['lastResetMonth'] ?? ''}'
+        : '';
+    return permissionBelongsToActiveBalance(
+      requestDate: permission.requestDate,
+      activeCycleKey: activeCycleKey,
+    );
+  }
+
+  /// A leave permission never depends on check-out being enabled.  The
+  /// snapshot is audit context for early-leave reconciliation only and the
+  /// gateway remains the server-authoritative source for the policy.
+  Future<Map<String, dynamic>> _checkoutDecisionSnapshot(
+    PermissionModel permission,
+  ) async {
+    if (permission.permissionType != PermissionTypePolicy.earlyLeave) {
+      return const <String, dynamic>{};
+    }
+    try {
+      final result = await _attendanceGateway.checkoutPolicy();
+      final policy = result['policy'];
+      final map = policy is Map ? policy : const <String, dynamic>{};
+      return {
+        'checkoutPolicyEnabled': map['enabled'] == true,
+        'checkoutPolicyRevision': map['revision'] is int
+            ? map['revision'] as int
+            : 0,
+        'checkoutPolicyEvaluatedAt': FieldValue.serverTimestamp(),
+        'checkoutPolicyDecisionPoint': 'permission_approval',
+      };
+    } catch (_) {
+      // Failing closed here never blocks the normal early-leave approval.
+      return {
+        'checkoutPolicyEnabled': false,
+        'checkoutPolicyRevision': 0,
+        'checkoutPolicyEvaluatedAt': FieldValue.serverTimestamp(),
+        'checkoutPolicyDecisionPoint': 'permission_approval_unavailable',
+      };
+    }
+  }
 
   List<String> _approvalManagerIds(UserModel employee) {
     return ManagerApprovalChain.orderedIds(
@@ -153,25 +242,22 @@ class PermissionService {
         .collection('permissions')
         .where('userId', isEqualTo: req.userId)
         .where('monthKey', isEqualTo: monthKey)
-        .where('status', whereIn: const [
-          'pending',
-          'pending_team_leader',
-          'pending_manager',
-          'pending_hr',
-          'pending_ceo',
-          'approved',
-        ])
+        .where(
+          'status',
+          whereIn: const [
+            'pending',
+            'pending_team_leader',
+            'pending_manager',
+            'pending_hr',
+            'pending_ceo',
+            'approved',
+          ],
+        )
         .get();
 
-    final regularDocs = monthlyDocs.docs
-        .where((doc) => doc.data()['isDeductible'] != true)
-        .toList();
-    final usedCount = regularDocs.length;
-    final usedHours = regularDocs.fold<double>(
-      0.0,
-      (total, doc) =>
-          total + (doc.data()['durationMinutes'] as num? ?? 0) / 60.0,
-    );
+    final cycleUsage = _usageFromDocs(monthlyDocs.docs);
+    final usedCount = cycleUsage.usedCount;
+    final usedHours = cycleUsage.usedHours;
 
     final quotaExhausted = PermissionTypePolicy.isRegularQuotaExhausted(
       usedCount: usedCount,
@@ -335,7 +421,7 @@ class PermissionService {
         includeSuperAdmins: false,
         type: 'permission_pending_hr',
         title: 'طلب إذن بدون مدير معيّن',
-        body: '${req.employeeName} أرسل طلب إذن وينتظر قرار مدير HR.',
+        body: '${req.employeeName} أرسل طلب إذن وينتظر قرار HR.',
         data: {'permissionId': permRef.id},
       );
     } else {
@@ -358,6 +444,10 @@ class PermissionService {
       final doc = await transaction.get(ref);
       if (!doc.exists) throw Exception('طلب الإذن غير موجود.');
       final permission = PermissionModel.fromFirestore(doc);
+      final userDoc =
+          permission.status == 'approved' && !permission.isDeductible
+          ? await transaction.get(userRef)
+          : null;
       if (permission.userId != userId) {
         throw Exception('غير مسموح بإلغاء الطلب.');
       }
@@ -383,7 +473,9 @@ class PermissionService {
         'cancelledBy': userId,
         if (permission.status == 'approved') 'balanceRestored': true,
       });
-      if (permission.status == 'approved' && !permission.isDeductible) {
+      if (permission.status == 'approved' &&
+          !permission.isDeductible &&
+          _updatesActiveBalance(permission, userDoc?.data())) {
         transaction.update(userRef, {
           'permissionBalance.usedThisMonth': FieldValue.increment(-1),
           'permissionBalance.usedHoursThisMonth': FieldValue.increment(
@@ -410,26 +502,27 @@ class PermissionService {
     if (perm.status == 'pending_hr' && perm.userId == reviewerId) {
       throw Exception('لا يمكن اعتماد طلبك الشخصي. يجب أن يراجعه HR آخر.');
     }
-    if (perm.status == 'pending_hr' && !EmployeeRole.isHrStaff(reviewerRole)) {
-      throw Exception('هذه المرحلة يراجعها HR أو مدير HR فقط.');
+    if (perm.status == 'pending_hr' && !EmployeeRole.isHr(reviewerRole)) {
+      throw Exception('هذه المرحلة يراجعها HR فقط.');
     }
     final pendingManagerIds =
         (doc.data()?['managerIds'] as List<dynamic>?)
             ?.whereType<String>()
             .toList() ??
         const <String>[];
-    if (perm.status == 'pending_hr' &&
-        pendingManagerIds.isEmpty &&
-        reviewerRole != EmployeeRole.hrManager) {
-      throw Exception('الطلبات بدون مدير معيّن يراجعها مدير HR فقط.');
-    }
     final requesterDoc = await _db.collection('users').doc(perm.userId).get();
     final requesterRole = requesterDoc.data()?['role'] as String? ?? '';
+    if (perm.status == 'pending_hr' &&
+        pendingManagerIds.isEmpty &&
+        requesterRole == EmployeeRole.superAdmin &&
+        reviewerRole != EmployeeRole.hrManager) {
+      throw Exception('الطلبات بدون مدير معيّن يراجعها HR فقط.');
+    }
     if (perm.status == 'pending_hr' &&
         requesterRole == EmployeeRole.superAdmin &&
         reviewerRole != EmployeeRole.hrAdmin &&
         reviewerRole != EmployeeRole.hrManager) {
-      throw Exception('طلبات مالك النظام يراجعها HR أو مدير HR فقط.');
+      throw Exception('طلبات مالك النظام يراجعها HR فقط.');
     }
 
     if (perm.status == 'pending_hr') {
@@ -449,7 +542,7 @@ class PermissionService {
       final managersCompleted =
           managerIds.isEmpty || approvalTrail.length >= managerIds.length;
       final firstManagerId = managerIds.isNotEmpty ? managerIds.first : '';
-      final update = {
+      final Map<String, dynamic> update = {
         'status': managersCompleted ? 'approved' : 'pending_manager',
         if (!managersCompleted && firstManagerId.isNotEmpty)
           'managerId': firstManagerId,
@@ -476,11 +569,13 @@ class PermissionService {
 
       if (managersCompleted) {
         final batch = _db.batch();
+        update.addAll(await _checkoutDecisionSnapshot(perm));
         if (perm.isDeductible) {
           update['salaryDeductionApprovalStatus'] = 'approved';
         }
         batch.update(docRef, update);
-        if (!perm.isDeductible) {
+        if (!perm.isDeductible &&
+            _updatesActiveBalance(perm, requesterDoc.data())) {
           batch.update(_db.collection('users').doc(perm.userId), {
             'permissionBalance.usedThisMonth': FieldValue.increment(1),
             'permissionBalance.usedHoursThisMonth': FieldValue.increment(
@@ -557,12 +652,17 @@ class PermissionService {
           : approvalPolicy.finalManagerApprovalStatus,
     );
     nextUpdate['reviewerName'] = reviewerName;
+    if (nextUpdate['status'] == 'approved') {
+      nextUpdate.addAll(await _checkoutDecisionSnapshot(perm));
+    }
 
     // 1. Update status
     batch.update(docRef, nextUpdate);
 
     // 2. Increment employee quota counters
-    if (nextUpdate['status'] == 'approved' && !perm.isDeductible) {
+    if (nextUpdate['status'] == 'approved' &&
+        !perm.isDeductible &&
+        _updatesActiveBalance(perm, requesterDoc.data())) {
       final userRef = _db.collection('users').doc(perm.userId);
       batch.update(userRef, {
         'permissionBalance.usedThisMonth': FieldValue.increment(1),
@@ -653,26 +753,27 @@ class PermissionService {
     if (isHrStage && perm.userId == reviewerId) {
       throw Exception('لا يمكن رفض طلبك الشخصي. يجب أن يراجعه HR آخر.');
     }
-    if (isHrStage && !EmployeeRole.isHrStaff(reviewerRole)) {
-      throw Exception('هذه المرحلة يراجعها HR أو مدير HR فقط.');
+    if (isHrStage && !EmployeeRole.isHr(reviewerRole)) {
+      throw Exception('هذه المرحلة يراجعها HR فقط.');
     }
     final pendingManagerIds =
         (doc.data()?['managerIds'] as List<dynamic>?)
             ?.whereType<String>()
             .toList() ??
         const <String>[];
-    if (isHrStage &&
-        pendingManagerIds.isEmpty &&
-        reviewerRole != EmployeeRole.hrManager) {
-      throw Exception('الطلبات بدون مدير معيّن يراجعها مدير HR فقط.');
-    }
     final requesterDoc = await _db.collection('users').doc(perm.userId).get();
     final requesterRole = requesterDoc.data()?['role'] as String? ?? '';
+    if (isHrStage &&
+        pendingManagerIds.isEmpty &&
+        requesterRole == EmployeeRole.superAdmin &&
+        reviewerRole != EmployeeRole.hrManager) {
+      throw Exception('الطلبات بدون مدير معيّن يراجعها HR فقط.');
+    }
     if (isHrStage &&
         requesterRole == EmployeeRole.superAdmin &&
         reviewerRole != EmployeeRole.hrAdmin &&
         reviewerRole != EmployeeRole.hrManager) {
-      throw Exception('طلبات مالك النظام يراجعها HR أو مدير HR فقط.');
+      throw Exception('طلبات مالك النظام يراجعها HR فقط.');
     }
     if (!isHrStage && perm.managerId != reviewerId) {
       throw Exception('هذا الطلب ينتظر قرار مدير آخر.');
@@ -741,25 +842,12 @@ class PermissionService {
     required String body,
     Map<String, dynamic>? data,
   }) async {
-    final notifRef = _db
-        .collection('notifications')
-        .doc(recipientId)
-        .collection('items')
-        .doc();
-
-    await notifRef.set({
-      'notificationId': notifRef.id,
-      'type': type,
-      'title': title,
-      'body': body,
-      'data': NotificationRoutePolicy.dataWithRoute(type, data),
-      'isRead': false,
-      'pushSent': false,
-      'createdAt': FieldValue.serverTimestamp(),
-    });
-
-    await _db.collection('users').doc(recipientId).update({
-      'unreadNotifications': FieldValue.increment(1),
-    });
+    await RoleNotificationService.instance.createNotification(
+      recipientId: recipientId,
+      type: type,
+      title: title,
+      body: body,
+      data: data,
+    );
   }
 }

@@ -133,7 +133,7 @@ class EmployeeDeletionRequestService {
     }
     final isHrStage = request.status == 'pending_hr_manager';
     if (isHrStage && reviewer.role != EmployeeRole.hrManager) {
-      throw StateError('هذه المرحلة تحتاج موافقة مدير HR.');
+      throw StateError('هذه المرحلة تحتاج موافقة مسؤول HR.');
     }
     if (!isHrStage && reviewer.role != EmployeeRole.superAdmin) {
       throw StateError('هذه المرحلة تحتاج موافقة مالك النظام.');
@@ -232,7 +232,7 @@ class EmployeeDeletionRequestService {
         role: EmployeeRole.superAdmin,
         type: 'employee_deletion_pending',
         title: 'طلب إنهاء حساب بانتظار الاعتماد النهائي',
-        body: 'تمت موافقة مدير HR على إنهاء حساب ${request.employeeName}.',
+        body: 'تمت موافقة HR على إنهاء حساب ${request.employeeName}.',
         data: {'requestId': request.id, 'route': '/hr/employees'},
         includeSuperAdmins: true,
       );

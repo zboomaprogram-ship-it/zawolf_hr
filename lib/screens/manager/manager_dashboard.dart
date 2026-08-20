@@ -44,17 +44,19 @@ class _ManagerDashboardScreenState extends State<ManagerDashboardScreen> {
             .collection('leaves')
             .where('managerId', isEqualTo: managerId)
             .where('status', isEqualTo: 'pending_manager')
+            .count()
             .get(),
         _db
             .collection('permissions')
             .where('managerId', isEqualTo: managerId)
             .where('status', isEqualTo: 'pending_manager')
+            .count()
             .get(),
       ]);
 
       int total = 0;
-      for (var snap in results) {
-        total += snap.docs.length;
+      for (final snap in results) {
+        total += snap.count ?? 0;
       }
 
       if (mounted) {
@@ -366,9 +368,9 @@ class _ManagerDashboardScreenState extends State<ManagerDashboardScreen> {
                     ),
                     _buildQuickActionCard(
                       'ملفات الفريق',
-                      'بيانات الموظفين والأداء والغياب',
-                      Icons.people_alt_outlined,
-                      () => context.go('/manager/employees'),
+                      'منح الوصول إلى ملفات ومصادر القسم',
+                      Icons.folder_shared_outlined,
+                      () => context.go('/workspace'),
                       theme,
                     ),
                     _buildQuickActionCard(

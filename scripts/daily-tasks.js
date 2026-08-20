@@ -1,5 +1,6 @@
 const admin = require('firebase-admin');
 const { installFirestoreCompatibility } = require('./firebase-service-account');
+const { resolveCheckoutPolicyAt } = require('./checkout-policy');
 installFirestoreCompatibility(admin);
 
 // 1. Initialize Firebase Admin
@@ -575,9 +576,25 @@ async function runDailyTasks() {
         }
       }
 
+      // Snapshot the rule that applied to this attendance record. This prevents a
+      // later HR policy change from rewriting an already completed pay period.
+      const policyAnchor = log.checkOutTime || log.checkInTime;
+      const attendanceCheckoutPolicy = typeof log.checkoutPolicyEnabled === 'boolean'
+        ? {
+          enabled: log.checkoutPolicyEnabled,
+          revision: Number(log.checkoutPolicyRevision || 0),
+        }
+        : await resolveCheckoutPolicyAt(db, policyAnchor);
+
+      if (typeof log.checkoutPolicyEnabled !== 'boolean' && log.checkInTime) {
+        updates.checkoutPolicyEnabled = attendanceCheckoutPolicy.enabled;
+        updates.checkoutPolicyRevision = attendanceCheckoutPolicy.revision;
+        updates.checkoutPolicyEvaluatedAt = admin.firestore.FieldValue.serverTimestamp();
+      }
+
       // 2. Check if they forgot to checkout. The job runs after the completed day,
       // so employees had until 11 PM to check out from the location.
-      if (log.checkInTime && !log.checkOutTime) {
+      if (attendanceCheckoutPolicy.enabled && log.checkInTime && !log.checkOutTime) {
         const wasAlreadyDetected = Boolean(log.salaryDeductionDetectedAt);
         const currentFraction = updates.salaryDeductionFraction !== undefined ? updates.salaryDeductionFraction : log.salaryDeductionFraction;
 
@@ -607,7 +624,7 @@ async function runDailyTasks() {
             salaryDeductionDetectedAt: admin.firestore.FieldValue.serverTimestamp(),
           });
         }
-      } else if (log.checkOutTime && log.salaryDeductionCode === 'early_checkout_quarter_day') {
+      } else if (attendanceCheckoutPolicy.enabled && log.checkOutTime && log.salaryDeductionCode === 'early_checkout_quarter_day') {
         // 3. Handle early checkout permission. Required checkout time is shifted earlier.
         const earlyPerm = approvedPermsByUserId[userId]?.['early_leave'];
         const baseEnd = user.workSchedule?.endTime || policy.defaultEndTime || '17:00';

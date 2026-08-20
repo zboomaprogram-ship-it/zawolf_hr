@@ -31,7 +31,9 @@ class OrganizationLevel {
     if (code == 'CEO-100') return ceo;
     if (code == 'COO-1300') return divisionManager;
     if (appRole == 'team_leader') return teamLeader;
-    if (appRole == 'manager' || appRole == 'hr_manager') {
+    if (appRole == 'manager' ||
+        appRole == 'hr_admin' ||
+        appRole == 'hr_manager') {
       return departmentManager;
     }
     return employee;

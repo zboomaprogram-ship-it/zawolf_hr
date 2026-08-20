@@ -50,7 +50,9 @@ class AttendanceReconciliationService {
         employee: employee,
         policy: policy,
       );
-    } else if (permission.permissionType == 'early_leave' && checkOut != null) {
+    } else if (permission.permissionType == 'early_leave' &&
+        attendanceData['checkoutPolicyEnabled'] != false &&
+        checkOut != null) {
       final baseEnd = AttendancePolicy.parseTimeOnDate(
         checkOut,
         employee.workSchedule.endTime ?? policy.defaultEndTime,

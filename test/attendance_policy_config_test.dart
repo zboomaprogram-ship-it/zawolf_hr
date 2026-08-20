@@ -17,6 +17,17 @@ void main() {
     expect(policy.toMap()['checkInReminderLeadMinutes'], 10);
   });
 
+  test('legacy policy retains the configured checkout boundary', () {
+    final policy = AttendancePolicyConfig.fromMap({
+      'defaultEndTime': '18:00',
+      'latestCheckoutTime': '22:30',
+    });
+
+    expect(policy.defaultEndTime, '18:00');
+    expect(policy.latestCheckoutTime, '22:30');
+    expect(policy.toMap()['latestCheckoutTime'], '22:30');
+  });
+
   test('late permission uses the shifted effective start time', () {
     final policy = AttendancePolicyConfig.fromMap({
       'graceMinutes': 15,

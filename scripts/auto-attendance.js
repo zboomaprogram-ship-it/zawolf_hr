@@ -4,6 +4,7 @@ const {
   installFirestoreCompatibility,
   parseFirebaseServiceAccount,
 } = require('./firebase-service-account');
+const { loadCheckoutPolicy } = require('./checkout-policy');
 
 installFirestoreCompatibility(admin);
 
@@ -130,7 +131,7 @@ async function resolveSignal(db, signalDoc, outcome, extra = {}) {
   });
 }
 
-async function processSignal(db, signalDoc, company, now) {
+async function processSignal(db, signalDoc, company, now, checkoutPolicy) {
   const signal = signalDoc.data();
   const capturedAt = signal.createdAt?.toDate?.();
   if (!(capturedAt instanceof Date) || Date.now() - capturedAt.getTime() > MAX_SIGNAL_AGE_MS || capturedAt.getTime() - Date.now() > 60 * 1000) {
@@ -214,6 +215,13 @@ async function processSignal(db, signalDoc, company, now) {
     return;
   }
   if (signal.event !== 'exit') return resolveSignal(db, signalDoc, 'rejected_event');
+  // Check-out is deliberately fail-closed. This decision happens before an
+  // attendance read/write so an off policy cannot create a hidden checkout.
+  if (checkoutPolicy?.enabled !== true) {
+    return resolveSignal(db, signalDoc, 'ignored_checkout_policy_disabled', {
+      checkoutPolicyRevision: Number(checkoutPolicy?.revision || 0),
+    });
+  }
   if (!attendance.exists || !attendance.data()?.checkInTime) return resolveSignal(db, signalDoc, 'ignored_without_check_in');
   if (attendance.data()?.checkOutTime) return resolveSignal(db, signalDoc, 'ignored_already_checked_out');
   if (fieldAssignment?.requiresCheckout === false) return resolveSignal(db, signalDoc, 'ignored_field_assignment_no_checkout');
@@ -263,12 +271,21 @@ async function processAutomaticAttendance() {
   }
   // Company policy is needed only when an actual geofence signal exists.
   // Avoid one unnecessary policy read on every five-minute scheduler tick.
-  const companyDoc = await db.collection('companies').doc('zawolf').get();
+  const [companyDoc, checkoutPolicy] = await Promise.all([
+    db.collection('companies').doc('zawolf').get(),
+    loadCheckoutPolicy(db),
+  ]);
   let processed = 0;
   let failed = 0;
   for (const signal of signals.docs) {
     try {
-      await processSignal(db, signal, companyDoc.data() || {}, now);
+      await processSignal(
+        db,
+        signal,
+        companyDoc.data() || {},
+        now,
+        checkoutPolicy,
+      );
       processed++;
     } catch (error) {
       failed++;
@@ -276,7 +293,14 @@ async function processAutomaticAttendance() {
       await resolveSignal(db, signal, 'failed', { error: String(error.message || error).slice(0, 500) });
     }
   }
-  return { found: signals.size, processed, failed, date: now.dateKey };
+  return {
+    found: signals.size,
+    processed,
+    failed,
+    date: now.dateKey,
+    checkoutEnabled: checkoutPolicy.enabled,
+    checkoutPolicyRevision: checkoutPolicy.revision,
+  };
 }
 
 if (require.main === module) {
@@ -289,4 +313,11 @@ if (require.main === module) {
   });
 }
 
-module.exports = { deductionFor, effectiveTimes, haversineMeters, isWorkDay, processAutomaticAttendance };
+module.exports = {
+  deductionFor,
+  effectiveTimes,
+  haversineMeters,
+  isWorkDay,
+  processAutomaticAttendance,
+  processSignal,
+};

@@ -5,6 +5,7 @@ const {
   installFirestoreCompatibility,
   parseFirebaseServiceAccount,
 } = require('./firebase-service-account');
+const { loadCheckoutPolicy } = require('./checkout-policy');
 installFirestoreCompatibility(admin);
 
 function dispatchConfig() {
@@ -49,6 +50,10 @@ function routeForNotification(type) {
   if (value === 'salary_deduction_pending') return '/manager/requests';
   if (value === 'salary_deduction_reviewed') return '/employee/deductions';
   if (value === 'complaint_new') return '/manager/requests';
+  if (
+    value === 'administrative_request_submitted' ||
+    value === 'field_mission_pending_ceo'
+  ) return '/manager/requests';
   if (value.includes('pending_hr') || value.includes('pending_manager')) {
     return '/manager/requests';
   }
@@ -99,6 +104,10 @@ function reminderAction(data) {
   return null;
 }
 
+function isCheckoutReminderSuppressed(data, checkoutPolicy) {
+  return reminderAction(data) === 'check_out' && checkoutPolicy?.enabled !== true;
+}
+
 function reminderDate(data) {
   const nested = data?.data && typeof data.data === 'object' ? data.data : {};
   const value = String(nested.date || '');
@@ -127,10 +136,11 @@ async function loadAttendanceForReminder(db, userId, dateKey) {
   return legacy.empty ? null : legacy.docs[0].data();
 }
 
-async function shouldSkipAttendanceReminder(db, item) {
+async function shouldSkipAttendanceReminder(db, item, checkoutPolicy) {
   const action = reminderAction(item.data);
   const dateKey = reminderDate(item.data);
   if (!action || !dateKey) return false;
+  if (isCheckoutReminderSuppressed(item.data, checkoutPolicy)) return true;
   const attendance = await loadAttendanceForReminder(
     db,
     item.userId,
@@ -356,6 +366,9 @@ async function dispatchNotifications() {
 
   let sent = 0;
   let failed = 0;
+  // Existing queued messages may predate the current policy. Resolve once and
+  // revalidate them at delivery time before any OneSignal call.
+  const checkoutPolicy = await loadCheckoutPolicy(db);
 
   for (const item of pending) {
     const title = item.data.title || 'تنبيه جديد';
@@ -365,14 +378,23 @@ async function dispatchNotifications() {
     try {
       // Attendance may be recorded after a reminder was queued but before the
       // dispatcher reaches OneSignal. Revalidate at the final delivery edge.
-      if (await shouldSkipAttendanceReminder(db, item)) {
-        await markSkipped(db, item, 'attendance_already_completed');
+      if (await shouldSkipAttendanceReminder(db, item, checkoutPolicy)) {
+        const reason = reminderAction(item.data) === 'check_out' && !checkoutPolicy.enabled
+          ? 'checkout_policy_disabled'
+          : 'attendance_already_completed';
+        await markSkipped(db, item, reason);
         console.log(
           `Skipped stale attendance reminder ${item.id} for ${item.userId}.`,
         );
         continue;
       }
-      const result = await sendPushToUsers([item.userId], title, body, payload);
+      const result = await sendPushToUsers(
+        [item.userId],
+        title,
+        body,
+        payload,
+        { idempotencyKey: `${item.userId}:${item.id}` },
+      );
       if (result.sent) {
         await markSent(db, [item], result);
         sent++;
@@ -413,6 +435,7 @@ module.exports = {
   routeForNotification,
   isUnsubscribedDeviceError,
   reminderAction,
+  isCheckoutReminderSuppressed,
   reminderDate,
   attendanceCompletesReminder,
   shouldSkipAttendanceReminder,

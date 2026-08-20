@@ -1882,7 +1882,6 @@ bool _isManagerRole(UserModel user) =>
     user.organizationLevel == OrganizationLevel.divisionManager ||
     user.organizationLevel == OrganizationLevel.departmentManager ||
     user.role == EmployeeRole.manager ||
-    user.role == EmployeeRole.hrManager ||
     user.role == EmployeeRole.hrAdmin;
 
 String _departmentOf(UserModel user) =>
@@ -1890,8 +1889,7 @@ String _departmentOf(UserModel user) =>
 
 int _roleOrder(UserModel user) => switch (user.role) {
   EmployeeRole.superAdmin => 0,
-  EmployeeRole.hrManager => 1,
-  EmployeeRole.hrAdmin => 2,
+  EmployeeRole.hrAdmin => 1,
   EmployeeRole.manager => 3,
   EmployeeRole.teamLeader => 4,
   _ => 5,

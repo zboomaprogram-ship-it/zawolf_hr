@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:provider/provider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart' hide TextDirection;
+import 'package:url_launcher/url_launcher.dart';
 import '../../services/auth_service.dart';
 import '../../services/leave_service.dart';
 import '../../services/permission_service.dart';
@@ -14,6 +17,7 @@ import '../../models/complaint_model.dart';
 import '../../models/leave_model.dart';
 import '../../models/leave_type_policy.dart';
 import '../../models/permission_model.dart';
+import '../../models/permission_type_policy.dart';
 import '../../models/user_model.dart';
 import '../../models/advance_model.dart';
 import '../../services/advance_service.dart';
@@ -21,6 +25,7 @@ import '../../services/request_approval_policy_service.dart';
 import '../../services/resignation_service.dart';
 import '../../services/administrative_request_service.dart';
 import '../../services/attendance_correction_request_service.dart';
+import '../../services/hr_direct_request_service.dart';
 import '../../models/request_approval_policy.dart';
 import '../../models/resignation_model.dart';
 import '../../models/administrative_request_model.dart';
@@ -31,6 +36,7 @@ import '../../theme/theme.dart';
 import '../../components/wolf_card.dart';
 import '../../components/wolf_button.dart';
 import '../../components/request_approval_timeline.dart';
+import '../../utils/user_facing_error.dart';
 import '../shared/requests_log_screen.dart';
 
 class RequestsManagementScreen extends StatefulWidget {
@@ -58,6 +64,331 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
   String _searchQuery = '';
   final Map<String, Stream<QuerySnapshot<Map<String, dynamic>>>> _streamCache =
       {};
+  final Map<String, Stream<dynamic>> _derivedStreamCache = {};
+
+  Future<void> _openAttachment(String rawUrl) async {
+    final url = rawUrl.trim();
+    final uri = Uri.tryParse(url);
+    if (uri == null ||
+        !uri.hasScheme ||
+        !(uri.scheme == 'https' || uri.scheme == 'http')) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('رابط المرفق غير صالح.')));
+      return;
+    }
+
+    try {
+      final opened = await launchUrl(
+        uri,
+        mode: LaunchMode.externalApplication,
+        webOnlyWindowName: '_blank',
+      );
+      if (!opened && mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('تعذر فتح رابط المرفق.')));
+      }
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('تعذر فتح رابط المرفق.')));
+    }
+  }
+
+  Future<void> _showDirectHrGrantDialog(UserModel hr) async {
+    final reasonController = TextEditingController();
+    var kind = 'leave';
+    UserModel? employee;
+    var leaveType = LeaveTypePolicy.normal;
+    var permissionType = PermissionTypePolicy.earlyLeave;
+    var startDate = DateTime.now();
+    var endDate = DateTime.now();
+    var permissionDate = DateTime.now();
+    var permissionTime = const TimeOfDay(hour: 9, minute: 0);
+    var durationHours = 1;
+    var deductible = false;
+    var saving = false;
+
+    final users = await _db
+        .collection('users')
+        .where('isActive', isEqualTo: true)
+        .get();
+    final employees =
+        users.docs
+            .map(UserModel.fromFirestore)
+            .where(
+              (user) => user.uid != hr.uid && !EmployeeRole.isHr(user.role),
+            )
+            .toList()
+          ..sort((a, b) => a.displayName.compareTo(b.displayName));
+    if (!mounted) return;
+
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('إضافة مباشرة لموظف'),
+          content: SizedBox(
+            width: 480,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  SegmentedButton<String>(
+                    segments: const [
+                      ButtonSegment(value: 'leave', label: Text('إجازة')),
+                      ButtonSegment(value: 'permission', label: Text('إذن')),
+                    ],
+                    selected: {kind},
+                    onSelectionChanged: saving
+                        ? null
+                        : (value) => setDialogState(() => kind = value.first),
+                  ),
+                  const SizedBox(height: 14),
+                  DropdownButtonFormField<UserModel>(
+                    initialValue: employee,
+                    isExpanded: true,
+                    decoration: const InputDecoration(labelText: 'الموظف'),
+                    items: employees
+                        .map(
+                          (user) => DropdownMenuItem(
+                            value: user,
+                            child: Text(
+                              '${user.displayName} (${user.employeeId})',
+                            ),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: saving
+                        ? null
+                        : (value) => setDialogState(() => employee = value),
+                  ),
+                  const SizedBox(height: 14),
+                  if (kind == 'leave') ...[
+                    DropdownButtonFormField<String>(
+                      initialValue: leaveType,
+                      decoration: const InputDecoration(
+                        labelText: 'نوع الإجازة',
+                      ),
+                      items: LeaveTypePolicy.supportedTypes
+                          .map(
+                            (type) => DropdownMenuItem(
+                              value: type,
+                              child: Text(LeaveTypePolicy.arabicLabel(type)),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: saving
+                          ? null
+                          : (value) => setDialogState(
+                              () => leaveType = value ?? leaveType,
+                            ),
+                    ),
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('فترة الإجازة'),
+                      subtitle: Text(
+                        '${DateFormat('yyyy/MM/dd').format(startDate)} - ${DateFormat('yyyy/MM/dd').format(endDate)}',
+                      ),
+                      trailing: const Icon(Icons.date_range),
+                      onTap: saving
+                          ? null
+                          : () async {
+                              final range = await showDateRangePicker(
+                                context: context,
+                                firstDate: DateTime.now().subtract(
+                                  const Duration(days: 365),
+                                ),
+                                lastDate: DateTime.now().add(
+                                  const Duration(days: 730),
+                                ),
+                                initialDateRange: DateTimeRange(
+                                  start: startDate,
+                                  end: endDate,
+                                ),
+                              );
+                              if (range != null) {
+                                setDialogState(() {
+                                  startDate = range.start;
+                                  endDate = range.end;
+                                });
+                              }
+                            },
+                    ),
+                  ] else ...[
+                    DropdownButtonFormField<String>(
+                      initialValue: permissionType,
+                      decoration: const InputDecoration(labelText: 'نوع الإذن'),
+                      items:
+                          const [
+                                PermissionTypePolicy.earlyLeave,
+                                PermissionTypePolicy.lateArrival,
+                                PermissionTypePolicy.midShiftExit,
+                              ]
+                              .map(
+                                (type) => DropdownMenuItem(
+                                  value: type,
+                                  child: Text(
+                                    PermissionTypePolicy.arabicLabel(type),
+                                  ),
+                                ),
+                              )
+                              .toList(),
+                      onChanged: saving
+                          ? null
+                          : (value) => setDialogState(
+                              () => permissionType = value ?? permissionType,
+                            ),
+                    ),
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('تاريخ ووقت الإذن'),
+                      subtitle: Text(
+                        '${DateFormat('yyyy/MM/dd').format(permissionDate)} · ${permissionTime.format(context)}',
+                      ),
+                      onTap: saving
+                          ? null
+                          : () async {
+                              final date = await showDatePicker(
+                                context: context,
+                                initialDate: permissionDate,
+                                firstDate: DateTime.now().subtract(
+                                  const Duration(days: 365),
+                                ),
+                                lastDate: DateTime.now().add(
+                                  const Duration(days: 365),
+                                ),
+                              );
+                              if (date == null || !context.mounted) return;
+                              final time = await showTimePicker(
+                                context: context,
+                                initialTime: permissionTime,
+                              );
+                              if (time != null) {
+                                setDialogState(() {
+                                  permissionDate = date;
+                                  permissionTime = time;
+                                });
+                              }
+                            },
+                    ),
+                    DropdownButtonFormField<int>(
+                      initialValue: durationHours,
+                      decoration: const InputDecoration(labelText: 'المدة'),
+                      items: const [1, 2, 3, 4]
+                          .map(
+                            (hours) => DropdownMenuItem(
+                              value: hours,
+                              child: Text('$hours ساعة'),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: saving
+                          ? null
+                          : (value) => setDialogState(
+                              () => durationHours = value ?? durationHours,
+                            ),
+                    ),
+                    SwitchListTile.adaptive(
+                      contentPadding: EdgeInsets.zero,
+                      value: deductible,
+                      title: const Text('إذن استقطاعي'),
+                      onChanged: saving
+                          ? null
+                          : (value) => setDialogState(() => deductible = value),
+                    ),
+                  ],
+                  TextField(
+                    controller: reasonController,
+                    minLines: 2,
+                    maxLines: 4,
+                    textDirection: TextDirection.rtl,
+                    decoration: const InputDecoration(
+                      labelText: 'السبب / ملاحظة HR',
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: saving ? null : () => Navigator.pop(dialogContext),
+              child: const Text('إلغاء'),
+            ),
+            FilledButton(
+              onPressed: saving
+                  ? null
+                  : () async {
+                      final messenger = ScaffoldMessenger.of(context);
+                      if (employee == null ||
+                          reasonController.text.trim().isEmpty) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('اختر الموظف واكتب السبب.'),
+                          ),
+                        );
+                        return;
+                      }
+                      setDialogState(() => saving = true);
+                      try {
+                        final service = HrDirectRequestService();
+                        if (kind == 'leave') {
+                          await service.grantLeave(
+                            employee: employee!,
+                            hr: hr,
+                            leaveType: leaveType,
+                            startDate: startDate,
+                            endDate: endDate,
+                            reason: reasonController.text,
+                          );
+                        } else {
+                          final expectedTime =
+                              '${permissionTime.hour.toString().padLeft(2, '0')}:${permissionTime.minute.toString().padLeft(2, '0')}';
+                          await service.grantPermission(
+                            employee: employee!,
+                            hr: hr,
+                            permissionType: permissionType,
+                            date: permissionDate,
+                            expectedTime: expectedTime,
+                            durationMinutes: durationHours * 60,
+                            reason: reasonController.text,
+                            isDeductible: deductible,
+                          );
+                        }
+                        if (!dialogContext.mounted || !mounted) return;
+                        Navigator.pop(dialogContext);
+                        messenger.showSnackBar(
+                          const SnackBar(
+                            content: Text('تمت الإضافة والاعتماد مباشرة.'),
+                          ),
+                        );
+                      } catch (error) {
+                        if (!dialogContext.mounted || !mounted) return;
+                        setDialogState(() => saving = false);
+                        messenger.showSnackBar(
+                          SnackBar(content: Text(userFacingError(error))),
+                        );
+                      }
+                    },
+              child: saving
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Text('إضافة واعتماد'),
+            ),
+          ],
+        ),
+      ),
+    );
+    reasonController.dispose();
+  }
 
   Future<void> _showRejectionDialog({
     required String requestId,
@@ -143,9 +474,11 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                   }
                 } catch (e) {
                   if (context.mounted) {
-                    ScaffoldMessenger.of(
-                      context,
-                    ).showSnackBar(SnackBar(content: Text('فشل الإجراء: $e')));
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('فشل الإجراء: ${userFacingError(e)}'),
+                      ),
+                    );
                   }
                 }
               },
@@ -178,9 +511,13 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
       text: (currentData?['durationMinutes'] ?? 60).toString(),
     );
     var mode = 'direct'; // 'direct' or 'request'
-    DateTime startDate = (currentData?['startDate'] as Timestamp?)?.toDate() ?? DateTime.now();
-    DateTime endDate = (currentData?['endDate'] as Timestamp?)?.toDate() ?? DateTime.now();
-    DateTime resignationDate = (currentData?['resignationDate'] as Timestamp?)?.toDate() ?? DateTime.now();
+    DateTime startDate =
+        (currentData?['startDate'] as Timestamp?)?.toDate() ?? DateTime.now();
+    DateTime endDate =
+        (currentData?['endDate'] as Timestamp?)?.toDate() ?? DateTime.now();
+    DateTime resignationDate =
+        (currentData?['resignationDate'] as Timestamp?)?.toDate() ??
+        DateTime.now();
     String leaveType = (currentData?['leaveType'] as String?) ?? 'casual';
 
     final formKey = GlobalKey<FormState>();
@@ -193,7 +530,10 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
           builder: (context, setDialogState) {
             return AlertDialog(
               backgroundColor: ZaWolfColors.surface01,
-              title: Text('تعديل $requestTitle', textDirection: TextDirection.rtl),
+              title: Text(
+                'تعديل $requestTitle',
+                textDirection: TextDirection.rtl,
+              ),
               content: SingleChildScrollView(
                 child: SizedBox(
                   width: 440,
@@ -217,7 +557,8 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                             ),
                           ],
                           selected: {mode},
-                          onSelectionChanged: (val) => setDialogState(() => mode = val.first),
+                          onSelectionChanged: (val) =>
+                              setDialogState(() => mode = val.first),
                         ),
                         const SizedBox(height: 16),
                         if (mode == 'request') ...[
@@ -228,10 +569,12 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                             style: const TextStyle(color: Colors.white),
                             decoration: const InputDecoration(
                               labelText: 'تعليمات التعديل للموظف',
-                              hintText: 'اكتب ما تطلب من الموظف تعديله في الطلب...',
+                              hintText:
+                                  'اكتب ما تطلب من الموظف تعديله في الطلب...',
                             ),
                             validator: (val) {
-                              if (mode == 'request' && (val == null || val.trim().isEmpty)) {
+                              if (mode == 'request' &&
+                                  (val == null || val.trim().isEmpty)) {
                                 return 'يرجى كتابة تعليمات التعديل.';
                               }
                               return null;
@@ -245,13 +588,21 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                               subtitle: Text(
                                 '${DateFormat('yyyy/MM/dd').format(startDate)}  ←  ${DateFormat('yyyy/MM/dd').format(endDate)}',
                               ),
-                              trailing: const Icon(Icons.calendar_today, color: ZaWolfColors.primaryCyan),
+                              trailing: const Icon(
+                                Icons.calendar_today,
+                                color: ZaWolfColors.primaryCyan,
+                              ),
                               onTap: () async {
                                 final picked = await showDateRangePicker(
                                   context: context,
-                                  initialDateRange: DateTimeRange(start: startDate, end: endDate),
+                                  initialDateRange: DateTimeRange(
+                                    start: startDate,
+                                    end: endDate,
+                                  ),
                                   firstDate: DateTime(2020),
-                                  lastDate: DateTime.now().add(const Duration(days: 730)),
+                                  lastDate: DateTime.now().add(
+                                    const Duration(days: 730),
+                                  ),
                                 );
                                 if (picked != null) {
                                   setDialogState(() {
@@ -264,15 +615,31 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                             const SizedBox(height: 8),
                             DropdownButtonFormField<String>(
                               initialValue: leaveType,
-                              decoration: const InputDecoration(labelText: 'نوع الإجازة'),
+                              decoration: const InputDecoration(
+                                labelText: 'نوع الإجازة',
+                              ),
                               dropdownColor: ZaWolfColors.surface02,
                               items: const [
-                                DropdownMenuItem(value: 'casual', child: Text('عارضة')),
-                                DropdownMenuItem(value: 'annual', child: Text('سنوية')),
-                                DropdownMenuItem(value: 'unpaid', child: Text('بدون أجر')),
-                                DropdownMenuItem(value: 'sick', child: Text('مرضية')),
+                                DropdownMenuItem(
+                                  value: 'casual',
+                                  child: Text('عارضة'),
+                                ),
+                                DropdownMenuItem(
+                                  value: 'annual',
+                                  child: Text('سنوية'),
+                                ),
+                                DropdownMenuItem(
+                                  value: 'unpaid',
+                                  child: Text('بدون أجر'),
+                                ),
+                                DropdownMenuItem(
+                                  value: 'sick',
+                                  child: Text('مرضية'),
+                                ),
                               ],
-                              onChanged: (val) => setDialogState(() => leaveType = val ?? 'casual'),
+                              onChanged: (val) => setDialogState(
+                                () => leaveType = val ?? 'casual',
+                              ),
                             ),
                           ],
                           if (collection == 'permissions') ...[
@@ -293,7 +660,8 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                                 labelText: 'مبلغ السلفة',
                               ),
                               validator: (val) {
-                                if (mode == 'direct' && (double.tryParse(val ?? '') ?? 0) <= 0) {
+                                if (mode == 'direct' &&
+                                    (double.tryParse(val ?? '') ?? 0) <= 0) {
                                   return 'أدخل مبلغاً صحيحاً للسلفة.';
                                 }
                                 return null;
@@ -304,17 +672,28 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                             ListTile(
                               contentPadding: EdgeInsets.zero,
                               title: const Text('تاريخ الاستقالة'),
-                              subtitle: Text(DateFormat('yyyy/MM/dd').format(resignationDate)),
-                              trailing: const Icon(Icons.calendar_today, color: ZaWolfColors.primaryCyan),
+                              subtitle: Text(
+                                DateFormat(
+                                  'yyyy/MM/dd',
+                                ).format(resignationDate),
+                              ),
+                              trailing: const Icon(
+                                Icons.calendar_today,
+                                color: ZaWolfColors.primaryCyan,
+                              ),
                               onTap: () async {
                                 final picked = await showDatePicker(
                                   context: context,
                                   initialDate: resignationDate,
                                   firstDate: DateTime(2020),
-                                  lastDate: DateTime.now().add(const Duration(days: 730)),
+                                  lastDate: DateTime.now().add(
+                                    const Duration(days: 730),
+                                  ),
                                 );
                                 if (picked != null) {
-                                  setDialogState(() => resignationDate = picked);
+                                  setDialogState(
+                                    () => resignationDate = picked,
+                                  );
                                 }
                               },
                             ),
@@ -342,10 +721,15 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                 ),
                 FilledButton.icon(
                   icon: Icon(mode == 'direct' ? Icons.check : Icons.send),
-                  label: Text(mode == 'direct' ? 'حفظ التعديل المباشر' : 'إرسال للموظف'),
+                  label: Text(
+                    mode == 'direct' ? 'حفظ التعديل المباشر' : 'إرسال للموظف',
+                  ),
                   onPressed: () async {
                     if (!formKey.currentState!.validate()) return;
-                    final authService = Provider.of<AuthService>(context, listen: false);
+                    final authService = Provider.of<AuthService>(
+                      context,
+                      listen: false,
+                    );
                     final reviewer = authService.currentUser;
                     if (reviewer == null) return;
 
@@ -380,25 +764,35 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                           patch['leaveType'] = leaveType;
                           patch['reason'] = reasonController.text.trim();
                         } else if (collection == 'permissions') {
-                          final mins = int.tryParse(durationController.text.trim()) ?? 60;
+                          final mins =
+                              int.tryParse(durationController.text.trim()) ??
+                              60;
                           patch['durationMinutes'] = mins;
                           patch['reason'] = reasonController.text.trim();
                         } else if (collection == 'advances') {
-                          final amt = double.tryParse(amountController.text.trim()) ?? 0;
+                          final amt =
+                              double.tryParse(amountController.text.trim()) ??
+                              0;
                           patch['amount'] = amt;
                           patch['reason'] = reasonController.text.trim();
                         } else if (collection == 'resignations') {
-                          patch['resignationDate'] = Timestamp.fromDate(resignationDate);
+                          patch['resignationDate'] = Timestamp.fromDate(
+                            resignationDate,
+                          );
                           patch['reason'] = reasonController.text.trim();
                         } else if (collection == 'administrativeRequests') {
                           patch['notes'] = reasonController.text.trim();
                         }
 
-                        await _db.collection(collection).doc(requestId).update(patch);
+                        await _db
+                            .collection(collection)
+                            .doc(requestId)
+                            .update(patch);
                         await _sendModificationNotif(
                           userId: userId,
                           title: 'تم تعديل بيانات طلبك ✏️',
-                          body: 'قامت الإدارة بتحديث بيانات $requestTitle مباشرة.',
+                          body:
+                              'قامت الإدارة بتحديث بيانات $requestTitle مباشرة.',
                           requestId: requestId,
                           collection: collection,
                         );
@@ -419,7 +813,9 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                     } catch (e) {
                       if (context.mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('فشل التعديل: $e')),
+                          SnackBar(
+                            content: Text('فشل التعديل: ${userFacingError(e)}'),
+                          ),
                         );
                       }
                     }
@@ -459,9 +855,11 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
       'pushSent': false,
       'createdAt': FieldValue.serverTimestamp(),
     });
-    await _db.collection('users').doc(userId).update({
-      'unreadNotifications': FieldValue.increment(1),
-    }).catchError((_) {});
+    await _db
+        .collection('users')
+        .doc(userId)
+        .update({'unreadNotifications': FieldValue.increment(1)})
+        .catchError((_) {});
   }
 
   @override
@@ -478,14 +876,14 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
       );
     }
     final canReviewSalaryDeductions = EmployeeRole.isHr(manager.role);
-    final canReviewTimeCorrections = EmployeeRole.isHrStaff(manager.role);
+    final canReviewTimeCorrections = EmployeeRole.isHr(manager.role);
     final tabs = <Tab>[
       const Tab(text: 'الإجازات'),
       const Tab(text: 'الأذونات'),
       const Tab(text: 'السلف'),
       if (canReviewSalaryDeductions) const Tab(text: 'خصومات التأخير'),
       if (canReviewSalaryDeductions) const Tab(text: 'خصومات الغياب'),
-      if (canReviewSalaryDeductions) const Tab(text: 'إلغاء خصم معتمد'),
+      if (canReviewSalaryDeductions) const Tab(text: 'الخصومات المعتمدة'),
       const Tab(text: 'خصومات إدارية'),
       if (canReviewTimeCorrections) const Tab(text: 'تصحيح الحضور'),
       const Tab(text: 'مراجعة أمنية'),
@@ -498,11 +896,21 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
       _buildPermissionsTab(manager, theme),
       _buildAdvancesTab(manager, theme),
       if (canReviewSalaryDeductions)
-        _buildSalaryDeductionsTab(manager, theme, reversalOnly: false, absenceOnly: false),
+        _buildSalaryDeductionsTab(
+          manager,
+          theme,
+          reversalOnly: false,
+          absenceOnly: false,
+        ),
       if (canReviewSalaryDeductions)
-        _buildSalaryDeductionsTab(manager, theme, reversalOnly: false, absenceOnly: true),
+        _buildSalaryDeductionsTab(
+          manager,
+          theme,
+          reversalOnly: false,
+          absenceOnly: true,
+        ),
       if (canReviewSalaryDeductions)
-        _buildSalaryDeductionsTab(manager, theme, reversalOnly: true),
+        _buildConfirmedDeductionsTab(manager, theme),
       _buildManualDeductionsTab(manager, theme),
       if (canReviewTimeCorrections)
         _buildAttendanceCorrectionsTab(manager, theme),
@@ -521,6 +929,15 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
             style: theme.textTheme.headlineMedium,
           ),
           actions: [
+            if (EmployeeRole.isHr(manager.role))
+              IconButton(
+                icon: const Icon(
+                  Icons.playlist_add_circle_outlined,
+                  color: ZaWolfColors.success,
+                ),
+                tooltip: 'إضافة إجازة أو إذن مباشرة',
+                onPressed: () => _showDirectHrGrantDialog(manager),
+              ),
             IconButton(
               icon: const Icon(
                 Icons.history_toggle_off,
@@ -558,10 +975,17 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                   border: OutlineInputBorder(),
                   isDense: true,
                 ),
-                onChanged: (value) => setState(() => _searchQuery = value.trim().toLowerCase()),
+                onChanged: (value) =>
+                    setState(() => _searchQuery = value.trim().toLowerCase()),
               ),
             ),
-            Expanded(child: TabBarView(children: tabViews)),
+            Expanded(
+              child: TabBarView(
+                children: tabViews
+                    .map((child) => _KeepAliveRequestTab(child: child))
+                    .toList(growable: false),
+              ),
+            ),
           ],
         ),
       ),
@@ -571,16 +995,23 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
   Widget _buildManualDeductionsTab(UserModel reviewer, ThemeData theme) {
     final service = ManualDeductionService();
     return StreamBuilder<List<ManualDeductionModel>>(
-      stream: service.watchManagedDeductions(reviewer),
+      stream: _cachedDerivedStream(
+        'manual-deductions|${reviewer.uid}|${reviewer.role}',
+        () => service.watchManagedDeductions(reviewer),
+      ),
       builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return _buildStreamError('تعذر تحميل الخصومات الإدارية');
+        }
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator(color: ZaWolfColors.primaryCyan));
+          return _buildLoadingState('تحميل الخصومات الإدارية...');
         }
         final allItems = snapshot.data ?? [];
         final items = allItems.where((item) {
           if (_searchQuery.isEmpty) return true;
           return item.employeeName.toLowerCase().contains(_searchQuery) ||
               item.employeeId.toLowerCase().contains(_searchQuery) ||
+              item.department.toLowerCase().contains(_searchQuery) ||
               item.reason.toLowerCase().contains(_searchQuery);
         }).toList();
 
@@ -605,12 +1036,18 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                 child: Padding(
                   padding: EdgeInsets.all(24),
                   child: Center(
-                    child: Text('لا توجد طلبات خصم إداري حالياً', textDirection: TextDirection.rtl),
+                    child: Text(
+                      'لا توجد طلبات خصم إداري حالياً',
+                      textDirection: TextDirection.rtl,
+                    ),
                   ),
                 ),
               )
             else
-              ...items.map((item) => _buildManualDeductionCard(item, reviewer, theme, service)),
+              ...items.map(
+                (item) =>
+                    _buildManualDeductionCard(item, reviewer, theme, service),
+              ),
           ],
         );
       },
@@ -625,9 +1062,12 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
   ) {
     final isHr = EmployeeRole.isHr(reviewer.role);
     final isSuperAdmin = reviewer.role == EmployeeRole.superAdmin;
-    final isMyTeam = item.managerIds.contains(reviewer.uid) || item.managerId == reviewer.uid;
+    final isMyTeam =
+        item.managerIds.contains(reviewer.uid) ||
+        item.managerId == reviewer.uid;
 
-    final canApprove = isSuperAdmin ||
+    final canApprove =
+        isSuperAdmin ||
         (isHr && item.status == 'pending_hr') ||
         (isMyTeam && item.status == 'pending_manager');
 
@@ -654,15 +1094,23 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
             Row(
               children: [
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 4,
+                  ),
                   decoration: BoxDecoration(
                     color: statusColor.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(6),
-                    border: Border.all(color: statusColor.withValues(alpha: 0.40)),
+                    border: Border.all(
+                      color: statusColor.withValues(alpha: 0.40),
+                    ),
                   ),
                   child: Text(
                     statusLabel,
-                    style: TextStyle(color: statusColor, fontWeight: FontWeight.bold),
+                    style: TextStyle(
+                      color: statusColor,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                 ),
                 const Spacer(),
@@ -679,7 +1127,10 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
             const SizedBox(height: 8),
             Text(
               'مقدار الخصم: ${item.fractionLabel} · بتاريخ ${item.dateKey}',
-              style: const TextStyle(color: ZaWolfColors.warning, fontWeight: FontWeight.w600),
+              style: const TextStyle(
+                color: ZaWolfColors.warning,
+                fontWeight: FontWeight.w600,
+              ),
               textDirection: TextDirection.rtl,
             ),
             const SizedBox(height: 6),
@@ -691,62 +1142,78 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
             const SizedBox(height: 6),
             Text(
               'أنشأ الطلب: ${item.createdByName} (${item.createdByRole == 'hr' ? 'HR' : 'مدير'})',
-              style: const TextStyle(color: ZaWolfColors.textMuted, fontSize: 12),
+              style: const TextStyle(
+                color: ZaWolfColors.textMuted,
+                fontSize: 12,
+              ),
               textDirection: TextDirection.rtl,
             ),
-            if (canApprove && (item.status == 'pending_hr' || item.status == 'pending_manager')) ...[
+            if (canApprove &&
+                (item.status == 'pending_hr' ||
+                    item.status == 'pending_manager')) ...[
               const SizedBox(height: 12),
               Row(
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
                   OutlinedButton.icon(
                     onPressed: () async {
+                      final messenger = ScaffoldMessenger.of(context);
                       try {
                         await service.rejectDeduction(
                           deductionId: item.id,
                           reviewer: reviewer,
                           reason: 'تم الرفض بواسطة ${reviewer.displayName}',
                         );
-                        if (context.mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
+                        if (mounted) {
+                          messenger.showSnackBar(
                             const SnackBar(content: Text('تم رفض طلب الخصم.')),
                           );
                         }
                       } catch (e) {
-                        if (context.mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text('خطأ: $e')),
+                        if (mounted) {
+                          messenger.showSnackBar(
+                            SnackBar(content: Text(userFacingError(e))),
                           );
                         }
                       }
                     },
                     icon: const Icon(Icons.close, color: ZaWolfColors.error),
-                    label: const Text('رفض', style: TextStyle(color: ZaWolfColors.error)),
+                    label: const Text(
+                      'رفض',
+                      style: TextStyle(color: ZaWolfColors.error),
+                    ),
                   ),
                   const SizedBox(width: 10),
                   FilledButton.icon(
                     onPressed: () async {
+                      final messenger = ScaffoldMessenger.of(context);
                       try {
                         await service.approveDeduction(
                           deductionId: item.id,
                           reviewer: reviewer,
                         );
-                        if (context.mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('تم اعتماد خصم الراتب وإرسال الإشعارات بنجاح.')),
+                        if (mounted) {
+                          messenger.showSnackBar(
+                            const SnackBar(
+                              content: Text(
+                                'تم اعتماد خصم الراتب وإرسال الإشعارات بنجاح.',
+                              ),
+                            ),
                           );
                         }
                       } catch (e) {
-                        if (context.mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text('خطأ: $e')),
+                        if (mounted) {
+                          messenger.showSnackBar(
+                            SnackBar(content: Text(userFacingError(e))),
                           );
                         }
                       }
                     },
                     icon: const Icon(Icons.check),
                     label: const Text('اعتماد الخصم'),
-                    style: FilledButton.styleFrom(backgroundColor: ZaWolfColors.error),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: ZaWolfColors.error,
+                    ),
                   ),
                 ],
               ),
@@ -763,7 +1230,9 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
     if (employees.isEmpty && !EmployeeRole.isHr(reviewer.role)) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('لا يوجد موظفون تابعون لك لإسناد الخصم.')),
+          const SnackBar(
+            content: Text('لا يوجد موظفون تابعون لك لإسناد الخصم.'),
+          ),
         );
       }
       return;
@@ -784,7 +1253,10 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
           builder: (dialogContext, setDialogState) {
             return AlertDialog(
               backgroundColor: ZaWolfColors.surface01,
-              title: const Text('إضافة طلب خصم إداري جديد', textDirection: TextDirection.rtl),
+              title: const Text(
+                'إضافة طلب خصم إداري جديد',
+                textDirection: TextDirection.rtl,
+              ),
               content: SingleChildScrollView(
                 child: Form(
                   key: formKey,
@@ -792,10 +1264,14 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      const Text('اختر الموظف:', style: TextStyle(color: ZaWolfColors.textMuted), textDirection: TextDirection.rtl),
+                      const Text(
+                        'اختر الموظف:',
+                        style: TextStyle(color: ZaWolfColors.textMuted),
+                        textDirection: TextDirection.rtl,
+                      ),
                       const SizedBox(height: 6),
                       DropdownButtonFormField<UserModel>(
-                        value: selectedUser,
+                        initialValue: selectedUser,
                         isExpanded: true,
                         dropdownColor: ZaWolfColors.surface02,
                         items: employees.map((emp) {
@@ -808,11 +1284,17 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                             ),
                           );
                         }).toList(),
-                        onChanged: (val) => setDialogState(() => selectedUser = val),
-                        validator: (val) => val == null ? 'يرجى اختيار الموظف' : null,
+                        onChanged: (val) =>
+                            setDialogState(() => selectedUser = val),
+                        validator: (val) =>
+                            val == null ? 'يرجى اختيار الموظف' : null,
                       ),
                       const SizedBox(height: 14),
-                      const Text('تاريخ الخصم:', style: TextStyle(color: ZaWolfColors.textMuted), textDirection: TextDirection.rtl),
+                      const Text(
+                        'تاريخ الخصم:',
+                        style: TextStyle(color: ZaWolfColors.textMuted),
+                        textDirection: TextDirection.rtl,
+                      ),
                       const SizedBox(height: 6),
                       OutlinedButton.icon(
                         onPressed: () async {
@@ -827,20 +1309,41 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                           }
                         },
                         icon: const Icon(Icons.calendar_today),
-                        label: Text(DateFormat('yyyy-MM-dd').format(selectedDate)),
+                        label: Text(
+                          DateFormat('yyyy-MM-dd').format(selectedDate),
+                        ),
                       ),
                       const SizedBox(height: 14),
-                      const Text('مقدار الخصم:', style: TextStyle(color: ZaWolfColors.textMuted), textDirection: TextDirection.rtl),
+                      const Text(
+                        'مقدار الخصم:',
+                        style: TextStyle(color: ZaWolfColors.textMuted),
+                        textDirection: TextDirection.rtl,
+                      ),
                       const SizedBox(height: 6),
                       DropdownButtonFormField<double>(
-                        value: selectedFraction,
+                        initialValue: selectedFraction,
                         dropdownColor: ZaWolfColors.surface02,
                         items: const [
-                          DropdownMenuItem(value: 0.25, child: Text('ربع يوم (0.25)')),
-                          DropdownMenuItem(value: 0.50, child: Text('نصف يوم (0.50)')),
-                          DropdownMenuItem(value: 1.00, child: Text('يوم كامل (1.00)')),
-                          DropdownMenuItem(value: 2.00, child: Text('يومان (2.00)')),
-                          DropdownMenuItem(value: 3.00, child: Text('ثلاثة أيام (3.00)')),
+                          DropdownMenuItem(
+                            value: 0.25,
+                            child: Text('ربع يوم (0.25)'),
+                          ),
+                          DropdownMenuItem(
+                            value: 0.50,
+                            child: Text('نصف يوم (0.50)'),
+                          ),
+                          DropdownMenuItem(
+                            value: 1.00,
+                            child: Text('يوم كامل (1.00)'),
+                          ),
+                          DropdownMenuItem(
+                            value: 2.00,
+                            child: Text('يومان (2.00)'),
+                          ),
+                          DropdownMenuItem(
+                            value: 3.00,
+                            child: Text('ثلاثة أيام (3.00)'),
+                          ),
                         ],
                         onChanged: (val) {
                           if (val != null) {
@@ -858,7 +1361,9 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                           hintText: 'أدخل سبب الخصم تفصيلياً (مطلوب)',
                           hintStyle: TextStyle(color: ZaWolfColors.textMuted),
                         ),
-                        validator: (val) => val == null || val.trim().isEmpty ? 'يرجى كتابة سبب الخصم' : null,
+                        validator: (val) => val == null || val.trim().isEmpty
+                            ? 'يرجى كتابة سبب الخصم'
+                            : null,
                       ),
                     ],
                   ),
@@ -871,7 +1376,11 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                 ),
                 FilledButton(
                   onPressed: () async {
-                    if (!formKey.currentState!.validate() || selectedUser == null) return;
+                    if (!formKey.currentState!.validate() ||
+                        selectedUser == null) {
+                      return;
+                    }
+                    final messenger = ScaffoldMessenger.of(context);
                     try {
                       final service = ManualDeductionService();
                       await service.createDeductionRequest(
@@ -881,27 +1390,32 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                         dayFraction: selectedFraction,
                         reason: reasonController.text.trim(),
                       );
-                      if (context.mounted) {
-                        Navigator.pop(dialogContext);
-                        ScaffoldMessenger.of(context).showSnackBar(
+                      if (!dialogContext.mounted || !mounted) return;
+                      Navigator.pop(dialogContext);
+                      messenger.showSnackBar(
+                        SnackBar(
+                          content: Text(
+                            EmployeeRole.isHr(reviewer.role)
+                                ? 'تم إنشاء طلب الخصم بنجاح وتحويله للمدير للموافقة.'
+                                : 'تم إنشاء طلب الخصم بنجاح وتحويله لـ HR للاعتماد.',
+                          ),
+                        ),
+                      );
+                    } catch (e) {
+                      if (mounted) {
+                        messenger.showSnackBar(
                           SnackBar(
                             content: Text(
-                              EmployeeRole.isHr(reviewer.role)
-                                  ? 'تم إنشاء طلب الخصم بنجاح وتحويله للمدير للموافقة.'
-                                  : 'تم إنشاء طلب الخصم بنجاح وتحويله لـ HR للاعتماد.',
+                              'فشل إنشاء طلب الخصم: ${userFacingError(e)}',
                             ),
                           ),
                         );
                       }
-                    } catch (e) {
-                      if (context.mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('فشل إنشاء طلب الخصم: $e')),
-                        );
-                      }
                     }
                   },
-                  style: FilledButton.styleFrom(backgroundColor: ZaWolfColors.error),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: ZaWolfColors.error,
+                  ),
                   child: const Text('إرسال الطلب'),
                 ),
               ],
@@ -914,13 +1428,16 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
 
   Widget _buildAdministrativeRequestsTab(UserModel reviewer, ThemeData theme) {
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-      stream: _administrativeRequestService.watchPending(reviewer),
+      stream: _cachedDerivedStream(
+        'administrative|${reviewer.uid}|${reviewer.role}',
+        () => _administrativeRequestService.watchPending(reviewer),
+      ),
       builder: (context, snapshot) {
         if (snapshot.hasError) {
           return _buildStreamError('تعذر تحميل الطلبات الإدارية');
         }
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
+          return _buildLoadingState('تحميل الطلبات الإدارية...');
         }
         final docs = _visibleApprovalDocs(snapshot.data?.docs ?? [], reviewer);
         if (docs.isEmpty) {
@@ -955,6 +1472,19 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                       ),
                     ),
                     Text(request.notes),
+                    if (request.category ==
+                        AdministrativeRequestCategory.fieldMission) ...[
+                      const SizedBox(height: 6),
+                      Text(
+                        'المكان: ${request.siteName ?? '-'} · التاريخ: ${request.missionDate ?? '-'}',
+                      ),
+                      Text(
+                        'الوقت: ${request.startTime ?? '-'} - ${request.endTime ?? '-'}',
+                      ),
+                      Text(
+                        'العودة للمكتب: ${request.requiresReturnToOffice ? "نعم" : "لا"} · تسجيل الانصراف: ${request.requiresCheckout ? "مطلوب" : "غير مطلوب"}',
+                      ),
+                    ],
                     _buildRequestDateLine(
                       label: 'تاريخ تقديم الطلب',
                       date: request.submittedAt,
@@ -978,7 +1508,11 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                         } catch (error) {
                           if (!context.mounted) return;
                           ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text('فشل الموافقة: $error')),
+                            SnackBar(
+                              content: Text(
+                                'فشل الموافقة: ${userFacingError(error)}',
+                              ),
+                            ),
                           );
                         }
                       },
@@ -999,7 +1533,10 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
 
   Widget _buildResignationsTab(UserModel reviewer, ThemeData theme) {
     return StreamBuilder<List<ResignationModel>>(
-      stream: _resignationService.watchPending(reviewer),
+      stream: _cachedDerivedStream(
+        'resignations|${reviewer.uid}|${reviewer.role}',
+        () => _resignationService.watchPending(reviewer),
+      ),
       builder: (context, snapshot) {
         if (snapshot.hasError) {
           return Center(
@@ -1010,14 +1547,20 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
           );
         }
         if (!snapshot.hasData) {
-          return const Center(child: CircularProgressIndicator());
+          return _buildLoadingState('تحميل طلبات الاستقالة...');
         }
         var requests = snapshot.data!;
         if (_searchQuery.isNotEmpty) {
-          requests = requests.where((r) => 
-            r.employeeName.toLowerCase().contains(_searchQuery) || 
-            r.department.toLowerCase().contains(_searchQuery)
-          ).toList();
+          requests = requests
+              .where(
+                (r) => _matchesSearch([
+                  r.employeeName,
+                  r.employeeId,
+                  r.department,
+                  r.reason,
+                ]),
+              )
+              .toList();
         }
         if (requests.isEmpty) {
           return const Center(child: Text('لا توجد طلبات استقالة معلقة.'));
@@ -1139,7 +1682,10 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
 
   Widget _buildApprovalPolicyControl(UserModel superAdmin) {
     return StreamBuilder<RequestApprovalPolicy>(
-      stream: _approvalPolicyService.watchPolicy(),
+      stream: _cachedDerivedStream(
+        'approval-policy',
+        _approvalPolicyService.watchPolicy,
+      ),
       initialData: const RequestApprovalPolicy(),
       builder: (context, snapshot) {
         final policy = snapshot.data ?? const RequestApprovalPolicy();
@@ -1172,7 +1718,9 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                   if (context.mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(
-                        content: Text('تعذر حفظ مسار الموافقات: $error'),
+                        content: Text(
+                          'تعذر حفظ مسار الموافقات: ${userFacingError(error)}',
+                        ),
                       ),
                     );
                   }
@@ -1196,27 +1744,42 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
     return _streamCache.putIfAbsent(key, query.snapshots);
   }
 
+  Stream<T> _cachedDerivedStream<T>(String key, Stream<T> Function() create) {
+    return _derivedStreamCache.putIfAbsent(key, create) as Stream<T>;
+  }
+
   List<QueryDocumentSnapshot<Map<String, dynamic>>> _visibleApprovalDocs(
     List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
     UserModel reviewer,
   ) {
     var filtered = docs;
-    if (EmployeeRole.isHrStaff(reviewer.role)) {
-      filtered = docs.where((doc) {
-        final data = doc.data();
-        return data['status'] == 'pending_hr' ||
-            data['managerId'] == reviewer.uid;
-      }).toList();
-    }
+    // HR is allowed to monitor every pending stage.  The old filter fetched
+    // pending_manager records and then silently removed them unless HR was
+    // also their assigned manager, so valid requests looked missing.
     if (_searchQuery.isNotEmpty) {
       filtered = filtered.where((doc) {
         final data = doc.data();
-        final name = (data['employeeName'] ?? '').toString().toLowerCase();
-        final dept = (data['department'] ?? '').toString().toLowerCase();
-        return name.contains(_searchQuery) || dept.contains(_searchQuery);
+        return _matchesSearch([
+          data['employeeName'],
+          data['employeeId'],
+          data['department'],
+          data['reason'],
+          data['notes'],
+          data['categoryLabel'],
+        ]);
       }).toList();
     }
     return filtered;
+  }
+
+  bool _canActOnApproval(Map<String, dynamic> data, UserModel reviewer) {
+    final status = '${data['status'] ?? ''}';
+    if (EmployeeRole.isHr(reviewer.role)) {
+      if (status == 'pending_hr') return true;
+      return status == 'pending_ceo' &&
+          reviewer.employeeId.trim().toUpperCase() == 'CEO-100';
+    }
+    return status == 'pending_manager' && data['managerId'] == reviewer.uid;
   }
 
   Stream<QuerySnapshot<Map<String, dynamic>>> _pendingStream(
@@ -1227,21 +1790,28 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
   }) {
     var query = _db.collection(collection) as Query<Map<String, dynamic>>;
     final usesManagerChain =
-        collection == 'leaves' || collection == 'permissions';
-    if (collection == 'leaves' && employeeId == 'CEO-100') {
-      query = query
-          .where('status', isEqualTo: 'pending_ceo')
-          .where('ceoId', isEqualTo: reviewerId);
-    } else if (usesManagerChain && EmployeeRole.isHrStaff(role)) {
-      query = query.where('status', whereIn: ['pending_hr', 'pending_manager']);
+        collection == 'leaves' ||
+        collection == 'permissions' ||
+        collection == 'advances';
+    if (usesManagerChain && EmployeeRole.isHr(role)) {
+      final reviewerIsCeo = employeeId?.trim().toUpperCase() == 'CEO-100';
+      query = query.where(
+        'status',
+        whereIn: reviewerIsCeo
+            ? ['pending', 'pending_hr', 'pending_manager', 'pending_ceo']
+            : ['pending', 'pending_hr', 'pending_manager'],
+      );
     } else if (usesManagerChain && EmployeeRole.canActAsApprovalManager(role)) {
       query = query
           .where('status', isEqualTo: 'pending_manager')
           .where('managerId', isEqualTo: reviewerId);
     } else {
-      query = query.where('status', isEqualTo: 'pending_hr');
+      query = query.where('status', whereIn: ['pending', 'pending_hr']);
     }
-    return _cachedStream('pending|$collection|$reviewerId|$role', query);
+    return _cachedStream(
+      'pending|$collection|$reviewerId|$role',
+      query.limit(300),
+    );
   }
 
   Widget _buildLeavesTab(UserModel reviewer, ThemeData theme) {
@@ -1257,9 +1827,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
           return _buildStreamError('تعذر تحميل طلبات الإجازة');
         }
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(
-            child: CircularProgressIndicator(color: ZaWolfColors.primaryCyan),
-          );
+          return _buildLoadingState('تحميل طلبات الإجازة...');
         }
 
         final docs = _visibleApprovalDocs(snapshot.data?.docs ?? [], reviewer);
@@ -1324,15 +1892,29 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                           ),
                           const SizedBox(width: 4),
                           Expanded(
-                            child: Text(
-                              leave.attachmentUrl!,
-                              style: theme.textTheme.bodySmall?.copyWith(
-                                color: ZaWolfColors.primaryCyan,
-                                decoration: TextDecoration.underline,
+                            child: Semantics(
+                              button: true,
+                              label: 'فتح المرفق',
+                              child: InkWell(
+                                onTap: () =>
+                                    _openAttachment(leave.attachmentUrl!),
+                                borderRadius: BorderRadius.circular(6),
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 4,
+                                  ),
+                                  child: Text(
+                                    leave.attachmentUrl!,
+                                    style: theme.textTheme.bodySmall?.copyWith(
+                                      color: ZaWolfColors.primaryCyan,
+                                      decoration: TextDecoration.underline,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    textDirection: TextDirection.ltr,
+                                  ),
+                                ),
                               ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              textDirection: TextDirection.ltr,
                             ),
                           ),
                         ],
@@ -1343,32 +1925,37 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                       compact: true,
                     ),
                     const SizedBox(height: 16),
-                    _buildApprovalActions(
-                      onApprove: () async {
-                        try {
-                          await _leaveService.approveLeave(
-                            leave.leaveId,
-                            reviewer.uid,
-                            reviewer.role,
-                          );
-                        } catch (e) {
-                          if (!context.mounted) return;
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text('فشل الموافقة: $e')),
-                          );
-                        }
-                      },
-                      onReject: () => _showRejectionDialog(
-                        requestId: leave.leaveId,
-                        type: 'leave',
+                    if (_canActOnApproval(docs[index].data(), reviewer))
+                      _buildApprovalActions(
+                        onApprove: () async {
+                          try {
+                            await _leaveService.approveLeave(
+                              leave.leaveId,
+                              reviewer.uid,
+                              reviewer.role,
+                            );
+                          } catch (e) {
+                            if (!context.mounted) return;
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                  'فشل الموافقة: ${userFacingError(e)}',
+                                ),
+                              ),
+                            );
+                          }
+                        },
+                        onReject: () => _showRejectionDialog(
+                          requestId: leave.leaveId,
+                          type: 'leave',
+                        ),
+                        onModify: () => _showModificationDialog(
+                          requestId: leave.leaveId,
+                          collection: 'leaves',
+                          userId: leave.userId,
+                          requestTitle: 'طلب الإجازة',
+                        ),
                       ),
-                      onModify: () => _showModificationDialog(
-                        requestId: leave.leaveId,
-                        collection: 'leaves',
-                        userId: leave.userId,
-                        requestTitle: 'طلب الإجازة',
-                      ),
-                    ),
                     const SizedBox(height: 8),
                     Text(
                       leave.status == 'pending_hr'
@@ -1390,8 +1977,11 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
     UserModel reviewer,
   ) {
     var query = _db.collection('permissions') as Query<Map<String, dynamic>>;
-    if (EmployeeRole.isHrStaff(reviewer.role)) {
-      query = query.where('status', whereIn: ['pending_hr', 'pending_manager']);
+    if (EmployeeRole.isHr(reviewer.role)) {
+      query = query.where(
+        'status',
+        whereIn: ['pending', 'pending_hr', 'pending_manager'],
+      );
     } else if (EmployeeRole.canActAsApprovalManager(reviewer.role)) {
       query = query
           .where('status', isEqualTo: 'pending_manager')
@@ -1399,7 +1989,10 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
     } else {
       query = query.where('managerId', isEqualTo: '__no_approver__');
     }
-    return query.snapshots();
+    return _cachedStream(
+      'permissions|${reviewer.uid}|${reviewer.role}',
+      query.limit(300),
+    );
   }
 
   Widget _buildPermissionsTab(UserModel reviewer, ThemeData theme) {
@@ -1410,9 +2003,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
           return _buildStreamError('تعذر تحميل طلبات الأذونات');
         }
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(
-            child: CircularProgressIndicator(color: ZaWolfColors.primaryCyan),
-          );
+          return _buildLoadingState('تحميل طلبات الأذونات...');
         }
 
         final docs = _visibleApprovalDocs(snapshot.data?.docs ?? [], reviewer);
@@ -1521,31 +2112,36 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                     ),
                     const SizedBox(height: 16),
 
-                    _buildApprovalActions(
-                      onApprove: () async {
-                        try {
-                          await _permissionService.approvePermission(
-                            perm.permissionId,
-                            reviewer.uid,
-                          );
-                        } catch (e) {
-                          if (!context.mounted) return;
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text('فشل الموافقة: $e')),
-                          );
-                        }
-                      },
-                      onReject: () => _showRejectionDialog(
-                        requestId: perm.permissionId,
-                        type: 'permission',
+                    if (_canActOnApproval(docs[index].data(), reviewer))
+                      _buildApprovalActions(
+                        onApprove: () async {
+                          try {
+                            await _permissionService.approvePermission(
+                              perm.permissionId,
+                              reviewer.uid,
+                            );
+                          } catch (e) {
+                            if (!context.mounted) return;
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                  'فشل الموافقة: ${userFacingError(e)}',
+                                ),
+                              ),
+                            );
+                          }
+                        },
+                        onReject: () => _showRejectionDialog(
+                          requestId: perm.permissionId,
+                          type: 'permission',
+                        ),
+                        onModify: () => _showModificationDialog(
+                          requestId: perm.permissionId,
+                          collection: 'permissions',
+                          userId: perm.userId,
+                          requestTitle: 'طلب الإذن',
+                        ),
                       ),
-                      onModify: () => _showModificationDialog(
-                        requestId: perm.permissionId,
-                        collection: 'permissions',
-                        userId: perm.userId,
-                        requestTitle: 'طلب الإذن',
-                      ),
-                    ),
                   ],
                 ),
               ),
@@ -1557,16 +2153,17 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
   }
 
   Widget _buildAdvancesTab(UserModel reviewer, ThemeData theme) {
-    return StreamBuilder<QuerySnapshot>(
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
       stream: _pendingStream('advances', reviewer.uid, reviewer.role),
       builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return _buildStreamError('تعذر تحميل طلبات السلف');
+        }
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(
-            child: CircularProgressIndicator(color: ZaWolfColors.primaryCyan),
-          );
+          return _buildLoadingState('تحميل طلبات السلف...');
         }
 
-        final docs = snapshot.data?.docs ?? [];
+        final docs = _visibleApprovalDocs(snapshot.data?.docs ?? [], reviewer);
         if (docs.isEmpty) {
           return _buildEmptyState('لا توجد طلبات سلفة معلقة');
         }
@@ -1608,31 +2205,36 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                         ),
                       ),
                     const SizedBox(height: 16),
-                    _buildApprovalActions(
-                      onApprove: () async {
-                        try {
-                          await _advanceService.approveAdvanceRequest(
-                            advanceId: advance.advanceId,
-                            reviewer: reviewer,
-                          );
-                        } catch (e) {
-                          if (!context.mounted) return;
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text('فشل الموافقة: $e')),
-                          );
-                        }
-                      },
-                      onReject: () => _showRejectionDialog(
-                        requestId: advance.advanceId,
-                        type: 'advance',
+                    if (_canActOnApproval(docs[index].data(), reviewer))
+                      _buildApprovalActions(
+                        onApprove: () async {
+                          try {
+                            await _advanceService.approveAdvanceRequest(
+                              advanceId: advance.advanceId,
+                              reviewer: reviewer,
+                            );
+                          } catch (e) {
+                            if (!context.mounted) return;
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                  'فشل الموافقة: ${userFacingError(e)}',
+                                ),
+                              ),
+                            );
+                          }
+                        },
+                        onReject: () => _showRejectionDialog(
+                          requestId: advance.advanceId,
+                          type: 'advance',
+                        ),
+                        onModify: () => _showModificationDialog(
+                          requestId: advance.advanceId,
+                          collection: 'advances',
+                          userId: advance.userId,
+                          requestTitle: 'طلب السلفة',
+                        ),
                       ),
-                      onModify: () => _showModificationDialog(
-                        requestId: advance.advanceId,
-                        collection: 'advances',
-                        userId: advance.userId,
-                        requestTitle: 'طلب السلفة',
-                      ),
-                    ),
                     const SizedBox(height: 8),
                     Text(
                       advance.status == 'pending_hr'
@@ -1656,19 +2258,30 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
       return _buildEmptyState('الشكاوى تظهر لمسؤول HR والإدارة العليا فقط');
     }
 
-    return StreamBuilder<QuerySnapshot>(
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
       stream: _cachedStream(
         'complaints|new|${reviewer.uid}',
         _db.collection('complaints').where('status', isEqualTo: 'new'),
       ),
       builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return _buildStreamError('تعذر تحميل الشكاوى');
+        }
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(
-            child: CircularProgressIndicator(color: ZaWolfColors.primaryCyan),
-          );
+          return _buildLoadingState('تحميل الشكاوى...');
         }
 
-        final docs = snapshot.data?.docs ?? [];
+        final docs = (snapshot.data?.docs ?? []).where((doc) {
+          if (_searchQuery.isEmpty) return true;
+          final data = doc.data();
+          return _matchesSearch([
+            data['employeeName'],
+            data['employeeId'],
+            data['department'],
+            data['title'],
+            data['body'],
+          ]);
+        }).toList();
         if (docs.isEmpty) {
           return _buildEmptyState('لا توجد شكاوى جديدة');
         }
@@ -1800,7 +2413,11 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                         } catch (e) {
                           if (!context.mounted) return;
                           ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text('فشل تحديث الشكوى: $e')),
+                            SnackBar(
+                              content: Text(
+                                'فشل تحديث الشكوى: ${userFacingError(e)}',
+                              ),
+                            ),
                           );
                         }
                       },
@@ -1819,6 +2436,202 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
     );
   }
 
+  /// A single confirmed-deductions register.  Previously this screen showed
+  /// only approved attendance deductions, while approved deductible
+  /// permissions and approved manual deductions were hidden in other tabs.
+  /// That made a valid confirmed salary deduction appear to be missing.
+  Widget _buildConfirmedDeductionsTab(UserModel reviewer, ThemeData theme) {
+    final attendanceStream = _cachedStream(
+      'attendance|salary-deduction|${reviewer.uid}|confirmed',
+      _db
+          .collection('attendance')
+          .where('salaryDeductionApprovalStatus', isEqualTo: 'approved')
+          .limit(300),
+    );
+    final permissionStream = _cachedStream(
+      'permissions|salary-deduction|${reviewer.uid}|confirmed',
+      _db
+          .collection('permissions')
+          .where('status', isEqualTo: 'approved')
+          .limit(300),
+    );
+    final manualStream = _cachedStream(
+      'manual-deductions|${reviewer.uid}|confirmed',
+      _db
+          .collection('manual_deductions')
+          .where('status', isEqualTo: 'approved')
+          .limit(300),
+    );
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      stream: attendanceStream,
+      builder: (context, attendanceSnapshot) =>
+          StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+            stream: permissionStream,
+            builder: (context, permissionSnapshot) =>
+                StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                  stream: manualStream,
+                  builder: (context, manualSnapshot) {
+                    if (attendanceSnapshot.hasError ||
+                        permissionSnapshot.hasError ||
+                        manualSnapshot.hasError) {
+                      return _buildStreamError('تعذر تحميل الخصومات المعتمدة');
+                    }
+                    if (attendanceSnapshot.connectionState ==
+                            ConnectionState.waiting ||
+                        permissionSnapshot.connectionState ==
+                            ConnectionState.waiting ||
+                        manualSnapshot.connectionState ==
+                            ConnectionState.waiting) {
+                      return _buildLoadingState(
+                        'تحميل سجل الخصومات المعتمدة...',
+                      );
+                    }
+                    final attendance =
+                        (attendanceSnapshot.data?.docs ?? const [])
+                            .map(AttendanceModel.fromFirestore)
+                            .toList();
+                    final permissions =
+                        (permissionSnapshot.data?.docs ?? const [])
+                            .map(PermissionModel.fromFirestore)
+                            .where(
+                              (item) =>
+                                  item.isDeductible &&
+                                  item.salaryDeductionFraction > 0 &&
+                                  item.salaryDeductionApprovalStatus ==
+                                      'approved',
+                            )
+                            .toList();
+                    final manual = (manualSnapshot.data?.docs ?? const [])
+                        .map(ManualDeductionModel.fromFirestore)
+                        .toList();
+                    final items =
+                        <_ConfirmedDeductionItem>[
+                            ...attendance.map(
+                              (item) => _ConfirmedDeductionItem(
+                                id: item.attendanceId,
+                                source: 'الحضور والانصراف',
+                                employeeName: item.employeeName,
+                                employeeId: item.employeeId,
+                                department: item.locationName,
+                                date: item.date,
+                                reason: item.salaryDeductionLabel,
+                                fraction: item.salaryDeductionFraction,
+                                amount: item.salaryDeductionAmount,
+                                currency: item.salaryCurrency,
+                                attendance: item,
+                              ),
+                            ),
+                            ...permissions.map(
+                              (item) => _ConfirmedDeductionItem(
+                                id: item.permissionId,
+                                source: 'إذن استقطاعي',
+                                employeeName: item.employeeName,
+                                employeeId: item.employeeId,
+                                department: item.department,
+                                date: item.requestDate,
+                                reason: item.salaryDeductionLabel,
+                                fraction: item.salaryDeductionFraction,
+                                amount: item.salaryDeductionAmount,
+                                currency: item.salaryCurrency,
+                              ),
+                            ),
+                            ...manual.map(
+                              (item) => _ConfirmedDeductionItem(
+                                id: item.id,
+                                source: 'خصم إداري',
+                                employeeName: item.employeeName,
+                                employeeId: item.employeeId,
+                                department: item.department,
+                                date: item.dateKey,
+                                reason: item.reason,
+                                fraction: item.dayFraction,
+                                amount: 0,
+                                currency: '',
+                              ),
+                            ),
+                          ]
+                          ..removeWhere(
+                            (item) => !_matchesSearch([
+                              item.employeeName,
+                              item.employeeId,
+                              item.department,
+                              item.source,
+                              item.reason,
+                            ]),
+                          )
+                          ..sort((a, b) => b.date.compareTo(a.date));
+                    if (items.isEmpty) {
+                      return _buildEmptyState(
+                        'لا توجد خصومات راتب معتمدة مطابقة للبحث',
+                      );
+                    }
+                    return ListView.separated(
+                      padding: const EdgeInsets.all(16),
+                      itemCount: items.length,
+                      separatorBuilder: (_, __) => const SizedBox(height: 12),
+                      itemBuilder: (context, index) {
+                        final item = items[index];
+                        return WolfCard(
+                          hasBorderGlow: true,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              _buildEmployeeHeader(
+                                item.employeeName,
+                                item.employeeId,
+                                item.department,
+                                theme,
+                              ),
+                              const SizedBox(height: 10),
+                              Text(
+                                item.source,
+                                style: const TextStyle(
+                                  color: ZaWolfColors.primaryCyan,
+                                ),
+                              ),
+                              Text(
+                                item.reason,
+                                style: theme.textTheme.titleMedium,
+                              ),
+                              Text(
+                                'التاريخ: ${item.date} · قيمة الخصم: ${item.fraction.toStringAsFixed(2)} يوم',
+                              ),
+                              if (item.amount > 0)
+                                Text(
+                                  'القيمة المالية: ${item.amount.toStringAsFixed(2)} ${item.currency}',
+                                  style: const TextStyle(
+                                    color: ZaWolfColors.warning,
+                                  ),
+                                ),
+                              const SizedBox(height: 8),
+                              const _SalaryDeductionStatus(status: 'approved'),
+                              if (item.attendance != null) ...[
+                                const SizedBox(height: 12),
+                                SizedBox(
+                                  width: double.infinity,
+                                  child: OutlinedButton.icon(
+                                    onPressed: () => _reverseSalaryDeduction(
+                                      attendance: item.attendance!,
+                                      reviewer: reviewer,
+                                    ),
+                                    icon: const Icon(Icons.undo),
+                                    label: const Text(
+                                      'إلغاء خصم الحضور المعتمد',
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                        );
+                      },
+                    );
+                  },
+                ),
+          ),
+    );
+  }
+
   Widget _buildSalaryDeductionsTab(
     UserModel reviewer,
     ThemeData theme, {
@@ -1828,22 +2641,32 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
     if (!EmployeeRole.isHr(reviewer.role)) {
       return _buildEmptyState('خصومات الراتب تراجع من HR فقط');
     }
-    return StreamBuilder<QuerySnapshot>(
+    Query<Map<String, dynamic>> deductionsQuery = _db.collection('attendance');
+    if (reversalOnly) {
+      deductionsQuery = deductionsQuery.where(
+        'salaryDeductionApprovalStatus',
+        whereIn: const ['approved', 'reversed'],
+      );
+    } else {
+      // Keep the active HR queue separate from history. Combining approved,
+      // reversed and pending records could fill the bounded page before recent
+      // pending deductions (such as Ashraf's) were returned.
+      deductionsQuery = deductionsQuery.where(
+        'salaryDeductionApprovalStatus',
+        isEqualTo: 'pending_hr',
+      );
+    }
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
       stream: _cachedStream(
-        'attendance|salary-deduction|${reviewer.uid}',
-        _db
-            .collection('attendance')
-            .where(
-              'salaryDeductionApprovalStatus',
-              whereIn: const ['pending_hr', 'approved', 'reversed'],
-            )
-            .limit(200),
+        'attendance|salary-deduction|${reviewer.uid}|reversal:$reversalOnly',
+        deductionsQuery.limit(200),
       ),
       builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return _buildStreamError('تعذر تحميل خصومات الحضور');
+        }
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(
-            child: CircularProgressIndicator(color: ZaWolfColors.primaryCyan),
-          );
+          return _buildLoadingState('تحميل خصومات الحضور...');
         }
 
         final loadedItems =
@@ -1859,7 +2682,8 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
           final isPending = status == 'pending_hr';
           if (!isPending) return false;
 
-          final isAbsence = attendance.salaryDeductionFraction >= 1.0 ||
+          final isAbsence =
+              attendance.salaryDeductionFraction >= 1.0 ||
               attendance.status == 'absent' ||
               attendance.salaryDeductionCode == 'ABSENCE' ||
               attendance.salaryDeductionCode == 'full_day';
@@ -1888,8 +2712,8 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                   reversalOnly
                       ? 'لا توجد خصومات معتمدة قابلة للإلغاء'
                       : (absenceOnly
-                          ? 'لا توجد خصومات غياب تنتظر مراجعة HR'
-                          : 'لا توجد خصومات تأخير تنتظر مراجعة HR'),
+                            ? 'لا توجد خصومات غياب تنتظر مراجعة HR'
+                            : 'لا توجد خصومات تأخير تنتظر مراجعة HR'),
                 ),
               ),
             ],
@@ -1953,9 +2777,8 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                           label: 'يوم وتاريخ الحضور',
                           date: _parseDateKey(attendance.date),
                         ),
-                        if (reviewer.role == EmployeeRole.hrAdmin ||
-                            reviewer.role == EmployeeRole.hrManager ||
-                            reviewer.role == EmployeeRole.superAdmin)
+                        if (attendance.userId != reviewer.uid &&
+                            EmployeeRole.isHr(reviewer.role))
                           Align(
                             alignment: AlignmentDirectional.centerStart,
                             child: TextButton.icon(
@@ -1977,6 +2800,12 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                             color: ZaWolfColors.textSecondary,
                           ),
                         ),
+                        if (attendance.checkoutPolicyEnabled == false)
+                          const Text(
+                            'تسجيل الانصراف لا ينطبق على هذا اليوم وفق سياسة HR المسجلة.',
+                            style: TextStyle(color: ZaWolfColors.textSecondary),
+                            textDirection: TextDirection.rtl,
+                          ),
                         Text(
                           'قيمة الخصم: ${attendance.salaryDeductionAmount.toStringAsFixed(2)} ${attendance.salaryCurrency}',
                           style: const TextStyle(color: ZaWolfColors.warning),
@@ -2008,7 +2837,11 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                               } catch (e) {
                                 if (!context.mounted) return;
                                 ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(content: Text('فشل الموافقة: $e')),
+                                  SnackBar(
+                                    content: Text(
+                                      'فشل الموافقة: ${userFacingError(e)}',
+                                    ),
+                                  ),
                                 );
                               }
                             },
@@ -2021,7 +2854,11 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                               } catch (e) {
                                 if (!context.mounted) return;
                                 ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(content: Text('فشل الرفض: $e')),
+                                  SnackBar(
+                                    content: Text(
+                                      'فشل الرفض: ${userFacingError(e)}',
+                                    ),
+                                  ),
                                 );
                               }
                             },
@@ -2076,7 +2913,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             backgroundColor: ZaWolfColors.error,
-            content: Text('فشل المزامنة: $e'),
+            content: Text('فشل المزامنة: ${userFacingError(e)}'),
           ),
         );
       }
@@ -2085,14 +2922,30 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
 
   Widget _buildAttendanceCorrectionsTab(UserModel reviewer, ThemeData theme) {
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-      stream: AttendanceCorrectionRequestService().pendingForHr(),
+      stream: _cachedDerivedStream(
+        'attendance-corrections|${reviewer.uid}',
+        AttendanceCorrectionRequestService().pendingForHr,
+      ),
       builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return _buildStreamError('تعذر تحميل طلبات تصحيح الحضور');
+        }
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(
-            child: CircularProgressIndicator(color: ZaWolfColors.primaryCyan),
-          );
+          return _buildLoadingState('تحميل طلبات تصحيح الحضور...');
         }
         final docs = [...?snapshot.data?.docs];
+        if (_searchQuery.isNotEmpty) {
+          docs.removeWhere((doc) {
+            final data = doc.data();
+            return !_matchesSearch([
+              data['employeeName'],
+              data['employeeId'],
+              data['department'],
+              data['attendanceDate'],
+              data['reason'],
+            ]);
+          });
+        }
         docs.sort((a, b) {
           final left = a.data()['submittedAt'] as Timestamp?;
           final right = b.data()['submittedAt'] as Timestamp?;
@@ -2221,9 +3074,11 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
       }
     } catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('تعذر مراجعة الطلب: $error')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('تعذر مراجعة الطلب: ${userFacingError(error)}'),
+          ),
+        );
       }
     } finally {
       commentController.dispose();
@@ -2267,17 +3122,33 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
     );
     if (confirmed != true || !mounted) return;
     final day = _parseDateKey(attendance.date) ?? parsedDay;
+    final correctedTime = DateTime(
+      day.year,
+      day.month,
+      day.day,
+      picked.hour,
+      picked.minute,
+    );
+    // The correction feature is intentionally only for an earlier arrival
+    // (for example: the employee arrived before the phone could register).
+    // Validate it before Firestore so HR receives a useful explanation rather
+    // than a generic save/permission error.
+    if (correctedTime.isAfter(initial)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'وقت التصحيح يجب أن يكون قبل أو مساوياً لوقت الوصول المسجل.',
+          ),
+        ),
+      );
+      reasonController.dispose();
+      return;
+    }
     try {
       await _attendanceService.correctCheckInTime(
         attendanceId: attendance.attendanceId,
         reviewerId: reviewer.uid,
-        correctedTime: DateTime(
-          day.year,
-          day.month,
-          day.day,
-          picked.hour,
-          picked.minute,
-        ),
+        correctedTime: correctedTime,
         reason: reasonController.text,
       );
       if (mounted) {
@@ -2287,9 +3158,11 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
       }
     } catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('تعذر تعديل الوقت: $error')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('تعذر تعديل الوقت: ${userFacingError(error)}'),
+          ),
+        );
       }
     } finally {
       reasonController.dispose();
@@ -2299,6 +3172,16 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
   List<AttendanceModel> _filterSalaryDeductions(List<AttendanceModel> items) {
     final today = DateFormat('yyyy-MM-dd').format(DateTime.now());
     return items.where((item) {
+      if (!_matchesSearch([
+        item.employeeName,
+        item.employeeId,
+        item.locationName,
+        item.salaryDeductionLabel,
+        item.salaryDeductionCode,
+        item.date,
+      ])) {
+        return false;
+      }
       switch (_salaryDeductionFilter) {
         case 'today':
           return item.date == today;
@@ -2478,33 +3361,58 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
     required UserModel reviewer,
   }) async {
     final reasonController = TextEditingController();
+    final formKey = GlobalKey<FormState>();
+    var saving = false;
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('إلغاء خصم معتمد', textDirection: TextDirection.rtl),
-        content: TextField(
-          controller: reasonController,
-          minLines: 2,
-          maxLines: 4,
-          textDirection: TextDirection.rtl,
-          decoration: const InputDecoration(
-            labelText: 'سبب الإلغاء',
-            hintText: 'اكتب سبب تصحيح القرار',
+      barrierDismissible: false,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text(
+            'إلغاء خصم معتمد',
+            textDirection: TextDirection.rtl,
           ),
+          content: Form(
+            key: formKey,
+            child: TextFormField(
+              controller: reasonController,
+              minLines: 2,
+              maxLines: 4,
+              autofocus: true,
+              textDirection: TextDirection.rtl,
+              decoration: const InputDecoration(
+                labelText: 'سبب الإلغاء',
+                hintText: 'اكتب سبباً واضحاً من 5 أحرف على الأقل',
+              ),
+              validator: (value) => (value ?? '').trim().length < 5
+                  ? 'سبب الإلغاء يجب أن يكون 5 أحرف على الأقل.'
+                  : null,
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: saving
+                  ? null
+                  : () => Navigator.pop(dialogContext, false),
+              child: const Text('تراجع'),
+            ),
+            FilledButton(
+              onPressed: saving
+                  ? null
+                  : () {
+                      if (!(formKey.currentState?.validate() ?? false)) return;
+                      setDialogState(() => saving = true);
+                      Navigator.pop(dialogContext, true);
+                    },
+              child: saving
+                  ? const SizedBox.square(
+                      dimension: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Text('إلغاء الخصم'),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('تراجع'),
-          ),
-          FilledButton(
-            onPressed: () {
-              if (reasonController.text.trim().length < 5) return;
-              Navigator.pop(dialogContext, true);
-            },
-            child: const Text('إلغاء الخصم'),
-          ),
-        ],
       ),
     );
     final reason = reasonController.text.trim();
@@ -2522,9 +3430,9 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
       );
     } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('تعذر إلغاء الخصم: $error')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('تعذر إلغاء الخصم: ${userFacingError(error)}')),
+      );
     }
   }
 
@@ -2532,7 +3440,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
     if (reviewer.role == EmployeeRole.manager) {
       return _buildEmptyState('مراجعة أمان الحضور من HR فقط');
     }
-    return StreamBuilder<QuerySnapshot>(
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
       stream: _cachedStream(
         'attendance|checkin-security|${reviewer.uid}',
         _db
@@ -2540,7 +3448,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
             .where('securityReviewStatus', isEqualTo: 'pending_hr'),
       ),
       builder: (context, checkInSnapshot) {
-        return StreamBuilder<QuerySnapshot>(
+        return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
           stream: _cachedStream(
             'attendance|checkout-security|${reviewer.uid}',
             _db
@@ -2548,15 +3456,14 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                 .where('checkoutSecurityReviewStatus', isEqualTo: 'pending_hr'),
           ),
           builder: (context, checkoutSnapshot) {
+            if (checkInSnapshot.hasError || checkoutSnapshot.hasError) {
+              return _buildStreamError('تعذر تحميل مراجعات أمان الحضور');
+            }
             final waiting =
                 checkInSnapshot.connectionState == ConnectionState.waiting ||
                 checkoutSnapshot.connectionState == ConnectionState.waiting;
             if (waiting) {
-              return const Center(
-                child: CircularProgressIndicator(
-                  color: ZaWolfColors.primaryCyan,
-                ),
-              );
+              return _buildLoadingState('تحميل مراجعات أمان الحضور...');
             }
 
             final items = <_SecurityReviewItem>[
@@ -2591,6 +3498,19 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                   DateTime.fromMillisecondsSinceEpoch(0);
               return bTime.compareTo(aTime);
             });
+
+            if (_searchQuery.isNotEmpty) {
+              items.removeWhere(
+                (item) => !_matchesSearch([
+                  item.attendance.employeeName,
+                  item.attendance.employeeId,
+                  item.attendance.locationName,
+                  item.attendance.date,
+                  item.attendance.locationRiskMessage,
+                  item.attendance.checkoutLocationRiskMessage,
+                ]),
+              );
+            }
 
             if (items.isEmpty) {
               return _buildEmptyState('لا توجد مراجعات أمنية معلقة');
@@ -2730,7 +3650,11 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                             } catch (e) {
                               if (!context.mounted) return;
                               ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(content: Text('فشل الموافقة: $e')),
+                                SnackBar(
+                                  content: Text(
+                                    'فشل الموافقة: ${userFacingError(e)}',
+                                  ),
+                                ),
                               );
                             }
                           },
@@ -2744,7 +3668,11 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                             } catch (e) {
                               if (!context.mounted) return;
                               ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(content: Text('فشل الرفض: $e')),
+                                SnackBar(
+                                  content: Text(
+                                    'فشل الرفض: ${userFacingError(e)}',
+                                  ),
+                                ),
                               );
                             }
                           },
@@ -2962,10 +3890,20 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
             ),
             const SizedBox(height: 6),
             const Text(
-              'تحقق من الاتصال ثم أعد فتح الصفحة. لن تختفي الطلبات بصمت عند حدوث خطأ.',
+              'تحقق من الاتصال ثم اضغط إعادة المحاولة. لن تختفي الطلبات بصمت عند حدوث خطأ.',
               textAlign: TextAlign.center,
               textDirection: TextDirection.rtl,
               style: TextStyle(color: ZaWolfColors.textSecondary),
+            ),
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              onPressed: () {
+                _streamCache.clear();
+                _derivedStreamCache.clear();
+                setState(() {});
+              },
+              icon: const Icon(Icons.refresh),
+              label: const Text('إعادة المحاولة'),
             ),
           ],
         ),
@@ -2973,9 +3911,125 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
     );
   }
 
+  Widget _buildLoadingState(String text) {
+    return _RequestLoadingState(
+      label: text,
+      onRetry: () {
+        _streamCache.clear();
+        _derivedStreamCache.clear();
+        if (mounted) setState(() {});
+      },
+    );
+  }
+
   String _translateLeaveType(String type) {
     if (type == 'wfh') return 'عمل من المنزل';
     return LeaveTypePolicy.arabicLabel(type);
+  }
+
+  bool _matchesSearch(Iterable<Object?> values) {
+    if (_searchQuery.isEmpty) return true;
+    return values.any(
+      (value) => (value ?? '').toString().toLowerCase().contains(_searchQuery),
+    );
+  }
+}
+
+class _KeepAliveRequestTab extends StatefulWidget {
+  const _KeepAliveRequestTab({required this.child});
+
+  final Widget child;
+
+  @override
+  State<_KeepAliveRequestTab> createState() => _KeepAliveRequestTabState();
+}
+
+class _RequestLoadingState extends StatefulWidget {
+  const _RequestLoadingState({required this.label, required this.onRetry});
+
+  final String label;
+  final VoidCallback onRetry;
+
+  @override
+  State<_RequestLoadingState> createState() => _RequestLoadingStateState();
+}
+
+class _RequestLoadingStateState extends State<_RequestLoadingState> {
+  Timer? _timer;
+  var _timedOut = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _timer = Timer(const Duration(seconds: 15), () {
+      if (mounted) setState(() => _timedOut = true);
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_timedOut) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(
+                Icons.hourglass_disabled_outlined,
+                color: ZaWolfColors.warning,
+                size: 52,
+              ),
+              const SizedBox(height: 12),
+              const Text(
+                'استغرق تحميل الطلبات وقتاً أطول من المتوقع.',
+                textAlign: TextAlign.center,
+                textDirection: TextDirection.rtl,
+                style: TextStyle(color: Colors.white, fontSize: 16),
+              ),
+              const SizedBox(height: 12),
+              OutlinedButton.icon(
+                onPressed: widget.onRetry,
+                icon: const Icon(Icons.refresh),
+                label: const Text('إعادة المحاولة'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const CircularProgressIndicator(color: ZaWolfColors.primaryCyan),
+          const SizedBox(height: 12),
+          Text(
+            widget.label,
+            textDirection: TextDirection.rtl,
+            style: const TextStyle(color: ZaWolfColors.textSecondary),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _KeepAliveRequestTabState extends State<_KeepAliveRequestTab>
+    with AutomaticKeepAliveClientMixin {
+  @override
+  bool get wantKeepAlive => true;
+
+  @override
+  Widget build(BuildContext context) {
+    super.build(context);
+    return widget.child;
   }
 }
 
@@ -2988,6 +4042,34 @@ class _SecurityReviewItem {
     required this.attendance,
     required this.checkout,
     required this.docId,
+  });
+}
+
+class _ConfirmedDeductionItem {
+  final String id;
+  final String source;
+  final String employeeName;
+  final String employeeId;
+  final String department;
+  final String date;
+  final String reason;
+  final double fraction;
+  final double amount;
+  final String currency;
+  final AttendanceModel? attendance;
+
+  const _ConfirmedDeductionItem({
+    required this.id,
+    required this.source,
+    required this.employeeName,
+    required this.employeeId,
+    required this.department,
+    required this.date,
+    required this.reason,
+    required this.fraction,
+    required this.amount,
+    required this.currency,
+    this.attendance,
   });
 }
 

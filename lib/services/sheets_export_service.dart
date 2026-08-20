@@ -20,6 +20,9 @@ class SheetsExportService {
         'الفرع (Branch)',
         'توقيت الحضور (Check-In)',
         'توقيت الانصراف (Check-Out)',
+        'حالة الانصراف (Checkout Policy)',
+        'إصدار سياسة الانصراف',
+        'وقت تقييم سياسة الانصراف',
         'دقائق التأخير (Late Minutes)',
         'الحالة (Status)',
         'اعتماد خصم الراتب',
@@ -38,6 +41,13 @@ class SheetsExportService {
           log.checkOutTime != null
               ? DateFormat('hh:mm a').format(log.checkOutTime!)
               : '-',
+          _checkoutStatus(log),
+          log.checkoutPolicyRevision?.toString() ?? '-',
+          log.checkoutPolicyEvaluatedAt != null
+              ? DateFormat(
+                  'yyyy-MM-dd HH:mm',
+                ).format(log.checkoutPolicyEvaluatedAt!)
+              : '-',
           log.lateMinutes,
           _translateStatus(log.status),
           _translateDeductionApproval(log.salaryDeductionApprovalStatus),
@@ -48,6 +58,14 @@ class SheetsExportService {
     ];
 
     return _toCsv(rows);
+  }
+
+  String _checkoutStatus(AttendanceModel log) {
+    if (log.checkOutTime != null) return 'تم تسجيل الانصراف';
+    if (log.checkoutPolicyEnabled == false) {
+      return 'لا ينطبق تسجيل الانصراف (سياسة HR)';
+    }
+    return 'لم يسجل الانصراف';
   }
 
   Future<String> exportLeavesToSheet(

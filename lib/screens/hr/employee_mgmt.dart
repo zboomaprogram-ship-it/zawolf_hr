@@ -66,13 +66,6 @@ List<DropdownMenuItem<String>> _roleMenuItems({
         ),
       ),
       DropdownMenuItem(
-        value: EmployeeRole.hrManager,
-        child: Align(
-          alignment: Alignment.centerRight,
-          child: Text(includeEnglish ? 'مدير HR (HR Manager)' : 'مدير HR'),
-        ),
-      ),
-      DropdownMenuItem(
         value: EmployeeRole.superAdmin,
         child: Align(
           alignment: Alignment.centerRight,
@@ -701,7 +694,7 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
               authService.currentUser?.role,
             )) {
           throw Exception(
-            'إنشاء حسابات الإدارة العليا متاح لمدير HR ومالك النظام فقط.',
+            'إنشاء حسابات الإدارة العليا متاح لمسؤول HR ومالك النظام فقط.',
           );
         }
         final locationId = value(row, 'locationId', ['Location ID']);
@@ -867,7 +860,7 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
         return EmployeeRole.hrAdmin;
       case 'hrmanager':
       case 'hr_manager':
-        return EmployeeRole.hrManager;
+        return EmployeeRole.hrAdmin;
       case 'super':
       case 'superadmin':
       case 'super_admin':
@@ -1625,7 +1618,7 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
                                               EmployeeRole.superAdmin));
                               final pendingLabel =
                                   request.status == 'pending_hr_manager'
-                                  ? 'بانتظار اعتماد مدير HR'
+                                  ? 'بانتظار اعتماد HR'
                                   : 'بانتظار الاعتماد النهائي من مالك النظام';
                               return Container(
                                 padding: const EdgeInsets.all(16),

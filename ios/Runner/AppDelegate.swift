@@ -1,13 +1,127 @@
 import Flutter
 import UIKit
 import GoogleMaps
+import CoreLocation
+import FirebaseCore
+import FirebaseAuth
+import FirebaseFirestore
 #if canImport(AlarmKit)
 import AlarmKit
 import SwiftUI
 #endif
 
+extension AppDelegate: CLLocationManagerDelegate {
+  func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+    guard let result = pendingAlwaysPermissionResult else { return }
+    switch manager.authorizationStatus {
+    case .authorizedAlways:
+      pendingAlwaysPermissionResult = nil
+      result(true)
+    case .denied, .restricted:
+      pendingAlwaysPermissionResult = nil
+      result(false)
+    default:
+      break
+    }
+  }
+
+  func locationManager(_ manager: CLLocationManager, didEnterRegion region: CLRegion) {
+    captureAutomaticAttendanceEvent("enter", region: region)
+  }
+
+  func locationManager(_ manager: CLLocationManager, didExitRegion region: CLRegion) {
+    captureAutomaticAttendanceEvent("exit", region: region)
+  }
+
+  func locationManager(
+    _ manager: CLLocationManager,
+    didDetermineState state: CLRegionState,
+    for region: CLRegion
+  ) {
+    // Match Android's initial behaviour: enabling while already at the branch
+    // may check in, but enabling away from it must not create a checkout.
+    if state == .inside {
+      captureAutomaticAttendanceEvent("enter", region: region)
+    }
+  }
+
+  fileprivate func captureAutomaticAttendanceEvent(_ event: String, region: CLRegion) {
+    guard region.identifier.hasPrefix("zawolf_") else { return }
+    pendingAttendanceEvent = event
+    if attendanceBackgroundTask == .invalid {
+      attendanceBackgroundTask = UIApplication.shared.beginBackgroundTask(withName: "ZaWolfAttendance") {
+        self.finishAttendanceBackgroundTask()
+      }
+    }
+    if let location = attendanceLocationManager.location,
+       abs(location.timestamp.timeIntervalSinceNow) < 120 {
+      writeAutomaticAttendanceSignal(event: event, location: location)
+    } else {
+      attendanceLocationManager.requestLocation()
+    }
+  }
+
+  func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
+    guard let event = pendingAttendanceEvent, let location = locations.last else { return }
+    writeAutomaticAttendanceSignal(event: event, location: location)
+  }
+
+  func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
+    pendingAttendanceEvent = nil
+    finishAttendanceBackgroundTask()
+  }
+
+  fileprivate func writeAutomaticAttendanceSignal(event: String, location: CLLocation) {
+    pendingAttendanceEvent = nil
+    let defaults = UserDefaults.standard
+    guard defaults.bool(forKey: "auto_attendance_enabled"),
+          let configuredUserId = defaults.string(forKey: "auto_attendance_userId"),
+          !configuredUserId.isEmpty else {
+      finishAttendanceBackgroundTask()
+      return
+    }
+
+    if FirebaseApp.app() == nil { FirebaseApp.configure() }
+    guard Auth.auth().currentUser?.uid == configuredUserId else {
+      finishAttendanceBackgroundTask()
+      return
+    }
+    let values: [String: Any] = [
+      "userId": configuredUserId,
+      "employeeId": defaults.string(forKey: "auto_attendance_employeeId") ?? "",
+      "deviceId": defaults.string(forKey: "auto_attendance_deviceId") ?? "",
+      "deviceLabel": defaults.string(forKey: "auto_attendance_deviceLabel") ?? "",
+      "locationId": defaults.string(forKey: "auto_attendance_locationId") ?? "",
+      "locationName": defaults.string(forKey: "auto_attendance_locationName") ?? "",
+      "event": event,
+      "latitude": location.coordinate.latitude,
+      "longitude": location.coordinate.longitude,
+      "accuracyMeters": max(location.horizontalAccuracy, 0),
+      "capturedAtMillis": Int64(Date().timeIntervalSince1970 * 1000),
+      "source": "ios_region",
+      "status": "pending",
+      "locationMocked": false,
+      "createdAt": FieldValue.serverTimestamp(),
+    ]
+    Firestore.firestore().collection("autoAttendanceSignals").addDocument(data: values) { _ in
+      self.finishAttendanceBackgroundTask()
+    }
+  }
+
+  fileprivate func finishAttendanceBackgroundTask() {
+    guard attendanceBackgroundTask != .invalid else { return }
+    UIApplication.shared.endBackgroundTask(attendanceBackgroundTask)
+    attendanceBackgroundTask = .invalid
+  }
+}
+
 @main
 @objc class AppDelegate: FlutterAppDelegate {
+  fileprivate let attendanceLocationManager = CLLocationManager()
+  fileprivate var pendingAttendanceEvent: String?
+  fileprivate var attendanceBackgroundTask: UIBackgroundTaskIdentifier = .invalid
+  fileprivate var pendingAlwaysPermissionResult: FlutterResult?
+
   override func application(
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
@@ -15,7 +129,113 @@ import SwiftUI
     GMSServices.provideAPIKey("AIzaSyDl5bO63kW9ukQkEEyqdg40oSFh1R8mOSM")
     GeneratedPluginRegistrant.register(with: self)
     configurePersonalAlarmChannel()
+    configureAutomaticAttendanceChannel()
+    restoreAutomaticAttendanceMonitor()
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
+  }
+
+  private func configureAutomaticAttendanceChannel() {
+    guard let controller = window?.rootViewController as? FlutterViewController else { return }
+    attendanceLocationManager.delegate = self
+    let channel = FlutterMethodChannel(
+      name: "zawolf_hr/automatic_attendance",
+      binaryMessenger: controller.binaryMessenger
+    )
+    channel.setMethodCallHandler { [weak self] call, result in
+      guard let self else { return }
+      switch call.method {
+      case "requestIosAlwaysPermission":
+        if self.attendanceLocationManager.authorizationStatus == .authorizedAlways {
+          result(true)
+        } else if self.attendanceLocationManager.authorizationStatus == .denied ||
+                    self.attendanceLocationManager.authorizationStatus == .restricted {
+          result(false)
+        } else {
+          self.pendingAlwaysPermissionResult = result
+          self.attendanceLocationManager.requestAlwaysAuthorization()
+        }
+      case "configureIosGeofence":
+        guard self.attendanceLocationManager.authorizationStatus == .authorizedAlways else {
+          result(FlutterError(
+            code: "BACKGROUND_LOCATION_REQUIRED",
+            message: "فعّل الموقع دائماً للحضور التلقائي من إعدادات iPhone.",
+            details: nil
+          ))
+          return
+        }
+        guard let data = call.arguments as? [String: Any],
+              let userId = data["userId"] as? String, !userId.isEmpty,
+              let deviceId = data["deviceId"] as? String, !deviceId.isEmpty,
+              let locationId = data["locationId"] as? String, !locationId.isEmpty,
+              let latitude = (data["latitude"] as? NSNumber)?.doubleValue,
+              let longitude = (data["longitude"] as? NSNumber)?.doubleValue,
+              let requestedRadius = (data["radiusMeters"] as? NSNumber)?.doubleValue else {
+          result(FlutterError(code: "INVALID_GEOFENCE", message: "بيانات فرع الحضور غير مكتملة.", details: nil))
+          return
+        }
+        let radius = min(max(requestedRadius, 100), self.attendanceLocationManager.maximumRegionMonitoringDistance)
+        let defaults = UserDefaults.standard
+        data.forEach { key, value in
+          if value is String || value is NSNumber { defaults.set(value, forKey: "auto_attendance_\(key)") }
+        }
+        defaults.set(radius, forKey: "auto_attendance_radiusMeters")
+        defaults.set(true, forKey: "auto_attendance_enabled")
+        self.startAttendanceMonitor(
+          locationId: locationId,
+          latitude: latitude,
+          longitude: longitude,
+          radius: radius
+        )
+        result(true)
+      case "disableIosGeofence":
+        self.stopAttendanceMonitors()
+        let defaults = UserDefaults.standard
+        for key in defaults.dictionaryRepresentation().keys where key.hasPrefix("auto_attendance_") {
+          defaults.removeObject(forKey: key)
+        }
+        result(true)
+      default:
+        result(FlutterMethodNotImplemented)
+      }
+    }
+  }
+
+  fileprivate func startAttendanceMonitor(
+    locationId: String,
+    latitude: CLLocationDegrees,
+    longitude: CLLocationDegrees,
+    radius: CLLocationDistance
+  ) {
+    stopAttendanceMonitors()
+    guard CLLocationManager.isMonitoringAvailable(for: CLCircularRegion.self) else { return }
+    let region = CLCircularRegion(
+      center: CLLocationCoordinate2D(latitude: latitude, longitude: longitude),
+      radius: radius,
+      identifier: "zawolf_\(locationId)"
+    )
+    region.notifyOnEntry = true
+    region.notifyOnExit = true
+    attendanceLocationManager.startMonitoring(for: region)
+    attendanceLocationManager.requestState(for: region)
+  }
+
+  fileprivate func stopAttendanceMonitors() {
+    attendanceLocationManager.monitoredRegions
+      .filter { $0.identifier.hasPrefix("zawolf_") }
+      .forEach(attendanceLocationManager.stopMonitoring)
+  }
+
+  private func restoreAutomaticAttendanceMonitor() {
+    attendanceLocationManager.delegate = self
+    let defaults = UserDefaults.standard
+    guard defaults.bool(forKey: "auto_attendance_enabled"),
+          let locationId = defaults.string(forKey: "auto_attendance_locationId") else { return }
+    startAttendanceMonitor(
+      locationId: locationId,
+      latitude: defaults.double(forKey: "auto_attendance_latitude"),
+      longitude: defaults.double(forKey: "auto_attendance_longitude"),
+      radius: defaults.double(forKey: "auto_attendance_radiusMeters")
+    )
   }
 
   private func configurePersonalAlarmChannel() {

@@ -1,21 +1,12 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart' hide TextDirection;
-import 'package:share_plus/share_plus.dart';
-import '../../services/sheets_export_service.dart';
-import '../../models/attendance_model.dart';
-import '../../models/leave_model.dart';
-import '../../models/permission_model.dart';
-import '../../models/performance_model.dart';
-import '../../models/payroll_run_model.dart';
-import '../../models/user_model.dart';
-import '../../theme/theme.dart';
+import 'package:url_launcher/url_launcher.dart';
+
 import '../../components/wolf_card.dart';
-import '../../components/wolf_button.dart';
-import '../../utils/csv_file_download.dart';
-import '../../utils/payroll_cycle.dart';
+import '../../models/company_workspace_models.dart';
+import '../../services/google_workspace_service.dart';
+import '../../theme/theme.dart';
+import '../shared/workspace_sheet_editor_screen.dart';
 
 class SheetsExportScreen extends StatefulWidget {
   const SheetsExportScreen({super.key});
@@ -25,584 +16,256 @@ class SheetsExportScreen extends StatefulWidget {
 }
 
 class _SheetsExportScreenState extends State<SheetsExportScreen> {
-  final FirebaseFirestore _db = FirebaseFirestore.instance;
-  final SheetsExportService _sheetsExportService = SheetsExportService();
+  final GoogleWorkspaceService _service = GoogleWorkspaceService();
+  DateTime _selectedDay = DateTime.now();
+  GoogleDailyReport? _report;
+  bool _loading = false;
+  bool _auditLoading = false;
+  String? _error;
+  DateTimeRange _auditRange = DateTimeRange(
+    start: DateTime.now().subtract(const Duration(days: 30)),
+    end: DateTime.now(),
+  );
+  WorkspaceAuditReport? _auditReport;
 
-  DateTime _selectedMonth = PayrollCycle.forDate(DateTime.now()).end;
-  bool _isExporting = false;
-  String _exportStatus = '';
-
-  Future<void> _selectMonth(BuildContext context) async {
-    final DateTime? picked = await showDatePicker(
+  Future<void> _selectDay() async {
+    final picked = await showDatePicker(
       context: context,
-      initialDate: _selectedMonth,
+      initialDate: _selectedDay,
       firstDate: DateTime(2025),
-      lastDate: DateTime.now().add(const Duration(days: 30)),
-      initialDatePickerMode: DatePickerMode.year,
-      builder: (context, child) {
-        return Theme(
-          data: Theme.of(context).copyWith(
-            colorScheme: const ColorScheme.dark(
-              primary: ZaWolfColors.primaryCyan,
-              onPrimary: ZaWolfColors.background,
-              surface: ZaWolfColors.surface01,
-              onSurface: Colors.white,
-            ),
-          ),
-          child: child!,
-        );
-      },
-    );
-    if (picked != null && picked != _selectedMonth) {
-      setState(() {
-        _selectedMonth = picked;
-      });
-    }
-  }
-
-  Future<void> _shareCsvFile(String csv, String fileName) async {
-    try {
-      if (await downloadCsvFile(csv, fileName)) {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            backgroundColor: ZaWolfColors.success,
-            content: Text('تم تنزيل ملف $fileName.csv في مجلد التنزيلات.'),
-          ),
-        );
-        return;
-      }
-
-      final file = XFile.fromData(
-        Uint8List.fromList([0xEF, 0xBB, 0xBF, ...utf8.encode(csv)]),
-        mimeType: 'text/csv',
-        name: '$fileName.csv',
-      );
-      await SharePlus.instance.share(
-        ShareParams(files: [file], subject: fileName),
-      );
-    } catch (e) {
-      // Fallback to clipboard
-      await Clipboard.setData(ClipboardData(text: csv));
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          backgroundColor: ZaWolfColors.warning,
-          content: Text(
-            'تعذرت المشاركة — تم نسخ البيانات للحافظة بدلاً من ذلك.',
+      lastDate: DateTime.now(),
+      builder: (context, child) => Theme(
+        data: Theme.of(context).copyWith(
+          colorScheme: const ColorScheme.dark(
+            primary: ZaWolfColors.primaryCyan,
+            onPrimary: ZaWolfColors.background,
+            surface: ZaWolfColors.surface01,
+            onSurface: Colors.white,
           ),
         ),
-      );
-      return;
-    }
-
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        backgroundColor: ZaWolfColors.success,
-        content: Text('تم تجهيز ملف $fileName.csv — افتحه في Google Sheets.'),
+        child: child!,
       ),
     );
+    if (picked != null) setState(() => _selectedDay = picked);
   }
 
-  Future<void> _exportAttendance() async {
+  Future<void> _generate() async {
     setState(() {
-      _isExporting = true;
-      _exportStatus = 'جاري جلب سجلات الحضور والغياب...';
+      _loading = true;
+      _error = null;
     });
-
-    final monthKey = DateFormat('yyyy-MM').format(_selectedMonth);
-    final cycle = PayrollCycle.forKey(monthKey);
-
     try {
-      final logsSnap = await _db
-          .collection('attendance')
-          .where('date', isGreaterThanOrEqualTo: cycle.startDateKey)
-          .where('date', isLessThan: cycle.nextStartDateKey)
-          .get();
-
-      final logs = logsSnap.docs
-          .map((doc) => AttendanceModel.fromFirestore(doc))
-          .toList();
-
-      if (logs.isEmpty) {
-        throw Exception('لا توجد سجلات حضور لهذا الشهر ($monthKey).');
-      }
-
-      setState(() => _exportStatus = 'جاري تجهيز ملف CSV...');
-
-      final csv = await _sheetsExportService.exportAttendanceToSheet(
-        'attendance_$monthKey',
-        logs,
+      final report = await _service.generateDailyReport(_selectedDay);
+      if (!mounted) return;
+      setState(() => _report = report);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: ZaWolfColors.success,
+          content: Text('تم تحديث ${report.rowCount} سجل في Google Sheet.'),
+        ),
       );
-      await _shareCsvFile(csv, 'حضور_$monthKey');
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            backgroundColor: ZaWolfColors.error,
-            content: Text(
-              'فشل التصدير: ${e.toString().replaceAll('Exception: ', '')}',
-            ),
-          ),
-        );
-      }
+    } on GoogleWorkspaceException catch (error) {
+      if (mounted) setState(() => _error = error.message);
+    } catch (_) {
+      if (mounted) setState(() => _error = 'تعذر إنشاء التقرير اليومي.');
     } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _openSheet() async {
+    final url = _report?.spreadsheetUrl ?? '';
+    if (url.isEmpty || !await launchUrl(Uri.parse(url))) {
       if (mounted) {
-        setState(() {
-          _isExporting = false;
-          _exportStatus = '';
-        });
+        setState(
+          () =>
+              _error = 'تعذر فتح جدول التقارير. تحقق من صلاحية Google للحساب.',
+        );
       }
     }
   }
 
-  Future<void> _exportLeaves() async {
+  Future<void> _selectAuditRange() async {
+    final value = await showDateRangePicker(
+      context: context,
+      initialDateRange: _auditRange,
+      firstDate: DateTime(2025),
+      lastDate: DateTime.now(),
+    );
+    if (value != null) setState(() => _auditRange = value);
+  }
+
+  Future<void> _generateAuditReport() async {
     setState(() {
-      _isExporting = true;
-      _exportStatus = 'جاري جلب سجلات الإجازات...';
+      _auditLoading = true;
+      _error = null;
     });
-
-    final monthKey = DateFormat('yyyy-MM').format(_selectedMonth);
-    final cycle = PayrollCycle.forKey(monthKey);
     try {
-      final leavesSnap = await _db.collection('leaves').get();
-      final leaves = leavesSnap.docs
-          .map((doc) => LeaveModel.fromFirestore(doc))
-          .where(
-            (leave) =>
-                !leave.startDate.isAfter(cycle.end) &&
-                !leave.endDate.isBefore(cycle.start),
-          )
-          .toList();
-
-      if (leaves.isEmpty) {
-        throw Exception('لا توجد إجازات مسجلة لتصديرها.');
-      }
-
-      setState(() => _exportStatus = 'جاري تجهيز ملف CSV...');
-
-      final csv = await _sheetsExportService.exportLeavesToSheet(
-        'leaves_$monthKey',
-        leaves,
+      final report = await _service.generateWorkspaceAuditReport(
+        startDate: _auditRange.start,
+        endDate: _auditRange.end,
       );
-      await _shareCsvFile(csv, 'اجازات_$monthKey');
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            backgroundColor: ZaWolfColors.error,
-            content: Text(
-              'فشل التصدير: ${e.toString().replaceAll('Exception: ', '')}',
-            ),
-          ),
-        );
-      }
+      if (!mounted) return;
+      setState(() => _auditReport = report);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('تم تحديث ${report.rowCount} عملية في سجل التدقيق.'),
+        ),
+      );
+    } on GoogleWorkspaceException catch (error) {
+      if (mounted) setState(() => _error = error.message);
+    } catch (_) {
+      if (mounted) setState(() => _error = 'تعذر إنشاء سجل التدقيق.');
     } finally {
-      if (mounted) {
-        setState(() {
-          _isExporting = false;
-          _exportStatus = '';
-        });
-      }
+      if (mounted) setState(() => _auditLoading = false);
     }
   }
 
-  Future<void> _exportPermissions() async {
-    setState(() {
-      _isExporting = true;
-      _exportStatus = 'جاري جلب سجلات الأذونات...';
-    });
-
-    final monthKey = DateFormat('yyyy-MM').format(_selectedMonth);
-
-    try {
-      final snap = await _db
-          .collection('permissions')
-          .where('monthKey', isEqualTo: monthKey)
-          .get();
-
-      final list = snap.docs
-          .map((doc) => PermissionModel.fromFirestore(doc))
-          .toList();
-
-      if (list.isEmpty) {
-        throw Exception('لا توجد أذونات مسجلة لهذا الشهر ($monthKey).');
-      }
-
-      setState(() => _exportStatus = 'جاري تجهيز ملف CSV...');
-
-      final csv = await _sheetsExportService.exportPermissionsToSheet(
-        'permissions_$monthKey',
-        list,
-      );
-      await _shareCsvFile(csv, 'اذونات_$monthKey');
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            backgroundColor: ZaWolfColors.error,
-            content: Text(
-              'فشل التصدير: ${e.toString().replaceAll('Exception: ', '')}',
-            ),
+  Future<void> _openAuditReport() async {
+    final report = _auditReport;
+    if (report == null) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => WorkspaceSheetEditorScreen(
+          resource: CompanyWorkspaceResource(
+            id: report.resourceId,
+            name: report.name,
+            type: 'sheet',
+            department: 'التقارير',
+            description: 'سجل تدقيق Workspace',
+            hasExternalId: true,
+            schemaProfileId: '',
+            sheetTab: report.sheetTab,
+            managerIds: const [],
+            isActive: true,
+            syncStatus: 'connected',
           ),
-        );
-      }
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isExporting = false;
-          _exportStatus = '';
-        });
-      }
-    }
-  }
-
-  Future<void> _exportPerformance() async {
-    setState(() {
-      _isExporting = true;
-      _exportStatus = 'جاري جلب تقييمات الأداء...';
-    });
-
-    final monthKey = DateFormat('yyyy-MM').format(_selectedMonth);
-
-    try {
-      final snap = await _db
-          .collection('performance')
-          .where('monthKey', isEqualTo: monthKey)
-          .get();
-
-      final list = snap.docs
-          .map((doc) => PerformanceModel.fromFirestore(doc))
-          .toList();
-
-      if (list.isEmpty) {
-        throw Exception('لا توجد تقييمات أداء لهذا الشهر ($monthKey).');
-      }
-
-      setState(() => _exportStatus = 'جاري تجهيز ملف CSV...');
-
-      final csv = await _sheetsExportService.exportPerformanceToSheet(
-        'performance_$monthKey',
-        list,
-      );
-      await _shareCsvFile(csv, 'اداء_$monthKey');
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            backgroundColor: ZaWolfColors.error,
-            content: Text(
-              'فشل التصدير: ${e.toString().replaceAll('Exception: ', '')}',
-            ),
-          ),
-        );
-      }
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isExporting = false;
-          _exportStatus = '';
-        });
-      }
-    }
-  }
-
-  Future<void> _exportEmployees() async {
-    setState(() {
-      _isExporting = true;
-      _exportStatus = 'جاري جلب بيانات الموظفين...';
-    });
-
-    try {
-      final snap = await _db.collection('users').get();
-      final employees = snap.docs
-          .map((doc) => UserModel.fromFirestore(doc))
-          .toList();
-
-      if (employees.isEmpty) {
-        throw Exception('لا يوجد موظفون مسجلون لتصديرهم.');
-      }
-
-      setState(() => _exportStatus = 'جاري تجهيز ملف CSV...');
-
-      final csv = await _sheetsExportService.exportEmployeesToSheet(
-        'employees',
-        employees,
-      );
-      await _shareCsvFile(csv, 'بيانات_الموظفين');
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            backgroundColor: ZaWolfColors.error,
-            content: Text(
-              'فشل التصدير: ${e.toString().replaceAll('Exception: ', '')}',
-            ),
-          ),
-        );
-      }
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isExporting = false;
-          _exportStatus = '';
-        });
-      }
-    }
-  }
-
-  Future<void> _exportPayroll() async {
-    setState(() {
-      _isExporting = true;
-      _exportStatus = 'جاري جلب كشوف الرواتب...';
-    });
-
-    final monthKey = DateFormat('yyyy-MM').format(_selectedMonth);
-
-    try {
-      final snap = await _db
-          .collection('payrollRuns')
-          .where('monthKey', isEqualTo: monthKey)
-          .get();
-
-      final list = snap.docs
-          .map((doc) => PayrollRunModel.fromFirestore(doc))
-          .toList();
-
-      if (list.isEmpty) {
-        throw Exception('لا توجد كشوف رواتب لهذا الشهر ($monthKey).');
-      }
-
-      setState(() => _exportStatus = 'جاري تجهيز ملف CSV...');
-
-      final csv = await _sheetsExportService.exportPayrollToSheet(
-        'payroll_$monthKey',
-        list,
-      );
-      await _shareCsvFile(csv, 'رواتب_$monthKey');
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            backgroundColor: ZaWolfColors.error,
-            content: Text(
-              'فشل التصدير: ${e.toString().replaceAll('Exception: ', '')}',
-            ),
-          ),
-        );
-      }
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isExporting = false;
-          _exportStatus = '';
-        });
-      }
-    }
+        ),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final monthStr = DateFormat('yyyy-MM').format(_selectedMonth);
-
+    final dateLabel = DateFormat('yyyy/MM/dd', 'ar').format(_selectedDay);
     return Scaffold(
-      appBar: AppBar(
-        title: Text('تصدير التقارير', style: theme.textTheme.headlineMedium),
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
+      appBar: AppBar(title: const Text('التقارير اليومية')),
+      body: Directionality(
+        textDirection: TextDirection.rtl,
+        child: ListView(
+          padding: const EdgeInsets.all(16),
           children: [
-            Text(
-              'تصدير كشوف العمل والتقييمات',
-              style: theme.textTheme.titleLarge!.copyWith(
-                color: Colors.white,
-                fontWeight: FontWeight.bold,
-              ),
-              textDirection: TextDirection.rtl,
+            Text('سجل تدقيق Workspace', style: theme.textTheme.headlineSmall),
+            const SizedBox(height: 8),
+            const Text(
+              'ينشئ Google Sheet داخل مجلد 04_التقارير ويجمع العرض والتعديل والتنزيل وتغييرات الصفوف والأعمدة والصلاحيات.',
             ),
-            const SizedBox(height: 4),
-            Text(
-              'دورة التقارير من يوم 26 إلى يوم 25. يتم تجهيز ملف CSV للمشاركة أو التنزيل.',
-              style: theme.textTheme.bodyMedium,
-              textDirection: TextDirection.rtl,
-            ),
-            const SizedBox(height: 24),
-
-            // Date Picker Month Card
+            const SizedBox(height: 12),
             WolfCard(
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              child: Wrap(
+                spacing: 12,
+                runSpacing: 12,
+                crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
-                  TextButton.icon(
-                    onPressed: () => _selectMonth(context),
-                    icon: const Icon(
-                      Icons.calendar_today,
-                      color: ZaWolfColors.primaryCyan,
-                      size: 18,
-                    ),
+                  OutlinedButton.icon(
+                    onPressed: _auditLoading ? null : _selectAuditRange,
+                    icon: const Icon(Icons.date_range_outlined),
                     label: Text(
-                      monthStr,
-                      style: const TextStyle(
-                        color: ZaWolfColors.primaryCyan,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 16,
-                      ),
+                      '${DateFormat('yyyy/MM/dd').format(_auditRange.start)} — ${DateFormat('yyyy/MM/dd').format(_auditRange.end)}',
                     ),
                   ),
-                  Text(
-                    'دورة التقارير · ${PayrollCycle.forKey(monthStr).arabicRangeLabel}',
-                    style: theme.textTheme.titleMedium!.copyWith(
-                      color: Colors.white,
-                    ),
+                  FilledButton.icon(
+                    onPressed: _auditLoading ? null : _generateAuditReport,
+                    icon: const Icon(Icons.history_outlined),
+                    label: const Text('إنشاء أو تحديث سجل التدقيق'),
                   ),
+                  if (_auditReport != null)
+                    OutlinedButton.icon(
+                      onPressed: _openAuditReport,
+                      icon: const Icon(Icons.table_view_outlined),
+                      label: Text('فتح السجل (${_auditReport!.rowCount})'),
+                    ),
                 ],
               ),
             ),
-            const SizedBox(height: 32),
-
-            // Loading Indicator
-            if (_isExporting) ...[
-              Center(
-                child: Column(
-                  children: [
-                    const CircularProgressIndicator(
-                      color: ZaWolfColors.primaryCyan,
+            if (_auditLoading)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 12),
+                child: LinearProgressIndicator(),
+              ),
+            const SizedBox(height: 24),
+            Text('تقرير تشغيلي مباشر', style: theme.textTheme.headlineSmall),
+            const SizedBox(height: 8),
+            const Text(
+              'اختر يوماً واحداً. يجمع النظام الحضور والانصراف والتأخير والإجازات والأذونات في صفحة Google Sheet واحدة، ويحدّث صفحة اليوم نفسها عند إعادة الإنشاء.',
+            ),
+            const SizedBox(height: 16),
+            WolfCard(
+              child: Wrap(
+                spacing: 12,
+                runSpacing: 12,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  OutlinedButton.icon(
+                    onPressed: _loading ? null : _selectDay,
+                    icon: const Icon(Icons.calendar_month_outlined),
+                    label: Text(dateLabel),
+                  ),
+                  FilledButton.icon(
+                    onPressed: _loading ? null : _generate,
+                    icon: const Icon(Icons.table_view_outlined),
+                    label: const Text('إنشاء أو تحديث Google Sheet'),
+                  ),
+                  if (_report != null)
+                    OutlinedButton.icon(
+                      onPressed: _openSheet,
+                      icon: const Icon(Icons.open_in_new),
+                      label: const Text('فتح جدول التقرير'),
                     ),
-                    const SizedBox(height: 12),
-                    Text(
-                      _exportStatus,
-                      style: const TextStyle(
-                        color: ZaWolfColors.primaryCyan,
-                        fontWeight: FontWeight.w600,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                  ],
+                ],
+              ),
+            ),
+            if (_loading)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 24),
+                child: LinearProgressIndicator(),
+              ),
+            if (_error != null)
+              WolfCard(
+                child: Text(
+                  _error!,
+                  style: const TextStyle(color: ZaWolfColors.error),
                 ),
               ),
-              const SizedBox(height: 32),
+            if (_report != null) ...[
+              const SizedBox(height: 16),
+              Text(
+                '${_report!.tabTitle} · ${_report!.rowCount} موظف',
+                style: theme.textTheme.titleLarge,
+              ),
+              const SizedBox(height: 8),
+              ..._report!.preview
+                  .take(100)
+                  .map(
+                    (row) => WolfCard(
+                      child: ListTile(
+                        title: Text(row.length > 2 ? '${row[2]}' : 'موظف'),
+                        subtitle: Text(
+                          row.length > 4
+                              ? '${row[3]} · ${row[4]} · حضور ${row.length > 5 ? row[5] : '-'} · انصراف ${row.length > 6 ? row[6] : '-'}'
+                              : '',
+                        ),
+                        trailing: Text(
+                          row.length > 7 ? 'تأخير ${row[7]} د' : '',
+                        ),
+                      ),
+                    ),
+                  ),
             ],
-
-            // Export Buttons Grid
-            _buildExportSection(
-              title: 'تقارير شهرية',
-              icon: Icons.date_range,
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: WolfButton(
-                        onPressed: _isExporting ? null : _exportAttendance,
-                        text: 'الحضور',
-                        secondaryText: 'ATTENDANCE',
-                        height: 52,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: WolfButton(
-                        onPressed: _isExporting ? null : _exportPermissions,
-                        text: 'الأذونات',
-                        secondaryText: 'PERMISSIONS',
-                        variant: WolfButtonVariant.teal,
-                        height: 52,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    Expanded(
-                      child: WolfButton(
-                        onPressed: _isExporting ? null : _exportPerformance,
-                        text: 'تقييم الأداء',
-                        secondaryText: 'PERFORMANCE',
-                        variant: WolfButtonVariant.purple,
-                        height: 52,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: WolfButton(
-                        onPressed: _isExporting ? null : _exportPayroll,
-                        text: 'كشوف الرواتب',
-                        secondaryText: 'PAYROLL',
-                        variant: WolfButtonVariant.outline,
-                        height: 52,
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-
-            const SizedBox(height: 24),
-
-            _buildExportSection(
-              title: 'تقارير عامة',
-              icon: Icons.people_outline,
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: WolfButton(
-                        onPressed: _isExporting ? null : _exportLeaves,
-                        text: 'الإجازات',
-                        secondaryText: 'LEAVES',
-                        variant: WolfButtonVariant.outline,
-                        height: 52,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: WolfButton(
-                        onPressed: _isExporting ? null : _exportEmployees,
-                        text: 'بيانات الموظفين',
-                        secondaryText: 'EMPLOYEES',
-                        height: 52,
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
           ],
         ),
       ),
-    );
-  }
-
-  Widget _buildExportSection({
-    required String title,
-    required IconData icon,
-    required List<Widget> children,
-  }) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.end,
-          children: [
-            Text(
-              title,
-              style: const TextStyle(
-                color: ZaWolfColors.textSecondary,
-                fontWeight: FontWeight.bold,
-                fontSize: 14,
-              ),
-            ),
-            const SizedBox(width: 8),
-            Icon(icon, color: ZaWolfColors.textMuted, size: 18),
-          ],
-        ),
-        const SizedBox(height: 12),
-        ...children,
-      ],
     );
   }
 }

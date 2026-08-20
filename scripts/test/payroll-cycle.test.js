@@ -22,3 +22,13 @@ test('cycle advances on day 26 and handles December', () => {
     nextStartDate: '2027-01-26',
   });
 });
+
+test('a delayed approval remains allocated to the cycle of its execution date', () => {
+  // Permission/attendance deductions must follow the day worked, not the day
+  // a manager or HR happened to approve the request.
+  const executionDate = { year: 2026, month: 7, day: 25 };
+  const approvalDate = { year: 2026, month: 7, day: 26 };
+
+  assert.equal(keyForDateParts(executionDate.year, executionDate.month, executionDate.day), '2026-07');
+  assert.equal(keyForDateParts(approvalDate.year, approvalDate.month, approvalDate.day), '2026-08');
+});

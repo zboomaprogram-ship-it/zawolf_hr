@@ -640,6 +640,90 @@ async function syncSalesKpis(input = {}) {
     results.push(await upsertEmployeeKpi(db, userDoc, api, cycle, options, context));
   }
   const matched = results.filter((item) => item.matched);
+
+  // --- Calculate Team Leader / Manager Aggregate Team KPIs ---
+  const supervisorTeamKpis = new Map();
+  for (const item of matched) {
+    const kpiProgress = item.providerDetails?.finalKpi || item.actual || 0;
+    const userDoc = activeUserDocs.find((d) => d.id === item.userId)?.data();
+    if (!userDoc) continue;
+    const supervisorIds = new Set([
+      userDoc.managerId,
+      ...(userDoc.managerIds || []),
+      userDoc.teamLeaderId,
+    ].filter(Boolean));
+
+    for (const supId of supervisorIds) {
+      if (supId === item.userId) continue;
+      if (!supervisorTeamKpis.has(supId)) {
+        supervisorTeamKpis.set(supId, []);
+      }
+      supervisorTeamKpis.get(supId).push(kpiProgress);
+    }
+  }
+
+  const now = admin.firestore.FieldValue.serverTimestamp();
+  for (const [supId, teamProgresses] of supervisorTeamKpis.entries()) {
+    if (!teamProgresses.length) continue;
+    const teamAvgProgress = Number(
+      (teamProgresses.reduce((sum, p) => sum + p, 0) / teamProgresses.length).toFixed(2),
+    );
+    const supKpiRef = db.collection('employeeKpis').doc(`${supId}_${cycle.monthKey}`);
+    const supKpiSnap = await supKpiRef.get();
+    if (supKpiSnap.exists) {
+      await supKpiRef.update({
+        overallProgress: teamAvgProgress,
+        'providerDetails.isTeamLeaderKpi': true,
+        'providerDetails.teamMemberCount': teamProgresses.length,
+        'providerDetails.teamAverageKpi': teamAvgProgress,
+        updatedAt: now,
+      });
+    } else {
+      const supUserDoc = activeUserDocs.find((d) => d.id === supId);
+      if (supUserDoc) {
+        const uData = supUserDoc.data();
+        await supKpiRef.set({
+          templateId: SOURCE,
+          userId: supId,
+          employeeId: uData.employeeId || '',
+          employeeName: uData.displayName || '',
+          department: uData.department || '',
+          managerId: uData.managerId || '',
+          managerIds: uData.managerIds || [],
+          teamLeaderId: uData.teamLeaderId || '',
+          monthKey: cycle.monthKey,
+          status: 'active',
+          metrics: [{
+            key: 'team_average_kpi',
+            source: SOURCE,
+            editable: false,
+            name: 'متوسط أداء الفريق (Team KPI)',
+            unit: '%',
+            target: 100,
+            actual: teamAvgProgress,
+            weight: 100,
+            direction: 'higher_is_better',
+            managerComment: 'يتم احتساب هذا المؤشر تلقائياً كمتوسط إنجاز أعضاء الفريق.',
+          }],
+          overallProgress: teamAvgProgress,
+          createdBy: SYSTEM_ACTOR,
+          createdAt: now,
+          updatedAt: now,
+          externalSource: SOURCE,
+          periodStart: cycle.startDate,
+          periodEnd: cycle.endDate,
+          lastSyncedAt: now,
+          syncStatus: 'synced',
+          providerType: 'sales_analytics',
+          providerDetails: {
+            isTeamLeaderKpi: true,
+            teamMemberCount: teamProgresses.length,
+            teamAverageKpi: teamAvgProgress,
+          },
+        });
+      }
+    }
+  }
   const salesResults = matched.filter((item) => item.metricKind === 'sales');
   const teleSalesResults = matched.filter((item) => item.metricKind === 'tele_sales');
   const salesDepartment = departmentAgentStats(api.salesKpi, 'sales');

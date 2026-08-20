@@ -29,6 +29,7 @@ import '../../models/resignation_model.dart';
 import '../../models/administrative_request_model.dart';
 import '../shared/requests_log_screen.dart';
 import '../../utils/payroll_cycle.dart';
+import '../../utils/permission_cycle_accounting.dart';
 
 class EmployeeRequestsScreen extends StatefulWidget {
   const EmployeeRequestsScreen({super.key});
@@ -61,6 +62,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
   DateTime _leaveEnd = DateTime.now().add(const Duration(days: 2));
   final _leaveReasonController = TextEditingController();
   final _workHandoverController = TextEditingController();
+  final _leaveAttachmentController = TextEditingController();
   String? _attachmentUrl;
 
   // Advance form fields
@@ -77,12 +79,23 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
   String _administrativeCategory = AdministrativeRequestCategory.personalData;
   final _administrativeNotesController = TextEditingController();
   final _administrativeAttachmentController = TextEditingController();
+  final _fieldMissionSiteController = TextEditingController();
+  DateTime _fieldMissionDate = DateTime.now();
+  TimeOfDay _fieldMissionStart = const TimeOfDay(hour: 9, minute: 0);
+  TimeOfDay _fieldMissionEnd = const TimeOfDay(hour: 17, minute: 0);
+  bool _fieldMissionRequiresReturn = true;
+  bool _fieldMissionRequiresCheckout = true;
   final _attendanceCorrectionReasonController = TextEditingController();
   AttendanceModel? _selectedCorrectionAttendance;
   TimeOfDay? _requestedCorrectionTime;
 
   bool _loading = false;
   int _requestTypeIndex = 0;
+  final Map<String, Stream<dynamic>> _streamCache = {};
+
+  Stream<T> _cachedStream<T>(String key, Stream<T> Function() create) {
+    return _streamCache.putIfAbsent(key, create) as Stream<T>;
+  }
 
   @override
   void initState() {
@@ -96,6 +109,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
     _permissionReasonController.dispose();
     _leaveReasonController.dispose();
     _workHandoverController.dispose();
+    _leaveAttachmentController.dispose();
     _advanceAmountController.dispose();
     _advanceReasonController.dispose();
     _complaintTitleController.dispose();
@@ -104,6 +118,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
     _resignationReasonController.dispose();
     _administrativeNotesController.dispose();
     _administrativeAttachmentController.dispose();
+    _fieldMissionSiteController.dispose();
     _attendanceCorrectionReasonController.dispose();
     super.dispose();
   }
@@ -112,12 +127,69 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
     final TimeOfDay? picked = await showTimePicker(
       context: context,
       initialTime: _selectedTime,
+      initialEntryMode: TimePickerEntryMode.input,
+      helpText: 'اختر وقت المغادرة',
+      cancelText: 'إلغاء',
+      confirmText: 'تم',
     );
     if (picked != null && picked != _selectedTime) {
       setState(() {
         _selectedTime = picked;
       });
     }
+  }
+
+  TimeOfDay _workTime(String? value, TimeOfDay fallback) {
+    final parts = value?.split(':');
+    if (parts == null || parts.length != 2) return fallback;
+    final hour = int.tryParse(parts[0]);
+    final minute = int.tryParse(parts[1]);
+    if (hour == null || minute == null || hour > 23 || minute > 59) {
+      return fallback;
+    }
+    return TimeOfDay(hour: hour, minute: minute);
+  }
+
+  TimeOfDay _resolvedPermissionTime(UserModel employee) {
+    final start = _workTime(
+      employee.workSchedule.startTime,
+      const TimeOfDay(hour: 9, minute: 0),
+    );
+    final end = _workTime(
+      employee.workSchedule.endTime,
+      const TimeOfDay(hour: 17, minute: 0),
+    );
+    final minutes = PermissionTypePolicy.resolveExpectedMinutes(
+      permissionType: _permissionType,
+      durationMinutes: _permissionDurationHours * 60,
+      workStartMinutes: start.hour * 60 + start.minute,
+      workEndMinutes: end.hour * 60 + end.minute,
+      selectedMinutes: _selectedTime.hour * 60 + _selectedTime.minute,
+    );
+    return TimeOfDay(hour: minutes ~/ 60, minute: minutes % 60);
+  }
+
+  String? _permissionTimeError(UserModel employee) {
+    if (_permissionType != PermissionTypePolicy.midShiftExit) return null;
+    final workStart = _workTime(
+      employee.workSchedule.startTime,
+      const TimeOfDay(hour: 9, minute: 0),
+    );
+    final workEnd = _workTime(
+      employee.workSchedule.endTime,
+      const TimeOfDay(hour: 17, minute: 0),
+    );
+    final startMinutes = workStart.hour * 60 + workStart.minute;
+    final endMinutes = workEnd.hour * 60 + workEnd.minute;
+    final departureMinutes = _selectedTime.hour * 60 + _selectedTime.minute;
+    final returnMinutes = departureMinutes + _permissionDurationHours * 60;
+    if (departureMinutes < startMinutes || departureMinutes >= endMinutes) {
+      return 'وقت المغادرة يجب أن يكون داخل ساعات عملك.';
+    }
+    if (returnMinutes > endMinutes) {
+      return 'وقت العودة يتجاوز موعد الانصراف. اختر وقتاً أبكر أو مدة أقل.';
+    }
+    return null;
   }
 
   Future<void> _selectPermissionDate(BuildContext context) async {
@@ -134,12 +206,26 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
     }
   }
 
-  Future<void> _selectLeaveDateRange(BuildContext context) async {
+  Future<void> _selectLeaveDateRange(
+    BuildContext context,
+    String leaveType,
+  ) async {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final firstAllowed = leaveType == LeaveTypePolicy.normal
+        ? today.add(const Duration(days: 2))
+        : today;
+    final initialStart = _leaveStart.isBefore(firstAllowed)
+        ? firstAllowed
+        : _leaveStart;
+    final initialEnd = _leaveEnd.isBefore(initialStart)
+        ? initialStart
+        : _leaveEnd;
     final DateTimeRange? picked = await showDateRangePicker(
       context: context,
-      initialDateRange: DateTimeRange(start: _leaveStart, end: _leaveEnd),
-      firstDate: DateTime.now(),
-      lastDate: DateTime.now().add(const Duration(days: 365)),
+      initialDateRange: DateTimeRange(start: initialStart, end: initialEnd),
+      firstDate: firstAllowed,
+      lastDate: today.add(const Duration(days: 365)),
     );
     if (picked != null) {
       setState(() {
@@ -149,9 +235,37 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
     }
   }
 
+  void _setLeaveType(String type) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final firstAllowed = type == LeaveTypePolicy.normal
+        ? today.add(const Duration(days: 2))
+        : today;
+    setState(() {
+      _leaveType = type;
+      if (_leaveStart.isBefore(firstAllowed)) {
+        _leaveStart = firstAllowed;
+        _leaveEnd = firstAllowed;
+      }
+    });
+  }
+
   // Submission handlers
-  Future<void> _submitPermission(UserModel employee) async {
+  Future<void> _submitPermission(
+    UserModel employee,
+    PermissionCycleUsage cycleUsage,
+  ) async {
     if (!_formKeyPermission.currentState!.validate()) return;
+    final timingError = _permissionTimeError(employee);
+    if (timingError != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: ZaWolfColors.error,
+          content: Text(timingError),
+        ),
+      );
+      return;
+    }
 
     setState(() => _loading = true);
     final service = PermissionService();
@@ -160,13 +274,13 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
       final dateStr = DateFormat('yyyy-MM-dd').format(_permissionDate);
       final monthKey = PayrollCycle.keyFor(_permissionDate);
 
+      final expectedTime = _resolvedPermissionTime(employee);
       final expectedTimeStr =
-          '${_selectedTime.hour.toString().padLeft(2, '0')}:${_selectedTime.minute.toString().padLeft(2, '0')}';
+          '${expectedTime.hour.toString().padLeft(2, '0')}:${expectedTime.minute.toString().padLeft(2, '0')}';
 
-      final balance = employee.permissionBalance;
       final quotaExhausted = PermissionTypePolicy.isRegularQuotaExhausted(
-        usedCount: balance.usedThisMonth,
-        usedHours: balance.usedHoursThisMonth,
+        usedCount: cycleUsage.usedCount,
+        usedHours: cycleUsage.usedHours,
       );
 
       final req = PermissionModel(
@@ -223,16 +337,34 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
     if (!_formKeyAdministrative.currentState!.validate()) return;
     setState(() => _loading = true);
     try {
-      await AdministrativeRequestService().submit(
-        employee: employee,
-        category: _administrativeCategory,
-        notes: _administrativeNotesController.text,
-        attachmentUrl: _administrativeAttachmentController.text.trim().isEmpty
-            ? null
-            : _administrativeAttachmentController.text.trim(),
-      );
+      final service = AdministrativeRequestService();
+      if (_administrativeCategory ==
+          AdministrativeRequestCategory.fieldMission) {
+        String time(TimeOfDay value) =>
+            '${value.hour.toString().padLeft(2, '0')}:${value.minute.toString().padLeft(2, '0')}';
+        await service.submitFieldMission(
+          employee: employee,
+          date: _fieldMissionDate,
+          startTime: time(_fieldMissionStart),
+          endTime: time(_fieldMissionEnd),
+          siteName: _fieldMissionSiteController.text,
+          reason: _administrativeNotesController.text,
+          requiresReturnToOffice: _fieldMissionRequiresReturn,
+          requiresCheckout: _fieldMissionRequiresCheckout,
+        );
+      } else {
+        await service.submit(
+          employee: employee,
+          category: _administrativeCategory,
+          notes: _administrativeNotesController.text,
+          attachmentUrl: _administrativeAttachmentController.text.trim().isEmpty
+              ? null
+              : _administrativeAttachmentController.text.trim(),
+        );
+      }
       _administrativeNotesController.clear();
       _administrativeAttachmentController.clear();
+      _fieldMissionSiteController.clear();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -357,7 +489,18 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
         );
         _leaveReasonController.clear();
         _workHandoverController.clear();
-        setState(() => _attachmentUrl = null);
+        _leaveAttachmentController.clear();
+        final today = DateTime.now();
+        final nextStart = DateTime(
+          today.year,
+          today.month,
+          today.day,
+        ).add(Duration(days: leaveType == LeaveTypePolicy.normal ? 2 : 0));
+        setState(() {
+          _attachmentUrl = null;
+          _leaveStart = nextStart;
+          _leaveEnd = nextStart;
+        });
         _tabController.animateTo(1);
       }
     } catch (e) {
@@ -562,6 +705,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
       _leaveReasonController.text = request.reason ?? '';
       _workHandoverController.text = request.workHandoverTo;
       _attachmentUrl = request.attachmentUrl;
+      _leaveAttachmentController.text = request.attachmentUrl ?? '';
     });
     _tabController.animateTo(0);
   }
@@ -850,10 +994,36 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
   }
 
   Widget _buildPermissionForm(UserModel user, ThemeData theme) {
-    final balance = user.permissionBalance;
+    final cycle = PayrollCycle.forDate(_permissionDate);
+    return StreamBuilder<PermissionCycleUsage>(
+      stream: _cachedStream<PermissionCycleUsage>(
+        'permission-usage:${user.uid}:${cycle.key}',
+        () => PermissionService().watchCycleUsage(
+          userId: user.uid,
+          cycleKey: cycle.key,
+        ),
+      ),
+      // The legacy user counter can be polluted by an approval from an older
+      // cycle. Permission documents for this cycle are the source of truth.
+      initialData: PermissionCycleUsage.zero,
+      builder: (context, snapshot) => _buildPermissionFormForCycle(
+        user,
+        theme,
+        cycle,
+        snapshot.data ?? PermissionCycleUsage.zero,
+      ),
+    );
+  }
+
+  Widget _buildPermissionFormForCycle(
+    UserModel user,
+    ThemeData theme,
+    PayrollCycle cycle,
+    PermissionCycleUsage usage,
+  ) {
     final quotaExhausted = PermissionTypePolicy.isRegularQuotaExhausted(
-      usedCount: balance.usedThisMonth,
-      usedHours: balance.usedHoursThisMonth,
+      usedCount: usage.usedCount,
+      usedHours: usage.usedHours,
     );
     final deductibleSelected = quotaExhausted || _isDeductiblePermission;
 
@@ -885,14 +1055,14 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'الأذونات المستخدمة هذا الشهر: ${balance.usedThisMonth}/2 أذونات',
+                          'الأذونات المستخدمة في دورة ${cycle.arabicRangeLabel}: ${usage.usedCount}/2',
                           style: theme.textTheme.bodyMedium!.copyWith(
                             color: Colors.white,
                             fontWeight: FontWeight.bold,
                           ),
                         ),
                         Text(
-                          'إجمالي الساعات المستخدمة: ${balance.usedHoursThisMonth.toInt()}/5 ساعات',
+                          'إجمالي الساعات المستخدمة: ${usage.usedHours.toStringAsFixed(1)}/5 ساعات',
                           style: theme.textTheme.bodySmall!.copyWith(
                             color: ZaWolfColors.textSecondary,
                           ),
@@ -944,6 +1114,21 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
                   checkmarkColor: Colors.white,
                 ),
               ],
+            ),
+            const SizedBox(height: 16),
+
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: ZaWolfColors.permissionTeal.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                'الإذن بالمغادرة المبكرة متاح حتى عند إيقاف تسجيل الانصراف؛ عند الموافقة يمر الطلب بمسار الموافقات المعتاد.',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: ZaWolfColors.textSecondary,
+                ),
+              ),
             ),
             const SizedBox(height: 16),
 
@@ -1035,7 +1220,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
             ),
             const Divider(color: ZaWolfColors.surface02),
 
-            // Time Picker
+            // Permission time
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -1045,22 +1230,39 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
                       : 'وقت المغادرة المتوقع:',
                   style: theme.textTheme.bodyMedium,
                 ),
-                TextButton.icon(
-                  icon: const Icon(
-                    Icons.alarm,
-                    color: ZaWolfColors.permissionTeal,
-                  ),
-                  label: Text(
-                    _selectedTime.format(context),
+                if (_permissionType == PermissionTypePolicy.midShiftExit)
+                  TextButton.icon(
+                    icon: const Icon(
+                      Icons.alarm,
+                      color: ZaWolfColors.permissionTeal,
+                    ),
+                    label: Text(
+                      _selectedTime.format(context),
+                      style: theme.textTheme.titleMedium!.copyWith(
+                        color: ZaWolfColors.permissionTeal,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    onPressed: () => _selectTime(context),
+                  )
+                else
+                  Text(
+                    _resolvedPermissionTime(user).format(context),
                     style: theme.textTheme.titleMedium!.copyWith(
                       color: ZaWolfColors.permissionTeal,
                       fontWeight: FontWeight.bold,
                     ),
                   ),
-                  onPressed: () => _selectTime(context),
-                ),
               ],
             ),
+            if (_permissionType != PermissionTypePolicy.midShiftExit)
+              Text(
+                'يتم حساب الوقت تلقائياً من جدول عملك والمدة المختارة.',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: ZaWolfColors.textSecondary,
+                ),
+                textDirection: TextDirection.rtl,
+              ),
             const Divider(color: ZaWolfColors.surface02),
             if (_permissionType == PermissionTypePolicy.midShiftExit) ...[
               Builder(
@@ -1118,17 +1320,27 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
                 ),
               ],
             ),
-            Slider(
-              value: _permissionDurationHours.toDouble(),
-              min: 1,
-              max: PermissionTypePolicy.maximumDurationHours.toDouble(),
-              divisions: PermissionTypePolicy.maximumDurationHours - 1,
-              activeColor: ZaWolfColors.permissionTeal,
-              onChanged: (val) {
-                setState(() {
-                  _permissionDurationHours = val.toInt();
-                });
-              },
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: List.generate(
+                PermissionTypePolicy.maximumDurationHours,
+                (index) {
+                  final hours = index + 1;
+                  return ChoiceChip(
+                    label: Text('$hours ساعة'),
+                    selected: _permissionDurationHours == hours,
+                    selectedColor: ZaWolfColors.permissionTeal,
+                    checkmarkColor: Colors.white,
+                    onSelected: (selected) {
+                      if (selected) {
+                        setState(() => _permissionDurationHours = hours);
+                      }
+                    },
+                  );
+                },
+              ),
             ),
 
             // Reason field
@@ -1139,7 +1351,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
               hintText: 'اكتب سبب طلب الإذن بالتفصيل...',
               maxLines: 2,
               validator: (val) =>
-                  val == null || val.isEmpty ? 'يرجى كتابة السبب' : null,
+                  val == null || val.trim().isEmpty ? 'يرجى كتابة السبب' : null,
             ),
             const SizedBox(height: 20),
 
@@ -1162,7 +1374,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
             ],
 
             WolfButton(
-              onPressed: () => _submitPermission(user),
+              onPressed: () => _submitPermission(user, usage),
               text: 'تقديم طلب الإذن',
               secondaryText: 'SUBMIT PERMISSION',
               variant: WolfButtonVariant.teal,
@@ -1200,21 +1412,21 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
                     label: const Center(child: Text('مرضية')),
                     selected: selectedLeaveType == 'sick',
                     onSelected: (val) {
-                      if (val) setState(() => _leaveType = 'sick');
+                      if (val) _setLeaveType(LeaveTypePolicy.sick);
                     },
                   ),
                   ChoiceChip(
                     label: const Center(child: Text('عارضة')),
                     selected: selectedLeaveType == 'casual',
                     onSelected: (val) {
-                      if (val) setState(() => _leaveType = 'casual');
+                      if (val) _setLeaveType(LeaveTypePolicy.casual);
                     },
                   ),
                   ChoiceChip(
                     label: const Center(child: Text('إجازة عادية')),
                     selected: selectedLeaveType == 'day_off',
                     onSelected: (val) {
-                      if (val) setState(() => _leaveType = 'day_off');
+                      if (val) _setLeaveType(LeaveTypePolicy.normal);
                     },
                   ),
                 ],
@@ -1223,7 +1435,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
                   selected: selectedLeaveType == LeaveTypePolicy.unpaid,
                   onSelected: (val) {
                     if (val && !isOnProbation) {
-                      setState(() => _leaveType = LeaveTypePolicy.unpaid);
+                      _setLeaveType(LeaveTypePolicy.unpaid);
                     }
                   },
                 ),
@@ -1233,7 +1445,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
                     selected: selectedLeaveType == LeaveTypePolicy.exam,
                     onSelected: (val) {
                       if (val) {
-                        setState(() => _leaveType = LeaveTypePolicy.exam);
+                        _setLeaveType(LeaveTypePolicy.exam);
                       }
                     },
                   ),
@@ -1242,7 +1454,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
                     selected: selectedLeaveType == LeaveTypePolicy.remote,
                     onSelected: (val) {
                       if (val) {
-                        setState(() => _leaveType = LeaveTypePolicy.remote);
+                        _setLeaveType(LeaveTypePolicy.remote);
                       }
                     },
                   ),
@@ -1258,6 +1470,20 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
               textDirection: TextDirection.rtl,
             ),
             const SizedBox(height: 16),
+
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: ZaWolfColors.primaryCyan.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                'يمكنك إرسال أكثر من طلب إجازة لأيام مختلفة، ما دامت التواريخ غير متداخلة والرصيد كافياً.',
+                style: theme.textTheme.bodySmall,
+                textDirection: TextDirection.rtl,
+              ),
+            ),
+            const SizedBox(height: 12),
 
             // Date Picker Range
             LayoutBuilder(
@@ -1284,7 +1510,8 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
                     'تغيير التواريخ',
                     style: TextStyle(color: ZaWolfColors.primaryCyan),
                   ),
-                  onPressed: () => _selectLeaveDateRange(context),
+                  onPressed: () =>
+                      _selectLeaveDateRange(context, selectedLeaveType),
                 );
 
                 if (constraints.maxWidth < 430) {
@@ -1319,7 +1546,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
               hintText: 'اكتب تفاصيل الإجازة والسبب...',
               maxLines: 2,
               validator: (val) =>
-                  val == null || val.isEmpty ? 'يرجى كتابة السبب' : null,
+                  val == null || val.trim().isEmpty ? 'يرجى كتابة السبب' : null,
             ),
             const SizedBox(height: 12),
 
@@ -1337,6 +1564,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
 
             // Attachment URL input
             WolfInputField(
+              controller: _leaveAttachmentController,
               labelText: 'رابط المرفق (جوجل درايف / الخ) - اختياري',
               englishLabel: 'Attachment Link (Optional)',
               hintText: 'https://...',
@@ -1397,9 +1625,6 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
                 if (val == null || val.isEmpty) return 'المبلغ مطلوب';
                 final amt = double.tryParse(val);
                 if (amt == null || amt <= 0) return 'مبلغ غير صحيح';
-                if (amt > user.baseMonthlySalary) {
-                  return 'المبلغ يتجاوز الراتب الأساسي';
-                }
                 return null;
               },
             ),
@@ -1549,7 +1774,10 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
     return Form(
       key: _formKeyAttendanceCorrection,
       child: StreamBuilder<List<AttendanceModel>>(
-        stream: service.correctionEligibleAttendance(user.uid),
+        stream: _cachedStream(
+          'correction-eligible|${user.uid}',
+          () => service.correctionEligibleAttendance(user.uid),
+        ),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(
@@ -1704,7 +1932,10 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
 
   Widget _buildAttendanceCorrectionHistory(String userId, ThemeData theme) {
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-      stream: AttendanceCorrectionRequestService().requestsForEmployee(userId),
+      stream: _cachedStream(
+        'correction-history|$userId',
+        () => AttendanceCorrectionRequestService().requestsForEmployee(userId),
+      ),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(
@@ -1829,6 +2060,91 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
             },
           ),
           const SizedBox(height: 14),
+          if (_administrativeCategory ==
+              AdministrativeRequestCategory.fieldMission) ...[
+            TextFormField(
+              controller: _fieldMissionSiteController,
+              textDirection: TextDirection.rtl,
+              decoration: const InputDecoration(
+                labelText: 'مكان المهمة الميدانية',
+                prefixIcon: Icon(Icons.place_outlined),
+              ),
+              validator: (value) =>
+                  (value?.trim().isEmpty ?? true) ? 'مكان المهمة مطلوب' : null,
+            ),
+            const SizedBox(height: 14),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(Icons.calendar_month_outlined),
+              title: const Text('تاريخ المهمة'),
+              subtitle: Text(
+                DateFormat('yyyy/MM/dd').format(_fieldMissionDate),
+              ),
+              onTap: () async {
+                final now = DateTime.now();
+                final picked = await showDatePicker(
+                  context: context,
+                  initialDate: _fieldMissionDate,
+                  firstDate: DateTime(now.year, now.month, now.day),
+                  lastDate: now.add(const Duration(days: 365)),
+                );
+                if (picked != null && mounted) {
+                  setState(() => _fieldMissionDate = picked);
+                }
+              },
+            ),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    icon: const Icon(Icons.login),
+                    label: Text(
+                      'البداية: ${_fieldMissionStart.format(context)}',
+                    ),
+                    onPressed: () async {
+                      final picked = await showTimePicker(
+                        context: context,
+                        initialTime: _fieldMissionStart,
+                      );
+                      if (picked != null && mounted) {
+                        setState(() => _fieldMissionStart = picked);
+                      }
+                    },
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    icon: const Icon(Icons.logout),
+                    label: Text('النهاية: ${_fieldMissionEnd.format(context)}'),
+                    onPressed: () async {
+                      final picked = await showTimePicker(
+                        context: context,
+                        initialTime: _fieldMissionEnd,
+                      );
+                      if (picked != null && mounted) {
+                        setState(() => _fieldMissionEnd = picked);
+                      }
+                    },
+                  ),
+                ),
+              ],
+            ),
+            SwitchListTile.adaptive(
+              contentPadding: EdgeInsets.zero,
+              value: _fieldMissionRequiresReturn,
+              title: const Text('العودة إلى المكتب بعد المهمة'),
+              onChanged: (value) =>
+                  setState(() => _fieldMissionRequiresReturn = value),
+            ),
+            SwitchListTile.adaptive(
+              contentPadding: EdgeInsets.zero,
+              value: _fieldMissionRequiresCheckout,
+              title: const Text('يتطلب تسجيل الانصراف'),
+              onChanged: (value) =>
+                  setState(() => _fieldMissionRequiresCheckout = value),
+            ),
+          ],
           TextFormField(
             controller: _administrativeNotesController,
             minLines: 4,
@@ -1841,30 +2157,41 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
             validator: (value) =>
                 (value?.trim().isEmpty ?? true) ? 'تفاصيل الطلب مطلوبة' : null,
           ),
-          const SizedBox(height: 14),
-          TextFormField(
-            controller: _administrativeAttachmentController,
-            textDirection: TextDirection.ltr,
-            decoration: const InputDecoration(
-              labelText: 'رابط مرفق (اختياري)',
-              hintText: 'https://...',
+          if (_administrativeCategory !=
+              AdministrativeRequestCategory.fieldMission) ...[
+            const SizedBox(height: 14),
+            TextFormField(
+              controller: _administrativeAttachmentController,
+              textDirection: TextDirection.ltr,
+              decoration: const InputDecoration(
+                labelText: 'رابط مرفق (اختياري)',
+                hintText: 'https://...',
+              ),
+              validator: (value) {
+                if (value == null || value.trim().isEmpty) return null;
+                final uri = Uri.tryParse(value.trim());
+                if (uri == null ||
+                    !['http', 'https'].contains(uri.scheme) ||
+                    uri.host.isEmpty) {
+                  return 'أدخل رابطاً صحيحاً';
+                }
+                return null;
+              },
             ),
-            validator: (value) {
-              if (value == null || value.trim().isEmpty) return null;
-              final uri = Uri.tryParse(value.trim());
-              if (uri == null ||
-                  !['http', 'https'].contains(uri.scheme) ||
-                  uri.host.isEmpty) {
-                return 'أدخل رابطاً صحيحاً';
-              }
-              return null;
-            },
-          ),
+          ],
           const SizedBox(height: 20),
           WolfButton(
             onPressed: () => _submitAdministrativeRequest(user),
-            text: 'إرسال الطلب الإداري',
-            secondaryText: 'SUBMIT ADMIN REQUEST',
+            text:
+                _administrativeCategory ==
+                    AdministrativeRequestCategory.fieldMission
+                ? 'إرسال طلب المهمة الميدانية'
+                : 'إرسال الطلب الإداري',
+            secondaryText:
+                _administrativeCategory ==
+                    AdministrativeRequestCategory.fieldMission
+                ? 'SUBMIT FIELD MISSION'
+                : 'SUBMIT ADMIN REQUEST',
             loading: _loading,
           ),
         ],
@@ -1874,7 +2201,10 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
 
   Widget _buildAdministrativeHistory(String userId, ThemeData theme) {
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-      stream: AdministrativeRequestService().watchMine(userId),
+      stream: _cachedStream(
+        'administrative-history|$userId',
+        () => AdministrativeRequestService().watchMine(userId),
+      ),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator());
@@ -1926,6 +2256,16 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
                     'تاريخ الإرسال: ${DateFormat('yyyy/MM/dd · HH:mm').format(request.submittedAt)}',
                   ),
                   Text(request.notes),
+                  if (request.category ==
+                      AdministrativeRequestCategory.fieldMission) ...[
+                    const SizedBox(height: 6),
+                    Text(
+                      'المكان: ${request.siteName ?? '-'} · ${request.missionDate ?? '-'}',
+                    ),
+                    Text(
+                      '${request.startTime ?? '-'} - ${request.endTime ?? '-'}',
+                    ),
+                  ],
                   if ((request.attachmentUrl ?? '').isNotEmpty)
                     Text(
                       request.attachmentUrl!,
@@ -1969,7 +2309,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
               ),
             ),
             child: const Text(
-              'يُرسل الطلب إلى قائد الفريق ثم المديرين بالترتيب، وبعدهم مدير HR للقرار النهائي.',
+              'يُرسل الطلب إلى قائد الفريق ثم المديرين بالترتيب، وبعدهم HR للقرار النهائي.',
               textAlign: TextAlign.center,
               textDirection: TextDirection.rtl,
             ),
@@ -2023,7 +2363,10 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
 
   Widget _buildResignationsHistory(String userId, ThemeData theme) {
     return StreamBuilder<List<ResignationModel>>(
-      stream: ResignationService().watchMine(userId),
+      stream: _cachedStream(
+        'resignation-history|$userId',
+        () => ResignationService().watchMine(userId),
+      ),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator());
@@ -2099,12 +2442,15 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
 
   Widget _buildAdvancesHistory(String userId, ThemeData theme) {
     return StreamBuilder<QuerySnapshot>(
-      stream: FirebaseFirestore.instance
-          .collection('advances')
-          .where('userId', isEqualTo: userId)
-          .orderBy('submittedAt', descending: true)
-          .limit(50)
-          .snapshots(),
+      stream: _cachedStream(
+        'advance-history|$userId',
+        () => FirebaseFirestore.instance
+            .collection('advances')
+            .where('userId', isEqualTo: userId)
+            .orderBy('submittedAt', descending: true)
+            .limit(25)
+            .snapshots(),
+      ),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator());
@@ -2197,12 +2543,15 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
 
   Widget _buildComplaintsHistory(String userId, ThemeData theme) {
     return StreamBuilder<QuerySnapshot>(
-      stream: FirebaseFirestore.instance
-          .collection('complaints')
-          .where('userId', isEqualTo: userId)
-          .orderBy('submittedAt', descending: true)
-          .limit(50)
-          .snapshots(),
+      stream: _cachedStream(
+        'complaint-history|$userId',
+        () => FirebaseFirestore.instance
+            .collection('complaints')
+            .where('userId', isEqualTo: userId)
+            .orderBy('submittedAt', descending: true)
+            .limit(25)
+            .snapshots(),
+      ),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator());
@@ -2313,12 +2662,15 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
 
   Widget _buildLeavesHistory(String userId, ThemeData theme) {
     return StreamBuilder<QuerySnapshot>(
-      stream: FirebaseFirestore.instance
-          .collection('leaves')
-          .where('userId', isEqualTo: userId)
-          .orderBy('submittedAt', descending: true)
-          .limit(50)
-          .snapshots(),
+      stream: _cachedStream(
+        'leave-history|$userId',
+        () => FirebaseFirestore.instance
+            .collection('leaves')
+            .where('userId', isEqualTo: userId)
+            .orderBy('submittedAt', descending: true)
+            .limit(25)
+            .snapshots(),
+      ),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator());
@@ -2489,12 +2841,15 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
 
   Widget _buildPermissionsHistory(String userId, ThemeData theme) {
     return StreamBuilder<QuerySnapshot>(
-      stream: FirebaseFirestore.instance
-          .collection('permissions')
-          .where('userId', isEqualTo: userId)
-          .orderBy('submittedAt', descending: true)
-          .limit(50)
-          .snapshots(),
+      stream: _cachedStream(
+        'permission-history|$userId',
+        () => FirebaseFirestore.instance
+            .collection('permissions')
+            .where('userId', isEqualTo: userId)
+            .orderBy('submittedAt', descending: true)
+            .limit(25)
+            .snapshots(),
+      ),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator());

@@ -5,6 +5,7 @@ class AdministrativeRequestCategory {
   static const employmentStatus = 'employment_status';
   static const softwareSubscription = 'software_subscription';
   static const equipment = 'equipment';
+  static const fieldMission = 'field_mission';
   static const other = 'other';
 
   static const values = [
@@ -12,6 +13,7 @@ class AdministrativeRequestCategory {
     employmentStatus,
     softwareSubscription,
     equipment,
+    fieldMission,
     other,
   ];
 
@@ -20,6 +22,7 @@ class AdministrativeRequestCategory {
     employmentStatus => 'تعديل الوضع الوظيفي',
     softwareSubscription => 'اشتراك برنامج أو خدمة',
     equipment => 'جهاز أو معدات',
+    fieldMission => 'مهمة ميدانية',
     _ => 'طلب إداري آخر',
   };
 }
@@ -39,6 +42,12 @@ class AdministrativeRequestModel {
     this.managerId = '',
     this.reviewerName,
     this.reviewerComment,
+    this.missionDate,
+    this.startTime,
+    this.endTime,
+    this.siteName,
+    this.requiresReturnToOffice = true,
+    this.requiresCheckout = true,
   });
 
   final String id;
@@ -54,6 +63,12 @@ class AdministrativeRequestModel {
   final String managerId;
   final String? reviewerName;
   final String? reviewerComment;
+  final String? missionDate;
+  final String? startTime;
+  final String? endTime;
+  final String? siteName;
+  final bool requiresReturnToOffice;
+  final bool requiresCheckout;
 
   factory AdministrativeRequestModel.fromFirestore(
     DocumentSnapshot<Map<String, dynamic>> doc,
@@ -75,6 +90,12 @@ class AdministrativeRequestModel {
       managerId: data['managerId'] as String? ?? '',
       reviewerName: data['reviewerName'] as String?,
       reviewerComment: data['reviewerComment'] as String?,
+      missionDate: data['missionDate'] as String?,
+      startTime: data['startTime'] as String?,
+      endTime: data['endTime'] as String?,
+      siteName: data['siteName'] as String?,
+      requiresReturnToOffice: data['requiresReturnToOffice'] as bool? ?? true,
+      requiresCheckout: data['requiresCheckout'] as bool? ?? true,
     );
   }
 }

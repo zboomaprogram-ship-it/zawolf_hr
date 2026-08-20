@@ -4,6 +4,7 @@ const {
   installFirestoreCompatibility,
   parseFirebaseServiceAccount,
 } = require('./firebase-service-account');
+const { loadCheckoutPolicy } = require('./checkout-policy');
 installFirestoreCompatibility(admin);
 
 const CAIRO_TIME_ZONE = 'Africa/Cairo';
@@ -34,6 +35,7 @@ const DAILY_CONTEXT_CACHE_MS = Math.max(
 let activeUsersCache = { expiresAt: 0, users: [] };
 let policyCache = { expiresAt: 0, dateKey: '', value: null };
 let dailyContextCache = { expiresAt: 0, dateKey: '', value: null };
+let attemptedReminderRuns = { dateKey: '', ids: new Set() };
 
 function initializeFirebase() {
   const existingApp = getExistingFirebaseApp(admin);
@@ -270,6 +272,12 @@ function dueReminderPlans(plans, nowMinutes) {
     : checkoutPlans;
 }
 
+function plansForCheckoutPolicy(plans, checkoutPolicy) {
+  return checkoutPolicy?.enabled === true
+    ? plans
+    : plans.filter((plan) => plan.kind !== 'check_out');
+}
+
 async function createReminder(db, { userId, dateKey, kind, notification }) {
   const runId = `${dateKey}_${userId}_${kind}_${notification.targetMinutes}`;
   const runRef = db.collection('attendanceReminderRuns').doc(runId);
@@ -337,6 +345,9 @@ async function queueAttendanceReminders() {
   initializeFirebase();
   const db = admin.firestore();
   const now = cairoParts();
+  if (attemptedReminderRuns.dateKey !== now.dateKey) {
+    attemptedReminderRuns = { dateKey: now.dateKey, ids: new Set() };
+  }
   if (now.weekday === 'Fri') return { queued: 0, skipped: 'friday', date: now.dateKey };
 
   const policyContext = await loadPolicyContext(db, now.dateKey);
@@ -347,6 +358,10 @@ async function queueAttendanceReminders() {
   if (!isReminderScanWindow(now.minutes, policy)) {
     return { queued: 0, skipped: 'outside_reminder_window', date: now.dateKey };
   }
+
+  // Load once per worker cycle. A missing/malformed document is disabled, so
+  // the worker still sends check-in reminders but never schedules check-out.
+  const checkoutPolicy = await loadCheckoutPolicy(db);
 
   const { users, leavesSnap, permissionsSnap, fieldAssignmentsSnap } =
     await loadDailyContext(db, now.dateKey);
@@ -403,9 +418,15 @@ async function queueAttendanceReminders() {
       { kind: 'check_out', notification: notificationFor({ kind: 'check_out', startMinutes: effectiveStart, endMinutes: effectiveEnd, hasLatePermission: Boolean(late), hasEarlyPermission: Boolean(early) }) },
     ];
 
-    const duePlans = dueReminderPlans(plans, now.minutes).filter((plan) => {
+    const duePlans = dueReminderPlans(
+      plansForCheckoutPolicy(plans, checkoutPolicy),
+      now.minutes,
+    ).filter((plan) => {
       if (plan.kind === 'check_out' && fieldAssignments.some((item) => item.requiresCheckout === false)) return false;
       return true;
+    }).filter((plan) => {
+      const runId = `${now.dateKey}_${userDoc.id}_${plan.kind}_${plan.notification.targetMinutes}`;
+      return !attemptedReminderRuns.ids.has(runId);
     });
     if (!duePlans.length) continue;
     dueUsers++;
@@ -419,6 +440,8 @@ async function queueAttendanceReminders() {
     );
 
     for (const plan of duePlans) {
+      const runId = `${now.dateKey}_${userDoc.id}_${plan.kind}_${plan.notification.targetMinutes}`;
+      attemptedReminderRuns.ids.add(runId);
       const isAlreadyDone = attendanceCompletedForReminder(
         attendanceData,
         plan.kind,
@@ -438,6 +461,8 @@ async function queueAttendanceReminders() {
     alreadyCompleted,
     date: now.dateKey,
     cairoMinute: now.minutes,
+    checkoutEnabled: checkoutPolicy.enabled,
+    checkoutPolicyRevision: checkoutPolicy.revision,
   };
 }
 
@@ -453,6 +478,7 @@ module.exports = {
   loadActiveUsers,
   notificationFor,
   dueReminderPlans,
+  plansForCheckoutPolicy,
   attendanceCompletedForReminder,
   loadAttendanceForDate,
   queueAttendanceReminders,

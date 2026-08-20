@@ -204,6 +204,8 @@ class _TeamAttendanceScreenState extends State<TeamAttendanceScreen> {
                     final status = data['status'] as String? ?? 'present';
                     final checkIn = data['checkInTime'] as Timestamp?;
                     final checkOut = data['checkOutTime'] as Timestamp?;
+                    final checkoutPolicyEnabled =
+                        data['checkoutPolicyEnabled'] as bool?;
                     final totalHours = (data['totalWorkHours'] as num?)
                         ?.toDouble();
                     final inGeofence =
@@ -305,7 +307,10 @@ class _TeamAttendanceScreenState extends State<TeamAttendanceScreen> {
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Text(
-                                      'الانصراف: ${checkOut != null ? DateFormat('hh:mm a').format(checkOut.toDate()) : '—'}',
+                                      checkoutPolicyEnabled == false &&
+                                              checkOut == null
+                                          ? 'الانصراف: لا ينطبق (سياسة HR)'
+                                          : 'الانصراف: ${checkOut != null ? DateFormat('hh:mm a').format(checkOut.toDate()) : '—'}',
                                       style: theme.textTheme.bodyMedium,
                                     ),
                                     Text(

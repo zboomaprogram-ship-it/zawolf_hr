@@ -237,8 +237,36 @@ class ProductivityService {
                   reviewedTasks.length)
               .clamp(0, 100)
               .toDouble();
-    final hasKpiData = kpi != null;
-    final kpiScore = (kpi?.overallProgress ?? 0).clamp(0, 100).toDouble();
+    // Check if user is a team leader/manager with team members
+    double? teamKpiScore;
+    final isSupervisor = user.role == EmployeeRole.manager ||
+        user.role == EmployeeRole.teamLeader ||
+        user.role == EmployeeRole.hrManager ||
+        user.role == EmployeeRole.hrAdmin ||
+        user.role == EmployeeRole.superAdmin;
+
+    if (isSupervisor) {
+      final teamKpiSnap = await _db
+          .collection('employeeKpis')
+          .where('monthKey', isEqualTo: monthKey)
+          .get();
+      final teamScores = teamKpiSnap.docs
+          .map(EmployeeKpiModel.fromFirestore)
+          .where((doc) =>
+              doc.userId != user.uid &&
+              (doc.managerId == user.uid ||
+                  doc.managerIds.contains(user.uid) ||
+                  doc.teamLeaderId == user.uid))
+          .map((doc) => doc.overallProgress)
+          .toList();
+      if (teamScores.isNotEmpty) {
+        teamKpiScore = teamScores.reduce((a, b) => a + b) / teamScores.length;
+      }
+    }
+
+    final effectiveKpiProgress = teamKpiScore ?? (kpi?.overallProgress);
+    final hasKpiData = effectiveKpiProgress != null;
+    final kpiScore = (effectiveKpiProgress ?? 0).clamp(0, 100).toDouble();
     final existingScore = await _db
         .collection('productivityScores')
         .doc('${user.uid}_$monthKey')

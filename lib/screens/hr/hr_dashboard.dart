@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:intl/intl.dart' hide TextDirection;
 import '../../services/auth_service.dart';
 import '../../services/dashboard_attendance_summary_service.dart';
 import '../../models/employee_role.dart';
@@ -13,6 +14,9 @@ import '../../components/sales_kpi_filter_sheet.dart';
 import '../../components/wolf_card.dart';
 import '../../services/sales_kpi_integration_service.dart';
 import '../../utils/user_facing_error.dart';
+import '../../features/checkout_policy/data/checkout_policy_repository_impl.dart';
+import '../../features/checkout_policy/domain/entities/checkout_policy.dart';
+import '../../features/checkout_policy/presentation/checkout_policy_controller.dart';
 
 class HrDashboardScreen extends StatefulWidget {
   const HrDashboardScreen({super.key});
@@ -30,6 +34,9 @@ class _HrDashboardScreenState extends State<HrDashboardScreen> {
   bool _loadingCounts = true;
   Future<DashboardAttendanceSummary>? _attendanceSummaryFuture;
   String? _selectedSalesKpiPeriod;
+  final CheckoutPolicyController _checkoutPolicyController =
+      CheckoutPolicyController(CheckoutPolicyRepositoryImpl());
+  Future<CheckoutPolicySnapshot>? _checkoutPolicyFuture;
 
   @override
   void initState() {
@@ -40,14 +47,18 @@ class _HrDashboardScreenState extends State<HrDashboardScreen> {
   Future<void> _fetchSummaryCounts() async {
     try {
       final results = await Future.wait([
-        _db.collection('users').get(),
-        _db.collection('locations').where('isActive', isEqualTo: true).get(),
+        _db.collection('users').count().get(),
+        _db
+            .collection('locations')
+            .where('isActive', isEqualTo: true)
+            .count()
+            .get(),
       ]);
 
       if (mounted) {
         setState(() {
-          _employeesCount = results[0].docs.length;
-          _locationsCount = results[1].docs.length;
+          _employeesCount = results[0].count ?? 0;
+          _locationsCount = results[1].count ?? 0;
           _loadingCounts = false;
         });
       }
@@ -68,12 +79,89 @@ class _HrDashboardScreenState extends State<HrDashboardScreen> {
     });
   }
 
+  Future<void> _confirmCheckoutPolicyChange(bool enabled) async {
+    final reasonController = TextEditingController();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(enabled ? 'تفعيل تسجيل الانصراف' : 'إيقاف تسجيل الانصراف'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              enabled
+                  ? 'سيظهر تسجيل الانصراف للموظفين الجدد فقط. لا يتم تعديل أي سجل أو خصم سابق.'
+                  : 'سيتم إخفاء الانصراف ومنع أي خصم جديد مرتبط به. الحضور والطلبات تبقى متاحة.',
+              textDirection: TextDirection.rtl,
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: reasonController,
+              maxLength: 500,
+              textDirection: TextDirection.rtl,
+              decoration: const InputDecoration(
+                labelText: 'سبب التغيير (اختياري)',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('إلغاء'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('تأكيد'),
+          ),
+        ],
+      ),
+    );
+    final reason = reasonController.text.trim();
+    reasonController.dispose();
+    if (confirmed == true && mounted) {
+      await _changeCheckoutPolicy(enabled, reason: reason);
+    }
+  }
+
+  Future<void> _changeCheckoutPolicy(bool enabled, {String? reason}) async {
+    try {
+      await _checkoutPolicyController.change(enabled: enabled, reason: reason);
+      if (!mounted) return;
+      setState(
+        () => _checkoutPolicyFuture = Future.value(
+          _checkoutPolicyController.state,
+        ),
+      );
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            enabled ? 'تم تفعيل تسجيل الانصراف.' : 'تم إيقاف تسجيل الانصراف.',
+          ),
+        ),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _checkoutPolicyFuture = _checkoutPolicyController.load());
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'تعذر تغيير حالة الانصراف. حدّث الصفحة ثم أعد المحاولة.',
+          ),
+        ),
+      );
+    }
+  }
+
   Future<void> _editSalesKpiPeriod(
     SalesKpiSummary current,
     String actorId,
   ) async {
     final service = SalesKpiIntegrationService();
-    final currentFilters = await service.watchFilters().first ??
+    final currentFilters =
+        await service.watchFilters().first ??
         SalesKpiFilters(
           startDate: current.periodStart,
           endDate: current.periodEnd,
@@ -111,6 +199,7 @@ class _HrDashboardScreenState extends State<HrDashboardScreen> {
     final canAccessReports = EmployeeRole.canAccessReports(hrAdmin.role);
 
     _attendanceSummaryFuture ??= _summaryService.loadForReviewer(hrAdmin);
+    _checkoutPolicyFuture ??= _checkoutPolicyController.load();
 
     return Scaffold(
       appBar: AppBar(
@@ -175,6 +264,69 @@ class _HrDashboardScreenState extends State<HrDashboardScreen> {
                   ),
                 ],
               ),
+            ),
+            const SizedBox(height: 24),
+
+            FutureBuilder<CheckoutPolicySnapshot>(
+              future: _checkoutPolicyFuture,
+              builder: (context, snapshot) {
+                final value = snapshot.data;
+                final enabled = value?.policy.enabled ?? false;
+                return WolfCard(
+                  child: Row(
+                    children: [
+                      Icon(
+                        enabled ? Icons.logout : Icons.login,
+                        color: enabled
+                            ? Colors.amber
+                            : ZaWolfColors.primaryCyan,
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text('تسجيل الانصراف'),
+                            const SizedBox(height: 4),
+                            Text(
+                              enabled
+                                  ? 'مفعّل للموظفين الجدد فقط'
+                                  : 'متوقف افتراضياً — الحضور والطلبات ما زالت متاحة',
+                              textDirection: TextDirection.rtl,
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              value?.policy.effectiveAt == null
+                                  ? 'الإصدار: ${value?.policy.revision ?? 0}'
+                                  : 'آخر تغيير: ${DateFormat('yyyy-MM-dd HH:mm').format(value!.policy.effectiveAt!.toLocal())} · الإصدار ${value.policy.revision}',
+                              style: Theme.of(context).textTheme.bodySmall,
+                              textDirection: TextDirection.rtl,
+                            ),
+                            if ((value?.policy.reason ?? '').isNotEmpty)
+                              Text(
+                                'السبب: ${value!.policy.reason}',
+                                style: Theme.of(context).textTheme.bodySmall,
+                                textDirection: TextDirection.rtl,
+                              ),
+                            if ((value?.policy.changedByRole ?? '').isNotEmpty)
+                              Text(
+                                'سجل المراجعة: آخر تغيير معتمد بواسطة ${value!.policy.changedByRole}',
+                                style: Theme.of(context).textTheme.bodySmall,
+                                textDirection: TextDirection.rtl,
+                              ),
+                          ],
+                        ),
+                      ),
+                      Switch(
+                        value: enabled,
+                        onChanged: value?.canManage == true
+                            ? _confirmCheckoutPolicyChange
+                            : null,
+                      ),
+                    ],
+                  ),
+                );
+              },
             ),
             const SizedBox(height: 24),
 
@@ -258,7 +410,7 @@ class _HrDashboardScreenState extends State<HrDashboardScreen> {
             ),
             const SizedBox(height: 24),
 
-            if (hrAdmin.role == EmployeeRole.hrManager ||
+            if (EmployeeRole.isHrStaff(hrAdmin.role) ||
                 hrAdmin.role == EmployeeRole.superAdmin)
               StreamBuilder<SalesKpiSummary?>(
                 stream: SalesKpiIntegrationService().watchCurrentSummary(),
@@ -339,6 +491,14 @@ class _HrDashboardScreenState extends State<HrDashboardScreen> {
                     'تصدير الحضور والإجازات مباشرة لـ Google Sheets',
                     Icons.file_download_outlined,
                     () => context.go('/hr/reports'),
+                    theme,
+                  ),
+                if (canAccessReports)
+                  _buildHRActionCard(
+                    'مركز ملفات الشركة',
+                    'إدارة المصادر والمخططات وصلاحيات الوصول',
+                    Icons.cloud_sync_outlined,
+                    () => context.go('/workspace'),
                     theme,
                   ),
                 _buildHRActionCard(

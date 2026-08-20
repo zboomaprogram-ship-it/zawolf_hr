@@ -40,7 +40,7 @@ class AttendanceCorrectionRequestService {
     return _db
         .collection('attendanceCorrectionRequests')
         .where('userId', isEqualTo: userId)
-        .limit(50)
+        .limit(25)
         .snapshots();
   }
 
@@ -129,7 +129,7 @@ class AttendanceCorrectionRequestService {
     required bool approve,
     required String comment,
   }) async {
-    if (!EmployeeRole.isHrStaff(reviewer.role)) {
+    if (!EmployeeRole.isHr(reviewer.role)) {
       throw Exception('طلبات تصحيح الوقت يراجعها HR فقط.');
     }
 
@@ -154,44 +154,45 @@ class AttendanceCorrectionRequestService {
         reviewerId: reviewer.uid,
         correctedTime: corrected.toDate(),
         reason: data['reason'] as String? ?? '',
+        correctionRequestId: requestId,
+        reviewerName: reviewer.displayName,
+        reviewerComment: comment,
       );
+    } else {
+      await _db.runTransaction((transaction) async {
+        final freshRequest = await transaction.get(ref);
+        final freshData = freshRequest.data();
+        if (!freshRequest.exists || freshData?['status'] != 'pending_hr') {
+          throw Exception('الطلب غير موجود أو تمت مراجعته بالفعل.');
+        }
+        if (freshData?['userId'] == reviewer.uid) {
+          throw Exception('لا يمكنك مراجعة طلب التصحيح الخاص بك.');
+        }
+        transaction.update(ref, {
+          'status': 'rejected',
+          'reviewedBy': reviewer.uid,
+          'reviewerName': reviewer.displayName,
+          'reviewedAt': FieldValue.serverTimestamp(),
+          'reviewerComment': comment.trim(),
+        });
+      });
     }
 
-    await ref.update({
-      'status': approve ? 'approved' : 'rejected',
-      'reviewedBy': reviewer.uid,
-      'reviewerName': reviewer.displayName,
-      'reviewedAt': FieldValue.serverTimestamp(),
-      'reviewerComment': comment.trim(),
-    });
-
     if (employeeId.isNotEmpty) {
-      final notification = _db
-          .collection('notifications')
-          .doc(employeeId)
-          .collection('items')
-          .doc();
-      await notification.set({
-        'notificationId': notification.id,
-        'type': approve
+      await RoleNotificationService.instance.createNotification(
+        recipientId: employeeId,
+        type: approve
             ? 'attendance_correction_approved'
             : 'attendance_correction_rejected',
-        'title': approve
-            ? 'تم قبول تصحيح وقت الحضور'
-            : 'تم رفض تصحيح وقت الحضور',
-        'body': comment.trim().isEmpty
+        title: approve ? 'تم قبول تصحيح وقت الحضور' : 'تم رفض تصحيح وقت الحضور',
+        body: comment.trim().isEmpty
             ? (approve
                   ? 'تم تعديل وقت الحضور وإعادة حساب الخصم.'
                   : 'راجع سجل طلباتك لمعرفة حالة الطلب.')
             : comment.trim(),
-        'data': {'route': '/employee/requests', 'requestId': requestId},
-        'isRead': false,
-        'pushSent': false,
-        'createdAt': FieldValue.serverTimestamp(),
-      });
-      await _db.collection('users').doc(employeeId).update({
-        'unreadNotifications': FieldValue.increment(1),
-      });
+        data: {'route': '/employee/requests', 'requestId': requestId},
+        eventId: 'attendance_correction_reviewed:$requestId',
+      );
     }
   }
 }
