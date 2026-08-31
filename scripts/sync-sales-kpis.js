@@ -1,6 +1,12 @@
 const admin = require('firebase-admin');
 const { fetchSalesAnalytics } = require('./sales-analytics-client');
 const { initializeFirebase } = require('./dispatch-notifications');
+const {
+  canonicalSalesFilters,
+  salesFilterVersion,
+  reconcileAgentMappings,
+  sourceHealth,
+} = require('./sales-indicators');
 
 const SOURCE = 'sales_analytics_api';
 const SYSTEM_ACTOR = 'sales-analytics-sync';
@@ -85,21 +91,36 @@ function agentsFrom(kpiData) {
   ));
 }
 
+function getProp(agent, keys) {
+  if (!agent || typeof agent !== 'object') return undefined;
+  for (const key of keys) {
+    if (agent[key] !== undefined && agent[key] !== null && agent[key] !== '') {
+      return agent[key];
+    }
+  }
+  return undefined;
+}
+
 function strongAgentIdentifiers(agent) {
   if (!agent || typeof agent !== 'object') return [];
   return [
     agent.id,
     agent.idEmp,
+    agent.id_emp,
     agent.employeeId,
+    agent.employee_id,
     agent.employeeCode,
+    agent.employee_code,
+    agent.code,
+    agent.key,
   ].map(normalize).filter(Boolean);
 }
 
 function primaryAgentKey(agent) {
   if (!agent || typeof agent !== 'object') return normalize(agent);
   return normalize(
-    agent.id || agent.idEmp || agent.employeeId || agent.employeeCode ||
-    agent.code || agent.key || agent.agentId || agent.name,
+    agent.id || agent.idEmp || agent.id_emp || agent.employeeId || agent.employee_id || agent.employeeCode ||
+    agent.employee_code || agent.code || agent.key || agent.agentId || agent.agent_id || agent.name,
   );
 }
 
@@ -129,7 +150,11 @@ function agentActual(agent, counts) {
     agent.amount,
     agent.count,
     agent.totalPrice,
+    agent.total_price,
     agent.confirmedMeetings,
+    agent.confirmed_meetings,
+    agent.finalKpi,
+    agent.final_kpi,
   ];
   for (const value of values) {
     const parsed = Number(value);
@@ -151,8 +176,24 @@ function agentActualForRole(agent, counts, role) {
     return agentActual(agent, counts);
   }
   const preferredValues = role.includes('tele')
-    ? [agent.confirmedMeetings, agent.meetings, agent.totalMeetings]
-    : [agent.totalPrice, agent.monthlyIncome, agent.downPayment];
+    ? [
+        agent.confirmedMeetings,
+        agent.confirmed_meetings,
+        agent.meetings,
+        agent.totalMeetings,
+        agent.total_meetings,
+        agent.achieved,
+      ]
+    : [
+        agent.totalPrice,
+        agent.total_price,
+        agent.monthlyIncome,
+        agent.monthly_income,
+        agent.downPayment,
+        agent.down_payment,
+        agent.confirmedSales,
+        agent.confirmed_sales,
+      ];
   for (const value of preferredValues) {
     const parsed = Number(value);
     if (Number.isFinite(parsed)) return parsed;
@@ -162,39 +203,39 @@ function agentActualForRole(agent, counts, role) {
 
 function providerDetailsForAgent(agent, role, currency) {
   const teleSales = role.includes('tele');
-  const value = (key) => number(agent?.[key]);
-  const percent = (key) => normalizedPercent(agent?.[key]);
+  const value = (...keys) => number(getProp(agent, keys));
+  const percent = (...keys) => normalizedPercent(getProp(agent, keys));
   if (teleSales) {
     return {
       kind: 'tele_sales',
       currency,
-      totalLeads: value('totalLeads'),
-      confirmedMeetings: value('confirmedMeetings'),
-      conversion: percent('conversion'),
-      conversionWeighted: percent('conversionWeighted'),
-      target: value('target'),
-      achieved: percent('achieved'),
-      achievedWeighted: percent('achievedWeighted'),
-      confirmedSales: value('confirmedSales'),
-      vsMeetings: percent('vsMeetings'),
-      closingWeighted: percent('closingWeighted'),
-      finalKpi: percent('finalKpi'),
+      totalLeads: value('totalLeads', 'total_leads', 'leads'),
+      confirmedMeetings: value('confirmedMeetings', 'confirmed_meetings', 'meetings'),
+      conversion: percent('conversion', 'conversionRate', 'conversion_rate'),
+      conversionWeighted: percent('conversionWeighted', 'conversion_weighted'),
+      target: value('target', 'kpiTarget', 'kpi_target'),
+      achieved: percent('achieved', 'targetAchieved', 'target_achieved', 'achievedPercentage', 'achieved_percentage'),
+      achievedWeighted: percent('achievedWeighted', 'achieved_weighted'),
+      confirmedSales: value('confirmedSales', 'confirmed_sales'),
+      vsMeetings: percent('vsMeetings', 'vs_meetings'),
+      closingWeighted: percent('closingWeighted', 'closing_weighted'),
+      finalKpi: percent('finalKpi', 'final_kpi', 'kpiPercent', 'kpi_percent', 'kpi', 'achievement'),
     };
   }
   return {
     kind: 'sales',
     currency,
-    confirmedSales: value('confirmedSales'),
-    meetings: value('meetings'),
-    conversion: percent('conversion'),
-    totalPrice: value('totalPrice'),
-    downPayment: value('downPayment'),
-    monthlyIncome: value('monthlyIncome'),
-    target: value('target'),
-    invoiceAchievement: percent('invoiceAchievement'),
-    salesConversionAchieved: percent('salesConversionAchieved'),
-    totalInvoiceAchieved: percent('totalInvoiceAchieved'),
-    finalKpi: percent('finalKpi'),
+    confirmedSales: value('confirmedSales', 'confirmed_sales'),
+    meetings: value('meetings', 'confirmedMeetings', 'confirmed_meetings'),
+    conversion: percent('conversion', 'conversionRate', 'conversion_rate'),
+    totalPrice: value('totalPrice', 'total_price', 'price'),
+    downPayment: value('downPayment', 'down_payment'),
+    monthlyIncome: value('monthlyIncome', 'monthly_income'),
+    target: value('target', 'kpiTarget', 'kpi_target'),
+    invoiceAchievement: percent('invoiceAchievement', 'invoice_achievement'),
+    salesConversionAchieved: percent('salesConversionAchieved', 'sales_conversion_achieved'),
+    totalInvoiceAchieved: percent('totalInvoiceAchieved', 'total_invoice_achieved'),
+    finalKpi: percent('finalKpi', 'final_kpi', 'kpiPercent', 'kpi_percent', 'kpi', 'achievement'),
   };
 }
 
@@ -221,9 +262,20 @@ function findAgent(kpiData, user) {
   if (configuredKey) {
     return agents.find((agent) => agentIdentifiers(agent).includes(configuredKey));
   }
-  const employeeId = normalize(user.employeeId);
-  if (!employeeId) return undefined;
-  return agents.find((agent) => strongAgentIdentifiers(agent).includes(employeeId));
+  const userIds = [
+    user.employeeId,
+    user.employeeCode,
+    user.employee_id,
+    user.employee_code,
+    user.code,
+    user.idEmp,
+  ].map(normalize).filter(Boolean);
+
+  if (!userIds.length) return undefined;
+  return agents.find((agent) => {
+    const strong = strongAgentIdentifiers(agent);
+    return userIds.some((id) => strong.includes(id));
+  });
 }
 
 function findAgentMatch(api, user) {
@@ -264,6 +316,15 @@ function departmentAgentStats(kpiData, role) {
     averageKpi: scores.length
       ? scores.reduce((sum, score) => sum + score, 0) / scores.length
       : 0,
+  };
+}
+
+function providerSnapshotTotals(salesDepartment, teleDepartment) {
+  return {
+    salesActual: number(salesDepartment?.actual),
+    teleSalesActual: number(teleDepartment?.actual),
+    salesEmployeeTarget: number(salesDepartment?.target),
+    teleSalesEmployeeTarget: number(teleDepartment?.target),
   };
 }
 
@@ -607,7 +668,11 @@ async function syncSalesKpis(input = {}) {
     cumulative: configuredValue('cumulative', true) !== false,
   };
   const api = await fetchSalesAnalytics(filters);
-  const usersSnap = await db.collection('users').get();
+  const canonicalFilters = canonicalSalesFilters(filters);
+  const filterVersion = salesFilterVersion(canonicalFilters);
+  // The scheduler must remain safe as the directory grows. Sales identity
+  // mapping is a bounded reconciliation pass, not an unbounded directory scan.
+  const usersSnap = await db.collection('users').limit(1000).get();
   const activeUserDocs = usersSnap.docs.filter((doc) => doc.data().isActive !== false);
   const candidateUserDocs = activeUserDocs.filter((doc) => {
     const user = doc.data();
@@ -731,7 +796,7 @@ async function syncSalesKpis(input = {}) {
   const mappedByAgent = new Map(
     matched.map((item) => [`${item.metricKind}:${normalize(item.providerAgentKey)}`, item]),
   );
-  const agentSummaries = [
+  const legacyAgentSummaries = [
     ...salesDepartment.agents.map((agent) => ({ role: 'sales', agent })),
     ...teleDepartment.agents.map((agent) => ({ role: 'tele_sales', agent })),
   ].map(({ role, agent }) => {
@@ -755,12 +820,48 @@ async function syncSalesKpis(input = {}) {
       providerDetails: providerDetailsForAgent(agent, role, options.currency),
     };
   });
+  const mappingSnap = await db.collection('salesIdentityMappings')
+    .where('active', '==', true)
+    .limit(500)
+    .get();
+  const mappingRegistry = mappingSnap.docs.map((doc) => doc.data());
+  const agentSummaries = mappingRegistry.length > 0
+    ? reconcileAgentMappings(legacyAgentSummaries, mappingRegistry)
+    : legacyAgentSummaries.map((agent) => ({
+        ...agent,
+        mappingStatus: agent.mappedUserId ? 'mapped' : 'unmapped',
+      }));
+  const filterEchoVersion = salesFilterVersion({
+    ...canonicalFilters,
+    ...(api.filters || {}),
+  });
+  const filterEchoMatches = filterEchoVersion === filterVersion;
+  const ambiguousMappings = agentSummaries.filter(
+    (agent) => agent.mappingStatus === 'ambiguous',
+  ).length;
+  const unmappedMappings = agentSummaries.filter(
+    (agent) => agent.mappingStatus === 'unmapped',
+  ).length;
   const summary = api.summary || {};
+  const providerTotals = providerSnapshotTotals(
+    salesDepartment,
+    teleDepartment,
+  );
   const snapshot = {
+    snapshotId: `${cycle.monthKey}_${filterVersion}`,
+    filterVersion,
+    filterEchoVersion,
+    filterEchoMatches,
+    sourceHealth: sourceHealth({
+      filterEchoMatches,
+      ambiguous: ambiguousMappings,
+      unmapped: unmappedMappings,
+    }),
     periodKey: cycle.monthKey,
     periodStart: cycle.startDate,
     periodEnd: cycle.endDate,
-    filters: api.filters || filters,
+    filters: canonicalFilters,
+    providerFilterEcho: api.filters || {},
     options: api.options || {},
     totalLeads: number(summary.totalLeads),
     confirmedMeetings: number(summary.confirmedMeetings),
@@ -794,10 +895,10 @@ async function syncSalesKpis(input = {}) {
     availableSalesAgents: salesDepartment.agents.length,
     availableTeleSalesAgents: teleDepartment.agents.length,
     agentSummaries,
-    salesActual: salesResults.reduce((sum, item) => sum + number(item.actual), 0),
-    teleSalesActual: teleSalesResults.reduce((sum, item) => sum + number(item.actual), 0),
-    salesEmployeeTarget: salesResults.reduce((sum, item) => sum + number(item.target), 0),
-    teleSalesEmployeeTarget: teleSalesResults.reduce((sum, item) => sum + number(item.target), 0),
+    // Department cards must reflect every row returned by the provider. A
+    // missing local employee mapping may block task assignment, but it must not
+    // hide valid sales or telesales results from the dashboard.
+    ...providerTotals,
     salesMappedEmployees: salesResults.length,
     teleSalesMappedEmployees: teleSalesResults.length,
     currency: options.currency,
@@ -811,10 +912,13 @@ async function syncSalesKpis(input = {}) {
       .filter((agent) => !agent.mappedUserId)
       .map((agent) => agent.key)
       .filter(Boolean),
+    ambiguousMappings,
+    mappingRegistryVersion: 1,
     createdTasks: matched.reduce((sum, item) => sum + item.createdTasks, 0),
     lateTasks: matched.reduce((sum, item) => sum + item.lateTasks, 0),
     syncedAt: admin.firestore.FieldValue.serverTimestamp(),
   };
+  await db.collection('salesKpiSnapshots').doc(snapshot.snapshotId).set(snapshot);
   await db.collection('salesKpiSummaries').doc(cycle.monthKey).set(snapshot);
   await db.collection('salesKpiSummaries').doc('current').set(snapshot);
   return {
@@ -850,6 +954,7 @@ module.exports = {
   findAgent,
   findAgentMatch,
   departmentAgentStats,
+  providerSnapshotTotals,
   taskDueDates,
   eligibleTaskDates,
   dailyTaskState,

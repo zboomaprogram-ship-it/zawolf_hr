@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
@@ -5,10 +6,19 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart' hide TextDirection;
 import '../../services/auth_service.dart';
 import '../../services/dashboard_attendance_summary_service.dart';
+import '../../services/pending_requests_service.dart';
+import '../../services/task_service.dart';
+import '../../models/task_model.dart';
 import '../../models/user_model.dart';
 import '../../theme/theme.dart';
 import '../../components/attendance_insights_card.dart';
 import '../../components/wolf_card.dart';
+import '../../design_system/tokens.dart';
+import '../../design_system/components/priority_strip.dart';
+import '../../design_system/components/section_header.dart';
+import '../../design_system/components/stat_card.dart';
+import '../widgets/end_of_day_briefing_card.dart';
+import '../../components/team_leaderboard_card.dart';
 
 class ManagerDashboardScreen extends StatefulWidget {
   const ManagerDashboardScreen({super.key});
@@ -21,58 +31,10 @@ class _ManagerDashboardScreenState extends State<ManagerDashboardScreen> {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
   final DashboardAttendanceSummaryService _summaryService =
       DashboardAttendanceSummaryService();
-  int _pendingCount = 0;
-  bool _loadingRequests = true;
+  final TaskService _taskService = TaskService();
   Future<DashboardAttendanceSummary>? _attendanceSummaryFuture;
   Stream<QuerySnapshot<Map<String, dynamic>>>? _todayAttendanceStream;
   String? _todayAttendanceStreamKey;
-
-  @override
-  void initState() {
-    super.initState();
-    _fetchPendingCounts();
-  }
-
-  Future<void> _fetchPendingCounts() async {
-    final authService = Provider.of<AuthService>(context, listen: false);
-    final managerId = authService.currentUser?.uid;
-    if (managerId == null) return;
-
-    try {
-      final results = await Future.wait([
-        _db
-            .collection('leaves')
-            .where('managerId', isEqualTo: managerId)
-            .where('status', isEqualTo: 'pending_manager')
-            .count()
-            .get(),
-        _db
-            .collection('permissions')
-            .where('managerId', isEqualTo: managerId)
-            .where('status', isEqualTo: 'pending_manager')
-            .count()
-            .get(),
-      ]);
-
-      int total = 0;
-      for (final snap in results) {
-        total += snap.count ?? 0;
-      }
-
-      if (mounted) {
-        setState(() {
-          _pendingCount = total;
-          _loadingRequests = false;
-        });
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _loadingRequests = false;
-        });
-      }
-    }
-  }
 
   void _loadAttendanceSummary() {
     final user = Provider.of<AuthService>(context, listen: false).currentUser;
@@ -127,6 +89,23 @@ class _ManagerDashboardScreenState extends State<ManagerDashboardScreen> {
       appBar: AppBar(
         title: Text('لوحة المدير', style: theme.textTheme.headlineMedium),
         actions: [
+          IconButton(
+            tooltip: 'بصمتي الشخصية (تسجيل الحضور)',
+            icon: const Icon(
+              Icons.fingerprint,
+              color: ZaWolfColors.primaryCyan,
+              size: 28,
+            ),
+            onPressed: () => context.push('/employee/dashboard'),
+          ),
+          IconButton(
+            tooltip: 'كشوف حضور الفريق',
+            icon: const Icon(
+              Icons.co_present_outlined,
+              color: ZaWolfColors.primaryCyan,
+            ),
+            onPressed: () => context.push('/manager/team'),
+          ),
           IconButton(
             icon: const Icon(Icons.logout, color: ZaWolfColors.error),
             onPressed: () async {
@@ -212,6 +191,49 @@ class _ManagerDashboardScreenState extends State<ManagerDashboardScreen> {
                 ),
                 const SizedBox(height: 20),
 
+                // Priority strip + key metrics (from existing sources)
+                ValueListenableBuilder<int>(
+                  valueListenable: PendingRequestsService.instance.pendingCount,
+                  builder: (context, pendingCount, _) => Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      PriorityStrip(
+                        items: [
+                          PriorityItem(
+                            label: 'بصمتي الشخصية (تسجيل الحضور)',
+                            count: 0,
+                            icon: Icons.fingerprint,
+                            accent: ZaWolfColors.primaryCyan,
+                            onTap: () => context.go('/employee/dashboard'),
+                          ),
+                          PriorityItem(
+                            label: 'كشوف وتأخير فريقي',
+                            count: 0,
+                            icon: Icons.co_present_outlined,
+                            accent: ZaWolfColors.primaryBlue,
+                            onTap: () => context.go('/manager/team'),
+                          ),
+                          PriorityItem(
+                            label: 'طلب معلق بانتظار موافقتك',
+                            count: pendingCount,
+                            icon: Icons.pending_actions,
+                            accent: ZaWolfColors.warning,
+                            onTap: () => context.go('/manager/requests'),
+                          ),
+                        ],
+                      ),
+                      EndOfDayBriefingCard(isHr: false, managerUid: manager.uid),
+                      const TeamLeaderboardCard(),
+                      const SizedBox(height: DsSpacing.md),
+                    ],
+                  ),
+                ),
+                _ManagerMetricsRow(
+                  summaryFuture: _attendanceSummaryFuture!,
+                  taskStream: _taskService.watchManagedTasks(manager),
+                ),
+                const SizedBox(height: DsSpacing.xl),
+
                 FutureBuilder<DashboardAttendanceSummary>(
                   future: _attendanceSummaryFuture,
                   builder: (context, summarySnapshot) {
@@ -277,69 +299,12 @@ class _ManagerDashboardScreenState extends State<ManagerDashboardScreen> {
                 ),
                 const SizedBox(height: 20),
 
-                // Pending Requests Banner
-                if (!_loadingRequests && _pendingCount > 0)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 20.0),
-                    child: InkWell(
-                      onTap: () => context.go('/manager/requests'),
-                      borderRadius: BorderRadius.circular(8),
-                      child: Ink(
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: ZaWolfColors.warning.withValues(alpha: 0.1),
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(
-                            color: ZaWolfColors.warning.withValues(alpha: 0.4),
-                          ),
-                        ),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            const Icon(
-                              Icons.arrow_forward_ios,
-                              size: 16,
-                              color: ZaWolfColors.warning,
-                            ),
-                            Expanded(
-                              child: Row(
-                                children: [
-                                  Expanded(
-                                    child: Text(
-                                      'لديك $_pendingCount طلبات معلقة بانتظار موافقتك',
-                                      style: theme.textTheme.titleMedium!
-                                          .copyWith(
-                                            color: ZaWolfColors.warning,
-                                            fontWeight: FontWeight.bold,
-                                          ),
-                                      textDirection: TextDirection.rtl,
-                                      maxLines: 2,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  const Icon(
-                                    Icons.pending_actions,
-                                    color: ZaWolfColors.warning,
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-
                 // Quick Navigation Grid
-                Text(
-                  'إجراءات سريعة',
-                  style: theme.textTheme.titleLarge!.copyWith(
-                    color: Colors.white,
-                  ),
-                  textDirection: TextDirection.rtl,
+                SectionHeader(
+                  title: 'إجراءات سريعة',
+                  actionLabel: 'عرض الكل',
+                  onAction: () => context.go('/hub/performance'),
                 ),
-                const SizedBox(height: 12),
                 GridView.count(
                   shrinkWrap: true,
                   physics: const NeverScrollableScrollPhysics(),
@@ -352,6 +317,13 @@ class _ManagerDashboardScreenState extends State<ManagerDashboardScreen> {
                       ? 1.65
                       : 1.5,
                   children: [
+                    _buildQuickActionCard(
+                      'بصمتي الشخصية',
+                      'تسجيل حضورك اليومي الشخصي',
+                      Icons.fingerprint,
+                      () => context.go('/employee/dashboard'),
+                      theme,
+                    ),
                     _buildQuickActionCard(
                       'طلبات فريقي',
                       'الطلبات المعلقة والمراجعة',
@@ -366,13 +338,14 @@ class _ManagerDashboardScreenState extends State<ManagerDashboardScreen> {
                       () => context.go('/manager/team'),
                       theme,
                     ),
-                    _buildQuickActionCard(
-                      'ملفات الفريق',
-                      'منح الوصول إلى ملفات ومصادر القسم',
-                      Icons.folder_shared_outlined,
-                      () => context.go('/workspace'),
-                      theme,
-                    ),
+                    if (kIsWeb)
+                      _buildQuickActionCard(
+                        'ملفات الفريق',
+                        'منح الوصول إلى ملفات ومصادر القسم',
+                        Icons.folder_shared_outlined,
+                        () => context.go('/workspace'),
+                        theme,
+                      ),
                     _buildQuickActionCard(
                       'مهام الفريق',
                       'توزيع ومتابعة التنفيذ',
@@ -401,31 +374,30 @@ class _ManagerDashboardScreenState extends State<ManagerDashboardScreen> {
                       () => context.go('/manager/warnings-rewards'),
                       theme,
                     ),
+                    _buildQuickActionCard(
+                      'خدمات الشركة',
+                      'الخدمات والطلبات التشغيلية',
+                      Icons.business_center_outlined,
+                      () => context.go('/company-os'),
+                      theme,
+                    ),
+                    _buildQuickActionCard(
+                      'عمليات الشركة',
+                      'متابعة العمليات والتدقيق',
+                      Icons.hub_outlined,
+                      () => context.go('/company-os/operations'),
+                      theme,
+                    ),
                   ],
                 ),
                 const SizedBox(height: 24),
 
                 // Live attendance list
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    TextButton(
-                      onPressed: () => context.go('/manager/team'),
-                      child: const Text(
-                        'عرض الكل',
-                        style: TextStyle(color: ZaWolfColors.primaryCyan),
-                      ),
-                    ),
-                    Text(
-                      'تتبع الحضور اليومي فريقي',
-                      style: theme.textTheme.titleLarge!.copyWith(
-                        color: Colors.white,
-                      ),
-                      textDirection: TextDirection.rtl,
-                    ),
-                  ],
+                SectionHeader(
+                  title: 'تتبع الحضور اليومي فريقي',
+                  actionLabel: 'عرض الكل',
+                  onAction: () => context.go('/manager/team'),
                 ),
-                const SizedBox(height: 12),
 
                 if (teamList.isEmpty)
                   WolfCard(
@@ -553,27 +525,114 @@ class _ManagerDashboardScreenState extends State<ManagerDashboardScreen> {
   ) {
     return WolfCard(
       onTap: onTap,
+      padding: const EdgeInsets.symmetric(
+        horizontal: DsSpacing.sm,
+        vertical: DsSpacing.xs,
+      ),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(icon, color: ZaWolfColors.primaryCyan, size: 28),
-          const SizedBox(height: 8),
+          Icon(icon, color: ZaWolfColors.primaryCyan, size: 26),
+          const SizedBox(height: 4),
           Text(
             title,
             style: theme.textTheme.titleMedium!.copyWith(
               color: Colors.white,
               fontWeight: FontWeight.bold,
+              fontSize: 13,
             ),
             textAlign: TextAlign.center,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
           ),
           const SizedBox(height: 2),
           Text(
             subtitle,
-            style: theme.textTheme.bodySmall!.copyWith(fontSize: 10),
+            style: theme.textTheme.bodySmall!.copyWith(fontSize: 9.5),
             textAlign: TextAlign.center,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
           ),
         ],
       ),
+    );
+  }
+}
+
+/// Metrics row: team present now, pending approvals, tasks due this week.
+/// All values come from sources this dashboard or its children already load.
+class _ManagerMetricsRow extends StatelessWidget {
+  const _ManagerMetricsRow({
+    required this.summaryFuture,
+    required this.taskStream,
+  });
+
+  final Future<DashboardAttendanceSummary> summaryFuture;
+  final Stream<List<EmployeeTaskModel>> taskStream;
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<int>(
+      valueListenable: PendingRequestsService.instance.pendingCount,
+      builder: (context, pendingCount, _) =>
+          StreamBuilder<List<EmployeeTaskModel>>(
+            stream: taskStream,
+            builder: (context, taskSnapshot) {
+              final loadingTasks =
+                  !taskSnapshot.hasData && !taskSnapshot.hasError;
+              final now = DateTime.now();
+              final weekEnd = now.add(const Duration(days: 7));
+              final tasksDueThisWeek =
+                  (taskSnapshot.data ?? const <EmployeeTaskModel>[])
+                      .where(
+                        (task) =>
+                            task.status != TaskStatus.done &&
+                            task.status != TaskStatus.cancelled &&
+                            !task.dueDate.isBefore(now) &&
+                            !task.dueDate.isAfter(weekEnd),
+                      )
+                      .length;
+              return FutureBuilder<DashboardAttendanceSummary>(
+                future: summaryFuture,
+                builder: (context, snapshot) {
+                  final loading = !snapshot.hasData && !snapshot.hasError;
+                  final summary = snapshot.data;
+                  return Row(
+                    children: [
+                      Expanded(
+                        child: StatCard(
+                          icon: Icons.how_to_reg_outlined,
+                          value: loading || summary == null
+                              ? '—'
+                              : '${summary.attended}/${summary.totalEmployees}',
+                          label: 'الفريق الآن',
+                          onTap: () => context.go('/manager/team'),
+                        ),
+                      ),
+                      const SizedBox(width: DsSpacing.md),
+                      Expanded(
+                        child: StatCard(
+                          icon: Icons.rule_outlined,
+                          value: '$pendingCount',
+                          label: 'طلبات معلقة',
+                          onTap: () => context.go('/manager/requests'),
+                        ),
+                      ),
+                      const SizedBox(width: DsSpacing.md),
+                      Expanded(
+                        child: StatCard(
+                          icon: Icons.task_alt_outlined,
+                          value: loadingTasks ? '—' : '$tasksDueThisWeek',
+                          label: 'مهام هذا الأسبوع',
+                          onTap: () => context.go('/manager/tasks'),
+                        ),
+                      ),
+                    ],
+                  );
+                },
+              );
+            },
+          ),
     );
   }
 }

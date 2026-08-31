@@ -91,7 +91,7 @@ class SuggestionsManagementScreen extends StatelessWidget {
                     if (suggestion.status != 'reviewed') ...[
                       const SizedBox(height: 12),
                       Align(
-                        alignment: Alignment.centerLeft,
+                        alignment: AlignmentDirectional.centerEnd,
                         child: OutlinedButton.icon(
                           onPressed: reviewerId.isEmpty
                               ? null

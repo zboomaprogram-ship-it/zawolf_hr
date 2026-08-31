@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'dart:math';
+import 'package:flutter/foundation.dart';
 
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:jailbreak_root_detection/jailbreak_root_detection.dart';
@@ -103,7 +104,7 @@ class AttendanceSecurityService {
   }
 
   Future<void> _assertAndroidDeveloperOptionsDisabled() async {
-    if (!Platform.isAndroid) return;
+    if (!Platform.isAndroid || kDebugMode) return;
     try {
       final signals = await _securityChannel.invokeMapMethod<String, dynamic>(
         'getSecuritySignals',
@@ -122,6 +123,7 @@ class AttendanceSecurityService {
   }
 
   Future<void> _assertTrustedDevice() async {
+    if (kDebugMode) return;
     try {
       final isNotTrusted = await JailbreakRootDetection.instance.isNotTrust;
       final isJailBroken = await JailbreakRootDetection.instance.isJailBroken;

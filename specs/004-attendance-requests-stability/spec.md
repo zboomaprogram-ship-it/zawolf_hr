@@ -4,7 +4,7 @@
 
 **Created**: 2026-08-20
 
-**Status**: Draft — awaiting owner review before planning
+**Status**: Approved by owner — planning complete, tasks pending review
 
 **Input**: Stabilize automatic location attendance, request visibility and
 approval, productivity/KPI calculations, device attendance binding, map location
@@ -82,6 +82,11 @@ for authorized HR/admin/manager users.
    **When** data is loading or no result exists, **Then** the screen finishes in
    a bounded time with records, an empty state, or an actionable retry state;
    it does not remain on an endless spinner.
+6. **Given** an employee has a salary deduction from attendance, permission,
+   leave, or an administrative decision, **When** they open its details,
+   **Then** they see a clear Arabic explanation of the deduction reason,
+   affected date or period, deduction fraction/amount when available, and its
+   current review status.
 
 ---
 
@@ -218,6 +223,11 @@ discard a pending request or attendance action.
 - **FR-010**: Authorized web users MUST be able to select and review company
   attendance locations and radius using an interactive map, with a safe
   coordinate fallback when map content is unavailable.
+- **FR-013**: Employees MUST be able to open each salary-deduction entry and
+  view a clear Arabic explanation of its source, reason, affected date or
+  period, deduction fraction/amount when available, and approval/review
+  status. Legacy records with incomplete data MUST show an honest Arabic
+  fallback rather than a fabricated explanation.
 - **FR-011**: Mobile back interactions MUST navigate within ZaWolf before
   exiting the application and MUST protect pending attendance/request writes.
 - **FR-012**: The feature MUST add automated coverage for duplicate/late

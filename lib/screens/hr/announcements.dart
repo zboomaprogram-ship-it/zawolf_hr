@@ -11,6 +11,7 @@ import '../../models/user_model.dart';
 import '../../services/auth_service.dart';
 import '../../services/managed_employee_service.dart';
 import '../../theme/theme.dart';
+import '../../utils/user_facing_error.dart';
 
 class AnnouncementsScreen extends StatefulWidget {
   const AnnouncementsScreen({super.key});
@@ -457,8 +458,10 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
       }
     } catch (error) {
       _showError(
-        'خطأ أثناء نشر الإعلان: '
-        '${error.toString().replaceAll('Exception: ', '')}',
+        userFacingError(
+          error,
+          fallback: 'تعذر نشر الإعلان الآن. حاول مرة أخرى.',
+        ),
       );
     } finally {
       if (mounted) setState(() => _isLoading = false);

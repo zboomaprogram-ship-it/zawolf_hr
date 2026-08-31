@@ -19,6 +19,12 @@ class AttendanceGatewayException implements Exception {
     'unauthenticated' => 'انتهت جلسة الدخول. سجل الدخول مرة أخرى.',
     'permission_denied' ||
     'forbidden' => 'لا تملك صلاحية تنفيذ هذا الإجراء. راجع مسؤول النظام.',
+    'no_assignment' => 'لا يوجد موقع حضور نشط مسند إلى حسابك. تواصل مع HR.',
+    'assignment_changed' =>
+      'تم تحديث مواقع حضورك. حدّث الصفحة ثم أعد المحاولة.',
+    'inactive_location' => 'موقع الحضور غير نشط حالياً. اختر موقعاً آخر.',
+    'outside_range' =>
+      'أنت خارج نطاق مواقع الحضور المسندة إليك. اقترب من الموقع ثم أعد المحاولة.',
     'network' || 'timeout' || 'server_unavailable' || 'unavailable' =>
       'تعذر التأكيد الآن. تم حفظ العملية للمزامنة عند توفر الإنترنت.',
     _ => 'تعذر إتمام الطلب الآن. تحقق من حالة الطلب قبل إعادة الإرسال.',
@@ -69,11 +75,31 @@ class AttendanceGatewayService {
     required bool enabled,
     required int expectedRevision,
     String? reason,
+    int? autoCheckoutReturnGraceMinutes,
+    String? companyBreakStartTime,
+    String? companyBreakEndTime,
   }) => _post({
     'enabled': enabled,
     'expectedRevision': expectedRevision,
     if (reason != null && reason.trim().isNotEmpty) 'reason': reason.trim(),
+    if (autoCheckoutReturnGraceMinutes != null)
+      'autoCheckoutReturnGraceMinutes': autoCheckoutReturnGraceMinutes,
+    if (companyBreakStartTime != null)
+      'companyBreakStartTime': companyBreakStartTime,
+    if (companyBreakEndTime != null) 'companyBreakEndTime': companyBreakEndTime,
   }, path: '/attendance/checkout-policy');
+
+  Future<void> reviewAttendanceSecurity({
+    required String attendanceId,
+    required String status,
+    required bool checkout,
+  }) async {
+    await _post({
+      'attendanceId': attendanceId,
+      'status': status,
+      'checkout': checkout,
+    }, path: '/attendance/security-review');
+  }
 
   /// Device ownership is validated and written by the server, never by a
   /// Firestore transaction running on an employee device.
@@ -86,6 +112,21 @@ class AttendanceGatewayService {
         'type': 'bindDevice',
         'deviceId': deviceId,
         'deviceLabel': deviceLabel,
+      },
+    });
+  }
+
+  /// Requests an audited, server-authorized reset for an employee device.
+  /// This is intentionally not a client-side Firestore mutation.
+  Future<void> resetDevice({
+    required String employeeId,
+    required String reason,
+  }) async {
+    await _post({
+      'action': {
+        'type': 'resetDevice',
+        'employeeId': employeeId,
+        'reason': reason,
       },
     });
   }

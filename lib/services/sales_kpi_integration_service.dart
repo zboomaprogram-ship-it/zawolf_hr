@@ -1,4 +1,7 @@
+import 'dart:convert';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:http/http.dart' as http;
 
 import '../models/sales_kpi_summary.dart';
 
@@ -54,16 +57,21 @@ class SalesKpiIntegrationService {
   Future<void> updateFilters({
     required SalesKpiFilters filters,
     required String actorId,
-  }) {
+  }) async {
     final periodKey = filters.startDate.length >= 7
         ? filters.startDate.substring(0, 7)
         : '';
-    return _db.collection('salesKpiSettings').doc('current').set({
+    await _db.collection('salesKpiSettings').doc('current').set({
       ...filters.toMap(),
       'periodKey': periodKey,
       'updatedBy': actorId,
       'updatedAt': FieldValue.serverTimestamp(),
     }, SetOptions(merge: true));
+    await triggerSync(
+      startDate: filters.startDate,
+      endDate: filters.endDate,
+      filters: filters,
+    );
   }
 
   Future<void> updateActivePeriod({
@@ -71,13 +79,47 @@ class SalesKpiIntegrationService {
     required String startDate,
     required String endDate,
     required String actorId,
-  }) {
-    return _db.collection('salesKpiSettings').doc('current').set({
+  }) async {
+    await _db.collection('salesKpiSettings').doc('current').set({
       'periodKey': periodKey,
       'startDate': startDate,
       'endDate': endDate,
       'updatedBy': actorId,
       'updatedAt': FieldValue.serverTimestamp(),
     }, SetOptions(merge: true));
+    await triggerSync(startDate: startDate, endDate: endDate);
+  }
+
+  Future<bool> triggerSync({
+    String? startDate,
+    String? endDate,
+    SalesKpiFilters? filters,
+  }) async {
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) return false;
+      final token = await user.getIdToken();
+      final body = <String, dynamic>{};
+      if (filters != null) {
+        body.addAll(filters.toMap());
+      }
+      if (startDate != null && startDate.trim().isNotEmpty) {
+        body['startDate'] = startDate.trim();
+      }
+      if (endDate != null && endDate.trim().isNotEmpty) {
+        body['endDate'] = endDate.trim();
+      }
+      final response = await http.post(
+        Uri.parse('https://notification.zawolf.ai/operations/sales-indicators/sync'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: jsonEncode(body),
+      );
+      return response.statusCode == 200 || response.statusCode == 202;
+    } catch (_) {
+      return false;
+    }
   }
 }

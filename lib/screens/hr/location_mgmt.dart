@@ -1,15 +1,22 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../services/location_service.dart';
 import '../../services/google_maps_loader_stub.dart'
     if (dart.library.js_interop) '../../services/google_maps_loader_web.dart';
 import '../../models/location_model.dart';
+import '../../models/user_model.dart';
+import '../../features/attendance_locations/data/attendance_location_administration_repository_impl.dart';
+import '../../features/attendance_locations/domain/entities/attendance_assignment_option.dart';
+import '../../features/attendance_locations/presentation/pages/attendance_location_assignment_page.dart';
 import '../../theme/theme.dart';
 import '../../components/wolf_card.dart';
 import '../../components/wolf_button.dart';
 import '../../components/wolf_input_field.dart';
+import '../../utils/user_facing_error.dart';
 
 class LocationManagementScreen extends StatefulWidget {
   const LocationManagementScreen({super.key});
@@ -21,6 +28,21 @@ class LocationManagementScreen extends StatefulWidget {
 
 class _LocationManagementScreenState extends State<LocationManagementScreen> {
   final LocationService _locationService = LocationService();
+  List<LocationModel> _visibleLocations = const [];
+  String _visibleLocationsFingerprint = '';
+
+  String _locationFingerprint(Iterable<LocationModel> locations) => locations
+      .map(
+        (location) => [
+          location.locationId,
+          location.name,
+          location.latitude,
+          location.longitude,
+          location.geofenceRadiusMeters,
+          location.isActive,
+        ].join('|'),
+      )
+      .join('~');
 
   void _showAddLocationDialog({LocationModel? existingLocation}) {
     showDialog(
@@ -35,6 +57,70 @@ class _LocationManagementScreenState extends State<LocationManagementScreen> {
     );
   }
 
+  Future<void> _openAssignments(List<LocationModel> locations) async {
+    try {
+      const pageSize = 250;
+      const maximumEmployees = 5000;
+      final employeeDocs = <QueryDocumentSnapshot<Map<String, dynamic>>>[];
+      QueryDocumentSnapshot<Map<String, dynamic>>? cursor;
+      do {
+        var query = FirebaseFirestore.instance
+            .collection('users')
+            .where('isActive', isEqualTo: true)
+            .orderBy(FieldPath.documentId)
+            .limit(pageSize);
+        if (cursor != null) query = query.startAfterDocument(cursor);
+        final page = await query.get();
+        employeeDocs.addAll(page.docs);
+        cursor = page.docs.isEmpty ? null : page.docs.last;
+        if (page.docs.length < pageSize) break;
+      } while (employeeDocs.length < maximumEmployees);
+      final employees =
+          employeeDocs
+              .map(UserModel.fromFirestore)
+              .map(
+                (user) => AttendanceEmployeeOption(
+                  uid: user.uid,
+                  name: user.displayName,
+                  employeeCode: user.employeeId,
+                  department: user.department,
+                ),
+              )
+              .toList(growable: false)
+            ..sort((a, b) => a.name.compareTo(b.name));
+      if (!mounted) return;
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => AttendanceLocationAssignmentPage(
+            employees: employees,
+            locations: locations
+                .where((location) => location.isActive)
+                .map(
+                  (location) => AttendanceSiteOption(
+                    id: location.locationId,
+                    name: location.name,
+                  ),
+                )
+                .toList(growable: false),
+            repository: AttendanceLocationAdministrationRepositoryImpl(),
+          ),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            userFacingError(
+              error,
+              fallback: 'تعذر تحميل الموظفين لإدارة مواقع الحضور.',
+            ),
+          ),
+        ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -45,6 +131,19 @@ class _LocationManagementScreenState extends State<LocationManagementScreen> {
           'إدارة المواقع والفروع',
           style: theme.textTheme.headlineMedium!.copyWith(color: Colors.white),
         ),
+        actions: [
+          Padding(
+            padding: const EdgeInsetsDirectional.only(end: 12),
+            child: TextButton.icon(
+              key: const ValueKey('attendance-multi-location-action'),
+              onPressed: _visibleLocations.isEmpty
+                  ? null
+                  : () => _openAssignments(_visibleLocations),
+              icon: const Icon(Icons.add_location_alt_outlined),
+              label: const Text('إسناد مواقع متعددة'),
+            ),
+          ),
+        ],
       ),
       floatingActionButton: FloatingActionButton.extended(
         backgroundColor: ZaWolfColors.primaryCyan,
@@ -70,13 +169,34 @@ class _LocationManagementScreenState extends State<LocationManagementScreen> {
           if (snapshot.hasError) {
             return Center(
               child: Text(
-                'حدث خطأ في تحميل البيانات: ${snapshot.error}',
+                userFacingError(
+                  snapshot.error!,
+                  fallback:
+                      'تعذر تحميل المواقع حالياً. أعد المحاولة بعد لحظات.',
+                ),
                 style: const TextStyle(color: ZaWolfColors.error),
               ),
             );
           }
 
-          final locations = snapshot.data ?? [];
+          // Stream collections can be updated by Firestore while Flutter is
+          // building this frame.  Keep an immutable snapshot for buttons and
+          // map overlays instead of retaining the stream-owned list.
+          final locations = List<LocationModel>.unmodifiable(
+            List<LocationModel>.of(snapshot.data ?? const <LocationModel>[]),
+          );
+          final fingerprint = _locationFingerprint(locations);
+          if (_visibleLocationsFingerprint != fingerprint) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (!mounted || _visibleLocationsFingerprint == fingerprint) {
+                return;
+              }
+              setState(() {
+                _visibleLocations = locations;
+                _visibleLocationsFingerprint = fingerprint;
+              });
+            });
+          }
           if (locations.isEmpty) {
             return Center(
               child: Column(
@@ -99,162 +219,189 @@ class _LocationManagementScreenState extends State<LocationManagementScreen> {
                     'اضغط على زر إضافة موقع لتسجيل الفرع الأول',
                     style: theme.textTheme.bodyMedium,
                   ),
+                  const SizedBox(height: 12),
+                  const Text(
+                    'بعد إضافة الفرع سيعمل زر «إسناد مواقع متعددة» لتحديد موقعين أو أكثر لكل موظف.',
+                    textAlign: TextAlign.center,
+                  ),
                 ],
               ),
             );
           }
 
-          return ListView.builder(
-            padding: const EdgeInsets.all(16),
-            itemCount: locations.length,
-            itemBuilder: (context, index) {
-              final loc = locations[index];
-              return Padding(
-                padding: const EdgeInsets.only(bottom: 16.0),
-                key: ValueKey(loc.locationId),
-                child: WolfCard(
-                  hasBorderGlow: true,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Row(
-                            children: [
-                              const Icon(
-                                Icons.business_outlined,
-                                color: ZaWolfColors.primaryCyan,
-                              ),
-                              const SizedBox(width: 8),
-                              Text(
-                                loc.name,
-                                style: theme.textTheme.titleLarge!.copyWith(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ],
-                          ),
-                          Row(
-                            children: [
-                              IconButton(
-                                icon: const Icon(
-                                  Icons.edit,
-                                  color: ZaWolfColors.textSecondary,
-                                  size: 20,
-                                ),
-                                onPressed: () => _showAddLocationDialog(
-                                  existingLocation: loc,
-                                ),
-                              ),
-                              IconButton(
-                                icon: const Icon(
-                                  Icons.delete_outline,
-                                  color: ZaWolfColors.error,
-                                  size: 20,
-                                ),
-                                onPressed: () async {
-                                  final confirm = await showDialog<bool>(
-                                    context: context,
-                                    builder: (context) => AlertDialog(
-                                      title: const Text('حذف الفرع'),
-                                      content: Text(
-                                        'هل أنت متأكد من حذف فرع ${loc.name}؟',
-                                      ),
-                                      actions: [
-                                        TextButton(
-                                          onPressed: () =>
-                                              Navigator.pop(context, false),
-                                          child: const Text('إلغاء'),
-                                        ),
-                                        TextButton(
-                                          onPressed: () =>
-                                              Navigator.pop(context, true),
-                                          child: const Text(
-                                            'حذف',
-                                            style: TextStyle(
-                                              color: ZaWolfColors.error,
-                                            ),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  );
-                                  if (!context.mounted) return;
-                                  if (confirm == true) {
-                                    await _locationService.updateLocation(
-                                      loc.copyWith(isActive: false),
-                                      actorId: FirebaseAuth
-                                          .instance
-                                          .currentUser
-                                          ?.uid,
-                                    );
-                                  }
-                                },
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        '📍 العنوان: ${loc.address}',
-                        style: theme.textTheme.bodyMedium,
-                      ),
-                      const SizedBox(height: 4),
-                      Row(
-                        children: [
-                          Text(
-                            '📏 نطاق الأمان (Geofence): ',
-                            style: theme.textTheme.bodyMedium,
-                          ),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 2,
-                            ),
-                            decoration: BoxDecoration(
-                              color: ZaWolfColors.primaryCyan.withValues(
-                                alpha: 0.15,
-                              ),
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: Text(
-                              '${loc.geofenceRadiusMeters.toInt()} متر',
-                              style: theme.textTheme.bodySmall!.copyWith(
-                                color: ZaWolfColors.primaryCyan,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      const Divider(color: ZaWolfColors.surface02),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text(
-                            'الموظفون المسجلون بالفرع: ${loc.employeeCount}',
-                            style: theme.textTheme.bodySmall!.copyWith(
-                              color: ZaWolfColors.textSecondary,
-                            ),
-                          ),
-                          Text(
-                            'GPS: ${loc.latitude.toStringAsFixed(5)}, ${loc.longitude.toStringAsFixed(5)}',
-                            style: theme.textTheme.bodySmall!.copyWith(
-                              color: ZaWolfColors.textMuted,
-                              fontFamily: 'JetBrains Mono',
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
+          return Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: () => _openAssignments(locations),
+                    icon: const Icon(Icons.add_location_alt_outlined),
+                    label: const Text('إسناد أكثر من موقع حضور للموظفين'),
                   ),
                 ),
-              );
-            },
+              ),
+              Expanded(
+                child: ListView.builder(
+                  padding: const EdgeInsets.all(16),
+                  itemCount: locations.length,
+                  itemBuilder: (context, index) {
+                    final loc = locations[index];
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 16.0),
+                      key: ValueKey(loc.locationId),
+                      child: WolfCard(
+                        hasBorderGlow: true,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Row(
+                                  children: [
+                                    const Icon(
+                                      Icons.business_outlined,
+                                      color: ZaWolfColors.primaryCyan,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      loc.name,
+                                      style: theme.textTheme.titleLarge!
+                                          .copyWith(
+                                            color: Colors.white,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                    ),
+                                  ],
+                                ),
+                                Row(
+                                  children: [
+                                    IconButton(
+                                      icon: const Icon(
+                                        Icons.edit,
+                                        color: ZaWolfColors.textSecondary,
+                                        size: 20,
+                                      ),
+                                      onPressed: () => _showAddLocationDialog(
+                                        existingLocation: loc,
+                                      ),
+                                    ),
+                                    IconButton(
+                                      icon: const Icon(
+                                        Icons.delete_outline,
+                                        color: ZaWolfColors.error,
+                                        size: 20,
+                                      ),
+                                      onPressed: () async {
+                                        final confirm = await showDialog<bool>(
+                                          context: context,
+                                          builder: (context) => AlertDialog(
+                                            title: const Text('حذف الفرع'),
+                                            content: Text(
+                                              'هل أنت متأكد من حذف فرع ${loc.name}؟',
+                                            ),
+                                            actions: [
+                                              TextButton(
+                                                onPressed: () => Navigator.pop(
+                                                  context,
+                                                  false,
+                                                ),
+                                                child: const Text('إلغاء'),
+                                              ),
+                                              TextButton(
+                                                onPressed: () => Navigator.pop(
+                                                  context,
+                                                  true,
+                                                ),
+                                                child: const Text(
+                                                  'حذف',
+                                                  style: TextStyle(
+                                                    color: ZaWolfColors.error,
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        );
+                                        if (!context.mounted) return;
+                                        if (confirm == true) {
+                                          await _locationService.updateLocation(
+                                            loc.copyWith(isActive: false),
+                                            actorId: FirebaseAuth
+                                                .instance
+                                                .currentUser
+                                                ?.uid,
+                                          );
+                                        }
+                                      },
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              '📍 العنوان: ${loc.address}',
+                              style: theme.textTheme.bodyMedium,
+                            ),
+                            const SizedBox(height: 4),
+                            Row(
+                              children: [
+                                Text(
+                                  '📏 نطاق الأمان (Geofence): ',
+                                  style: theme.textTheme.bodyMedium,
+                                ),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 2,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: ZaWolfColors.primaryCyan.withValues(
+                                      alpha: 0.15,
+                                    ),
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Text(
+                                    '${loc.geofenceRadiusMeters.toInt()} متر',
+                                    style: theme.textTheme.bodySmall!.copyWith(
+                                      color: ZaWolfColors.primaryCyan,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            const Divider(color: ZaWolfColors.surface02),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text(
+                                  'الموظفون المسجلون بالفرع: ${loc.employeeCount}',
+                                  style: theme.textTheme.bodySmall!.copyWith(
+                                    color: ZaWolfColors.textSecondary,
+                                  ),
+                                ),
+                                Text(
+                                  'GPS: ${loc.latitude.toStringAsFixed(5)}, ${loc.longitude.toStringAsFixed(5)}',
+                                  style: theme.textTheme.bodySmall!.copyWith(
+                                    color: ZaWolfColors.textMuted,
+                                    fontFamily: 'JetBrains Mono',
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
           );
         },
       ),
@@ -371,11 +518,11 @@ class _AddLocationDialogState extends State<AddLocationDialog> {
       }
       if (!mounted) return;
       Navigator.pop(context);
-    } catch (e) {
+    } catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('خطأ أثناء الحفظ: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('تعذر حفظ الموقع: ${userFacingError(error)}')),
+        );
       }
     } finally {
       if (mounted) {
@@ -669,12 +816,49 @@ class _FullScreenLocationPickerState extends State<FullScreenLocationPicker> {
   GoogleMapController? _controller;
   late LatLng _selectedPosition;
   late final Future<void> _mapReady;
+  late Set<Marker> _markers;
+  late Set<Circle> _circles;
 
   @override
   void initState() {
     super.initState();
     _selectedPosition = widget.initialPosition;
+    _refreshMapOverlays();
     _mapReady = GoogleMapsLoader.ensureLoaded();
+  }
+
+  /// The web map plugin can still be iterating an overlay collection after a
+  /// frame is built.  Replace immutable snapshots only when the position
+  /// changes; do not create mutable overlay collections from [build].
+  void _refreshMapOverlays() {
+    final position = _selectedPosition;
+    _markers = Set<Marker>.unmodifiable(<Marker>{
+      Marker(
+        markerId: const MarkerId('selected_branch'),
+        position: position,
+        draggable: true,
+        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueCyan),
+        onDragEnd: _selectPosition,
+      ),
+    });
+    _circles = Set<Circle>.unmodifiable(<Circle>{
+      Circle(
+        circleId: const CircleId('branch_geofence'),
+        center: position,
+        radius: widget.radiusMeters,
+        strokeColor: ZaWolfColors.primaryCyan,
+        strokeWidth: 2,
+        fillColor: ZaWolfColors.primaryCyan.withValues(alpha: 0.16),
+      ),
+    });
+  }
+
+  void _selectPosition(LatLng position) {
+    if (!mounted) return;
+    setState(() {
+      _selectedPosition = position;
+      _refreshMapOverlays();
+    });
   }
 
   @override
@@ -686,12 +870,12 @@ class _FullScreenLocationPickerState extends State<FullScreenLocationPicker> {
   Future<void> _pickVisibleCenter() async {
     final bounds = await _controller?.getVisibleRegion();
     if (bounds == null) return;
-    setState(() {
-      _selectedPosition = LatLng(
+    _selectPosition(
+      LatLng(
         (bounds.northeast.latitude + bounds.southwest.latitude) / 2,
         (bounds.northeast.longitude + bounds.southwest.longitude) / 2,
-      );
-    });
+      ),
+    );
   }
 
   Future<void> _openExternalMap() async {
@@ -704,27 +888,6 @@ class _FullScreenLocationPickerState extends State<FullScreenLocationPicker> {
 
   @override
   Widget build(BuildContext context) {
-    final marker = Marker(
-      markerId: const MarkerId('selected_branch'),
-      position: _selectedPosition,
-      draggable: true,
-      icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueCyan),
-      onDragEnd: (position) {
-        setState(() {
-          _selectedPosition = position;
-        });
-      },
-    );
-
-    final circle = Circle(
-      circleId: const CircleId('branch_geofence'),
-      center: _selectedPosition,
-      radius: widget.radiusMeters,
-      strokeColor: ZaWolfColors.primaryCyan,
-      strokeWidth: 2,
-      fillColor: ZaWolfColors.primaryCyan.withValues(alpha: 0.16),
-    );
-
     return Scaffold(
       backgroundColor: ZaWolfColors.background,
       appBar: AppBar(
@@ -763,18 +926,20 @@ class _FullScreenLocationPickerState extends State<FullScreenLocationPicker> {
                   target: widget.initialPosition,
                   zoom: 16,
                 ),
-                markers: {marker},
-                circles: {circle},
+                // google_maps_flutter_web may retain and iterate these
+                // collections after a frame. Hand it fresh snapshots so a
+                // tap/drag state update cannot modify a collection in use.
+                markers: Set<Marker>.of(_markers),
+                circles: Set<Circle>.of(_circles),
                 onMapCreated: (controller) {
                   _controller = controller;
                 },
-                onTap: (position) {
-                  setState(() {
-                    _selectedPosition = position;
-                  });
-                },
-                myLocationButtonEnabled: true,
-                myLocationEnabled: true,
+                onTap: _selectPosition,
+                // The web plugin can dereference a missing browser-location
+                // provider before permission is granted. Branch selection is
+                // still fully available through map taps and coordinates.
+                myLocationButtonEnabled: !kIsWeb,
+                myLocationEnabled: !kIsWeb,
                 zoomControlsEnabled: true,
                 compassEnabled: true,
                 mapToolbarEnabled: true,

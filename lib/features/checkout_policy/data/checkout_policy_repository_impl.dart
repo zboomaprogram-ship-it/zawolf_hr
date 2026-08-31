@@ -23,11 +23,17 @@ class CheckoutPolicyRepositoryImpl implements CheckoutPolicyRepository {
     required bool enabled,
     required int expectedRevision,
     String? reason,
+    int? autoCheckoutReturnGraceMinutes,
+    String? companyBreakStartTime,
+    String? companyBreakEndTime,
   }) async {
     final data = await _gateway.updateCheckoutPolicy(
       enabled: enabled,
       expectedRevision: expectedRevision,
       reason: reason,
+      autoCheckoutReturnGraceMinutes: autoCheckoutReturnGraceMinutes,
+      companyBreakStartTime: companyBreakStartTime,
+      companyBreakEndTime: companyBreakEndTime,
     );
     return _cache(data);
   }

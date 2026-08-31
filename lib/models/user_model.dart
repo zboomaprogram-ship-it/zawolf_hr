@@ -154,6 +154,13 @@ class UserModel {
   final String salesAnalyticsRole;
   final String salesAnalyticsAgentKey;
   final String salesAnalyticsCompany;
+  final String avatarGender;
+  final String? avatarFaceUrl;
+
+  /// Cosmetic only. It is used by the virtual office and never influences
+  /// attendance, approvals, payroll, or performance evaluation.
+  final String avatarAccent;
+  final String preferredViewMode;
 
   UserModel({
     required this.uid,
@@ -200,7 +207,121 @@ class UserModel {
     this.salesAnalyticsRole = '',
     this.salesAnalyticsAgentKey = '',
     this.salesAnalyticsCompany = '',
+    this.avatarGender = 'male',
+    this.avatarFaceUrl,
+    this.avatarAccent = 'cyan',
+    this.preferredViewMode = 'virtual_office',
   });
+
+  UserModel copyWith({
+    String? uid,
+    String? email,
+    String? displayName,
+    String? photoURL,
+    String? role,
+    String? employeeId,
+    String? department,
+    String? position,
+    String? organizationLevel,
+    String? organizationDivisionId,
+    int? organizationOrder,
+    String? locationId,
+    String? locationName,
+    double? baseMonthlySalary,
+    String? salaryCurrency,
+    String? managerId,
+    String? managerName,
+    List<String>? managerIds,
+    List<String>? managerNames,
+    List<String>? managerCodes,
+    String? teamLeaderId,
+    String? teamLeaderName,
+    bool? isActive,
+    String? deactivationReason,
+    String? deactivatedBy,
+    String? deactivatedByName,
+    DateTime? deactivatedAt,
+    DateTime? joinDate,
+    WorkSchedule? workSchedule,
+    LeaveBalance? leaveBalance,
+    PermissionBalance? permissionBalance,
+    List<String>? notificationTokens,
+    int? unreadNotifications,
+    DateTime? createdAt,
+    DateTime? updatedAt,
+    DateTime? passwordChangedAt,
+    String? registeredAttendanceDeviceId,
+    String? registeredAttendanceDeviceLabel,
+    DateTime? registeredAttendanceDeviceAt,
+    String? initialPassword,
+    bool? salesAnalyticsEnabled,
+    String? salesAnalyticsRole,
+    String? salesAnalyticsAgentKey,
+    String? salesAnalyticsCompany,
+    String? avatarGender,
+    String? avatarFaceUrl,
+    String? avatarAccent,
+    String? preferredViewMode,
+  }) {
+    return UserModel(
+      uid: uid ?? this.uid,
+      email: email ?? this.email,
+      displayName: displayName ?? this.displayName,
+      photoURL: photoURL ?? this.photoURL,
+      role: role ?? this.role,
+      employeeId: employeeId ?? this.employeeId,
+      department: department ?? this.department,
+      position: position ?? this.position,
+      organizationLevel: organizationLevel ?? this.organizationLevel,
+      organizationDivisionId:
+          organizationDivisionId ?? this.organizationDivisionId,
+      organizationOrder: organizationOrder ?? this.organizationOrder,
+      locationId: locationId ?? this.locationId,
+      locationName: locationName ?? this.locationName,
+      baseMonthlySalary: baseMonthlySalary ?? this.baseMonthlySalary,
+      salaryCurrency: salaryCurrency ?? this.salaryCurrency,
+      managerId: managerId ?? this.managerId,
+      managerName: managerName ?? this.managerName,
+      managerIds: managerIds ?? this.managerIds,
+      managerNames: managerNames ?? this.managerNames,
+      managerCodes: managerCodes ?? this.managerCodes,
+      teamLeaderId: teamLeaderId ?? this.teamLeaderId,
+      teamLeaderName: teamLeaderName ?? this.teamLeaderName,
+      isActive: isActive ?? this.isActive,
+      deactivationReason: deactivationReason ?? this.deactivationReason,
+      deactivatedBy: deactivatedBy ?? this.deactivatedBy,
+      deactivatedByName: deactivatedByName ?? this.deactivatedByName,
+      deactivatedAt: deactivatedAt ?? this.deactivatedAt,
+      joinDate: joinDate ?? this.joinDate,
+      workSchedule: workSchedule ?? this.workSchedule,
+      leaveBalance: leaveBalance ?? this.leaveBalance,
+      permissionBalance: permissionBalance ?? this.permissionBalance,
+      notificationTokens: notificationTokens ?? this.notificationTokens,
+      unreadNotifications: unreadNotifications ?? this.unreadNotifications,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+      passwordChangedAt: passwordChangedAt ?? this.passwordChangedAt,
+      registeredAttendanceDeviceId:
+          registeredAttendanceDeviceId ?? this.registeredAttendanceDeviceId,
+      registeredAttendanceDeviceLabel:
+          registeredAttendanceDeviceLabel ??
+          this.registeredAttendanceDeviceLabel,
+      registeredAttendanceDeviceAt:
+          registeredAttendanceDeviceAt ?? this.registeredAttendanceDeviceAt,
+      initialPassword: initialPassword ?? this.initialPassword,
+      salesAnalyticsEnabled:
+          salesAnalyticsEnabled ?? this.salesAnalyticsEnabled,
+      salesAnalyticsRole: salesAnalyticsRole ?? this.salesAnalyticsRole,
+      salesAnalyticsAgentKey:
+          salesAnalyticsAgentKey ?? this.salesAnalyticsAgentKey,
+      salesAnalyticsCompany:
+          salesAnalyticsCompany ?? this.salesAnalyticsCompany,
+      avatarGender: avatarGender ?? this.avatarGender,
+      avatarFaceUrl: avatarFaceUrl ?? this.avatarFaceUrl,
+      avatarAccent: avatarAccent ?? this.avatarAccent,
+      preferredViewMode: preferredViewMode ?? this.preferredViewMode,
+    );
+  }
 
   factory UserModel.fromFirestore(DocumentSnapshot doc) {
     final data = doc.data() as Map<String, dynamic>;
@@ -277,6 +398,11 @@ class UserModel {
       salesAnalyticsRole: data['salesAnalyticsRole'] as String? ?? '',
       salesAnalyticsAgentKey: data['salesAnalyticsAgentKey'] as String? ?? '',
       salesAnalyticsCompany: data['salesAnalyticsCompany'] as String? ?? '',
+      avatarGender: data['avatarGender'] as String? ?? 'male',
+      avatarFaceUrl: data['avatarFaceUrl'] as String?,
+      avatarAccent: data['avatarAccent'] as String? ?? 'cyan',
+      preferredViewMode:
+          data['preferredViewMode'] as String? ?? 'virtual_office',
     );
   }
 
@@ -337,6 +463,10 @@ class UserModel {
         'salesAnalyticsAgentKey': salesAnalyticsAgentKey,
       if (salesAnalyticsCompany.isNotEmpty)
         'salesAnalyticsCompany': salesAnalyticsCompany,
+      'avatarGender': avatarGender,
+      if (avatarFaceUrl != null) 'avatarFaceUrl': avatarFaceUrl,
+      'avatarAccent': avatarAccent,
+      'preferredViewMode': preferredViewMode,
     };
   }
 
@@ -388,6 +518,9 @@ class UserModel {
       'salesAnalyticsRole': salesAnalyticsRole,
       'salesAnalyticsAgentKey': salesAnalyticsAgentKey,
       'salesAnalyticsCompany': salesAnalyticsCompany,
+      'avatarGender': avatarGender,
+      'avatarFaceUrl': avatarFaceUrl,
+      'avatarAccent': avatarAccent,
     };
   }
 
@@ -456,108 +589,9 @@ class UserModel {
       salesAnalyticsRole: data['salesAnalyticsRole'] as String? ?? '',
       salesAnalyticsAgentKey: data['salesAnalyticsAgentKey'] as String? ?? '',
       salesAnalyticsCompany: data['salesAnalyticsCompany'] as String? ?? '',
-    );
-  }
-
-  UserModel copyWith({
-    String? uid,
-    String? email,
-    String? displayName,
-    String? photoURL,
-    String? role,
-    String? employeeId,
-    String? department,
-    String? position,
-    String? organizationLevel,
-    String? organizationDivisionId,
-    int? organizationOrder,
-    String? locationId,
-    String? locationName,
-    double? baseMonthlySalary,
-    String? salaryCurrency,
-    String? managerId,
-    String? managerName,
-    List<String>? managerIds,
-    List<String>? managerNames,
-    List<String>? managerCodes,
-    String? teamLeaderId,
-    String? teamLeaderName,
-    bool? isActive,
-    String? deactivationReason,
-    String? deactivatedBy,
-    String? deactivatedByName,
-    DateTime? deactivatedAt,
-    DateTime? joinDate,
-    WorkSchedule? workSchedule,
-    LeaveBalance? leaveBalance,
-    PermissionBalance? permissionBalance,
-    List<String>? notificationTokens,
-    int? unreadNotifications,
-    DateTime? createdAt,
-    DateTime? updatedAt,
-    DateTime? passwordChangedAt,
-    String? registeredAttendanceDeviceId,
-    String? registeredAttendanceDeviceLabel,
-    DateTime? registeredAttendanceDeviceAt,
-    String? initialPassword,
-    bool? salesAnalyticsEnabled,
-    String? salesAnalyticsRole,
-    String? salesAnalyticsAgentKey,
-    String? salesAnalyticsCompany,
-  }) {
-    return UserModel(
-      uid: uid ?? this.uid,
-      email: email ?? this.email,
-      displayName: displayName ?? this.displayName,
-      photoURL: photoURL ?? this.photoURL,
-      role: role ?? this.role,
-      employeeId: employeeId ?? this.employeeId,
-      department: department ?? this.department,
-      position: position ?? this.position,
-      organizationLevel: organizationLevel ?? this.organizationLevel,
-      organizationDivisionId:
-          organizationDivisionId ?? this.organizationDivisionId,
-      organizationOrder: organizationOrder ?? this.organizationOrder,
-      locationId: locationId ?? this.locationId,
-      locationName: locationName ?? this.locationName,
-      baseMonthlySalary: baseMonthlySalary ?? this.baseMonthlySalary,
-      salaryCurrency: salaryCurrency ?? this.salaryCurrency,
-      managerId: managerId ?? this.managerId,
-      managerName: managerName ?? this.managerName,
-      managerIds: managerIds ?? this.managerIds,
-      managerNames: managerNames ?? this.managerNames,
-      managerCodes: managerCodes ?? this.managerCodes,
-      teamLeaderId: teamLeaderId ?? this.teamLeaderId,
-      teamLeaderName: teamLeaderName ?? this.teamLeaderName,
-      isActive: isActive ?? this.isActive,
-      deactivationReason: deactivationReason ?? this.deactivationReason,
-      deactivatedBy: deactivatedBy ?? this.deactivatedBy,
-      deactivatedByName: deactivatedByName ?? this.deactivatedByName,
-      deactivatedAt: deactivatedAt ?? this.deactivatedAt,
-      joinDate: joinDate ?? this.joinDate,
-      workSchedule: workSchedule ?? this.workSchedule,
-      leaveBalance: leaveBalance ?? this.leaveBalance,
-      permissionBalance: permissionBalance ?? this.permissionBalance,
-      notificationTokens: notificationTokens ?? this.notificationTokens,
-      unreadNotifications: unreadNotifications ?? this.unreadNotifications,
-      createdAt: createdAt ?? this.createdAt,
-      updatedAt: updatedAt ?? this.updatedAt,
-      passwordChangedAt: passwordChangedAt ?? this.passwordChangedAt,
-      registeredAttendanceDeviceId:
-          registeredAttendanceDeviceId ?? this.registeredAttendanceDeviceId,
-      registeredAttendanceDeviceLabel:
-          registeredAttendanceDeviceLabel ??
-          this.registeredAttendanceDeviceLabel,
-      registeredAttendanceDeviceAt:
-          registeredAttendanceDeviceAt ?? this.registeredAttendanceDeviceAt,
-      initialPassword: initialPassword ?? this.initialPassword,
-      salesAnalyticsEnabled:
-          salesAnalyticsEnabled ?? this.salesAnalyticsEnabled,
-      salesAnalyticsRole: salesAnalyticsRole ?? this.salesAnalyticsRole,
-      salesAnalyticsAgentKey:
-          salesAnalyticsAgentKey ?? this.salesAnalyticsAgentKey,
-      salesAnalyticsCompany:
-          salesAnalyticsCompany ?? this.salesAnalyticsCompany,
+      avatarGender: data['avatarGender'] as String? ?? 'male',
+      avatarFaceUrl: data['avatarFaceUrl'] as String?,
+      avatarAccent: data['avatarAccent'] as String? ?? 'cyan',
     );
   }
 

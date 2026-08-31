@@ -139,7 +139,10 @@ class _EmployeeSuggestionsScreenState extends State<EmployeeSuggestionsScreen> {
                               height: 16,
                               child: CircularProgressIndicator(strokeWidth: 2),
                             )
-                          : const Icon(Icons.send),
+                          : const Directionality(
+                              textDirection: TextDirection.ltr,
+                              child: Icon(Icons.send),
+                            ),
                       label: const Text('إرسال'),
                     ),
                   ],

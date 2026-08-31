@@ -143,6 +143,21 @@ class _ScoreDetailsSheet extends StatelessWidget {
                                 color: ZaWolfColors.textSecondary,
                               ),
                             ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'حالة مصادر البيانات: ${score.inputStateLabel}',
+                              style: TextStyle(
+                                color: switch (score.inputState) {
+                                  ProductivityInputState.complete =>
+                                    ZaWolfColors.success,
+                                  ProductivityInputState.partial =>
+                                    ZaWolfColors.warning,
+                                  ProductivityInputState.unavailable =>
+                                    ZaWolfColors.error,
+                                },
+                                fontSize: 12,
+                              ),
+                            ),
                           ],
                         ),
                       ),
@@ -269,7 +284,7 @@ class _ScoreBreakdown extends StatelessWidget {
         ),
         if (onUpdateBehavior != null)
           Align(
-            alignment: Alignment.centerLeft,
+            alignment: AlignmentDirectional.centerEnd,
             child: TextButton.icon(
               onPressed: () => _editBehavior(context),
               icon: const Icon(Icons.edit_note),

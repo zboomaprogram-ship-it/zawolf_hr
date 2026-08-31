@@ -13,9 +13,30 @@ test('checkout policy fails closed when configuration is missing or malformed', 
   assert.deepEqual(normalizePolicy(null), {
     enabled: false, revision: 0, effectiveAt: null,
     changedByUserId: null, changedByRole: null, reason: null,
+    autoCheckoutReturnGraceMinutes: 15,
+    companyBreakStartTime: '13:00', companyBreakEndTime: '14:00',
   });
   assert.equal(normalizePolicy({ enabled: 'true', revision: -1 }).enabled, false);
   assert.equal(normalizePolicy({ enabled: true, revision: -1 }).revision, 0);
+});
+
+test('checkout policy safely retains the return grace and company break settings', async () => {
+  const { db } = policyTestStore();
+  const admin = { firestore: { FieldValue: { serverTimestamp: () => new Date('2026-08-20T10:00:00Z') } } };
+  const policy = await updateCheckoutPolicy({
+    db,
+    admin,
+    actor: { uid: 'hr-1', role: 'hr' },
+    enabled: true,
+    expectedRevision: 0,
+    autoCheckoutReturnGraceMinutes: 20,
+    companyBreakStartTime: '13:00',
+    companyBreakEndTime: '14:00',
+  });
+  assert.equal(policy.autoCheckoutReturnGraceMinutes, 20);
+  assert.equal(policy.companyBreakStartTime, '13:00');
+  assert.equal(policy.companyBreakEndTime, '14:00');
+  assert.equal(normalizePolicy({ autoCheckoutReturnGraceMinutes: 999 }).autoCheckoutReturnGraceMinutes, 15);
 });
 
 test('only HR and super-admin roles may manage checkout policy', () => {

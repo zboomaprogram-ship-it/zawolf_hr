@@ -4,6 +4,10 @@
 // HTTP host before this module is reached.
 
 const { checkoutDisabledResult, loadCheckoutPolicy } = require('./checkout-policy');
+const {
+  loadMultiLocationFlag,
+  validateAssignedLocation,
+} = require('./attendance-location-assignments');
 
 const CAIRO_FORMATTER = new Intl.DateTimeFormat('en-CA', {
   timeZone: 'Africa/Cairo', year: 'numeric', month: '2-digit', day: '2-digit',
@@ -26,6 +30,15 @@ function gatewayError(message, code = 'invalid_request') {
   const error = new Error(message);
   error.code = code;
   return error;
+}
+
+function canResetAttendanceDevice(actor) {
+  if (['super_admin', 'hr_admin', 'hr_manager'].includes(actor?.role)) return true;
+  if (actor?.role !== 'manager') return false;
+  const unit = `${actor.department || ''} ${actor.position || ''}`.toLowerCase();
+  return unit.includes('information technology') ||
+    /(^|[^a-z])it([^a-z]|$)/.test(unit) ||
+    unit.includes('تكنولوجيا المعلومات') || unit.includes('تقنية المعلومات');
 }
 
 function parseAction(raw, actor) {
@@ -83,7 +96,7 @@ async function bindTrustedDevice({ db, admin, actor, action, userRef, user }) {
   });
 }
 
-function actionData({ admin, action, user, receivedAt }) {
+function actionData({ admin, action, user, receivedAt, locationEvidence = null }) {
   const raw = action.raw;
   const delayed = receivedAt.getTime() - action.eventTime.getTime() > 2 * 60 * 1000;
   const review = delayed || raw.securityReviewStatus === 'pending_hr';
@@ -91,8 +104,8 @@ function actionData({ admin, action, user, receivedAt }) {
     userId: action.actor.uid,
     employeeId: asString(user.employeeId),
     employeeName: asString(user.displayName),
-    locationId: asString(user.locationId),
-    locationName: asString(user.locationName),
+    locationId: locationEvidence?.locationId || asString(user.locationId),
+    locationName: locationEvidence?.locationName || asString(user.locationName),
     managerId: asString(user.managerId),
     date: action.date,
     securityProtocolVersion: 2,
@@ -119,9 +132,15 @@ function actionData({ admin, action, user, receivedAt }) {
       locationRiskLevel: review ? 'high' : asString(raw.locationRiskLevel, 'low'),
       locationRiskReasons: Array.isArray(raw.locationRiskReasons) ? raw.locationRiskReasons.slice(0, 10) : [],
       locationRiskMessage: delayed ? 'تمت مزامنة الحضور بعد انقطاع مؤقت وسيتم مراجعته.' : asString(raw.locationRiskMessage),
-      locationAccuracyMeters: Math.max(0, asNumber(raw.accuracyMeters)),
-      locationDistanceMeters: Math.max(0, asNumber(raw.distanceMeters)),
-      locationAllowedRadiusMeters: Math.max(0, asNumber(raw.allowedRadius)),
+      locationAccuracyMeters: locationEvidence?.accuracyMeters ?? Math.max(0, asNumber(raw.accuracyMeters)),
+      locationDistanceMeters: locationEvidence?.distanceMeters ?? Math.max(0, asNumber(raw.distanceMeters)),
+      locationConfiguredRadiusMeters: locationEvidence?.configuredRadiusMeters ?? Math.max(0, asNumber(raw.allowedRadius)),
+      locationAllowedRadiusMeters: locationEvidence?.allowedRadiusMeters ?? Math.max(0, asNumber(raw.allowedRadius)),
+      ...(locationEvidence ? {
+        attendanceLocationAssignmentId: locationEvidence.assignmentId,
+        attendanceLocationAssignmentVersion: locationEvidence.assignmentVersion,
+        attendanceLocationValidatedAt: admin.firestore.Timestamp.fromDate(locationEvidence.validatedAt),
+      } : {}),
       locationMocked: false,
       locationCapturedOffline: delayed,
       status: ['present', 'late', 'late_quarter_day', 'late_half_day', 'late_full_day'].includes(raw.status) ? raw.status : 'present',
@@ -169,14 +188,40 @@ async function submitAttendanceAction({ admin, actor, rawAction }) {
   if (!userSnap.exists || user.isActive === false) throw gatewayError('حساب الموظف غير نشط.', 'account_inactive');
   const expectedId = `${actor.uid}_${action.date}`;
   if (asString(rawAction.attendanceId) !== expectedId) throw gatewayError('Attendance identity is invalid.');
-  await bindTrustedDevice({ db, admin, actor, action, userRef, user });
   const ref = db.collection('attendance').doc(expectedId);
   const receivedAt = new Date();
   if (action.type === 'checkIn') {
-    const existing = await ref.get();
-    if (!existing.exists) await ref.create(actionData({ admin, action, user, receivedAt }));
-    return { action: 'check_in', status: existing.exists ? 'already_recorded' : 'recorded', attendanceId: expectedId };
+    // A retry must converge even when the employee's assignments changed after
+    // the original successful event. Location is evidence, not record identity.
+    const duplicate = await ref.get();
+    if (duplicate.exists && duplicate.data()?.checkInTime) {
+      return { action: 'check_in', status: 'already_recorded', attendanceId: expectedId };
+    }
+    const multiLocationEnabled = await loadMultiLocationFlag(db, actor.uid);
+    const locationEvidence = multiLocationEnabled
+      ? await validateAssignedLocation({
+        db, actorUid: actor.uid, rawAction, eventTime: action.eventTime,
+      })
+      : null;
+    await bindTrustedDevice({ db, admin, actor, action, userRef, user });
+    // Use a transaction for the canonical Cairo-day identity. Two retries (or
+    // an automatic/manual race) therefore converge to one record and a
+    // semantic receipt instead of leaking an "already exists" error.
+    const status = await db.runTransaction(async (transaction) => {
+      const existing = await transaction.get(ref);
+      if (existing.exists && existing.data()?.checkInTime) {
+        return 'already_recorded';
+      }
+      transaction.set(ref, actionData({
+        admin, action, user, receivedAt, locationEvidence,
+      }), {
+        merge: false,
+      });
+      return 'recorded';
+    });
+    return { action: 'check_in', status, attendanceId: expectedId };
   }
+  await bindTrustedDevice({ db, admin, actor, action, userRef, user });
   const existing = await ref.get();
   if (!existing.exists || !existing.data()?.checkInTime) throw gatewayError('سجل الحضور غير موجود بعد.', 'checkin_missing');
   if (existing.data()?.checkOutTime) return { action: 'check_out', status: 'already_recorded', attendanceId: expectedId };
@@ -210,6 +255,48 @@ async function bindAttendanceDevice({ admin, actor, rawAction }) {
   return { action: 'device_bound', status: 'recorded' };
 }
 
+/// HR/IT-only device reset. The employee never receives direct Firestore
+/// permission to remove a device binding, and every reset leaves an audit log.
+async function resetAttendanceDevice({ admin, actor, employeeId, reason }) {
+  if (!canResetAttendanceDevice(actor)) {
+    throw gatewayError('لا تملك صلاحية إعادة ضبط جهاز الحضور.', 'not_authorized');
+  }
+  const targetId = asString(employeeId);
+  const auditReason = asString(reason);
+  if (!targetId || !auditReason || auditReason.length > 500) {
+    throw gatewayError('سبب إعادة الضبط مطلوب ويجب أن يكون مختصراً.');
+  }
+  const db = admin.firestore();
+  const userRef = db.collection('users').doc(targetId);
+  const userSnap = await userRef.get();
+  if (!userSnap.exists) throw gatewayError('حساب الموظف غير موجود.', 'not_found');
+  const user = userSnap.data() || {};
+  const deviceId = asString(user.registeredAttendanceDeviceId);
+  const deviceRef = deviceId
+    ? db.collection('attendanceDevices').doc(deviceId.replaceAll('/', '_'))
+    : null;
+  const auditRef = db.collection('auditLogs').doc(`attendance_device_reset_${targetId}_${Date.now()}`);
+  await db.runTransaction(async (transaction) => {
+    transaction.set(userRef, {
+      registeredAttendanceDeviceId: admin.firestore.FieldValue.delete(),
+      registeredAttendanceDeviceLabel: admin.firestore.FieldValue.delete(),
+      registeredAttendanceDeviceAt: admin.firestore.FieldValue.delete(),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true });
+    if (deviceRef) transaction.delete(deviceRef);
+    transaction.set(auditRef, {
+      actorId: actor.uid,
+      action: 'attendance_device_reset',
+      targetCollection: 'users',
+      targetId,
+      reason: auditReason,
+      previousDeviceId: deviceId || null,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+  });
+  return { action: 'device_reset', status: 'recorded', employeeId: targetId };
+}
+
 /// Returns only the caller's check-in state for a deterministic attendance ID.
 /// It deliberately does not leak another employee's attendance existence.
 async function resolveCheckInStatus({ admin, actor, attendanceId }) {
@@ -230,5 +317,7 @@ async function resolveCheckInStatus({ admin, actor, attendanceId }) {
 module.exports = {
   submitAttendanceAction,
   bindAttendanceDevice,
+  resetAttendanceDevice,
+  canResetAttendanceDevice,
   resolveCheckInStatus,
 };

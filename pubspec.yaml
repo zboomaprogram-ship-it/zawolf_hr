@@ -16,7 +16,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 1.0.2+49
+version: 1.0.3+50
 
 
 environment:
@@ -49,6 +49,10 @@ dependencies:
 
   # Location & Geofencing
   geolocator: ^12.0.0
+  # Used only for the web attendance path to request a non-cached browser
+  # coordinate with an application-controlled timeout.
+  geolocator_web: ^4.1.4
+  geolocator_platform_interface: ^4.2.8
   google_maps_flutter: ^2.6.1
 
   # Notifications (Local & Polling)
@@ -80,6 +84,8 @@ dependencies:
 
 dev_dependencies:
   flutter_test:
+    sdk: flutter
+  integration_test:
     sdk: flutter
 
   # The "flutter_lints" package below contains a set of recommended lints to

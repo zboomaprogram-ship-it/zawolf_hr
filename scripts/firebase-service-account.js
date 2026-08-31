@@ -44,6 +44,25 @@ function getExistingFirebaseApp(admin) {
   return apps.length > 0 ? apps[0] : null;
 }
 
+function isLocalEmulatorHost(value) {
+  const host = String(value || '').trim().split(':')[0].toLowerCase();
+  return host === 'localhost' || host === '127.0.0.1';
+}
+
+function emulatorProjectId(env = process.env) {
+  if (
+    !isLocalEmulatorHost(env.FIRESTORE_EMULATOR_HOST) ||
+    !isLocalEmulatorHost(env.FIREBASE_AUTH_EMULATOR_HOST)
+  ) {
+    return null;
+  }
+  const projectId = String(
+    env.GCLOUD_PROJECT || env.GOOGLE_CLOUD_PROJECT || '',
+  ).trim();
+  if (!projectId || projectId === 'zawolf-hr-system-60317') return null;
+  return projectId;
+}
+
 function installFirestoreCompatibility(admin) {
   if (typeof admin.firestore === 'function') return;
   const { FieldValue, GeoPoint, Timestamp, getFirestore } = require('firebase-admin/firestore');
@@ -54,6 +73,7 @@ function installFirestoreCompatibility(admin) {
 }
 
 module.exports = {
+  emulatorProjectId,
   getExistingFirebaseApp,
   installFirestoreCompatibility,
   parseFirebaseServiceAccount,

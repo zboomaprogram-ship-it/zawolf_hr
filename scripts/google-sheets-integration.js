@@ -1,4 +1,5 @@
 const { GoogleAuth } = require('google-auth-library');
+const crypto = require('node:crypto');
 
 const SHEETS_SCOPE = 'https://www.googleapis.com/auth/spreadsheets';
 const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive';
@@ -333,45 +334,57 @@ function createGoogleSheetsIntegration({ env = process.env, authClient } = {}) {
     };
   }
 
-  async function writeWorkspaceAuditReport(headers, rows) {
+  async function writeWorkspaceAuditReport(headers, rows, {
+    reportName = 'ZaWolf - سجل التدقيق',
+    tabTitle = 'سجل التدقيق',
+  } = {}) {
     if (!Array.isArray(headers) || !headers.length || !Array.isArray(rows)) {
       throw new Error('Audit report data is invalid.');
     }
-    const rootFolderId = assertGoogleId(
-      config.workspaceRootFolderId,
-      'GOOGLE_WORKSPACE_ROOT_FOLDER_ID',
-    );
-    const reportsFolder = await ensureDriveFolder(rootFolderId, '04_التقارير');
-    const reportName = 'ZaWolf - سجل التدقيق';
-    const found = await request({
-      method: 'GET',
-      url: `${DRIVE_API}/files`,
-      params: {
-        q: `'${driveQueryLiteral(reportsFolder.id)}' in parents and name = '${driveQueryLiteral(reportName)}' and mimeType = 'application/vnd.google-apps.spreadsheet' and trashed = false`,
-        pageSize: 2,
-        fields: 'files(id,name)',
-        supportsAllDrives: true,
-        includeItemsFromAllDrives: true,
-      },
-      retry: true,
-    });
-    let spreadsheetId = String(found.data?.files?.[0]?.id || '');
+    if (!String(reportName).trim() || !String(tabTitle).trim()) {
+      throw new Error('Report name is invalid.');
+    }
+    // Service accounts do not have personal Drive storage. Prefer a workbook
+    // owned by the company and shared with the service account so reports can
+    // be created reliably even when the service account has zero quota. The
+    // owner may place this workbook in 04_التقارير; each report receives its
+    // own named tab inside it.
+    let spreadsheetId = String(config.reportsSpreadsheetId || '');
     if (!spreadsheetId) {
-      const created = await request({
-        method: 'POST',
+      const rootFolderId = assertGoogleId(
+        config.workspaceRootFolderId,
+        'GOOGLE_WORKSPACE_ROOT_FOLDER_ID',
+      );
+      const reportsFolder = await ensureDriveFolder(rootFolderId, '04_التقارير');
+      const found = await request({
+        method: 'GET',
         url: `${DRIVE_API}/files`,
-        params: { fields: 'id,name', supportsAllDrives: true },
-        data: {
-          name: reportName,
-          mimeType: 'application/vnd.google-apps.spreadsheet',
-          parents: [reportsFolder.id],
+        params: {
+          q: `'${driveQueryLiteral(reportsFolder.id)}' in parents and name = '${driveQueryLiteral(reportName)}' and mimeType = 'application/vnd.google-apps.spreadsheet' and trashed = false`,
+          pageSize: 2,
+          fields: 'files(id,name)',
+          supportsAllDrives: true,
+          includeItemsFromAllDrives: true,
         },
         retry: true,
       });
-      spreadsheetId = String(created.data?.id || '');
+      spreadsheetId = String(found.data?.files?.[0]?.id || '');
+      if (!spreadsheetId) {
+        const created = await request({
+          method: 'POST',
+          url: `${DRIVE_API}/files`,
+          params: { fields: 'id,name', supportsAllDrives: true },
+          data: {
+            name: reportName,
+            mimeType: 'application/vnd.google-apps.spreadsheet',
+            parents: [reportsFolder.id],
+          },
+          retry: true,
+        });
+        spreadsheetId = String(created.data?.id || '');
+      }
     }
     if (!spreadsheetId) throw new Error('Google Drive did not create the audit Sheet.');
-    const tabTitle = 'سجل التدقيق';
     const metadata = await request({
       method: 'GET',
       url: `${SHEETS_API}/${encodeURIComponent(spreadsheetId)}`,
@@ -599,6 +612,72 @@ function createGoogleSheetsIntegration({ env = process.env, authClient } = {}) {
     });
   }
 
+  async function moveWorkspaceDriveFile({ oldParentFolderId, newParentFolderId, fileId }) {
+    await workspaceDriveChildMetadata(oldParentFolderId, fileId);
+    const destinationId = assertGoogleId(newParentFolderId, 'Destination folder id');
+    const response = await request({
+      method: 'PATCH',
+      url: `${DRIVE_API}/files/${encodeURIComponent(assertGoogleId(fileId, 'Drive file id'))}`,
+      params: {
+        addParents: destinationId,
+        removeParents: assertGoogleId(oldParentFolderId, 'Drive folder id'),
+        fields: 'id,name,mimeType,size,modifiedTime,webViewLink,parents',
+        supportsAllDrives: true,
+      },
+      retry: true,
+    });
+    return response.data || {};
+  }
+
+  async function copyWorkspaceDriveFile({ parentFolderId, destinationFolderId, fileId, name }) {
+    const metadata = await workspaceDriveChildMetadata(parentFolderId, fileId);
+    if (metadata.mimeType === 'application/vnd.google-apps.folder') {
+      const error = new Error('Drive folders cannot be copied from the app.');
+      error.code = 'validation';
+      throw error;
+    }
+    const destinationId = assertGoogleId(destinationFolderId, 'Destination folder id');
+    const response = await request({
+      method: 'POST',
+      url: `${DRIVE_API}/files/${encodeURIComponent(assertGoogleId(fileId, 'Drive file id'))}/copy`,
+      params: {
+        fields: 'id,name,mimeType,size,modifiedTime,webViewLink,parents',
+        supportsAllDrives: true,
+      },
+      data: {
+        parents: [destinationId],
+        ...(String(name || '').trim() ? { name: safeFolderName(name, metadata.name || 'Copy') } : {}),
+      },
+      retry: true,
+    });
+    return response.data || {};
+  }
+
+  async function restoreWorkspaceDriveFile({ parentFolderId, fileId }) {
+    const folderId = assertGoogleId(parentFolderId, 'Drive folder id');
+    const id = assertGoogleId(fileId, 'Drive file id');
+    const metadataResponse = await request({
+      method: 'GET',
+      url: `${DRIVE_API}/files/${encodeURIComponent(id)}`,
+      params: { fields: 'id,name,mimeType,parents,trashed', supportsAllDrives: true },
+      retry: true,
+    });
+    const metadata = metadataResponse.data || {};
+    if (!Array.isArray(metadata.parents) || !metadata.parents.includes(folderId)) {
+      const error = new Error('Drive file is outside the assigned folder.');
+      error.code = 'forbidden';
+      throw error;
+    }
+    const response = await request({
+      method: 'PATCH',
+      url: `${DRIVE_API}/files/${encodeURIComponent(id)}`,
+      params: { fields: 'id,name,mimeType,size,modifiedTime,webViewLink,parents', supportsAllDrives: true },
+      data: { trashed: false },
+      retry: true,
+    });
+    return response.data || {};
+  }
+
   async function discoverWorkspaceTree(rawRootFolderId) {
     const rootFolderId = assertGoogleId(rawRootFolderId, 'Workspace root folder id');
     const output = [];
@@ -645,7 +724,14 @@ function createGoogleSheetsIntegration({ env = process.env, authClient } = {}) {
           if (output.length >= 1500) break;
           const name = String(file.name || '').trim();
           if (!file.id || !name) continue;
-          const item = { ...file, path: current.path ? `${current.path}/${name}` : name };
+          // Keep the direct parent ID as well as the human-readable path.  The
+          // workspace index uses this to rebuild the real Drive hierarchy; a
+          // path alone cannot safely distinguish folders with the same name.
+          const item = {
+            ...file,
+            parentExternalId: current.id,
+            path: current.path ? `${current.path}/${name}` : name,
+          };
           output.push(item);
           if (file.mimeType === 'application/vnd.google-apps.folder') {
             queue.push({ id: file.id, path: item.path });
@@ -920,7 +1006,15 @@ function createGoogleSheetsIntegration({ env = process.env, authClient } = {}) {
   // test-sheet methods above, the spreadsheet/folder id is supplied by a
   // Firestore resource record after the server has checked the caller's
   // workspace grant.  IDs never travel back to the Flutter client.
-  async function readWorkspaceSheet({ spreadsheetId, tabName = '', headerRow = 1 }) {
+  async function readWorkspaceSheet({
+    spreadsheetId,
+    tabName = '',
+    headerRow = 1,
+    startRow,
+    startColumn = 1,
+    rowCount,
+    columnCount,
+  }) {
     const id = assertGoogleId(spreadsheetId, 'Spreadsheet id');
     const metadata = await request({
       method: 'GET',
@@ -935,35 +1029,64 @@ function createGoogleSheetsIntegration({ env = process.env, authClient } = {}) {
     if (!selectedTab || !tabs.includes(selectedTab)) {
       throw new Error('The configured Sheet tab was not found.');
     }
+    const selectedProperties = (metadata.data?.sheets || []).find(
+      (sheet) => String(sheet.properties?.title || '') === selectedTab,
+    )?.properties || {};
     const safeHeaderRow = Math.max(1, Math.min(Number(headerRow) || 1, 50));
-    const range = `${quotedTab(selectedTab)}!A1:ZZ`;
-    const response = await request({
+    const safeStartRow = Math.max(safeHeaderRow + 1, Math.min(Number(startRow) || safeHeaderRow + 1, 100000));
+    const safeStartColumn = Math.max(1, Math.min(Number(startColumn) || 1, 702));
+    // The legacy editor retains a 500-row default while the V2 caller opts
+    // into a smaller viewport. Both paths are now bounded provider requests.
+    const safeRowCount = Math.max(1, Math.min(Number(rowCount) || 500, 500));
+    const headerRange = `${quotedTab(selectedTab)}!A${safeHeaderRow}:ZZ${safeHeaderRow}`;
+    const headerResponse = await request({
       method: 'GET',
-      url: `${SHEETS_API}/${encodeURIComponent(id)}/values/${encodeURIComponent(range)}`,
+      url: `${SHEETS_API}/${encodeURIComponent(id)}/values/${encodeURIComponent(headerRange)}`,
       params: { majorDimension: 'ROWS', valueRenderOption: 'FORMATTED_VALUE' },
       retry: true,
     });
-    const values = response.data?.values || [];
-    const headers = (values[safeHeaderRow - 1] || []).map((value, index) => {
+    const suppliedHeaders = (headerResponse.data?.values?.[0] || []).map((value, index) => {
       const valueText = String(value || '').trim();
       return valueText || `column_${index + 1}`;
     });
-    const lastRow = Math.max(safeHeaderRow, Math.min(values.length, 501));
-    const lastColumn = Math.max(1, Math.min(headers.length || 1, 702));
-    const gridRange = `${quotedTab(selectedTab)}!A1:${columnName(lastColumn - 1)}${lastRow}`;
-    const grid = await request({
+    // Old callers do not pass a viewport width.  Do not accidentally render
+    // every possible Google Sheet column for them; use the populated header
+    // width. V2 always passes an explicit, bounded column count.
+    const requestedColumnCount = Number(columnCount);
+    const safeColumnCount = Math.max(1, Math.min(
+      Number.isFinite(requestedColumnCount) && requestedColumnCount > 0
+        ? requestedColumnCount
+        : Math.max(1, suppliedHeaders.length),
+      702,
+    ));
+    const knownColumnCount = Number(selectedProperties.gridProperties?.columnCount || 1);
+    const lastColumn = Math.max(safeStartColumn, Math.min(
+      safeStartColumn + safeColumnCount - 1, knownColumnCount || 1, 702,
+    ));
+    const headers = Array.from({ length: Math.max(suppliedHeaders.length, lastColumn) }, (_, index) =>
+      suppliedHeaders[index] || `column_${index + 1}`,
+    );
+    const lastRow = Math.min(safeStartRow + safeRowCount - 1, 100000);
+    const headerGridRange = `${quotedTab(selectedTab)}!A${safeHeaderRow}:${columnName(lastColumn - 1)}${safeHeaderRow}`;
+    const gridRange = `${quotedTab(selectedTab)}!${columnName(safeStartColumn - 1)}${safeStartRow}:${columnName(lastColumn - 1)}${lastRow}`;
+    const readGrid = async (range) => request({
       method: 'GET',
       url: `${SHEETS_API}/${encodeURIComponent(id)}`,
       params: {
-        ranges: gridRange,
+        ranges: range,
         includeGridData: true,
-        fields: 'sheets(properties(title),merges,data(startRow,startColumn,rowData(values(formattedValue,effectiveValue,userEnteredValue,note,hyperlink,dataValidation,userEnteredFormat(backgroundColor,textFormat,horizontalAlignment,verticalAlignment,wrapStrategy,numberFormat),effectiveFormat(backgroundColor,textFormat,horizontalAlignment,verticalAlignment,wrapStrategy,numberFormat)))))',
+        fields: 'sheets(properties(title,gridProperties(rowCount,columnCount)),merges,data(startRow,startColumn,rowData(values(formattedValue,effectiveValue,userEnteredValue,note,hyperlink,dataValidation,userEnteredFormat(backgroundColor,textFormat,horizontalAlignment,verticalAlignment,wrapStrategy,numberFormat),effectiveFormat(backgroundColor,textFormat,horizontalAlignment,verticalAlignment,wrapStrategy,numberFormat)))))',
       },
       retry: true,
     });
+    const [headerGrid, grid] = await Promise.all([readGrid(headerGridRange), readGrid(gridRange)]);
+    const headerGridSheet = (headerGrid.data?.sheets || []).find(
+      (item) => String(item.properties?.title || '') === selectedTab,
+    );
     const gridSheet = (grid.data?.sheets || []).find(
       (item) => String(item.properties?.title || '') === selectedTab,
     );
+    const headerData = headerGridSheet?.data?.[0]?.rowData?.[0]?.values || [];
     const rowData = gridSheet?.data?.[0]?.rowData || [];
     const colorHex = (color) => {
       if (!color || typeof color !== 'object') return null;
@@ -1005,16 +1128,70 @@ function createGoogleSheetsIntegration({ env = process.env, authClient } = {}) {
         validationStrict: validation.strict === true,
       };
     };
-    const headerCells = headers.map((_, column) => cellMetadata(rowData[safeHeaderRow - 1]?.values?.[column]));
-    const rows = values.slice(safeHeaderRow, safeHeaderRow + 500).map((row, index) => {
-      const dataRow = rowData[safeHeaderRow + index]?.values || [];
+    const visibleHeaders = headers.slice(safeStartColumn - 1, lastColumn);
+    const headerCells = visibleHeaders.map((_, column) => cellMetadata(headerData[safeStartColumn - 1 + column]));
+    const rows = rowData.map((dataRow, index) => {
+      const cells = dataRow?.values || [];
       return {
-        rowNumber: safeHeaderRow + index + 1,
-        values: Object.fromEntries(headers.map((header, column) => [header, row[column] ?? ''])),
-        cells: Object.fromEntries(headers.map((header, column) => [header, cellMetadata(dataRow[column])])),
+        rowNumber: safeStartRow + index,
+        values: Object.fromEntries(visibleHeaders.map((header, column) => [header, cells[column]?.formattedValue ?? ''])),
+        cells: Object.fromEntries(visibleHeaders.map((header, column) => [header, cellMetadata(cells[column])])),
       };
     });
-    return { tabName: selectedTab, headers, headerCells, rows, tabs, merges: gridSheet?.merges || [] };
+    return {
+      tabName: selectedTab,
+      headers: visibleHeaders,
+      headerCells,
+      rows,
+      tabs,
+      merges: gridSheet?.merges || [],
+      viewport: {
+        startRow: safeStartRow,
+        startColumn: safeStartColumn,
+        rowCount: safeRowCount,
+        columnCount: visibleHeaders.length,
+        totalRows: Number(gridSheet?.properties?.gridProperties?.rowCount || selectedProperties.gridProperties?.rowCount || 0),
+        totalColumns: Number(gridSheet?.properties?.gridProperties?.columnCount || knownColumnCount || 0),
+      },
+      // Sheets does not expose a per-range revision token. Bind the client
+      // version to the returned viewport so a stale edit is detected before
+      // the next mutation, without leaking provider revision metadata.
+      version: crypto.createHash('sha256').update(JSON.stringify({
+        tab: selectedTab,
+        startRow: safeStartRow,
+        startColumn: safeStartColumn,
+        headerData,
+        rowData,
+        merges: gridSheet?.merges || [],
+      })).digest('hex'),
+    };
+  }
+
+  async function updateWorkspaceSheetCells({ spreadsheetId, tabName, cells }) {
+    const id = assertGoogleId(spreadsheetId, 'Spreadsheet id');
+    if (!Array.isArray(cells) || !cells.length || cells.length > 500) {
+      throw new Error('Sheet cell update is invalid.');
+    }
+    const data = cells.map((cell) => {
+      const row = Number(cell?.row);
+      const column = Number(cell?.column);
+      const value = String(cell?.value ?? '');
+      if (!Number.isInteger(row) || row < 1 || row > 100000 ||
+          !Number.isInteger(column) || column < 1 || column > 702 || value.length > 10000) {
+        throw new Error('Sheet cell update is invalid.');
+      }
+      return {
+        range: `${quotedTab(tabName)}!${columnName(column - 1)}${row}`,
+        majorDimension: 'ROWS',
+        values: [[value]],
+      };
+    });
+    await request({
+      method: 'POST',
+      url: `${SHEETS_API}/${encodeURIComponent(id)}/values:batchUpdate`,
+      data: { valueInputOption: 'USER_ENTERED', data },
+      retry: true,
+    });
   }
 
   async function workspaceSheetProperties(spreadsheetId, tabName) {
@@ -1148,6 +1325,42 @@ function createGoogleSheetsIntegration({ env = process.env, authClient } = {}) {
         ],
       },
       retry: true,
+    });
+  }
+
+  async function configureWorkspaceSheetFilter({ spreadsheetId, tabName, operation, startRow, endRow, startColumn, endColumn, sortColumn, descending = false }) {
+    const { id, properties } = await workspaceSheetProperties(spreadsheetId, tabName);
+    if (operation === 'clear_filter') {
+      await request({
+        method: 'POST', url: `${SHEETS_API}/${encodeURIComponent(id)}:batchUpdate`,
+        data: { requests: [{ clearBasicFilter: { sheetId: properties.sheetId } }] }, retry: true,
+      });
+      return;
+    }
+    const values = [startRow, endRow, startColumn, endColumn].map(Number);
+    if (!values.every(Number.isInteger) || values[0] < 1 || values[1] < values[0] ||
+        values[2] < 1 || values[3] < values[2] || values[1] > 100000 || values[3] > 702) {
+      throw new Error('Sheet filter range is invalid.');
+    }
+    const range = {
+      sheetId: properties.sheetId,
+      startRowIndex: values[0] - 1,
+      endRowIndex: values[1],
+      startColumnIndex: values[2] - 1,
+      endColumnIndex: values[3],
+    };
+    const requestBody = operation === 'set_filter'
+      ? { setBasicFilter: { filter: { range } } }
+      : operation === 'sort_range'
+        ? { sortRange: {
+          range,
+          sortSpecs: [{ dimensionIndex: Math.max(0, Math.min(Number(sortColumn) || values[2], 702) - 1), sortOrder: descending ? 'DESCENDING' : 'ASCENDING' }],
+        } }
+        : null;
+    if (!requestBody) throw new Error('Sheet filter operation is invalid.');
+    await request({
+      method: 'POST', url: `${SHEETS_API}/${encodeURIComponent(id)}:batchUpdate`,
+      data: { requests: [requestBody] }, retry: true,
     });
   }
 
@@ -1286,14 +1499,19 @@ function createGoogleSheetsIntegration({ env = process.env, authClient } = {}) {
     uploadWorkspaceDriveFile,
     renameWorkspaceDriveFile,
     trashWorkspaceDriveFile,
+    moveWorkspaceDriveFile,
+    copyWorkspaceDriveFile,
+    restoreWorkspaceDriveFile,
     discoverWorkspaceTree,
     ensureCompanyWorkspaceStructure,
     downloadDriveFile,
     createDriveTestFile,
     readWorkspaceSheet,
+    updateWorkspaceSheetCells,
     updateWorkspaceSheetRow,
     formatWorkspaceSheetRange,
     changeWorkspaceSheetStructure,
+    configureWorkspaceSheetFilter,
     changeWorkspaceSheetTab,
   };
 }

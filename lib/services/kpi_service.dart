@@ -10,6 +10,7 @@ import 'audit_log_service.dart';
 
 class KpiService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
+  final Map<String, Stream<List<EmployeeKpiModel>>> _managedKpiStreams = {};
 
   Stream<List<KpiTemplateModel>> watchTemplates({
     bool includeInactive = false,
@@ -163,6 +164,43 @@ class KpiService {
   }
 
   Stream<List<EmployeeKpiModel>> watchManagedKpis(
+    UserModel reviewer,
+    String monthKey,
+  ) {
+    final cacheKey = '${reviewer.uid}|${reviewer.role}|$monthKey';
+    return _managedKpiStreams.putIfAbsent(
+      cacheKey,
+      () => _shareWhileListened(
+        () => _createManagedKpiStream(reviewer, monthKey),
+      ),
+    );
+  }
+
+  /// The KPI management page has several tabs that need the same selected
+  /// month. Sharing one active listener prevents every tab from opening an
+  /// identical Firestore subscription. The upstream listener is cancelled as
+  /// soon as the final consumer leaves, so cached stream objects do not keep
+  /// billed listeners alive in the background.
+  Stream<T> _shareWhileListened<T>(Stream<T> Function() create) {
+    StreamSubscription<T>? upstream;
+    late final StreamController<T> controller;
+    controller = StreamController<T>.broadcast(
+      onListen: () {
+        upstream ??= create().listen(
+          controller.add,
+          onError: controller.addError,
+          onDone: controller.close,
+        );
+      },
+      onCancel: () async {
+        await upstream?.cancel();
+        upstream = null;
+      },
+    );
+    return controller.stream;
+  }
+
+  Stream<List<EmployeeKpiModel>> _createManagedKpiStream(
     UserModel reviewer,
     String monthKey,
   ) {

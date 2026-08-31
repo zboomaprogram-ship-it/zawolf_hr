@@ -15,6 +15,19 @@ function asRevision(value) {
   return Number.isInteger(value) && value >= 0 ? value : 0;
 }
 
+function boundedMinutes(value, fallback, min = 1, max = 180) {
+  const number = Number(value);
+  return Number.isFinite(number) && number >= min && number <= max
+    ? Math.round(number)
+    : fallback;
+}
+
+function validClock(value, fallback) {
+  return typeof value === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(value)
+    ? value
+    : fallback;
+}
+
 function normalizePolicy(data) {
   return {
     enabled: asBoolean(data?.enabled),
@@ -23,6 +36,9 @@ function normalizePolicy(data) {
     changedByUserId: typeof data?.changedByUserId === 'string' ? data.changedByUserId : null,
     changedByRole: typeof data?.changedByRole === 'string' ? data.changedByRole : null,
     reason: typeof data?.reason === 'string' ? data.reason : null,
+    autoCheckoutReturnGraceMinutes: boundedMinutes(data?.autoCheckoutReturnGraceMinutes, 15),
+    companyBreakStartTime: validClock(data?.companyBreakStartTime, '13:00'),
+    companyBreakEndTime: validClock(data?.companyBreakEndTime, '14:00'),
   };
 }
 
@@ -89,7 +105,10 @@ async function resolveCheckoutPolicyAt(db, effectiveAt) {
   }
 }
 
-async function updateCheckoutPolicy({ db, admin, actor, enabled, expectedRevision, reason = '' }) {
+async function updateCheckoutPolicy({
+  db, admin, actor, enabled, expectedRevision, reason = '',
+  autoCheckoutReturnGraceMinutes, companyBreakStartTime, companyBreakEndTime,
+}) {
   if (!canManageCheckoutPolicy(actor)) {
     const error = new Error('لا تملك صلاحية التحكم في تسجيل الانصراف.');
     error.code = 'not_authorized';
@@ -119,6 +138,12 @@ async function updateCheckoutPolicy({ db, admin, actor, enabled, expectedRevisio
       changedByUserId: actor.uid,
       changedByRole: String(actor.role || ''),
       reason: safeReason || null,
+      autoCheckoutReturnGraceMinutes: boundedMinutes(
+        autoCheckoutReturnGraceMinutes,
+        previous.autoCheckoutReturnGraceMinutes,
+      ),
+      companyBreakStartTime: validClock(companyBreakStartTime, previous.companyBreakStartTime),
+      companyBreakEndTime: validClock(companyBreakEndTime, previous.companyBreakEndTime),
       updatedAt: now,
     };
     const eventRef = ref.collection(EVENTS_COLLECTION).doc();

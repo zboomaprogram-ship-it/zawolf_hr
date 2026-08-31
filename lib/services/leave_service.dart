@@ -81,6 +81,58 @@ class LeaveService {
         );
   }
 
+  /// Counts only scheduled working days. The default employee schedule already
+  /// treats Friday as a weekly day off; active company days off are also
+  /// excluded. Keeping this calculation in the service prevents a browser
+  /// client from charging a leave balance for a non-working day.
+  static int countChargeableDays({
+    required DateTime start,
+    required DateTime end,
+    required WorkSchedule schedule,
+    Set<String> companyDayOffKeys = const <String>{},
+  }) {
+    var count = 0;
+    var cursor = DateTime(start.year, start.month, start.day);
+    final last = DateTime(end.year, end.month, end.day);
+    while (!cursor.isAfter(last)) {
+      final key =
+          '${cursor.year.toString().padLeft(4, '0')}-'
+          '${cursor.month.toString().padLeft(2, '0')}-'
+          '${cursor.day.toString().padLeft(2, '0')}';
+      if (schedule.isWorkDay(cursor) && !companyDayOffKeys.contains(key)) {
+        count++;
+      }
+      cursor = cursor.add(const Duration(days: 1));
+    }
+    return count;
+  }
+
+  Future<int> _chargeableDays(LeaveModel request, UserModel employee) async {
+    final startKey =
+        '${request.startDate.year.toString().padLeft(4, '0')}-'
+        '${request.startDate.month.toString().padLeft(2, '0')}-'
+        '${request.startDate.day.toString().padLeft(2, '0')}';
+    final endKey =
+        '${request.endDate.year.toString().padLeft(4, '0')}-'
+        '${request.endDate.month.toString().padLeft(2, '0')}-'
+        '${request.endDate.day.toString().padLeft(2, '0')}';
+    final dayOffs = await _db
+        .collection('companyDayOffs')
+        .where('date', isGreaterThanOrEqualTo: startKey)
+        .where('date', isLessThanOrEqualTo: endKey)
+        .get();
+    final keys = dayOffs.docs
+        .where((doc) => doc.data()['isActive'] == true)
+        .map((doc) => (doc.data()['date'] as String? ?? doc.id).trim())
+        .toSet();
+    return countChargeableDays(
+      start: request.startDate,
+      end: request.endDate,
+      schedule: employee.workSchedule,
+      companyDayOffKeys: keys,
+    );
+  }
+
   String _attachmentContentType(String pathOrExtension) {
     final extension = pathOrExtension.split('.').last.trim().toLowerCase();
     switch (extension) {
@@ -253,6 +305,31 @@ class LeaveService {
   // Submit leave request
   Future<void> submitLeaveRequest(LeaveModel req, UserModel employee) async {
     validateRequest(req);
+    final chargedDays = await _chargeableDays(req, employee);
+    if (chargedDays == 0) {
+      throw Exception(
+        'الفترة المحددة لا تحتوي أيام عمل؛ لا يلزم طلب إجازة لها.',
+      );
+    }
+    final normalizedRequest = LeaveModel(
+      leaveId: req.leaveId,
+      userId: req.userId,
+      employeeId: req.employeeId,
+      employeeName: req.employeeName,
+      department: req.department,
+      locationId: req.locationId,
+      managerId: req.managerId,
+      leaveType: req.leaveType,
+      startDate: req.startDate,
+      endDate: req.endDate,
+      numberOfDays: chargedDays,
+      reason: req.reason,
+      attachmentUrl: req.attachmentUrl,
+      workHandoverTo: req.workHandoverTo,
+      status: req.status,
+      submittedAt: req.submittedAt,
+    );
+    req = normalizedRequest;
     final approvalPolicy = await _approvalPolicyService.getPolicy();
     if (req.leaveType != LeaveTypePolicy.unpaid &&
         employee.hiringDate == null) {

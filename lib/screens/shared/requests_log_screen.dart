@@ -12,6 +12,9 @@ import '../../services/request_log_service.dart';
 import '../../theme/theme.dart';
 import '../../utils/csv_file_download.dart';
 import '../../utils/payroll_cycle.dart';
+import '../../design_system/components/feedback_states.dart'
+    show EmptyState, ErrorState;
+import '../../design_system/components/skeletons.dart' show SkeletonList;
 
 class RequestsLogScreen extends StatefulWidget {
   const RequestsLogScreen({super.key});
@@ -187,8 +190,9 @@ class _RequestsLogScreenState extends State<RequestsLogScreen> {
         future: _logsFuture,
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(
-              child: CircularProgressIndicator(color: ZaWolfColors.primaryCyan),
+            return const Padding(
+              padding: EdgeInsets.all(16),
+              child: SkeletonList(itemCount: 5, itemHeight: 96),
             );
           }
           if (snapshot.hasError) {
@@ -309,39 +313,42 @@ class _PeriodSelector extends StatelessWidget {
             onSelectionChanged: (values) => onModeChanged(values.first),
           ),
           if (!allTime)
-            Row(
-              children: [
-                IconButton(
-                  tooltip: 'الدورة السابقة',
-                  onPressed: onPrevious,
-                  icon: const Icon(Icons.chevron_right),
-                ),
-                Expanded(
-                  child: Column(
-                    children: [
-                      Text(
-                        'دورة ${cycle.key}',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      Text(
-                        cycle.arabicRangeLabel,
-                        style: const TextStyle(
-                          color: ZaWolfColors.primaryCyan,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ],
+            Directionality(
+              textDirection: TextDirection.rtl,
+              child: Row(
+                children: [
+                  IconButton(
+                    tooltip: 'الدورة السابقة',
+                    onPressed: onPrevious,
+                    icon: const Icon(Icons.chevron_right),
                   ),
-                ),
-                IconButton(
-                  tooltip: 'الدورة التالية',
-                  onPressed: isCurrent ? null : onNext,
-                  icon: const Icon(Icons.chevron_left),
-                ),
-              ],
+                  Expanded(
+                    child: Column(
+                      children: [
+                        Text(
+                          'دورة ${cycle.key}',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        Text(
+                          cycle.arabicRangeLabel,
+                          style: const TextStyle(
+                            color: ZaWolfColors.primaryCyan,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'الدورة التالية',
+                    onPressed: isCurrent ? null : onNext,
+                    icon: const Icon(Icons.chevron_left),
+                  ),
+                ],
+              ),
             )
           else
             const Padding(
@@ -705,28 +712,21 @@ class _RequestLogCard extends StatelessWidget {
     'permission' => Icons.access_time,
     'advance' => Icons.payments_outlined,
     'administrative' => Icons.assignment_outlined,
-    'resignation' => Icons.logout,
+    'resignation' => Icons.meeting_room_outlined,
     _ => Icons.description_outlined,
   };
 }
 
+/// Backward-compatible wrappers over the shared design-system states so the
+/// screen satisfies the five-state contract without changing its call sites.
 class _EmptyState extends StatelessWidget {
   const _EmptyState();
 
   @override
   Widget build(BuildContext context) {
-    return const Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(Icons.manage_search, color: ZaWolfColors.textMuted, size: 56),
-          SizedBox(height: 12),
-          Text(
-            'لا توجد طلبات مطابقة للفلاتر.',
-            style: TextStyle(color: ZaWolfColors.textMuted),
-          ),
-        ],
-      ),
+    return const EmptyState(
+      title: 'لا توجد طلبات مطابقة للفلاتر.',
+      icon: Icons.manage_search,
     );
   }
 }
@@ -738,21 +738,9 @@ class _ErrorState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          const Icon(Icons.error_outline, color: ZaWolfColors.error, size: 48),
-          const SizedBox(height: 12),
-          const Text('تعذر تحميل سجل الطلبات الآن.'),
-          const SizedBox(height: 10),
-          OutlinedButton.icon(
-            onPressed: onRetry,
-            icon: const Icon(Icons.refresh),
-            label: const Text('إعادة المحاولة'),
-          ),
-        ],
-      ),
+    return ErrorState(
+      message: 'تعذر تحميل سجل الطلبات الآن.',
+      onRetry: onRetry,
     );
   }
 }

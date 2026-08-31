@@ -1581,6 +1581,11 @@ service cloud.firestore {
       allow create, update, delete: if isAuth() && isActive() && isHR();
     }
 
+    match /custom_org_trees/{treeId} {
+      allow read: if isAuth() && isActive();
+      allow create, update, delete: if isAuth() && isActive() && isHR();
+    }
+
     match /job_titles/{jobTitleId} {
       allow read: if isAuth() && isActive();
       allow create, update, delete: if isAuth() && isActive() && isHR();
@@ -1754,7 +1759,7 @@ service cloud.firestore {
         leaveCeoReview() ||
         (isHR() || uid() in resource.data.get('managerIds', []) || resource.data.managerId == uid())
       );
-      allow delete: if isAuth() && isActive() && isHR();
+      allow delete: if isAuth() && isActive() && (isHR() || canActAsApprovalManager());
     }
 
     match /permissions/{permissionId} {
@@ -1846,7 +1851,7 @@ service cloud.firestore {
         permissionManagerReview() ||
         (isHR() || uid() in resource.data.get('managerIds', []) || resource.data.managerId == uid())
       );
-      allow delete: if isAuth() && isActive() && isHR();
+      allow delete: if isAuth() && isActive() && (isHR() || canActAsApprovalManager());
     }
 
     match /resignations/{resignationId} {
@@ -2009,7 +2014,7 @@ service cloud.firestore {
           && request.resource.data.reviewedBy == uid()
         )
       );
-      allow delete: if isAuth() && isActive() && isHRManagerRole();
+      allow delete: if isAuth() && isActive() && (isHR() || canActAsApprovalManager());
     }
 
     match /fieldAssignments/{assignmentId} {
@@ -2207,8 +2212,18 @@ service cloud.firestore {
     }
 
     match /salesKpiSummaries/{summaryId} {
-      allow read: if isAuth() && isActive() && isManagerOrAbove();
+      allow read: if isAuth() && isActive();
       allow write: if false;
+    }
+
+    match /salesKpiSnapshots/{snapshotId} {
+      allow read: if isAuth() && isActive();
+      allow write: if isAuth() && isActive() && isHR();
+    }
+
+    match /salesIdentityMappings/{mappingId} {
+      allow read: if isAuth() && isActive();
+      allow create, update, delete: if isAuth() && isActive() && isHR();
     }
 
     match /salesKpiSettings/{settingsId} {
@@ -2466,7 +2481,7 @@ service cloud.firestore {
 
     match /workspaceAuditLogs/{auditId} {
       allow read: if isAuth() && isActive() && (
-        isWorkspaceController() || (isManagerRole() && resource.data.managerId == uid())
+        isWorkspaceController() || isHR() || (isManagerRole() && resource.data.managerId == uid())
       );
       allow create: if isAuth() && isActive()
         && request.resource.data.actorId == uid()
@@ -2494,6 +2509,31 @@ service cloud.firestore {
         uid() in resource.data.get('managerIds', [])
       );
       allow delete: if isAuth() && isActive() && isSuperAdmin();
+    }
+
+    match /it_tickets/{ticketId} {
+      allow read: if isAuth() && isActive() && (
+        resource.data.requesterUid == uid() || isHR() || isWorkspaceItManager()
+      );
+      allow create: if isAuth() && isActive() && request.resource.data.requesterUid == uid();
+      allow update, delete: if isAuth() && isActive() && (
+        resource.data.requesterUid == uid() || isHR() || isWorkspaceItManager()
+      );
+    }
+
+    match /knowledge_articles/{articleId} {
+      allow read: if isAuth() && isActive();
+      allow write: if isAuth() && isActive() && (isHR() || isWorkspaceItManager());
+    }
+
+    match /company_assets/{assetId} {
+      allow read: if isAuth() && isActive();
+      allow write: if isAuth() && isActive() && (isHR() || isWorkspaceItManager());
+    }
+
+    match /software_licenses/{licenseId} {
+      allow read: if isAuth() && isActive();
+      allow write: if isAuth() && isActive() && (isHR() || isWorkspaceItManager());
     }
   }
 }

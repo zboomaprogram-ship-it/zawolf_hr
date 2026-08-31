@@ -139,8 +139,12 @@ class AdvanceService {
   Stream<List<AdvanceModel>> watchTeamAdvances(UserModel reviewer) {
     Query<Map<String, dynamic>> query = _db.collection('advances');
 
-    if (reviewer.role == EmployeeRole.manager) {
-      query = query.where('managerId', isEqualTo: reviewer.uid);
+    final isCompanyCeo = reviewer.employeeId.trim().toUpperCase() == 'CEO-100';
+    if (isCompanyCeo || reviewer.role == EmployeeRole.manager) {
+      // CEO-100 can be the assigned manager while holding an HR role.
+      query = query
+          .where('status', isEqualTo: 'pending_manager')
+          .where('managerId', isEqualTo: reviewer.uid);
     }
 
     return query.orderBy('submittedAt', descending: true).snapshots().map((

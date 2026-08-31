@@ -3,6 +3,8 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../services/app_security_policy_service.dart';
 import '../theme/theme.dart';
+import '../core/feature_flags/required_update_state.dart';
+import '../services/safe_diagnostics_service.dart';
 
 class RequiredUpdateScreen extends StatelessWidget {
   final AppSecurityStatus status;
@@ -17,6 +19,12 @@ class RequiredUpdateScreen extends StatelessWidget {
   Future<void> _openStore(BuildContext context) async {
     final url = status.policy.storeUrlForCurrentPlatform().trim();
     if (url.isEmpty || !await launchUrl(Uri.parse(url))) {
+      await SafeDiagnosticsService.instance.capture(
+        feature: 'required_update',
+        safeCode: 'temporarily_unavailable',
+        operation: 'open_store',
+        surface: 'required_update',
+      );
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('تعذر فتح صفحة التحديث. تواصل مع HR.')),
@@ -26,7 +34,9 @@ class RequiredUpdateScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final unavailable = !status.policyVerified;
+    final viewState = requiredUpdateViewState(status);
+    final unavailable = viewState == RequiredUpdateViewState.policyUnavailable;
+    final unsupported = viewState == RequiredUpdateViewState.unsupportedRelease;
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       theme: ZaWolfTheme.darkTheme,
@@ -45,6 +55,8 @@ class RequiredUpdateScreen extends StatelessWidget {
                       Icon(
                         unavailable
                             ? Icons.cloud_off_outlined
+                            : unsupported
+                            ? Icons.mobile_off_outlined
                             : Icons.security_update_good_outlined,
                         size: 72,
                         color: unavailable
@@ -55,6 +67,8 @@ class RequiredUpdateScreen extends StatelessWidget {
                       Text(
                         unavailable
                             ? 'تعذر التحقق من الإصدار'
+                            : unsupported
+                            ? 'هذا الإصدار لم يعد مدعوماً'
                             : 'تحديث أمني مطلوب',
                         style: Theme.of(context).textTheme.headlineMedium,
                         textAlign: TextAlign.center,
@@ -63,6 +77,8 @@ class RequiredUpdateScreen extends StatelessWidget {
                       Text(
                         unavailable
                             ? 'تعذر الاتصال بسياسة أمان التطبيق. تحقق من الإنترنت ثم أعد المحاولة.'
+                            : unsupported
+                            ? 'لا توجد حزمة تحديث متاحة لهذا الجهاز حالياً. تواصل مع مسؤول النظام لمعرفة الإصدار المدعوم.'
                             : status.policy.messageAr,
                         style: Theme.of(context).textTheme.bodyLarge,
                         textAlign: TextAlign.center,
@@ -73,7 +89,7 @@ class RequiredUpdateScreen extends StatelessWidget {
                         style: Theme.of(context).textTheme.bodySmall,
                       ),
                       const SizedBox(height: 28),
-                      if (!unavailable)
+                      if (!unavailable && !unsupported)
                         SizedBox(
                           width: double.infinity,
                           child: FilledButton.icon(
@@ -82,12 +98,28 @@ class RequiredUpdateScreen extends StatelessWidget {
                             label: const Text('تحديث التطبيق'),
                           ),
                         ),
-                      SizedBox(height: unavailable ? 20 : 10),
+                      SizedBox(height: unavailable || unsupported ? 20 : 10),
                       OutlinedButton.icon(
-                        onPressed: onRetry,
+                        onPressed: () {
+                          if (unavailable || unsupported) {
+                            SafeDiagnosticsService.instance.capture(
+                              feature: 'required_update',
+                              safeCode: unavailable
+                                  ? 'temporarily_unavailable'
+                                  : 'validation_failed',
+                              operation: 'retry_policy',
+                              surface: 'required_update',
+                            );
+                          }
+                          onRetry();
+                        },
                         icon: const Icon(Icons.refresh),
                         label: Text(
-                          unavailable ? 'إعادة الاتصال' : 'تحقق مرة أخرى',
+                          unavailable
+                              ? 'إعادة الاتصال'
+                              : unsupported
+                              ? 'التحقق من توفر إصدار جديد'
+                              : 'تحقق مرة أخرى',
                         ),
                       ),
                     ],

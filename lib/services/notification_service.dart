@@ -4,6 +4,10 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/notification_route_policy.dart';
 import 'daily_reminder_service.dart';
+import 'safe_diagnostics_service.dart';
+
+typedef AuthorizedNotificationRouteResolver =
+    Future<String?> Function(String notificationId);
 
 class NotificationService {
   NotificationService._internal();
@@ -18,6 +22,7 @@ class NotificationService {
   final StreamController<String> _onNotificationTap =
       StreamController<String>.broadcast();
   Stream<String> get onNotificationTap => _onNotificationTap.stream;
+  AuthorizedNotificationRouteResolver? _authorizedRouteResolver;
 
   // Initial route if app was launched via notification
   String? initialRoute;
@@ -31,7 +36,7 @@ class NotificationService {
     final candidate = route?.trim() ?? '';
     if (candidate.isEmpty) return fallback;
     final uri = Uri.tryParse(candidate);
-    if (uri == null || !_supportedNotificationPaths.contains(uri.path)) {
+    if (uri == null || !_isSupportedNotificationPath(uri.path)) {
       return fallback;
     }
     return candidate;
@@ -49,12 +54,54 @@ class NotificationService {
     '/employee/payroll',
     '/employee/deductions',
     '/manager/requests',
+    '/company-os',
   };
+
+  bool _isSupportedNotificationPath(String path) {
+    if (_supportedNotificationPaths.contains(path)) return true;
+    return RegExp(
+      r'^/(?:employee/requests|manager/requests|hr/requests|requests)/operational/[A-Za-z0-9_.:-]{1,128}$',
+    ).hasMatch(path);
+  }
 
   void handleRemoteNotificationRoute(String? route) {
     final destination = safeRoute(route);
     initialRoute = destination;
     _onNotificationTap.add(destination);
+  }
+
+  void configureAuthorizedRouteResolver(
+    AuthorizedNotificationRouteResolver? resolver,
+  ) {
+    _authorizedRouteResolver = resolver;
+  }
+
+  Future<void> handleRemoteNotificationData({
+    required String? notificationId,
+    required String? route,
+    String type = '',
+  }) async {
+    final id = notificationId?.trim() ?? '';
+    if (id.isNotEmpty && _authorizedRouteResolver != null) {
+      try {
+        final resolved = await _authorizedRouteResolver!(id);
+        if (resolved != null && resolved.isNotEmpty) {
+          handleRemoteNotificationRoute(resolved);
+          return;
+        }
+      } catch (_) {
+        // A resolver outage must not expose technical details or block inbox use.
+        await SafeDiagnosticsService.instance.capture(
+          feature: 'notification_operations',
+          safeCode: 'temporarily_unavailable',
+          operation: 'resolve_route',
+          surface: 'notification',
+        );
+      }
+      handleRemoteNotificationRoute('/notifications');
+      return;
+    }
+    handleRemoteNotificationRoute(safeRoute(route, type: type));
   }
 
   /// Expose the raw plugin for advanced use (e.g., DailyReminderService).
@@ -84,6 +131,12 @@ class NotificationService {
         final payload = response.payload ?? '';
         if (payload.contains('check_in|') || payload.contains('check_out|')) {
           await DailyReminderService.instance.handleReminderPayload(payload);
+        } else if (payload.startsWith('notification|')) {
+          final parts = payload.split('|');
+          await handleRemoteNotificationData(
+            notificationId: parts.length > 1 ? parts[1] : null,
+            route: parts.length > 2 ? parts[2] : null,
+          );
         } else if (payload.startsWith('route|')) {
           final route = payload.split('|')[1];
           _onNotificationTap.add(route);
@@ -176,37 +229,53 @@ class NotificationService {
         .where('isRead', isEqualTo: false)
         .limit(25)
         .snapshots()
-        .listen((snapshot) {
-          if (isInitial) {
-            isInitial = false;
-            for (var doc in snapshot.docs) {
-              _notifiedIds.add(doc.id);
+        .listen(
+          (snapshot) {
+            if (isInitial) {
+              isInitial = false;
+              for (var doc in snapshot.docs) {
+                _notifiedIds.add(doc.id);
+              }
+              return;
             }
-            return;
-          }
-          for (var change in snapshot.docChanges) {
-            if (change.type == DocumentChangeType.added) {
-              final data = change.doc.data();
-              if (data != null) {
-                final docId = change.doc.id;
-                if (!_notifiedIds.contains(docId)) {
-                  _notifiedIds.add(docId);
-                  final title = data['title'] as String? ?? 'تنبيه جديد';
-                  final body = data['body'] as String? ?? '';
-                  final type = data['type'] as String? ?? '';
+            for (var change in snapshot.docChanges) {
+              if (change.type == DocumentChangeType.added) {
+                final data = change.doc.data();
+                if (data != null) {
+                  final docId = change.doc.id;
+                  if (!_notifiedIds.contains(docId)) {
+                    _notifiedIds.add(docId);
+                    final title = data['title'] as String? ?? 'تنبيه جديد';
+                    final body = data['body'] as String? ?? '';
+                    final type = data['type'] as String? ?? '';
 
-                  final nestedData = data['data'];
-                  final route = safeRoute(
-                    nestedData is Map ? nestedData['route'] as String? : null,
-                    type: type,
-                  );
+                    final nestedData = data['data'];
+                    final route = safeRoute(
+                      nestedData is Map ? nestedData['route'] as String? : null,
+                      type: type,
+                    );
 
-                  showNotification(title, body, payload: 'route|$route');
+                    showNotification(
+                      title,
+                      body,
+                      payload: 'notification|$docId|$route',
+                    );
+                  }
                 }
               }
             }
-          }
-        });
+          },
+          onError: (_) {
+            unawaited(
+              SafeDiagnosticsService.instance.capture(
+                feature: 'notification_operations',
+                safeCode: 'temporarily_unavailable',
+                operation: 'listen',
+                surface: 'notification',
+              ),
+            );
+          },
+        );
   }
 
   // Cancel listener

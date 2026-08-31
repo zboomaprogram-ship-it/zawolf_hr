@@ -199,8 +199,10 @@ class AdministrativeRequestService {
     if (reviewer.employeeId.trim().toUpperCase() == 'CEO-100') {
       return _db
           .collection('administrativeRequests')
-          .where('status', isEqualTo: 'pending_ceo')
-          .where('ceoId', isEqualTo: reviewer.uid)
+          // The screen scopes this two-stage result to the CEO's UID. Both
+          // stages are needed: direct-manager approval and field-mission CEO
+          // approval. Firestore cannot express that OR across two fields.
+          .where('status', whereIn: ['pending_manager', 'pending_ceo'])
           .limit(100)
           .snapshots();
     }

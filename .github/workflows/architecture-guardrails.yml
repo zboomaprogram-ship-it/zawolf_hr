@@ -14,26 +14,69 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  flutter-quality:
+  analyze:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
           cache: true
+      - uses: actions/cache@v4
+        with:
+          path: ~/.pub-cache
+          key: pub-${{ runner.os }}-${{ hashFiles('pubspec.lock') }}
+          restore-keys: pub-${{ runner.os }}-
       - name: Install Flutter dependencies
         run: flutter pub get
       - name: Analyze
         run: flutter analyze
+
+  guards:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - uses: actions/cache@v4
+        with:
+          path: ~/.pub-cache
+          key: pub-${{ runner.os }}-${{ hashFiles('pubspec.lock') }}
+          restore-keys: pub-${{ runner.os }}-
+      - name: Install Flutter dependencies
+        run: flutter pub get
       - name: Architecture and Firestore query guards
         run: >-
           flutter test
           test/architecture_guard_test.dart
           test/firestore_query_guard_test.dart
-      - name: Flutter tests
-        run: flutter test
+
+  flutter-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        shard-index: [0, 1]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - uses: actions/cache@v4
+        with:
+          path: ~/.pub-cache
+          key: pub-${{ runner.os }}-${{ hashFiles('pubspec.lock') }}
+          restore-keys: pub-${{ runner.os }}-
+      - name: Install Flutter dependencies
+        run: flutter pub get
+      - name: Flutter tests (shard ${{ matrix.shard-index }})
+        run: flutter test --shards=2 --shard-index=${{ matrix.shard-index }}
 
   node-quality:
     runs-on: ubuntu-latest

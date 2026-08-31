@@ -7,8 +7,10 @@ import '../../models/task_model.dart';
 import '../../services/auth_service.dart';
 import '../../services/task_service.dart';
 import '../../theme/theme.dart';
+import '../../design_system/components/skeletons.dart' show SkeletonList;
 
 class EmployeeTasksScreen extends StatefulWidget {
+  // Legacy fallback retained while work_outcomes_v2 is piloted and reversible.
   const EmployeeTasksScreen({super.key});
 
   @override
@@ -33,8 +35,9 @@ class _EmployeeTasksScreenState extends State<EmployeeTasksScreen> {
 
     if (user == null) {
       return const Scaffold(
-        body: Center(
-          child: CircularProgressIndicator(color: ZaWolfColors.primaryCyan),
+        body: Padding(
+          padding: EdgeInsets.all(16),
+          child: SkeletonList(itemCount: 4, itemHeight: 96),
         ),
       );
     }
@@ -71,13 +74,14 @@ class _EmployeeTasksScreenState extends State<EmployeeTasksScreen> {
                 query.isEmpty ||
                 task.title.toLowerCase().contains(query) ||
                 task.description.toLowerCase().contains(query);
-            final isFutureKpiTask = task.dueDate.isAfter(endOfToday) &&
+            final isFutureKpiTask =
+                task.dueDate.isAfter(endOfToday) &&
                 (task.source == 'sales_analytics_api' ||
                     task.progressMode == 'cumulative_daily');
             final matchesStatus = switch (_statusFilter) {
               'open' =>
                 !isFutureKpiTask &&
-                task.status != TaskStatus.done &&
+                    task.status != TaskStatus.done &&
                     task.status != TaskStatus.cancelled,
               'done' => task.status == TaskStatus.done,
               'late' =>

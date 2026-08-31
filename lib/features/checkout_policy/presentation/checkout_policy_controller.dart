@@ -20,12 +20,18 @@ class CheckoutPolicyController {
   Future<CheckoutPolicySnapshot> change({
     required bool enabled,
     String? reason,
+    int? autoCheckoutReturnGraceMinutes,
+    String? companyBreakStartTime,
+    String? companyBreakEndTime,
   }) async {
     try {
       _state = await _repository.update(
         enabled: enabled,
         expectedRevision: _state.policy.revision,
         reason: reason,
+        autoCheckoutReturnGraceMinutes: autoCheckoutReturnGraceMinutes,
+        companyBreakStartTime: companyBreakStartTime,
+        companyBreakEndTime: companyBreakEndTime,
       );
       return _state;
     } catch (_) {

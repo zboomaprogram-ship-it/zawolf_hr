@@ -7,6 +7,10 @@ import '../../models/attendance_policy.dart';
 import '../../services/attendance_policy_service.dart';
 import '../../services/app_security_policy_service.dart';
 import '../../theme/theme.dart';
+import '../../utils/user_facing_error.dart';
+import '../../features/checkout_policy/data/checkout_policy_repository_impl.dart';
+import '../../features/checkout_policy/domain/entities/checkout_policy.dart';
+import '../../features/checkout_policy/presentation/checkout_policy_controller.dart';
 
 class AttendancePolicySettingsScreen extends StatefulWidget {
   const AttendancePolicySettingsScreen({super.key});
@@ -42,6 +46,10 @@ class _AttendancePolicySettingsScreenState
   bool _enforceSecureAttendance = false;
   bool _blockAndroidDeveloperOptions = true;
   int _currentBuild = 0;
+  final CheckoutPolicyController _checkoutPolicyController =
+      CheckoutPolicyController(CheckoutPolicyRepositoryImpl());
+  CheckoutPolicySnapshot? _checkoutPolicy;
+  bool _savingCheckoutPolicy = false;
 
   @override
   void initState() {
@@ -77,9 +85,11 @@ class _AttendancePolicySettingsScreenState
     final results = await Future.wait([
       AttendancePolicyService().getPolicyConfig(),
       AppSecurityPolicyService.instance.loadStatus(),
+      _checkoutPolicyController.load(),
     ]);
     final policy = results[0] as AttendancePolicyConfig;
     final securityStatus = results[1] as AppSecurityStatus;
+    final checkoutPolicy = results[2] as CheckoutPolicySnapshot;
     if (!mounted) return;
     _checkInOpen.text = policy.checkInOpenTime;
     _start.text = policy.defaultStartTime;
@@ -106,7 +116,229 @@ class _AttendancePolicySettingsScreenState
     _iosStoreUrl.text = securityStatus.policy.iosStoreUrl;
     _updateMessage.text = securityStatus.policy.messageAr;
     _currentBuild = securityStatus.currentBuild;
+    _checkoutPolicy = checkoutPolicy;
     setState(() => _loading = false);
+  }
+
+  Future<void> _confirmCheckoutPolicyChange(bool enabled) async {
+    final reasonController = TextEditingController();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(enabled ? 'تفعيل تسجيل الانصراف' : 'إيقاف تسجيل الانصراف'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              enabled
+                  ? 'سيظهر تسجيل الانصراف للعمليات الجديدة فقط، دون تعديل السجلات السابقة.'
+                  : 'سيختفي تسجيل الانصراف وتتوقف الخصومات الجديدة المرتبطة به. تسجيل الحضور وطلب إذن المغادرة المبكرة يظلان متاحين.',
+              textDirection: TextDirection.rtl,
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: reasonController,
+              maxLength: 500,
+              textDirection: TextDirection.rtl,
+              decoration: const InputDecoration(
+                labelText: 'سبب التغيير (اختياري)',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('إلغاء'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('تأكيد'),
+          ),
+        ],
+      ),
+    );
+    final reason = reasonController.text.trim();
+    reasonController.dispose();
+    if (confirmed != true || !mounted) return;
+    setState(() => _savingCheckoutPolicy = true);
+    try {
+      final value = await _checkoutPolicyController.change(
+        enabled: enabled,
+        reason: reason,
+      );
+      if (!mounted) return;
+      setState(() => _checkoutPolicy = value);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            enabled ? 'تم تفعيل تسجيل الانصراف.' : 'تم إيقاف تسجيل الانصراف.',
+          ),
+        ),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      _showError('تعذر تغيير حالة الانصراف. حدّث الصفحة ثم أعد المحاولة.');
+    } finally {
+      if (mounted) setState(() => _savingCheckoutPolicy = false);
+    }
+  }
+
+  Future<void> _editAutomaticCheckoutSettings() async {
+    final snapshot = _checkoutPolicy;
+    if (snapshot?.canManage != true || _savingCheckoutPolicy) return;
+    final policy = snapshot!.policy;
+    final graceController = TextEditingController(
+      text: policy.autoCheckoutReturnGraceMinutes.toString(),
+    );
+    final breakStartController = TextEditingController(
+      text: policy.companyBreakStartTime,
+    );
+    final breakEndController = TextEditingController(
+      text: policy.companyBreakEndTime,
+    );
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('ضبط الانصراف التلقائي'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              'عند خروج الموظف من الموقع ينتظر النظام عودته خلال المهلة. لا ينفذ الانصراف أثناء إذن مغادرة معتمد أو استراحة الشركة.',
+              textDirection: TextDirection.rtl,
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: graceController,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(
+                labelText: 'مهلة العودة بالدقائق (1–180)',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: breakStartController,
+              decoration: const InputDecoration(
+                labelText: 'بداية استراحة الشركة (HH:mm)',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: breakEndController,
+              decoration: const InputDecoration(
+                labelText: 'نهاية استراحة الشركة (HH:mm)',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('إلغاء'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('حفظ'),
+          ),
+        ],
+      ),
+    );
+    final grace = int.tryParse(graceController.text.trim());
+    final breakStart = breakStartController.text.trim();
+    final breakEnd = breakEndController.text.trim();
+    graceController.dispose();
+    breakStartController.dispose();
+    breakEndController.dispose();
+    if (saved != true || !mounted) return;
+    if (grace == null ||
+        grace < 1 ||
+        grace > 180 ||
+        !_validTime(breakStart) ||
+        !_validTime(breakEnd) ||
+        breakStart.compareTo(breakEnd) >= 0) {
+      _showError(
+        'أدخل مهلة من 1 إلى 180 دقيقة ووقت استراحة صحيحاً من البداية إلى النهاية.',
+      );
+      return;
+    }
+    setState(() => _savingCheckoutPolicy = true);
+    try {
+      final value = await _checkoutPolicyController.change(
+        enabled: policy.enabled,
+        reason: 'تحديث إعدادات الانصراف التلقائي',
+        autoCheckoutReturnGraceMinutes: grace,
+        companyBreakStartTime: breakStart,
+        companyBreakEndTime: breakEnd,
+      );
+      if (!mounted) return;
+      setState(() => _checkoutPolicy = value);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('تم حفظ مهلة العودة واستراحة الشركة.')),
+      );
+    } catch (_) {
+      if (mounted) {
+        _showError(
+          'تعذر حفظ إعدادات الانصراف التلقائي. حدّث الصفحة ثم أعد المحاولة.',
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _savingCheckoutPolicy = false);
+    }
+  }
+
+  Widget _buildCheckoutPolicyCard(ThemeData theme) {
+    final snapshot = _checkoutPolicy;
+    final enabled = snapshot?.policy.enabled ?? false;
+    final changedBy = snapshot?.policy.changedByUserId;
+    final auditLine = changedBy == null
+        ? ''
+        : '\nسجل المراجعة: آخر تغيير معتمد بواسطة $changedBy';
+    return WolfCard(
+      child: Column(
+        children: [
+          SwitchListTile.adaptive(
+            contentPadding: EdgeInsets.zero,
+            value: enabled,
+            onChanged: snapshot?.canManage == true && !_savingCheckoutPolicy
+                ? _confirmCheckoutPolicyChange
+                : null,
+            secondary: _savingCheckoutPolicy
+                ? const SizedBox.square(
+                    dimension: 24,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : Icon(
+                    enabled ? Icons.logout : Icons.login,
+                    color: enabled ? Colors.amber : ZaWolfColors.primaryCyan,
+                  ),
+            title: const Text('تسجيل الانصراف'),
+            subtitle: Text(
+              enabled
+                  ? 'مفعّل للعمليات الجديدة. مهلة العودة: ${snapshot?.policy.autoCheckoutReturnGraceMinutes ?? 15} دقيقة. استراحة الشركة: ${snapshot?.policy.companyBreakStartTime ?? '13:00'}–${snapshot?.policy.companyBreakEndTime ?? '14:00'}.$auditLine'
+                  : 'متوقف افتراضياً. تسجيل الحضور وطلبات الإذن تظل متاحة بشكل مستقل.\nالإصدار: ${snapshot?.policy.revision ?? 0}$auditLine',
+              style: theme.textTheme.bodySmall,
+              textDirection: TextDirection.rtl,
+            ),
+          ),
+          if (snapshot?.canManage == true)
+            Align(
+              alignment: AlignmentDirectional.centerStart,
+              child: TextButton.icon(
+                onPressed: _savingCheckoutPolicy
+                    ? null
+                    : _editAutomaticCheckoutSettings,
+                icon: const Icon(Icons.timer_outlined),
+                label: const Text('ضبط مهلة العودة والاستراحة'),
+              ),
+            ),
+        ],
+      ),
+    );
   }
 
   bool _validTime(String value) {
@@ -188,7 +420,10 @@ class _AttendancePolicySettingsScreenState
       }
     } catch (error) {
       _showError(
-        'تعذر حفظ الإعدادات: ${error.toString().replaceFirst('Exception: ', '')}',
+        userFacingError(
+          error,
+          fallback: 'تعذر حفظ إعدادات الدوام الآن. حاول مرة أخرى.',
+        ),
       );
     } finally {
       if (mounted) setState(() => _saving = false);
@@ -261,6 +496,8 @@ class _AttendancePolicySettingsScreenState
               child: ListView(
                 padding: const EdgeInsets.all(16),
                 children: [
+                  _buildCheckoutPolicyCard(theme),
+                  const SizedBox(height: 16),
                   WolfCard(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,

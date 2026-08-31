@@ -1,0 +1,39 @@
+{
+  "environment": "sanitized-staging-fixture",
+  "sanitized": true,
+  "organization": {
+    "units": [
+      { "id": "unit-test-sales" },
+      { "id": "unit-test-operations" }
+    ],
+    "users": [
+      {
+        "uid": "employee-test-a",
+        "departmentUnitId": "unit-test-sales",
+        "directManagerId": "manager-test-a"
+      },
+      {
+        "uid": "employee-test-b",
+        "departmentUnitId": "unit-test-operations",
+        "directManagerId": "manager-test-b"
+      }
+    ],
+    "existingTrees": [],
+    "existingMemberships": []
+  },
+  "attendance": {
+    "users": [
+      {
+        "uid": "employee-test-a",
+        "locationId": "location-test-a",
+        "locationName": "SITE_A"
+      },
+      {
+        "uid": "employee-test-b",
+        "locationId": "location-test-b",
+        "locationName": "SITE_B"
+      }
+    ],
+    "existingAssignments": []
+  }
+}

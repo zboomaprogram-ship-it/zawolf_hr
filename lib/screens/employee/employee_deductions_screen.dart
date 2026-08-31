@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
+import 'package:intl/intl.dart' hide TextDirection;
 import 'package:provider/provider.dart';
 
 import '../../components/wolf_card.dart';
@@ -7,7 +7,10 @@ import '../../services/auth_service.dart';
 import '../../services/employee_deduction_service.dart';
 import '../../theme/theme.dart';
 import '../../utils/payroll_cycle.dart';
+import '../../design_system/components/skeletons.dart' show SkeletonList;
 
+/// Stable rollback surface. The router selects the migrated Phase 007 page
+/// only for explicitly enabled pilot actors and returns here otherwise.
 class EmployeeDeductionsScreen extends StatefulWidget {
   const EmployeeDeductionsScreen({super.key});
 
@@ -46,8 +49,9 @@ class _EmployeeDeductionsScreenState extends State<EmployeeDeductionsScreen> {
             );
           }
           if (!snapshot.hasData) {
-            return const Center(
-              child: CircularProgressIndicator(color: ZaWolfColors.primaryCyan),
+            return Padding(
+              padding: const EdgeInsets.all(16),
+              child: SkeletonList(itemCount: 4, itemHeight: 84),
             );
           }
 
@@ -114,30 +118,33 @@ class _CycleSelector extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return WolfCard(
-      child: Row(
-        children: [
-          IconButton(
-            tooltip: 'الدورة السابقة',
-            onPressed: onPrevious,
-            icon: const Icon(Icons.chevron_right),
-          ),
-          Expanded(
-            child: Column(
-              children: [
-                Text(
-                  'دورة ${cycle.key}',
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
-                Text(cycle.arabicRangeLabel, textAlign: TextAlign.center),
-              ],
+      child: Directionality(
+        textDirection: TextDirection.rtl,
+        child: Row(
+          children: [
+            IconButton(
+              tooltip: 'الدورة السابقة',
+              onPressed: onPrevious,
+              icon: const Icon(Icons.chevron_right),
             ),
-          ),
-          IconButton(
-            tooltip: 'الدورة التالية',
-            onPressed: onNext,
-            icon: const Icon(Icons.chevron_left),
-          ),
-        ],
+            Expanded(
+              child: Column(
+                children: [
+                  Text(
+                    'دورة ${cycle.key}',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                  Text(cycle.arabicRangeLabel, textAlign: TextAlign.center),
+                ],
+              ),
+            ),
+            IconButton(
+              tooltip: 'الدورة التالية',
+              onPressed: onNext,
+              icon: const Icon(Icons.chevron_left),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -280,6 +287,46 @@ class _DeductionTile extends StatelessWidget {
             '${entry.sourceLabel} · ${parsedDate == null ? entry.date : DateFormat('d MMMM yyyy', 'ar').format(parsedDate)}',
             textAlign: TextAlign.right,
             style: Theme.of(context).textTheme.bodySmall,
+          ),
+          const SizedBox(height: 10),
+          TextButton.icon(
+            onPressed: () => _showDetails(context),
+            icon: const Icon(Icons.info_outline),
+            label: const Text('عرض سبب الخصم بالتفصيل'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showDetails(BuildContext context) {
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('تفاصيل خصم الراتب'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            for (final line in entry.detailLines)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: SelectableText(line, textAlign: TextAlign.right),
+              ),
+            if (!entry.hasCompleteDetails)
+              const Padding(
+                padding: EdgeInsets.only(top: 4),
+                child: Text(
+                  'بعض تفاصيل هذا السجل التاريخي غير متاحة. لم يتم تعديل أي قيمة في الراتب.',
+                  textAlign: TextAlign.right,
+                ),
+              ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('إغلاق'),
           ),
         ],
       ),

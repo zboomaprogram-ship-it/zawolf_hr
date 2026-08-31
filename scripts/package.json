@@ -15,6 +15,9 @@
     "repair-attendance-accounts": "node repair-attendance-accounts.js",
     "sync-sales-kpis": "node sync-sales-kpis.js",
     "sync-notification-recipients": "node sync-notification-recipients.js",
+    "accept-company-os": "node company-os-acceptance.js",
+    "accept-008-009": "node release-008-009-acceptance.js",
+    "accept-008-009-emulator": "firebase emulators:exec --only auth,firestore --project zawolf-acceptance --config ../firebase.json \"node run-008-009-emulator-matrix.js\"",
     "migrate-hr-role": "node migrate-hr-manager-role.js",
     "test": "node --test test/*.test.js",
     "start": "node notification-web.js"

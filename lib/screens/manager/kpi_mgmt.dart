@@ -15,8 +15,15 @@ import '../../services/department_service.dart';
 import '../../services/kpi_service.dart';
 import '../../services/location_service.dart';
 import '../../services/sales_kpi_integration_service.dart';
+import '../../core/feature_flags/phase007_feature_flags.dart';
+import '../../core/feature_flags/remote_phase007_feature_flags.dart';
+import '../../features/sales_indicators/domain/entities/sales_indicator_filter.dart';
+import '../../navigation/sales_indicators_entry.dart';
 import '../../theme/theme.dart';
+import '../../utils/user_facing_error.dart';
 import '../../utils/payroll_cycle.dart';
+import '../../design_system/components/skeletons.dart' show SkeletonList;
+import '../../design_system/components/feedback_states.dart' show EmptyState;
 
 class KpiManagementScreen extends StatefulWidget {
   const KpiManagementScreen({super.key});
@@ -151,6 +158,50 @@ class _ProviderDashboardTabState extends State<_ProviderDashboardTab> {
 
   @override
   Widget build(BuildContext context) {
+    final useSalesIndicatorsV2 = context
+        .watch<RemotePhase007FeatureFlags>()
+        .isEnabledFor(
+          feature: Phase007Feature.salesIndicators,
+          actorId: widget.reviewer.uid,
+        );
+    if (useSalesIndicatorsV2) {
+      return StreamBuilder<SalesKpiSummary?>(
+        stream: _salesIntegration.watchCurrentSummary(),
+        builder: (context, snapshot) {
+          final current = snapshot.data;
+          if (current == null &&
+              snapshot.connectionState == ConnectionState.waiting) {
+            return const Padding(
+              padding: EdgeInsets.all(16),
+              child: SkeletonList(itemCount: 4, itemHeight: 88),
+            );
+          }
+          final legacy = current?.filters;
+          final cycle = PayrollCycle.forDate(DateTime.now());
+          String date(DateTime value) =>
+              '${value.year.toString().padLeft(4, '0')}-'
+              '${value.month.toString().padLeft(2, '0')}-'
+              '${value.day.toString().padLeft(2, '0')}';
+          return SalesIndicatorsEntry(
+            filter: SalesIndicatorFilter(
+              startDate: legacy?.startDate.isNotEmpty == true
+                  ? legacy!.startDate
+                  : date(cycle.start),
+              endDate: legacy?.endDate.isNotEmpty == true
+                  ? legacy!.endDate
+                  : date(cycle.end),
+              company: legacy?.company ?? 'ALL',
+              sales: legacy?.sales ?? const <String>[],
+              teleSales: legacy?.teleSales ?? const <String>[],
+              entryChannel: legacy?.entryChannel ?? 'ALL',
+              salesTarget: legacy?.salesTarget ?? 20000,
+              teleTarget: legacy?.teleTarget ?? 50,
+            ),
+            canManageMappings: EmployeeRole.isHr(widget.reviewer.role),
+          );
+        },
+      );
+    }
     return StreamBuilder<List<EmployeeKpiModel>>(
       stream: widget.kpiService.watchManagedKpis(
         widget.reviewer,
@@ -158,8 +209,9 @@ class _ProviderDashboardTabState extends State<_ProviderDashboardTab> {
       ),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(
-            child: CircularProgressIndicator(color: ZaWolfColors.primaryCyan),
+          return const Padding(
+            padding: EdgeInsets.all(16),
+            child: SkeletonList(itemCount: 5, itemHeight: 88),
           );
         }
         final providerRecords = (snapshot.data ?? [])
@@ -173,10 +225,9 @@ class _ProviderDashboardTabState extends State<_ProviderDashboardTab> {
           builder: (context, summarySnapshot) {
             if (summarySnapshot.connectionState == ConnectionState.waiting &&
                 !summarySnapshot.hasData) {
-              return const Center(
-                child: CircularProgressIndicator(
-                  color: ZaWolfColors.primaryCyan,
-                ),
+              return const Padding(
+                padding: EdgeInsets.all(16),
+                child: SkeletonList(itemCount: 3, itemHeight: 96),
               );
             }
             return _buildDashboard(
@@ -195,11 +246,9 @@ class _ProviderDashboardTabState extends State<_ProviderDashboardTab> {
     List<EmployeeKpiModel> providerRecords,
     SalesKpiSummary? summary,
   ) {
-    // Unmapped API identities are integration diagnostics, not employees.
-    // Excluding them keeps team counts, averages and lists accurate.
-    final external = (summary?.agents ?? const <SalesKpiAgentSummary>[])
-        .where((agent) => agent.isMapped)
-        .toList();
+    // Keep every provider row visible. Unmapped rows are explicitly labelled
+    // and can be reconciled by HR instead of silently disappearing from Sales.
+    final external = summary?.agents ?? const <SalesKpiAgentSummary>[];
     final visibleExternal = _department == 'all'
         ? external
         : external.where((agent) => agent.kind == _department).toList();
@@ -546,8 +595,9 @@ class _EmployeeKpiTabState extends State<_EmployeeKpiTab> {
       ),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(
-            child: CircularProgressIndicator(color: ZaWolfColors.primaryCyan),
+          return const Padding(
+            padding: EdgeInsets.all(16),
+            child: SkeletonList(itemCount: 5, itemHeight: 88),
           );
         }
         var records = snapshot.data ?? [];
@@ -649,7 +699,7 @@ class _EmployeeKpiTabState extends State<_EmployeeKpiTab> {
                 children: departments.entries.map((entry) {
                   final isSelected = _departmentFilter == entry.key;
                   return Padding(
-                    padding: const EdgeInsets.only(left: 8),
+                    padding: const EdgeInsetsDirectional.only(start: 8),
                     child: ChoiceChip(
                       label: Text(entry.value),
                       selected: isSelected,
@@ -910,22 +960,20 @@ class _TemplatesTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     return StreamBuilder<List<KpiTemplateModel>>(
       stream: kpiService.watchTemplates(includeInactive: true),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(
-            child: CircularProgressIndicator(color: ZaWolfColors.primaryCyan),
+          return const Padding(
+            padding: EdgeInsets.all(16),
+            child: SkeletonList(itemCount: 4, itemHeight: 80),
           );
         }
         final templates = snapshot.data ?? [];
         if (templates.isEmpty) {
-          return Center(
-            child: Text(
-              'ابدأ بإنشاء قالب KPI',
-              style: theme.textTheme.titleMedium,
-            ),
+          return const EmptyState(
+            title: 'ابدأ بإنشاء قالب KPI',
+            icon: Icons.assignment_outlined,
           );
         }
         return ListView(
@@ -1689,7 +1737,10 @@ class _StatusChip extends StatelessWidget {
 }
 
 void _showError(BuildContext context, Object error) {
-  final message = error.toString().replaceFirst('Exception: ', '');
+  final message = userFacingError(
+    error,
+    fallback: 'تعذر حفظ بيانات KPI الآن. حاول مرة أخرى.',
+  );
   ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
 }
 

@@ -18,6 +18,7 @@ import '../../utils/user_facing_error.dart';
 import '../../utils/workspace_csv_import.dart';
 import 'workspace_sheet_editor_screen.dart';
 import 'workspace_folder_browser_screen.dart';
+import '../../design_system/components/skeletons.dart' show SkeletonList;
 
 class CompanyWorkspaceCenterScreen extends StatefulWidget {
   const CompanyWorkspaceCenterScreen({super.key});
@@ -206,7 +207,7 @@ class _CompanyWorkspaceCenterScreenState
                     if (managers.isNotEmpty) ...[
                       const SizedBox(height: 14),
                       const Align(
-                        alignment: Alignment.centerRight,
+                        alignment: AlignmentDirectional.centerStart,
                         child: Text('المديرون الذين يمكنهم منح الوصول'),
                       ),
                       ...managers.map(
@@ -982,7 +983,12 @@ class _CompanyWorkspaceCenterScreenState
   Widget build(BuildContext context) {
     final user = context.watch<AuthService>().currentUser;
     if (user == null) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+      return const Scaffold(
+        body: Padding(
+          padding: EdgeInsets.all(16),
+          child: SkeletonList(itemCount: 4, itemHeight: 88),
+        ),
+      );
     }
     final isAdmin = _service.canAdminister(user);
     final canGrant = _service.canGrantAccess(user);

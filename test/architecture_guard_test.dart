@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 final _legacyUiInfrastructureAllowlist = <String>{
+  'lib/components/attendance_heatmap_card.dart',
   'lib/components/employee_request_history_section.dart',
   'lib/components/request_approval_timeline.dart',
   'lib/screens/employee/employee_dashboard.dart',
@@ -140,6 +141,94 @@ void main() {
       reason: 'Cubits over 300 lines require a responsibility split or review.',
     );
   });
+
+  test(
+    'Company Workspace V2 preserves the domain/data/presentation boundary',
+    () {
+      final domainViolations = <String>[];
+      final dataViolations = <String>[];
+      for (final file in _dartFiles('lib/features/company_workspace/domain')) {
+        final source = file.readAsStringSync();
+        if (RegExp(
+          r'''package:(?:flutter|firebase_|cloud_firestore|http|drift)/''',
+        ).hasMatch(source)) {
+          domainViolations.add(_repoPath(file));
+        }
+      }
+      for (final file in _dartFiles('lib/features/company_workspace/data')) {
+        final source = file.readAsStringSync();
+        if (RegExp(r'''/presentation/''').hasMatch(source)) {
+          dataViolations.add(_repoPath(file));
+        }
+      }
+
+      expect(domainViolations, isEmpty);
+      expect(dataViolations, isEmpty);
+    },
+  );
+
+  test('Company OS preserves domain/data/presentation boundaries', () {
+    final violations = <String>[];
+    for (final file in _dartFiles('lib/features/company_os/domain')) {
+      final source = file.readAsStringSync();
+      if (RegExp(
+        r'''package:(?:flutter|firebase_|cloud_firestore|http|drift)/''',
+      ).hasMatch(source)) {
+        violations.add(_repoPath(file));
+      }
+    }
+    for (final file in _dartFiles('lib/features/company_os/data')) {
+      if (file.readAsStringSync().contains('/presentation/')) {
+        violations.add(_repoPath(file));
+      }
+    }
+    expect(violations, isEmpty);
+  });
+
+  test(
+    'Organization structure preserves domain/data/presentation boundaries',
+    () {
+      final violations = <String>[];
+      for (final file in _dartFiles(
+        'lib/features/organization_structure/domain',
+      )) {
+        final source = file.readAsStringSync();
+        if (RegExp(
+          r'''package:(?:flutter|firebase_|cloud_firestore|http|drift)/''',
+        ).hasMatch(source)) {
+          violations.add(_repoPath(file));
+        }
+      }
+      for (final file in _dartFiles(
+        'lib/features/organization_structure/data',
+      )) {
+        if (file.readAsStringSync().contains('/presentation/')) {
+          violations.add(_repoPath(file));
+        }
+      }
+      expect(violations, isEmpty);
+    },
+  );
+
+  test(
+    'Company OS Cubits remain focused and presentation stays infrastructure free',
+    () {
+      final violations = <String>[];
+      for (final file in _dartFiles('lib/features/company_os/presentation')) {
+        final source = file.readAsStringSync();
+        if (source.contains('FirebaseFirestore') ||
+            source.contains('cloud_firestore') ||
+            source.contains('/data/')) {
+          violations.add(_repoPath(file));
+        }
+        if (file.path.endsWith('_cubit.dart') &&
+            file.readAsLinesSync().length > 300) {
+          violations.add('${_repoPath(file)} exceeds 300 lines');
+        }
+      }
+      expect(violations, isEmpty);
+    },
+  );
 
   test('every migrated feature has a specification directory', () {
     final featuresRoot = Directory('lib/features');

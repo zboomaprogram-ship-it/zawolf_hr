@@ -7,6 +7,7 @@ import '../../services/auth_service.dart';
 import '../../services/payroll_service.dart';
 import '../../theme/theme.dart';
 import '../../utils/payroll_cycle.dart';
+import '../../design_system/components/skeletons.dart' show SkeletonList;
 
 class EmployeePayrollScreen extends StatelessWidget {
   const EmployeePayrollScreen({super.key});
@@ -32,8 +33,9 @@ class EmployeePayrollScreen extends StatelessWidget {
         stream: PayrollService().watchMyPayroll(user.uid, monthKey),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(
-              child: CircularProgressIndicator(color: ZaWolfColors.primaryCyan),
+            return const Padding(
+              padding: EdgeInsets.all(16),
+              child: SkeletonList(itemCount: 4, itemHeight: 96),
             );
           }
           final run = snapshot.data;

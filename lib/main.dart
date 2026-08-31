@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:http/http.dart' as http;
 import 'package:provider/provider.dart';
 import 'theme/theme.dart';
 import 'services/auth_service.dart';
@@ -16,8 +18,16 @@ import 'package:flutter/foundation.dart';
 import 'firebase_options.dart';
 import 'screens/required_update_screen.dart';
 import 'services/app_security_policy_service.dart';
+import 'core/feature_flags/company_workspace_feature_flag.dart';
+import 'core/feature_flags/phase007_feature_flags.dart';
+import 'core/feature_flags/remote_phase007_feature_flags.dart';
+import 'core/feature_flags/company_os_feature_flags.dart';
+import 'core/feature_flags/remote_company_os_feature_flags.dart';
+import 'features/company_workspace/data/datasources/firebase_workspace_session.dart';
+import 'features/company_workspace/data/feature_flags/remote_company_workspace_feature_flag.dart';
 
 void main() async {
+  Provider.debugCheckInvalidValueType = null;
   WidgetsFlutterBinding.ensureInitialized();
   await initializeDateFormatting('ar', null);
 
@@ -71,11 +81,53 @@ class MyApp extends StatefulWidget {
 
 class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   late Future<AppSecurityStatus> _securityStatus;
+  late final http.Client _workspaceFlagClient;
+  late final RemoteCompanyWorkspaceFeatureFlag _workspaceFlag;
+  late final http.Client _phase007FlagClient;
+  late final RemotePhase007FeatureFlags _phase007Flags;
+  late final http.Client _companyOsFlagClient;
+  late final RemoteCompanyOsFeatureFlags _companyOsFlags;
+  StreamSubscription<User?>? _workspaceFlagSubscription;
   bool _resumeSecurityCheckInFlight = false;
 
   @override
   void initState() {
     super.initState();
+    _workspaceFlagClient = http.Client();
+    _workspaceFlag = RemoteCompanyWorkspaceFeatureFlag(
+      client: _workspaceFlagClient,
+      session: FirebaseWorkspaceSession(FirebaseAuth.instance),
+      baseUri: Uri.parse('https://notification.zawolf.ai'),
+    );
+    _phase007FlagClient = http.Client();
+    _phase007Flags = RemotePhase007FeatureFlags(
+      client: _phase007FlagClient,
+      tokenProvider: () async =>
+          FirebaseAuth.instance.currentUser?.getIdToken(),
+      baseUri: Uri.parse('https://notification.zawolf.ai'),
+    );
+    _companyOsFlagClient = http.Client();
+    _companyOsFlags = RemoteCompanyOsFeatureFlags(
+      client: _companyOsFlagClient,
+      tokenProvider: () async =>
+          FirebaseAuth.instance.currentUser?.getIdToken(),
+      baseUri: Uri.parse('https://notification.zawolf.ai'),
+    );
+    _workspaceFlagSubscription = FirebaseAuth.instance.idTokenChanges().listen((
+      user,
+    ) {
+      unawaited(_workspaceFlag.refresh());
+      if (user == null) {
+        _phase007Flags.clear();
+        _companyOsFlags.resetForSignedOutUser();
+      } else {
+        unawaited(_phase007Flags.refresh());
+        unawaited(_companyOsFlags.refresh());
+      }
+    });
+    unawaited(_workspaceFlag.refresh());
+    unawaited(_phase007Flags.refresh());
+    unawaited(_companyOsFlags.refresh());
     if (!kIsWeb) {
       WidgetsBinding.instance.addObserver(this);
     }
@@ -84,6 +136,13 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
 
   @override
   void dispose() {
+    _workspaceFlagSubscription?.cancel();
+    _workspaceFlag.dispose();
+    _workspaceFlagClient.close();
+    _phase007Flags.dispose();
+    _phase007FlagClient.close();
+    _companyOsFlags.dispose();
+    _companyOsFlagClient.close();
     if (!kIsWeb) {
       WidgetsBinding.instance.removeObserver(this);
     }
@@ -162,6 +221,18 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
         return MultiProvider(
           providers: [
             ChangeNotifierProvider<AuthService>(create: (_) => AuthService()),
+            ChangeNotifierProvider<RemoteCompanyWorkspaceFeatureFlag>.value(
+              value: _workspaceFlag,
+            ),
+            Provider<CompanyWorkspaceFeatureFlag>.value(value: _workspaceFlag),
+            ChangeNotifierProvider<RemotePhase007FeatureFlags>.value(
+              value: _phase007Flags,
+            ),
+            Provider<Phase007FeatureFlags>.value(value: _phase007Flags),
+            ChangeNotifierProvider<RemoteCompanyOsFeatureFlags>.value(
+              value: _companyOsFlags,
+            ),
+            Provider<CompanyOsFeatureFlags>.value(value: _companyOsFlags),
           ],
           child: Builder(
             builder: (context) {

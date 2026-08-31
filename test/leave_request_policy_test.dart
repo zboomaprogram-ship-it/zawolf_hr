@@ -129,6 +129,24 @@ void main() {
     expect(LeaveService.dateRangesOverlap(first, second), isFalse);
   });
 
+  test('leave balance excludes Friday and active company days off', () {
+    final scheduledDays = LeaveService.countChargeableDays(
+      start: DateTime(2026, 8, 27), // Thursday
+      end: DateTime(2026, 8, 29), // Saturday; Friday is excluded
+      schedule: WorkSchedule(),
+    );
+    expect(scheduledDays, 2);
+    expect(
+      LeaveService.countChargeableDays(
+        start: DateTime(2026, 8, 27),
+        end: DateTime(2026, 8, 29),
+        schedule: WorkSchedule(),
+        companyDayOffKeys: {'2026-08-29'},
+      ),
+      1,
+    );
+  });
+
   test('overlapping leave dates are still rejected', () {
     final first = request(type: 'day_off', start: DateTime(2026, 7, 22));
     final sameDay = request(type: 'day_off', start: DateTime(2026, 7, 22));

@@ -7,6 +7,7 @@ import '../services/auth_service.dart';
 import '../theme/theme.dart';
 import '../components/wolf_button.dart';
 import '../components/wolf_input_field.dart';
+import '../design_system/components/app_logo.dart';
 import '../utils/user_facing_error.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -179,11 +180,7 @@ class _LoginScreenState extends State<LoginScreen> {
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Image.asset(
-                    'assets/images/wolf_head_geometric.png',
-                    width: 78,
-                    height: 78,
-                  ),
+                  const AppLogo(size: 78),
                   const SizedBox(height: 28),
                   Text(
                     'هل أنت مستعد لقيادة النظام؟',
@@ -329,7 +326,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             ],
                           ),
                           Align(
-                            alignment: Alignment.centerLeft,
+                            alignment: AlignmentDirectional.centerEnd,
                             child: TextButton.icon(
                               onPressed: _isLoading
                                   ? null

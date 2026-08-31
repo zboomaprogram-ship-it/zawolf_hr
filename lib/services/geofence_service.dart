@@ -1,13 +1,23 @@
+import 'dart:async';
+
 import 'package:geolocator/geolocator.dart';
+import 'package:geolocator_web/web_settings.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import '../models/user_model.dart';
 import '../models/location_model.dart';
+import '../features/attendance_locations/data/attendance_location_assignment_repository_impl.dart';
+import '../features/attendance_locations/domain/entities/attendance_location_assignment.dart';
+import '../features/attendance_locations/domain/repositories/attendance_location_assignment_repository.dart';
+import '../features/attendance_locations/domain/services/attendance_location_matcher.dart';
 
 class GeofenceResult {
   final bool isWithinZone;
   final double distanceMeters;
   final String locationName;
+  final String? locationId;
+  final String? assignmentId;
+  final int? assignmentVersion;
   final double configuredRadius;
   final double allowedRadius;
   final double accuracyToleranceMeters;
@@ -19,6 +29,9 @@ class GeofenceResult {
     required this.isWithinZone,
     required this.distanceMeters,
     required this.locationName,
+    this.locationId,
+    this.assignmentId,
+    this.assignmentVersion,
     required this.configuredRadius,
     required this.allowedRadius,
     required this.accuracyToleranceMeters,
@@ -30,6 +43,15 @@ class GeofenceResult {
 
 class GeofenceService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
+  final AttendanceLocationAssignmentRepository _assignmentRepository;
+  final AttendanceLocationMatcher _matcher;
+
+  GeofenceService({
+    AttendanceLocationAssignmentRepository? assignmentRepository,
+    AttendanceLocationMatcher matcher = const AttendanceLocationMatcher(),
+  }) : _assignmentRepository =
+           assignmentRepository ?? AttendanceLocationAssignmentRepositoryImpl(),
+       _matcher = matcher;
 
   // Request location permissions if not already granted
   Future<bool> handleLocationPermission() async {
@@ -39,7 +61,9 @@ class GeofenceService {
     serviceEnabled = await Geolocator.isLocationServiceEnabled();
     if (!serviceEnabled) {
       throw Exception(
-        'خدمة الموقع مغلقة. فعّل GPS / Location من إعدادات الهاتف ثم اضغط تحديث الموقع.',
+        kIsWeb
+            ? 'خدمة الموقع غير متاحة في المتصفح. اسمح للموقع باستخدام موقعك الدقيق من رمز القفل بجانب عنوان الصفحة ثم حدّث الصفحة.'
+            : 'خدمة الموقع مغلقة. فعّل GPS / Location من إعدادات الهاتف ثم اضغط تحديث الموقع.',
       );
     }
 
@@ -48,28 +72,33 @@ class GeofenceService {
       permission = await Geolocator.requestPermission();
       if (permission == LocationPermission.denied) {
         throw Exception(
-          'تم رفض إذن الموقع. اسمح للتطبيق باستخدام الموقع حتى يمكن تسجيل الحضور.',
+          kIsWeb
+              ? 'تم رفض إذن الموقع في المتصفح. اسمح للموقع باستخدام موقعك الدقيق ثم أعد المحاولة.'
+              : 'تم رفض إذن الموقع. اسمح للتطبيق باستخدام الموقع حتى يمكن تسجيل الحضور.',
         );
       }
     }
 
     if (permission == LocationPermission.deniedForever) {
       throw Exception(
-        'إذن الموقع مرفوض نهائياً. افتح إعدادات التطبيق وفعّل صلاحية الموقع.',
+        kIsWeb
+            ? 'تم حظر إذن الموقع للمتصفح. افتح إعدادات الموقع من رمز القفل بجانب عنوان الصفحة واسمح بالموقع، ثم حدّث الصفحة.'
+            : 'إذن الموقع مرفوض نهائياً. افتح إعدادات التطبيق وفعّل صلاحية الموقع.',
       );
     }
 
-    try {
-      final accuracyStatus = await Geolocator.getLocationAccuracy();
-      if (accuracyStatus == LocationAccuracyStatus.reduced) {
-        throw Exception(
-          'الموقع التقريبي مفعّل. افتح إعدادات التطبيق وفعّل الموقع الدقيق (Precise location) حتى يمكن التحقق من نطاق الفرع.',
-        );
+    if (!kIsWeb) {
+      try {
+        final accuracyStatus = await Geolocator.getLocationAccuracy();
+        if (accuracyStatus == LocationAccuracyStatus.reduced) {
+          throw Exception(
+            'الموقع التقريبي مفعّل. افتح إعدادات التطبيق وفعّل الموقع الدقيق (Precise location) حتى يمكن التحقق من نطاق الفرع.',
+          );
+        }
+      } catch (error) {
+        if (error.toString().contains('الموقع التقريبي')) rethrow;
+        // Web and some Android vendors do not expose the accuracy switch through platform API.
       }
-    } on Exception catch (error) {
-      if (error.toString().contains('الموقع التقريبي')) rethrow;
-      // Some Android vendors do not expose the accuracy switch through the
-      // platform API. The measured GPS accuracy is still validated below.
     }
 
     return true;
@@ -84,6 +113,27 @@ class GeofenceService {
     final hasPermission = await handleLocationPermission();
     if (!hasPermission) {
       throw Exception('أذونات الموقع الجغرافي مطلوبة لتسجيل الحضور.');
+    }
+
+    // The server-owned flag is returned with the bounded employee assignment
+    // projection. Failure to load it falls back to the unchanged legacy path.
+    AttendanceLocationAssignmentsSnapshot? assignmentSnapshot;
+    try {
+      assignmentSnapshot = await _assignmentRepository.getMine();
+    } catch (_) {
+      assignmentSnapshot = null;
+    }
+    if (assignmentSnapshot?.enabled == true) {
+      if (assignmentSnapshot!.isStale) {
+        throw Exception(
+          'بيانات مواقع الحضور تحتاج تحديثاً. اتصل بالإنترنت ثم أعد المحاولة قبل تسجيل الحضور.',
+        );
+      }
+      return _validateAssignedLocations(
+        employee,
+        assignmentSnapshot.assignments,
+        strictLocationOnly: strictLocationOnly,
+      );
     }
 
     // 2. Fetch employee's assigned location from Firestore
@@ -103,7 +153,7 @@ class GeofenceService {
 
     final location = LocationModel.fromFirestore(locationDoc);
 
-    // 3. Get device GPS position (high accuracy)
+    // 3. Get device GPS position (high accuracy with Web Desktop fallback)
     var position = await _getReliablePosition(
       allowLastKnown: !strictLocationOnly,
     );
@@ -120,7 +170,7 @@ class GeofenceService {
     // still a stale cell/Wi-Fi estimate. Before declaring the employee out of
     // range, force another best-quality reading and keep the most credible
     // branch-relative sample.
-    if (distanceMeters > location.geofenceRadiusMeters) {
+    if (distanceMeters > location.geofenceRadiusMeters && !kIsWeb) {
       final retry = await _retryOutsidePosition(location, position);
       final retryDistance = Geolocator.distanceBetween(
         retry.latitude,
@@ -155,6 +205,7 @@ class GeofenceService {
       isWithinZone: isWithin,
       distanceMeters: distanceMeters,
       locationName: location.name,
+      locationId: location.locationId,
       configuredRadius: location.geofenceRadiusMeters,
       allowedRadius: effectiveRadius,
       accuracyToleranceMeters: accuracyTolerance,
@@ -164,8 +215,80 @@ class GeofenceService {
     );
   }
 
+  Future<GeofenceResult> _validateAssignedLocations(
+    UserModel employee,
+    List<AttendanceLocationAssignment> assignments, {
+    required bool strictLocationOnly,
+  }) async {
+    if (assignments.isEmpty) {
+      throw Exception('لا يوجد موقع حضور نشط مسند إلى حسابك. تواصل مع HR.');
+    }
+    var position = await _getReliablePosition(
+      allowLastKnown: !strictLocationOnly,
+    );
+    var match = _matcher.nearestMatch(
+      assignments: assignments,
+      employeeUid: employee.uid,
+      eventTime: DateTime.now(),
+      latitude: position.latitude,
+      longitude: position.longitude,
+      accuracyMeters: position.accuracy,
+      maxAccuracyAllowanceMeters: strictLocationOnly ? 12 : 25,
+    );
+    if (match == null) {
+      try {
+        final retry = await _getCurrentPosition(
+          desiredAccuracy: LocationAccuracy.best,
+          timeLimit: const Duration(seconds: 8),
+        );
+        _throwIfMocked(retry);
+        final retryMatch = _matcher.nearestMatch(
+          assignments: assignments,
+          employeeUid: employee.uid,
+          eventTime: DateTime.now(),
+          latitude: retry.latitude,
+          longitude: retry.longitude,
+          accuracyMeters: retry.accuracy,
+          maxAccuracyAllowanceMeters: strictLocationOnly ? 12 : 25,
+        );
+        if (retryMatch != null || retry.accuracy < position.accuracy) {
+          position = retry;
+          match = retryMatch;
+        }
+      } catch (_) {}
+    }
+    if (match == null) {
+      throw Exception(
+        'أنت خارج نطاق مواقع الحضور المسندة إليك. اقترب من أحد المواقع ثم أعد المحاولة.',
+      );
+    }
+    final tolerance = position.accuracy
+        .clamp(0, strictLocationOnly ? 12 : 25)
+        .toDouble();
+    return GeofenceResult(
+      isWithinZone: true,
+      distanceMeters: match.distanceMeters,
+      locationName: match.locationName,
+      locationId: match.locationId,
+      assignmentId: match.assignmentId,
+      assignmentVersion: match.assignmentVersion,
+      configuredRadius: match.allowedRadiusMeters - tolerance,
+      allowedRadius: match.allowedRadiusMeters,
+      accuracyToleranceMeters: tolerance,
+      accuracyMeters: position.accuracy,
+      isMocked: position.isMocked,
+      position: position,
+    );
+  }
+
   Future<Position> _getReliablePosition({required bool allowLastKnown}) async {
     final samples = <Position>[];
+    // Chrome can resolve a one-shot request inconsistently on desktop while
+    // its watch API delivers the same fresh browser coordinate. Start this in
+    // parallel so it is ready as a secure fallback without delaying check-in.
+    final webWatch = kIsWeb
+        ? _getWebWatchPosition(timeLimit: const Duration(seconds: 28))
+        : null;
     Position? cachedPosition;
     try {
       cachedPosition = await Geolocator.getLastKnownPosition();
@@ -175,18 +298,28 @@ class GeofenceService {
     }
 
     try {
-      final first = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.high,
-        timeLimit: const Duration(seconds: 12),
+      final first = await _getCurrentPosition(
+        // On desktop Chrome, asking for a high-accuracy GPS sample first can
+        // time out even though the browser has a valid Wi-Fi/IP-assisted
+        // position.  Start with the normal browser fix on web, then request a
+        // best-quality retry only when the precision is insufficient.  The
+        // same freshness, accuracy and geofence checks still apply.
+        desiredAccuracy: kIsWeb
+            ? LocationAccuracy.medium
+            : LocationAccuracy.high,
+        // Desktop browsers commonly need longer than a phone for the first
+        // Wi-Fi/GPS fix. An eight-second limit made valid web attendance fail
+        // before the browser had a chance to provide its first reading.
+        timeLimit: Duration(seconds: kIsWeb ? 22 : 8),
       );
       _throwIfMocked(first);
       if (_isFresh(first)) samples.add(first);
       if (_isFresh(first) && first.accuracy <= 25) return first;
 
       try {
-        final second = await Geolocator.getCurrentPosition(
+        final second = await _getCurrentPosition(
           desiredAccuracy: LocationAccuracy.best,
-          timeLimit: const Duration(seconds: 8),
+          timeLimit: Duration(seconds: kIsWeb ? 16 : 6),
         );
         _throwIfMocked(second);
         if (_isFresh(second)) samples.add(second);
@@ -200,12 +333,20 @@ class GeofenceService {
       if (_isMockLocationError(error)) rethrow;
     }
 
+    if (webWatch != null) {
+      final watched = await webWatch;
+      if (watched != null) {
+        _throwIfMocked(watched);
+        return watched;
+      }
+    }
+
     // Some Android devices have an unhealthy Google fused-location provider
     // even while GPS and internet are enabled. Retry through Android's native
     // LocationManager before reporting location as unavailable.
     if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
       try {
-        final nativePosition = await Geolocator.getCurrentPosition(
+        final nativePosition = await _getCurrentPosition(
           desiredAccuracy: LocationAccuracy.best,
           forceAndroidLocationManager: true,
           timeLimit: const Duration(seconds: 12),
@@ -228,20 +369,27 @@ class GeofenceService {
     }
 
     try {
-      final fallback = await Geolocator.getCurrentPosition(
+      final fallback = await _getCurrentPosition(
         desiredAccuracy: LocationAccuracy.medium,
-        timeLimit: const Duration(seconds: 8),
+        timeLimit: Duration(seconds: kIsWeb ? 15 : 6),
       );
       _throwIfMocked(fallback);
       if (_isFresh(fallback)) return fallback;
     } catch (_) {}
+
+    if (kIsWeb) {
+      throw Exception(
+        'تعذر الحصول على موقع حديث من المتصفح. اسمح بالموقع الدقيق، أوقف VPN إن وجد، ثم حدّث الصفحة وأعد المحاولة.',
+      );
+    }
+
     throw Exception(
       'تعذر الحصول على قراءة GPS حديثة. فعّل الموقع الدقيق وميزة تحسين دقة الموقع من Google، ثم انتقل قرب نافذة واضغط تحديث.',
     );
   }
 
   void _throwIfMocked(Position position) {
-    if (position.isMocked) {
+    if (!kDebugMode && position.isMocked) {
       throw Exception(
         'تم اكتشاف موقع وهمي. أوقف تطبيقات تغيير الموقع وأعد تشغيل الهاتف قبل تسجيل الحضور.',
       );
@@ -251,6 +399,69 @@ class GeofenceService {
   bool _isMockLocationError(Object error) =>
       error.toString().contains('موقع وهمي');
 
+  /// Requests a current browser position and bounds the wait in Dart.
+  ///
+  /// `geolocator_web` delegates to the browser Geolocation API, whose timeout
+  /// is expressed in milliseconds.  Keeping the timeout outside the platform
+  /// settings avoids a platform-unit conversion issue while [WebSettings]
+  /// accepts a short-lived browser coordinate. This is important on desktop:
+  /// browsers often have no GPS and obtain a reliable Wi-Fi reading only after
+  /// their location provider has warmed up. The reading is still rejected by
+  /// [_isFresh] and the normal geofence distance check.
+  Future<Position> _getCurrentPosition({
+    required LocationAccuracy desiredAccuracy,
+    required Duration timeLimit,
+    bool forceAndroidLocationManager = false,
+  }) {
+    if (kIsWeb) {
+      return GeolocatorPlatform.instance
+          .getCurrentPosition(
+            locationSettings: WebSettings(
+              accuracy: desiredAccuracy,
+              // The browser can often provide a just-captured Wi-Fi position
+              // from its cache immediately. Accept it only for the same
+              // one-minute window enforced by [_isFresh], rather than forcing
+              // a slow new hardware lookup after 30 seconds.
+              maximumAge: const Duration(minutes: 1),
+            ),
+          )
+          .timeout(timeLimit);
+    }
+    return Geolocator.getCurrentPosition(
+      desiredAccuracy: desiredAccuracy,
+      forceAndroidLocationManager: forceAndroidLocationManager,
+      timeLimit: timeLimit,
+    );
+  }
+
+  /// Uses the browser's `watchPosition` path as a web-only fallback.
+  ///
+  /// This keeps the same browser permission, freshness, spoofing and
+  /// geofence checks as a normal reading. It does not use IP geolocation or
+  /// relax the attendance radius; it merely handles desktop browsers where a
+  /// one-shot position request never settles although an active position watch
+  /// can obtain a fresh Wi-Fi/GPS fix.
+  Future<Position?> _getWebWatchPosition({required Duration timeLimit}) async {
+    if (!kIsWeb) return null;
+    try {
+      return await GeolocatorPlatform.instance
+          .getPositionStream(
+            locationSettings: WebSettings(
+              // Desktop browsers frequently cannot resolve a high-accuracy
+              // GPS fix, while their normal Wi-Fi location is available. The
+              // result still goes through freshness and geofence validation.
+              accuracy: LocationAccuracy.medium,
+              maximumAge: Duration.zero,
+            ),
+          )
+          .where((position) => _isFresh(position))
+          .first
+          .timeout(timeLimit);
+    } catch (_) {
+      return null;
+    }
+  }
+
   Future<Position> _retryOutsidePosition(
     LocationModel location,
     Position initial,
@@ -258,7 +469,7 @@ class GeofenceService {
     final candidates = <Position>[initial];
     for (var attempt = 0; attempt < 2; attempt++) {
       try {
-        final candidate = await Geolocator.getCurrentPosition(
+        final candidate = await _getCurrentPosition(
           desiredAccuracy: LocationAccuracy.best,
           timeLimit: const Duration(seconds: 8),
         );

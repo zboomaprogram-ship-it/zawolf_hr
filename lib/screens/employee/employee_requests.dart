@@ -1,12 +1,21 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart' hide TextDirection;
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:file_picker/file_picker.dart';
+import 'package:go_router/go_router.dart';
 import '../../theme/theme.dart';
 import '../../utils/user_facing_error.dart';
 import '../../components/wolf_button.dart';
 import '../../components/wolf_input_field.dart';
 import '../../components/request_approval_timeline.dart';
+import '../../design_system/components/confirmation_sheet.dart';
+import '../../design_system/components/feedback_states.dart';
+import '../../design_system/components/filter_bar.dart';
+import '../../design_system/components/skeletons.dart';
+import '../../design_system/components/status_pill.dart';
+import '../../design_system/tokens.dart';
 import '../../services/auth_service.dart';
 import '../../services/permission_service.dart';
 import '../../services/leave_service.dart';
@@ -16,6 +25,8 @@ import '../../services/advance_service.dart';
 import '../../services/resignation_service.dart';
 import '../../services/administrative_request_service.dart';
 import '../../services/attendance_correction_request_service.dart';
+import '../../services/governed_drive_attachment_service.dart';
+import '../../services/task_service.dart';
 import '../../models/attendance_model.dart';
 import '../../models/permission_model.dart';
 import '../../models/permission_type_policy.dart';
@@ -27,9 +38,12 @@ import '../../models/complaint_model.dart';
 import '../../models/user_model.dart';
 import '../../models/resignation_model.dart';
 import '../../models/administrative_request_model.dart';
+import '../../models/task_model.dart';
 import '../shared/requests_log_screen.dart';
 import '../../utils/payroll_cycle.dart';
 import '../../utils/permission_cycle_accounting.dart';
+import '../../core/feature_flags/company_os_feature_flags.dart';
+import 'widgets/virtual_office_game_widget.dart';
 
 class EmployeeRequestsScreen extends StatefulWidget {
   const EmployeeRequestsScreen({super.key});
@@ -38,9 +52,7 @@ class EmployeeRequestsScreen extends StatefulWidget {
   State<EmployeeRequestsScreen> createState() => _EmployeeRequestsScreenState();
 }
 
-class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
-    with SingleTickerProviderStateMixin {
-  late TabController _tabController;
+class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
   final _formKeyPermission = GlobalKey<FormState>();
   final _formKeyLeave = GlobalKey<FormState>();
   final _formKeyComplaint = GlobalKey<FormState>();
@@ -74,11 +86,13 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
   final _complaintBodyController = TextEditingController();
   final _complaintAttachmentController = TextEditingController();
   bool _submitComplaintAnonymously = false;
+  String? _complaintAttachmentUrl;
   final _resignationReasonController = TextEditingController();
   DateTime _resignationDate = DateTime.now().add(const Duration(days: 30));
   String _administrativeCategory = AdministrativeRequestCategory.personalData;
   final _administrativeNotesController = TextEditingController();
   final _administrativeAttachmentController = TextEditingController();
+  String? _administrativeAttachmentUrl;
   final _fieldMissionSiteController = TextEditingController();
   DateTime _fieldMissionDate = DateTime.now();
   TimeOfDay _fieldMissionStart = const TimeOfDay(hour: 9, minute: 0);
@@ -90,7 +104,14 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
   TimeOfDay? _requestedCorrectionTime;
 
   bool _loading = false;
+  // The request centre intentionally keeps creation and history in one
+  // surface.  This replaces the old two-tab design while retaining the
+  // existing forms and history streams during the gradual migration.
+  // Sending a request must always be the quickest path. The virtual office is
+  // an optional discovery experience, never a gate in front of a HR request.
+  int _requestCentreView = 1;
   int _requestTypeIndex = 0;
+  String _historyStatusFilter = 'all';
   final Map<String, Stream<dynamic>> _streamCache = {};
 
   Stream<T> _cachedStream<T>(String key, Stream<T> Function() create) {
@@ -98,14 +119,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
   }
 
   @override
-  void initState() {
-    super.initState();
-    _tabController = TabController(length: 2, vsync: this);
-  }
-
-  @override
   void dispose() {
-    _tabController.dispose();
     _permissionReasonController.dispose();
     _leaveReasonController.dispose();
     _workHandoverController.dispose();
@@ -136,6 +150,61 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
       setState(() {
         _selectedTime = picked;
       });
+    }
+  }
+
+  String _attachmentContentType(
+    PlatformFile file,
+  ) => switch ((file.extension ?? '').toLowerCase()) {
+    'pdf' => 'application/pdf',
+    'png' => 'image/png',
+    'jpg' || 'jpeg' => 'image/jpeg',
+    'doc' => 'application/msword',
+    'docx' =>
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    _ => 'application/octet-stream',
+  };
+
+  Future<String?> _uploadRequestAttachment() async {
+    final result = await FilePicker.pickFiles(
+      type: FileType.any,
+      withData: true,
+    );
+    if (result == null || result.files.isEmpty || !mounted) return null;
+    final file = result.files.first;
+    if (file.bytes == null ||
+        file.bytes!.isEmpty ||
+        file.size > 10 * 1024 * 1024) {
+      throw ArgumentError('اختر ملفاً صالحاً بحجم لا يتجاوز 10 ميغابايت');
+    }
+    return (await GovernedDriveAttachmentService().upload(
+      fileName: file.name,
+      contentType: _attachmentContentType(file),
+      bytes: file.bytes!,
+    )).opaqueUri;
+  }
+
+  Future<void> _pickAndStoreAttachment({
+    required TextEditingController controller,
+    required ValueChanged<String?> onStored,
+  }) async {
+    try {
+      setState(() => _loading = true);
+      final uri = await _uploadRequestAttachment();
+      if (uri == null || !mounted) return;
+      onStored(uri);
+      controller.text = '📎 تم حفظ المرفق في ملفات الشركة';
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('تم حفظ المرفق في Google Drive.')),
+      );
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(userFacingError(error))));
+      }
+    } finally {
+      if (mounted) setState(() => _loading = false);
     }
   }
 
@@ -317,7 +386,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
           _permissionDate = DateTime.now();
           _isDeductiblePermission = false;
         });
-        _tabController.animateTo(1); // switch to history tab
+        setState(() => _requestCentreView = 1);
       }
     } catch (e) {
       if (mounted) {
@@ -357,13 +426,12 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
           employee: employee,
           category: _administrativeCategory,
           notes: _administrativeNotesController.text,
-          attachmentUrl: _administrativeAttachmentController.text.trim().isEmpty
-              ? null
-              : _administrativeAttachmentController.text.trim(),
+          attachmentUrl: _administrativeAttachmentUrl,
         );
       }
       _administrativeNotesController.clear();
       _administrativeAttachmentController.clear();
+      _administrativeAttachmentUrl = null;
       _fieldMissionSiteController.clear();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -372,7 +440,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
             content: Text('تم إرسال الطلب الإداري بنجاح'),
           ),
         );
-        _tabController.animateTo(1);
+        setState(() => _requestCentreView = 1);
       }
     } catch (error) {
       if (mounted) {
@@ -426,7 +494,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
             content: Text('تم إرسال طلب تصحيح الوقت إلى HR.'),
           ),
         );
-        _tabController.animateTo(1);
+        setState(() => _requestCentreView = 1);
       }
     } catch (error) {
       if (mounted) {
@@ -501,7 +569,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
           _leaveStart = nextStart;
           _leaveEnd = nextStart;
         });
-        _tabController.animateTo(1);
+        setState(() => _requestCentreView = 1);
       }
     } catch (e) {
       if (mounted) {
@@ -552,7 +620,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
         );
         _advanceAmountController.clear();
         _advanceReasonController.clear();
-        _tabController.animateTo(1);
+        setState(() => _requestCentreView = 1);
       }
     } catch (e) {
       if (mounted) {
@@ -577,9 +645,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
         employee: employee,
         title: _complaintTitleController.text,
         body: _complaintBodyController.text,
-        attachmentUrl: _complaintAttachmentController.text.trim().isEmpty
-            ? null
-            : _complaintAttachmentController.text.trim(),
+        attachmentUrl: _complaintAttachmentUrl,
         isAnonymous: _submitComplaintAnonymously,
       );
 
@@ -593,8 +659,11 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
         _complaintTitleController.clear();
         _complaintBodyController.clear();
         _complaintAttachmentController.clear();
-        setState(() => _submitComplaintAnonymously = false);
-        _tabController.animateTo(1);
+        setState(() {
+          _submitComplaintAnonymously = false;
+          _complaintAttachmentUrl = null;
+        });
+        setState(() => _requestCentreView = 1);
       }
     } catch (e) {
       if (mounted) {
@@ -624,7 +693,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('تم إرسال طلب الاستقالة بنجاح')),
       );
-      _tabController.animateTo(1);
+      setState(() => _requestCentreView = 1);
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -638,7 +707,23 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
     }
   }
 
-  // Cancel Request Action
+  Future<bool> _confirmCancel(
+    String collectionPath,
+    String docId, {
+    String? message,
+  }) async {
+    final confirmed = await showConfirmationSheet(
+      context,
+      title: 'حذف الطلب',
+      message:
+          message ??
+          'سيتم إلغاء الطلب وحذفه من قائمة الطلبات النشطة. يبقى سجل داخلي لحماية حقوقك.',
+      confirmLabel: 'حذف الطلب',
+    );
+    if (!confirmed || !mounted) return false;
+    return _cancelRequest(collectionPath, docId);
+  }
+
   Future<bool> _cancelRequest(String collectionPath, String docId) async {
     final authService = Provider.of<AuthService>(context, listen: false);
     final actorId = authService.currentUser?.uid ?? '';
@@ -675,9 +760,9 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
         targetId: docId,
       );
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('تم إلغاء الطلب بنجاح')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('تم حذف الطلب من القائمة النشطة')),
+        );
       }
       return true;
     } catch (e) {
@@ -707,7 +792,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
       _attachmentUrl = request.attachmentUrl;
       _leaveAttachmentController.text = request.attachmentUrl ?? '';
     });
-    _tabController.animateTo(0);
+    setState(() => _requestCentreView = 1);
   }
 
   Future<void> _editPermissionRequest(PermissionModel request) async {
@@ -727,7 +812,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
       _isDeductiblePermission = request.isDeductible;
       _permissionReasonController.text = request.reason;
     });
-    _tabController.animateTo(0);
+    setState(() => _requestCentreView = 1);
   }
 
   @override
@@ -740,50 +825,509 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
-    return DefaultTabController(
-      length: 2,
-      child: Scaffold(
-        appBar: AppBar(
-          title: const Text(
-            'إدارة الطلبات',
-            style: TextStyle(fontWeight: FontWeight.bold),
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text(
+          'المقر الافتراضي ومركز الخدمات',
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
+        actions: [
+          IconButton(
+            icon: const Icon(
+              Icons.history_toggle_off,
+              color: ZaWolfColors.primaryCyan,
+            ),
+            tooltip: 'قسم الأرشيف وسجل الطلبات',
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const RequestsLogScreen(),
+                ),
+              );
+            },
           ),
-          actions: [
-            IconButton(
-              icon: const Icon(
-                Icons.history_toggle_off,
-                color: ZaWolfColors.primaryCyan,
+        ],
+      ),
+      body: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+            child: Align(
+              alignment: AlignmentDirectional.centerStart,
+              child: _requestCentreView == 0
+                  ? OutlinedButton.icon(
+                      onPressed: () => setState(() => _requestCentreView = 1),
+                      icon: const Icon(Icons.edit_note_outlined),
+                      label: const Text('إرسال طلب مباشر'),
+                    )
+                  : TextButton.icon(
+                      onPressed: () => setState(() => _requestCentreView = 0),
+                      icon: const Icon(Icons.sports_esports_outlined),
+                      label: const Text('استكشف المقر الافتراضي'),
+                    ),
+            ),
+          ),
+          Expanded(
+            child: _requestCentreView == 0
+                ? Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 12.0),
+                    child: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+                      stream: FirebaseFirestore.instance
+                          .collection('attendance')
+                          .doc(
+                            '${user.uid}_${DateFormat('yyyy-MM-dd').format(DateTime.now())}',
+                          )
+                          .snapshots(),
+                      builder: (context, attendanceSnapshot) =>
+                          StreamBuilder<List<EmployeeTaskModel>>(
+                            stream: TaskService().watchMyTasks(user.uid),
+                            builder: (context, taskSnapshot) {
+                              final weekStart = DateTime.now().subtract(
+                                Duration(days: DateTime.now().weekday - 1),
+                              );
+                              final completedThisWeek =
+                                  (taskSnapshot.data ??
+                                          const <EmployeeTaskModel>[])
+                                      .where(
+                                        (task) =>
+                                            task.status == TaskStatus.done &&
+                                            task.completedAt != null &&
+                                            !task.completedAt!.isBefore(
+                                              weekStart,
+                                            ),
+                                      )
+                                      .length;
+                              return VirtualOfficeGameWidget(
+                                user: user,
+                                attendedToday:
+                                    attendanceSnapshot.data?.exists ?? false,
+                                completedTasksThisWeek: completedThisWeek,
+                                onHotspotTapped: (hotspot) =>
+                                    _handleHotspotAction(user, theme, hotspot),
+                              );
+                            },
+                          ),
+                    ),
+                  )
+                : _buildSubmitConsole(user, theme),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _handleHotspotAction(
+    UserModel user,
+    ThemeData theme,
+    OfficeDepartmentHotspot hotspot,
+  ) {
+    switch (hotspot) {
+      case OfficeDepartmentHotspot.companyGate:
+        _showGateClockInModal(user, theme);
+        break;
+      case OfficeDepartmentHotspot.hrOffice:
+        _showHROfficeModal(user, theme);
+        break;
+      case OfficeDepartmentHotspot.itDesk:
+        _showITDeskModal(user, theme);
+        break;
+      case OfficeDepartmentHotspot.financeOffice:
+        _showFinanceOfficeModal(user, theme);
+        break;
+      case OfficeDepartmentHotspot.managerOffice:
+        _showManagerOfficeModal(user, theme);
+        break;
+      case OfficeDepartmentHotspot.archiveDept:
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (context) => const RequestsLogScreen()),
+        );
+        break;
+      case OfficeDepartmentHotspot.chatRoom:
+        final dept = user.department.isNotEmpty ? user.department : 'general';
+        context.push('/conversations/department/$dept');
+        break;
+    }
+  }
+
+  void _openDirectRequest(int requestTypeIndex) {
+    setState(() {
+      _requestTypeIndex = requestTypeIndex;
+      _requestCentreView = 1;
+    });
+  }
+
+  void _openOperationalRequest(String category) {
+    final actorId = context.read<AuthService>().currentUser?.uid ?? '';
+    final enabled = context.read<CompanyOsFeatureFlags>().isEnabledFor(
+      feature: CompanyOsFeature.requests,
+      actorId: actorId,
+    );
+    if (!enabled) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'طلبات الخدمات التقنية والمالية غير مفعّلة لحسابك الآن.',
+          ),
+        ),
+      );
+      return;
+    }
+    setState(() => _requestCentreView = 1);
+    context.push('/employee/requests/operational/new?category=$category');
+  }
+
+  void _showGateClockInModal(UserModel user, ThemeData theme) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: theme.scaffoldBackgroundColor,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (context) => Container(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.sensor_door, size: 48, color: Colors.greenAccent),
+            const SizedBox(height: 12),
+            const Text(
+              '🚪 بوابة الشركة الرئيسية',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
               ),
-              tooltip: 'سجل الطلبات المقبولة والمرفوضة',
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'يمكنك تسجيل الحضور (Check-In) عند وصولك للبوابة الرئيسية.',
+              style: TextStyle(color: Colors.white70),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 20),
+            WolfButton(
+              text: 'تسجيل الحضور الآن (Clock In)',
               onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => const RequestsLogScreen(),
-                  ),
-                );
+                Navigator.pop(context);
+                context.go('/attendance');
               },
             ),
           ],
-          bottom: TabBar(
-            controller: _tabController,
-            tabs: const [
-              Tab(text: 'تقديم طلب جديد'),
-              Tab(text: 'سجل طلباتي'),
+        ),
+      ),
+    );
+  }
+
+  void _showHROfficeModal(UserModel user, ThemeData theme) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: theme.scaffoldBackgroundColor,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (context) => DraggableScrollableSheet(
+        initialChildSize: 0.75,
+        maxChildSize: 0.95,
+        minChildSize: 0.5,
+        expand: false,
+        builder: (context, scrollController) => SingleChildScrollView(
+          controller: scrollController,
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            children: [
+              const Icon(
+                Icons.badge_outlined,
+                size: 42,
+                color: Colors.cyanAccent,
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                '📄 مكتب الموارد البشرية (HR)',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 16),
+              _buildLeaveBalanceSummary(user, theme),
+              const SizedBox(height: 20),
+              ListTile(
+                leading: const Icon(
+                  Icons.calendar_month,
+                  color: ZaWolfColors.primaryCyan,
+                ),
+                title: const Text(
+                  'طلب إجازة (Leave Request)',
+                  style: TextStyle(color: Colors.white),
+                ),
+                onTap: () {
+                  Navigator.pop(context);
+                  _openDirectRequest(1);
+                },
+              ),
+              ListTile(
+                leading: const Icon(
+                  Icons.access_time,
+                  color: ZaWolfColors.primaryCyan,
+                ),
+                title: const Text(
+                  'طلب استئذان (Time Permission)',
+                  style: TextStyle(color: Colors.white),
+                ),
+                onTap: () {
+                  Navigator.pop(context);
+                  _openDirectRequest(0);
+                },
+              ),
+              ListTile(
+                leading: const Icon(
+                  Icons.fingerprint,
+                  color: ZaWolfColors.primaryCyan,
+                ),
+                title: const Text(
+                  'تصحيح بصمة / حضور',
+                  style: TextStyle(color: Colors.white),
+                ),
+                onTap: () {
+                  Navigator.pop(context);
+                  _openDirectRequest(6);
+                },
+              ),
+              ListTile(
+                leading: const Icon(
+                  Icons.receipt_long,
+                  color: Colors.amberAccent,
+                ),
+                title: const Text(
+                  'تفاصيل الخصومات وسجل الحضور',
+                  style: TextStyle(color: Colors.white),
+                ),
+                onTap: () {
+                  Navigator.pop(context);
+                  context.push('/employee/deductions');
+                },
+              ),
             ],
-            labelColor: ZaWolfColors.primaryCyan,
-            unselectedLabelColor: ZaWolfColors.textSecondary,
-            indicatorColor: ZaWolfColors.primaryCyan,
           ),
         ),
-        body: TabBarView(
-          controller: _tabController,
-          children: [
-            // Tab 1: Submit Form Console
-            _buildSubmitConsole(user, theme),
+      ),
+    );
+  }
 
-            // Tab 2: Requests History
-            _buildHistoryConsole(user, theme),
+  void _showITDeskModal(UserModel user, ThemeData theme) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: theme.scaffoldBackgroundColor,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (context) => Container(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.computer, size: 42, color: Colors.purpleAccent),
+            const SizedBox(height: 8),
+            const Text(
+              '💻 مكتب الدعم التقني والتشغيل',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 16),
+            ListTile(
+              leading: const Icon(
+                Icons.support_agent,
+                color: Colors.purpleAccent,
+              ),
+              title: const Text(
+                'طلب دعم تقني / اشتراك برامج',
+                style: TextStyle(color: Colors.white),
+              ),
+              onTap: () {
+                Navigator.pop(context);
+                _openOperationalRequest('technical');
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.devices, color: Colors.purpleAccent),
+              title: const Text(
+                'طلب عهدة / أجهزة ومعدات',
+                style: TextStyle(color: Colors.white),
+              ),
+              onTap: () {
+                Navigator.pop(context);
+                _openOperationalRequest('assets');
+              },
+            ),
+            if (kIsWeb)
+              ListTile(
+                leading: const Icon(
+                  Icons.folder_shared,
+                  color: ZaWolfColors.primaryCyan,
+                ),
+                title: const Text(
+                  'بوابة مستندات الشركة (Google Workspace)',
+                  style: TextStyle(color: Colors.white),
+                ),
+                subtitle: const Text(
+                  'متاحة عبر المتصفح ومساحة العمل الرسمية',
+                  style: TextStyle(color: Colors.white54, fontSize: 11),
+                ),
+                onTap: () {
+                  Navigator.pop(context);
+                  context.push('/workspace');
+                },
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showFinanceOfficeModal(UserModel user, ThemeData theme) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: theme.scaffoldBackgroundColor,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (context) => Container(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(
+              Icons.account_balance_wallet_outlined,
+              size: 42,
+              color: Colors.amberAccent,
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              '💰 المكتب المالي',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 16),
+            ListTile(
+              leading: const Icon(Icons.payments, color: Colors.amberAccent),
+              title: const Text(
+                'طلب سلفة مالية (Salary Advance)',
+                style: TextStyle(color: Colors.white),
+              ),
+              onTap: () {
+                Navigator.pop(context);
+                _openDirectRequest(2);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.description, color: Colors.amberAccent),
+              title: const Text(
+                'تقديم اعتراض / تسوية خصم',
+                style: TextStyle(color: Colors.white),
+              ),
+              onTap: () {
+                Navigator.pop(context);
+                _openDirectRequest(3);
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showManagerOfficeModal(UserModel user, ThemeData theme) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: theme.scaffoldBackgroundColor,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (context) => Container(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(
+              Icons.business_center_outlined,
+              size: 42,
+              color: Colors.blueAccent,
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              '👔 مكتب الإدارة والمهمات',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 16),
+            ListTile(
+              leading: const Icon(Icons.alt_route, color: Colors.blueAccent),
+              title: const Text(
+                'طلب مهمة ميدانية (Field Mission)',
+                style: TextStyle(color: Colors.white),
+              ),
+              onTap: () {
+                Navigator.pop(context);
+                setState(() {
+                  _administrativeCategory =
+                      AdministrativeRequestCategory.fieldMission;
+                });
+                _openDirectRequest(5);
+              },
+            ),
+            if ([
+              'manager',
+              'team_leader',
+              'hr',
+              'hr_admin',
+              'hr_manager',
+              'super_admin',
+            ].contains(user.role))
+              ListTile(
+                leading: const Icon(
+                  Icons.forum_outlined,
+                  color: Colors.cyanAccent,
+                ),
+                title: const Text(
+                  'قناة المديرين',
+                  style: TextStyle(color: Colors.white),
+                ),
+                subtitle: const Text(
+                  'محادثة الإدارة والمنسقين',
+                  style: TextStyle(color: Colors.white60),
+                ),
+                onTap: () {
+                  Navigator.pop(context);
+                  context.push('/conversations/managers');
+                },
+              ),
+            ListTile(
+              leading: const Icon(
+                Icons.meeting_room_outlined,
+                color: ZaWolfColors.error,
+              ),
+              title: const Text(
+                'تقديم استقالة (Resignation Notice)',
+                style: TextStyle(color: Colors.white),
+              ),
+              onTap: () {
+                Navigator.pop(context);
+                _openDirectRequest(4);
+              },
+            ),
           ],
         ),
       ),
@@ -834,14 +1378,67 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
   }
 
   Widget _buildRequestTypeSelector(ThemeData theme) {
-    const types = [
-      ('إذن', Icons.schedule_outlined, ZaWolfColors.permissionTeal),
-      ('إجازة', Icons.event_available_outlined, ZaWolfColors.dayoffPurple),
-      ('سلفة', Icons.account_balance_wallet_outlined, ZaWolfColors.warning),
-      ('شكوى', Icons.feedback_outlined, ZaWolfColors.error),
-      ('استقالة', Icons.exit_to_app, ZaWolfColors.error),
-      ('طلب إداري', Icons.assignment_outlined, ZaWolfColors.primaryBlue),
-      ('تصحيح حضور', Icons.edit_calendar_outlined, ZaWolfColors.success),
+    final actorId = context.read<AuthService>().currentUser?.uid ?? '';
+    final operationalEnabled = context
+        .read<CompanyOsFeatureFlags>()
+        .isEnabledFor(feature: CompanyOsFeature.requests, actorId: actorId);
+    final types = <({String label, IconData icon, Color color, String? route})>[
+      (
+        label: 'إذن',
+        icon: Icons.schedule_outlined,
+        color: ZaWolfColors.permissionTeal,
+        route: null,
+      ),
+      (
+        label: 'إجازة',
+        icon: Icons.event_available_outlined,
+        color: ZaWolfColors.dayoffPurple,
+        route: null,
+      ),
+      (
+        label: 'سلفة',
+        icon: Icons.account_balance_wallet_outlined,
+        color: ZaWolfColors.warning,
+        route: null,
+      ),
+      (
+        label: 'شكوى',
+        icon: Icons.feedback_outlined,
+        color: ZaWolfColors.error,
+        route: null,
+      ),
+      (
+        label: 'استقالة',
+        icon: Icons.meeting_room_outlined,
+        color: ZaWolfColors.error,
+        route: null,
+      ),
+      (
+        label: 'خدمات الموظف والشؤون الإدارية',
+        icon: Icons.assignment_outlined,
+        color: ZaWolfColors.primaryBlue,
+        route: null,
+      ),
+      (
+        label: 'تصحيح حضور',
+        icon: Icons.edit_calendar_outlined,
+        color: ZaWolfColors.success,
+        route: null,
+      ),
+      if (operationalEnabled)
+        (
+          label: 'خدمات تقنية وتشغيلية',
+          icon: Icons.computer_outlined,
+          color: ZaWolfColors.primaryCyan,
+          route: '/employee/requests/operational/new?category=technical',
+        ),
+      if (operationalEnabled)
+        (
+          label: 'مصروفات ومدفوعات الشركة',
+          icon: Icons.payments_outlined,
+          color: ZaWolfColors.warning,
+          route: '/employee/requests/operational/new?category=financial',
+        ),
     ];
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -857,7 +1454,13 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
               child: Material(
                 color: Colors.transparent,
                 child: InkWell(
-                  onTap: () => setState(() => _requestTypeIndex = index),
+                  onTap: () {
+                    if (type.route case final route?) {
+                      context.push(route);
+                      return;
+                    }
+                    setState(() => _requestTypeIndex = index);
+                  },
                   borderRadius: BorderRadius.circular(8),
                   child: AnimatedContainer(
                     duration: const Duration(milliseconds: 160),
@@ -867,25 +1470,25 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
                     ),
                     decoration: BoxDecoration(
                       color: selected
-                          ? type.$3.withValues(alpha: 0.14)
+                          ? type.color.withValues(alpha: 0.14)
                           : ZaWolfColors.surface01,
                       borderRadius: BorderRadius.circular(8),
                       border: Border.all(
-                        color: selected ? type.$3 : ZaWolfColors.surface03,
+                        color: selected ? type.color : ZaWolfColors.surface03,
                         width: selected ? 1.4 : 1,
                       ),
                     ),
                     child: Row(
                       children: [
                         Icon(
-                          type.$2,
+                          type.icon,
                           color: selected
-                              ? type.$3
+                              ? type.color
                               : ZaWolfColors.textSecondary,
                         ),
                         const SizedBox(width: 9),
                         Text(
-                          type.$1,
+                          type.label,
                           style: theme.textTheme.titleMedium?.copyWith(
                             color: selected
                                 ? Colors.white
@@ -895,7 +1498,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
                         ),
                         const Spacer(),
                         if (selected)
-                          Icon(Icons.check_circle, color: type.$3, size: 18),
+                          Icon(Icons.check_circle, color: type.color, size: 18),
                       ],
                     ),
                   ),
@@ -1562,18 +2165,19 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
             ),
             const SizedBox(height: 12),
 
-            // Attachment URL input
-            WolfInputField(
-              controller: _leaveAttachmentController,
-              labelText: 'رابط المرفق (جوجل درايف / الخ) - اختياري',
-              englishLabel: 'Attachment Link (Optional)',
-              hintText: 'https://...',
-              textDirection: TextDirection.ltr,
-              onChanged: (val) {
-                setState(() {
-                  _attachmentUrl = val.trim();
-                });
-              },
+            OutlinedButton.icon(
+              icon: const Icon(Icons.attach_file_outlined),
+              label: Text(
+                _attachmentUrl == null
+                    ? 'إرفاق مستند للإجازة (اختياري)'
+                    : 'تم إرفاق مستند في ملفات الشركة',
+              ),
+              onPressed: _loading
+                  ? null
+                  : () => _pickAndStoreAttachment(
+                      controller: _leaveAttachmentController,
+                      onStored: (uri) => setState(() => _attachmentUrl = uri),
+                    ),
             ),
             const SizedBox(height: 16),
 
@@ -1735,25 +2339,20 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
                   : null,
             ),
             const SizedBox(height: 16),
-            WolfInputField(
-              controller: _complaintAttachmentController,
-              labelText: 'رابط مرفق اختياري',
-              englishLabel: 'Optional Link',
-              hintText: 'https://drive.google.com/...',
-              prefixIcon: Icons.link,
-              textDirection: TextDirection.ltr,
-              validator: (val) {
-                final value = val?.trim() ?? '';
-                if (value.isEmpty) return null;
-                final uri = Uri.tryParse(value);
-                if (uri == null || uri.scheme.isEmpty || uri.host.isEmpty) {
-                  return 'أدخل رابطاً صحيحاً أو اتركه فارغاً';
-                }
-                if (!['http', 'https'].contains(uri.scheme.toLowerCase())) {
-                  return 'الرابط يجب أن يبدأ بـ http أو https';
-                }
-                return null;
-              },
+            OutlinedButton.icon(
+              icon: const Icon(Icons.attach_file_outlined),
+              label: Text(
+                _complaintAttachmentUrl == null
+                    ? 'إرفاق ملف للشكوى (اختياري)'
+                    : 'تم إرفاق ملف في ملفات الشركة',
+              ),
+              onPressed: _loading
+                  ? null
+                  : () => _pickAndStoreAttachment(
+                      controller: _complaintAttachmentController,
+                      onStored: (uri) =>
+                          setState(() => _complaintAttachmentUrl = uri),
+                    ),
             ),
             const SizedBox(height: 20),
             WolfButton(
@@ -1892,11 +2491,25 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
     );
   }
 
+  // ignore: unused_element
   Widget _buildHistoryConsole(UserModel user, ThemeData theme) {
     return DefaultTabController(
       length: 7,
       child: Column(
         children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+            child: FilterBar(
+              selectedId: _historyStatusFilter,
+              onSelected: (id) => setState(() => _historyStatusFilter = id),
+              chips: const [
+                FilterChipItem(id: 'all', label: 'الكل'),
+                FilterChipItem(id: 'pending', label: 'قيد المراجعة'),
+                FilterChipItem(id: 'approved', label: 'مقبول'),
+                FilterChipItem(id: 'rejected', label: 'مرفوض'),
+              ],
+            ),
+          ),
           TabBar(
             isScrollable: true,
             tabs: const [
@@ -1930,6 +2543,38 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
     );
   }
 
+  Widget _buildAttachmentIndicator(String value, ThemeData theme) {
+    final governedDriveAttachment = value.startsWith('drive-request://');
+    return Row(
+      children: [
+        Icon(
+          governedDriveAttachment ? Icons.cloud_done_outlined : Icons.link,
+          color: ZaWolfColors.primaryCyan,
+          size: 16,
+        ),
+        const SizedBox(width: 6),
+        Expanded(
+          child: Text(
+            governedDriveAttachment
+                ? 'مرفق محفوظ بأمان في ملفات الشركة'
+                : value,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: ZaWolfColors.primaryCyan,
+              decoration: governedDriveAttachment
+                  ? null
+                  : TextDecoration.underline,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            textDirection: governedDriveAttachment
+                ? TextDirection.rtl
+                : TextDirection.ltr,
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _buildAttendanceCorrectionHistory(String userId, ThemeData theme) {
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
       stream: _cachedStream(
@@ -1938,9 +2583,10 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
       ),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(
-            child: CircularProgressIndicator(color: ZaWolfColors.primaryCyan),
-          );
+          return _buildHistoryLoading();
+        }
+        if (snapshot.hasError) {
+          return _buildHistoryError();
         }
         final docs = [...?snapshot.data?.docs];
         docs.sort((a, b) {
@@ -1950,6 +2596,11 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
             left?.millisecondsSinceEpoch ?? 0,
           );
         });
+        docs.removeWhere(
+          (doc) => !_matchesHistoryFilter(
+            doc.data()['status'] as String? ?? 'pending_hr',
+          ),
+        );
         if (docs.isEmpty) {
           return const Center(child: Text('لا توجد طلبات تصحيح وقت.'));
         }
@@ -2013,11 +2664,11 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
                     if (status == 'pending_hr') ...[
                       const SizedBox(height: 12),
                       WolfButton(
-                        onPressed: () => _cancelRequest(
+                        onPressed: () => _confirmCancel(
                           'attendanceCorrectionRequests',
                           docs[index].id,
                         ),
-                        text: 'إلغاء الطلب',
+                        text: 'حذف الطلب',
                         secondaryText: 'CANCEL REQUEST',
                         variant: WolfButtonVariant.outline,
                         height: 40,
@@ -2097,7 +2748,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
               children: [
                 Expanded(
                   child: OutlinedButton.icon(
-                    icon: const Icon(Icons.login),
+                    icon: const Icon(Icons.schedule),
                     label: Text(
                       'البداية: ${_fieldMissionStart.format(context)}',
                     ),
@@ -2115,7 +2766,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
                 const SizedBox(width: 8),
                 Expanded(
                   child: OutlinedButton.icon(
-                    icon: const Icon(Icons.logout),
+                    icon: const Icon(Icons.timer_off_outlined),
                     label: Text('النهاية: ${_fieldMissionEnd.format(context)}'),
                     onPressed: () async {
                       final picked = await showTimePicker(
@@ -2160,23 +2811,20 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
           if (_administrativeCategory !=
               AdministrativeRequestCategory.fieldMission) ...[
             const SizedBox(height: 14),
-            TextFormField(
-              controller: _administrativeAttachmentController,
-              textDirection: TextDirection.ltr,
-              decoration: const InputDecoration(
-                labelText: 'رابط مرفق (اختياري)',
-                hintText: 'https://...',
+            OutlinedButton.icon(
+              icon: const Icon(Icons.attach_file_outlined),
+              label: Text(
+                _administrativeAttachmentUrl == null
+                    ? 'إرفاق ملف داعم (اختياري)'
+                    : 'تم إرفاق ملف في ملفات الشركة',
               ),
-              validator: (value) {
-                if (value == null || value.trim().isEmpty) return null;
-                final uri = Uri.tryParse(value.trim());
-                if (uri == null ||
-                    !['http', 'https'].contains(uri.scheme) ||
-                    uri.host.isEmpty) {
-                  return 'أدخل رابطاً صحيحاً';
-                }
-                return null;
-              },
+              onPressed: _loading
+                  ? null
+                  : () => _pickAndStoreAttachment(
+                      controller: _administrativeAttachmentController,
+                      onStored: (uri) =>
+                          setState(() => _administrativeAttachmentUrl = uri),
+                    ),
             ),
           ],
           const SizedBox(height: 20),
@@ -2207,17 +2855,26 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
       ),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
+          return _buildHistoryLoading();
+        }
+        if (snapshot.hasError) {
+          return _buildHistoryError();
         }
         final docs = snapshot.data?.docs ?? const [];
-        if (docs.isEmpty) {
+        final filteredDocs = docs
+            .where(
+              (doc) =>
+                  _matchesHistoryFilter(doc.data()['status'] as String? ?? ''),
+            )
+            .toList();
+        if (filteredDocs.isEmpty) {
           return _buildEmptyState('لا توجد طلبات إدارية سابقة.');
         }
         return ListView.builder(
           padding: const EdgeInsets.all(16),
-          itemCount: docs.length,
+          itemCount: filteredDocs.length,
           itemBuilder: (context, index) {
-            final doc = docs[index];
+            final doc = filteredDocs[index];
             final request = AdministrativeRequestModel.fromFirestore(doc);
             return Container(
               margin: const EdgeInsets.only(bottom: 12),
@@ -2239,9 +2896,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
-                          AdministrativeRequestCategory.arabicLabel(
-                            request.category,
-                          ),
+                          request.categoryLabel,
                           style: const TextStyle(
                             color: Colors.white,
                             fontWeight: FontWeight.bold,
@@ -2267,18 +2922,24 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
                     ),
                   ],
                   if ((request.attachmentUrl ?? '').isNotEmpty)
-                    Text(
-                      request.attachmentUrl!,
-                      style: const TextStyle(color: ZaWolfColors.primaryCyan),
-                      textDirection: TextDirection.ltr,
-                    ),
+                    _buildAttachmentIndicator(request.attachmentUrl!, theme),
                   RequestApprovalTimeline(data: doc.data(), compact: true),
+                  if (request.category == 'company_os') ...[
+                    const SizedBox(height: 12),
+                    FilledButton.icon(
+                      onPressed: () => context.push(
+                        '/employee/requests/operational/${request.id}',
+                      ),
+                      icon: const Icon(Icons.route_outlined),
+                      label: const Text('عرض مسار الطلب'),
+                    ),
+                  ],
                   if (request.status.startsWith('pending_')) ...[
                     const SizedBox(height: 12),
                     WolfButton(
                       onPressed: () =>
-                          _cancelRequest('administrativeRequests', request.id),
-                      text: 'إلغاء الطلب',
+                          _confirmCancel('administrativeRequests', request.id),
+                      text: 'حذف الطلب',
                       secondaryText: 'CANCEL REQUEST',
                       variant: WolfButtonVariant.outline,
                       height: 40,
@@ -2369,9 +3030,14 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
       ),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
+          return _buildHistoryLoading();
         }
-        final requests = snapshot.data ?? const <ResignationModel>[];
+        if (snapshot.hasError) {
+          return _buildHistoryError();
+        }
+        final requests = (snapshot.data ?? const <ResignationModel>[])
+            .where((request) => _matchesHistoryFilter(request.status))
+            .toList();
         if (requests.isEmpty) {
           return _buildEmptyState('لا توجد طلبات استقالة سابقة.');
         }
@@ -2393,7 +3059,10 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
                 children: [
                   Row(
                     children: [
-                      const Icon(Icons.exit_to_app, color: ZaWolfColors.error),
+                      const Icon(
+                        Icons.meeting_room_outlined,
+                        color: ZaWolfColors.error,
+                      ),
                       const SizedBox(width: 8),
                       const Expanded(
                         child: Text(
@@ -2424,8 +3093,8 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
                     const SizedBox(height: 12),
                     WolfButton(
                       onPressed: () =>
-                          _cancelRequest('resignations', request.resignationId),
-                      text: 'إلغاء الطلب',
+                          _confirmCancel('resignations', request.resignationId),
+                      text: 'حذف الطلب',
                       secondaryText: 'CANCEL REQUEST',
                       variant: WolfButtonVariant.outline,
                       height: 40,
@@ -2453,9 +3122,17 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
       ),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
+          return _buildHistoryLoading();
         }
-        final docs = snapshot.data?.docs ?? [];
+        if (snapshot.hasError) {
+          return _buildHistoryError();
+        }
+        final docs = (snapshot.data?.docs ?? [])
+            .where(
+              (doc) =>
+                  _matchesHistoryFilter(AdvanceModel.fromFirestore(doc).status),
+            )
+            .toList();
         if (docs.isEmpty) {
           return _buildEmptyState('لا توجد طلبات سلفة سابقة.');
         }
@@ -2525,8 +3202,8 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
                     const SizedBox(height: 12),
                     WolfButton(
                       onPressed: () =>
-                          _cancelRequest('advances', req.advanceId),
-                      text: 'إلغاء الطلب',
+                          _confirmCancel('advances', req.advanceId),
+                      text: 'حذف الطلب',
                       secondaryText: 'CANCEL REQUEST',
                       variant: WolfButtonVariant.outline,
                       height: 40,
@@ -2554,9 +3231,20 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
       ),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
+          return _buildHistoryLoading();
         }
-        final docs = snapshot.data?.docs ?? [];
+        if (snapshot.hasError) {
+          return _buildHistoryError();
+        }
+        final docs = (snapshot.data?.docs ?? [])
+            .where(
+              (doc) => _matchesHistoryFilter(
+                ComplaintModel.fromFirestore(doc).status == 'new'
+                    ? 'pending'
+                    : ComplaintModel.fromFirestore(doc).status,
+              ),
+            )
+            .toList();
         if (docs.isEmpty) {
           return _buildEmptyState('لا توجد شكاوى سابقة.');
         }
@@ -2617,35 +3305,14 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
                   if (complaint.attachmentUrl != null &&
                       complaint.attachmentUrl!.isNotEmpty) ...[
                     const SizedBox(height: 10),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            complaint.attachmentUrl!,
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              color: ZaWolfColors.primaryCyan,
-                              decoration: TextDecoration.underline,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            textDirection: TextDirection.ltr,
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        const Icon(
-                          Icons.link,
-                          color: ZaWolfColors.primaryCyan,
-                          size: 16,
-                        ),
-                      ],
-                    ),
+                    _buildAttachmentIndicator(complaint.attachmentUrl!, theme),
                   ],
                   if (complaint.status == 'new') ...[
                     const SizedBox(height: 12),
                     WolfButton(
                       onPressed: () =>
-                          _cancelRequest('complaints', complaint.complaintId),
-                      text: 'إلغاء الشكوى',
+                          _confirmCancel('complaints', complaint.complaintId),
+                      text: 'حذف الشكوى',
                       secondaryText: 'CANCEL COMPLAINT',
                       variant: WolfButtonVariant.outline,
                       height: 40,
@@ -2673,9 +3340,17 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
       ),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
+          return _buildHistoryLoading();
         }
-        final docs = snapshot.data?.docs ?? [];
+        if (snapshot.hasError) {
+          return _buildHistoryError();
+        }
+        final docs = (snapshot.data?.docs ?? [])
+            .where(
+              (doc) =>
+                  _matchesHistoryFilter(LeaveModel.fromFirestore(doc).status),
+            )
+            .toList();
         if (docs.isEmpty) {
           return _buildEmptyState('لا توجد طلبات إجازة سابقة.');
         }
@@ -2755,28 +3430,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
                   if (req.attachmentUrl != null &&
                       req.attachmentUrl!.isNotEmpty) ...[
                     const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        const Icon(
-                          Icons.link,
-                          color: ZaWolfColors.primaryCyan,
-                          size: 16,
-                        ),
-                        const SizedBox(width: 4),
-                        Expanded(
-                          child: Text(
-                            req.attachmentUrl!,
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              color: ZaWolfColors.primaryCyan,
-                              decoration: TextDecoration.underline,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            textDirection: TextDirection.ltr,
-                          ),
-                        ),
-                      ],
-                    ),
+                    _buildAttachmentIndicator(req.attachmentUrl!, theme),
                   ],
                   if (req.reviewerComment != null &&
                       req.reviewerComment!.isNotEmpty) ...[
@@ -2812,8 +3466,8 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
                         Expanded(
                           child: WolfButton(
                             onPressed: () =>
-                                _cancelRequest('leaves', req.leaveId),
-                            text: 'إلغاء',
+                                _confirmCancel('leaves', req.leaveId),
+                            text: 'حذف الطلب',
                             variant: WolfButtonVariant.outline,
                             height: 40,
                           ),
@@ -2852,9 +3506,18 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
       ),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
+          return _buildHistoryLoading();
         }
-        final docs = snapshot.data?.docs ?? [];
+        if (snapshot.hasError) {
+          return _buildHistoryError();
+        }
+        final docs = (snapshot.data?.docs ?? [])
+            .where(
+              (doc) => _matchesHistoryFilter(
+                PermissionModel.fromFirestore(doc).status,
+              ),
+            )
+            .toList();
         if (docs.isEmpty) {
           return _buildEmptyState('لا توجد طلبات إذن سابقة.');
         }
@@ -2963,8 +3626,8 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
                         Expanded(
                           child: WolfButton(
                             onPressed: () =>
-                                _cancelRequest('permissions', req.permissionId),
-                            text: 'إلغاء',
+                                _confirmCancel('permissions', req.permissionId),
+                            text: 'حذف الطلب',
                             variant: WolfButtonVariant.outline,
                             height: 40,
                           ),
@@ -3028,83 +3691,53 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen>
     return (formatter.format(start), formatter.format(end));
   }
 
+  bool _matchesHistoryFilter(String status) {
+    switch (_historyStatusFilter) {
+      case 'pending':
+        return status.startsWith('pending') || status == 'new';
+      case 'approved':
+        return status == 'approved' || status == 'reviewed';
+      case 'rejected':
+        return status == 'rejected' || status == 'invalid_late';
+      default:
+        return true;
+    }
+  }
+
+  Widget _buildHistoryLoading() {
+    return const Padding(
+      padding: EdgeInsets.all(16),
+      child: SkeletonList(itemCount: 4, itemHeight: 88),
+    );
+  }
+
+  Widget _buildHistoryError() {
+    return const ErrorState(
+      message: 'تعذر تحميل السجل الآن. تحقق من الاتصال وحاول مجدداً.',
+    );
+  }
+
   Widget _buildEmptyState(String text) {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(Icons.inbox, color: ZaWolfColors.textMuted, size: 48),
-          const SizedBox(height: 16),
-          Text(text, style: const TextStyle(color: ZaWolfColors.textSecondary)),
-        ],
-      ),
+    return EmptyState(
+      title: text,
+      subtitle: 'الطلبات التي ترسلها تظهر هنا وتنتقل للسجل بعد المراجعة.',
     );
   }
 
   Widget _buildStatusBadge(String status) {
-    Color color;
-    String text;
-
-    switch (status) {
-      case 'approved':
-        color = ZaWolfColors.success;
-        text = 'مقبول';
-        break;
-      case 'rejected':
-        color = ZaWolfColors.error;
-        text = 'مرفوض';
-        break;
-      case 'invalid_late':
-        color = ZaWolfColors.error;
-        text = 'غير مقبول (متأخر)';
-        break;
-      case 'pending_hr':
-        color = ZaWolfColors.warning;
-        text = 'بانتظار HR';
-        break;
-      case 'pending_manager':
-        color = ZaWolfColors.warning;
-        text = 'بانتظار المدير';
-        break;
-      case 'pending_ceo':
-        color = ZaWolfColors.warning;
-        text = 'بانتظار CEO';
-        break;
-      case 'cancelled':
-        color = Colors.grey;
-        text = 'ملغي';
-        break;
-      case 'reviewed':
-        color = ZaWolfColors.success;
-        text = 'تمت المراجعة';
-        break;
-      case 'closed':
-        color = Colors.grey;
-        text = 'مغلقة';
-        break;
-      case 'pending':
-      default:
-        color = ZaWolfColors.warning;
-        text = 'معلق';
-        break;
-    }
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: color.withValues(alpha: 0.3)),
-      ),
-      child: Text(
-        text,
-        style: TextStyle(
-          color: color,
-          fontSize: 11,
-          fontWeight: FontWeight.bold,
-        ),
-      ),
-    );
+    final (label, dsStatus) = switch (status) {
+      'approved' => ('مقبول', DsStatus.approved),
+      'rejected' => ('مرفوض', DsStatus.rejected),
+      'invalid_late' => ('غير مقبول (متأخر)', DsStatus.rejected),
+      'pending_hr' => ('بانتظار HR', DsStatus.pendingAction),
+      'pending_manager' => ('بانتظار المدير', DsStatus.pendingAction),
+      'pending_ceo' => ('بانتظار CEO', DsStatus.pendingAction),
+      'cancelled' => ('ملغي', DsStatus.neutral),
+      'reviewed' => ('تمت المراجعة', DsStatus.approved),
+      'closed' => ('مغلقة', DsStatus.neutral),
+      _ => ('معلق', DsStatus.pendingAction),
+    };
+    return StatusPill(status: dsStatus, label: label);
   }
 
   String _getLeaveTypeLabel(String type) {

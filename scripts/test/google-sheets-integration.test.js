@@ -383,3 +383,29 @@ test('daily HR reports replace one dated Google Sheet tab without CSV', async ()
     true,
   );
 });
+
+test('Workspace reports reuse the company-owned reports workbook when configured', async () => {
+  const requests = [];
+  const authClient = {
+    async request(options) {
+      requests.push(options);
+      if (options.method === 'GET') {
+        return { data: { sheets: [{ properties: { sheetId: 9, title: 'سجل التدقيق' } }] } };
+      }
+      return { data: {} };
+    },
+  };
+  const sheets = createGoogleSheetsIntegration({
+    env: {
+      GOOGLE_SHEETS_TEST_SPREADSHEET_ID: '1h3eNfVdY5wTHszPN0w0gPNI-BGGauoGWSSal4fLnwIM',
+      GOOGLE_HR_REPORTS_SPREADSHEET_ID: '1reportsWorkbookId1234567890',
+      GOOGLE_WORKSPACE_ROOT_FOLDER_ID: 'companyRootFolderId123',
+    },
+    authClient,
+  });
+  const report = await sheets.writeWorkspaceAuditReport(['الإجراء'], [['عرض']]);
+  assert.equal(report.spreadsheetId, '1reportsWorkbookId1234567890');
+  assert.equal(report.rowCount, 1);
+  assert.equal(requests.some((item) => String(item.url).includes('/drive/v3/files')), false);
+  assert.equal(requests.some((item) => item.method === 'PUT'), true);
+});

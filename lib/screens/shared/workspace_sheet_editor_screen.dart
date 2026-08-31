@@ -9,6 +9,8 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../models/company_workspace_models.dart';
 import '../../services/google_workspace_service.dart';
 import '../../utils/user_facing_error.dart';
+import '../../theme/theme.dart';
+import '../../design_system/components/skeletons.dart' show SkeletonList;
 
 /// Audited spreadsheet editor. Google IDs remain on the server and every
 /// mutation is sent through the ZaWolf permission/audit gateway.
@@ -186,7 +188,7 @@ class _WorkspaceSheetEditorScreenState
                           ? Icons.check_box
                           : Icons.check_box_outline_blank,
                       size: 20,
-                      color: const Color(0xFF41DDEB),
+                      color: ZaWolfColors.editorAccent,
                     )
                   else
                     Expanded(
@@ -889,7 +891,10 @@ class _WorkspaceSheetEditorScreenState
             ],
           ),
           body: _loading
-              ? const Center(child: CircularProgressIndicator())
+              ? const Padding(
+                  padding: EdgeInsets.all(16),
+                  child: SkeletonList(itemCount: 6, itemHeight: 40),
+                )
               : sheet == null
               ? _errorPanel()
               : Column(
@@ -944,11 +949,11 @@ class _WorkspaceSheetEditorScreenState
                             style: PlutoGridStyleConfig.dark(
                               rowHeight: 52,
                               columnHeight: 52,
-                              activatedColor: Color(0xFF123B46),
-                              activatedBorderColor: Color(0xFF41DDEB),
-                              gridBorderColor: Color(0xFF34424A),
-                              borderColor: Color(0xFF34424A),
-                              cellColorInEditState: Color(0xFF16252C),
+                              activatedColor: ZaWolfColors.editorActivated,
+                              activatedBorderColor: ZaWolfColors.editorAccent,
+                              gridBorderColor: ZaWolfColors.editorGridBorder,
+                              borderColor: ZaWolfColors.editorGridBorder,
+                              cellColorInEditState: ZaWolfColors.editorCellEdit,
                             ),
                           ),
                         ),
@@ -982,7 +987,7 @@ class _WorkspaceSheetEditorScreenState
 
   Widget _toolbar(WorkspaceSheetData sheet) {
     return Material(
-      color: const Color(0xFF11191E),
+      color: ZaWolfColors.editorSurface,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         child: Directionality(
@@ -1125,7 +1130,7 @@ class _WorkspaceSheetEditorScreenState
   }
 
   Widget _formulaBar(WorkspaceSheetData sheet) => Material(
-    color: const Color(0xFF0D1418),
+    color: ZaWolfColors.editorSurfaceDeep,
     child: Padding(
       padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
       child: Row(
@@ -1190,7 +1195,7 @@ class _WorkspaceSheetEditorScreenState
   );
 
   Widget _sheetTabs(WorkspaceSheetData sheet) => Material(
-    color: const Color(0xFF11191E),
+    color: ZaWolfColors.editorSurface,
     child: SafeArea(
       top: false,
       child: SizedBox(

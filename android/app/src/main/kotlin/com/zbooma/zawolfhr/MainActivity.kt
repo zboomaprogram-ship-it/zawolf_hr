@@ -17,6 +17,7 @@ import com.google.android.gms.location.LocationServices
 import io.flutter.embedding.android.FlutterFragmentActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
+import org.json.JSONObject
 
 class MainActivity : FlutterFragmentActivity() {
     private val personalAlarmChannel = "zawolf_hr/personal_alarm"
@@ -161,12 +162,25 @@ class MainActivity : FlutterFragmentActivity() {
         val employeeId = call.argument<String>("employeeId") ?: ""
         val deviceId = call.argument<String>("deviceId") ?: ""
         val deviceLabel = call.argument<String>("deviceLabel") ?: ""
-        val locationId = call.argument<String>("locationId")
-        val locationName = call.argument<String>("locationName") ?: ""
-        val latitude = call.argument<Double>("latitude")
-        val longitude = call.argument<Double>("longitude")
-        val radius = call.argument<Double>("radiusMeters")
-        if (userId.isNullOrEmpty() || deviceId.isEmpty() || locationId.isNullOrEmpty() || latitude == null || longitude == null || radius == null) {
+        val rawLocations = call.argument<List<Map<String, Any?>>>("locations")
+            ?: listOfNotNull(call.arguments as? Map<String, Any?>)
+        val locations = rawLocations.take(20).mapNotNull { raw ->
+            val id = raw["locationId"] as? String
+            val latitude = (raw["latitude"] as? Number)?.toDouble()
+            val longitude = (raw["longitude"] as? Number)?.toDouble()
+            val radius = (raw["radiusMeters"] as? Number)?.toDouble()
+            if (id.isNullOrBlank() || latitude == null || longitude == null || radius == null || radius <= 0) null
+            else AttendanceRegion(
+                locationId = id,
+                locationName = raw["locationName"] as? String ?: "",
+                latitude = latitude,
+                longitude = longitude,
+                radiusMeters = radius,
+                assignmentId = raw["assignmentId"] as? String ?: "",
+                assignmentVersion = (raw["assignmentVersion"] as? Number)?.toInt() ?: 0,
+            )
+        }
+        if (userId.isNullOrEmpty() || deviceId.isEmpty() || locations.isEmpty()) {
             result.error("INVALID_GEOFENCE", "بيانات فرع الحضور غير مكتملة.", null)
             return
         }
@@ -178,30 +192,54 @@ class MainActivity : FlutterFragmentActivity() {
             return
         }
         val prefs = getSharedPreferences("auto_attendance", Context.MODE_PRIVATE)
+        val locationMetadata = JSONObject()
+        locations.forEach { location ->
+            locationMetadata.put(location.locationId, JSONObject().apply {
+                put("locationName", location.locationName)
+                put("assignmentId", location.assignmentId)
+                put("assignmentVersion", location.assignmentVersion)
+            })
+        }
         prefs.edit()
             .putString("userId", userId)
             .putString("employeeId", employeeId)
             .putString("deviceId", deviceId)
             .putString("deviceLabel", deviceLabel)
-            .putString("locationId", locationId)
-            .putString("locationName", locationName)
+            .putString("locationMetadata", locationMetadata.toString())
             .apply()
-        val geofence = Geofence.Builder()
-            .setRequestId("zawolf_$locationId")
-            .setCircularRegion(latitude, longitude, radius.toFloat())
-            .setTransitionTypes(Geofence.GEOFENCE_TRANSITION_ENTER or Geofence.GEOFENCE_TRANSITION_EXIT)
+        val geofences = locations.map { location -> Geofence.Builder()
+            .setRequestId("zawolf_${location.locationId}")
+            .setCircularRegion(location.latitude, location.longitude, location.radiusMeters.toFloat())
+            // Check-in and exit evidence are both handled server-side.  The
+            // server applies HR's checkout policy and return-grace rules; the
+            // device never decides payroll or permission exceptions.
+            .setTransitionTypes(
+                Geofence.GEOFENCE_TRANSITION_ENTER or
+                    Geofence.GEOFENCE_TRANSITION_EXIT
+            )
             .setNotificationResponsiveness(10_000)
             .setExpirationDuration(Geofence.NEVER_EXPIRE)
             .build()
+        }
         val request = GeofencingRequest.Builder()
             .setInitialTrigger(GeofencingRequest.INITIAL_TRIGGER_ENTER)
-            .addGeofence(geofence)
+            .addGeofences(geofences)
             .build()
         geofencingClient.removeGeofences(geofencePendingIntent()).continueWithTask {
             geofencingClient.addGeofences(request, geofencePendingIntent())
         }.addOnSuccessListener { result.success(true) }
             .addOnFailureListener { error -> result.error("GEOFENCE_FAILED", error.message, null) }
     }
+
+    private data class AttendanceRegion(
+        val locationId: String,
+        val locationName: String,
+        val latitude: Double,
+        val longitude: Double,
+        val radiusMeters: Double,
+        val assignmentId: String,
+        val assignmentVersion: Int,
+    )
 
     private fun disableAndroidGeofence(result: MethodChannel.Result) {
         geofencingClient.removeGeofences(geofencePendingIntent())

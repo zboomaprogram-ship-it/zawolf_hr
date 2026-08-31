@@ -1,7 +1,15 @@
 import 'package:flutter/material.dart';
 import '../theme/theme.dart';
 
-enum WolfButtonVariant { primary, teal, purple, danger, outline }
+enum WolfButtonVariant {
+  primary,
+  teal,
+  purple,
+  danger,
+  outline,
+  secondary,
+  ghost,
+}
 
 class WolfButton extends StatelessWidget {
   final VoidCallback? onPressed;
@@ -110,49 +118,71 @@ class WolfButton extends StatelessWidget {
         textStyle = textStyle.copyWith(color: ZaWolfColors.textSecondary);
         subStyle = subStyle.copyWith(color: ZaWolfColors.textMuted);
         break;
+      case WolfButtonVariant.secondary:
+        decoration = BoxDecoration(
+          color: ZaWolfColors.surface02,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: ZaWolfColors.surface03, width: 1),
+        );
+        textStyle = textStyle.copyWith(color: ZaWolfColors.textPrimary);
+        subStyle = subStyle.copyWith(color: ZaWolfColors.textMuted);
+        break;
+      case WolfButtonVariant.ghost:
+        decoration = const BoxDecoration(color: Colors.transparent);
+        textStyle =
+            textStyle.copyWith(color: ZaWolfColors.primaryCyan);
+        subStyle = subStyle.copyWith(
+          color: ZaWolfColors.primaryCyan.withValues(alpha: 0.7),
+        );
+        break;
     }
 
-    return Container(
+    final enabled = !loading && onPressed != null;
+
+    return Opacity(
+      opacity: enabled || loading ? 1.0 : 0.5,
+      child: Container(
       width: width ?? double.infinity,
       height: height,
       decoration: decoration,
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: loading ? null : onPressed,
-          borderRadius: BorderRadius.circular(8),
-          child: Center(
-            child: loading
-                ? const SizedBox(
-                    width: 24,
-                    height: 24,
-                    child: CircularProgressIndicator(
-                      color: Colors.white,
-                      strokeWidth: 2.5,
-                    ),
-                  )
-                : (text != null
-                      ? FittedBox(
-                          fit: BoxFit.scaleDown,
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(text!, style: textStyle),
-                              if (secondaryText != null &&
-                                  secondaryText!.isNotEmpty)
-                                Text(
-                                  secondaryText!,
-                                  style: subStyle.copyWith(
-                                    color: subStyle.color?.withValues(
-                                      alpha: 0.55,
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: loading ? null : onPressed,
+            borderRadius: BorderRadius.circular(8),
+            child: Center(
+              child: loading
+                  ? const SizedBox(
+                      width: 24,
+                      height: 24,
+                      child: CircularProgressIndicator(
+                        color: Colors.white,
+                        strokeWidth: 2.5,
+                      ),
+                    )
+                  : (text != null
+                        ? FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(text!, style: textStyle),
+                                if (secondaryText != null &&
+                                    secondaryText!.isNotEmpty)
+                                  Text(
+                                    secondaryText!,
+                                    style: subStyle.copyWith(
+                                      color: subStyle.color?.withValues(
+                                        alpha: 0.55,
+                                      ),
                                     ),
                                   ),
-                                ),
-                            ],
-                          ),
-                        )
-                      : child),
+                              ],
+                            ),
+                          )
+                        : child),
+            ),
           ),
         ),
       ),

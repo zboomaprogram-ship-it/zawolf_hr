@@ -7,5 +7,8 @@ abstract interface class CheckoutPolicyRepository {
     required bool enabled,
     required int expectedRevision,
     String? reason,
+    int? autoCheckoutReturnGraceMinutes,
+    String? companyBreakStartTime,
+    String? companyBreakEndTime,
   });
 }

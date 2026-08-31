@@ -6,7 +6,10 @@ import '../../components/wolf_card.dart';
 import '../../models/performance_model.dart';
 import '../../models/user_model.dart';
 import '../../services/attendance_period_summary_service.dart';
+import '../../navigation/operational_visibility_entry.dart';
 import '../../theme/theme.dart';
+import '../../design_system/components/feedback_states.dart' show EmptyState;
+import '../../design_system/components/skeletons.dart' show SkeletonList;
 
 class EmployeeInsightsScreen extends StatefulWidget {
   final String employeeUid;
@@ -53,8 +56,9 @@ class _EmployeeInsightsScreenState extends State<EmployeeInsightsScreen> {
             return _message('تعذر فتح ملف الموظف. تحقق من الصلاحيات.');
           }
           if (!userSnapshot.hasData) {
-            return const Center(
-              child: CircularProgressIndicator(color: ZaWolfColors.primaryCyan),
+            return const Padding(
+              padding: EdgeInsets.all(16),
+              child: SkeletonList(itemCount: 4, itemHeight: 96),
             );
           }
           if (!userSnapshot.data!.exists) {
@@ -113,6 +117,25 @@ class _EmployeeInsightsScreenState extends State<EmployeeInsightsScreen> {
                     ],
                   ),
                 ),
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                    key: const Key('employee-full-operations-history'),
+                    onPressed: () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => OperationalVisibilityEntry(
+                          employeeUserId: widget.employeeUid,
+                          canManageVisibility: false,
+                        ),
+                      ),
+                    ),
+                    icon: const Icon(Icons.manage_history_outlined),
+                    label: const Text(
+                      'عرض السجل الكامل للحضور والطلبات والخصومات',
+                    ),
+                  ),
+                ),
                 const SizedBox(height: 16),
                 Text(
                   'بيانات العمل',
@@ -158,14 +181,7 @@ class _EmployeeInsightsScreenState extends State<EmployeeInsightsScreen> {
                     }
                     if (!snapshot.hasData) {
                       return const WolfCard(
-                        child: Padding(
-                          padding: EdgeInsets.all(24),
-                          child: Center(
-                            child: CircularProgressIndicator(
-                              color: ZaWolfColors.primaryCyan,
-                            ),
-                          ),
-                        ),
+                        child: SkeletonList(itemCount: 2, itemHeight: 56),
                       );
                     }
                     final overview = snapshot.data!;
@@ -188,12 +204,10 @@ class _EmployeeInsightsScreenState extends State<EmployeeInsightsScreen> {
                         WolfCard(
                           child: Column(
                             children: overview.recent.isEmpty
-                                ? [
-                                    const Padding(
-                                      padding: EdgeInsets.all(12),
-                                      child: Text(
-                                        'لا توجد سجلات حضور خلال آخر 30 يوماً.',
-                                      ),
+                                ? const [
+                                    EmptyState(
+                                      title:
+                                          'لا توجد سجلات حضور خلال آخر 30 يوماً.',
                                     ),
                                   ]
                                 : overview.recent.map(_attendanceRow).toList(),
@@ -222,14 +236,7 @@ class _EmployeeInsightsScreenState extends State<EmployeeInsightsScreen> {
                     }
                     if (!snapshot.hasData) {
                       return const WolfCard(
-                        child: Padding(
-                          padding: EdgeInsets.all(24),
-                          child: Center(
-                            child: CircularProgressIndicator(
-                              color: ZaWolfColors.primaryCyan,
-                            ),
-                          ),
-                        ),
+                        child: SkeletonList(itemCount: 3, itemHeight: 64),
                       );
                     }
                     final history =

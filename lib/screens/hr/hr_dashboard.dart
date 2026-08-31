@@ -1,22 +1,27 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:intl/intl.dart' hide TextDirection;
 import '../../services/auth_service.dart';
 import '../../services/dashboard_attendance_summary_service.dart';
+import '../../services/pending_requests_service.dart';
 import '../../models/employee_role.dart';
 import '../../models/sales_kpi_summary.dart';
 import '../../theme/theme.dart';
 import '../../components/attendance_insights_card.dart';
+
 import '../../components/sales_kpi_summary_card.dart';
 import '../../components/sales_kpi_filter_sheet.dart';
 import '../../components/wolf_card.dart';
+import '../../design_system/tokens.dart';
+import '../../design_system/components/app_logo.dart';
+import '../../design_system/components/priority_strip.dart';
+import '../../design_system/components/section_header.dart';
+import '../../design_system/components/stat_card.dart';
+import '../widgets/end_of_day_briefing_card.dart';
 import '../../services/sales_kpi_integration_service.dart';
 import '../../utils/user_facing_error.dart';
-import '../../features/checkout_policy/data/checkout_policy_repository_impl.dart';
-import '../../features/checkout_policy/domain/entities/checkout_policy.dart';
-import '../../features/checkout_policy/presentation/checkout_policy_controller.dart';
 
 class HrDashboardScreen extends StatefulWidget {
   const HrDashboardScreen({super.key});
@@ -34,9 +39,6 @@ class _HrDashboardScreenState extends State<HrDashboardScreen> {
   bool _loadingCounts = true;
   Future<DashboardAttendanceSummary>? _attendanceSummaryFuture;
   String? _selectedSalesKpiPeriod;
-  final CheckoutPolicyController _checkoutPolicyController =
-      CheckoutPolicyController(CheckoutPolicyRepositoryImpl());
-  Future<CheckoutPolicySnapshot>? _checkoutPolicyFuture;
 
   @override
   void initState() {
@@ -77,82 +79,6 @@ class _HrDashboardScreenState extends State<HrDashboardScreen> {
     setState(() {
       _attendanceSummaryFuture = _summaryService.loadForReviewer(user);
     });
-  }
-
-  Future<void> _confirmCheckoutPolicyChange(bool enabled) async {
-    final reasonController = TextEditingController();
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: Text(enabled ? 'تفعيل تسجيل الانصراف' : 'إيقاف تسجيل الانصراف'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              enabled
-                  ? 'سيظهر تسجيل الانصراف للموظفين الجدد فقط. لا يتم تعديل أي سجل أو خصم سابق.'
-                  : 'سيتم إخفاء الانصراف ومنع أي خصم جديد مرتبط به. الحضور والطلبات تبقى متاحة.',
-              textDirection: TextDirection.rtl,
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: reasonController,
-              maxLength: 500,
-              textDirection: TextDirection.rtl,
-              decoration: const InputDecoration(
-                labelText: 'سبب التغيير (اختياري)',
-                border: OutlineInputBorder(),
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('إلغاء'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(dialogContext, true),
-            child: const Text('تأكيد'),
-          ),
-        ],
-      ),
-    );
-    final reason = reasonController.text.trim();
-    reasonController.dispose();
-    if (confirmed == true && mounted) {
-      await _changeCheckoutPolicy(enabled, reason: reason);
-    }
-  }
-
-  Future<void> _changeCheckoutPolicy(bool enabled, {String? reason}) async {
-    try {
-      await _checkoutPolicyController.change(enabled: enabled, reason: reason);
-      if (!mounted) return;
-      setState(
-        () => _checkoutPolicyFuture = Future.value(
-          _checkoutPolicyController.state,
-        ),
-      );
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            enabled ? 'تم تفعيل تسجيل الانصراف.' : 'تم إيقاف تسجيل الانصراف.',
-          ),
-        ),
-      );
-    } catch (_) {
-      if (!mounted) return;
-      setState(() => _checkoutPolicyFuture = _checkoutPolicyController.load());
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'تعذر تغيير حالة الانصراف. حدّث الصفحة ثم أعد المحاولة.',
-          ),
-        ),
-      );
-    }
   }
 
   Future<void> _editSalesKpiPeriod(
@@ -199,7 +125,6 @@ class _HrDashboardScreenState extends State<HrDashboardScreen> {
     final canAccessReports = EmployeeRole.canAccessReports(hrAdmin.role);
 
     _attendanceSummaryFuture ??= _summaryService.loadForReviewer(hrAdmin);
-    _checkoutPolicyFuture ??= _checkoutPolicyController.load();
 
     return Scaffold(
       appBar: AppBar(
@@ -208,6 +133,23 @@ class _HrDashboardScreenState extends State<HrDashboardScreen> {
           style: theme.textTheme.headlineMedium,
         ),
         actions: [
+          IconButton(
+            tooltip: 'بصمتي الشخصية (تسجيل الحضور)',
+            icon: const Icon(
+              Icons.fingerprint,
+              color: ZaWolfColors.primaryCyan,
+              size: 28,
+            ),
+            onPressed: () => context.push('/employee/dashboard'),
+          ),
+          IconButton(
+            tooltip: 'سجل الحضور والغياب',
+            icon: const Icon(
+              Icons.co_present_outlined,
+              color: ZaWolfColors.primaryCyan,
+            ),
+            onPressed: () => context.push('/hr/attendance-summary'),
+          ),
           IconButton(
             icon: const Icon(Icons.logout, color: ZaWolfColors.error),
             onPressed: () async {
@@ -220,25 +162,22 @@ class _HrDashboardScreenState extends State<HrDashboardScreen> {
         ],
       ),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(DsSpacing.lg),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            // 1. Header
             Container(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.all(DsSpacing.lg),
               decoration: BoxDecoration(
                 color: ZaWolfColors.surface01,
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: DsRadius.inputBorder,
                 border: Border.all(color: ZaWolfColors.surface03),
               ),
               child: Row(
                 children: [
-                  Image.asset(
-                    'assets/images/wolf_head_geometric.png',
-                    width: 46,
-                    height: 46,
-                  ),
-                  const SizedBox(width: 14),
+                  const AppLogo(size: 46),
+                  const SizedBox(width: DsSpacing.lg),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.end,
@@ -265,95 +204,48 @@ class _HrDashboardScreenState extends State<HrDashboardScreen> {
                 ],
               ),
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: DsSpacing.lg),
 
-            FutureBuilder<CheckoutPolicySnapshot>(
-              future: _checkoutPolicyFuture,
-              builder: (context, snapshot) {
-                final value = snapshot.data;
-                final enabled = value?.policy.enabled ?? false;
-                return WolfCard(
-                  child: Row(
-                    children: [
-                      Icon(
-                        enabled ? Icons.logout : Icons.login,
-                        color: enabled
-                            ? Colors.amber
-                            : ZaWolfColors.primaryCyan,
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text('تسجيل الانصراف'),
-                            const SizedBox(height: 4),
-                            Text(
-                              enabled
-                                  ? 'مفعّل للموظفين الجدد فقط'
-                                  : 'متوقف افتراضياً — الحضور والطلبات ما زالت متاحة',
-                              textDirection: TextDirection.rtl,
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              value?.policy.effectiveAt == null
-                                  ? 'الإصدار: ${value?.policy.revision ?? 0}'
-                                  : 'آخر تغيير: ${DateFormat('yyyy-MM-dd HH:mm').format(value!.policy.effectiveAt!.toLocal())} · الإصدار ${value.policy.revision}',
-                              style: Theme.of(context).textTheme.bodySmall,
-                              textDirection: TextDirection.rtl,
-                            ),
-                            if ((value?.policy.reason ?? '').isNotEmpty)
-                              Text(
-                                'السبب: ${value!.policy.reason}',
-                                style: Theme.of(context).textTheme.bodySmall,
-                                textDirection: TextDirection.rtl,
-                              ),
-                            if ((value?.policy.changedByRole ?? '').isNotEmpty)
-                              Text(
-                                'سجل المراجعة: آخر تغيير معتمد بواسطة ${value!.policy.changedByRole}',
-                                style: Theme.of(context).textTheme.bodySmall,
-                                textDirection: TextDirection.rtl,
-                              ),
-                          ],
-                        ),
-                      ),
-                      Switch(
-                        value: enabled,
-                        onChanged: value?.canManage == true
-                            ? _confirmCheckoutPolicyChange
-                            : null,
-                      ),
-                    ],
+            // 2. Priority strip — pending approvals & attendance access
+            ValueListenableBuilder<int>(
+              valueListenable: PendingRequestsService.instance.pendingCount,
+              builder: (context, pendingCount, _) => PriorityStrip(
+                items: [
+                  PriorityItem(
+                    label: 'بصمتي الشخصية (تسجيل الحضور)',
+                    count: 0,
+                    icon: Icons.fingerprint,
+                    accent: ZaWolfColors.primaryCyan,
+                    onTap: () => context.go('/employee/dashboard'),
                   ),
-                );
-              },
-            ),
-            const SizedBox(height: 24),
-
-            // Counts Grid Overview
-            if (!_loadingCounts)
-              Row(
-                children: [
-                  Expanded(
-                    child: _buildCountCard(
-                      'إجمالي الفروع النشطة',
-                      _locationsCount.toString(),
-                      Icons.domain,
-                      theme,
-                    ),
+                  PriorityItem(
+                    label: 'إدارة وسجلات الحضور',
+                    count: 0,
+                    icon: Icons.co_present_outlined,
+                    accent: ZaWolfColors.primaryBlue,
+                    onTap: () => context.go('/hr/attendance-summary'),
                   ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: _buildCountCard(
-                      'إجمالي الموظفين',
-                      _employeesCount.toString(),
-                      Icons.people_alt_outlined,
-                      theme,
-                    ),
+                  PriorityItem(
+                    label: 'طلبات معلقة بانتظار المراجعة',
+                    count: pendingCount,
+                    icon: Icons.rule_outlined,
+                    onTap: () => context.go('/hr/requests'),
                   ),
                 ],
               ),
-            const SizedBox(height: 24),
+            ),
+            const EndOfDayBriefingCard(isHr: true),
+            const SizedBox(height: DsSpacing.md),
+
+            // 3. Metrics row (max four)
+            _HrMetricsRow(
+              loadingCounts: _loadingCounts,
+              employeesCount: _employeesCount,
+              locationsCount: _locationsCount,
+              attendanceSummaryFuture: _attendanceSummaryFuture!,
+            ),
+
+            const SizedBox(height: DsSpacing.xl),
 
             FutureBuilder<DashboardAttendanceSummary>(
               future: _attendanceSummaryFuture,
@@ -447,79 +339,171 @@ class _HrDashboardScreenState extends State<HrDashboardScreen> {
                 },
               ),
 
-            // HR Administrative Quick Actions Grid
-            Text(
-              'عمليات الموارد البشرية المتاحة',
-              style: theme.textTheme.titleLarge!.copyWith(color: Colors.white),
-              textDirection: TextDirection.rtl,
+            // Grouped quick actions by domain
+            SectionHeader(
+              title: 'الحضور والوقت',
+              actionLabel: 'عرض الكل',
+              onAction: () => context.go('/hub/time'),
             ),
-            const SizedBox(height: 16),
             GridView.count(
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
               crossAxisCount: MediaQuery.sizeOf(context).width >= 1200 ? 4 : 2,
-              crossAxisSpacing: 16,
-              mainAxisSpacing: 16,
+              crossAxisSpacing: DsSpacing.lg,
+              mainAxisSpacing: DsSpacing.lg,
               childAspectRatio: MediaQuery.sizeOf(context).width >= 1200
                   ? 1.45
                   : 1.3,
               children: [
-                _buildHRActionCard(
-                  'إدارة الطلبات',
-                  'مراجعة الإجازات، الأذونات، والسلف',
-                  Icons.assignment_turned_in_outlined,
-                  () => context.go('/hr/requests'),
+                _actionTile(
+                  'تسجيل بصمتي الشخصية',
+                  'بصمة الحضور والانصراف اليومية',
+                  Icons.fingerprint,
+                  () => context.go('/employee/dashboard'),
                   theme,
                 ),
-                _buildHRActionCard(
-                  'إدارة الموظفين',
-                  'إضافة موظف وتعديل بياناته وصلاحياته',
-                  Icons.person_add_alt_1,
-                  () => context.go('/hr/employees'),
+                _actionTile(
+                  'سجل الحضور والغياب',
+                  'كشوف وحركات حضور جميع الموظفين',
+                  Icons.co_present_outlined,
+                  () => context.go('/hr/attendance-summary'),
                   theme,
                 ),
-                _buildHRActionCard(
+                _actionTile(
                   'إدارة الفروع والمواقع',
                   'تحديد النطاقات الجغرافية ومطابقة الحضور',
                   Icons.map_outlined,
                   () => context.go('/hr/locations'),
                   theme,
                 ),
-                if (canAccessReports)
-                  _buildHRActionCard(
-                    'تصدير التقارير',
-                    'تصدير الحضور والإجازات مباشرة لـ Google Sheets',
-                    Icons.file_download_outlined,
-                    () => context.go('/hr/reports'),
-                    theme,
-                  ),
-                if (canAccessReports)
-                  _buildHRActionCard(
-                    'مركز ملفات الشركة',
-                    'إدارة المصادر والمخططات وصلاحيات الوصول',
-                    Icons.cloud_sync_outlined,
-                    () => context.go('/workspace'),
-                    theme,
-                  ),
-                _buildHRActionCard(
-                  'بث الإعلانات العامة',
-                  'نشر إشعار إداري لجميع موظفي المنظومة',
-                  Icons.campaign_outlined,
-                  () => context.go('/hr/announcements'),
+                _actionTile(
+                  'أيام العطلة',
+                  'إجازات الشركة الرسمية',
+                  Icons.event_busy_outlined,
+                  () => context.go('/hr/day-offs'),
                   theme,
                 ),
-                _buildHRActionCard(
+                _actionTile(
                   'سياسة الدوام',
                   'مواعيد الحضور والانصراف والتنبيهات والخصومات',
                   Icons.schedule_outlined,
                   () => context.go('/hr/attendance-policy'),
                   theme,
                 ),
-                _buildHRActionCard(
+                _actionTile(
                   'المهام الميدانية',
                   'تصريح عمل خارج الفرع ومتابعة الانصراف',
                   Icons.directions_walk_outlined,
                   () => context.go('/hr/field-assignments'),
+                  theme,
+                ),
+              ],
+            ),
+            const SizedBox(height: DsSpacing.xl),
+            SectionHeader(
+              title: 'الأشخاص والتقارير',
+              actionLabel: 'عرض الكل',
+              onAction: () => context.go('/hub/people'),
+            ),
+            GridView.count(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              crossAxisCount: MediaQuery.sizeOf(context).width >= 1200 ? 4 : 2,
+              crossAxisSpacing: DsSpacing.lg,
+              mainAxisSpacing: DsSpacing.lg,
+              childAspectRatio: MediaQuery.sizeOf(context).width >= 1200
+                  ? 1.45
+                  : 1.3,
+              children: [
+                _actionTile(
+                  'إدارة الطلبات',
+                  'مراجعة الإجازات، الأذونات، والسلف',
+                  Icons.assignment_turned_in_outlined,
+                  () => context.go('/hr/requests'),
+                  theme,
+                ),
+                _actionTile(
+                  'إدارة الموظفين',
+                  'إضافة موظف وتعديل بياناته وصلاحياته',
+                  Icons.person_add_alt_1,
+                  () => context.go('/hr/employees'),
+                  theme,
+                ),
+                _actionTile(
+                  'بث الإعلانات العامة',
+                  'نشر إشعار إداري لجميع موظفي المنظومة',
+                  Icons.campaign_outlined,
+                  () => context.go('/hr/announcements'),
+                  theme,
+                ),
+                if (canAccessReports)
+                  _actionTile(
+                    'تصدير التقارير',
+                    'تصدير الحضور والإجازات مباشرة لـ Google Sheets',
+                    Icons.file_download_outlined,
+                    () => context.go('/hr/reports'),
+                    theme,
+                  ),
+                if (canAccessReports && kIsWeb)
+                  _actionTile(
+                    'مركز ملفات الشركة',
+                    'إدارة المصادر والمخططات وصلاحيات الوصول',
+                    Icons.cloud_sync_outlined,
+                    () => context.go('/workspace'),
+                    theme,
+                  ),
+                if (canAccessReports && kIsWeb)
+                  _actionTile(
+                    'تقارير ملفات الشركة',
+                    'اكتشاف تقارير نشاط الملفات وتقارير HR المحمية',
+                    Icons.folder_shared_outlined,
+                    () => context.go('/hr/workspace-reports'),
+                    theme,
+                  ),
+              ],
+            ),
+            const SizedBox(height: DsSpacing.xl),
+            SectionHeader(
+              title: 'أنظمة ومعطيات الشركة التشغيلية (Company OS)',
+              actionLabel: 'عرض الكل',
+              onAction: () => context.go('/company-os'),
+            ),
+            GridView.count(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              crossAxisCount: MediaQuery.sizeOf(context).width >= 1200 ? 4 : 2,
+              crossAxisSpacing: DsSpacing.lg,
+              mainAxisSpacing: DsSpacing.lg,
+              childAspectRatio: MediaQuery.sizeOf(context).width >= 1200
+                  ? 1.45
+                  : 1.3,
+              children: [
+                _actionTile(
+                  'خدمات الشركة',
+                  'بوابة التذاكر الذاتية وقاعدة المعرفة',
+                  Icons.business_center_outlined,
+                  () => context.go('/company-os'),
+                  theme,
+                ),
+                _actionTile(
+                  'عمليات IT والأصول',
+                  'إدارة الدعم الفني والمعدات والاشتراكات',
+                  Icons.support_agent_outlined,
+                  () => context.go('/company-os/it'),
+                  theme,
+                ),
+                _actionTile(
+                  'عمليات الشركة والتدقيق',
+                  'لوحة الأداء الشاملة وسجل التدقيق الفوري',
+                  Icons.monitor_heart_outlined,
+                  () => context.go('/company-os/operations'),
+                  theme,
+                ),
+                _actionTile(
+                  'محرر الهيكل التنظيمي',
+                  'تخصيص القطاعات والأقسام والمدراء المباشرين',
+                  Icons.account_tree_outlined,
+                  () => context.go('/hr/organization-trees'),
                   theme,
                 ),
               ],
@@ -530,56 +514,7 @@ class _HrDashboardScreenState extends State<HrDashboardScreen> {
     );
   }
 
-  Widget _buildCountCard(
-    String label,
-    String value,
-    IconData icon,
-    ThemeData theme,
-  ) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: ZaWolfColors.surface01,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: ZaWolfColors.surface03),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.18),
-            blurRadius: 18,
-            offset: const Offset(0, 10),
-          ),
-        ],
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Icon(icon, color: ZaWolfColors.primaryCyan, size: 36),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Text(
-                value,
-                style: theme.textTheme.headlineMedium!.copyWith(
-                  color: Colors.white,
-                  fontWeight: FontWeight.bold,
-                  fontFamily: 'JetBrains Mono',
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                label,
-                style: theme.textTheme.bodySmall!.copyWith(
-                  color: ZaWolfColors.textSecondary,
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildHRActionCard(
+  Widget _actionTile(
     String title,
     String subtitle,
     IconData icon,
@@ -588,30 +523,111 @@ class _HrDashboardScreenState extends State<HrDashboardScreen> {
   ) {
     return WolfCard(
       onTap: onTap,
+      padding: const EdgeInsets.symmetric(
+        horizontal: DsSpacing.sm,
+        vertical: DsSpacing.xs,
+      ),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(icon, color: ZaWolfColors.primaryCyan, size: 32),
-          const SizedBox(height: 10),
+          Icon(icon, color: ZaWolfColors.primaryCyan, size: 26),
+          const SizedBox(height: 4),
           Text(
             title,
             style: theme.textTheme.titleMedium!.copyWith(
               color: Colors.white,
               fontWeight: FontWeight.bold,
+              fontSize: 13,
             ),
             textAlign: TextAlign.center,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
           ),
-          const SizedBox(height: 4),
+          const SizedBox(height: 2),
           Text(
             subtitle,
             style: theme.textTheme.bodySmall!.copyWith(
-              fontSize: 10,
+              fontSize: 9.5,
               color: ZaWolfColors.textSecondary,
             ),
             textAlign: TextAlign.center,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
           ),
         ],
       ),
+    );
+  }
+}
+
+/// Metrics row: up to four StatCards from existing data sources only.
+class _HrMetricsRow extends StatelessWidget {
+  final bool loadingCounts;
+  final int employeesCount;
+  final int locationsCount;
+  final Future<DashboardAttendanceSummary> attendanceSummaryFuture;
+
+  const _HrMetricsRow({
+    required this.loadingCounts,
+    required this.employeesCount,
+    required this.locationsCount,
+    required this.attendanceSummaryFuture,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<int>(
+      valueListenable: PendingRequestsService.instance.pendingCount,
+      builder: (context, pendingCount, _) {
+        return FutureBuilder<DashboardAttendanceSummary>(
+          future: attendanceSummaryFuture,
+          builder: (context, summarySnapshot) {
+            final summary = summarySnapshot.data;
+            final attendancePercent = summary
+                ?.percentOf(summary.attended)
+                .round();
+            return Row(
+              children: [
+                Expanded(
+                  child: StatCard(
+                    icon: Icons.today_outlined,
+                    value: attendancePercent == null
+                        ? '—'
+                        : '$attendancePercent%',
+                    label: 'حضور اليوم',
+                    onTap: () => context.go('/hr/attendance-summary'),
+                  ),
+                ),
+                const SizedBox(width: DsSpacing.md),
+                Expanded(
+                  child: StatCard(
+                    icon: Icons.people_alt_outlined,
+                    value: loadingCounts ? '—' : '$employeesCount',
+                    label: 'الموظفون',
+                  ),
+                ),
+                const SizedBox(width: DsSpacing.md),
+                Expanded(
+                  child: StatCard(
+                    icon: Icons.rule_outlined,
+                    value: '$pendingCount',
+                    label: 'طلبات معلقة',
+                    onTap: () => context.go('/hr/requests'),
+                  ),
+                ),
+                const SizedBox(width: DsSpacing.md),
+                Expanded(
+                  child: StatCard(
+                    icon: Icons.domain_outlined,
+                    value: loadingCounts ? '—' : '$locationsCount',
+                    label: 'الفروع النشطة',
+                  ),
+                ),
+              ],
+            );
+          },
+        );
+      },
     );
   }
 }

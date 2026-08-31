@@ -7,8 +7,12 @@ import '../../models/user_model.dart';
 import '../../services/auth_service.dart';
 import '../../services/productivity_service.dart';
 import '../../theme/theme.dart';
+import '../../utils/user_facing_error.dart';
 import '../../utils/payroll_cycle.dart';
 import '../shared/productivity_score_details_sheet.dart';
+import '../../design_system/components/feedback_states.dart'
+    show EmptyState;
+import '../../design_system/components/skeletons.dart' show SkeletonList;
 
 class ProductivityRankingScreen extends StatefulWidget {
   const ProductivityRankingScreen({super.key});
@@ -77,14 +81,17 @@ class _ProductivityRankingScreenState extends State<ProductivityRankingScreen> {
           SnackBar(content: Text('تم تحديث إنتاجية $count موظف.')),
         );
       }
-    } catch (e, stackTrace) {
-      debugPrint('Error refreshing productivity: $e');
+    } catch (error, stackTrace) {
+      debugPrint('Error refreshing productivity: $error');
       debugPrint(stackTrace.toString());
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              'تعذر تحديث الإنتاجية: $e',
+              userFacingError(
+                error,
+                fallback: 'تعذر تحديث الإنتاجية الآن. حاول مرة أخرى.',
+              ),
             ),
           ),
         );
@@ -135,8 +142,9 @@ class _ProductivityRankingScreenState extends State<ProductivityRankingScreen> {
         stream: _service.watchRanking(reviewer, _monthKey),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(
-              child: CircularProgressIndicator(color: ZaWolfColors.primaryCyan),
+            return const Padding(
+              padding: EdgeInsets.all(16),
+              child: SkeletonList(itemCount: 6, itemHeight: 84),
             );
           }
           if (snapshot.hasError) {
@@ -284,6 +292,28 @@ class _ProductivityRankingScreenState extends State<ProductivityRankingScreen> {
                 '${filtered.length} من ${scores.length} موظف',
                 style: theme.textTheme.bodySmall,
               ),
+              if (filtered.any(
+                (score) => score.inputState != ProductivityInputState.complete,
+              )) ...[
+                const SizedBox(height: 8),
+                WolfCard(
+                  child: const ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: Icon(
+                      Icons.info_outline,
+                      color: ZaWolfColors.warning,
+                    ),
+                    title: Text(
+                      'بعض النتائج تعتمد على بيانات جزئية',
+                      textAlign: TextAlign.right,
+                    ),
+                    subtitle: Text(
+                      'افتح بطاقة الموظف لمعرفة مصادر البيانات المتاحة قبل اتخاذ قرار إداري.',
+                      textAlign: TextAlign.right,
+                    ),
+                  ),
+                ),
+              ],
               const SizedBox(height: 12),
               Row(
                 children: [
@@ -310,10 +340,8 @@ class _ProductivityRankingScreenState extends State<ProductivityRankingScreen> {
               const SizedBox(height: 16),
               if (filtered.isEmpty)
                 const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 48),
-                  child: Center(
-                    child: Text('لا توجد نتائج مطابقة للفلاتر الحالية.'),
-                  ),
+                  padding: EdgeInsets.symmetric(vertical: 24),
+                  child: EmptyState(title: 'لا توجد نتائج مطابقة للفلاتر الحالية.'),
                 ),
               ...filtered.asMap().entries.map((entry) {
                 final rank = entry.key + 1;
@@ -353,6 +381,15 @@ class _ProductivityRankingScreenState extends State<ProductivityRankingScreen> {
                                 '${score.department} · ${score.statusLabel}',
                                 style: theme.textTheme.bodySmall,
                               ),
+                              if (score.inputState !=
+                                  ProductivityInputState.complete)
+                                Text(
+                                  'بيانات ${score.inputStateLabel}',
+                                  style: const TextStyle(
+                                    color: ZaWolfColors.warning,
+                                    fontSize: 12,
+                                  ),
+                                ),
                               const SizedBox(height: 8),
                               LinearProgressIndicator(
                                 value: (score.overallScore / 100).clamp(0, 1),
@@ -432,39 +469,42 @@ class _PeriodSelector extends StatelessWidget {
   Widget build(BuildContext context) {
     final cycle = PayrollCycle.forKey(monthKey);
     return WolfCard(
-      child: Row(
-        children: [
-          IconButton(
-            tooltip: 'الدورة السابقة',
-            onPressed: onPrevious,
-            icon: const Icon(Icons.chevron_right),
-          ),
-          Expanded(
-            child: Column(
-              children: [
-                Text(
-                  'دورة الرواتب $monthKey',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                Text(
-                  cycle.arabicRangeLabel,
-                  style: const TextStyle(
-                    color: ZaWolfColors.textMuted,
-                    fontSize: 12,
-                  ),
-                ),
-              ],
+      child: Directionality(
+        textDirection: TextDirection.rtl,
+        child: Row(
+          children: [
+            IconButton(
+              tooltip: 'الدورة السابقة',
+              onPressed: onPrevious,
+              icon: const Icon(Icons.chevron_right),
             ),
-          ),
-          IconButton(
-            tooltip: 'الدورة التالية',
-            onPressed: canGoNext ? onNext : null,
-            icon: const Icon(Icons.chevron_left),
-          ),
-        ],
+            Expanded(
+              child: Column(
+                children: [
+                  Text(
+                    'دورة الرواتب $monthKey',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  Text(
+                    cycle.arabicRangeLabel,
+                    style: const TextStyle(
+                      color: ZaWolfColors.textMuted,
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            IconButton(
+              tooltip: 'الدورة التالية',
+              onPressed: canGoNext ? onNext : null,
+              icon: const Icon(Icons.chevron_left),
+            ),
+          ],
+        ),
       ),
     );
   }

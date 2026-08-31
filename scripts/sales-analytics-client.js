@@ -24,7 +24,15 @@ function agentsFrom(kpiData) {
 
 function strongIdentifiers(agent) {
   if (!agent || typeof agent !== 'object') return [];
-  return [agent.id, agent.idEmp, agent.employeeId, agent.employeeCode]
+  return [
+    agent.id,
+    agent.idEmp,
+    agent.employeeId,
+    agent.employeeCode,
+    agent.agentId,
+    agent.code,
+    agent.key,
+  ]
     .map(normalizeIdentifier)
     .filter(Boolean);
 }
@@ -86,6 +94,16 @@ function requiredConfig() {
   };
 }
 
+function salesAnalyticsEndpoint(baseUrl) {
+  const normalized = String(baseUrl || DEFAULT_BASE_URL).replace(/\/+$/, '');
+  // Hostinger accepts either the provider root URL or the complete endpoint.
+  // Keeping both forms valid prevents an accidental duplicated API path and
+  // the resulting empty KPI snapshot.
+  return /\/api\/v1\/sales-analytics$/i.test(normalized)
+    ? normalized
+    : `${normalized}/api/v1/sales-analytics`;
+}
+
 function isRetryable(error) {
   return error?.name === 'AbortError' ||
     String(error?.message || '').includes('timed out') ||
@@ -102,10 +120,20 @@ async function fetchSalesAnalytics(params, fetchImpl = globalThis.fetch) {
     throw new SalesAnalyticsError('This Node runtime does not provide fetch.');
   }
   const { apiKey, baseUrl, timeoutMs, maxAttempts } = requiredConfig();
-  const url = new URL(`${baseUrl}/api/v1/sales-analytics`);
+  const url = new URL(salesAnalyticsEndpoint(baseUrl));
   for (const [key, value] of Object.entries(params)) {
     if (value !== undefined && value !== null && value !== '') {
-      url.searchParams.set(key, String(value));
+      if (Array.isArray(value)) {
+        if (value.length === 1) {
+          url.searchParams.set(key, String(value[0]));
+        } else if (value.length === 0) {
+          url.searchParams.set(key, 'ALL');
+        } else {
+          url.searchParams.set(key, value.map(String).join(','));
+        }
+      } else {
+        url.searchParams.set(key, String(value));
+      }
     }
   }
   url.searchParams.set('includeRows', 'false');
@@ -174,4 +202,5 @@ module.exports = {
   fetchSalesAnalytics,
   SalesAnalyticsError,
   analyzeIdentityContract,
+  salesAnalyticsEndpoint,
 };

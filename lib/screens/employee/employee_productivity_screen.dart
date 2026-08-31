@@ -7,6 +7,7 @@ import '../../services/auth_service.dart';
 import '../../services/productivity_service.dart';
 import '../../theme/theme.dart';
 import '../../utils/payroll_cycle.dart';
+import '../../design_system/components/skeletons.dart' show SkeletonList;
 
 class EmployeeProductivityScreen extends StatefulWidget {
   const EmployeeProductivityScreen({super.key});
@@ -45,8 +46,9 @@ class _EmployeeProductivityScreenState
         future: _scoreFuture,
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(
-              child: CircularProgressIndicator(color: ZaWolfColors.primaryCyan),
+            return const Padding(
+              padding: EdgeInsets.all(16),
+              child: SkeletonList(itemCount: 4, itemHeight: 88),
             );
           }
           if (snapshot.hasError || !snapshot.hasData) {
@@ -91,6 +93,30 @@ class _EmployeeProductivityScreenState
                         ),
                       ),
                     ],
+                  ),
+                ),
+                const SizedBox(height: 12),
+                WolfCard(
+                  child: ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: Icon(
+                      score.inputState == ProductivityInputState.complete
+                          ? Icons.verified_outlined
+                          : Icons.info_outline,
+                      color: score.inputState == ProductivityInputState.complete
+                          ? ZaWolfColors.success
+                          : ZaWolfColors.warning,
+                    ),
+                    title: Text(
+                      'حالة بيانات الإنتاجية: ${score.inputStateLabel}',
+                      textAlign: TextAlign.right,
+                    ),
+                    subtitle: Text(
+                      score.inputState == ProductivityInputState.complete
+                          ? 'تم احتساب الحضور والمهام وKPI لهذه الدورة.'
+                          : 'قد لا تكون بعض مصادر المهام أو KPI متاحة لهذه الدورة؛ لا يعني ذلك أن نتيجتك صفر.',
+                      textAlign: TextAlign.right,
+                    ),
                   ),
                 ),
                 const SizedBox(height: 16),

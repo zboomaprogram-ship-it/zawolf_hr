@@ -1,10 +1,17 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+import '../core/feature_flags/company_workspace_feature_flag.dart';
+import '../core/feature_flags/phase007_feature_flags.dart';
+import '../core/feature_flags/company_os_feature_flags.dart';
+import '../features/company_os/domain/entities/operational_request_category.dart';
 import '../models/employee_role.dart';
+import '../navigation/nav_config.dart';
 import '../services/auth_service.dart';
 import '../screens/splash_screen.dart';
+import 'conversation_entry.dart';
 import '../screens/login_screen.dart';
 import '../screens/privacy_policy_screen.dart';
 import 'navigation_wrapper.dart';
@@ -46,16 +53,42 @@ import '../screens/shared/employee_insights_screen.dart';
 import '../screens/shared/notifications_screen.dart';
 import '../screens/shared/polls_screen.dart';
 import '../screens/shared/company_workspace_center_screen.dart';
+import '../screens/shared/hubs/domain_hub_screen.dart';
 import '../screens/account_disabled_screen.dart';
 import '../screens/team_leader/team_leader_dashboard.dart';
+import 'company_workspace_v2_entry.dart';
+import 'developer_tools_entry.dart';
+import 'diagnostics_report_entry.dart';
+import 'employee_operations_entry.dart';
+import 'employee_assistant_entry.dart';
+import 'operational_visibility_entry.dart';
+import 'company_os_entry.dart';
+import 'company_os_it_entry.dart';
+import 'company_os_operations_entry.dart';
+import 'company_os_requests_entry.dart';
+import 'company_os_organization_entry.dart';
 
 class ZaWolfRouter {
   static GoRouter getRouter(BuildContext context) {
     final authService = Provider.of<AuthService>(context, listen: false);
+    final workspaceV2 = Provider.of<CompanyWorkspaceFeatureFlag>(
+      context,
+      listen: false,
+    );
+    final phase007 = Provider.of<Phase007FeatureFlags>(context, listen: false);
+    final companyOs = Provider.of<CompanyOsFeatureFlags>(
+      context,
+      listen: false,
+    );
 
     return GoRouter(
       initialLocation: '/splash',
-      refreshListenable: authService,
+      refreshListenable: Listenable.merge([
+        authService,
+        workspaceV2.changes,
+        phase007.changes,
+        companyOs.changes,
+      ]),
       redirect: (BuildContext context, GoRouterState state) {
         final loggingIn = state.matchedLocation == '/login';
         final onSplash = state.matchedLocation == '/splash';
@@ -169,12 +202,76 @@ class ZaWolfRouter {
               builder: (context, state) => const NotificationsScreen(),
             ),
             GoRoute(
+              path: '/conversations/department/:channelId',
+              builder: (context, state) => ConversationEntry(
+                channelId: state.pathParameters['channelId']!,
+                channelName: state.uri.queryParameters['name'],
+              ),
+            ),
+            GoRoute(
+              path: '/conversations/managers',
+              builder: (context, state) => const ConversationEntry(
+                channelId: 'manager-channel',
+                channelName: 'قناة المديرين',
+              ),
+            ),
+            GoRoute(
+              path: '/operations/employee/:employeeUserId',
+              redirect: (context, state) {
+                final actor = authService.currentUser;
+                final target = state.pathParameters['employeeUserId'] ?? '';
+                if (actor == null || target.isEmpty) return '/splash';
+                final enabled = phase007.isEnabledFor(
+                  feature: Phase007Feature.operationalVisibility,
+                  actorId: actor.uid,
+                );
+                if (!enabled) return null;
+                if (actor.role == EmployeeRole.employee &&
+                    actor.uid != target) {
+                  return '/employee/dashboard';
+                }
+                return null;
+              },
+              builder: (context, state) {
+                final actor = authService.currentUser!;
+                final target = state.pathParameters['employeeUserId']!;
+                final enabled = phase007.isEnabledFor(
+                  feature: Phase007Feature.operationalVisibility,
+                  actorId: actor.uid,
+                );
+                if (!enabled) {
+                  return const Scaffold(
+                    body: Center(child: Text('هذه الميزة غير مفعلة حالياً.')),
+                  );
+                }
+                return OperationalVisibilityEntry(
+                  employeeUserId: target,
+                  canManageVisibility:
+                      actor.role == EmployeeRole.superAdmin ||
+                      EmployeeRole.isHrStaff(actor.role),
+                );
+              },
+            ),
+            GoRoute(
               path: '/polls',
               builder: (context, state) => const PollsScreen(),
             ),
             GoRoute(
               path: '/workspace',
-              builder: (context, state) => const CompanyWorkspaceCenterScreen(),
+              builder: (context, state) {
+                if (!kIsWeb) return const _WorkspaceWebOnlyPage();
+                final actorId = FirebaseAuth.instance.currentUser?.uid ?? '';
+                return workspaceV2.isEnabledFor(actorId: actorId)
+                    ? CompanyWorkspaceV2Entry(actorId: actorId)
+                    : const CompanyWorkspaceCenterScreen();
+              },
+            ),
+            // HR report discovery stays behind the same safe V2 switch. The
+            // legacy workspace remains the rollback destination until pilot
+            // evidence and the owner's default-route approval exist.
+            GoRoute(
+              path: '/hr/workspace-reports',
+              redirect: (_, __) => '/workspace',
             ),
             // Employee Routes
             GoRoute(
@@ -182,12 +279,100 @@ class ZaWolfRouter {
               builder: (context, state) => const EmployeeDashboardScreen(),
             ),
             GoRoute(
+              path: '/company-os',
+              builder: (context, state) => const CompanyOsEntry(),
+            ),
+            for (final route in const <(String, CompanyOsItSurface)>[
+              ('/company-os/it', CompanyOsItSurface.tickets),
+              ('/company-os/it/assets', CompanyOsItSurface.assets),
+              ('/company-os/it/licenses', CompanyOsItSurface.licenses),
+            ])
+              GoRoute(
+                path: route.$1,
+                builder: (context, state) =>
+                    CompanyOsItEntry(surface: route.$2),
+              ),
+            for (final route in const <(String, CompanyOsOperationsSurface)>[
+              ('/company-os/operations', CompanyOsOperationsSurface.dashboard),
+              (
+                '/company-os/operations/search',
+                CompanyOsOperationsSurface.search,
+              ),
+              (
+                '/company-os/operations/reports',
+                CompanyOsOperationsSurface.reports,
+              ),
+              (
+                '/company-os/operations/audit',
+                CompanyOsOperationsSurface.audit,
+              ),
+            ])
+              GoRoute(
+                path: route.$1,
+                builder: (_, __) => CompanyOsOperationsEntry(surface: route.$2),
+              ),
+            GoRoute(
               path: '/employee/requests',
               builder: (context, state) => const EmployeeRequestsScreen(),
             ),
             GoRoute(
+              path: '/employee/requests/operational/new',
+              builder: (_, state) => CompanyOsRequestsEntry(
+                surface: CompanyOsRequestSurface.create,
+                initialCategory:
+                    switch (state.uri.queryParameters['category']) {
+                      'technical' => OperationalRequestCategory.technical,
+                      'financial' => OperationalRequestCategory.financial,
+                      _ => null,
+                    },
+              ),
+            ),
+            GoRoute(
+              path: '/employee/requests/operational/:requestId',
+              builder: (_, state) => CompanyOsRequestsEntry(
+                surface: CompanyOsRequestSurface.detail,
+                requestId: state.pathParameters['requestId'],
+              ),
+            ),
+            GoRoute(
+              path: '/manager/requests/operational/:requestId',
+              builder: (_, state) => CompanyOsRequestsEntry(
+                surface: CompanyOsRequestSurface.detail,
+                requestId: state.pathParameters['requestId'],
+                canDecide: true,
+              ),
+            ),
+            GoRoute(
+              path: '/hr/requests/operational/:requestId',
+              builder: (_, state) => CompanyOsRequestsEntry(
+                surface: CompanyOsRequestSurface.detail,
+                requestId: state.pathParameters['requestId'],
+                canDecide: true,
+              ),
+            ),
+            GoRoute(
+              path: '/requests/operational/:requestId',
+              builder: (_, state) => CompanyOsRequestsEntry(
+                surface: CompanyOsRequestSurface.detail,
+                requestId: state.pathParameters['requestId'],
+                canDecide:
+                    authService.currentUser?.role != EmployeeRole.employee,
+              ),
+            ),
+            GoRoute(
               path: '/employee/tasks',
-              builder: (context, state) => const EmployeeTasksScreen(),
+              builder: (context, state) {
+                final actorId = authService.currentUser?.uid ?? '';
+                final enabled =
+                    actorId.isNotEmpty &&
+                    phase007.isEnabledFor(
+                      feature: Phase007Feature.workOutcomes,
+                      actorId: actorId,
+                    );
+                return enabled
+                    ? WorkOutcomesEntry(actorUserId: actorId)
+                    : const EmployeeTasksScreen();
+              },
             ),
             GoRoute(
               path: '/employee/performance',
@@ -207,6 +392,29 @@ class ZaWolfRouter {
               builder: (context, state) => const ProfileSettingsScreen(),
             ),
             GoRoute(
+              path: '/developer-tools',
+              builder: (context, state) => const DeveloperToolsEntry(),
+            ),
+            GoRoute(
+              path: '/hr/developer-tools',
+              builder: (context, state) => const DeveloperToolsAdminEntry(),
+            ),
+            GoRoute(
+              path: '/hr/diagnostics',
+              builder: (context, state) {
+                final actorId = authService.currentUser?.uid ?? '';
+                final enabled =
+                    actorId.isNotEmpty &&
+                    phase007.isEnabledFor(
+                      feature: Phase007Feature.diagnostics,
+                      actorId: actorId,
+                    );
+                return enabled
+                    ? const DiagnosticsReportEntry()
+                    : const HrDashboardScreen();
+              },
+            ),
+            GoRoute(
               path: '/employee/suggestions',
               builder: (context, state) => const EmployeeSuggestionsScreen(),
             ),
@@ -221,11 +429,35 @@ class ZaWolfRouter {
             ),
             GoRoute(
               path: '/employee/deductions',
-              builder: (context, state) => const EmployeeDeductionsScreen(),
+              builder: (context, state) {
+                final employeeUserId = authService.currentUser?.uid ?? '';
+                final enabled =
+                    employeeUserId.isNotEmpty &&
+                    phase007.isEnabledFor(
+                      feature: Phase007Feature.employeeOperations,
+                      actorId: employeeUserId,
+                    );
+                if (!enabled) return const EmployeeDeductionsScreen();
+                return EmployeeDeductionDetailsEntry(
+                  employeeUserId: employeeUserId,
+                  initialCycleKey: state.uri.queryParameters['cycle'],
+                );
+              },
             ),
             GoRoute(
               path: '/assistant',
-              builder: (context, state) => const SmartAssistantScreen(),
+              builder: (context, state) {
+                final actorId = authService.currentUser?.uid ?? '';
+                final enabled =
+                    actorId.isNotEmpty &&
+                    phase007.isEnabledFor(
+                      feature: Phase007Feature.employeeAssistant,
+                      actorId: actorId,
+                    );
+                return enabled
+                    ? const EmployeeAssistantEntry()
+                    : const SmartAssistantScreen();
+              },
             ),
             // Team Leader Routes
             GoRoute(
@@ -273,7 +505,21 @@ class ZaWolfRouter {
             ),
             GoRoute(
               path: '/manager/tasks',
-              builder: (context, state) => const TasksManagementScreen(),
+              builder: (context, state) {
+                final actorId = authService.currentUser?.uid ?? '';
+                final enabled =
+                    actorId.isNotEmpty &&
+                    phase007.isEnabledFor(
+                      feature: Phase007Feature.workOutcomes,
+                      actorId: actorId,
+                    );
+                return enabled
+                    ? WorkOutcomesEntry(
+                        actorUserId: actorId,
+                        mode: WorkOutcomesPageMode.manager,
+                      )
+                    : const TasksManagementScreen();
+              },
             ),
             GoRoute(
               path: '/manager/team',
@@ -349,7 +595,35 @@ class ZaWolfRouter {
             ),
             GoRoute(
               path: '/hr/google-workspace',
-              builder: (context, state) => const GoogleWorkspaceScreen(),
+              builder: (context, state) => kIsWeb
+                  ? const GoogleWorkspaceScreen()
+                  : const _WorkspaceWebOnlyPage(),
+            ),
+            // Domain hubs (additive, specs/ui_redesign/02)
+            GoRoute(
+              path: '/hub/time',
+              builder: (context, state) =>
+                  const DomainHubScreen(domain: NavDomain.time),
+            ),
+            GoRoute(
+              path: '/hub/approvals',
+              builder: (context, state) =>
+                  const DomainHubScreen(domain: NavDomain.approvals),
+            ),
+            GoRoute(
+              path: '/hub/payroll',
+              builder: (context, state) =>
+                  const DomainHubScreen(domain: NavDomain.payroll),
+            ),
+            GoRoute(
+              path: '/hub/performance',
+              builder: (context, state) =>
+                  const DomainHubScreen(domain: NavDomain.performance),
+            ),
+            GoRoute(
+              path: '/hub/people',
+              builder: (context, state) =>
+                  const DomainHubScreen(domain: NavDomain.people),
             ),
             GoRoute(
               path: '/hr/payroll',
@@ -369,7 +643,21 @@ class ZaWolfRouter {
             ),
             GoRoute(
               path: '/hr/departments',
-              builder: (context, state) => const DepartmentPerformanceScreen(),
+              // Keep the live hierarchy and the additive multi-tree editor in
+              // one page. The legacy tab remains the default rollback seam.
+              builder: (context, state) => DepartmentPerformanceScreen(
+                organizationTreesBuilder: (_) =>
+                    const CompanyOsOrganizationEntry(embedded: true),
+              ),
+            ),
+            GoRoute(
+              path: '/hr/organization-trees',
+              builder: (context, state) => DepartmentPerformanceScreen(
+                initialTab: 1,
+                initialOrganizationTreesView: true,
+                organizationTreesBuilder: (_) =>
+                    const CompanyOsOrganizationEntry(embedded: true),
+              ),
             ),
             GoRoute(
               path: '/hr/warnings-rewards',
@@ -398,4 +686,31 @@ class ZaWolfRouter {
       ],
     );
   }
+}
+
+class _WorkspaceWebOnlyPage extends StatelessWidget {
+  const _WorkspaceWebOnlyPage();
+
+  @override
+  Widget build(BuildContext context) => const Directionality(
+    textDirection: TextDirection.rtl,
+    child: Scaffold(
+      body: Center(
+        child: Padding(
+          padding: EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.desktop_windows_outlined, size: 48),
+              SizedBox(height: 16),
+              Text(
+                'ملفات الشركة وGoogle Workspace متاحان من لوحة الويب فقط.',
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
+        ),
+      ),
+    ),
+  );
 }

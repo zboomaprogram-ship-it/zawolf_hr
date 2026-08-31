@@ -1,0 +1,28 @@
+{
+  "sanitized": true,
+  "organization": {
+    "secondaryTreeVisible": true,
+    "primaryRoutingPassed": true,
+    "immutableExistingApprovalPlanPassed": true,
+    "unauthorizedAccessCount": 0,
+    "auditEventCount": 1,
+    "rollbackTestPassed": true
+  },
+  "attendance": {
+    "employeeAliasCount": 2,
+    "deviceAliases": ["DEVICE_A", "DEVICE_B"],
+    "locationAliases": ["SITE_A", "SITE_B"],
+    "manualCheckInPassed": true,
+    "offlineQueuePassed": true,
+    "automaticEntryPassed": true,
+    "duplicateConvergencePassed": true,
+    "staleAssignmentRejected": true,
+    "inactiveSiteRejected": true,
+    "outsideRangeRejected": true,
+    "duplicateCount": 0,
+    "auditEventCount": 2,
+    "rollbackTestPassed": true,
+    "p95LatencyMs": 900,
+    "maxFirestoreReadsPerCheckIn": 5
+  }
+}

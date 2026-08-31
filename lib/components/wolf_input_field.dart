@@ -16,6 +16,8 @@ class WolfInputField extends StatefulWidget {
   final int maxLines;
   final ValueChanged<String>? onChanged;
   final ValueChanged<String>? onSubmitted;
+  final String? helperText;
+  final String? errorText;
 
   const WolfInputField({
     super.key,
@@ -33,6 +35,8 @@ class WolfInputField extends StatefulWidget {
     this.maxLines = 1,
     this.onChanged,
     this.onSubmitted,
+    this.helperText,
+    this.errorText,
   });
 
   @override
@@ -76,7 +80,7 @@ class _WolfInputFieldState extends State<WolfInputField> {
             ),
             if (widget.englishLabel != null)
               Padding(
-                padding: const EdgeInsets.only(right: 8.0),
+                padding: const EdgeInsetsDirectional.only(end: 8.0),
                 child: Text(
                   widget.englishLabel!.toUpperCase(),
                   style: theme.textTheme.bodySmall!.copyWith(
@@ -122,6 +126,8 @@ class _WolfInputFieldState extends State<WolfInputField> {
               validator: widget.validator,
               decoration: InputDecoration(
                 hintText: widget.hintText,
+                helperText: widget.helperText,
+                errorText: widget.errorText,
                 prefixIcon: widget.prefixIcon != null
                     ? Icon(
                         widget.prefixIcon,

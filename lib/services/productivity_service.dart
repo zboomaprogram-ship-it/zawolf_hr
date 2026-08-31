@@ -239,26 +239,12 @@ class ProductivityService {
               .toDouble();
     // Check if user is a team leader/manager with team members
     double? teamKpiScore;
-    final isSupervisor = user.role == EmployeeRole.manager ||
-        user.role == EmployeeRole.teamLeader ||
-        user.role == EmployeeRole.hrManager ||
-        user.role == EmployeeRole.hrAdmin ||
-        user.role == EmployeeRole.superAdmin;
-
-    if (isSupervisor) {
-      final teamKpiSnap = await _db
-          .collection('employeeKpis')
-          .where('monthKey', isEqualTo: monthKey)
-          .get();
-      final teamScores = teamKpiSnap.docs
-          .map(EmployeeKpiModel.fromFirestore)
-          .where((doc) =>
-              doc.userId != user.uid &&
-              (doc.managerId == user.uid ||
-                  doc.managerIds.contains(user.uid) ||
-                  doc.teamLeaderId == user.uid))
-          .map((doc) => doc.overallProgress)
-          .toList();
+    if (user.role == EmployeeRole.manager ||
+        user.role == EmployeeRole.teamLeader) {
+      final teamScores = await _loadSupervisedKpiScores(
+        user: user,
+        monthKey: monthKey,
+      );
       if (teamScores.isNotEmpty) {
         teamKpiScore = teamScores.reduce((a, b) => a + b) / teamScores.length;
       }
@@ -310,6 +296,38 @@ class ProductivityService {
       absentDays: absentDays,
       lateDays: lateDays,
     );
+  }
+
+  /// A supervisor's productivity is based on their actual managed team only.
+  /// HR/admin roles do not silently aggregate every employee KPI into their
+  /// personal score. This also prevents a broad month-wide Firestore read.
+  Future<List<double>> _loadSupervisedKpiScores({
+    required UserModel user,
+    required String monthKey,
+  }) async {
+    final base = _db
+        .collection('employeeKpis')
+        .where('monthKey', isEqualTo: monthKey);
+    final queries = user.role == EmployeeRole.teamLeader
+        ? <Query<Map<String, dynamic>>>[
+            base.where('teamLeaderId', isEqualTo: user.uid),
+          ]
+        : <Query<Map<String, dynamic>>>[
+            base.where('managerIds', arrayContains: user.uid),
+            base.where('managerId', isEqualTo: user.uid),
+            base.where('teamLeaderId', isEqualTo: user.uid),
+          ];
+    final snapshots = await Future.wait(queries.map((query) => query.get()));
+    final byId = <String, EmployeeKpiModel>{};
+    for (final snapshot in snapshots) {
+      for (final document in snapshot.docs) {
+        final item = EmployeeKpiModel.fromFirestore(document);
+        if (item.userId != user.uid) {
+          byId[item.employeeKpiId] = item;
+        }
+      }
+    }
+    return byId.values.map((item) => item.overallProgress).toList();
   }
 
   Future<void> calculateAndCacheForUser({

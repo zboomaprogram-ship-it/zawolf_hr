@@ -1,5 +1,10 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+/// Describes whether the score includes every optional productivity input.
+/// A missing source must remain visible to reviewers instead of looking like
+/// an employee earned a real zero in that category.
+enum ProductivityInputState { complete, partial, unavailable }
+
 class ProductivityScoreModel {
   final String scoreId;
   final String userId;
@@ -60,6 +65,22 @@ class ProductivityScoreModel {
     if (overallScore >= 60) return 'يحتاج متابعة';
     return 'خطر';
   }
+
+  ProductivityInputState get inputState {
+    if (hasTaskData && hasTaskQualityData && hasKpiData) {
+      return ProductivityInputState.complete;
+    }
+    if (!hasTaskData && !hasTaskQualityData && !hasKpiData) {
+      return ProductivityInputState.unavailable;
+    }
+    return ProductivityInputState.partial;
+  }
+
+  String get inputStateLabel => switch (inputState) {
+    ProductivityInputState.complete => 'مكتملة',
+    ProductivityInputState.partial => 'جزئية',
+    ProductivityInputState.unavailable => 'غير متاحة',
+  };
 
   factory ProductivityScoreModel.fromFirestore(DocumentSnapshot doc) {
     final data = doc.data() as Map<String, dynamic>;

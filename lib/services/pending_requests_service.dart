@@ -29,18 +29,24 @@ class PendingRequestsService {
     _advancesCount = 0;
     pendingCount.value = 0;
 
-    String targetStatus = 'pending_hr';
-    if (reviewer.role == EmployeeRole.manager ||
+    // CEO-100 can be assigned as a direct manager while retaining an HR role.
+    // Treat that assignment as a manager-review surface for the notification
+    // badge; otherwise pending_manager requests are silently omitted.
+    final isCompanyCeo = reviewer.employeeId.trim().toUpperCase() == 'CEO-100';
+    final reviewsManagerStage =
+        isCompanyCeo ||
+        reviewer.role == EmployeeRole.manager ||
         reviewer.role == EmployeeRole.teamLeader ||
-        reviewer.role == EmployeeRole.superAdmin) {
+        reviewer.role == EmployeeRole.superAdmin;
+
+    String targetStatus = 'pending_hr';
+    if (reviewsManagerStage) {
       targetStatus = 'pending_manager';
     }
 
     // 1. Leaves
     Query<Map<String, dynamic>> leavesQuery = _db.collection('leaves');
-    if (reviewer.role == EmployeeRole.manager ||
-        reviewer.role == EmployeeRole.teamLeader ||
-        reviewer.role == EmployeeRole.superAdmin) {
+    if (reviewsManagerStage) {
       leavesQuery = leavesQuery
           .where('managerId', isEqualTo: reviewer.uid)
           .where('status', isEqualTo: 'pending_manager');
@@ -63,9 +69,7 @@ class PendingRequestsService {
     Query<Map<String, dynamic>> permissionsQuery = _db.collection(
       'permissions',
     );
-    if (reviewer.role == EmployeeRole.manager ||
-        reviewer.role == EmployeeRole.teamLeader ||
-        reviewer.role == EmployeeRole.superAdmin) {
+    if (reviewsManagerStage) {
       permissionsQuery = permissionsQuery
           .where('managerId', isEqualTo: reviewer.uid)
           .where('status', isEqualTo: 'pending_manager');
@@ -89,8 +93,7 @@ class PendingRequestsService {
 
     // 3. Advances
     Query<Map<String, dynamic>> advancesQuery = _db.collection('advances');
-    if (reviewer.role == EmployeeRole.manager ||
-        reviewer.role == EmployeeRole.teamLeader) {
+    if (reviewsManagerStage) {
       advancesQuery = advancesQuery
           .where('managerId', isEqualTo: reviewer.uid)
           .where('status', isEqualTo: targetStatus);

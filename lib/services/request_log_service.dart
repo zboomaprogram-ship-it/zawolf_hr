@@ -138,7 +138,8 @@ class RequestLogService {
     PayrollCycle cycle, {
     required bool allTime,
   }) async {
-    if (EmployeeRole.isHr(user.role)) {
+    final isCompanyCeo = user.employeeId.trim().toUpperCase() == 'CEO-100';
+    if (!isCompanyCeo && EmployeeRole.isHr(user.role)) {
       final base = _db.collection(collection);
       final snapshot = allTime
           ? await base.limit(2000).get()
@@ -155,7 +156,8 @@ class RequestLogService {
       return snapshot.docs;
     }
 
-    if (user.role == EmployeeRole.manager ||
+    if (isCompanyCeo ||
+        user.role == EmployeeRole.manager ||
         user.role == EmployeeRole.teamLeader) {
       final results = await Future.wait([
         _db

@@ -3,6 +3,10 @@ class NotificationRoutePolicy {
 
   static String routeForType(String type) {
     final value = type.trim();
+    if (value.startsWith('company_os_request_pending_')) {
+      return '/manager/requests';
+    }
+    if (value.startsWith('company_os_request_')) return '/employee/requests';
     if (value == 'hr_announcement') return '/notifications';
     if (value == 'account_deactivated') return '/account-disabled';
     if (value == 'warning_dismissal_review') return '/hr/employees';

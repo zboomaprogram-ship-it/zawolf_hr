@@ -30,6 +30,8 @@ extension AppDelegate: CLLocationManagerDelegate {
   }
 
   func locationManager(_ manager: CLLocationManager, didExitRegion region: CLRegion) {
+    // Exit is evidence only. The server owns return grace, approved-permission
+    // exceptions, break windows and the eventual checkout decision.
     captureAutomaticAttendanceEvent("exit", region: region)
   }
 
@@ -38,8 +40,8 @@ extension AppDelegate: CLLocationManagerDelegate {
     didDetermineState state: CLRegionState,
     for region: CLRegion
   ) {
-    // Match Android's initial behaviour: enabling while already at the branch
-    // may check in, but enabling away from it must not create a checkout.
+    // Enabling while already at the branch may check in, but enabling away from
+    // it must not create a checkout.
     if state == .inside {
       captureAutomaticAttendanceEvent("enter", region: region)
     }
@@ -48,6 +50,7 @@ extension AppDelegate: CLLocationManagerDelegate {
   fileprivate func captureAutomaticAttendanceEvent(_ event: String, region: CLRegion) {
     guard region.identifier.hasPrefix("zawolf_") else { return }
     pendingAttendanceEvent = event
+    pendingAttendanceLocationId = String(region.identifier.dropFirst("zawolf_".count))
     if attendanceBackgroundTask == .invalid {
       attendanceBackgroundTask = UIApplication.shared.beginBackgroundTask(withName: "ZaWolfAttendance") {
         self.finishAttendanceBackgroundTask()
@@ -86,13 +89,18 @@ extension AppDelegate: CLLocationManagerDelegate {
       finishAttendanceBackgroundTask()
       return
     }
-    let values: [String: Any] = [
+    let locationId = pendingAttendanceLocationId ?? defaults.string(forKey: "auto_attendance_locationId") ?? ""
+    pendingAttendanceLocationId = nil
+    let metadata = automaticAttendanceLocations().first {
+      ($0["locationId"] as? String) == locationId
+    } ?? [:]
+    var values: [String: Any] = [
       "userId": configuredUserId,
       "employeeId": defaults.string(forKey: "auto_attendance_employeeId") ?? "",
       "deviceId": defaults.string(forKey: "auto_attendance_deviceId") ?? "",
       "deviceLabel": defaults.string(forKey: "auto_attendance_deviceLabel") ?? "",
-      "locationId": defaults.string(forKey: "auto_attendance_locationId") ?? "",
-      "locationName": defaults.string(forKey: "auto_attendance_locationName") ?? "",
+      "locationId": locationId,
+      "locationName": metadata["locationName"] as? String ?? defaults.string(forKey: "auto_attendance_locationName") ?? "",
       "event": event,
       "latitude": location.coordinate.latitude,
       "longitude": location.coordinate.longitude,
@@ -103,6 +111,13 @@ extension AppDelegate: CLLocationManagerDelegate {
       "locationMocked": false,
       "createdAt": FieldValue.serverTimestamp(),
     ]
+    if let assignmentId = metadata["assignmentId"] as? String, !assignmentId.isEmpty {
+      values["assignmentId"] = assignmentId
+    }
+    if let assignmentVersion = metadata["assignmentVersion"] as? NSNumber,
+       assignmentVersion.intValue > 0 {
+      values["assignmentVersion"] = assignmentVersion.intValue
+    }
     Firestore.firestore().collection("autoAttendanceSignals").addDocument(data: values) { _ in
       self.finishAttendanceBackgroundTask()
     }
@@ -119,6 +134,7 @@ extension AppDelegate: CLLocationManagerDelegate {
 @objc class AppDelegate: FlutterAppDelegate {
   fileprivate let attendanceLocationManager = CLLocationManager()
   fileprivate var pendingAttendanceEvent: String?
+  fileprivate var pendingAttendanceLocationId: String?
   fileprivate var attendanceBackgroundTask: UIBackgroundTaskIdentifier = .invalid
   fileprivate var pendingAlwaysPermissionResult: FlutterResult?
 
@@ -165,27 +181,44 @@ extension AppDelegate: CLLocationManagerDelegate {
         }
         guard let data = call.arguments as? [String: Any],
               let userId = data["userId"] as? String, !userId.isEmpty,
-              let deviceId = data["deviceId"] as? String, !deviceId.isEmpty,
-              let locationId = data["locationId"] as? String, !locationId.isEmpty,
-              let latitude = (data["latitude"] as? NSNumber)?.doubleValue,
-              let longitude = (data["longitude"] as? NSNumber)?.doubleValue,
-              let requestedRadius = (data["radiusMeters"] as? NSNumber)?.doubleValue else {
+              let deviceId = data["deviceId"] as? String, !deviceId.isEmpty else {
           result(FlutterError(code: "INVALID_GEOFENCE", message: "بيانات فرع الحضور غير مكتملة.", details: nil))
           return
         }
-        let radius = min(max(requestedRadius, 100), self.attendanceLocationManager.maximumRegionMonitoringDistance)
+        let rawLocations = (data["locations"] as? [[String: Any]]) ?? [data]
+        let locations = Array(rawLocations.prefix(20)).compactMap { raw -> [String: Any]? in
+          guard let locationId = raw["locationId"] as? String, !locationId.isEmpty,
+                let latitude = (raw["latitude"] as? NSNumber)?.doubleValue,
+                let longitude = (raw["longitude"] as? NSNumber)?.doubleValue,
+                let requestedRadius = (raw["radiusMeters"] as? NSNumber)?.doubleValue,
+                requestedRadius > 0 else { return nil }
+          var normalized = raw
+          normalized["locationId"] = locationId
+          normalized["latitude"] = latitude
+          normalized["longitude"] = longitude
+          normalized["radiusMeters"] = min(max(requestedRadius, 100), self.attendanceLocationManager.maximumRegionMonitoringDistance)
+          return normalized
+        }
+        guard !locations.isEmpty else {
+          result(FlutterError(code: "INVALID_GEOFENCE", message: "لا توجد مواقع حضور صالحة للتسجيل.", details: nil))
+          return
+        }
         let defaults = UserDefaults.standard
         data.forEach { key, value in
           if value is String || value is NSNumber { defaults.set(value, forKey: "auto_attendance_\(key)") }
         }
-        defaults.set(radius, forKey: "auto_attendance_radiusMeters")
+        if let encoded = try? JSONSerialization.data(withJSONObject: locations) {
+          defaults.set(encoded, forKey: "auto_attendance_locations")
+        }
+        if let first = locations.first {
+          defaults.set(first["locationId"], forKey: "auto_attendance_locationId")
+          defaults.set(first["locationName"], forKey: "auto_attendance_locationName")
+          defaults.set(first["latitude"], forKey: "auto_attendance_latitude")
+          defaults.set(first["longitude"], forKey: "auto_attendance_longitude")
+          defaults.set(first["radiusMeters"], forKey: "auto_attendance_radiusMeters")
+        }
         defaults.set(true, forKey: "auto_attendance_enabled")
-        self.startAttendanceMonitor(
-          locationId: locationId,
-          latitude: latitude,
-          longitude: longitude,
-          radius: radius
-        )
+        self.startAttendanceMonitors(locations)
         result(true)
       case "disableIosGeofence":
         self.stopAttendanceMonitors()
@@ -206,7 +239,6 @@ extension AppDelegate: CLLocationManagerDelegate {
     longitude: CLLocationDegrees,
     radius: CLLocationDistance
   ) {
-    stopAttendanceMonitors()
     guard CLLocationManager.isMonitoringAvailable(for: CLCircularRegion.self) else { return }
     let region = CLCircularRegion(
       center: CLLocationCoordinate2D(latitude: latitude, longitude: longitude),
@@ -214,9 +246,36 @@ extension AppDelegate: CLLocationManagerDelegate {
       identifier: "zawolf_\(locationId)"
     )
     region.notifyOnEntry = true
+    // An exit is sent to the backend as evidence only. The backend applies the
+    // HR-owned policy rather than allowing the device to alter payroll state.
     region.notifyOnExit = true
     attendanceLocationManager.startMonitoring(for: region)
     attendanceLocationManager.requestState(for: region)
+  }
+
+  fileprivate func startAttendanceMonitors(_ locations: [[String: Any]]) {
+    stopAttendanceMonitors()
+    for raw in locations.prefix(20) {
+      guard let locationId = raw["locationId"] as? String,
+            let latitude = (raw["latitude"] as? NSNumber)?.doubleValue,
+            let longitude = (raw["longitude"] as? NSNumber)?.doubleValue,
+            let radius = (raw["radiusMeters"] as? NSNumber)?.doubleValue else { continue }
+      startAttendanceMonitor(
+        locationId: locationId,
+        latitude: latitude,
+        longitude: longitude,
+        radius: radius
+      )
+    }
+  }
+
+  fileprivate func automaticAttendanceLocations() -> [[String: Any]] {
+    guard let data = UserDefaults.standard.data(forKey: "auto_attendance_locations"),
+          let object = try? JSONSerialization.jsonObject(with: data),
+          let decoded = object as? [[String: Any]] else {
+      return []
+    }
+    return decoded
   }
 
   fileprivate func stopAttendanceMonitors() {
@@ -228,14 +287,18 @@ extension AppDelegate: CLLocationManagerDelegate {
   private func restoreAutomaticAttendanceMonitor() {
     attendanceLocationManager.delegate = self
     let defaults = UserDefaults.standard
-    guard defaults.bool(forKey: "auto_attendance_enabled"),
-          let locationId = defaults.string(forKey: "auto_attendance_locationId") else { return }
-    startAttendanceMonitor(
-      locationId: locationId,
-      latitude: defaults.double(forKey: "auto_attendance_latitude"),
-      longitude: defaults.double(forKey: "auto_attendance_longitude"),
-      radius: defaults.double(forKey: "auto_attendance_radiusMeters")
-    )
+    guard defaults.bool(forKey: "auto_attendance_enabled") else { return }
+    let locations = automaticAttendanceLocations()
+    if !locations.isEmpty {
+      startAttendanceMonitors(locations)
+    } else if let locationId = defaults.string(forKey: "auto_attendance_locationId") {
+      startAttendanceMonitor(
+        locationId: locationId,
+        latitude: defaults.double(forKey: "auto_attendance_latitude"),
+        longitude: defaults.double(forKey: "auto_attendance_longitude"),
+        radius: defaults.double(forKey: "auto_attendance_radiusMeters")
+      )
+    }
   }
 
   private func configurePersonalAlarmChannel() {

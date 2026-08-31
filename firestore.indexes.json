@@ -61,6 +61,15 @@
       ]
     },
     {
+      "collectionGroup": "permissions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "userId", "order": "ASCENDING" },
+        { "fieldPath": "requestDate", "order": "ASCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "leaves",
       "queryScope": "COLLECTION",
       "fields": [
@@ -374,6 +383,15 @@
       "collectionGroup": "administrativeRequests",
       "queryScope": "COLLECTION",
       "fields": [
+        { "fieldPath": "specialistRole", "order": "ASCENDING" },
+        { "fieldPath": "category", "order": "ASCENDING" },
+        { "fieldPath": "submittedAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "administrativeRequests",
+      "queryScope": "COLLECTION",
+      "fields": [
         { "fieldPath": "userId", "order": "ASCENDING" },
         { "fieldPath": "submittedAt", "order": "DESCENDING" }
       ]
@@ -400,6 +418,82 @@
       "fields": [
         { "fieldPath": "status", "order": "ASCENDING" },
         { "fieldPath": "ceoId", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "companyOsAssetAssignments",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "assetId", "order": "ASCENDING" },
+        { "fieldPath": "assignedAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "companyOsAssetMaintenance",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "assetId", "order": "ASCENDING" },
+        { "fieldPath": "openedAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "companyOsLicenseSeats",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "licenseId", "order": "ASCENDING" },
+        { "fieldPath": "assignedAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "administrativeRequests",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "category", "order": "ASCENDING" },
+        { "fieldPath": "submittedAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "administrativeRequests",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "requesterUid", "order": "ASCENDING" },
+        { "fieldPath": "category", "order": "ASCENDING" },
+        { "fieldPath": "submittedAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "administrativeRequests",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "costBearing", "order": "ASCENDING" },
+        { "fieldPath": "executionDate", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "administrativeRequests",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "requesterUid", "order": "ASCENDING" },
+        { "fieldPath": "costBearing", "order": "ASCENDING" },
+        { "fieldPath": "executionDate", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "administrativeRequests",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "managerIds", "arrayConfig": "CONTAINS" },
+        { "fieldPath": "category", "order": "ASCENDING" },
+        { "fieldPath": "submittedAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "administrativeRequests",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "costBearing", "order": "ASCENDING" },
+        { "fieldPath": "category", "order": "ASCENDING" },
+        { "fieldPath": "submittedAt", "order": "DESCENDING" }
       ]
     }
   ],

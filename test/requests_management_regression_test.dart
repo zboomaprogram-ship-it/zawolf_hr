@@ -80,18 +80,24 @@ void main() {
     expect(firestoreRules, contains('&& uid() != resource.data.userId'));
   });
 
-  test('HR monitors manager-stage requests and CEO receives final CEO stage', () {
-    expect(
-      screenSource,
-      contains("? ['pending', 'pending_hr', 'pending_manager', 'pending_ceo']"),
-    );
-    expect(screenSource, contains('final reviewerIsCeo'));
-    expect(screenSource, contains("reviewer.employeeId.trim().toUpperCase() == 'CEO-100'"));
-    expect(
-      screenSource,
-      isNot(contains("collection == 'leaves' && employeeId == 'CEO-100'")),
-    );
-  });
+  test(
+    'HR monitors manager-stage requests and CEO receives final CEO stage',
+    () {
+      expect(
+        screenSource,
+        contains("whereIn: ['pending_manager', 'pending_ceo']"),
+      );
+      expect(screenSource, contains('final reviewerIsCeo'));
+      expect(
+        screenSource,
+        contains("reviewer.employeeId.trim().toUpperCase() == 'CEO-100'"),
+      );
+      expect(
+        screenSource,
+        isNot(contains("collection == 'leaves' && employeeId == 'CEO-100'")),
+      );
+    },
+  );
 
   test('latest HR salary deductions are not hidden by the bounded query', () {
     expect(screenSource, contains("isEqualTo: 'pending_hr'"));

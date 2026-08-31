@@ -2,10 +2,13 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:provider/provider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart' hide TextDirection;
 import 'package:url_launcher/url_launcher.dart';
+import 'package:go_router/go_router.dart';
 import '../../services/auth_service.dart';
 import '../../services/leave_service.dart';
 import '../../services/permission_service.dart';
@@ -36,8 +39,18 @@ import '../../theme/theme.dart';
 import '../../components/wolf_card.dart';
 import '../../components/wolf_button.dart';
 import '../../components/request_approval_timeline.dart';
+import '../../design_system/components/confirmation_sheet.dart';
+import '../../design_system/components/data_presentations.dart';
+import '../../design_system/bidi.dart';
 import '../../utils/user_facing_error.dart';
+import '../../core/sync/authenticated_operation_client.dart';
+import '../../features/request_visibility/domain/entities/request_view_query.dart';
+import '../../navigation/request_visibility_entry.dart';
 import '../shared/requests_log_screen.dart';
+
+// Approval requests use cards on every viewport. The old desktop master/detail
+// table hid request fields and reserved a large blank detail pane.
+const bool _requestMasterDetailEnabled = false;
 
 class RequestsManagementScreen extends StatefulWidget {
   const RequestsManagementScreen({super.key});
@@ -62,9 +75,283 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
   bool _isSavingApprovalPolicy = false;
   String _salaryDeductionFilter = 'all';
   String _searchQuery = '';
+  final Set<String> _busyRequestIds = {};
   final Map<String, Stream<QuerySnapshot<Map<String, dynamic>>>> _streamCache =
       {};
   final Map<String, Stream<dynamic>> _derivedStreamCache = {};
+  final http.Client _requestOperationsHttp = http.Client();
+  late final AuthenticatedOperationClient _requestOperations =
+      AuthenticatedOperationClient(
+        client: _requestOperationsHttp,
+        tokenProvider: () async =>
+            FirebaseAuth.instance.currentUser?.getIdToken(),
+      );
+
+  bool _isRequestBusy(String requestId) => _busyRequestIds.contains(requestId);
+
+  /// Runs [action] with the request's action buttons disabled until done
+  /// (specs/ui_redesign/06 R2: disable during submission).
+  Future<void> _withRequestGuard(
+    String requestId,
+    Future<void> Function() action,
+  ) async {
+    if (_busyRequestIds.contains(requestId)) return;
+    setState(() => _busyRequestIds.add(requestId));
+    try {
+      await action();
+    } finally {
+      _busyRequestIds.remove(requestId);
+      if (mounted) setState(() {});
+    }
+  }
+
+  /// Confirms through [ConfirmationSheet], then runs [run] guarded per row.
+  Future<void> _confirmAndRun({
+    required String requestId,
+    required String title,
+    String message = 'سيتم تنفيذ الإجراء على هذا الطلب.',
+    required String confirmLabel,
+    bool destructive = false,
+    required Future<void> Function() run,
+  }) async {
+    if (!mounted) return;
+    final ok = await showConfirmationSheet(
+      context,
+      title: title,
+      message: message,
+      confirmLabel: confirmLabel,
+      destructive: destructive,
+    );
+    if (!ok || !mounted) return;
+    await _withRequestGuard(requestId, run);
+  }
+
+  bool _canArchiveManagedRequest(UserModel reviewer) {
+    final role = EmployeeRole.normalize(reviewer.role).trim().toLowerCase();
+    return EmployeeRole.isHr(reviewer.role) ||
+        const {
+          'hr',
+          'hr_admin',
+          'hr_manager',
+          'admin',
+          'administrator',
+          'owner',
+          'super_admin',
+        }.contains(role);
+  }
+
+  Future<void> _confirmAndArchiveRequest({
+    required String collection,
+    required String requestId,
+  }) async {
+    await _confirmAndRun(
+      requestId: 'archive-$collection-$requestId',
+      title: 'حذف من قائمة الإدارة',
+      message:
+          'سيُخفى الطلب من قائمة الإدارة مع الاحتفاظ بسجل الطلب والموافقة والتدقيق. لن يُحذف أي سجل مالي.',
+      confirmLabel: 'حذف من القائمة',
+      destructive: true,
+      run: () async {
+        final response = await _requestOperations.post(
+          Uri.parse(
+            'https://notification.zawolf.ai/operations/request-management/archive',
+          ),
+          operationId: 'archive-$collection-$requestId',
+          body: <String, Object?>{
+            'collection': collection,
+            'requestId': requestId,
+          },
+        );
+        if (!mounted) return;
+        final message = switch (response.statusCode) {
+          401 => 'انتهت جلسة الدخول. سجّل الدخول ثم أعد المحاولة.',
+          403 => 'لا تتوفر لك صلاحية حذف هذا الطلب من القائمة.',
+          _ when response.ok => 'تم حذف الطلب من قائمة الإدارة مع حفظ سجله.',
+          _ => 'تعذر حذف الطلب من القائمة الآن. أعد المحاولة لاحقاً.',
+        };
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(message)));
+        if (response.ok) {
+          _streamCache.clear();
+          _derivedStreamCache.clear();
+          setState(() {});
+        }
+      },
+    );
+  }
+
+  Future<String?> _requestNotificationDescription(String target) async {
+    final controller = TextEditingController();
+    String? validationMessage;
+    final result = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: Text(
+            target == 'manager'
+                ? 'تذكير المدير بالطلب'
+                : 'إبلاغ الموظف بالتعديل المطلوب',
+          ),
+          content: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 520),
+            child: TextField(
+              controller: controller,
+              minLines: 3,
+              maxLines: 6,
+              maxLength: 700,
+              autofocus: true,
+              decoration: InputDecoration(
+                labelText: target == 'manager'
+                    ? 'وصف التذكير'
+                    : 'ما التعديل المطلوب من الموظف؟',
+                hintText: 'اكتب رسالة واضحة تظهر في الإشعار…',
+                errorText: validationMessage,
+                alignLabelWithHint: true,
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('إلغاء'),
+            ),
+            FilledButton.icon(
+              onPressed: () {
+                final value = controller.text.trim();
+                if (value.isEmpty) {
+                  setDialogState(() => validationMessage = 'الوصف مطلوب.');
+                  return;
+                }
+                Navigator.of(dialogContext).pop(value);
+              },
+              icon: const Icon(Icons.notifications_active_outlined),
+              label: const Text('إرسال الإشعار'),
+            ),
+          ],
+        ),
+      ),
+    );
+    controller.dispose();
+    return result;
+  }
+
+  Future<void> _sendRequestNotification({
+    required String collection,
+    required String requestId,
+    required String target,
+  }) async {
+    final description = await _requestNotificationDescription(target);
+    if (description == null || !mounted) return;
+    final operationId =
+        'request-notify-$collection-$requestId-$target-${DateTime.now().microsecondsSinceEpoch}';
+    await _withRequestGuard(operationId, () async {
+      final response = await _requestOperations.post(
+        Uri.parse(
+          'https://notification.zawolf.ai/operations/request-management/notify',
+        ),
+        operationId: operationId,
+        body: <String, Object?>{
+          'collection': collection,
+          'requestId': requestId,
+          'target': target,
+          'description': description,
+        },
+      );
+      if (!mounted) return;
+      final message = switch (response.safeCode) {
+        'manager_not_assigned' => 'لا يوجد مدير مرتبط بهذا الموظف.',
+        'employee_not_linked' => 'تعذر ربط الطلب بحساب الموظف.',
+        'recipient_not_found' => 'لم يتم العثور على حساب المستلم.',
+        'session_expired' => 'انتهت جلسة الدخول. سجّل الدخول ثم أعد المحاولة.',
+        'access_denied' => 'لا تتوفر لك صلاحية إرسال هذا الإشعار.',
+        'already_sent' => 'تم إرسال هذا الإشعار سابقاً.',
+        _ when response.ok => 'تم إرسال الإشعار بنجاح.',
+        _ => 'تعذر إرسال الإشعار الآن. أعد المحاولة لاحقاً.',
+      };
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(message)));
+    });
+  }
+
+  Widget _buildArchiveRequestAction({
+    required UserModel reviewer,
+    required String collection,
+    required String requestId,
+  }) {
+    if (!_canArchiveManagedRequest(reviewer)) return const SizedBox.shrink();
+    final busy = _isRequestBusy('archive-$collection-$requestId');
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Align(
+        alignment: AlignmentDirectional.centerEnd,
+        child: Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          alignment: WrapAlignment.end,
+          children: [
+            PopupMenuButton<String>(
+              tooltip: 'إرسال إشعار بخصوص الطلب',
+              onSelected: (target) => _sendRequestNotification(
+                collection: collection,
+                requestId: requestId,
+                target: target,
+              ),
+              itemBuilder: (context) => const [
+                PopupMenuItem(
+                  value: 'manager',
+                  child: ListTile(
+                    leading: Icon(Icons.supervisor_account_outlined),
+                    title: Text('تذكير المدير بالطلب'),
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                ),
+                PopupMenuItem(
+                  value: 'employee',
+                  child: ListTile(
+                    leading: Icon(Icons.edit_notifications_outlined),
+                    title: Text('طلب تعديل من الموظف'),
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                ),
+              ],
+              child: const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.notifications_active_outlined),
+                    SizedBox(width: 8),
+                    Text('إرسال إشعار'),
+                    SizedBox(width: 4),
+                    Icon(Icons.arrow_drop_down),
+                  ],
+                ),
+              ),
+            ),
+            TextButton.icon(
+              onPressed: busy
+                  ? null
+                  : () => _confirmAndArchiveRequest(
+                      collection: collection,
+                      requestId: requestId,
+                    ),
+              icon: const Icon(Icons.delete_outline),
+              label: const Text('حذف من القائمة'),
+              style: TextButton.styleFrom(foregroundColor: ZaWolfColors.error),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    _requestOperationsHttp.close();
+    super.dispose();
+  }
 
   Future<void> _openAttachment(String rawUrl) async {
     final url = rawUrl.trim();
@@ -395,102 +682,63 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
     required String type, // 'leave' | 'permission' | 'advance'
   }) async {
     final commentController = TextEditingController();
-    final formKey = GlobalKey<FormState>();
 
-    await showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) {
-        return AlertDialog(
-          backgroundColor: ZaWolfColors.surface01,
-          title: const Text('أدخل سبب الرفض', textDirection: TextDirection.rtl),
-          content: Form(
-            key: formKey,
-            child: TextFormField(
-              controller: commentController,
-              textDirection: TextDirection.rtl,
-              maxLines: 3,
-              style: const TextStyle(color: Colors.white),
-              decoration: const InputDecoration(
-                hintText: 'اكتب سبب الرفض هنا... (مطلوب)',
-                hintStyle: TextStyle(color: ZaWolfColors.textMuted),
-              ),
-              validator: (val) {
-                if (val == null || val.trim().isEmpty) {
-                  return 'يجب كتابة سبب الرفض للتوثيق.';
-                }
-                return null;
-              },
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('إلغاء'),
-            ),
-            TextButton(
-              onPressed: () async {
-                if (!formKey.currentState!.validate()) return;
-
-                final authService = Provider.of<AuthService>(
-                  context,
-                  listen: false,
-                );
-                final reviewerId = authService.currentUser!.uid;
-
-                try {
-                  if (type == 'leave') {
-                    await _leaveService.rejectLeave(
-                      requestId,
-                      reviewerId,
-                      commentController.text.trim(),
-                    );
-                  } else if (type == 'permission') {
-                    await _permissionService.rejectPermission(
-                      requestId,
-                      reviewerId,
-                      commentController.text.trim(),
-                    );
-                  } else if (type == 'advance') {
-                    await _advanceService.updateAdvanceStatus(
-                      advanceId: requestId,
-                      status: 'rejected',
-                      reviewerId: reviewerId,
-                      comment: commentController.text.trim(),
-                    );
-                  } else if (type == 'administrative') {
-                    await _administrativeRequestService.reject(
-                      requestId,
-                      authService.currentUser!,
-                      commentController.text.trim(),
-                    );
-                  }
-
-                  if (context.mounted) {
-                    Navigator.pop(context);
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('تم رفض الطلب بنجاح.')),
-                    );
-                  }
-                } catch (e) {
-                  if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text('فشل الإجراء: ${userFacingError(e)}'),
-                      ),
-                    );
-                  }
-                }
-              },
-              child: const Text(
-                'رفض الطلب',
-                style: TextStyle(color: ZaWolfColors.error),
-              ),
-            ),
-          ],
-        );
-      },
+    final confirmed = await showConfirmationSheet(
+      context,
+      title: 'رفض الطلب',
+      message: 'سيتم رفض الطلب وإشعار الموظف بالسبب.',
+      confirmLabel: 'رفض الطلب',
+      commentHint: 'اكتب سبب الرفض هنا... (مطلوب)',
+      requireComment: true,
+      commentController: commentController,
     );
+    if (!confirmed || !mounted) {
+      commentController.dispose();
+      return;
+    }
+    final reason = commentController.text.trim();
+    commentController.dispose();
+
+    await _withRequestGuard(requestId, () async {
+      final authService = Provider.of<AuthService>(context, listen: false);
+      final reviewerId = authService.currentUser!.uid;
+      try {
+        if (type == 'leave') {
+          await _leaveService.rejectLeave(requestId, reviewerId, reason);
+        } else if (type == 'permission') {
+          await _permissionService.rejectPermission(
+            requestId,
+            reviewerId,
+            reason,
+          );
+        } else if (type == 'advance') {
+          await _advanceService.updateAdvanceStatus(
+            advanceId: requestId,
+            status: 'rejected',
+            reviewerId: reviewerId,
+            comment: reason,
+          );
+        } else if (type == 'administrative') {
+          await _administrativeRequestService.reject(
+            requestId,
+            authService.currentUser!,
+            reason,
+          );
+        }
+
+        if (mounted) {
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(const SnackBar(content: Text('تم رفض الطلب بنجاح.')));
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('فشل الإجراء: ${userFacingError(e)}')),
+          );
+        }
+      }
+    });
   }
 
   Future<void> _showModificationDialog({
@@ -553,7 +801,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                             ButtonSegment(
                               value: 'request',
                               label: Text('طلب تعديل من الموظف'),
-                              icon: Icon(Icons.send),
+                              icon: Icon(Icons.mail_outline),
                             ),
                           ],
                           selected: {mode},
@@ -720,7 +968,9 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                   child: const Text('إلغاء'),
                 ),
                 FilledButton.icon(
-                  icon: Icon(mode == 'direct' ? Icons.check : Icons.send),
+                  icon: Icon(
+                    mode == 'direct' ? Icons.check : Icons.mail_outline,
+                  ),
                   label: Text(
                     mode == 'direct' ? 'حفظ التعديل المباشر' : 'إرسال للموظف',
                   ),
@@ -877,6 +1127,19 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
     }
     final canReviewSalaryDeductions = EmployeeRole.isHr(manager.role);
     final canReviewTimeCorrections = EmployeeRole.isHr(manager.role);
+    final canReviewSecurity = EmployeeRole.isHr(manager.role);
+    final historyQuery = RequestViewQuery(
+      actorScope: RequestActorScope(actorId: manager.uid, role: manager.role),
+      tab: RequestViewTab.history,
+      fromDate: DateTime.utc(2020),
+      toDate: DateTime.now().toUtc().add(const Duration(days: 366)),
+    );
+    final deductionQuery = RequestViewQuery(
+      actorScope: historyQuery.actorScope,
+      tab: RequestViewTab.deductions,
+      fromDate: historyQuery.fromDate,
+      toDate: historyQuery.toDate,
+    );
     final tabs = <Tab>[
       const Tab(text: 'الإجازات'),
       const Tab(text: 'الأذونات'),
@@ -886,10 +1149,11 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
       if (canReviewSalaryDeductions) const Tab(text: 'الخصومات المعتمدة'),
       const Tab(text: 'خصومات إدارية'),
       if (canReviewTimeCorrections) const Tab(text: 'تصحيح الحضور'),
-      const Tab(text: 'مراجعة أمنية'),
+      if (canReviewSecurity) const Tab(text: 'مراجعة أمنية'),
       const Tab(text: 'الشكاوى'),
       const Tab(text: 'الاستقالات'),
       const Tab(text: 'إدارية'),
+      const Tab(text: 'السجل الموحد'),
     ];
     final tabViews = <Widget>[
       _buildLeavesTab(manager, theme),
@@ -910,14 +1174,23 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
           absenceOnly: true,
         ),
       if (canReviewSalaryDeductions)
-        _buildConfirmedDeductionsTab(manager, theme),
+        RequestVisibilityEntry(
+          key: const ValueKey('unified-deductions'),
+          query: deductionQuery,
+          searchTerm: _searchQuery,
+        ),
       _buildManualDeductionsTab(manager, theme),
       if (canReviewTimeCorrections)
         _buildAttendanceCorrectionsTab(manager, theme),
-      _buildSecurityReviewsTab(manager, theme),
+      if (canReviewSecurity) _buildSecurityReviewsTab(manager, theme),
       _buildComplaintsTab(manager, theme),
       _buildResignationsTab(manager, theme),
       _buildAdministrativeRequestsTab(manager, theme),
+      RequestVisibilityEntry(
+        key: const ValueKey('unified-request-history'),
+        query: historyQuery,
+        searchTerm: _searchQuery,
+      ),
     ];
 
     return DefaultTabController(
@@ -1019,7 +1292,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
           padding: const EdgeInsets.all(16),
           children: [
             Align(
-              alignment: Alignment.centerRight,
+              alignment: AlignmentDirectional.centerStart,
               child: FilledButton.icon(
                 onPressed: () => _showCreateManualDeductionDialog(reviewer),
                 icon: const Icon(Icons.add),
@@ -1439,7 +1712,22 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return _buildLoadingState('تحميل الطلبات الإدارية...');
         }
-        final docs = _visibleApprovalDocs(snapshot.data?.docs ?? [], reviewer);
+        final pendingDocs = snapshot.data?.docs ?? [];
+        final isCompanyCeo =
+            reviewer.employeeId.trim().toUpperCase() == 'CEO-100';
+        final scopedDocs = isCompanyCeo
+            ? pendingDocs
+                  .where((doc) {
+                    final data = doc.data();
+                    final status = (data['status'] ?? '').toString();
+                    return (status == 'pending_manager' &&
+                            data['managerId'] == reviewer.uid) ||
+                        (status == 'pending_ceo' &&
+                            data['ceoId'] == reviewer.uid);
+                  })
+                  .toList(growable: false)
+            : pendingDocs;
+        final docs = _visibleApprovalDocs(scopedDocs, reviewer);
         if (docs.isEmpty) {
           return _buildEmptyState('لا توجد طلبات إدارية معلقة');
         }
@@ -1463,9 +1751,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                     ),
                     const SizedBox(height: 10),
                     Text(
-                      AdministrativeRequestCategory.arabicLabel(
-                        request.category,
-                      ),
+                      request.categoryLabel,
                       style: const TextStyle(
                         color: Colors.white,
                         fontWeight: FontWeight.bold,
@@ -1498,28 +1784,40 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                       ),
                     RequestApprovalTimeline(data: doc.data(), compact: true),
                     const SizedBox(height: 10),
-                    _buildApprovalActions(
-                      onApprove: () async {
-                        try {
-                          await _administrativeRequestService.approve(
+                    if (request.category == 'company_os')
+                      FilledButton.icon(
+                        onPressed: () => context.push(
+                          '${EmployeeRole.isHr(reviewer.role) || reviewer.role == EmployeeRole.superAdmin ? '/hr' : '/manager'}/requests/operational/${request.id}',
+                        ),
+                        icon: const Icon(Icons.route_outlined),
+                        label: const Text('فتح مسار الموافقات'),
+                      )
+                    else
+                      _buildApprovalActions(
+                        disabled: _isRequestBusy(request.id),
+                        onDelete: () => _deleteRequestDocument(
+                          collection: 'administrativeRequests',
+                          docId: request.id,
+                          requestTitle: 'الطلب الإداري',
+                        ),
+                        onApprove: () => _confirmAndRun(
+                          requestId: request.id,
+                          title: 'اعتماد الطلب الإداري',
+                          confirmLabel: 'اعتماد',
+                          run: () => _administrativeRequestService.approve(
                             request.id,
                             reviewer,
-                          );
-                        } catch (error) {
-                          if (!context.mounted) return;
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text(
-                                'فشل الموافقة: ${userFacingError(error)}',
-                              ),
-                            ),
-                          );
-                        }
-                      },
-                      onReject: () => _showRejectionDialog(
-                        requestId: request.id,
-                        type: 'administrative',
+                          ),
+                        ),
+                        onReject: () => _showRejectionDialog(
+                          requestId: request.id,
+                          type: 'administrative',
+                        ),
                       ),
+                    _buildArchiveRequestAction(
+                      reviewer: reviewer,
+                      collection: 'administrativeRequests',
+                      requestId: request.id,
                     ),
                   ],
                 ),
@@ -1541,7 +1839,10 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
         if (snapshot.hasError) {
           return Center(
             child: Text(
-              'تعذر تحميل طلبات الاستقالة: ${snapshot.error}',
+              userFacingError(
+                snapshot.error!,
+                fallback: 'تعذر تحميل طلبات الاستقالة حالياً. أعد المحاولة.',
+              ),
               textAlign: TextAlign.center,
             ),
           );
@@ -1593,11 +1894,18 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                     children: [
                       Expanded(
                         child: WolfButton(
-                          onPressed: () => _resignationService.review(
-                            resignationId: request.resignationId,
-                            reviewer: reviewer,
-                            approve: true,
-                          ),
+                          onPressed: _isRequestBusy(request.resignationId)
+                              ? null
+                              : () => _confirmAndRun(
+                                  requestId: request.resignationId,
+                                  title: 'اعتماد طلب الاستقالة',
+                                  confirmLabel: 'اعتماد',
+                                  run: () => _resignationService.review(
+                                    resignationId: request.resignationId,
+                                    reviewer: reviewer,
+                                    approve: true,
+                                  ),
+                                ),
                           text: 'موافقة',
                           variant: WolfButtonVariant.teal,
                           height: 42,
@@ -1620,8 +1928,9 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                       const SizedBox(width: 8),
                       Expanded(
                         child: WolfButton(
-                          onPressed: () =>
-                              _rejectResignation(request, reviewer),
+                          onPressed: _isRequestBusy(request.resignationId)
+                              ? null
+                              : () => _rejectResignation(request, reviewer),
                           text: 'رفض',
                           variant: WolfButtonVariant.danger,
                           height: 42,
@@ -1643,41 +1952,26 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
     UserModel reviewer,
   ) async {
     final controller = TextEditingController();
-    final reason = await showDialog<String>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('سبب رفض الاستقالة'),
-        content: TextField(
-          controller: controller,
-          minLines: 2,
-          maxLines: 4,
-          textDirection: TextDirection.rtl,
-          decoration: const InputDecoration(hintText: 'اكتب سبب الرفض...'),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('إلغاء'),
-          ),
-          TextButton(
-            onPressed: () {
-              if (controller.text.trim().isNotEmpty) {
-                Navigator.pop(dialogContext, controller.text.trim());
-              }
-            },
-            child: const Text('رفض'),
-          ),
-        ],
-      ),
+    final confirmed = await showConfirmationSheet(
+      context,
+      title: 'رفض طلب الاستقالة',
+      message: 'سيتم رفض الطلب وإشعار الموظف بالسبب.',
+      confirmLabel: 'رفض',
+      commentHint: 'اكتب سبب الرفض... (مطلوب)',
+      requireComment: true,
+      commentController: controller,
     );
+    final reason = controller.text.trim();
     controller.dispose();
-    if (reason == null) return;
-    await _resignationService.review(
-      resignationId: request.resignationId,
-      reviewer: reviewer,
-      approve: false,
-      comment: reason,
-    );
+    if (!confirmed || reason.isEmpty) return;
+    await _withRequestGuard(request.resignationId, () {
+      return _resignationService.review(
+        resignationId: request.resignationId,
+        reviewer: reviewer,
+        approve: false,
+        comment: reason,
+      );
+    });
   }
 
   Widget _buildApprovalPolicyControl(UserModel superAdmin) {
@@ -1752,7 +2046,9 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
     List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
     UserModel reviewer,
   ) {
-    var filtered = docs;
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> filtered = docs
+        .where((doc) => doc.data()['managementArchived'] != true)
+        .toList(growable: false);
     // HR is allowed to monitor every pending stage.  The old filter fetched
     // pending_manager records and then silently removed them unless HR was
     // also their assigned manager, so valid requests looked missing.
@@ -1769,11 +2065,35 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
         ]);
       }).toList();
     }
+    final reviewerIsCeo = reviewer.employeeId.trim().toUpperCase() == 'CEO-100';
+    if (reviewerIsCeo) {
+      filtered = filtered
+          .where((doc) {
+            final data = doc.data();
+            final status = (data['status'] ?? '').toString();
+            return (status == 'pending_manager' &&
+                    data['managerId'] == reviewer.uid) ||
+                (status == 'pending_ceo' &&
+                    ((data['ceoId'] ?? '').toString().isEmpty ||
+                        data['ceoId'] == reviewer.uid));
+          })
+          .toList(growable: false);
+    }
     return filtered;
   }
 
   bool _canActOnApproval(Map<String, dynamic> data, UserModel reviewer) {
     final status = '${data['status'] ?? ''}';
+    final isCompanyCeo = reviewer.employeeId.trim().toUpperCase() == 'CEO-100';
+    if (isCompanyCeo) {
+      if (status == 'pending_manager' && data['managerId'] == reviewer.uid) {
+        return true;
+      }
+      if (status == 'pending_ceo') {
+        final ceoId = (data['ceoId'] ?? '').toString();
+        return ceoId.isEmpty || ceoId == reviewer.uid;
+      }
+    }
     if (EmployeeRole.isHr(reviewer.role)) {
       if (status == 'pending_hr') return true;
       return status == 'pending_ceo' &&
@@ -1793,13 +2113,16 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
         collection == 'leaves' ||
         collection == 'permissions' ||
         collection == 'advances';
-    if (usesManagerChain && EmployeeRole.isHr(role)) {
-      final reviewerIsCeo = employeeId?.trim().toUpperCase() == 'CEO-100';
+    final reviewerIsCeo = employeeId?.trim().toUpperCase() == 'CEO-100';
+    if (usesManagerChain && reviewerIsCeo) {
       query = query.where(
         'status',
-        whereIn: reviewerIsCeo
-            ? ['pending', 'pending_hr', 'pending_manager', 'pending_ceo']
-            : ['pending', 'pending_hr', 'pending_manager'],
+        whereIn: ['pending_manager', 'pending_ceo'],
+      );
+    } else if (usesManagerChain && EmployeeRole.isHr(role)) {
+      query = query.where(
+        'status',
+        whereIn: ['pending', 'pending_hr', 'pending_manager'],
       );
     } else if (usesManagerChain && EmployeeRole.canActAsApprovalManager(role)) {
       query = query
@@ -1835,137 +2158,63 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
           return _buildEmptyState('لا توجد طلبات إجازة معلقة');
         }
 
-        return ListView.builder(
-          padding: const EdgeInsets.all(16),
-          itemCount: docs.length,
-          itemBuilder: (context, index) {
-            final leave = LeaveModel.fromFirestore(docs[index]);
-            return Padding(
-              padding: const EdgeInsets.only(bottom: 16.0),
-              child: WolfCard(
-                hasBorderGlow: true,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _buildEmployeeHeader(
-                      leave.employeeName,
-                      leave.employeeId,
-                      leave.department,
-                      theme,
-                    ),
-                    const SizedBox(height: 12),
-                    Text(
-                      'نوع الإجازة: ${_translateLeaveType(leave.leaveType)}',
-                      style: theme.textTheme.titleMedium!.copyWith(
-                        color: Colors.white,
-                      ),
-                    ),
-                    _buildRequestDateLine(
-                      label: 'تاريخ تقديم الطلب',
-                      date: leave.submittedAt,
-                      fallback: leave.startDate,
-                    ),
-                    Text(
-                      'الفترة: ${DateFormat('yyyy-MM-dd').format(leave.startDate)} إلى ${DateFormat('yyyy-MM-dd').format(leave.endDate)} (${leave.numberOfDays} يوم)',
-                    ),
-                    if (leave.reason != null && leave.reason!.isNotEmpty)
-                      Text(
-                        'السبب: ${leave.reason}',
-                        style: const TextStyle(
-                          color: ZaWolfColors.textSecondary,
-                        ),
-                      ),
-                    if (leave.workHandoverTo.isNotEmpty)
-                      Text(
-                        'تسليم المهام إلى: ${leave.workHandoverTo}',
-                        style: const TextStyle(color: ZaWolfColors.primaryCyan),
-                      ),
-                    if (leave.attachmentUrl != null &&
-                        leave.attachmentUrl!.isNotEmpty) ...[
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          const Icon(
-                            Icons.link,
-                            color: ZaWolfColors.primaryCyan,
-                            size: 16,
-                          ),
-                          const SizedBox(width: 4),
-                          Expanded(
-                            child: Semantics(
-                              button: true,
-                              label: 'فتح المرفق',
-                              child: InkWell(
-                                onTap: () =>
-                                    _openAttachment(leave.attachmentUrl!),
-                                borderRadius: BorderRadius.circular(6),
-                                child: Padding(
-                                  padding: const EdgeInsets.symmetric(
-                                    vertical: 4,
-                                  ),
-                                  child: Text(
-                                    leave.attachmentUrl!,
-                                    style: theme.textTheme.bodySmall?.copyWith(
-                                      color: ZaWolfColors.primaryCyan,
-                                      decoration: TextDecoration.underline,
-                                    ),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    textDirection: TextDirection.ltr,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                    RequestApprovalTimeline(
-                      data: docs[index].data(),
-                      compact: true,
-                    ),
-                    const SizedBox(height: 16),
-                    if (_canActOnApproval(docs[index].data(), reviewer))
-                      _buildApprovalActions(
-                        onApprove: () async {
-                          try {
-                            await _leaveService.approveLeave(
-                              leave.leaveId,
-                              reviewer.uid,
-                              reviewer.role,
-                            );
-                          } catch (e) {
-                            if (!context.mounted) return;
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text(
-                                  'فشل الموافقة: ${userFacingError(e)}',
-                                ),
-                              ),
-                            );
-                          }
-                        },
-                        onReject: () => _showRejectionDialog(
-                          requestId: leave.leaveId,
-                          type: 'leave',
-                        ),
-                        onModify: () => _showModificationDialog(
-                          requestId: leave.leaveId,
-                          collection: 'leaves',
-                          userId: leave.userId,
-                          requestTitle: 'طلب الإجازة',
-                        ),
-                      ),
-                    const SizedBox(height: 8),
-                    Text(
-                      leave.status == 'pending_hr'
-                          ? 'المرحلة الحالية: المراجعة النهائية لدى HR'
-                          : 'المرحلة الحالية: موافقة المدير المسؤول',
-                      style: const TextStyle(color: ZaWolfColors.primaryCyan),
-                    ),
-                  ],
+        // Web >=980: table + side detail panel instead of full-page
+        // navigation (specs/ui_redesign/06 R2).
+        final rows = <AppRow>[
+          for (final doc in docs)
+            () {
+              final leave = LeaveModel.fromFirestore(doc);
+              return AppRow(
+                id: leave.leaveId,
+                title: leave.employeeName,
+                leading: Icons.beach_access_outlined,
+                cells: [
+                  _translateLeaveType(leave.leaveType),
+                  '${DateFormat('yyyy-MM-dd').format(leave.startDate)}'
+                      ' ← ${DateFormat('yyyy-MM-dd').format(leave.endDate)}',
+                  leave.status == 'pending_hr'
+                      ? 'بانتظار HR'
+                      : 'بانتظار المدير',
+                ],
+              );
+            }(),
+        ];
+        final leaveById = {
+          for (final doc in docs) LeaveModel.fromFirestore(doc).leaveId: doc,
+        };
+
+        return LayoutBuilder(
+          builder: (context, constraints) {
+            if (!_requestMasterDetailEnabled || constraints.maxWidth < 980) {
+              return ListView.builder(
+                padding: const EdgeInsets.all(16),
+                itemCount: docs.length,
+                itemBuilder: (context, index) => _buildLeaveRequestCard(
+                  doc: docs[index],
+                  reviewer: reviewer,
+                  theme: theme,
                 ),
-              ),
+              );
+            }
+            return DsMasterDetailView(
+              columns: const [
+                AppColumn('الموظف'),
+                AppColumn('النوع'),
+                AppColumn('الفترة', width: 220),
+                AppColumn('المرحلة'),
+              ],
+              rows: rows,
+              detailBuilder: (row) {
+                final doc = leaveById[row.id];
+                if (doc == null) return const SizedBox.shrink();
+                return _buildLeaveRequestCard(
+                  doc: doc,
+                  reviewer: reviewer,
+                  theme: theme,
+                );
+              },
+              emptyDetailLabel:
+                  'اختر طلب إجازة من الجدول لعرض التفاصيل والموافقة',
             );
           },
         );
@@ -1973,11 +2222,144 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
     );
   }
 
+  Widget _buildLeaveRequestCard({
+    required QueryDocumentSnapshot<Map<String, dynamic>> doc,
+    required UserModel reviewer,
+    required ThemeData theme,
+  }) {
+    final leave = LeaveModel.fromFirestore(doc);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16.0),
+      child: WolfCard(
+        hasBorderGlow: true,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildEmployeeHeader(
+              leave.employeeName,
+              leave.employeeId,
+              leave.department,
+              theme,
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'نوع الإجازة: ${_translateLeaveType(leave.leaveType)}',
+              style: theme.textTheme.titleMedium!.copyWith(color: Colors.white),
+            ),
+            _buildRequestDateLine(
+              label: 'تاريخ تقديم الطلب',
+              date: leave.submittedAt,
+              fallback: leave.startDate,
+            ),
+            Text(
+              'الفترة: ${DateFormat('yyyy-MM-dd').format(leave.startDate)} إلى ${DateFormat('yyyy-MM-dd').format(leave.endDate)} (${leave.numberOfDays} يوم)',
+            ),
+            if (leave.reason != null && leave.reason!.isNotEmpty)
+              Text(
+                'السبب: ${leave.reason}',
+                style: const TextStyle(color: ZaWolfColors.textSecondary),
+              ),
+            if (leave.workHandoverTo.isNotEmpty)
+              Text(
+                'تسليم المهام إلى: ${leave.workHandoverTo}',
+                style: const TextStyle(color: ZaWolfColors.primaryCyan),
+              ),
+            if (leave.attachmentUrl != null &&
+                leave.attachmentUrl!.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  const Icon(
+                    Icons.link,
+                    color: ZaWolfColors.primaryCyan,
+                    size: 16,
+                  ),
+                  const SizedBox(width: 4),
+                  Expanded(
+                    child: Semantics(
+                      button: true,
+                      label: 'فتح المرفق',
+                      child: InkWell(
+                        onTap: () => _openAttachment(leave.attachmentUrl!),
+                        borderRadius: BorderRadius.circular(6),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 4),
+                          child: Text(
+                            leave.attachmentUrl!,
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: ZaWolfColors.primaryCyan,
+                              decoration: TextDecoration.underline,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            textDirection: TextDirection.ltr,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+            RequestApprovalTimeline(data: doc.data(), compact: true),
+            const SizedBox(height: 16),
+            if (_canActOnApproval(doc.data(), reviewer))
+              _buildApprovalActions(
+                disabled: _isRequestBusy(leave.leaveId),
+                onDelete: () => _deleteRequestDocument(
+                  collection: 'leaves',
+                  docId: leave.leaveId,
+                  requestTitle: 'طلب الإجازة',
+                ),
+                onApprove: () => _confirmAndRun(
+                  requestId: leave.leaveId,
+                  title: 'اعتماد طلب الإجازة',
+                  confirmLabel: 'اعتماد',
+                  run: () => _leaveService.approveLeave(
+                    leave.leaveId,
+                    reviewer.uid,
+                    reviewer.role,
+                  ),
+                ),
+                onReject: () => _showRejectionDialog(
+                  requestId: leave.leaveId,
+                  type: 'leave',
+                ),
+                onModify: () => _showModificationDialog(
+                  requestId: leave.leaveId,
+                  collection: 'leaves',
+                  userId: leave.userId,
+                  requestTitle: 'طلب الإجازة',
+                ),
+              ),
+            _buildArchiveRequestAction(
+              reviewer: reviewer,
+              collection: 'leaves',
+              requestId: leave.leaveId,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              leave.status == 'pending_hr'
+                  ? 'المرحلة الحالية: المراجعة النهائية لدى HR'
+                  : 'المرحلة الحالية: موافقة المدير المسؤول',
+              style: const TextStyle(color: ZaWolfColors.primaryCyan),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Stream<QuerySnapshot<Map<String, dynamic>>> _permissionReviewStream(
     UserModel reviewer,
   ) {
     var query = _db.collection('permissions') as Query<Map<String, dynamic>>;
-    if (EmployeeRole.isHr(reviewer.role)) {
+    final isCompanyCeo = reviewer.employeeId.trim().toUpperCase() == 'CEO-100';
+    if (isCompanyCeo) {
+      query = query
+          .where('status', isEqualTo: 'pending_manager')
+          .where('managerId', isEqualTo: reviewer.uid);
+    } else if (EmployeeRole.isHr(reviewer.role)) {
       query = query.where(
         'status',
         whereIn: ['pending', 'pending_hr', 'pending_manager'],
@@ -2011,144 +2393,199 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
           return _buildEmptyState('لا توجد طلبات إذن معلقة');
         }
 
-        return ListView.builder(
-          padding: const EdgeInsets.all(16),
-          itemCount: docs.length,
-          itemBuilder: (context, index) {
-            final perm = PermissionModel.fromFirestore(docs[index]);
-            return Padding(
-              padding: const EdgeInsets.only(bottom: 16.0),
-              child: WolfCard(
-                hasBorderGlow: true,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Warning Banners
-                    if (perm.isSubmittedAfterWorkStart)
-                      Container(
-                        width: double.infinity,
-                        margin: const EdgeInsets.only(bottom: 12),
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: ZaWolfColors.error.withValues(alpha: 0.15),
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(
-                            color: ZaWolfColors.error.withValues(alpha: 0.5),
-                          ),
-                        ),
-                        child: const Text(
-                          '⚠️ تم تقديم طلب التأخير بعد بداية وقت العمل — لا يُعتد به وفق اللائحة (مرفوض تلقائياً)',
-                          style: TextStyle(
-                            color: ZaWolfColors.error,
-                            fontSize: 11,
-                            fontWeight: FontWeight.bold,
-                          ),
-                          textDirection: TextDirection.rtl,
-                        ),
-                      ),
-                    if (perm.isExceedingQuota)
-                      Container(
-                        width: double.infinity,
-                        margin: const EdgeInsets.only(bottom: 12),
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: ZaWolfColors.warning.withValues(alpha: 0.15),
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(
-                            color: ZaWolfColors.warning.withValues(alpha: 0.5),
-                          ),
-                        ),
-                        child: const Text(
-                          'إذن استقطاعي بعد استهلاك الرصيد الشهري — يتطلب موافقة HR ويُخصم من الراتب',
-                          style: TextStyle(
-                            color: ZaWolfColors.warning,
-                            fontSize: 11,
-                            fontWeight: FontWeight.bold,
-                          ),
-                          textDirection: TextDirection.rtl,
-                        ),
-                      ),
+        final rows = <AppRow>[
+          for (final doc in docs)
+            () {
+              final perm = PermissionModel.fromFirestore(doc);
+              return AppRow(
+                id: perm.permissionId,
+                title: perm.employeeName,
+                leading: Icons.schedule_outlined,
+                cells: [
+                  '${perm.permissionType == 'late_arrival' ? 'تأخير حضور' : 'مغادرة مبكرة'}${perm.isDeductible ? ' · استقطاعي' : ''}',
+                  '${perm.requestDate} · ${perm.expectedTime}',
+                  perm.status == 'pending_hr' ? 'بانتظار HR' : 'بانتظار المدير',
+                ],
+              );
+            }(),
+        ];
+        final permissionById = {
+          for (final doc in docs)
+            PermissionModel.fromFirestore(doc).permissionId: doc,
+        };
 
-                    _buildEmployeeHeader(
-                      perm.employeeName,
-                      perm.employeeId,
-                      perm.department,
-                      theme,
-                    ),
-                    const SizedBox(height: 12),
-                    Text(
-                      'نوع الإذن: ${perm.permissionType == 'late_arrival' ? 'تأخير حضور' : 'مغادرة مبكرة'}${perm.isDeductible ? ' · استقطاعي' : ''}',
-                      style: theme.textTheme.titleMedium!.copyWith(
-                        color: Colors.white,
-                      ),
-                    ),
-                    _buildRequestDateLine(
-                      label: 'تاريخ تقديم الطلب',
-                      date: perm.submittedAt,
-                      fallback: _parseDateKey(perm.requestDate),
-                    ),
-                    Text(
-                      'التاريخ: ${perm.requestDate} · الوقت المتوقع: ${perm.expectedTime} · المدة: ${perm.durationMinutes} دقيقة',
-                    ),
-                    if (perm.salaryDeductionFraction > 0)
-                      Text(
-                        'أثر الراتب: ${perm.salaryDeductionLabel} · ${perm.salaryDeductionAmount.toStringAsFixed(2)} ${perm.salaryCurrency}',
-                        style: const TextStyle(color: ZaWolfColors.warning),
-                      ),
-                    Text(
-                      'السبب: ${perm.reason}',
-                      style: const TextStyle(color: ZaWolfColors.textSecondary),
-                    ),
-                    RequestApprovalTimeline(
-                      data: docs[index].data(),
-                      compact: true,
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      perm.status == 'pending_hr'
-                          ? 'المرحلة الحالية: المراجعة النهائية لدى HR'
-                          : 'المرحلة الحالية: موافقة المدير المسؤول',
-                      style: const TextStyle(color: ZaWolfColors.primaryCyan),
-                    ),
-                    const SizedBox(height: 16),
-
-                    if (_canActOnApproval(docs[index].data(), reviewer))
-                      _buildApprovalActions(
-                        onApprove: () async {
-                          try {
-                            await _permissionService.approvePermission(
-                              perm.permissionId,
-                              reviewer.uid,
-                            );
-                          } catch (e) {
-                            if (!context.mounted) return;
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text(
-                                  'فشل الموافقة: ${userFacingError(e)}',
-                                ),
-                              ),
-                            );
-                          }
-                        },
-                        onReject: () => _showRejectionDialog(
-                          requestId: perm.permissionId,
-                          type: 'permission',
-                        ),
-                        onModify: () => _showModificationDialog(
-                          requestId: perm.permissionId,
-                          collection: 'permissions',
-                          userId: perm.userId,
-                          requestTitle: 'طلب الإذن',
-                        ),
-                      ),
-                  ],
+        return LayoutBuilder(
+          builder: (context, constraints) {
+            if (!_requestMasterDetailEnabled || constraints.maxWidth < 980) {
+              return ListView.builder(
+                padding: const EdgeInsets.all(16),
+                itemCount: docs.length,
+                itemBuilder: (context, index) => _buildPermissionRequestCard(
+                  doc: docs[index],
+                  reviewer: reviewer,
+                  theme: theme,
                 ),
-              ),
+              );
+            }
+            return DsMasterDetailView(
+              columns: const [
+                AppColumn('الموظف'),
+                AppColumn('النوع'),
+                AppColumn('التاريخ والوقت', width: 200),
+                AppColumn('المرحلة'),
+              ],
+              rows: rows,
+              detailBuilder: (row) {
+                final doc = permissionById[row.id];
+                if (doc == null) return const SizedBox.shrink();
+                return _buildPermissionRequestCard(
+                  doc: doc,
+                  reviewer: reviewer,
+                  theme: theme,
+                );
+              },
+              emptyDetailLabel:
+                  'اختر طلب إذن من الجدول لعرض التفاصيل والموافقة',
             );
           },
         );
       },
+    );
+  }
+
+  Widget _buildPermissionRequestCard({
+    required QueryDocumentSnapshot<Map<String, dynamic>> doc,
+    required UserModel reviewer,
+    required ThemeData theme,
+  }) {
+    final perm = PermissionModel.fromFirestore(doc);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16.0),
+      child: WolfCard(
+        hasBorderGlow: true,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Warning Banners
+            if (perm.isSubmittedAfterWorkStart)
+              Container(
+                width: double.infinity,
+                margin: const EdgeInsets.only(bottom: 12),
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: ZaWolfColors.error.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: ZaWolfColors.error.withValues(alpha: 0.5),
+                  ),
+                ),
+                child: const Text(
+                  '⚠️ تم تقديم طلب التأخير بعد بداية وقت العمل — لا يُعتد به وفق اللائحة (مرفوض تلقائياً)',
+                  style: TextStyle(
+                    color: ZaWolfColors.error,
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                  ),
+                  textDirection: TextDirection.rtl,
+                ),
+              ),
+            if (perm.isExceedingQuota)
+              Container(
+                width: double.infinity,
+                margin: const EdgeInsets.only(bottom: 12),
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: ZaWolfColors.warning.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: ZaWolfColors.warning.withValues(alpha: 0.5),
+                  ),
+                ),
+                child: const Text(
+                  'إذن استقطاعي بعد استهلاك الرصيد الشهري — يتطلب موافقة HR ويُخصم من الراتب',
+                  style: TextStyle(
+                    color: ZaWolfColors.warning,
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                  ),
+                  textDirection: TextDirection.rtl,
+                ),
+              ),
+
+            _buildEmployeeHeader(
+              perm.employeeName,
+              perm.employeeId,
+              perm.department,
+              theme,
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'نوع الإذن: ${perm.permissionType == 'late_arrival' ? 'تأخير حضور' : 'مغادرة مبكرة'}${perm.isDeductible ? ' · استقطاعي' : ''}',
+              style: theme.textTheme.titleMedium!.copyWith(color: Colors.white),
+            ),
+            _buildRequestDateLine(
+              label: 'تاريخ تقديم الطلب',
+              date: perm.submittedAt,
+              fallback: _parseDateKey(perm.requestDate),
+            ),
+            Text(
+              'التاريخ: ${perm.requestDate} · الوقت المتوقع: ${perm.expectedTime} · المدة: ${perm.durationMinutes} دقيقة',
+            ),
+            if (perm.salaryDeductionFraction > 0)
+              Text(
+                'أثر الراتب: ${perm.salaryDeductionLabel} · ${perm.salaryDeductionAmount.toStringAsFixed(2)} ${perm.salaryCurrency}',
+                style: const TextStyle(color: ZaWolfColors.warning),
+              ),
+            Text(
+              'السبب: ${perm.reason}',
+              style: const TextStyle(color: ZaWolfColors.textSecondary),
+            ),
+            RequestApprovalTimeline(data: doc.data(), compact: true),
+            const SizedBox(height: 8),
+            Text(
+              perm.status == 'pending_hr'
+                  ? 'المرحلة الحالية: المراجعة النهائية لدى HR'
+                  : 'المرحلة الحالية: موافقة المدير المسؤول',
+              style: const TextStyle(color: ZaWolfColors.primaryCyan),
+            ),
+            const SizedBox(height: 16),
+
+            if (_canActOnApproval(doc.data(), reviewer))
+              _buildApprovalActions(
+                disabled: _isRequestBusy(perm.permissionId),
+                onDelete: () => _deleteRequestDocument(
+                  collection: 'permissions',
+                  docId: perm.permissionId,
+                  requestTitle: 'طلب الإذن',
+                ),
+                onApprove: () => _confirmAndRun(
+                  requestId: perm.permissionId,
+                  title: 'اعتماد طلب الإذن',
+                  confirmLabel: 'اعتماد',
+                  run: () => _permissionService.approvePermission(
+                    perm.permissionId,
+                    reviewer.uid,
+                  ),
+                ),
+                onReject: () => _showRejectionDialog(
+                  requestId: perm.permissionId,
+                  type: 'permission',
+                ),
+                onModify: () => _showModificationDialog(
+                  requestId: perm.permissionId,
+                  collection: 'permissions',
+                  userId: perm.userId,
+                  requestTitle: 'طلب الإذن',
+                ),
+              ),
+            _buildArchiveRequestAction(
+              reviewer: reviewer,
+              collection: 'permissions',
+              requestId: perm.permissionId,
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -2168,87 +2605,148 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
           return _buildEmptyState('لا توجد طلبات سلفة معلقة');
         }
 
-        return ListView.builder(
-          padding: const EdgeInsets.all(16),
-          itemCount: docs.length,
-          itemBuilder: (context, index) {
-            final advance = AdvanceModel.fromFirestore(docs[index]);
-            return Padding(
-              padding: const EdgeInsets.only(bottom: 16.0),
-              child: WolfCard(
-                hasBorderGlow: true,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _buildEmployeeHeader(
-                      advance.employeeName,
-                      advance.employeeId,
-                      advance.department,
-                      theme,
-                    ),
-                    const SizedBox(height: 12),
-                    Text(
-                      'المبلغ المطلوب: ${advance.amount} جنيه',
-                      style: theme.textTheme.titleMedium!.copyWith(
-                        color: Colors.white,
-                      ),
-                    ),
-                    _buildRequestDateLine(
-                      label: 'تاريخ تقديم الطلب',
-                      date: advance.submittedAt,
-                    ),
-                    if (advance.reason != null && advance.reason!.isNotEmpty)
-                      Text(
-                        'السبب: ${advance.reason}',
-                        style: const TextStyle(
-                          color: ZaWolfColors.textSecondary,
-                        ),
-                      ),
-                    const SizedBox(height: 16),
-                    if (_canActOnApproval(docs[index].data(), reviewer))
-                      _buildApprovalActions(
-                        onApprove: () async {
-                          try {
-                            await _advanceService.approveAdvanceRequest(
-                              advanceId: advance.advanceId,
-                              reviewer: reviewer,
-                            );
-                          } catch (e) {
-                            if (!context.mounted) return;
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text(
-                                  'فشل الموافقة: ${userFacingError(e)}',
-                                ),
-                              ),
-                            );
-                          }
-                        },
-                        onReject: () => _showRejectionDialog(
-                          requestId: advance.advanceId,
-                          type: 'advance',
-                        ),
-                        onModify: () => _showModificationDialog(
-                          requestId: advance.advanceId,
-                          collection: 'advances',
-                          userId: advance.userId,
-                          requestTitle: 'طلب السلفة',
-                        ),
-                      ),
-                    const SizedBox(height: 8),
-                    Text(
-                      advance.status == 'pending_hr'
-                          ? 'المرحلة الحالية: مراجعة HR'
-                          : 'المرحلة الحالية: موافقة المدير النهائية',
-                      style: const TextStyle(color: ZaWolfColors.primaryCyan),
-                    ),
-                  ],
+        final rows = <AppRow>[
+          for (final doc in docs)
+            () {
+              final advance = AdvanceModel.fromFirestore(doc);
+              return AppRow(
+                id: advance.advanceId,
+                title: advance.employeeName,
+                leading: Icons.payments_outlined,
+                accentColor: ZaWolfColors.warning,
+                cells: [
+                  '${dsBidi(advance.amount.toString())} جنيه',
+                  advance.submittedAt == null
+                      ? ''
+                      : DateFormat('yyyy-MM-dd').format(advance.submittedAt!),
+                  advance.status == 'pending_hr'
+                      ? 'بانتظار HR'
+                      : 'بانتظار المدير النهائي',
+                ],
+              );
+            }(),
+        ];
+        final advanceById = {
+          for (final doc in docs)
+            AdvanceModel.fromFirestore(doc).advanceId: doc,
+        };
+
+        return LayoutBuilder(
+          builder: (context, constraints) {
+            if (!_requestMasterDetailEnabled || constraints.maxWidth < 980) {
+              return ListView.builder(
+                padding: const EdgeInsets.all(16),
+                itemCount: docs.length,
+                itemBuilder: (context, index) => _buildAdvanceRequestCard(
+                  doc: docs[index],
+                  reviewer: reviewer,
+                  theme: theme,
                 ),
-              ),
+              );
+            }
+            return DsMasterDetailView(
+              columns: const [
+                AppColumn('الموظف'),
+                AppColumn('المبلغ'),
+                AppColumn('تاريخ الطلب'),
+                AppColumn('المرحلة'),
+              ],
+              rows: rows,
+              detailBuilder: (row) {
+                final doc = advanceById[row.id];
+                if (doc == null) return const SizedBox.shrink();
+                return _buildAdvanceRequestCard(
+                  doc: doc,
+                  reviewer: reviewer,
+                  theme: theme,
+                );
+              },
+              emptyDetailLabel:
+                  'اختر طلب سلفة من الجدول لعرض التفاصيل والموافقة',
             );
           },
         );
       },
+    );
+  }
+
+  Widget _buildAdvanceRequestCard({
+    required QueryDocumentSnapshot<Map<String, dynamic>> doc,
+    required UserModel reviewer,
+    required ThemeData theme,
+  }) {
+    final advance = AdvanceModel.fromFirestore(doc);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16.0),
+      child: WolfCard(
+        hasBorderGlow: true,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildEmployeeHeader(
+              advance.employeeName,
+              advance.employeeId,
+              advance.department,
+              theme,
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'المبلغ المطلوب: ${advance.amount} جنيه',
+              style: theme.textTheme.titleMedium!.copyWith(color: Colors.white),
+            ),
+            _buildRequestDateLine(
+              label: 'تاريخ تقديم الطلب',
+              date: advance.submittedAt,
+            ),
+            if (advance.reason != null && advance.reason!.isNotEmpty)
+              Text(
+                'السبب: ${advance.reason}',
+                style: const TextStyle(color: ZaWolfColors.textSecondary),
+              ),
+            const SizedBox(height: 16),
+            if (_canActOnApproval(doc.data(), reviewer))
+              _buildApprovalActions(
+                disabled: _isRequestBusy(advance.advanceId),
+                onDelete: () => _deleteRequestDocument(
+                  collection: 'advances',
+                  docId: advance.advanceId,
+                  requestTitle: 'طلب السلفة',
+                ),
+                onApprove: () => _confirmAndRun(
+                  requestId: advance.advanceId,
+                  title: 'اعتماد طلب السلفة',
+                  confirmLabel: 'اعتماد',
+                  run: () => _advanceService.approveAdvanceRequest(
+                    advanceId: advance.advanceId,
+                    reviewer: reviewer,
+                  ),
+                ),
+                onReject: () => _showRejectionDialog(
+                  requestId: advance.advanceId,
+                  type: 'advance',
+                ),
+                onModify: () => _showModificationDialog(
+                  requestId: advance.advanceId,
+                  collection: 'advances',
+                  userId: advance.userId,
+                  requestTitle: 'طلب السلفة',
+                ),
+              ),
+            _buildArchiveRequestAction(
+              reviewer: reviewer,
+              collection: 'advances',
+              requestId: advance.advanceId,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              advance.status == 'pending_hr'
+                  ? 'المرحلة الحالية: مراجعة HR'
+                  : 'المرحلة الحالية: موافقة المدير النهائية',
+              style: const TextStyle(color: ZaWolfColors.primaryCyan),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -2440,6 +2938,8 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
   /// only approved attendance deductions, while approved deductible
   /// permissions and approved manual deductions were hidden in other tabs.
   /// That made a valid confirmed salary deduction appear to be missing.
+  // Retained temporarily as the rollback seam for the unified visibility tab.
+  // ignore: unused_element
   Widget _buildConfirmedDeductionsTab(UserModel reviewer, ThemeData theme) {
     final attendanceStream = _cachedStream(
       'attendance|salary-deduction|${reviewer.uid}|confirmed',
@@ -2565,70 +3065,115 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                         'لا توجد خصومات راتب معتمدة مطابقة للبحث',
                       );
                     }
-                    return ListView.separated(
-                      padding: const EdgeInsets.all(16),
-                      itemCount: items.length,
-                      separatorBuilder: (_, __) => const SizedBox(height: 12),
-                      itemBuilder: (context, index) {
-                        final item = items[index];
-                        return WolfCard(
-                          hasBorderGlow: true,
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              _buildEmployeeHeader(
-                                item.employeeName,
-                                item.employeeId,
-                                item.department,
-                                theme,
-                              ),
-                              const SizedBox(height: 10),
-                              Text(
-                                item.source,
-                                style: const TextStyle(
-                                  color: ZaWolfColors.primaryCyan,
-                                ),
-                              ),
-                              Text(
-                                item.reason,
-                                style: theme.textTheme.titleMedium,
-                              ),
-                              Text(
-                                'التاريخ: ${item.date} · قيمة الخصم: ${item.fraction.toStringAsFixed(2)} يوم',
-                              ),
-                              if (item.amount > 0)
-                                Text(
-                                  'القيمة المالية: ${item.amount.toStringAsFixed(2)} ${item.currency}',
-                                  style: const TextStyle(
-                                    color: ZaWolfColors.warning,
-                                  ),
-                                ),
-                              const SizedBox(height: 8),
-                              const _SalaryDeductionStatus(status: 'approved'),
-                              if (item.attendance != null) ...[
+                    final rows = <AppRow>[
+                      for (final item in items)
+                        AppRow(
+                          id: item.id,
+                          title: item.employeeName,
+                          leading: Icons.receipt_long_outlined,
+                          accentColor: ZaWolfColors.warning,
+                          cells: [
+                            item.source,
+                            '${item.date} · ${item.reason}',
+                            '${dsBidi(item.fraction.toStringAsFixed(2))} يوم',
+                          ],
+                        ),
+                    ];
+                    final itemById = {for (final item in items) item.id: item};
+
+                    return LayoutBuilder(
+                      builder: (context, constraints) {
+                        if (!_requestMasterDetailEnabled ||
+                            constraints.maxWidth < 980) {
+                          return ListView.separated(
+                            padding: const EdgeInsets.all(16),
+                            itemCount: items.length,
+                            separatorBuilder: (_, __) =>
                                 const SizedBox(height: 12),
-                                SizedBox(
-                                  width: double.infinity,
-                                  child: OutlinedButton.icon(
-                                    onPressed: () => _reverseSalaryDeduction(
-                                      attendance: item.attendance!,
-                                      reviewer: reviewer,
-                                    ),
-                                    icon: const Icon(Icons.undo),
-                                    label: const Text(
-                                      'إلغاء خصم الحضور المعتمد',
-                                    ),
-                                  ),
+                            itemBuilder: (context, index) =>
+                                _buildConfirmedDeductionCard(
+                                  item: items[index],
+                                  reviewer: reviewer,
+                                  theme: theme,
                                 ),
-                              ],
-                            ],
-                          ),
+                          );
+                        }
+                        return DsMasterDetailView(
+                          columns: const [
+                            AppColumn('الموظف'),
+                            AppColumn('المصدر', width: 160),
+                            AppColumn('التاريخ والسبب'),
+                            AppColumn('قيمة الخصم'),
+                          ],
+                          rows: rows,
+                          detailBuilder: (row) {
+                            final item = itemById[row.id];
+                            if (item == null) return const SizedBox.shrink();
+                            return _buildConfirmedDeductionCard(
+                              item: item,
+                              reviewer: reviewer,
+                              theme: theme,
+                            );
+                          },
+                          emptyDetailLabel:
+                              'اختر خصماً من الجدول لعرض التفاصيل',
                         );
                       },
                     );
                   },
                 ),
           ),
+    );
+  }
+
+  Widget _buildConfirmedDeductionCard({
+    required _ConfirmedDeductionItem item,
+    required UserModel reviewer,
+    required ThemeData theme,
+  }) {
+    return WolfCard(
+      hasBorderGlow: true,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildEmployeeHeader(
+            item.employeeName,
+            item.employeeId,
+            item.department,
+            theme,
+          ),
+          const SizedBox(height: 10),
+          Text(
+            item.source,
+            style: const TextStyle(color: ZaWolfColors.primaryCyan),
+          ),
+          Text(item.reason, style: theme.textTheme.titleMedium),
+          Text(
+            'التاريخ: ${item.date} · قيمة الخصم: ${item.fraction.toStringAsFixed(2)} يوم',
+          ),
+          if (item.amount > 0)
+            Text(
+              'القيمة المالية: ${item.amount.toStringAsFixed(2)} ${item.currency}',
+              style: const TextStyle(color: ZaWolfColors.warning),
+            ),
+          const SizedBox(height: 8),
+          const _SalaryDeductionStatus(status: 'approved'),
+          if (item.attendance != null) ...[
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: () => _reverseSalaryDeduction(
+                  attendance: item.attendance!,
+                  reviewer: reviewer,
+                ),
+                icon: const Icon(Icons.undo),
+                label: const Text('إلغاء خصم الحضور المعتمد'),
+              ),
+            ),
+          ],
+        ],
+      ),
     );
   }
 
@@ -2828,40 +3373,28 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                         if (attendance.salaryDeductionApprovalStatus ==
                             'pending_hr')
                           _buildApprovalActions(
-                            onApprove: () async {
-                              try {
-                                await _attendanceService.approveSalaryDeduction(
-                                  attendance.attendanceId,
-                                  reviewer.uid,
-                                );
-                              } catch (e) {
-                                if (!context.mounted) return;
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text(
-                                      'فشل الموافقة: ${userFacingError(e)}',
-                                    ),
+                            disabled: _isRequestBusy(attendance.attendanceId),
+                            onApprove: () => _confirmAndRun(
+                              requestId: attendance.attendanceId,
+                              title: 'اعتماد الخصم',
+                              confirmLabel: 'اعتماد',
+                              run: () =>
+                                  _attendanceService.approveSalaryDeduction(
+                                    attendance.attendanceId,
+                                    reviewer.uid,
                                   ),
-                                );
-                              }
-                            },
-                            onReject: () async {
-                              try {
-                                await _attendanceService.rejectSalaryDeduction(
-                                  attendance.attendanceId,
-                                  reviewer.uid,
-                                );
-                              } catch (e) {
-                                if (!context.mounted) return;
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text(
-                                      'فشل الرفض: ${userFacingError(e)}',
-                                    ),
+                            ),
+                            onReject: () => _confirmAndRun(
+                              requestId: attendance.attendanceId,
+                              title: 'رفض الخصم',
+                              confirmLabel: 'رفض',
+                              destructive: true,
+                              run: () =>
+                                  _attendanceService.rejectSalaryDeduction(
+                                    attendance.attendanceId,
+                                    reviewer.uid,
                                   ),
-                                );
-                              }
-                            },
+                            ),
                           )
                         else if (reversalOnly &&
                             attendance.salaryDeductionApprovalStatus ==
@@ -2956,63 +3489,130 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
         if (docs.isEmpty) {
           return _buildEmptyState('لا توجد طلبات تصحيح حضور بانتظار HR');
         }
-        return ListView.separated(
-          padding: const EdgeInsets.all(16),
-          itemCount: docs.length,
-          separatorBuilder: (_, _) => const SizedBox(height: 12),
-          itemBuilder: (context, index) {
-            final doc = docs[index];
-            final data = doc.data();
-            final original = data['originalCheckInTime'] as Timestamp?;
-            final requested = data['requestedCheckInTime'] as Timestamp?;
-            return WolfCard(
-              hasBorderGlow: true,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _buildEmployeeHeader(
-                    data['employeeName'] as String? ?? 'موظف',
-                    data['employeeId'] as String? ?? '',
-                    data['department'] as String? ?? '',
-                    theme,
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    'يوم الحضور: ${data['attendanceDate'] ?? ''}',
-                    style: theme.textTheme.titleMedium,
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    'الوقت المسجل: ${original == null ? '--:--' : DateFormat('hh:mm a', 'ar').format(original.toDate())}',
-                  ),
-                  Text(
-                    'الوقت المطلوب: ${requested == null ? '--:--' : DateFormat('hh:mm a', 'ar').format(requested.toDate())}',
-                    style: const TextStyle(
-                      color: ZaWolfColors.primaryCyan,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text('السبب: ${data['reason'] ?? ''}'),
-                  const SizedBox(height: 14),
-                  _buildApprovalActions(
-                    onApprove: () => _reviewAttendanceCorrection(
-                      requestId: doc.id,
-                      reviewer: reviewer,
-                      approve: true,
-                    ),
-                    onReject: () => _reviewAttendanceCorrection(
-                      requestId: doc.id,
-                      reviewer: reviewer,
-                      approve: false,
-                    ),
-                  ),
+        final correctionById = {for (final doc in docs) doc.id: doc};
+        final rows = <AppRow>[
+          for (final doc in docs)
+            () {
+              final data = doc.data();
+              final requested = data['requestedCheckInTime'] as Timestamp?;
+              return AppRow(
+                id: doc.id,
+                title: data['employeeName'] as String? ?? 'موظف',
+                leading: Icons.edit_calendar_outlined,
+                cells: [
+                  data['attendanceDate'] as String? ?? '',
+                  requested == null
+                      ? '--:--'
+                      : DateFormat('hh:mm a', 'ar').format(requested.toDate()),
+                  'بانتظار HR',
                 ],
-              ),
+              );
+            }(),
+        ];
+
+        return LayoutBuilder(
+          builder: (context, constraints) {
+            if (!_requestMasterDetailEnabled || constraints.maxWidth < 980) {
+              return ListView.separated(
+                padding: const EdgeInsets.all(16),
+                itemCount: docs.length,
+                separatorBuilder: (_, _) => const SizedBox(height: 12),
+                itemBuilder: (context, index) => _buildCorrectionRequestCard(
+                  doc: docs[index],
+                  reviewer: reviewer,
+                  theme: theme,
+                ),
+              );
+            }
+            return DsMasterDetailView(
+              columns: const [
+                AppColumn('الموظف'),
+                AppColumn('يوم الحضور'),
+                AppColumn('الوقت المطلوب', width: 140),
+                AppColumn('المرحلة'),
+              ],
+              rows: rows,
+              detailBuilder: (row) {
+                final doc = correctionById[row.id];
+                if (doc == null) return const SizedBox.shrink();
+                return _buildCorrectionRequestCard(
+                  doc: doc,
+                  reviewer: reviewer,
+                  theme: theme,
+                );
+              },
+              emptyDetailLabel:
+                  'اختر طلب تصحيح من الجدول لعرض التفاصيل والموافقة',
             );
           },
         );
       },
+    );
+  }
+
+  Widget _buildCorrectionRequestCard({
+    required QueryDocumentSnapshot<Map<String, dynamic>> doc,
+    required UserModel reviewer,
+    required ThemeData theme,
+  }) {
+    final data = doc.data();
+    final original = data['originalCheckInTime'] as Timestamp?;
+    final requested = data['requestedCheckInTime'] as Timestamp?;
+    return WolfCard(
+      hasBorderGlow: true,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildEmployeeHeader(
+            data['employeeName'] as String? ?? 'موظف',
+            data['employeeId'] as String? ?? '',
+            data['department'] as String? ?? '',
+            theme,
+          ),
+          const SizedBox(height: 12),
+          Text(
+            'يوم الحضور: ${data['attendanceDate'] ?? ''}',
+            style: theme.textTheme.titleMedium,
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'الوقت المسجل: ${original == null ? '--:--' : DateFormat('hh:mm a', 'ar').format(original.toDate())}',
+          ),
+          Text(
+            'الوقت المطلوب: ${requested == null ? '--:--' : DateFormat('hh:mm a', 'ar').format(requested.toDate())}',
+            style: const TextStyle(
+              color: ZaWolfColors.primaryCyan,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text('السبب: ${data['reason'] ?? ''}'),
+          const SizedBox(height: 14),
+          _buildApprovalActions(
+            disabled: _isRequestBusy(doc.id),
+            onDelete: () => _deleteRequestDocument(
+              collection: 'attendanceCorrectionRequests',
+              docId: doc.id,
+              requestTitle: 'طلب تصحيح الحضور',
+            ),
+            onApprove: () => _reviewAttendanceCorrection(
+              requestId: doc.id,
+              reviewer: reviewer,
+              approve: true,
+            ),
+            onReject: () => _reviewAttendanceCorrection(
+              requestId: doc.id,
+              reviewer: reviewer,
+              approve: false,
+            ),
+          ),
+          _buildArchiveRequestAction(
+            reviewer: reviewer,
+            collection: 'attendanceCorrectionRequests',
+            requestId: doc.id,
+          ),
+        ],
+      ),
     );
   }
 
@@ -3022,67 +3622,54 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
     required bool approve,
   }) async {
     final commentController = TextEditingController();
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: Text(approve ? 'اعتماد تصحيح الحضور' : 'رفض تصحيح الحضور'),
-        content: TextField(
-          controller: commentController,
-          maxLines: 3,
-          decoration: InputDecoration(
-            hintText: approve
-                ? 'ملاحظة اختيارية للموظف'
-                : 'اكتب سبب الرفض للموظف',
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('إلغاء'),
-          ),
-          FilledButton(
-            onPressed: () {
-              if (!approve && commentController.text.trim().isEmpty) return;
-              Navigator.pop(dialogContext, true);
-            },
-            child: Text(approve ? 'اعتماد' : 'رفض'),
-          ),
-        ],
-      ),
+    final confirmed = await showConfirmationSheet(
+      context,
+      title: approve ? 'اعتماد تصحيح الحضور' : 'رفض تصحيح الحضور',
+      message: approve
+          ? 'سيتم تصحيح الوقت وإعادة حساب الخصم.'
+          : 'سيتم رفض طلب التصحيح وإشعار الموظف بالسبب.',
+      confirmLabel: approve ? 'اعتماد' : 'رفض',
+      destructive: !approve,
+      commentHint: approve
+          ? 'ملاحظة اختيارية للموظف'
+          : 'اكتب سبب الرفض للموظف (مطلوب)',
+      requireComment: !approve,
+      commentController: commentController,
     );
-    if (confirmed != true) {
+    if (!confirmed) {
       commentController.dispose();
       return;
     }
-    try {
-      await AttendanceCorrectionRequestService().review(
-        requestId: requestId,
-        reviewer: reviewer,
-        approve: approve,
-        comment: commentController.text,
-      );
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              approve
-                  ? 'تم تصحيح الوقت وإعادة حساب الخصم.'
-                  : 'تم رفض طلب التصحيح.',
+    await _withRequestGuard(requestId, () async {
+      try {
+        await AttendanceCorrectionRequestService().review(
+          requestId: requestId,
+          reviewer: reviewer,
+          approve: approve,
+          comment: commentController.text,
+        );
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                approve
+                    ? 'تم تصحيح الوقت وإعادة حساب الخصم.'
+                    : 'تم رفض طلب التصحيح.',
+              ),
             ),
-          ),
-        );
+          );
+        }
+      } catch (error) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('تعذر مراجعة الطلب: ${userFacingError(error)}'),
+            ),
+          );
+        }
       }
-    } catch (error) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('تعذر مراجعة الطلب: ${userFacingError(error)}'),
-          ),
-        );
-      }
-    } finally {
-      commentController.dispose();
-    }
+    });
+    commentController.dispose();
   }
 
   Future<void> _correctArrivalTime(
@@ -3298,62 +3885,48 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
         .where((item) => item.salaryDeductionApprovalStatus == 'pending_hr')
         .toList();
     if (pendingItems.isEmpty) return;
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: ZaWolfColors.surface01,
-        title: Text(
-          approve ? 'اعتماد الخصومات المعروضة؟' : 'رفض الخصومات المعروضة؟',
-          textDirection: TextDirection.rtl,
-        ),
-        content: Text(
+    final confirmed = await showConfirmationSheet(
+      context,
+      title: approve ? 'اعتماد الخصومات المعروضة؟' : 'رفض الخصومات المعروضة؟',
+      message:
           'سيتم تطبيق الإجراء على ${pendingItems.length} خصم معلق حسب الفلتر الحالي.',
-          textDirection: TextDirection.rtl,
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('إلغاء'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: Text(approve ? 'اعتماد' : 'رفض'),
-          ),
-        ],
-      ),
+      confirmLabel: approve ? 'اعتماد' : 'رفض',
+      destructive: !approve,
     );
-    if (confirmed != true) return;
+    if (!confirmed || !mounted) return;
 
-    var success = 0;
-    var failed = 0;
-    for (final item in pendingItems) {
-      try {
-        if (approve) {
-          await _attendanceService.approveSalaryDeduction(
-            item.attendanceId,
-            reviewer.uid,
-          );
-        } else {
-          await _attendanceService.rejectSalaryDeduction(
-            item.attendanceId,
-            reviewer.uid,
-          );
+    await _withRequestGuard('salary-deductions-bulk', () async {
+      var success = 0;
+      var failed = 0;
+      for (final item in pendingItems) {
+        try {
+          if (approve) {
+            await _attendanceService.approveSalaryDeduction(
+              item.attendanceId,
+              reviewer.uid,
+            );
+          } else {
+            await _attendanceService.rejectSalaryDeduction(
+              item.attendanceId,
+              reviewer.uid,
+            );
+          }
+          success++;
+        } catch (_) {
+          failed++;
         }
-        success++;
-      } catch (_) {
-        failed++;
       }
-    }
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          failed == 0
-              ? 'تم تنفيذ الإجراء على $success خصم.'
-              : 'تم تنفيذ $success وفشل $failed. تحقق من الصلاحيات.',
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            failed == 0
+                ? 'تم تنفيذ الإجراء على $success خصم.'
+                : 'تم تنفيذ $success وفشل $failed. تحقق من الصلاحيات.',
+          ),
         ),
-      ),
-    );
+      );
+    });
   }
 
   Future<void> _reverseSalaryDeduction({
@@ -3516,176 +4089,206 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
               return _buildEmptyState('لا توجد مراجعات أمنية معلقة');
             }
 
-            return ListView.builder(
-              padding: const EdgeInsets.all(16),
-              itemCount: items.length,
-              itemBuilder: (context, index) {
-                final item = items[index];
-                final attendance = item.attendance;
-                final reasons = item.checkout
-                    ? attendance.checkoutLocationRiskReasons
-                    : attendance.locationRiskReasons;
-                final riskMessage = item.checkout
-                    ? (attendance.checkoutLocationRiskMessage ??
-                          'مراجعة انصراف: تحقق من مؤشرات الموقع المسجلة')
-                    : (attendance.locationRiskMessage ??
-                          'مؤشرات موقع غير معتادة');
-                final accuracy = item.checkout
-                    ? attendance.checkoutLocationAccuracyMeters
-                    : attendance.locationAccuracyMeters;
-                final distance = item.checkout
-                    ? attendance.checkoutLocationDistanceMeters
-                    : attendance.locationDistanceMeters;
-                final radius = item.checkout
-                    ? attendance.checkoutLocationAllowedRadiusMeters
-                    : attendance.locationAllowedRadiusMeters;
+            final reviewById = {for (final item in items) item.docId: item};
+            final rows = <AppRow>[
+              for (final item in items)
+                AppRow(
+                  id: item.docId,
+                  title: item.attendance.employeeName,
+                  leading: Icons.security,
+                  accentColor: ZaWolfColors.warning,
+                  cells: [
+                    item.checkout ? 'مراجعة انصراف' : 'مراجعة حضور',
+                    item.attendance.date,
+                    item.attendance.locationName,
+                  ],
+                ),
+            ];
 
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 16.0),
-                  child: WolfCard(
-                    hasBorderGlow: true,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        _buildEmployeeHeader(
-                          attendance.employeeName,
-                          attendance.employeeId,
-                          attendance.locationName,
-                          theme,
-                        ),
-                        const SizedBox(height: 12),
-                        Row(
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 10,
-                                vertical: 5,
-                              ),
-                              decoration: BoxDecoration(
-                                color: ZaWolfColors.warning.withValues(
-                                  alpha: 0.12,
-                                ),
-                                borderRadius: BorderRadius.circular(8),
-                                border: Border.all(
-                                  color: ZaWolfColors.warning.withValues(
-                                    alpha: 0.35,
-                                  ),
-                                ),
-                              ),
-                              child: Text(
-                                item.checkout ? 'مراجعة انصراف' : 'مراجعة حضور',
-                                style: const TextStyle(
-                                  color: ZaWolfColors.warning,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ),
-                            const Spacer(),
-                            const Icon(
-                              Icons.security,
-                              color: ZaWolfColors.primaryCyan,
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 10),
-                        Text(
-                          riskMessage,
-                          style:
-                              theme.textTheme.titleMedium?.copyWith(
-                                color: Colors.white,
-                                fontWeight: FontWeight.bold,
-                              ) ??
-                              const TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.bold,
-                              ),
-                          textDirection: TextDirection.rtl,
-                        ),
-                        _buildRequestDateLine(
-                          label: item.checkout ? 'وقت الانصراف' : 'وقت الحضور',
-                          date: item.checkout
-                              ? attendance.checkOutTime
-                              : attendance.checkInTime,
-                          fallback: _parseDateKey(attendance.date),
-                        ),
-                        if (accuracy != null)
-                          _buildInfoLine(
-                            'دقة الموقع',
-                            '${accuracy.toStringAsFixed(0)} متر',
-                          ),
-                        if (distance != null && radius != null)
-                          _buildInfoLine(
-                            'المسافة من الفرع',
-                            '${distance.toStringAsFixed(0)} متر من نطاق ${radius.toStringAsFixed(0)} متر',
-                          ),
-                        if (reasons.isNotEmpty)
-                          Padding(
-                            padding: const EdgeInsets.only(top: 8),
-                            child: Wrap(
-                              spacing: 8,
-                              runSpacing: 8,
-                              children: reasons
-                                  .map(
-                                    (reason) => Chip(
-                                      label: Text(_riskReasonLabel(reason)),
-                                      backgroundColor: ZaWolfColors.surface02,
-                                      labelStyle: const TextStyle(
-                                        color: ZaWolfColors.textSecondary,
-                                        fontSize: 12,
-                                      ),
-                                    ),
-                                  )
-                                  .toList(),
-                            ),
-                          ),
-                        const SizedBox(height: 16),
-                        _buildApprovalActions(
-                          onApprove: () async {
-                            try {
-                              await _attendanceService.approveSecurityReview(
-                                item.docId,
-                                reviewer.uid,
-                                checkout: item.checkout,
-                              );
-                            } catch (e) {
-                              if (!context.mounted) return;
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text(
-                                    'فشل الموافقة: ${userFacingError(e)}',
-                                  ),
-                                ),
-                              );
-                            }
-                          },
-                          onReject: () async {
-                            try {
-                              await _attendanceService.rejectSecurityReview(
-                                item.docId,
-                                reviewer.uid,
-                                checkout: item.checkout,
-                              );
-                            } catch (e) {
-                              if (!context.mounted) return;
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text(
-                                    'فشل الرفض: ${userFacingError(e)}',
-                                  ),
-                                ),
-                              );
-                            }
-                          },
-                        ),
-                      ],
+            return LayoutBuilder(
+              builder: (context, constraints) {
+                if (!_requestMasterDetailEnabled ||
+                    constraints.maxWidth < 980) {
+                  return ListView.builder(
+                    padding: const EdgeInsets.all(16),
+                    itemCount: items.length,
+                    itemBuilder: (context, index) => _buildSecurityReviewCard(
+                      item: items[index],
+                      reviewer: reviewer,
+                      theme: theme,
                     ),
-                  ),
+                  );
+                }
+                return DsMasterDetailView(
+                  columns: const [
+                    AppColumn('الموظف'),
+                    AppColumn('النوع', width: 140),
+                    AppColumn('التاريخ', width: 130),
+                    AppColumn('الفرع'),
+                  ],
+                  rows: rows,
+                  detailBuilder: (row) {
+                    final item = reviewById[row.id];
+                    if (item == null) return const SizedBox.shrink();
+                    return _buildSecurityReviewCard(
+                      item: item,
+                      reviewer: reviewer,
+                      theme: theme,
+                    );
+                  },
+                  emptyDetailLabel:
+                      'اختر مراجعة أمنية من الجدول لعرض التفاصيل والموافقة',
                 );
               },
             );
           },
         );
       },
+    );
+  }
+
+  Widget _buildSecurityReviewCard({
+    required _SecurityReviewItem item,
+    required UserModel reviewer,
+    required ThemeData theme,
+  }) {
+    final attendance = item.attendance;
+    final reasons = item.checkout
+        ? attendance.checkoutLocationRiskReasons
+        : attendance.locationRiskReasons;
+    final riskMessage = item.checkout
+        ? (attendance.checkoutLocationRiskMessage ??
+              'مراجعة انصراف: تحقق من مؤشرات الموقع المسجلة')
+        : (attendance.locationRiskMessage ?? 'مؤشرات موقع غير معتادة');
+    final accuracy = item.checkout
+        ? attendance.checkoutLocationAccuracyMeters
+        : attendance.locationAccuracyMeters;
+    final distance = item.checkout
+        ? attendance.checkoutLocationDistanceMeters
+        : attendance.locationDistanceMeters;
+    final radius = item.checkout
+        ? attendance.checkoutLocationAllowedRadiusMeters
+        : attendance.locationAllowedRadiusMeters;
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16.0),
+      child: WolfCard(
+        hasBorderGlow: true,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildEmployeeHeader(
+              attendance.employeeName,
+              attendance.employeeId,
+              attendance.locationName,
+              theme,
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 5,
+                  ),
+                  decoration: BoxDecoration(
+                    color: ZaWolfColors.warning.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: ZaWolfColors.warning.withValues(alpha: 0.35),
+                    ),
+                  ),
+                  child: Text(
+                    item.checkout ? 'مراجعة انصراف' : 'مراجعة حضور',
+                    style: const TextStyle(
+                      color: ZaWolfColors.warning,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+                const Spacer(),
+                const Icon(Icons.security, color: ZaWolfColors.primaryCyan),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Text(
+              riskMessage,
+              style:
+                  theme.textTheme.titleMedium?.copyWith(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                  ) ??
+                  const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                  ),
+              textDirection: TextDirection.rtl,
+            ),
+            _buildRequestDateLine(
+              label: item.checkout ? 'وقت الانصراف' : 'وقت الحضور',
+              date: item.checkout
+                  ? attendance.checkOutTime
+                  : attendance.checkInTime,
+              fallback: _parseDateKey(attendance.date),
+            ),
+            if (accuracy != null)
+              _buildInfoLine(
+                'دقة الموقع',
+                '${accuracy.toStringAsFixed(0)} متر',
+              ),
+            if (distance != null && radius != null)
+              _buildInfoLine(
+                'المسافة من الفرع',
+                '${distance.toStringAsFixed(0)} متر من نطاق ${radius.toStringAsFixed(0)} متر',
+              ),
+            if (reasons.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: reasons
+                      .map(
+                        (reason) => Chip(
+                          label: Text(_riskReasonLabel(reason)),
+                          backgroundColor: ZaWolfColors.surface02,
+                          labelStyle: const TextStyle(
+                            color: ZaWolfColors.textSecondary,
+                            fontSize: 12,
+                          ),
+                        ),
+                      )
+                      .toList(),
+                ),
+              ),
+            const SizedBox(height: 16),
+            _buildApprovalActions(
+              disabled: _isRequestBusy(item.docId),
+              onApprove: () => _confirmAndRun(
+                requestId: item.docId,
+                title: 'اعتماد المراجعة الأمنية',
+                confirmLabel: 'اعتماد',
+                run: () => _attendanceService.approveSecurityReview(
+                  item.docId,
+                  reviewer.uid,
+                  checkout: item.checkout,
+                ),
+              ),
+              onReject: () => _confirmAndRun(
+                requestId: item.docId,
+                title: 'رفض المراجعة الأمنية',
+                confirmLabel: 'رفض',
+                destructive: true,
+                run: () => _attendanceService.rejectSecurityReview(
+                  item.docId,
+                  reviewer.uid,
+                  checkout: item.checkout,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -3728,16 +4331,80 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
     );
   }
 
+  Future<void> _deleteRequestDocument({
+    required String collection,
+    required String docId,
+    required String requestTitle,
+  }) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          title: Text('حذف $requestTitle نهائياً'),
+          content: Text(
+            'هل أنت متأكد من حذف هذا الطلب ($requestTitle) نهائياً من النظام؟\nلن يمكن استعادة الطلب بعد الحذف.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('إلغاء'),
+            ),
+            FilledButton(
+              style: FilledButton.styleFrom(backgroundColor: Colors.redAccent),
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('حذف نهائي'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (confirmed == true) {
+      try {
+        await FirebaseFirestore.instance
+            .collection(collection)
+            .doc(docId)
+            .delete();
+        if (mounted) setState(() {});
+        messenger.showSnackBar(
+          SnackBar(content: Text('تم حذف $requestTitle بنجاح.')),
+        );
+      } catch (e) {
+        messenger.showSnackBar(
+          const SnackBar(
+            content: Text('تعذر حذف الطلب. تحقق من الصلاحيات والاتصال.'),
+          ),
+        );
+      }
+    }
+  }
+
   Widget _buildApprovalActions({
     required VoidCallback onApprove,
     required VoidCallback onReject,
     VoidCallback? onModify,
+    VoidCallback? onDelete,
+    bool disabled = false,
   }) {
     return Row(
       children: [
+        if (onDelete != null) ...[
+          Expanded(
+            child: WolfButton(
+              onPressed: disabled ? null : onDelete,
+              text: 'حذف الطلب',
+              secondaryText: 'DELETE',
+              variant: WolfButtonVariant.danger,
+              height: 48,
+            ),
+          ),
+          const SizedBox(width: 8),
+        ],
         Expanded(
           child: WolfButton(
-            onPressed: onReject,
+            onPressed: disabled ? null : onReject,
             text: 'رفض',
             secondaryText: 'REJECT',
             variant: WolfButtonVariant.outline,
@@ -3748,7 +4415,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
           const SizedBox(width: 8),
           Expanded(
             child: WolfButton(
-              onPressed: onModify,
+              onPressed: disabled ? null : onModify,
               text: 'طلب تعديل',
               secondaryText: 'MODIFY',
               variant: WolfButtonVariant.purple,
@@ -3759,7 +4426,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
         const SizedBox(width: 8),
         Expanded(
           child: WolfButton(
-            onPressed: onApprove,
+            onPressed: disabled ? null : onApprove,
             text: 'موافقة',
             secondaryText: 'APPROVE',
             variant: WolfButtonVariant.primary,
@@ -4087,7 +4754,7 @@ class _SalaryDeductionStatus extends StatelessWidget {
       _ => ('بانتظار HR', ZaWolfColors.warning, Icons.schedule),
     };
     return Align(
-      alignment: Alignment.centerRight,
+      alignment: AlignmentDirectional.centerStart,
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [

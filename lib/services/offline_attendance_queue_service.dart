@@ -27,6 +27,8 @@ class OfflineAttendanceAction {
   final String employeeName;
   final String locationId;
   final String locationName;
+  final String? assignmentId;
+  final int? assignmentVersion;
   final String? managerId;
   final String date;
   final DateTime eventTime;
@@ -62,6 +64,8 @@ class OfflineAttendanceAction {
     required this.employeeName,
     required this.locationId,
     required this.locationName,
+    this.assignmentId,
+    this.assignmentVersion,
     this.managerId,
     required this.date,
     required this.eventTime,
@@ -101,6 +105,8 @@ class OfflineAttendanceAction {
       employeeName: json['employeeName'] as String,
       locationId: json['locationId'] as String,
       locationName: json['locationName'] as String,
+      assignmentId: json['assignmentId'] as String?,
+      assignmentVersion: (json['assignmentVersion'] as num?)?.toInt(),
       managerId: json['managerId'] as String?,
       date: json['date'] as String,
       eventTime: DateTime.fromMillisecondsSinceEpoch(json['eventTime'] as int),
@@ -149,6 +155,8 @@ class OfflineAttendanceAction {
       'employeeName': employeeName,
       'locationId': locationId,
       'locationName': locationName,
+      if (assignmentId != null) 'assignmentId': assignmentId,
+      if (assignmentVersion != null) 'assignmentVersion': assignmentVersion,
       if (managerId != null) 'managerId': managerId,
       'date': date,
       'eventTime': eventTime.millisecondsSinceEpoch,
@@ -185,6 +193,9 @@ class OfflineAttendanceAction {
       'employeeName': employeeName,
       'locationId': locationId,
       'locationName': locationName,
+      if (assignmentId != null) 'attendanceLocationAssignmentId': assignmentId,
+      if (assignmentVersion != null)
+        'attendanceLocationAssignmentVersion': assignmentVersion,
       if (managerId != null) 'managerId': managerId,
       'date': date,
       'checkInTime': Timestamp.fromDate(eventTime),

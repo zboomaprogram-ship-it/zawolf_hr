@@ -6,6 +6,10 @@ import 'package:go_router/go_router.dart';
 import '../../services/auth_service.dart';
 import '../../theme/theme.dart';
 import '../../components/wolf_card.dart';
+import '../../core/feature_flags/phase007_feature_flags.dart';
+import '../../core/feature_flags/remote_phase007_feature_flags.dart';
+import '../../design_system/components/feedback_states.dart' show EmptyState;
+import '../../design_system/components/skeletons.dart' show SkeletonList;
 
 class TeamAttendanceScreen extends StatefulWidget {
   const TeamAttendanceScreen({super.key});
@@ -22,6 +26,12 @@ class _TeamAttendanceScreenState extends State<TeamAttendanceScreen> {
       'all'; // 'all' | 'present' | 'late' | 'absent' | 'on-leave'
   Stream<QuerySnapshot<Map<String, dynamic>>>? _attendanceStream;
   String? _attendanceStreamKey;
+  late final Stream<QuerySnapshot<Map<String, dynamic>>>
+  _hiddenEmployeeIdsStream = _db
+      .collection('operationalVisibility')
+      .where('hiddenFromAttendance', isEqualTo: true)
+      .limit(500)
+      .snapshots();
 
   Stream<QuerySnapshot<Map<String, dynamic>>> _attendanceForSelection(
     String managerId,
@@ -76,6 +86,11 @@ class _TeamAttendanceScreenState extends State<TeamAttendanceScreen> {
     final authService = Provider.of<AuthService>(context);
     final manager = authService.currentUser;
     final theme = Theme.of(context);
+    final phase007 = context.watch<RemotePhase007FeatureFlags>();
+    final timelineEnabled = phase007.isEnabledFor(
+      feature: Phase007Feature.operationalVisibility,
+      actorId: manager?.uid ?? '',
+    );
     final dateStr = DateFormat('yyyy-MM-dd').format(_selectedDate);
 
     if (manager == null) {
@@ -157,193 +172,205 @@ class _TeamAttendanceScreenState extends State<TeamAttendanceScreen> {
 
           // Stream Results
           Expanded(
-            child: StreamBuilder<QuerySnapshot>(
-              stream: _attendanceForSelection(
-                manager.uid,
-                dateStr,
-                _selectedStatus,
-              ),
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(
-                    child: CircularProgressIndicator(
-                      color: ZaWolfColors.primaryCyan,
-                    ),
-                  );
-                }
-
-                final docs = snapshot.data?.docs ?? [];
-                if (docs.isEmpty) {
-                  return Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const Icon(
-                          Icons.group_off_outlined,
-                          color: ZaWolfColors.textMuted,
-                          size: 56,
-                        ),
-                        const SizedBox(height: 12),
-                        Text(
-                          'لا توجد سجلات مطابقة للفلاتر المحددة.',
-                          style: theme.textTheme.bodyMedium,
-                        ),
-                      ],
-                    ),
-                  );
-                }
-
-                return ListView.builder(
-                  padding: const EdgeInsets.all(16),
-                  itemCount: docs.length,
-                  itemBuilder: (context, index) {
-                    final data = docs[index].data() as Map<String, dynamic>;
-                    final name = data['employeeName'] as String? ?? '';
-                    final userId = data['userId'] as String? ?? '';
-                    final empId = data['employeeId'] as String? ?? '';
-                    final status = data['status'] as String? ?? 'present';
-                    final checkIn = data['checkInTime'] as Timestamp?;
-                    final checkOut = data['checkOutTime'] as Timestamp?;
-                    final checkoutPolicyEnabled =
-                        data['checkoutPolicyEnabled'] as bool?;
-                    final totalHours = (data['totalWorkHours'] as num?)
-                        ?.toDouble();
-                    final inGeofence =
-                        data['isWithinGeofence'] as bool? ?? true;
-                    final lateMinutes = data['lateMinutes'] as int? ?? 0;
-
-                    Color statusColor = ZaWolfColors.success;
-                    String statusLabel = 'في الميعاد';
-
-                    if (status == 'late') {
-                      statusColor = ZaWolfColors.warning;
-                      statusLabel = 'متأخر $lateMinutes دقيقة';
-                    } else if (status == 'absent') {
-                      statusColor = ZaWolfColors.error;
-                      statusLabel = 'غائب';
-                    } else if (status == 'on-leave') {
-                      statusColor = ZaWolfColors.primaryBlue;
-                      statusLabel = 'إجازة رسمية';
+            child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+              stream: _hiddenEmployeeIdsStream,
+              builder: (context, hiddenSnapshot) {
+                final hiddenIds =
+                    hiddenSnapshot.data?.docs.map((doc) => doc.id).toSet() ??
+                    const <String>{};
+                return StreamBuilder<QuerySnapshot>(
+                  stream: _attendanceForSelection(
+                    manager.uid,
+                    dateStr,
+                    _selectedStatus,
+                  ),
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState == ConnectionState.waiting) {
+                      return const Padding(
+                        padding: EdgeInsets.all(16),
+                        child: SkeletonList(itemCount: 6, itemHeight: 84),
+                      );
                     }
 
-                    return Padding(
-                      padding: const EdgeInsets.only(bottom: 12.0),
-                      key: ValueKey(docs[index].id),
-                      child: WolfCard(
-                        onTap: userId.isEmpty
-                            ? null
-                            : () => context.go('/manager/employee/$userId'),
-                        hasBorderGlow: true,
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            // Header Row
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    final docs = (snapshot.data?.docs ?? [])
+                        .where((doc) {
+                          final data = doc.data() as Map<String, dynamic>;
+                          return !hiddenIds.contains(data['userId']);
+                        })
+                        .toList(growable: false);
+                    if (docs.isEmpty) {
+                      return const EmptyState(
+                        title: 'لا توجد سجلات مطابقة للفلاتر المحددة.',
+                        icon: Icons.group_off_outlined,
+                      );
+                    }
+
+                    return ListView.builder(
+                      padding: const EdgeInsets.all(16),
+                      itemCount: docs.length,
+                      itemBuilder: (context, index) {
+                        final data = docs[index].data() as Map<String, dynamic>;
+                        final name = data['employeeName'] as String? ?? '';
+                        final userId = data['userId'] as String? ?? '';
+                        final empId = data['employeeId'] as String? ?? '';
+                        final status = data['status'] as String? ?? 'present';
+                        final checkIn = data['checkInTime'] as Timestamp?;
+                        final checkOut = data['checkOutTime'] as Timestamp?;
+                        final checkoutPolicyEnabled =
+                            data['checkoutPolicyEnabled'] as bool?;
+                        final totalHours = (data['totalWorkHours'] as num?)
+                            ?.toDouble();
+                        final inGeofence =
+                            data['isWithinGeofence'] as bool? ?? true;
+                        final lateMinutes = data['lateMinutes'] as int? ?? 0;
+
+                        Color statusColor = ZaWolfColors.success;
+                        String statusLabel = 'في الميعاد';
+
+                        if (status == 'late') {
+                          statusColor = ZaWolfColors.warning;
+                          statusLabel = 'متأخر $lateMinutes دقيقة';
+                        } else if (status == 'absent') {
+                          statusColor = ZaWolfColors.error;
+                          statusLabel = 'غائب';
+                        } else if (status == 'on-leave') {
+                          statusColor = ZaWolfColors.primaryBlue;
+                          statusLabel = 'إجازة رسمية';
+                        }
+
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 12.0),
+                          key: ValueKey(docs[index].id),
+                          child: WolfCard(
+                            onTap: userId.isEmpty
+                                ? null
+                                : () => context.go(
+                                    timelineEnabled
+                                        ? '/operations/employee/$userId'
+                                        : '/manager/employee/$userId',
+                                  ),
+                            hasBorderGlow: true,
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 10,
-                                    vertical: 2,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: statusColor.withValues(alpha: 0.15),
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  child: Text(
-                                    statusLabel,
-                                    style: TextStyle(
-                                      color: statusColor,
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 11,
-                                    ),
-                                  ),
-                                ),
+                                // Header Row
                                 Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
                                   children: [
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 10,
+                                        vertical: 2,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: statusColor.withValues(
+                                          alpha: 0.15,
+                                        ),
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                      child: Text(
+                                        statusLabel,
+                                        style: TextStyle(
+                                          color: statusColor,
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 11,
+                                        ),
+                                      ),
+                                    ),
+                                    Row(
+                                      children: [
+                                        Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.end,
+                                          children: [
+                                            Text(
+                                              name,
+                                              style: theme
+                                                  .textTheme
+                                                  .titleMedium!
+                                                  .copyWith(
+                                                    color: Colors.white,
+                                                    fontWeight: FontWeight.bold,
+                                                  ),
+                                            ),
+                                            Text(
+                                              'كود: $empId',
+                                              style: theme.textTheme.bodySmall,
+                                            ),
+                                          ],
+                                        ),
+                                        const SizedBox(width: 10),
+                                        CircleAvatar(
+                                          radius: 16,
+                                          backgroundColor:
+                                              ZaWolfColors.surface02,
+                                          child: Text(
+                                            name.substring(0, 1),
+                                            style: const TextStyle(
+                                              color: ZaWolfColors.primaryCyan,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                                const Divider(
+                                  color: ZaWolfColors.surface02,
+                                  height: 20,
+                                ),
+
+                                // Log Details
+                                Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          checkoutPolicyEnabled == false &&
+                                                  checkOut == null
+                                              ? 'الانصراف: لا ينطبق (سياسة HR)'
+                                              : 'الانصراف: ${checkOut != null ? DateFormat('hh:mm a').format(checkOut.toDate()) : '—'}',
+                                          style: theme.textTheme.bodyMedium,
+                                        ),
+                                        Text(
+                                          'ساعات العمل: ${totalHours != null ? '${totalHours.toStringAsFixed(1)} ساعة' : '—'}',
+                                          style: theme.textTheme.bodyMedium,
+                                        ),
+                                      ],
+                                    ),
                                     Column(
                                       crossAxisAlignment:
                                           CrossAxisAlignment.end,
                                       children: [
                                         Text(
-                                          name,
-                                          style: theme.textTheme.titleMedium!
-                                              .copyWith(
-                                                color: Colors.white,
-                                                fontWeight: FontWeight.bold,
+                                          'الحضور: ${checkIn != null ? DateFormat('hh:mm a').format(checkIn.toDate()) : '—'}',
+                                          style: theme.textTheme.bodyMedium,
+                                        ),
+                                        Row(
+                                          children: [
+                                            Text(
+                                              inGeofence
+                                                  ? 'داخل النطاق ✓'
+                                                  : 'خارج النطاق ⚠️',
+                                              style: TextStyle(
+                                                color: inGeofence
+                                                    ? ZaWolfColors.success
+                                                    : ZaWolfColors.error,
+                                                fontWeight: FontWeight.w600,
+                                                fontSize: 12,
                                               ),
-                                        ),
-                                        Text(
-                                          'كود: $empId',
-                                          style: theme.textTheme.bodySmall,
-                                        ),
-                                      ],
-                                    ),
-                                    const SizedBox(width: 10),
-                                    CircleAvatar(
-                                      radius: 16,
-                                      backgroundColor: ZaWolfColors.surface02,
-                                      child: Text(
-                                        name.substring(0, 1),
-                                        style: const TextStyle(
-                                          color: ZaWolfColors.primaryCyan,
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ],
-                            ),
-                            const Divider(
-                              color: ZaWolfColors.surface02,
-                              height: 20,
-                            ),
-
-                            // Log Details
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      checkoutPolicyEnabled == false &&
-                                              checkOut == null
-                                          ? 'الانصراف: لا ينطبق (سياسة HR)'
-                                          : 'الانصراف: ${checkOut != null ? DateFormat('hh:mm a').format(checkOut.toDate()) : '—'}',
-                                      style: theme.textTheme.bodyMedium,
-                                    ),
-                                    Text(
-                                      'ساعات العمل: ${totalHours != null ? '${totalHours.toStringAsFixed(1)} ساعة' : '—'}',
-                                      style: theme.textTheme.bodyMedium,
-                                    ),
-                                  ],
-                                ),
-                                Column(
-                                  crossAxisAlignment: CrossAxisAlignment.end,
-                                  children: [
-                                    Text(
-                                      'الحضور: ${checkIn != null ? DateFormat('hh:mm a').format(checkIn.toDate()) : '—'}',
-                                      style: theme.textTheme.bodyMedium,
-                                    ),
-                                    Row(
-                                      children: [
-                                        Text(
-                                          inGeofence
-                                              ? 'داخل النطاق ✓'
-                                              : 'خارج النطاق ⚠️',
-                                          style: TextStyle(
-                                            color: inGeofence
-                                                ? ZaWolfColors.success
-                                                : ZaWolfColors.error,
-                                            fontWeight: FontWeight.w600,
-                                            fontSize: 12,
-                                          ),
-                                        ),
-                                        Text(
-                                          ' :النطاق الجغرافي',
-                                          style: theme.textTheme.bodyMedium!
-                                              .copyWith(fontSize: 12),
+                                            ),
+                                            Text(
+                                              ' :النطاق الجغرافي',
+                                              style: theme.textTheme.bodyMedium!
+                                                  .copyWith(fontSize: 12),
+                                            ),
+                                          ],
                                         ),
                                       ],
                                     ),
@@ -351,9 +378,9 @@ class _TeamAttendanceScreenState extends State<TeamAttendanceScreen> {
                                 ),
                               ],
                             ),
-                          ],
-                        ),
-                      ),
+                          ),
+                        );
+                      },
                     );
                   },
                 );

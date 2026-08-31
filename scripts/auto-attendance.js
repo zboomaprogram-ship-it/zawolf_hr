@@ -5,12 +5,16 @@ const {
   parseFirebaseServiceAccount,
 } = require('./firebase-service-account');
 const { loadCheckoutPolicy } = require('./checkout-policy');
+const { validateAssignedLocation } = require('./attendance-location-assignments');
 
 installFirestoreCompatibility(admin);
 
 const CAIRO_TIME_ZONE = 'Africa/Cairo';
 const MAX_SIGNAL_AGE_MS = 15 * 60 * 1000;
 const MAX_LOCATION_ACCURACY_METERS = 25;
+const DEFAULT_RETURN_GRACE_MINUTES = 15;
+const DEFAULT_COMPANY_BREAK_START = 13 * 60;
+const DEFAULT_COMPANY_BREAK_END = 14 * 60;
 
 function initializeFirebase() {
   const existingApp = getExistingFirebaseApp(admin);
@@ -79,6 +83,37 @@ function effectiveTimes(user, policy, permissions) {
   };
 }
 
+function permissionReturnWindow(permission, workTimes) {
+  if (permission?.permissionType !== 'mid_shift_exit') return null;
+  const start = parseMinutes(permission.expectedTime, -1);
+  const duration = Math.max(0, Number(permission.durationMinutes || 0));
+  if (start < 0 || duration <= 0) return null;
+  const end = Math.min(workTimes.end, start + duration);
+  return end > start ? { start, end, reason: 'approved_mid_shift_permission' } : null;
+}
+
+function activeReturnException({ nowMinutes, permissions, workTimes, policy }) {
+  const permission = permissions
+    .map((item) => permissionReturnWindow(item, workTimes))
+    .find((item) => item && nowMinutes >= item.start && nowMinutes < item.end);
+  if (permission) return permission;
+  const breakStart = parseMinutes(policy.companyBreakStartTime, DEFAULT_COMPANY_BREAK_START);
+  const breakEnd = parseMinutes(policy.companyBreakEndTime, DEFAULT_COMPANY_BREAK_END);
+  if (breakEnd > breakStart && nowMinutes >= breakStart && nowMinutes < breakEnd) {
+    return { start: breakStart, end: breakEnd, reason: 'company_break' };
+  }
+  return null;
+}
+
+function returnGraceDeadline({ now, nowMinutes, exception, policy }) {
+  const returnGraceMinutes = Math.max(
+    1,
+    Math.min(180, Number(policy.autoCheckoutReturnGraceMinutes || DEFAULT_RETURN_GRACE_MINUTES)),
+  );
+  const remainingException = exception ? Math.max(0, exception.end - nowMinutes) : 0;
+  return new Date(now.getTime() + (remainingException + returnGraceMinutes) * 60 * 1000);
+}
+
 function deductionFor(nowMinutes, startMinutes, policy, salary, currency) {
   const lateMinutes = Math.max(0, nowMinutes - startMinutes);
   const grace = Number(policy.graceMinutes ?? 15);
@@ -131,7 +166,7 @@ async function resolveSignal(db, signalDoc, outcome, extra = {}) {
   });
 }
 
-async function processSignal(db, signalDoc, company, now, checkoutPolicy) {
+async function processSignal(db, signalDoc, company, now, checkoutPolicy, multiLocationEnabled = false) {
   const signal = signalDoc.data();
   const capturedAt = signal.createdAt?.toDate?.();
   if (!(capturedAt instanceof Date) || Date.now() - capturedAt.getTime() > MAX_SIGNAL_AGE_MS || capturedAt.getTime() - Date.now() > 60 * 1000) {
@@ -140,21 +175,49 @@ async function processSignal(db, signalDoc, company, now, checkoutPolicy) {
   if (!['android_geofence', 'ios_region'].includes(signal.source)) {
     return resolveSignal(db, signalDoc, 'rejected_source');
   }
+  if (!['enter', 'exit'].includes(signal.event)) {
+    return resolveSignal(db, signalDoc, 'ignored_non_check_in_event');
+  }
   if (signal.locationMocked === true) {
     return resolveSignal(db, signalDoc, 'rejected_mock_location');
   }
   // The server timestamp is the authoritative work time. The dispatcher may
   // run a minute later, so never calculate a shift from the worker's clock.
   const signalTime = cairoParts(capturedAt);
-  const [userDoc, locationDoc, dayOffDoc] = await Promise.all([
+  const [userDoc, dayOffDoc] = await Promise.all([
     db.collection('users').doc(signal.userId).get(),
-    db.collection('locations').doc(signal.locationId).get(),
     db.collection('companyDayOffs').doc(signalTime.dateKey).get(),
   ]);
-  if (!userDoc.exists || !locationDoc.exists) return resolveSignal(db, signalDoc, 'rejected_account_or_location');
+  if (!userDoc.exists) return resolveSignal(db, signalDoc, 'rejected_account_or_location');
   const user = userDoc.data();
-  const location = locationDoc.data();
-  if (!user.isActive || user.employeeId !== signal.employeeId || user.locationId !== signal.locationId || user.registeredAttendanceDeviceId !== signal.deviceId || !location.isActive) {
+  let location;
+  let assignmentEvidence = null;
+  if (multiLocationEnabled) {
+    try {
+      assignmentEvidence = await validateAssignedLocation({
+        db,
+        actorUid: signal.userId,
+        rawAction: signal,
+        eventTime: capturedAt,
+      });
+      location = {
+        name: assignmentEvidence.locationName,
+        latitude: assignmentEvidence.locationLatitude,
+        longitude: assignmentEvidence.locationLongitude,
+        geofenceRadiusMeters: assignmentEvidence.configuredRadiusMeters,
+        isActive: true,
+      };
+    } catch (error) {
+      return resolveSignal(db, signalDoc, `rejected_${String(error.code || 'assignment')}`);
+    }
+  } else {
+    const locationDoc = await db.collection('locations').doc(signal.locationId).get();
+    if (!locationDoc.exists) return resolveSignal(db, signalDoc, 'rejected_account_or_location');
+    location = locationDoc.data();
+  }
+  if (!user.isActive || user.employeeId !== signal.employeeId ||
+      (!multiLocationEnabled && user.locationId !== signal.locationId) ||
+      user.registeredAttendanceDeviceId !== signal.deviceId || !location.isActive) {
     return resolveSignal(db, signalDoc, 'rejected_assignment');
   }
   if (!isWorkDay(user, signalTime.weekday)) return resolveSignal(db, signalDoc, 'ignored_non_work_day');
@@ -170,7 +233,11 @@ async function processSignal(db, signalDoc, company, now, checkoutPolicy) {
   const accuracy = Number(signal.accuracyMeters);
   const distance = haversineMeters(Number(signal.latitude), Number(signal.longitude), Number(location.latitude), Number(location.longitude));
   const radius = Number(location.geofenceRadiusMeters || 50);
-  if (!Number.isFinite(accuracy) || accuracy <= 0 || accuracy > MAX_LOCATION_ACCURACY_METERS || !Number.isFinite(distance) || distance > radius) {
+  // An Android/iOS EXIT signal is produced by the OS at the region boundary;
+  // it is expected to be outside the radius.  ENTER must still prove that it
+  // is inside the assigned location.
+  if (!Number.isFinite(accuracy) || accuracy <= 0 || accuracy > MAX_LOCATION_ACCURACY_METERS ||
+      !Number.isFinite(distance) || (signal.event === 'enter' && distance > radius)) {
     return resolveSignal(db, signalDoc, 'rejected_location', { accuracyMeters: accuracy, distanceMeters: distance, allowedRadiusMeters: radius });
   }
   const policy = company.attendancePolicy || company || {};
@@ -180,13 +247,22 @@ async function processSignal(db, signalDoc, company, now, checkoutPolicy) {
   const attendanceRef = db.collection('attendance').doc(`${userDoc.id}_${signalTime.dateKey}`);
   const attendance = await attendanceRef.get();
   if (signal.event === 'enter') {
+    const graceRef = db.collection('autoAttendanceReturnGraces').doc(`${userDoc.id}_${signalTime.dateKey}`);
+    const grace = await graceRef.get();
+    if (grace.exists && grace.data()?.status === 'pending') {
+      await graceRef.update({
+        status: 'returned',
+        returnedAt: admin.firestore.Timestamp.fromDate(capturedAt),
+        resolvedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+    }
     const policyOpensAt = parseMinutes(policy.checkInOpenTime, 7 * 60);
     const employeeStartsAt = parseMinutes(user.workSchedule?.startTime, parseMinutes(policy.defaultStartTime, 9 * 60));
     const opensAt = Math.min(policyOpensAt, employeeStartsAt);
     if (signalTime.minutes < opensAt) return resolveSignal(db, signalDoc, 'ignored_before_check_in_open');
     if (attendance.exists && attendance.data()?.checkInTime) return resolveSignal(db, signalDoc, 'ignored_already_checked_in');
     const deduction = deductionFor(signalTime.minutes, times.start, policy, user.baseMonthlySalary, user.salaryCurrency);
-    await attendanceRef.set({
+    const automaticRecord = {
       userId: userDoc.id, employeeId: user.employeeId || '', employeeName: user.displayName || '',
       locationId: signal.locationId, locationName: location.name || signal.locationName || '',
       managerId: user.managerId || null, date: signalTime.dateKey,
@@ -197,6 +273,10 @@ async function processSignal(db, signalDoc, company, now, checkoutPolicy) {
       isWithinGeofence: true, biometricVerified: false,
       automaticAttendance: true, attendanceSource: signal.source,
       locationAccuracyMeters: accuracy, locationDistanceMeters: distance, locationAllowedRadiusMeters: radius,
+      ...(assignmentEvidence ? {
+        attendanceLocationAssignmentId: assignmentEvidence.assignmentId,
+        attendanceLocationAssignmentVersion: assignmentEvidence.assignmentVersion,
+      } : {}),
       locationMocked: false, locationCapturedOffline: false,
       securityReviewStatus: 'none', locationRiskLevel: 'low', locationRiskReasons: [],
       isLate: deduction.fraction > 0, lateMinutes: deduction.lateMinutes,
@@ -207,7 +287,17 @@ async function processSignal(db, signalDoc, company, now, checkoutPolicy) {
       status: deduction.status,
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-    }, { merge: true });
+    };
+    try {
+      // Never merge an automatic event into a concurrent manual record. The
+      // deterministic document ID is the idempotency boundary for both.
+      await attendanceRef.create(automaticRecord);
+    } catch (error) {
+      const duplicate = String(error?.code || '').includes('already') ||
+        String(error?.message || error).toLowerCase().includes('already exists');
+      if (duplicate) return resolveSignal(db, signalDoc, 'ignored_already_checked_in');
+      throw error;
+    }
     await resolveSignal(db, signalDoc, 'processed_check_in', { attendanceId: attendanceRef.id });
     if (deduction.fraction > 0) {
       await writeHrNotification(db, 'خصم تأخير بانتظار مراجعة HR', `${user.displayName || user.employeeId}: ${deduction.label} (${deduction.amount.toFixed(2)} ${deduction.currency}).`, { attendanceId: attendanceRef.id });
@@ -225,24 +315,80 @@ async function processSignal(db, signalDoc, company, now, checkoutPolicy) {
   if (!attendance.exists || !attendance.data()?.checkInTime) return resolveSignal(db, signalDoc, 'ignored_without_check_in');
   if (attendance.data()?.checkOutTime) return resolveSignal(db, signalDoc, 'ignored_already_checked_out');
   if (fieldAssignment?.requiresCheckout === false) return resolveSignal(db, signalDoc, 'ignored_field_assignment_no_checkout');
-  const latestCheckout = parseMinutes(policy.latestCheckoutTime, 23 * 60);
-  if (signalTime.minutes < times.end) return resolveSignal(db, signalDoc, 'ignored_before_checkout_time');
-  if (signalTime.minutes > latestCheckout) return resolveSignal(db, signalDoc, 'ignored_after_checkout_deadline');
-  const checkIn = attendance.data().checkInTime.toDate();
-  await attendanceRef.update({
-    checkOutTime: admin.firestore.Timestamp.fromDate(capturedAt),
-    localCheckOutTime: admin.firestore.Timestamp.fromDate(capturedAt),
-    checkOutLocation: new admin.firestore.GeoPoint(Number(signal.latitude), Number(signal.longitude)),
-    totalWorkHours: Math.max(0, (capturedAt.getTime() - checkIn.getTime()) / 3600000),
-    checkOutAutomatic: true, checkOutAttendanceSource: signal.source,
-    checkOutDeviceId: signal.deviceId, checkOutDeviceLabel: signal.deviceLabel || '',
-    checkoutLocationAccuracyMeters: accuracy, checkoutLocationDistanceMeters: distance,
-    checkoutLocationAllowedRadiusMeters: radius, checkoutLocationMocked: false,
-    checkoutLocationCapturedOffline: false, checkoutSecurityReviewStatus: 'none',
-    checkoutLocationRiskLevel: 'low', checkoutLocationRiskReasons: [],
-    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  const exception = activeReturnException({
+    nowMinutes: signalTime.minutes,
+    permissions: todaysPermissions,
+    workTimes: times,
+    policy,
   });
-  await resolveSignal(db, signalDoc, 'processed_check_out', { attendanceId: attendanceRef.id });
+  const dueAt = returnGraceDeadline({
+    now: capturedAt,
+    nowMinutes: signalTime.minutes,
+    exception,
+    policy,
+  });
+  const graceRef = db.collection('autoAttendanceReturnGraces').doc(`${userDoc.id}_${signalTime.dateKey}`);
+  await graceRef.set({
+    userId: userDoc.id,
+    employeeId: user.employeeId || '',
+    attendanceId: attendanceRef.id,
+    date: signalTime.dateKey,
+    status: 'pending',
+    dueAt: admin.firestore.Timestamp.fromDate(dueAt),
+    exitAt: admin.firestore.Timestamp.fromDate(capturedAt),
+    locationId: signal.locationId,
+    locationName: location.name || signal.locationName || '',
+    source: signal.source,
+    exceptionReason: exception?.reason || null,
+    returnGraceMinutes: Math.round((dueAt.getTime() - capturedAt.getTime()) / 60000),
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+  }, { merge: true });
+  await resolveSignal(db, signalDoc, exception ? 'pending_return_after_exception' : 'pending_return_grace', {
+    attendanceId: attendanceRef.id,
+    returnGraceDueAt: admin.firestore.Timestamp.fromDate(dueAt),
+  });
+}
+
+async function processExpiredReturnGraces(db, checkoutPolicy, now = new Date()) {
+  if (checkoutPolicy?.enabled !== true) return { found: 0, processed: 0 };
+  const pending = await db.collection('autoAttendanceReturnGraces')
+    .where('status', '==', 'pending')
+    .limit(100)
+    .get();
+  let processed = 0;
+  for (const graceDoc of pending.docs) {
+    const grace = graceDoc.data();
+    const dueAt = grace.dueAt?.toDate?.();
+    if (!(dueAt instanceof Date) || dueAt > now) continue;
+    if (!grace.attendanceId) {
+      await graceDoc.ref.update({
+        status: 'invalid_without_attendance',
+        resolvedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+      continue;
+    }
+    const attendanceRef = db.collection('attendance').doc(String(grace.attendanceId || ''));
+    const attendance = await attendanceRef.get();
+    if (!attendance.exists || attendance.data()?.checkOutTime) {
+      await graceDoc.ref.update({ status: 'resolved_without_checkout', resolvedAt: admin.firestore.FieldValue.serverTimestamp() });
+      continue;
+    }
+    const checkIn = attendance.data().checkInTime?.toDate?.();
+    await attendanceRef.update({
+      checkOutTime: admin.firestore.Timestamp.fromDate(dueAt),
+      localCheckOutTime: admin.firestore.Timestamp.fromDate(dueAt),
+      totalWorkHours: checkIn instanceof Date ? Math.max(0, (dueAt.getTime() - checkIn.getTime()) / 3600000) : 0,
+      checkOutAutomatic: true,
+      checkOutAttendanceSource: 'return_grace_expired',
+      checkOutReason: grace.exceptionReason ? 'return_grace_expired_after_exception' : 'return_grace_expired',
+      returnGraceEvidenceId: graceDoc.id,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+    await graceDoc.ref.update({ status: 'checked_out', processedAt: admin.firestore.FieldValue.serverTimestamp() });
+    processed++;
+  }
+  return { found: pending.size, processed };
 }
 
 async function processAutomaticAttendance() {
@@ -253,9 +399,6 @@ async function processAutomaticAttendance() {
     .where('status', '==', 'pending')
     .limit(100)
     .get();
-  if (signals.empty) {
-    return { found: 0, processed: 0, failed: 0, date: now.dateKey };
-  }
   const securityDoc = await db.collection('publicConfig').doc('appSecurity').get();
   if (securityDoc.data()?.automaticAttendanceEnabled !== true) {
     for (const signal of signals.docs) {
@@ -269,22 +412,44 @@ async function processAutomaticAttendance() {
       automaticAttendanceEnabled: false,
     };
   }
+  // An automatic checkout may be due even when the phone has not sent a new
+  // geofence event. Process the durable grace queue on every scheduler tick.
+  const checkoutPolicy = await loadCheckoutPolicy(db);
+  if (signals.empty) {
+    const graceResult = await processExpiredReturnGraces(db, checkoutPolicy, new Date());
+    return {
+      found: 0,
+      processed: 0,
+      failed: 0,
+      date: now.dateKey,
+      checkoutEnabled: checkoutPolicy.enabled,
+      checkoutPolicyRevision: checkoutPolicy.revision,
+      returnGrace: graceResult,
+    };
+  }
   // Company policy is needed only when an actual geofence signal exists.
   // Avoid one unnecessary policy read on every five-minute scheduler tick.
-  const [companyDoc, checkoutPolicy] = await Promise.all([
-    db.collection('companies').doc('zawolf').get(),
-    loadCheckoutPolicy(db),
-  ]);
+  const companyDoc = await db.collection('companies').doc('zawolf').get();
+  const multiLocationFlag = securityDoc.data()?.attendance_multi_location_v1;
   let processed = 0;
   let failed = 0;
   for (const signal of signals.docs) {
     try {
+      const signalUid = String(signal.data()?.userId || '');
+      const multiLocationEnabled = multiLocationFlag === true ||
+        securityDoc.data()?.attendanceMultiLocationEnabled === true ||
+        (multiLocationFlag?.enabled === true && (
+          multiLocationFlag.everyone === true ||
+          (Array.isArray(multiLocationFlag.actorIds) &&
+            multiLocationFlag.actorIds.map(String).includes(signalUid))
+        ));
       await processSignal(
         db,
         signal,
         companyDoc.data() || {},
         now,
         checkoutPolicy,
+        multiLocationEnabled,
       );
       processed++;
     } catch (error) {
@@ -293,6 +458,7 @@ async function processAutomaticAttendance() {
       await resolveSignal(db, signal, 'failed', { error: String(error.message || error).slice(0, 500) });
     }
   }
+  const graceResult = await processExpiredReturnGraces(db, checkoutPolicy, new Date());
   return {
     found: signals.size,
     processed,
@@ -300,6 +466,7 @@ async function processAutomaticAttendance() {
     date: now.dateKey,
     checkoutEnabled: checkoutPolicy.enabled,
     checkoutPolicyRevision: checkoutPolicy.revision,
+    returnGrace: graceResult,
   };
 }
 
@@ -316,8 +483,11 @@ if (require.main === module) {
 module.exports = {
   deductionFor,
   effectiveTimes,
+  activeReturnException,
+  returnGraceDeadline,
   haversineMeters,
   isWorkDay,
   processAutomaticAttendance,
   processSignal,
+  processExpiredReturnGraces,
 };

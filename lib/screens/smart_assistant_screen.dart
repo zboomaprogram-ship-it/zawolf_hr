@@ -109,7 +109,7 @@ class _SmartAssistantScreenState extends State<SmartAssistantScreen> {
 
   Widget _buildMessageBubble(ChatMessage msg, ThemeData theme) {
     return Align(
-      alignment: msg.isUser ? Alignment.centerRight : Alignment.centerLeft,
+      alignment: msg.isUser ? AlignmentDirectional.centerStart : AlignmentDirectional.centerEnd,
       child: Container(
         margin: const EdgeInsets.only(bottom: 12),
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -164,7 +164,10 @@ class _SmartAssistantScreenState extends State<SmartAssistantScreen> {
               shape: BoxShape.circle,
             ),
             child: IconButton(
-              icon: const Icon(Icons.send, color: Colors.black),
+              icon: const Directionality(
+                textDirection: TextDirection.ltr,
+                child: Icon(Icons.send, color: Colors.black),
+              ),
               onPressed: _loading ? null : _sendMessage,
             ),
           ),

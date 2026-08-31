@@ -17,6 +17,8 @@ import '../../services/productivity_service.dart';
 import '../../theme/theme.dart';
 import '../../utils/payroll_cycle.dart';
 import '../shared/productivity_score_details_sheet.dart';
+import '../../design_system/components/rtl_navigation.dart';
+import '../../design_system/components/skeletons.dart' show SkeletonList;
 
 class DepartmentPerformanceData {
   final String departmentName;
@@ -31,7 +33,16 @@ class DepartmentPerformanceData {
 }
 
 class DepartmentPerformanceScreen extends StatefulWidget {
-  const DepartmentPerformanceScreen({super.key});
+  const DepartmentPerformanceScreen({
+    super.key,
+    this.organizationTreesBuilder,
+    this.initialTab = 0,
+    this.initialOrganizationTreesView = false,
+  });
+
+  final WidgetBuilder? organizationTreesBuilder;
+  final int initialTab;
+  final bool initialOrganizationTreesView;
 
   @override
   State<DepartmentPerformanceScreen> createState() =>
@@ -39,14 +50,41 @@ class DepartmentPerformanceScreen extends StatefulWidget {
 }
 
 class _DepartmentPerformanceScreenState
-    extends State<DepartmentPerformanceScreen> {
+    extends State<DepartmentPerformanceScreen>
+    with SingleTickerProviderStateMixin {
   final ProductivityService _service = ProductivityService();
   late final String _monthKey = PayrollCycle.keyFor(DateTime.now());
+  late final TabController _tabController;
   bool _refreshing = false;
-  bool _autoRefreshAttempted = false;
+  bool _organizationRefreshing = false;
   Future<List<UserModel>>? _organizationFuture;
   String? _organizationReviewerId;
   int _organizationStructureVersion = 0;
+  late bool _showOrganizationTrees;
+
+  @override
+  void initState() {
+    super.initState();
+    const tabCount = 2;
+    _showOrganizationTrees = widget.initialOrganizationTreesView;
+    _tabController = TabController(
+      length: tabCount,
+      initialIndex: widget.initialTab.clamp(0, tabCount - 1),
+      vsync: this,
+    )..addListener(_handleTabChanged);
+  }
+
+  void _handleTabChanged() {
+    if (!_tabController.indexIsChanging && mounted) setState(() {});
+  }
+
+  @override
+  void dispose() {
+    _tabController
+      ..removeListener(_handleTabChanged)
+      ..dispose();
+    super.dispose();
+  }
 
   Future<void> _refresh(
     UserModel reviewer, {
@@ -62,7 +100,7 @@ class _DepartmentPerformanceScreenState
         ).showSnackBar(SnackBar(content: Text('تم تحديث بيانات $count موظف.')));
       }
     } catch (_) {
-      if (mounted) {
+      if (mounted && showConfirmation) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text(
@@ -76,24 +114,34 @@ class _DepartmentPerformanceScreenState
     }
   }
 
-  void _refreshStaleCacheOnce(
-    UserModel reviewer,
-    List<ProductivityScoreModel> scores,
-  ) {
-    if (_autoRefreshAttempted || _refreshing) return;
-    final now = DateTime.now();
-    final stale =
-        scores.isEmpty ||
-        scores.any((score) {
-          final calculatedAt = score.calculatedAt;
-          return calculatedAt == null ||
-              now.difference(calculatedAt).inMinutes >= 30;
-        });
-    if (!stale) return;
-    _autoRefreshAttempted = true;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _refresh(reviewer, showConfirmation: false);
-    });
+  Future<void> _refreshOrganization(
+    UserModel reviewer, {
+    bool showConfirmation = false,
+  }) async {
+    if (_organizationRefreshing) return;
+    setState(() => _organizationRefreshing = true);
+    try {
+      final future = _loadOrganization(reviewer);
+      setState(() => _organizationFuture = future);
+      await future;
+      if (!mounted) return;
+      setState(() => _organizationStructureVersion++);
+      if (showConfirmation) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('تم تحديث الهيكل الوظيفي.')),
+        );
+      }
+    } catch (_) {
+      if (mounted && showConfirmation) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('تعذر تحديث الهيكل الوظيفي الآن. أعد المحاولة.'),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _organizationRefreshing = false);
+    }
   }
 
   List<DepartmentPerformanceData> _aggregateDepartments(
@@ -136,8 +184,9 @@ class _DepartmentPerformanceScreenState
     final theme = Theme.of(context);
     if (reviewer == null) {
       return const Scaffold(
-        body: Center(
-          child: CircularProgressIndicator(color: ZaWolfColors.primaryCyan),
+        body: Padding(
+          padding: EdgeInsets.all(16),
+          child: SkeletonList(itemCount: 5, itemHeight: 96),
         ),
       );
     }
@@ -147,19 +196,28 @@ class _DepartmentPerformanceScreenState
       _organizationFuture = _loadOrganization(reviewer);
     }
 
-    return DefaultTabController(
-      length: 2,
-      child: Scaffold(
-        appBar: AppBar(
-          title: Text(
-            'الأقسام والهيكل الوظيفي',
-            style: theme.textTheme.headlineMedium,
-          ),
-          actions: [
+    final organizationTabSelected = _tabController.index == 1;
+    final activeRefresh = organizationTabSelected
+        ? _organizationRefreshing
+        : _refreshing;
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(
+          'الأقسام والهيكل الوظيفي',
+          style: theme.textTheme.headlineMedium,
+        ),
+        actions: [
+          if (!(organizationTabSelected && _showOrganizationTrees))
             IconButton(
-              tooltip: 'تحديث الحساب',
-              onPressed: _refreshing ? null : () => _refresh(reviewer),
-              icon: _refreshing
+              tooltip: organizationTabSelected
+                  ? 'تحديث الهيكل الوظيفي'
+                  : 'تحديث أداء الأقسام',
+              onPressed: activeRefresh
+                  ? null
+                  : () => organizationTabSelected
+                        ? _refreshOrganization(reviewer, showConfirmation: true)
+                        : _refresh(reviewer),
+              icon: activeRefresh
                   ? const SizedBox(
                       width: 20,
                       height: 20,
@@ -167,23 +225,24 @@ class _DepartmentPerformanceScreenState
                     )
                   : const Icon(Icons.refresh, color: ZaWolfColors.primaryCyan),
             ),
-          ],
-          bottom: const TabBar(
-            tabs: [
-              Tab(icon: Icon(Icons.analytics_outlined), text: 'أداء الأقسام'),
-              Tab(
-                icon: Icon(Icons.account_tree_outlined),
-                text: 'الهيكل الوظيفي',
-              ),
-            ],
-          ),
-        ),
-        body: TabBarView(
-          children: [
-            _buildPerformanceTab(reviewer, theme),
-            _buildOrganizationTab(reviewer),
+        ],
+        bottom: TabBar(
+          controller: _tabController,
+          tabs: [
+            Tab(icon: Icon(Icons.analytics_outlined), text: 'أداء الأقسام'),
+            Tab(
+              icon: Icon(Icons.account_tree_outlined),
+              text: 'الهيكل الوظيفي',
+            ),
           ],
         ),
+      ),
+      body: TabBarView(
+        controller: _tabController,
+        children: [
+          _buildPerformanceTab(reviewer, theme),
+          _buildOrganizationTab(reviewer),
+        ],
       ),
     );
   }
@@ -208,7 +267,6 @@ class _DepartmentPerformanceScreenState
           );
         }
         final scores = snapshot.data ?? [];
-        _refreshStaleCacheOnce(reviewer, scores);
         final departments = _aggregateDepartments(scores, reviewer);
 
         if (departments.isEmpty) {
@@ -226,10 +284,16 @@ class _DepartmentPerformanceScreenState
                   const SizedBox(height: 14),
                   Text(
                     _refreshing
-                        ? 'جارٍ تجهيز بيانات الأقسام لشهر $_monthKey لأول مرة…'
+                        ? 'جارٍ تحديث بيانات الأقسام لشهر $_monthKey…'
                         : 'لا توجد بيانات للأقسام في شهر $_monthKey',
                     style: theme.textTheme.titleMedium,
                     textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 14),
+                  FilledButton.icon(
+                    onPressed: _refreshing ? null : () => _refresh(reviewer),
+                    icon: const Icon(Icons.refresh),
+                    label: const Text('تحديث أداء الأقسام'),
                   ),
                 ],
               ),
@@ -315,6 +379,26 @@ class _DepartmentPerformanceScreenState
                               'عدد الموظفين: ${dept.employeeCount}',
                               style: theme.textTheme.bodySmall,
                             ),
+                            if (scores
+                                .where(
+                                  (score) =>
+                                      (score.department.trim().isEmpty
+                                          ? 'غير محدد'
+                                          : score.department) ==
+                                      dept.departmentName,
+                                )
+                                .any(
+                                  (score) =>
+                                      score.inputState !=
+                                      ProductivityInputState.complete,
+                                ))
+                              const Text(
+                                'يتضمن بيانات جزئية',
+                                style: TextStyle(
+                                  color: ZaWolfColors.warning,
+                                  fontSize: 12,
+                                ),
+                              ),
                             const SizedBox(height: 8),
                             LinearProgressIndicator(
                               value: (dept.averageScore / 100).clamp(0, 1),
@@ -336,8 +420,8 @@ class _DepartmentPerformanceScreenState
                         ),
                       ),
                       const SizedBox(width: 4),
-                      const Icon(
-                        Icons.chevron_left,
+                      Icon(
+                        RtlNavigation.chevronEnd(context),
                         color: ZaWolfColors.textMuted,
                         size: 20,
                       ),
@@ -372,6 +456,12 @@ class _DepartmentPerformanceScreenState
   }
 
   Widget _buildOrganizationTab(UserModel reviewer) {
+    return Column(
+      children: [Expanded(child: _buildLegacyOrganizationTree(reviewer))],
+    );
+  }
+
+  Widget _buildLegacyOrganizationTree(UserModel reviewer) {
     return FutureBuilder<List<UserModel>>(
       future: _organizationFuture,
       builder: (context, snapshot) {
@@ -400,11 +490,7 @@ class _DepartmentPerformanceScreenState
         }
         return RefreshIndicator(
           color: ZaWolfColors.primaryCyan,
-          onRefresh: () async {
-            final future = _loadOrganization(reviewer);
-            setState(() => _organizationFuture = future);
-            await future;
-          },
+          onRefresh: () => _refreshOrganization(reviewer),
           child: _OrganizationChart(
             key: ValueKey(_organizationStructureVersion),
             users: users,
@@ -492,11 +578,63 @@ class _OrganizationChartBody extends StatefulWidget {
   State<_OrganizationChartBody> createState() => _OrganizationChartBodyState();
 }
 
+class _CustomCeoTreeInfo {
+  final String id;
+  final String name;
+  final String ceoUid;
+  _CustomCeoTreeInfo({
+    required this.id,
+    required this.name,
+    required this.ceoUid,
+  });
+
+  Map<String, dynamic> toFirestore() => {
+    'name': name,
+    'ceoUid': ceoUid,
+    'createdAt': FieldValue.serverTimestamp(),
+  };
+
+  factory _CustomCeoTreeInfo.fromFirestore(DocumentSnapshot doc) {
+    final data = doc.data() as Map<String, dynamic>;
+    return _CustomCeoTreeInfo(
+      id: doc.id,
+      name: data['name'] as String? ?? '',
+      ceoUid: data['ceoUid'] as String? ?? '',
+    );
+  }
+}
+
 class _OrganizationChartBodyState extends State<_OrganizationChartBody> {
   final TextEditingController _searchController = TextEditingController();
   String _query = '';
   String? _selectedDepartment;
   bool _showEmployees = true;
+
+  List<_CustomCeoTreeInfo> _customTrees = [];
+  String? _selectedTreeId;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadCustomTrees();
+  }
+
+  Future<void> _loadCustomTrees() async {
+    try {
+      final snapshot = await FirebaseFirestore.instance
+          .collection('custom_org_trees')
+          .orderBy('createdAt')
+          .get();
+      if (!mounted) return;
+      setState(() {
+        _customTrees = snapshot.docs
+            .map(_CustomCeoTreeInfo.fromFirestore)
+            .toList();
+      });
+    } catch (_) {
+      // Silently fail – trees will just not be loaded
+    }
+  }
 
   @override
   void dispose() {
@@ -504,14 +642,73 @@ class _OrganizationChartBodyState extends State<_OrganizationChartBody> {
     super.dispose();
   }
 
+  /// Walk the manager chain to find all employees under a given CEO uid.
+  /// Returns the set of user uids that belong under this CEO.
+  Set<String> _findSubordinates(String ceoUid, List<UserModel> allUsers) {
+    // Build a map: managerId -> list of direct reports
+    final directReports = <String, List<String>>{};
+    for (final user in allUsers) {
+      final allManagerIds = <String>{
+        ...user.managerIds,
+        if ((user.managerId ?? '').isNotEmpty) user.managerId!,
+        if ((user.teamLeaderId ?? '').isNotEmpty) user.teamLeaderId!,
+      };
+      for (final mid in allManagerIds) {
+        directReports.putIfAbsent(mid, () => []).add(user.uid);
+      }
+    }
+    // BFS from ceoUid
+    final result = <String>{ceoUid};
+    final queue = <String>[ceoUid];
+    while (queue.isNotEmpty) {
+      final current = queue.removeAt(0);
+      for (final reportUid in directReports[current] ?? <String>[]) {
+        if (result.add(reportUid)) {
+          queue.add(reportUid);
+        }
+      }
+    }
+    return result;
+  }
+
   @override
   Widget build(BuildContext context) {
     final allUsers = [...widget.users]..sort(_compareUsers);
-    final executives = allUsers
-        .where((user) => user.employeeId.trim().toUpperCase() == 'CEO-100')
-        .toList();
+    final userById = <String, UserModel>{for (final u in allUsers) u.uid: u};
+
+    // Determine active custom tree and filter users to the CEO's subordinates
+    _CustomCeoTreeInfo? activeCustomTree;
+    if (_selectedTreeId != null && _customTrees.isNotEmpty) {
+      activeCustomTree = _customTrees.cast<_CustomCeoTreeInfo?>().firstWhere(
+        (t) => t!.id == _selectedTreeId,
+        orElse: () => null,
+      );
+    }
+
+    List<UserModel> treeUsers;
+    List<UserModel> executives;
+
+    if (activeCustomTree != null) {
+      final ceoUser = userById[activeCustomTree.ceoUid];
+      if (ceoUser != null) {
+        final subordinateUids = _findSubordinates(ceoUser.uid, allUsers);
+        treeUsers = allUsers
+            .where((u) => subordinateUids.contains(u.uid))
+            .toList();
+        executives = [ceoUser];
+      } else {
+        treeUsers = allUsers;
+        executives = [];
+      }
+    } else {
+      treeUsers = allUsers;
+      executives = allUsers
+          .where((user) => user.employeeId.trim().toUpperCase() == 'CEO-100')
+          .toList();
+    }
+
     final departmentNames =
-        allUsers
+        treeUsers
             .where((user) => user.role != EmployeeRole.superAdmin)
             .map(_departmentOf)
             .toSet()
@@ -523,14 +720,14 @@ class _OrganizationChartBodyState extends State<_OrganizationChartBody> {
         return false;
       }
       if (_query.isEmpty) return true;
-      return allUsers
+      return treeUsers
           .where((user) => _departmentOf(user) == department)
           .any(_matchesQuery);
     }).toList();
 
     final groups = {
       for (final department in visibleDepartments)
-        department: allUsers
+        department: treeUsers
             .where(
               (user) =>
                   user.role != EmployeeRole.superAdmin &&
@@ -554,7 +751,7 @@ class _OrganizationChartBodyState extends State<_OrganizationChartBody> {
         }).toList(),
     };
 
-    final managerCount = allUsers
+    final managerCount = treeUsers
         .where(
           (user) =>
               user.organizationLevel == OrganizationLevel.divisionManager ||
@@ -562,7 +759,7 @@ class _OrganizationChartBodyState extends State<_OrganizationChartBody> {
               _isManagerRole(user),
         )
         .length;
-    final teamLeaderCount = allUsers
+    final teamLeaderCount = treeUsers
         .where(
           (user) =>
               user.organizationLevel == OrganizationLevel.teamLeader ||
@@ -580,8 +777,9 @@ class _OrganizationChartBodyState extends State<_OrganizationChartBody> {
             vertical: 16,
           ),
           children: [
+            _buildTreeSwitcherHeader(allUsers),
             _OrganizationHeader(
-              employeeCount: allUsers.length,
+              employeeCount: treeUsers.length,
               departmentCount: departmentNames.length,
               managerCount: managerCount,
               teamLeaderCount: teamLeaderCount,
@@ -607,7 +805,7 @@ class _OrganizationChartBodyState extends State<_OrganizationChartBody> {
               _OrganizationConfigurationPanel(
                 divisions: divisions,
                 departments: widget.departments,
-                users: allUsers,
+                users: treeUsers,
                 service: widget.service,
                 onChanged: widget.onStructureChanged,
               ),
@@ -623,7 +821,7 @@ class _OrganizationChartBodyState extends State<_OrganizationChartBody> {
                 divisions: divisions,
                 departmentsByDivision: departmentsByDivision,
                 groups: groups,
-                allUsers: allUsers,
+                allUsers: treeUsers,
                 showEmployees: _showEmployees,
               )
             else
@@ -632,7 +830,7 @@ class _OrganizationChartBodyState extends State<_OrganizationChartBody> {
                 divisions: divisions,
                 departmentsByDivision: departmentsByDivision,
                 groups: groups,
-                allUsers: allUsers,
+                allUsers: treeUsers,
                 showEmployees: _showEmployees,
               ),
           ],
@@ -651,6 +849,245 @@ class _OrganizationChartBodyState extends State<_OrganizationChartBody> {
       ...user.managerNames,
     ].join(' ').toLowerCase();
     return searchable.contains(_query);
+  }
+
+  String _ceoDisplayName(String ceoUid) {
+    final user = widget.users.cast<UserModel?>().firstWhere(
+      (u) => u!.uid == ceoUid,
+      orElse: () => null,
+    );
+    return user?.displayName ?? ceoUid;
+  }
+
+  Widget _buildTreeSwitcherHeader(List<UserModel> allUsers) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 14),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFF0F2B33),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: const Color(0xFF00E5FF).withValues(alpha: 0.3),
+        ),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.account_tree_outlined, color: Color(0xFF00E5FF)),
+          const SizedBox(width: 10),
+          const Text(
+            'اختر الهيكل الوظيفي:',
+            style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(width: 12),
+          DropdownButton<String?>(
+            value: _selectedTreeId,
+            dropdownColor: const Color(0xFF0F2B33),
+            style: const TextStyle(
+              color: Color(0xFF00E5FF),
+              fontWeight: FontWeight.bold,
+            ),
+            underline: const SizedBox(),
+            items: [
+              const DropdownMenuItem<String?>(
+                value: null,
+                child: Text('الهيكل الأساسي (ZAWOLF)'),
+              ),
+              for (final tree in _customTrees)
+                DropdownMenuItem<String?>(
+                  value: tree.id,
+                  child: Text(
+                    '${tree.name} · (${_ceoDisplayName(tree.ceoUid)})',
+                  ),
+                ),
+            ],
+            onChanged: (id) {
+              setState(() => _selectedTreeId = id);
+            },
+          ),
+          const Spacer(),
+          if (_selectedTreeId != null)
+            IconButton.outlined(
+              tooltip: 'حذف هذا الهيكل نهائياً',
+              style: IconButton.styleFrom(
+                foregroundColor: Colors.redAccent,
+                side: const BorderSide(color: Colors.redAccent),
+              ),
+              icon: const Icon(Icons.delete_forever_outlined),
+              onPressed: _deleteCurrentCustomTree,
+            ),
+          const SizedBox(width: 8),
+          FilledButton.icon(
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFF00E5FF),
+              foregroundColor: const Color(0xFF08181E),
+            ),
+            icon: const Icon(Icons.person_add_alt_1_outlined),
+            label: const Text('هيكل جديد بـ CEO'),
+            onPressed: () => _createCeoTreeDialog(allUsers),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _createCeoTreeDialog(List<UserModel> allUsers) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final nameController = TextEditingController(text: 'هيكل جديد');
+    UserModel? selectedCeo;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => Directionality(
+          textDirection: TextDirection.rtl,
+          child: AlertDialog(
+            title: const Text('إنشاء هيكل جديد بـ CEO'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: nameController,
+                  decoration: const InputDecoration(
+                    labelText: 'اسم الهيكل التنظيمي الجديد',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                DropdownButtonFormField<UserModel>(
+                  decoration: const InputDecoration(
+                    labelText: 'اختر المدير التنفيذي (CEO) لهذا الهيكل',
+                    border: OutlineInputBorder(),
+                  ),
+                  items: [
+                    for (final user in allUsers)
+                      DropdownMenuItem<UserModel>(
+                        value: user,
+                        child: Text(
+                          '${user.displayName} (${user.position.isNotEmpty ? user.position : 'موظف'})',
+                        ),
+                      ),
+                  ],
+                  onChanged: (val) {
+                    if (val != null) {
+                      setDialogState(() => selectedCeo = val);
+                    }
+                  },
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext, false),
+                child: const Text('إلغاء'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(dialogContext, true),
+                child: const Text('تأكيد وحفظ الهيكل'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    if (confirmed == true && selectedCeo != null) {
+      final treeName = nameController.text.trim().isEmpty
+          ? 'هيكل ${selectedCeo!.displayName}'
+          : nameController.text.trim();
+      final newTree = _CustomCeoTreeInfo(
+        id: '', // Will be set by Firestore doc id
+        name: treeName,
+        ceoUid: selectedCeo!.uid,
+      );
+
+      try {
+        // Persist to Firestore
+        final docRef = await FirebaseFirestore.instance
+            .collection('custom_org_trees')
+            .add(newTree.toFirestore());
+
+        final savedTree = _CustomCeoTreeInfo(
+          id: docRef.id,
+          name: treeName,
+          ceoUid: selectedCeo!.uid,
+        );
+
+        setState(() {
+          _customTrees.add(savedTree);
+          _selectedTreeId = docRef.id;
+        });
+
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text(
+              'تم إنشاء "$treeName" بنجاح! الشجرة تعرض جميع الموظفين تحت ${selectedCeo!.displayName} بناءً على مسار الاعتماد.',
+            ),
+          ),
+        );
+      } catch (e) {
+        messenger.showSnackBar(
+          const SnackBar(
+            content: Text('تعذر حفظ الهيكل. تحقق من الاتصال والصلاحيات.'),
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _deleteCurrentCustomTree() async {
+    if (_selectedTreeId == null) return;
+    final messenger = ScaffoldMessenger.of(context);
+    final tree = _customTrees.cast<_CustomCeoTreeInfo?>().firstWhere(
+      (t) => t!.id == _selectedTreeId,
+      orElse: () => null,
+    );
+    if (tree == null) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          title: Text('حذف ${tree.name} نهائياً'),
+          content: Text(
+            'هل أنت متأكد من حذف هيكل "${tree.name}" نهائياً من النظام؟\nلن يتم أرشفته بل سيحذف بالكامل وسيعود العرض إلى الهيكل الأساسي.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('إلغاء'),
+            ),
+            FilledButton(
+              style: FilledButton.styleFrom(backgroundColor: Colors.redAccent),
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('حذف نهائي'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (confirmed == true) {
+      try {
+        // Delete from Firestore permanently
+        await FirebaseFirestore.instance
+            .collection('custom_org_trees')
+            .doc(tree.id)
+            .delete();
+      } catch (_) {
+        // Continue with local removal even if Firestore fails
+      }
+
+      setState(() {
+        _customTrees.removeWhere((t) => t.id == tree.id);
+        _selectedTreeId = null;
+      });
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text('تم حذف ${tree.name} نهائياً والعودة للهيكل الأساسي.'),
+        ),
+      );
+    }
   }
 }
 
@@ -994,12 +1431,18 @@ class _DesktopOrganizationMapState extends State<_DesktopOrganizationMap> {
                 IconButton(
                   onPressed: () => _moveHorizontally(towardLeft: false),
                   tooltip: 'تحريك لليمين',
-                  icon: const Icon(Icons.arrow_forward_ios_rounded),
+                  icon: const Directionality(
+                    textDirection: TextDirection.ltr,
+                    child: Icon(Icons.arrow_forward_ios_rounded),
+                  ),
                 ),
                 IconButton(
                   onPressed: () => _moveHorizontally(towardLeft: true),
                   tooltip: 'تحريك لليسار',
-                  icon: const Icon(Icons.arrow_back_ios_new_rounded),
+                  icon: const Directionality(
+                    textDirection: TextDirection.ltr,
+                    child: Icon(Icons.arrow_back_ios_new_rounded),
+                  ),
                 ),
                 const SizedBox(width: 8),
                 const Expanded(

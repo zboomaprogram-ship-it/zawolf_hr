@@ -7,6 +7,7 @@ import '../../models/warning_reward_model.dart';
 import '../../services/auth_service.dart';
 import '../../services/warning_reward_service.dart';
 import '../../theme/theme.dart';
+import '../../design_system/components/skeletons.dart' show SkeletonList;
 
 class EmployeeWarningsRewardsScreen extends StatelessWidget {
   const EmployeeWarningsRewardsScreen({super.key});
@@ -17,8 +18,9 @@ class EmployeeWarningsRewardsScreen extends StatelessWidget {
     final theme = Theme.of(context);
     if (user == null) {
       return const Scaffold(
-        body: Center(
-          child: CircularProgressIndicator(color: ZaWolfColors.primaryCyan),
+        body: Padding(
+          padding: EdgeInsets.all(16),
+          child: SkeletonList(itemCount: 5, itemHeight: 84),
         ),
       );
     }

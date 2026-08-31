@@ -1,16 +1,30 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:http/http.dart' as http;
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 import '../services/auth_service.dart';
 import '../models/employee_role.dart';
 import '../theme/theme.dart';
 
-import 'package:badges/badges.dart' as badges;
+import '../design_system/tokens.dart';
 import '../services/notification_service.dart';
+import '../core/feature_flags/phase007_feature_flags.dart';
+import '../core/feature_flags/company_os_feature_flags.dart';
+import '../core/feature_flags/remote_company_os_feature_flags.dart';
+import '../core/feature_flags/remote_phase007_feature_flags.dart';
+import '../core/sync/authenticated_operation_client.dart';
+import '../features/employee_operations/data/notification_operations_repository_impl.dart';
+import '../features/employee_operations/presentation/cubit/notification_badge_cubit.dart';
 import '../services/pending_requests_service.dart';
 import '../services/required_attendance_alarm_service.dart';
 import '../models/user_model.dart';
+import 'guarded_back_navigation.dart';
+import 'nav_config.dart';
+import 'web_shell.dart';
 import 'dart:async';
 
 class NavigationWrapper extends StatefulWidget {
@@ -25,6 +39,11 @@ class NavigationWrapper extends StatefulWidget {
 class _NavigationWrapperState extends State<NavigationWrapper>
     with WidgetsBindingObserver {
   StreamSubscription<String>? _notifTapSub;
+  StreamSubscription? _notificationBadgeSub;
+  http.Client? _notificationHttpClient;
+  NotificationBadgeCubit? _notificationBadgeCubit;
+  String? _notificationBadgeActorId;
+  int? _notificationUnreadCount;
   String? _currentUserUid;
   String? _attendanceAlarmCheckedForUid;
   UserModel? _alarmUser;
@@ -49,8 +68,78 @@ class _NavigationWrapperState extends State<NavigationWrapper>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _notifTapSub?.cancel();
+    _notificationBadgeSub?.cancel();
+    unawaited(_notificationBadgeCubit?.close());
+    _notificationHttpClient?.close();
     PendingRequestsService.instance.stopListening();
     super.dispose();
+  }
+
+  void _ensureNotificationOperations(
+    BuildContext context,
+    Phase007FeatureFlags flags,
+    String actorId,
+  ) {
+    final enabled = flags.isEnabledFor(
+      feature: Phase007Feature.notificationOperations,
+      actorId: actorId,
+    );
+    if (!enabled) {
+      _disposeNotificationOperations();
+      return;
+    }
+    if (_notificationBadgeActorId == actorId &&
+        _notificationBadgeCubit != null) {
+      return;
+    }
+    _disposeNotificationOperations();
+    final client = http.Client();
+    final cubit = NotificationBadgeCubit(
+      actorId: actorId,
+      repository: NotificationOperationsRepositoryImpl(
+        firestore: FirebaseFirestore.instance,
+        operationClient: AuthenticatedOperationClient(
+          client: client,
+          tokenProvider: () async =>
+              FirebaseAuth.instance.currentUser?.getIdToken(),
+        ),
+        operationsBaseUri: Uri.parse('https://notification.zawolf.ai'),
+      ),
+    );
+    _notificationHttpClient = client;
+    _notificationBadgeCubit = cubit;
+    _notificationBadgeActorId = actorId;
+    _notificationUnreadCount = cubit.state.unreadCount;
+    NotificationService.instance.configureAuthorizedRouteResolver((id) async {
+      final destination = await cubit.resolve(id);
+      return destination?.toUri().toString();
+    });
+    _notificationBadgeSub = cubit.stream.listen((state) {
+      if (!mounted || _notificationBadgeActorId != actorId) return;
+      setState(() => _notificationUnreadCount = state.unreadCount);
+    });
+  }
+
+  void _disposeNotificationOperations() {
+    _notificationBadgeSub?.cancel();
+    _notificationBadgeSub = null;
+    unawaited(_notificationBadgeCubit?.close());
+    _notificationBadgeCubit = null;
+    NotificationService.instance.configureAuthorizedRouteResolver(null);
+    _notificationHttpClient?.close();
+    _notificationHttpClient = null;
+    _notificationBadgeActorId = null;
+    _notificationUnreadCount = null;
+  }
+
+  Widget _withNotificationOperations(Widget child) {
+    final cubit = _notificationBadgeCubit;
+    return cubit == null
+        ? child
+        : BlocProvider<NotificationBadgeCubit>.value(
+            value: cubit,
+            child: child,
+          );
   }
 
   @override
@@ -138,6 +227,7 @@ class _NavigationWrapperState extends State<NavigationWrapper>
         _currentUserUid = null;
         _attendanceAlarmCheckedForUid = null;
         PendingRequestsService.instance.stopListening();
+        _disposeNotificationOperations();
       }
       return const Scaffold(
         body: Center(
@@ -145,6 +235,12 @@ class _NavigationWrapperState extends State<NavigationWrapper>
         ),
       );
     }
+
+    final phase007Flags = context.watch<RemotePhase007FeatureFlags>();
+    _ensureNotificationOperations(context, phase007Flags, user.uid);
+    final effectiveUser = _notificationUnreadCount == null
+        ? user
+        : user.copyWith(unreadNotifications: _notificationUnreadCount);
 
     if (_currentUserUid != user.uid) {
       _currentUserUid = user.uid;
@@ -164,504 +260,67 @@ class _NavigationWrapperState extends State<NavigationWrapper>
     final String role = user.role;
     _recordWebRoute(routerState.uri.toString());
 
-    // Define tabs based on role
-    List<NavigationItem> items = [];
-    if (role == EmployeeRole.employee) {
-      items = [
-        NavigationItem(
-          icon: Icons.home_outlined,
-          activeIcon: Icons.home,
-          label: 'الرئيسية',
-          englishLabel: 'Home',
-          path: '/employee/dashboard',
-        ),
-        NavigationItem(
-          icon: Icons.assignment_outlined,
-          activeIcon: Icons.assignment,
-          label: 'طلباتي',
-          englishLabel: 'Requests',
-          path: '/employee/requests',
-        ),
-        NavigationItem(
-          icon: Icons.task_alt_outlined,
-          activeIcon: Icons.task_alt,
-          label: 'مهامي',
-          englishLabel: 'Tasks',
-          path: '/employee/tasks',
-        ),
-        NavigationItem(
-          icon: Icons.bar_chart_outlined,
-          activeIcon: Icons.bar_chart,
-          label: 'أدائي',
-          englishLabel: 'Performance',
-          path: '/employee/performance',
-        ),
-        NavigationItem(
-          icon: Icons.flag_outlined,
-          activeIcon: Icons.flag,
-          label: 'KPI',
-          englishLabel: 'Goals',
-          path: '/employee/kpi',
-        ),
-        NavigationItem(
-          icon: Icons.insights_outlined,
-          activeIcon: Icons.insights,
-          label: 'إنتاجيتي',
-          englishLabel: 'Productivity',
-          path: '/employee/productivity',
-        ),
-        NavigationItem(
-          icon: Icons.person_outline,
-          activeIcon: Icons.person,
-          label: 'حسابي',
-          englishLabel: 'Profile',
-          path: '/employee/profile',
-        ),
-        NavigationItem(
-          icon: Icons.workspace_premium_outlined,
-          activeIcon: Icons.workspace_premium,
-          label: 'السجل',
-          englishLabel: 'Records',
-          path: '/employee/warnings-rewards',
-        ),
-        NavigationItem(
-          icon: Icons.payments_outlined,
-          activeIcon: Icons.payments,
-          label: 'راتبي',
-          englishLabel: 'Payroll',
-          path: '/employee/payroll',
-        ),
-        NavigationItem(
-          icon: Icons.lightbulb_outline,
-          activeIcon: Icons.lightbulb,
-          label: 'مقترحاتي',
-          englishLabel: 'Suggestions',
-          path: '/employee/suggestions',
-        ),
-      ];
-    } else if (role == EmployeeRole.teamLeader) {
-      items = [
-        NavigationItem(
-          icon: Icons.fingerprint,
-          activeIcon: Icons.fingerprint,
-          label: 'حضوري',
-          englishLabel: 'Attendance',
-          path: '/employee/dashboard',
-        ),
-        NavigationItem(
-          icon: Icons.assignment_outlined,
-          activeIcon: Icons.assignment,
-          label: 'طلباتي',
-          englishLabel: 'Requests',
-          path: '/employee/requests',
-        ),
-        NavigationItem(
-          icon: Icons.groups_2_outlined,
-          activeIcon: Icons.groups_2,
-          label: 'فريقي',
-          englishLabel: 'My Team',
-          path: '/team-leader/dashboard',
-        ),
-        NavigationItem(
-          icon: Icons.people_outline,
-          activeIcon: Icons.people,
-          label: 'الأعضاء',
-          englishLabel: 'Members',
-          path: '/team-leader/employees',
-        ),
-        NavigationItem(
-          icon: Icons.rule_outlined,
-          activeIcon: Icons.rule,
-          label: 'موافقات الفريق',
-          englishLabel: 'Approvals',
-          path: '/team-leader/requests',
-        ),
-        NavigationItem(
-          icon: Icons.task_alt_outlined,
-          activeIcon: Icons.task_alt,
-          label: 'مهام الفريق',
-          englishLabel: 'Team Tasks',
-          path: '/team-leader/tasks',
-        ),
-        NavigationItem(
-          icon: Icons.campaign_outlined,
-          activeIcon: Icons.campaign,
-          label: 'إعلان للفريق',
-          englishLabel: 'Team Announcement',
-          path: '/hr/announcements',
-        ),
-        NavigationItem(
-          icon: Icons.check_circle_outline,
-          activeIcon: Icons.check_circle,
-          label: 'مهامي',
-          englishLabel: 'My Tasks',
-          path: '/employee/tasks',
-        ),
-        NavigationItem(
-          icon: Icons.person_outline,
-          activeIcon: Icons.person,
-          label: 'حسابي',
-          englishLabel: 'Profile',
-          path: '/employee/profile',
-        ),
-      ];
-    } else if (role == EmployeeRole.manager) {
-      items = [
-        NavigationItem(
-          icon: Icons.fingerprint,
-          activeIcon: Icons.fingerprint,
-          label: 'حضوري',
-          englishLabel: 'Attendance',
-          path: '/employee/dashboard',
-        ),
-        NavigationItem(
-          icon: Icons.assignment_outlined,
-          activeIcon: Icons.assignment,
-          label: 'طلباتي',
-          englishLabel: 'Requests',
-          path: '/employee/requests',
-        ),
-        NavigationItem(
-          icon: Icons.dashboard_customize_outlined,
-          activeIcon: Icons.dashboard_customize,
-          label: 'لوحتي',
-          englishLabel: 'Dashboard',
-          path: '/manager/dashboard',
-        ),
-        NavigationItem(
-          icon: Icons.rule_outlined,
-          activeIcon: Icons.rule,
-          label: 'الطلبات',
-          englishLabel: 'Approvals',
-          path: '/manager/requests',
-        ),
-        NavigationItem(
-          icon: Icons.task_alt_outlined,
-          activeIcon: Icons.task_alt,
-          label: 'المهام',
-          englishLabel: 'Tasks',
-          path: '/manager/tasks',
-        ),
-        NavigationItem(
-          icon: Icons.campaign_outlined,
-          activeIcon: Icons.campaign,
-          label: 'إعلان للفريق',
-          englishLabel: 'Team Announcement',
-          path: '/hr/announcements',
-        ),
-        NavigationItem(
-          icon: Icons.people_outline,
-          activeIcon: Icons.people,
-          label: 'فريقي',
-          englishLabel: 'Team Attendance',
-          path: '/manager/team',
-        ),
-        NavigationItem(
-          icon: Icons.grade_outlined,
-          activeIcon: Icons.grade,
-          label: 'الأداء',
-          englishLabel: 'Team Performance',
-          path: '/manager/performance',
-        ),
-        NavigationItem(
-          icon: Icons.flag_outlined,
-          activeIcon: Icons.flag,
-          label: 'KPI',
-          englishLabel: 'Goals',
-          path: '/manager/kpi',
-        ),
-        NavigationItem(
-          icon: Icons.leaderboard_outlined,
-          activeIcon: Icons.leaderboard,
-          label: 'الإنتاجية',
-          englishLabel: 'Ranking',
-          path: '/manager/productivity',
-        ),
-        NavigationItem(
-          icon: Icons.domain_outlined,
-          activeIcon: Icons.domain,
-          label: 'الأقسام',
-          englishLabel: 'Departments',
-          path: '/manager/departments',
-        ),
-        NavigationItem(
-          icon: Icons.lightbulb_outline,
-          activeIcon: Icons.lightbulb,
-          label: 'المقترحات',
-          englishLabel: 'Suggestions',
-          path: '/manager/suggestions',
-        ),
-        NavigationItem(
-          icon: Icons.workspace_premium_outlined,
-          activeIcon: Icons.workspace_premium,
-          label: 'السجلات',
-          englishLabel: 'Records',
-          path: '/manager/warnings-rewards',
-        ),
-        NavigationItem(
-          icon: Icons.support_agent_outlined,
-          activeIcon: Icons.support_agent,
-          label: 'المساعد',
-          englishLabel: 'Assistant',
-          path: '/assistant',
-        ),
-        NavigationItem(
-          icon: Icons.person_outline,
-          activeIcon: Icons.person,
-          label: 'حسابي',
-          englishLabel: 'Profile',
-          path: '/employee/profile',
-        ),
-      ];
-    } else if (role == EmployeeRole.hrAdmin) {
-      items = [
-        NavigationItem(
-          icon: Icons.fingerprint,
-          activeIcon: Icons.fingerprint,
-          label: 'حضوري',
-          englishLabel: 'Attendance',
-          path: '/employee/dashboard',
-        ),
-        NavigationItem(
-          icon: Icons.assignment_outlined,
-          activeIcon: Icons.assignment,
-          label: 'طلباتي',
-          englishLabel: 'Requests',
-          path: '/employee/requests',
-        ),
-        NavigationItem(
-          icon: Icons.admin_panel_settings_outlined,
-          activeIcon: Icons.admin_panel_settings,
-          label: 'لوحة التحكم',
-          englishLabel: 'Control Panel',
-          path: '/hr/dashboard',
-        ),
-        NavigationItem(
-          icon: Icons.badge_outlined,
-          activeIcon: Icons.badge,
-          label: 'الموظفون',
-          englishLabel: 'Employees',
-          path: '/hr/employees',
-        ),
-        NavigationItem(
-          icon: Icons.add_location_alt_outlined,
-          activeIcon: Icons.add_location_alt,
-          label: 'المواقع',
-          englishLabel: 'Locations',
-          path: '/hr/locations',
-        ),
-        NavigationItem(
-          icon: Icons.payments_outlined,
-          activeIcon: Icons.payments,
-          label: 'الرواتب',
-          englishLabel: 'Payroll',
-          path: '/hr/payroll',
-        ),
-        NavigationItem(
-          icon: Icons.task_alt_outlined,
-          activeIcon: Icons.task_alt,
-          label: 'المهام',
-          englishLabel: 'Tasks',
-          path: '/hr/tasks',
-        ),
-        NavigationItem(
-          icon: Icons.flag_outlined,
-          activeIcon: Icons.flag,
-          label: 'KPI',
-          englishLabel: 'Goals',
-          path: '/hr/kpi',
-        ),
-        NavigationItem(
-          icon: Icons.leaderboard_outlined,
-          activeIcon: Icons.leaderboard,
-          label: 'الإنتاجية',
-          englishLabel: 'Ranking',
-          path: '/hr/productivity',
-        ),
-        NavigationItem(
-          icon: Icons.domain_outlined,
-          activeIcon: Icons.domain,
-          label: 'الأقسام',
-          englishLabel: 'Departments',
-          path: '/hr/departments',
-        ),
-        NavigationItem(
-          icon: Icons.workspace_premium_outlined,
-          activeIcon: Icons.workspace_premium,
-          label: 'السجلات',
-          englishLabel: 'Records',
-          path: '/hr/warnings-rewards',
-        ),
-        NavigationItem(
-          icon: Icons.campaign_outlined,
-          activeIcon: Icons.campaign,
-          label: 'الإعلانات',
-          englishLabel: 'Announcements',
-          path: '/hr/announcements',
-        ),
-        NavigationItem(
-          icon: Icons.event_busy_outlined,
-          activeIcon: Icons.event_busy,
-          label: 'أيام العطلة',
-          englishLabel: 'Days Off',
-          path: '/hr/day-offs',
-        ),
-        NavigationItem(
-          icon: Icons.support_agent_outlined,
-          activeIcon: Icons.support_agent,
-          label: 'المساعد',
-          englishLabel: 'Assistant',
-          path: '/assistant',
-        ),
-        NavigationItem(
-          icon: Icons.person_outline,
-          activeIcon: Icons.person,
-          label: 'حسابي',
-          englishLabel: 'Profile',
-          path: '/employee/profile',
-        ),
-      ];
-    } else if (role == EmployeeRole.superAdmin ||
-        role == EmployeeRole.hrManager) {
-      items = [
-        NavigationItem(
-          icon: Icons.fingerprint,
-          activeIcon: Icons.fingerprint,
-          label: 'حضوري',
-          englishLabel: 'Attendance',
-          path: '/employee/dashboard',
-        ),
-        NavigationItem(
-          icon: Icons.assignment_outlined,
-          activeIcon: Icons.assignment,
-          label: 'طلباتي',
-          englishLabel: 'Requests',
-          path: '/employee/requests',
-        ),
-        NavigationItem(
-          icon: Icons.admin_panel_settings_outlined,
-          activeIcon: Icons.admin_panel_settings,
-          label: 'تحكم',
-          englishLabel: 'Control',
-          path: '/hr/dashboard',
-        ),
-        NavigationItem(
-          icon: Icons.rule_outlined,
-          activeIcon: Icons.rule,
-          label: 'الموافقات',
-          englishLabel: 'Approvals',
-          path: '/manager/requests',
-        ),
-        NavigationItem(
-          icon: Icons.task_alt_outlined,
-          activeIcon: Icons.task_alt,
-          label: 'المهام',
-          englishLabel: 'Tasks',
-          path: '/manager/tasks',
-        ),
-        NavigationItem(
-          icon: Icons.campaign_outlined,
-          activeIcon: Icons.campaign,
-          label: 'الإعلانات',
-          englishLabel: 'Announcements',
-          path: '/hr/announcements',
-        ),
-        NavigationItem(
-          icon: Icons.flag_outlined,
-          activeIcon: Icons.flag,
-          label: 'KPI',
-          englishLabel: 'Goals',
-          path: '/manager/kpi',
-        ),
-        NavigationItem(
-          icon: Icons.leaderboard_outlined,
-          activeIcon: Icons.leaderboard,
-          label: 'الإنتاجية',
-          englishLabel: 'Ranking',
-          path: '/manager/productivity',
-        ),
-        NavigationItem(
-          icon: Icons.domain_outlined,
-          activeIcon: Icons.domain,
-          label: 'الأقسام',
-          englishLabel: 'Departments',
-          path: '/hr/departments',
-        ),
-        NavigationItem(
-          icon: Icons.badge_outlined,
-          activeIcon: Icons.badge,
-          label: 'الموظفون',
-          englishLabel: 'Employees',
-          path: '/hr/employees',
-        ),
-        NavigationItem(
-          icon: Icons.assessment_outlined,
-          activeIcon: Icons.assessment,
-          label: 'التقارير',
-          englishLabel: 'Reports',
-          path: '/hr/reports',
-        ),
-        NavigationItem(
-          icon: Icons.payments_outlined,
-          activeIcon: Icons.payments,
-          label: 'الرواتب',
-          englishLabel: 'Payroll',
-          path: '/hr/payroll',
-        ),
-        NavigationItem(
-          icon: Icons.add_location_alt_outlined,
-          activeIcon: Icons.add_location_alt,
-          label: 'المواقع',
-          englishLabel: 'Locations',
-          path: '/hr/locations',
-        ),
-        NavigationItem(
-          icon: Icons.event_busy_outlined,
-          activeIcon: Icons.event_busy,
-          label: 'أيام العطلة',
-          englishLabel: 'Days Off',
-          path: '/hr/day-offs',
-        ),
-        NavigationItem(
-          icon: Icons.lightbulb_outline,
-          activeIcon: Icons.lightbulb,
-          label: 'المقترحات',
-          englishLabel: 'Suggestions',
-          path: '/manager/suggestions',
-        ),
-        NavigationItem(
-          icon: Icons.workspace_premium_outlined,
-          activeIcon: Icons.workspace_premium,
-          label: 'السجلات',
-          englishLabel: 'Records',
-          path: '/manager/warnings-rewards',
-        ),
-        NavigationItem(
-          icon: Icons.support_agent_outlined,
-          activeIcon: Icons.support_agent,
-          label: 'المساعد',
-          englishLabel: 'Assistant',
-          path: '/assistant',
-        ),
-        NavigationItem(
-          icon: Icons.person_outline,
-          activeIcon: Icons.person,
-          label: 'حسابي',
-          englishLabel: 'Profile',
-          path: '/employee/profile',
-        ),
-      ];
+    // Single shared source for both shells.
+    final List<NavigationItem> items = navItemsForRole(role);
+    // Watch the remote configuration so Company OS entries appear as soon as
+    // the signed-in user's entitlements finish loading. Using `read` here
+    // made a valid enabled feature remain invisible until a full app rebuild.
+    final companyOs = context.watch<RemoteCompanyOsFeatureFlags>();
+    if (kIsWeb &&
+        companyOs.isEnabledFor(
+          feature: CompanyOsFeature.portal,
+          actorId: user.uid,
+        )) {
+      items.add(
+        NavigationItem(
+          icon: Icons.business_center_outlined,
+          activeIcon: Icons.business_center,
+          label: 'مركز تشغيل الشركة',
+          englishLabel: 'Company Operations Hub',
+          path: '/company-os',
+          domain: NavDomain.approvals,
+        ),
+      );
     }
-
-    items.add(
-      NavigationItem(
-        icon: Icons.folder_shared_outlined,
-        activeIcon: Icons.folder_shared,
-        label: 'ملفات الشركة',
-        englishLabel: 'Company Files',
-        path: '/workspace',
-      ),
-    );
+    if (companyOs.isEnabledFor(
+      feature: CompanyOsFeature.itOperations,
+      actorId: user.uid,
+    )) {
+      items.add(
+        NavigationItem(
+          icon: Icons.support_agent_outlined,
+          activeIcon: Icons.support_agent,
+          label: 'عمليات IT',
+          englishLabel: 'IT Operations',
+          path: '/company-os/it',
+          domain: NavDomain.people,
+        ),
+      );
+    }
+    const operationsRoles = {
+      EmployeeRole.manager,
+      EmployeeRole.hrAdmin,
+      EmployeeRole.superAdmin,
+      'admin',
+      'finance',
+      'it_manager',
+    };
+    if (operationsRoles.contains(EmployeeRole.normalize(user.role)) &&
+        companyOs.isEnabledFor(
+          feature: CompanyOsFeature.operations,
+          actorId: user.uid,
+        )) {
+      items.add(
+        NavigationItem(
+          icon: Icons.monitor_heart_outlined,
+          activeIcon: Icons.monitor_heart,
+          label: 'عمليات الشركة',
+          englishLabel: 'Company Operations',
+          path: '/company-os/operations',
+          domain: NavDomain.performance,
+        ),
+      );
+    }
 
     final isManagementRole =
         role == EmployeeRole.manager ||
@@ -678,201 +337,111 @@ class _NavigationWrapperState extends State<NavigationWrapper>
                 item.path == '/employee/profile',
           )
           .toList();
-      return _DesktopManagementShell(
-        user: user,
-        items: managementItems,
-        matchedLocation: matchedLocation,
-        canGoBack:
-            _webRouteHistory.isNotEmpty ||
-            matchedLocation != _homeRouteForRole(role),
-        onBack: () => _navigateBackOnWeb(context, role),
-        onSignOut: () async {
-          await authService.signOut();
-          if (context.mounted) context.go('/login');
-        },
-        child: widget.child,
+      return _withNotificationOperations(
+        WebManagementShell(
+          user: effectiveUser,
+          items: managementItems,
+          matchedLocation: matchedLocation,
+          canGoBack:
+              _webRouteHistory.isNotEmpty ||
+              matchedLocation != homeRouteForRole(role),
+          onBack: () => _navigateBackOnWeb(context, role),
+          onSignOut: () async {
+            await authService.signOut();
+            if (context.mounted) context.go('/login');
+          },
+          child: widget.child,
+        ),
       );
     }
 
-    final hasOverflow = items.length > 4;
-    final bottomItems = hasOverflow
-        ? [
-            ...items.take(3),
-            NavigationItem(
-              icon: Icons.menu,
-              activeIcon: Icons.menu_open,
-              label: 'المزيد',
-              englishLabel: 'More',
-              path: '__more__',
-            ),
-          ]
-        : items;
+    // Mobile bottom nav: fixed four role tabs + grouped More sheet.
+    final bottomItems = mobileTabsForRole(role);
+    final allItems = items;
+    final hasOverflow = allItems.any((item) => !bottomItems.contains(item));
     final overflowItems = hasOverflow
-        ? items.skip(3).toList()
+        ? allItems.where((item) => !bottomItems.contains(item)).toList()
         : <NavigationItem>[];
 
-    return Scaffold(
-      body: widget.child,
-      bottomNavigationBar: Container(
-        decoration: BoxDecoration(
-          color: ZaWolfColors.surface01,
-          border: const Border(
-            top: BorderSide(color: ZaWolfColors.surface03, width: 1),
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.32),
-              blurRadius: 24,
-              offset: const Offset(0, -10),
+    // Shell-route tabs are intentionally navigated with `go`, so the platform
+    // stack alone cannot restore the prior in-app tab. Keep a short local
+    // history and consume Android/iOS back gestures before the OS can close
+    // the app. Detail/form routes may still add their own dirty-form guard.
+    return _withNotificationOperations(
+      PopScope(
+        canPop: false,
+        onPopInvokedWithResult: (didPop, _) {
+          if (didPop) return;
+          _navigateBackOnWeb(context, role);
+        },
+        child: Scaffold(
+          body: widget.child,
+          bottomNavigationBar: Container(
+            decoration: BoxDecoration(
+              color: ZaWolfColors.surface01,
+              border: const Border(
+                top: BorderSide(color: ZaWolfColors.surface03, width: 1),
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.32),
+                  blurRadius: 24,
+                  offset: const Offset(0, -10),
+                ),
+              ],
             ),
-          ],
-        ),
-        child: SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(
-              vertical: 8.0,
-              horizontal: 12.0,
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: bottomItems.map((item) {
-                final isMoreItem = item.path == '__more__';
-                final isSelected = isMoreItem
-                    ? overflowItems.any(
-                        (extra) => extra.path == matchedLocation,
-                      )
-                    : item.path == matchedLocation;
-                final accentColor = isSelected
-                    ? ZaWolfColors.primaryCyan
-                    : ZaWolfColors.textSecondary;
-
-                Widget iconWidget = AnimatedContainer(
-                  duration: const Duration(milliseconds: 180),
-                  width: 42,
-                  height: 34,
-                  decoration: BoxDecoration(
-                    color: isSelected
-                        ? ZaWolfColors.primaryCyan.withValues(alpha: 0.12)
-                        : Colors.transparent,
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(
-                      color: isSelected
-                          ? ZaWolfColors.primaryCyan.withValues(alpha: 0.35)
-                          : Colors.transparent,
-                    ),
-                  ),
-                  child: Icon(
-                    isSelected ? item.activeIcon : item.icon,
-                    color: accentColor,
-                    size: 22,
-                  ),
-                );
-
-                // Show badge for notifications on Profile for employee, dashboard for manager/HR
-                final unreadCount = user.unreadNotifications;
-                final showUnreadBadge =
-                    unreadCount > 0 &&
-                    (((role == EmployeeRole.employee ||
-                                role == EmployeeRole.teamLeader) &&
-                            item.path == '/employee/profile') ||
-                        (role == 'manager' &&
-                            item.path == '/manager/dashboard') ||
-                        (role == 'hr_admin' && item.path == '/hr/dashboard'));
-
-                if (showUnreadBadge) {
-                  iconWidget = badges.Badge(
-                    badgeContent: Text(
-                      '$unreadCount',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 10,
-                        fontWeight: FontWeight.bold,
+            child: SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  vertical: DsSpacing.sm,
+                  horizontal: DsSpacing.md,
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceAround,
+                  children: [
+                    ...bottomItems.map((item) {
+                      return Expanded(
+                        child: _BottomTab(
+                          item: item,
+                          selected:
+                              matchedLocation == item.path ||
+                              matchedLocation.startsWith('${item.path}/'),
+                          unreadCount: _unreadBadgeFor(item, user, role),
+                          showPendingBadge: item.path.endsWith('/requests'),
+                          onTap: () {
+                            if (matchedLocation != item.path) {
+                              context.go(item.path);
+                            }
+                          },
+                        ),
+                      );
+                    }),
+                    if (hasOverflow)
+                      Expanded(
+                        child: _BottomTab(
+                          item: NavigationItem(
+                            icon: Icons.menu,
+                            activeIcon: Icons.menu_open,
+                            label: 'المزيد',
+                            englishLabel: 'More',
+                            path: '__more__',
+                          ),
+                          selected: overflowItems.any(
+                            (extra) => extra.path == matchedLocation,
+                          ),
+                          unreadCount: 0,
+                          showPendingBadge: false,
+                          onTap: () => _showGroupedMoreSheet(
+                            context: context,
+                            theme: theme,
+                            items: overflowItems,
+                            matchedLocation: matchedLocation,
+                          ),
+                        ),
                       ),
-                    ),
-                    badgeStyle: const badges.BadgeStyle(
-                      badgeColor: ZaWolfColors.error,
-                    ),
-                    child: iconWidget,
-                  );
-                }
-
-                // Show badge for pending requests on manager/HR requests tabs
-                final isRequestsTab =
-                    item.path == '/manager/requests' ||
-                    item.path == '/hr/requests' ||
-                    item.path == '/team-leader/requests';
-                if (isRequestsTab &&
-                    (role == EmployeeRole.manager ||
-                        role == EmployeeRole.teamLeader ||
-                        role == EmployeeRole.hrAdmin ||
-                        role == EmployeeRole.hrManager ||
-                        role == EmployeeRole.superAdmin)) {
-                  iconWidget = ValueListenableBuilder<int>(
-                    valueListenable:
-                        PendingRequestsService.instance.pendingCount,
-                    builder: (context, count, child) {
-                      if (count > 0) {
-                        return badges.Badge(
-                          badgeContent: Text(
-                            '$count',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 10,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          badgeStyle: const badges.BadgeStyle(
-                            badgeColor: ZaWolfColors.error,
-                          ),
-                          child: child!,
-                        );
-                      }
-                      return child!;
-                    },
-                    child: iconWidget,
-                  );
-                }
-
-                return Expanded(
-                  child: InkWell(
-                    onTap: () {
-                      if (isMoreItem) {
-                        _showMoreSheet(
-                          context: context,
-                          theme: theme,
-                          items: overflowItems,
-                          matchedLocation: matchedLocation,
-                        );
-                      } else if (!isSelected) {
-                        context.go(item.path);
-                      }
-                    },
-                    borderRadius: BorderRadius.circular(8),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 4.0),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          iconWidget,
-                          const SizedBox(height: 3),
-                          Text(
-                            item.label,
-                            style: theme.textTheme.bodySmall!.copyWith(
-                              color: accentColor,
-                              fontSize: 10,
-                              fontWeight: isSelected
-                                  ? FontWeight.bold
-                                  : FontWeight.normal,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                );
-              }).toList(),
+                  ],
+                ),
+              ),
             ),
           ),
         ),
@@ -880,8 +449,23 @@ class _NavigationWrapperState extends State<NavigationWrapper>
     );
   }
 
+  int _unreadBadgeFor(NavigationItem item, UserModel user, String role) {
+    final unread = _notificationUnreadCount ?? user.unreadNotifications;
+    if (unread <= 0) return 0;
+    final isProfileAnchor =
+        (role == EmployeeRole.employee || role == EmployeeRole.teamLeader) &&
+        item.path == '/employee/profile';
+    final isDashboardAnchor =
+        (role == EmployeeRole.manager && item.path == '/manager/dashboard') ||
+        ((role == EmployeeRole.hrAdmin ||
+                role == EmployeeRole.hrManager ||
+                role == EmployeeRole.superAdmin) &&
+            item.path == '/hr/dashboard');
+    return (isProfileAnchor || isDashboardAnchor) ? unread : 0;
+  }
+
   void _recordWebRoute(String route) {
-    if (!kIsWeb || route == _lastWebRoute) return;
+    if (route == _lastWebRoute) return;
     if (_webBackNavigationInProgress) {
       _webBackNavigationInProgress = false;
     } else if (_lastWebRoute != null) {
@@ -894,117 +478,92 @@ class _NavigationWrapperState extends State<NavigationWrapper>
   }
 
   void _navigateBackOnWeb(BuildContext context, String role) {
-    if (_webRouteHistory.isNotEmpty) {
+    final decision = GuardedBackNavigation.decide(
+      hasPreviousRoute: _webRouteHistory.isNotEmpty,
+      isHomeRoute:
+          GoRouterState.of(context).matchedLocation == homeRouteForRole(role),
+    );
+    if (decision == GuardedBackDecision.navigatePrevious) {
       final target = _webRouteHistory.removeLast();
       _webBackNavigationInProgress = true;
       context.go(target);
       return;
     }
 
-    final fallback = _homeRouteForRole(role);
-    if (GoRouterState.of(context).matchedLocation != fallback) {
+    final fallback = homeRouteForRole(role);
+    if (decision == GuardedBackDecision.navigateHome) {
       _webBackNavigationInProgress = true;
       context.go(fallback);
     }
   }
 
-  String _homeRouteForRole(String role) {
-    return switch (role) {
-      EmployeeRole.superAdmin ||
-      EmployeeRole.hrManager ||
-      EmployeeRole.hrAdmin => '/hr/dashboard',
-      EmployeeRole.manager => '/manager/dashboard',
-      EmployeeRole.teamLeader => '/team-leader/dashboard',
-      _ => '/employee/dashboard',
-    };
-  }
-
-  void _showMoreSheet({
+  void _showGroupedMoreSheet({
     required BuildContext context,
     required ThemeData theme,
     required List<NavigationItem> items,
     required String matchedLocation,
   }) {
+    final groups = groupNavItems(items);
     showModalBottomSheet<void>(
       context: context,
-      backgroundColor: ZaWolfColors.surface01,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(8)),
-      ),
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
       builder: (sheetContext) {
-        return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Center(
-                  child: Container(
-                    width: 44,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: ZaWolfColors.surface03,
-                      borderRadius: BorderRadius.circular(4),
+        return Container(
+          decoration: const BoxDecoration(
+            color: ZaWolfColors.surface01,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+          ),
+          child: SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 44,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: ZaWolfColors.surface03,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
                     ),
                   ),
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  'المزيد',
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
+                  const SizedBox(height: DsSpacing.md),
+                  Text(
+                    'المزيد',
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                    ),
+                    textAlign: TextAlign.right,
                   ),
-                  textAlign: TextAlign.right,
-                ),
-                const SizedBox(height: 8),
-                const SizedBox(height: 8),
-                Flexible(
-                  child: SingleChildScrollView(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: items.map((item) {
-                        final isSelected = item.path == matchedLocation;
-                        return ListTile(
-                          contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                          ),
-                          leading: Icon(
-                            isSelected ? item.activeIcon : item.icon,
-                            color: isSelected
-                                ? ZaWolfColors.primaryCyan
-                                : ZaWolfColors.textSecondary,
-                          ),
-                          title: Text(
-                            item.label,
-                            textAlign: TextAlign.right,
-                            style: TextStyle(
-                              color: isSelected
-                                  ? ZaWolfColors.primaryCyan
-                                  : Colors.white,
-                              fontWeight: isSelected
-                                  ? FontWeight.bold
-                                  : FontWeight.normal,
+                  const SizedBox(height: DsSpacing.md),
+                  Flexible(
+                    child: SingleChildScrollView(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          for (final group in groups)
+                            _DomainCard(
+                              domainLabel: group.domain.arabicLabel,
+                              englishLabel: group.domain.englishLabel,
+                              icon: group.domain.icon,
+                              children: group.items,
+                              matchedLocation: matchedLocation,
+                              onNavigate: (path) {
+                                Navigator.pop(sheetContext);
+                                if (matchedLocation != path) context.go(path);
+                              },
                             ),
-                          ),
-                          subtitle: Text(
-                            item.englishLabel,
-                            textAlign: TextAlign.right,
-                            style: const TextStyle(
-                              color: ZaWolfColors.textMuted,
-                            ),
-                          ),
-                          onTap: () {
-                            Navigator.pop(sheetContext);
-                            if (!isSelected) context.go(item.path);
-                          },
-                        );
-                      }).toList(),
+                        ],
+                      ),
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         );
@@ -1013,277 +572,233 @@ class _NavigationWrapperState extends State<NavigationWrapper>
   }
 }
 
-class NavigationItem {
-  final IconData icon;
-  final IconData activeIcon;
-  final String label;
+class _DomainCard extends StatelessWidget {
+  final String domainLabel;
   final String englishLabel;
-  final String path;
+  final IconData icon;
+  final List<NavigationItem> children;
+  final String matchedLocation;
+  final ValueChanged<String> onNavigate;
 
-  NavigationItem({
-    required this.icon,
-    required this.activeIcon,
-    required this.label,
+  const _DomainCard({
+    required this.domainLabel,
     required this.englishLabel,
-    required this.path,
+    required this.icon,
+    required this.children,
+    required this.matchedLocation,
+    required this.onNavigate,
   });
+
+  @override
+  Widget build(BuildContext context) {
+    final anyActive = children.any((item) => item.path == matchedLocation);
+    return Container(
+      margin: const EdgeInsets.only(bottom: DsSpacing.md),
+      padding: const EdgeInsets.all(DsSpacing.lg),
+      decoration: BoxDecoration(
+        color: ZaWolfColors.surface01.withValues(alpha: 0.92),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: anyActive
+              ? ZaWolfColors.primaryCyan.withValues(alpha: 0.35)
+              : ZaWolfColors.surface03,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Icon(
+                icon,
+                size: 20,
+                color: anyActive
+                    ? ZaWolfColors.primaryCyan
+                    : ZaWolfColors.textSecondary,
+              ),
+              const SizedBox(width: DsSpacing.md),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      domainLabel,
+                      style: TextStyle(
+                        color: anyActive
+                            ? Colors.white
+                            : ZaWolfColors.textPrimary,
+                        fontWeight: FontWeight.bold,
+                        fontSize: DsType.body,
+                      ),
+                    ),
+                    Text(
+                      englishLabel,
+                      style: const TextStyle(
+                        color: ZaWolfColors.textMuted,
+                        fontSize: DsType.caption,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: DsSpacing.sm),
+          Wrap(
+            spacing: DsSpacing.sm,
+            runSpacing: DsSpacing.sm,
+            children: [
+              for (final item in children)
+                ActionChip(
+                  label: Text(item.label),
+                  labelStyle: TextStyle(
+                    color: item.path == matchedLocation
+                        ? ZaWolfColors.primaryCyan
+                        : ZaWolfColors.textSecondary,
+                    fontSize: DsType.caption,
+                  ),
+                  backgroundColor: item.path == matchedLocation
+                      ? ZaWolfColors.primaryCyan.withValues(alpha: 0.12)
+                      : ZaWolfColors.surface02,
+                  side: BorderSide(
+                    color: item.path == matchedLocation
+                        ? ZaWolfColors.primaryCyan.withValues(alpha: 0.4)
+                        : Colors.transparent,
+                  ),
+                  onPressed: () => onNavigate(item.path),
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
 }
 
-class _DesktopManagementShell extends StatelessWidget {
-  final UserModel user;
-  final List<NavigationItem> items;
-  final String matchedLocation;
-  final Widget child;
-  final bool canGoBack;
-  final VoidCallback onBack;
-  final Future<void> Function() onSignOut;
+class _BottomTab extends StatelessWidget {
+  final NavigationItem item;
+  final bool selected;
+  final int unreadCount;
+  final bool showPendingBadge;
+  final VoidCallback onTap;
 
-  const _DesktopManagementShell({
-    required this.user,
-    required this.items,
-    required this.matchedLocation,
-    required this.child,
-    required this.canGoBack,
-    required this.onBack,
-    required this.onSignOut,
+  const _BottomTab({
+    required this.item,
+    required this.selected,
+    required this.unreadCount,
+    required this.showPendingBadge,
+    required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Scaffold(
-      backgroundColor: ZaWolfColors.background,
-      body: Directionality(
-        textDirection: TextDirection.rtl,
-        child: Row(
-          children: [
-            SizedBox(
-              width: 278,
-              child: ColoredBox(
-                color: ZaWolfColors.surface01,
-                child: SafeArea(
-                  child: Column(
-                    children: [
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(20, 20, 20, 16),
-                        child: Row(
-                          children: [
-                            Image.asset(
-                              'assets/images/wolf_head_geometric.png',
-                              width: 42,
-                              height: 42,
-                            ),
-                            const SizedBox(width: 12),
-                            const Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    'ZaWolf HR',
-                                    style: TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 18,
-                                      fontWeight: FontWeight.w700,
-                                    ),
-                                  ),
-                                  Text(
-                                    'مساحة الإدارة',
-                                    style: TextStyle(
-                                      color: ZaWolfColors.textMuted,
-                                      fontSize: 12,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const Divider(height: 1, color: ZaWolfColors.surface03),
-                      Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: Row(
-                          children: [
-                            CircleAvatar(
-                              radius: 20,
-                              backgroundColor: ZaWolfColors.primaryCyan
-                                  .withValues(alpha: 0.12),
-                              child: Text(
-                                user.displayName.isEmpty
-                                    ? 'Z'
-                                    : user.displayName.characters.first,
-                                style: const TextStyle(
-                                  color: ZaWolfColors.primaryCyan,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    user.displayName,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: theme.textTheme.titleSmall?.copyWith(
-                                      color: Colors.white,
-                                    ),
-                                  ),
-                                  Text(
-                                    EmployeeRole.arabicLabel(user.role),
-                                    style: theme.textTheme.bodySmall?.copyWith(
-                                      color: ZaWolfColors.textMuted,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      Expanded(
-                        child: ListView.separated(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 4,
-                          ),
-                          itemCount: items.length,
-                          separatorBuilder: (_, _) => const SizedBox(height: 3),
-                          itemBuilder: (context, index) {
-                            final item = items[index];
-                            final selected =
-                                matchedLocation == item.path ||
-                                (item.path != '/hr/dashboard' &&
-                                    matchedLocation.startsWith(
-                                      '${item.path}/',
-                                    ));
-                            return Tooltip(
-                              message: item.englishLabel,
-                              child: Material(
-                                color: selected
-                                    ? ZaWolfColors.primaryCyan.withValues(
-                                        alpha: 0.10,
-                                      )
-                                    : Colors.transparent,
-                                borderRadius: BorderRadius.circular(6),
-                                child: InkWell(
-                                  onTap: selected
-                                      ? null
-                                      : () => context.go(item.path),
-                                  borderRadius: BorderRadius.circular(6),
-                                  child: Container(
-                                    height: 46,
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 12,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      border: Border(
-                                        right: BorderSide(
-                                          color: selected
-                                              ? ZaWolfColors.primaryCyan
-                                              : Colors.transparent,
-                                          width: 3,
-                                        ),
-                                      ),
-                                    ),
-                                    child: Row(
-                                      children: [
-                                        Icon(
-                                          selected
-                                              ? item.activeIcon
-                                              : item.icon,
-                                          size: 21,
-                                          color: selected
-                                              ? ZaWolfColors.primaryCyan
-                                              : ZaWolfColors.textSecondary,
-                                        ),
-                                        const SizedBox(width: 12),
-                                        Expanded(
-                                          child: Text(
-                                            item.label,
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: TextStyle(
-                                              color: selected
-                                                  ? Colors.white
-                                                  : ZaWolfColors.textSecondary,
-                                              fontWeight: selected
-                                                  ? FontWeight.w700
-                                                  : FontWeight.w500,
-                                            ),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            );
-                          },
-                        ),
-                      ),
-                      const Divider(height: 1, color: ZaWolfColors.surface03),
-                      Padding(
-                        padding: const EdgeInsets.all(12),
-                        child: OutlinedButton.icon(
-                          onPressed: onSignOut,
-                          icon: const Icon(Icons.logout, size: 19),
-                          label: const Text('تسجيل الخروج'),
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: ZaWolfColors.error,
-                            minimumSize: const Size.fromHeight(44),
-                          ),
-                        ),
-                      ),
-                    ],
+    final accentColor = selected
+        ? ZaWolfColors.primaryCyan
+        : ZaWolfColors.textSecondary;
+
+    Widget iconWidget = AnimatedContainer(
+      duration: const Duration(milliseconds: 180),
+      width: 42,
+      height: 34,
+      decoration: BoxDecoration(
+        color: selected
+            ? ZaWolfColors.primaryCyan.withValues(alpha: 0.12)
+            : Colors.transparent,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: selected
+              ? ZaWolfColors.primaryCyan.withValues(alpha: 0.35)
+              : Colors.transparent,
+        ),
+      ),
+      child: Icon(
+        selected ? item.activeIcon : item.icon,
+        color: accentColor,
+        size: 22,
+      ),
+    );
+
+    if (showPendingBadge) {
+      iconWidget = ValueListenableBuilder<int>(
+        valueListenable: PendingRequestsService.instance.pendingCount,
+        builder: (context, pendingCount, child) {
+          if (pendingCount > 0) {
+            return Stack(
+              clipBehavior: Clip.none,
+              children: [
+                child!,
+                Positioned(
+                  top: -3,
+                  left: -3,
+                  child: Container(
+                    width: 9,
+                    height: 9,
+                    decoration: const BoxDecoration(
+                      color: ZaWolfColors.error,
+                      shape: BoxShape.circle,
+                    ),
                   ),
                 ),
+              ],
+            );
+          }
+          return child!;
+        },
+        child: iconWidget,
+      );
+    }
+
+    if (unreadCount > 0) {
+      iconWidget = Stack(
+        clipBehavior: Clip.none,
+        children: [
+          iconWidget,
+          Positioned(
+            top: -3,
+            left: -3,
+            child: Container(
+              constraints: const BoxConstraints(minWidth: 16),
+              height: 16,
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: ZaWolfColors.error,
+                borderRadius: BorderRadius.circular(999),
               ),
-            ),
-            const VerticalDivider(
-              width: 1,
-              thickness: 1,
-              color: ZaWolfColors.surface03,
-            ),
-            Expanded(
-              child: ColoredBox(
-                color: ZaWolfColors.background,
-                child: Column(
-                  children: [
-                    Container(
-                      height: 48,
-                      padding: const EdgeInsets.symmetric(horizontal: 14),
-                      decoration: const BoxDecoration(
-                        color: ZaWolfColors.surface01,
-                        border: Border(
-                          bottom: BorderSide(color: ZaWolfColors.surface03),
-                        ),
-                      ),
-                      child: Row(
-                        children: [
-                          IconButton(
-                            onPressed: canGoBack ? onBack : null,
-                            tooltip: 'رجوع',
-                            icon: const Icon(Icons.arrow_forward_rounded),
-                          ),
-                          const SizedBox(width: 4),
-                          Text(
-                            'رجوع',
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                              color: canGoBack
-                                  ? ZaWolfColors.textSecondary
-                                  : ZaWolfColors.textMuted,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    Expanded(child: SizedBox.expand(child: child)),
-                  ],
+              child: Text(
+                '$unreadCount',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 9,
+                  fontWeight: FontWeight.bold,
                 ),
               ),
+            ),
+          ),
+        ],
+      );
+    }
+
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4.0),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            iconWidget,
+            const SizedBox(height: 3),
+            Text(
+              item.label,
+              style: theme.textTheme.bodySmall!.copyWith(
+                color: accentColor,
+                fontSize: 10,
+                fontWeight: selected ? FontWeight.bold : FontWeight.normal,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
             ),
           ],
         ),

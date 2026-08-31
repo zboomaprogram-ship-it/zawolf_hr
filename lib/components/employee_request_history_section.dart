@@ -3,12 +3,25 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart' hide TextDirection;
 
+import '../design_system/components/feedback_states.dart';
+import '../design_system/components/section_header.dart';
+import '../design_system/components/skeletons.dart';
+import '../design_system/components/status_pill.dart';
+import '../design_system/tokens.dart';
 import '../theme/theme.dart';
 
 class EmployeeRequestHistorySection extends StatefulWidget {
-  const EmployeeRequestHistorySection({super.key, required this.userId});
+  const EmployeeRequestHistorySection({
+    super.key,
+    required this.userId,
+    this.onPendingCount,
+  });
 
   final String userId;
+
+  /// Reports how many loaded requests are still awaiting approval so the
+  /// dashboard priority strip can reuse this load without extra queries.
+  final ValueChanged<int>? onPendingCount;
 
   @override
   State<EmployeeRequestHistorySection> createState() =>
@@ -32,6 +45,9 @@ class _EmployeeRequestHistorySectionState
       _requests = _loadRequests();
     }
   }
+
+  bool _isPending(String status) =>
+      status != 'approved' && status != 'rejected' && status != 'cancelled';
 
   Future<List<_RequestSummary>> _loadRequests() async {
     final firestore = FirebaseFirestore.instance;
@@ -61,6 +77,10 @@ class _EmployeeRequestHistorySectionState
         (doc) => _RequestSummary.fromDocument(doc, 'طلب إداري'),
       ),
     ]..sort((a, b) => b.submittedAt.compareTo(a.submittedAt));
+
+    widget.onPendingCount?.call(
+      requests.where((request) => _isPending(request.status)).length,
+    );
     return requests;
   }
 
@@ -70,7 +90,6 @@ class _EmployeeRequestHistorySectionState
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -81,38 +100,34 @@ class _EmployeeRequestHistorySectionState
               onPressed: _reload,
               icon: const Icon(Icons.refresh),
             ),
-            const Spacer(),
-            Text(
-              'سجل الطلبات',
-              style: theme.textTheme.titleMedium?.copyWith(
-                color: Colors.white,
-                fontWeight: FontWeight.w700,
+            Expanded(
+              child: SectionHeader(
+                title: 'سجل الطلبات',
+                actionLabel: 'عرض الكل',
+                onAction: () => context.go('/employee/requests'),
               ),
             ),
           ],
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: DsSpacing.sm),
         FutureBuilder<List<_RequestSummary>>(
           future: _requests,
           builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting) {
-              return const SizedBox(
-                height: 88,
-                child: Center(child: CircularProgressIndicator()),
-              );
+            if (snapshot.connectionState == ConnectionState.waiting &&
+                !snapshot.hasError) {
+              return const SkeletonList(itemCount: 3, itemHeight: 64);
             }
             if (snapshot.hasError) {
-              return _HistoryMessage(
-                icon: Icons.cloud_off_outlined,
-                text: 'تعذر تحميل سجل الطلبات الآن.',
-                action: _reload,
+              return ErrorState(
+                message: 'تعذر تحميل سجل الطلبات الآن.',
+                onRetry: _reload,
               );
             }
             final requests = snapshot.data ?? const <_RequestSummary>[];
             if (requests.isEmpty) {
-              return const _HistoryMessage(
-                icon: Icons.inbox_outlined,
-                text: 'لا توجد طلبات حتى الآن.',
+              return const EmptyState(
+                title: 'لا توجد طلبات حتى الآن.',
+                subtitle: 'الطلبات التي ترسلها تظهر هنا، وتنتقل إلى السجل بعد مراجعتها.',
               );
             }
 
@@ -120,11 +135,6 @@ class _EmployeeRequestHistorySectionState
               children: [
                 for (final request in requests.take(5))
                   _RequestSummaryTile(request: request),
-                TextButton.icon(
-                  onPressed: () => context.go('/employee/requests'),
-                  icon: const Icon(Icons.history),
-                  label: const Text('عرض السجل الكامل'),
-                ),
               ],
             );
           },
@@ -183,8 +193,8 @@ class _RequestSummaryTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final status = _statusPresentation(request.status);
     return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.all(12),
+      margin: const EdgeInsets.only(bottom: DsSpacing.sm),
+      padding: const EdgeInsets.all(DsSpacing.md),
       decoration: BoxDecoration(
         color: ZaWolfColors.surface01,
         borderRadius: BorderRadius.circular(8),
@@ -192,22 +202,8 @@ class _RequestSummaryTile extends StatelessWidget {
       ),
       child: Row(
         children: [
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            decoration: BoxDecoration(
-              color: status.color.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(6),
-            ),
-            child: Text(
-              status.label,
-              style: TextStyle(
-                color: status.color,
-                fontSize: 12,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ),
-          const SizedBox(width: 10),
+          StatusPill(status: status.$1, label: status.$2, compact: true),
+          const SizedBox(width: DsSpacing.md),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.end,
@@ -243,51 +239,19 @@ class _RequestSummaryTile extends StatelessWidget {
   }
 }
 
-class _HistoryMessage extends StatelessWidget {
-  const _HistoryMessage({required this.icon, required this.text, this.action});
-
-  final IconData icon;
-  final String text;
-  final VoidCallback? action;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: ZaWolfColors.surface01,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: ZaWolfColors.surface03),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          if (action != null)
-            IconButton(onPressed: action, icon: const Icon(Icons.refresh)),
-          Text(text, style: const TextStyle(color: ZaWolfColors.textSecondary)),
-          const SizedBox(width: 8),
-          Icon(icon, color: ZaWolfColors.textMuted),
-        ],
-      ),
-    );
+(DsStatus, String) _statusPresentation(String status) {
+  switch (status) {
+    case 'approved':
+      return (DsStatus.approved, 'مقبول');
+    case 'rejected':
+      return (DsStatus.rejected, 'مرفوض');
+    case 'cancelled':
+      return (DsStatus.neutral, 'ملغي');
+    case 'pending_hr':
+      return (DsStatus.pendingAction, 'بانتظار HR');
+    case 'pending_ceo':
+      return (DsStatus.pendingAction, 'بانتظار CEO');
+    default:
+      return (DsStatus.pendingAction, 'بانتظار المدير');
   }
-}
-
-({String label, Color color}) _statusPresentation(String status) {
-  if (status == 'approved') {
-    return (label: 'مقبول', color: ZaWolfColors.success);
-  }
-  if (status == 'rejected') {
-    return (label: 'مرفوض', color: ZaWolfColors.error);
-  }
-  if (status == 'cancelled') {
-    return (label: 'ملغي', color: ZaWolfColors.textMuted);
-  }
-  if (status == 'pending_hr') {
-    return (label: 'بانتظار HR', color: ZaWolfColors.warning);
-  }
-  if (status == 'pending_ceo') {
-    return (label: 'بانتظار CEO', color: ZaWolfColors.warning);
-  }
-  return (label: 'بانتظار المدير', color: ZaWolfColors.warning);
 }

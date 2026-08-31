@@ -499,6 +499,10 @@ class PermissionService {
     final reviewerRole = (reviewerDoc.data()?['role'] as String?) ?? 'employee';
     final reviewerName =
         (reviewerDoc.data()?['displayName'] as String?)?.trim() ?? '';
+    final reviewerEmployeeId =
+        (reviewerDoc.data()?['employeeId'] as String?)?.trim().toUpperCase() ??
+        '';
+    final isCompanyCeo = reviewerEmployeeId == 'CEO-100';
     if (perm.status == 'pending_hr' && perm.userId == reviewerId) {
       throw Exception('لا يمكن اعتماد طلبك الشخصي. يجب أن يراجعه HR آخر.');
     }
@@ -631,7 +635,7 @@ class PermissionService {
       throw Exception('طلب الإذن ليس في مرحلة موافقة المدير.');
     }
 
-    if (!EmployeeRole.canActAsApprovalManager(reviewerRole)) {
+    if (!isCompanyCeo && !EmployeeRole.canActAsApprovalManager(reviewerRole)) {
       throw Exception('هذا الطلب ينتظر موافقة المدير.');
     }
     if (perm.managerId != reviewerId) {

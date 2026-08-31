@@ -11,6 +11,7 @@ class AttendancePeriodDay {
   final AttendanceModel? attendance;
   final bool isExpectedWorkDay;
   final bool isApprovedLeave;
+  final bool isApprovedPermission;
 
   const AttendancePeriodDay({
     required this.date,
@@ -18,11 +19,13 @@ class AttendancePeriodDay {
     required this.attendance,
     required this.isExpectedWorkDay,
     required this.isApprovedLeave,
+    this.isApprovedPermission = false,
   });
 
   bool get isAbsent =>
       isExpectedWorkDay &&
       !isApprovedLeave &&
+      !isApprovedPermission &&
       (attendance == null || attendance!.status == 'absent');
 
   bool get isPresent =>
@@ -78,7 +81,22 @@ class AttendancePeriodSummaryService {
           .where('date', isGreaterThanOrEqualTo: startKey)
           .where('date', isLessThan: endExclusiveKey)
           .get(),
-      _db.collection('leaves').where('userId', isEqualTo: user.uid).get(),
+      // A leave that starts in the selected period is sufficient for the
+      // common case. Older overlapping leaves are retained by the small
+      // client-side overlap check below, so historical data remains correct.
+      _db
+          .collection('leaves')
+          .where('userId', isEqualTo: user.uid)
+          .where('status', isEqualTo: 'approved')
+          .where('startDate', isLessThan: Timestamp.fromDate(endExclusive))
+          .get(),
+      _db
+          .collection('permissions')
+          .where('userId', isEqualTo: user.uid)
+          .where('status', isEqualTo: 'approved')
+          .where('requestDate', isGreaterThanOrEqualTo: startKey)
+          .where('requestDate', isLessThan: endExclusiveKey)
+          .get(),
       _db.collection('companyDayOffs').get(),
     ]);
 
@@ -89,9 +107,13 @@ class AttendancePeriodSummaryService {
     }
     final approvedLeaves = snapshots[1].docs
         .map(LeaveModel.fromFirestore)
-        .where((leave) => leave.status == 'approved')
+        .where((leave) => !leave.endDate.isBefore(startDay))
         .toList();
-    final companyDaysOff = snapshots[2].docs
+    final approvedPermissionDates = snapshots[2].docs
+        .map((doc) => doc.data()['requestDate'] as String? ?? '')
+        .where((date) => date.isNotEmpty)
+        .toSet();
+    final companyDaysOff = snapshots[3].docs
         .where((doc) => doc.data()['isActive'] == true)
         .map((doc) => doc.data()['date'] as String? ?? doc.id)
         .toSet();
@@ -103,6 +125,7 @@ class AttendancePeriodSummaryService {
       now: current,
       attendanceByDate: attendanceByDate,
       approvedLeaves: approvedLeaves,
+      approvedPermissionDates: approvedPermissionDates,
       companyDaysOff: companyDaysOff,
     );
   }
@@ -114,6 +137,7 @@ class AttendancePeriodSummaryService {
     required DateTime now,
     required Map<String, AttendanceModel> attendanceByDate,
     required List<LeaveModel> approvedLeaves,
+    Set<String> approvedPermissionDates = const {},
     required Set<String> companyDaysOff,
   }) {
     const defaultWorkDays = [6, 7, 1, 2, 3, 4];
@@ -147,6 +171,7 @@ class AttendancePeriodSummaryService {
             !day.isBefore(_dateOnly(leave.startDate)) &&
             !day.isAfter(_dateOnly(leave.endDate)),
       );
+      final onApprovedPermission = approvedPermissionDates.contains(key);
       final scheduled = workDays.contains(day.weekday);
       final joined = joinDay == null || !day.isBefore(joinDay);
       final companyDayOff = companyDaysOff.contains(key);
@@ -175,6 +200,7 @@ class AttendancePeriodSummaryService {
           attendance: attendance,
           isExpectedWorkDay: expected,
           isApprovedLeave: onApprovedLeave,
+          isApprovedPermission: onApprovedPermission,
         ),
       );
     }

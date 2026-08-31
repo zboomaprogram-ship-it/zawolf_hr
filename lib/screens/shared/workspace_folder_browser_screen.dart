@@ -8,6 +8,8 @@ import '../../services/google_workspace_service.dart';
 import '../../utils/binary_file_action.dart';
 import '../../utils/user_facing_error.dart';
 import 'workspace_sheet_editor_screen.dart';
+import '../../design_system/components/rtl_navigation.dart';
+import '../../design_system/components/skeletons.dart' show SkeletonList;
 
 /// Folder-first company Drive browser. It requests children only after the
 /// folder is opened, keeping the workspace landing page fast and uncluttered.
@@ -168,7 +170,10 @@ class _WorkspaceFolderBrowserScreenState
         ],
       ),
       body: _loading
-          ? const Center(child: CircularProgressIndicator())
+          ? const Padding(
+            padding: EdgeInsets.all(16),
+            child: SkeletonList(itemCount: 5, itemHeight: 72),
+          )
           : _error != null
           ? Center(
               child: Padding(
@@ -219,7 +224,7 @@ class _WorkspaceFolderBrowserScreenState
       ),
       title: Text('${file['name'] ?? ''}'),
       subtitle: Text('${file['modifiedTime'] ?? ''}'),
-      trailing: const Icon(Icons.chevron_left),
+      trailing: Icon(RtlNavigation.chevronEnd(context)),
       onTap: () => _open(file),
     ),
   );

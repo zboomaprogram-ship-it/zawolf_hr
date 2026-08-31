@@ -1,11 +1,13 @@
 const admin = require('firebase-admin');
 const { isOneSignalConfigured, sendPushToUsers } = require('./onesignal');
 const {
+  emulatorProjectId,
   getExistingFirebaseApp,
   installFirestoreCompatibility,
   parseFirebaseServiceAccount,
 } = require('./firebase-service-account');
 const { loadCheckoutPolicy } = require('./checkout-policy');
+const { requestStageNotification } = require('./company-os/notifications');
 installFirestoreCompatibility(admin);
 
 function dispatchConfig() {
@@ -25,6 +27,13 @@ function isUnsubscribedDeviceError(error) {
 function initializeFirebase() {
   const existingApp = getExistingFirebaseApp(admin);
   if (existingApp) return existingApp;
+
+  const localProjectId = emulatorProjectId(process.env);
+  if (localProjectId) {
+    const app = admin.initializeApp({ projectId: localProjectId });
+    console.log(`Using local Firebase emulators for project: ${localProjectId}`);
+    return app;
+  }
 
   const serviceAccount = parseFirebaseServiceAccount(
     process.env.FIREBASE_SERVICE_ACCOUNT,
@@ -81,13 +90,164 @@ function routeForNotification(type) {
   return '/notifications';
 }
 
-function notificationPayload(doc, data) {
+const SAFE_NOTIFICATION_ROUTES = new Set([
+  '/notifications',
+  '/account-disabled',
+  '/polls',
+  '/employee/dashboard',
+  '/employee/requests',
+  '/employee/deductions',
+  '/employee/tasks',
+  '/employee/warnings-rewards',
+  '/employee/suggestions',
+  '/employee/kpi',
+  '/manager/requests',
+  '/team-leader/requests',
+  '/hr/requests',
+  '/hr/employees',
+]);
+
+const NOTIFICATION_FOCUS_ID = /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$/;
+const HR_NOTIFICATION_ROLES = new Set(['hr_admin', 'hr_manager']);
+
+function safeNotificationRoute(value) {
+  const route = String(value || '').trim();
+  if (SAFE_NOTIFICATION_ROUTES.has(route)) return route;
+  return /^\/(?:employee\/requests|requests)\/operational\/[A-Za-z0-9_.:-]{1,128}$/.test(route)
+    ? route
+    : null;
+}
+
+function safeNotificationFocusId(value) {
+  const focusId = String(value || '').trim();
+  return NOTIFICATION_FOCUS_ID.test(focusId) ? focusId : null;
+}
+
+function normalizeNotificationResource(input) {
+  const data = input?.data && typeof input.data === 'object' ? input.data : {};
+  const type = String(input?.type || 'notification').trim().slice(0, 128);
+  return {
+    type: type || 'notification',
+    focusId: safeNotificationFocusId(
+      data.requestId || data.resourceId || data.targetId || data.attendanceId,
+    ),
+    storedRoute: safeNotificationRoute(data.route),
+  };
+}
+
+function classifyRecipientRoute({ role, resource }) {
+  const normalizedRole = String(role || 'employee');
+  const type = String(resource?.type || 'notification').toLowerCase();
+  let path;
+
+  if (type.startsWith('company_os_request_') && resource?.storedRoute) {
+    return {
+      path: resource.storedRoute,
+      focusId: safeNotificationFocusId(resource?.focusId),
+      fallbackPath: resource.storedRoute,
+    };
+  }
+
+  const employeeDecision = type.includes('approved') ||
+    type.includes('rejected') || type.includes('reviewed');
+  const managementRequest = type.includes('pending') ||
+    type.includes('submitted') || type.endsWith('_new') ||
+    type === 'attendance_security_review';
+
+  if (employeeDecision) {
+    path = routeForNotification(type);
+    if (path === '/manager/requests' || path === '/hr/requests') {
+      path = '/employee/requests';
+    }
+  } else if (managementRequest && HR_NOTIFICATION_ROLES.has(normalizedRole)) {
+    path = '/hr/requests';
+  } else if (managementRequest && normalizedRole === 'team_leader') {
+    path = '/team-leader/requests';
+  } else if (managementRequest &&
+      (normalizedRole === 'manager' || normalizedRole === 'super_admin')) {
+    path = '/manager/requests';
+  } else {
+    path = safeNotificationRoute(resource?.storedRoute) || routeForNotification(type);
+  }
+
+  path = safeNotificationRoute(path) || '/notifications';
+  return {
+    path,
+    focusId: safeNotificationFocusId(resource?.focusId),
+    fallbackPath: path,
+  };
+}
+
+async function companyOsOutboxRecipients(db, outbox) {
+  const directUid = String(outbox.recipientUid || '').trim();
+  if (directUid) {
+    const snapshot = await db.collection('users').doc(directUid).get();
+    return snapshot.exists && snapshot.data()?.isActive === true ? [directUid] : [];
+  }
+  const role = String(outbox.recipientRole || '').trim();
+  if (!role) return [];
+  const snapshots = await Promise.all([
+    db.collection('users').where('operationalRole', '==', role).limit(100).get(),
+    db.collection('users').where('role', '==', role).limit(100).get(),
+  ]);
+  return [...new Set(snapshots.flatMap((snapshot) => snapshot.docs)
+    .filter((doc) => doc.data()?.isActive === true)
+    .map((doc) => doc.id))];
+}
+
+async function promoteCompanyOsNotificationOutbox(db) {
+  const snapshot = await db.collection('companyOsNotificationOutbox')
+    .where('dispatchStatus', '==', 'pending')
+    .limit(Math.min(dispatchConfig().batchSize, 50))
+    .get();
+  let promoted = 0;
+  for (const doc of snapshot.docs) {
+    const outbox = doc.data();
+    const recipients = await companyOsOutboxRecipients(db, outbox);
+    await db.runTransaction(async (transaction) => {
+      const current = await transaction.get(doc.ref);
+      if (!current.exists || current.data()?.dispatchStatus !== 'pending') return;
+      for (const recipientUid of recipients) {
+        const notification = requestStageNotification({
+          operationId: outbox.operationId || doc.id,
+          requestId: outbox.requestId,
+          recipientUid,
+          stage: outbox.stage || 'manager',
+          status: outbox.status || 'pending',
+        });
+        transaction.set(
+          db.collection('notifications').doc(recipientUid).collection('items').doc(notification.id),
+          {
+            ...notification,
+            isRead: false,
+            pushSent: false,
+            createdAt: admin.firestore.FieldValue.serverTimestamp(),
+          },
+        );
+      }
+      transaction.update(doc.ref, {
+        dispatchStatus: recipients.length ? 'dispatched' : 'no_active_recipient',
+        recipientCount: recipients.length,
+        dispatchedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+    });
+    promoted += recipients.length;
+  }
+  return { outboxes: snapshot.size, promoted };
+}
+
+function notificationPayload(doc, data, recipientRole) {
   const rawData = data.data && typeof data.data === 'object' ? data.data : {};
+  const destination = classifyRecipientRoute({
+    role: recipientRole,
+    resource: normalizeNotificationResource(data),
+  });
   return {
     ...rawData,
     notificationId: doc.id,
     type: data.type || 'notification',
-    route: rawData.route || routeForNotification(data.type),
+    requestId: destination.focusId,
+    route: destination.path,
   };
 }
 
@@ -176,6 +336,11 @@ async function loadPendingNotifications(db) {
   const activeUsers = new Set(
     userDocs.filter((doc) => doc.exists && doc.data()?.isActive === true).map((doc) => doc.id),
   );
+  const userRoles = new Map(
+    userDocs
+      .filter((doc) => doc.exists)
+      .map((doc) => [doc.id, String(doc.data()?.role || 'employee')]),
+  );
   const pending = [];
   const perUserCount = new Map();
 
@@ -199,7 +364,13 @@ async function loadPendingNotifications(db) {
     }
     const claimed = await claimNotification(db, doc.ref);
     if (!claimed) continue;
-    pending.push({ userId, ref: doc.ref, id: doc.id, data });
+    pending.push({
+      userId,
+      recipientRole: userRoles.get(userId) || 'employee',
+      ref: doc.ref,
+      id: doc.id,
+      data,
+    });
     perUserCount.set(userId, (perUserCount.get(userId) || 0) + 1);
   }
 
@@ -360,6 +531,7 @@ async function dispatchNotifications() {
   }
 
   const db = admin.firestore();
+  await promoteCompanyOsNotificationOutbox(db);
   const pending = await loadPendingNotifications(db);
   console.log(`Found ${pending.length} pending push notification(s).`);
   if (!pending.length) return { found: 0, sent: 0, failed: 0 };
@@ -373,7 +545,7 @@ async function dispatchNotifications() {
   for (const item of pending) {
     const title = item.data.title || 'تنبيه جديد';
     const body = item.data.body || '';
-    const payload = notificationPayload(item, item.data);
+    const payload = notificationPayload(item, item.data, item.recipientRole);
 
     try {
       // Attendance may be recorded after a reminder was queued but before the
@@ -433,6 +605,9 @@ module.exports = {
   initializeFirebase,
   notificationPayload,
   routeForNotification,
+  safeNotificationRoute,
+  normalizeNotificationResource,
+  classifyRecipientRoute,
   isUnsubscribedDeviceError,
   reminderAction,
   isCheckoutReminderSuppressed,
@@ -440,4 +615,6 @@ module.exports = {
   attendanceCompletesReminder,
   shouldSkipAttendanceReminder,
   watchPendingNotifications,
+  companyOsOutboxRecipients,
+  promoteCompanyOsNotificationOutbox,
 };

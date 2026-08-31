@@ -1,113 +1,100 @@
-# Implementation Plan: [FEATURE]
+# Implementation Plan: Attendance and Requests Stability
 
-**Branch**: `[###-feature-name]` | **Date**: [DATE] | **Spec**: [link]
-
-**Input**: Feature specification from `/specs/[###-feature-name]/spec.md`
-
-**Note**: This template is filled in by the `$speckit-plan` command; its definition describes the execution workflow.
+**Branch**: `004-attendance-requests-stability` | **Date**: 2026-08-20 | **Spec**: [spec.md](spec.md)
 
 ## Summary
 
-[Extract from feature spec: primary requirement + technical approach from research]
+Stabilize employee check-in and HR/manager/admin request operations before any
+Company Workspace work. Extend the existing reliable check-in boundary to
+automatic location events; add a bounded role-scoped request visibility model;
+make approval/device-reset mutations server-authoritative and auditable; correct
+productivity/KPI input selection; harden map fallback; and standardize safe
+mobile back navigation. It also normalizes salary-deduction explanations for
+employees, including incomplete legacy history, without recalculating payroll.
+The completed default-off check-out policy remains in force.
 
 ## Technical Context
 
-<!--
-  ACTION REQUIRED: Replace the content in this section with the technical details
-  for the project. The structure here is presented in advisory capacity to guide
-  the iteration process.
--->
+**Language/Version**: Dart/Flutter and Node.js existing gateway.
 
-**Language/Version**: [e.g., Python 3.11, Swift 5.9, Rust 1.75 or NEEDS CLARIFICATION]
+**Primary Dependencies**: Firebase Auth/Firestore, `google_maps_flutter`,
+`geolocator`, native method channels, local check-in outbox, Node Admin SDK.
 
-**Primary Dependencies**: [e.g., FastAPI, UIKit, LLVM or NEEDS CLARIFICATION]
+**Storage**: Firestore is canonical; the existing account-scoped local check-in
+outbox is the UI source of truth for pending check-ins.
 
-**Storage**: [if applicable, e.g., PostgreSQL, CoreData, files or N/A]
+**Testing**: `flutter_test`, architecture/query guards, focused service/screen
+tests, existing Node test runner.
 
-**Testing**: [e.g., pytest, XCTest, cargo test or NEEDS CLARIFICATION]
+**Target Platform**: Flutter Android, iOS, web, and Node integration runtime.
 
-**Target Platform**: [e.g., Linux server, iOS 15+, WASM or NEEDS CLARIFICATION]
+**Project Type**: Flutter client plus Node integration service.
 
-**Project Type**: [e.g., library/cli/web-service/mobile-app/compiler/desktop-app or NEEDS CLARIFICATION]
+**Performance Goals**: Request tabs resolve to records, empty, or retry within
+10 seconds under normal connectivity; bounded queries; no new polling/listener
+amplification.
 
-**Performance Goals**: [domain-specific, e.g., 1000 req/s, 10k lines/sec, 60 fps or NEEDS CLARIFICATION]
+**Constraints**: Automatic check-in only; preserve Cairo identity and check-out
+snapshots; safe Arabic errors only; no deployment, rules/config change, data
+migration, device/location reset, or payroll recalculation.
 
-**Constraints**: [domain-specific, e.g., <200ms p95, <100MB memory, offline-capable or NEEDS CLARIFICATION]
-
-**Scale/Scope**: [domain-specific, e.g., 10k users, 1M LOC, 50 screens or NEEDS CLARIFICATION]
+**Scale/Scope**: Existing attendance/request/productivity/device/location and
+navigation screens. Company Workspace/Google Workspace are deferred.
 
 ## Constitution Check
 
-*GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
+*Passed before research and re-checked after design.*
 
-[Gates determined based on constitution file]
+| Gate | Status | Evidence / planned control |
+|---|---|---|
+| Strangler Fig delivery | PASS | Extend the existing reliable check-in slice; no legacy deletion or bulk move. |
+| Layer boundaries | PASS | Presentation uses safe state/contracts; adapters own Firebase/HTTP/storage. |
+| Focused Cubits | PASS | Screen state stays limited to tab loading/search or guarded navigation. |
+| Attendance/payroll safety | PASS | Characterize Cairo identity, approvals, historic deductions, and check-out snapshot behavior first. |
+| Test-first delivery | PASS | Contract and regression tests precede each route/mutation change. |
+| Firestore read budget | PASS | Role/date/status-bounded reads, pagination, cached ownership, no polling. |
+| Irreversible operations | PASS | Live rule/config/device/location/history changes remain separately authorized. |
 
 ## Project Structure
 
-### Documentation (this feature)
-
 ```text
-specs/[###-feature]/
-├── plan.md              # This file ($speckit-plan command output)
-├── research.md          # Phase 0 output ($speckit-plan command)
-├── data-model.md        # Phase 1 output ($speckit-plan command)
-├── quickstart.md        # Phase 1 output ($speckit-plan command)
-├── contracts/           # Phase 1 output ($speckit-plan command)
-└── tasks.md             # Phase 2 output ($speckit-tasks command - NOT created by $speckit-plan)
-```
+specs/004-attendance-requests-stability/
+├── plan.md
+├── research.md
+├── data-model.md
+├── quickstart.md
+├── contracts/
+│   ├── attendance-request-read-model.md
+│   └── attendance-device-location-contract.md
+└── tasks.md                 # created after plan approval
 
-### Source Code (repository root)
-<!--
-  ACTION REQUIRED: Replace the placeholder tree below with the concrete layout
-  for this feature. Delete unused options and expand the chosen structure with
-  real paths (e.g., apps/admin, packages/something). The delivered plan must
-  not include Option labels.
--->
+lib/
+├── core/errors/
+├── features/attendance_checkin/
+├── services/                # attendance, request, productivity adapters
+├── screens/employee/
+├── screens/manager/
+├── screens/hr/
+└── navigation/
 
-```text
-# [REMOVE IF UNUSED] Option 1: Single project (DEFAULT)
-src/
-├── models/
+scripts/
+├── attendance-gateway.js
+├── notification-web.js
+└── test/
+
+test/
+├── features/attendance_checkin/
 ├── services/
-├── cli/
-└── lib/
-
-tests/
-├── contract/
-├── integration/
-└── unit/
-
-# [REMOVE IF UNUSED] Option 2: Web application (when "frontend" + "backend" detected)
-backend/
-├── src/
-│   ├── models/
-│   ├── services/
-│   └── api/
-└── tests/
-
-frontend/
-├── src/
-│   ├── components/
-│   ├── pages/
-│   └── services/
-└── tests/
-
-# [REMOVE IF UNUSED] Option 3: Mobile + API (when "iOS/Android" detected)
-api/
-└── [same as backend above]
-
-ios/ or android/
-└── [platform-specific structure: feature modules, UI flows, platform tests]
+├── screens/
+└── architecture/query guards
 ```
 
-**Structure Decision**: [Document the selected structure and reference the real
-directories captured above]
+**Structure Decision**: Keep the current layout. Introduce contracts and
+bounded read-model adapters alongside legacy services. A changed screen must
+own one stable, bounded source rather than construct new Firestore streams
+inside `build`.
 
 ## Complexity Tracking
 
-> **Fill ONLY if Constitution Check has violations that must be justified**
-
-| Violation | Why Needed | Simpler Alternative Rejected Because |
-|-----------|------------|-------------------------------------|
-| [e.g., 4th project] | [current need] | [why 3 projects insufficient] |
-| [e.g., Repository pattern] | [specific problem] | [why direct DB access insufficient] |
+No constitution exception is needed. Historical data is normalized only for
+display; no destructive repair or payroll rewrite is included.

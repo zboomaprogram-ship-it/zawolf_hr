@@ -8,6 +8,8 @@ import 'attendance_checkin_failure_mapper.dart';
 import 'checkin_pilot_metrics.dart';
 import 'local/checkin_outbox.dart';
 import 'remote/attendance_gateway_checkin_client.dart';
+import '../../diagnostics/domain/entities/diagnostic_event.dart';
+import '../../diagnostics/domain/repositories/diagnostics_repository.dart';
 
 class AttendanceCheckInRepositoryImpl implements AttendanceCheckInRepository {
   AttendanceCheckInRepositoryImpl({
@@ -17,11 +19,13 @@ class AttendanceCheckInRepositoryImpl implements AttendanceCheckInRepository {
         const AttendanceCheckInFailureMapper(),
     Future<void> Function(Duration duration)? wait,
     CheckInPilotMetrics? metrics,
+    DiagnosticsRepository? diagnostics,
   }) : _remote = remote,
        _outbox = outbox,
        _failureMapper = failureMapper,
        _wait = wait ?? Future<void>.delayed,
-       _metrics = metrics ?? CheckInPilotMetrics();
+       _metrics = metrics ?? CheckInPilotMetrics(),
+       _diagnostics = diagnostics;
 
   static const _maximumAutomaticRetries = 2;
 
@@ -30,6 +34,7 @@ class AttendanceCheckInRepositoryImpl implements AttendanceCheckInRepository {
   final AttendanceCheckInFailureMapper _failureMapper;
   final Future<void> Function(Duration duration) _wait;
   final CheckInPilotMetrics _metrics;
+  final DiagnosticsRepository? _diagnostics;
 
   @override
   Future<OperationResult<CheckInReceipt>> submit(CheckInAction action) async {
@@ -41,6 +46,18 @@ class AttendanceCheckInRepositoryImpl implements AttendanceCheckInRepository {
         return OperationResult.success(receipt);
       } catch (error) {
         final failure = _failureMapper.map(error);
+        await _diagnostics?.report(
+          DiagnosticEvent.create(
+            feature: 'attendance_checkin',
+            safeCode: _safeCode(failure),
+            release: const String.fromEnvironment(
+              'APP_RELEASE',
+              defaultValue: 'unknown',
+            ),
+            occurredAt: DateTime.now(),
+            metadata: const {'operation': 'submit', 'surface': 'attendance'},
+          ),
+        );
         if (failure.requiresStatusCheck) {
           await _savePending(
             action,
@@ -65,6 +82,18 @@ class AttendanceCheckInRepositoryImpl implements AttendanceCheckInRepository {
     }
     throw StateError('Unreachable bounded retry state.');
   }
+
+  String _safeCode(AppFailure failure) => switch (failure.category) {
+    FailureCategory.authenticationSession => 'session_expired',
+    FailureCategory.access => 'access_denied',
+    FailureCategory.connectivity => 'connection_interrupted',
+    FailureCategory.validation => 'validation_failed',
+    FailureCategory.temporaryService =>
+      failure.requiresStatusCheck
+          ? 'check_request_status'
+          : 'temporarily_unavailable',
+    _ => 'unexpected',
+  };
 
   @override
   Future<PendingCheckIn?> pendingFor(String employeeScopeId) {

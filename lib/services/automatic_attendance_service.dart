@@ -4,6 +4,8 @@ import 'package:geolocator/geolocator.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/user_model.dart';
+import '../features/attendance_locations/data/attendance_location_assignment_repository_impl.dart';
+import '../features/attendance_locations/domain/services/attendance_region_plan.dart';
 import 'attendance_service.dart';
 import 'location_service.dart';
 
@@ -34,9 +36,6 @@ class AutomaticAttendanceService {
       throw Exception(
         'الحضور التلقائي غير متاح على iPhone. استخدم زر الحضور والانصراف داخل التطبيق؛ لا يتم تتبع موقعك في الخلفية.',
       );
-    }
-    if (user.locationId.isEmpty) {
-      throw Exception('لا يوجد فرع عمل محدد لهذا الحساب. تواصل مع HR.');
     }
     if (!await Geolocator.isLocationServiceEnabled()) {
       throw Exception('فعّل خدمة الموقع من إعدادات الهاتف أولاً.');
@@ -72,14 +71,17 @@ class AutomaticAttendanceService {
     String? deviceId,
     String? deviceLabel,
   }) async {
-    if (!isSupported || user.locationId.isEmpty) {
-      return;
-    }
+    if (!isSupported) return;
     if (!force && !await isEnabledFor(user.uid)) return;
     final permission = await Geolocator.checkPermission();
     if (permission != LocationPermission.always) return;
-    final location = await LocationService().getLocationById(user.locationId);
-    if (location == null || !location.isActive) return;
+    final monitorLocations = await _monitorLocations(user);
+    if (monitorLocations.isEmpty) {
+      if (force) {
+        throw Exception('لا يوجد موقع حضور نشط مسند إلى حسابك. تواصل مع HR.');
+      }
+      return;
+    }
     final boundDeviceId = deviceId ?? user.registeredAttendanceDeviceId;
     if (boundDeviceId == null || boundDeviceId.trim().isEmpty) return;
     final method = defaultTargetPlatform == TargetPlatform.iOS
@@ -90,12 +92,53 @@ class AutomaticAttendanceService {
       'employeeId': user.employeeId,
       'deviceId': boundDeviceId,
       'deviceLabel': deviceLabel ?? user.registeredAttendanceDeviceLabel ?? '',
-      'locationId': location.locationId,
-      'locationName': location.name,
-      'latitude': location.latitude,
-      'longitude': location.longitude,
-      'radiusMeters': location.geofenceRadiusMeters,
+      // Scalar fields keep old installed native builds compatible during the
+      // staged rollout. New builds consume the bounded locations list.
+      ...monitorLocations.first,
+      'locations': monitorLocations,
     });
+  }
+
+  Future<List<Map<String, Object?>>> _monitorLocations(UserModel user) async {
+    try {
+      final snapshot = await AttendanceLocationAssignmentRepositoryImpl()
+          .getMine();
+      if (snapshot.enabled) {
+        final now = DateTime.now();
+        final assignments = AttendanceRegionPlan.build(
+          assignments: snapshot.assignments,
+          at: now,
+        );
+        return assignments
+            .map(
+              (assignment) => <String, Object?>{
+                'locationId': assignment.locationId,
+                'locationName': assignment.locationName,
+                'latitude': assignment.latitude,
+                'longitude': assignment.longitude,
+                'radiusMeters': assignment.radiusMeters,
+                'assignmentId': assignment.id,
+                'assignmentVersion': assignment.version,
+                'priority': assignment.priority,
+              },
+            )
+            .toList(growable: false);
+      }
+    } catch (_) {
+      // A rollout/cache failure keeps the existing single-location behavior.
+    }
+    if (user.locationId.isEmpty) return const [];
+    final location = await LocationService().getLocationById(user.locationId);
+    if (location == null || !location.isActive) return const [];
+    return [
+      <String, Object?>{
+        'locationId': location.locationId,
+        'locationName': location.name,
+        'latitude': location.latitude,
+        'longitude': location.longitude,
+        'radiusMeters': location.geofenceRadiusMeters,
+      },
+    ];
   }
 
   Future<void> disable(String userId) async {

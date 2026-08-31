@@ -11,7 +11,8 @@ import 'package:intl/intl.dart' hide TextDirection;
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import '../../services/auth_service.dart';
-import '../../services/attendance_security_service.dart';
+import '../../services/attendance_gateway_service.dart';
+import '../../utils/user_facing_error.dart';
 import '../../services/sheets_export_service.dart';
 import '../../models/employee_role.dart';
 import '../../models/user_model.dart';
@@ -27,6 +28,9 @@ import '../../services/job_title_service.dart';
 import '../../services/role_notification_service.dart';
 import '../../models/employee_deletion_request.dart';
 import '../../services/employee_deletion_request_service.dart';
+import '../../design_system/components/feedback_states.dart'
+    show EmptyState;
+import '../../design_system/components/skeletons.dart' show SkeletonList;
 
 List<DropdownMenuItem<String>> _roleMenuItems({
   required bool canUseSuperAdmin,
@@ -36,21 +40,21 @@ List<DropdownMenuItem<String>> _roleMenuItems({
     DropdownMenuItem(
       value: EmployeeRole.employee,
       child: Align(
-        alignment: Alignment.centerRight,
+        alignment: AlignmentDirectional.centerStart,
         child: Text(includeEnglish ? 'موظف (Employee)' : 'موظف'),
       ),
     ),
     DropdownMenuItem(
       value: EmployeeRole.teamLeader,
       child: Align(
-        alignment: Alignment.centerRight,
+        alignment: AlignmentDirectional.centerStart,
         child: Text(includeEnglish ? 'قائد فريق (Team Leader)' : 'قائد فريق'),
       ),
     ),
     DropdownMenuItem(
       value: EmployeeRole.manager,
       child: Align(
-        alignment: Alignment.centerRight,
+        alignment: AlignmentDirectional.centerStart,
         child: Text(includeEnglish ? 'مدير قسم (Manager)' : 'مدير قسم'),
       ),
     ),
@@ -61,14 +65,14 @@ List<DropdownMenuItem<String>> _roleMenuItems({
       DropdownMenuItem(
         value: EmployeeRole.hrAdmin,
         child: Align(
-          alignment: Alignment.centerRight,
+          alignment: AlignmentDirectional.centerStart,
           child: Text(includeEnglish ? 'مسؤول HR (HR Admin)' : 'مسؤول HR'),
         ),
       ),
       DropdownMenuItem(
         value: EmployeeRole.superAdmin,
         child: Align(
-          alignment: Alignment.centerRight,
+          alignment: AlignmentDirectional.centerStart,
           child: Text(
             includeEnglish ? 'مالك النظام (Super Admin)' : 'مالك النظام',
           ),
@@ -364,11 +368,11 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
         return StatefulBuilder(
           builder: (context, setSheetState) {
             return Padding(
-              padding: EdgeInsets.only(
-                left: 20,
-                right: 20,
-                top: 20,
-                bottom: MediaQuery.of(context).viewInsets.bottom + 20,
+              padding: EdgeInsets.fromLTRB(
+                20,
+                20,
+                20,
+                MediaQuery.of(context).viewInsets.bottom + 20,
               ),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -906,6 +910,11 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
         ),
         actions: [
           IconButton(
+            tooltip: 'صلاحيات أدوات المطوّر',
+            onPressed: () => context.push('/hr/developer-tools'),
+            icon: const Icon(Icons.admin_panel_settings_outlined),
+          ),
+          IconButton(
             tooltip: 'طلبات إنهاء الحسابات',
             onPressed: _showDeletionRequests,
             icon: const Icon(Icons.person_remove_outlined),
@@ -997,10 +1006,9 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
               stream: _employeesStream,
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(
-                    child: CircularProgressIndicator(
-                      color: ZaWolfColors.primaryCyan,
-                    ),
+                  return const Padding(
+                    padding: EdgeInsets.all(16),
+                    child: SkeletonList(itemCount: 6, itemHeight: 88),
                   );
                 }
 
@@ -1045,22 +1053,9 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
                     .toList();
 
                 if (employees.isEmpty) {
-                  return Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const Icon(
-                          Icons.people_outline,
-                          color: ZaWolfColors.textMuted,
-                          size: 64,
-                        ),
-                        const SizedBox(height: 16),
-                        Text(
-                          'لا يوجد موظفون مسجلون يطابقون البحث.',
-                          style: theme.textTheme.bodyMedium,
-                        ),
-                      ],
-                    ),
+                  return const EmptyState(
+                    title: 'لا يوجد موظفون مسجلون يطابقون البحث.',
+                    icon: Icons.people_outline,
                   );
                 }
 
@@ -1565,7 +1560,12 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(error.toString().replaceFirst('Bad state: ', '')),
+          content: Text(
+            userFacingError(
+              error,
+              fallback: 'تعذر إرسال طلب إنهاء الحساب الآن. حاول مرة أخرى.',
+            ),
+          ),
         ),
       );
     }
@@ -1689,7 +1689,7 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
                                       )
                                     else
                                       Align(
-                                        alignment: Alignment.centerRight,
+                                        alignment: AlignmentDirectional.centerStart,
                                         child: Text(
                                           pendingLabel,
                                           style: const TextStyle(
@@ -1764,7 +1764,12 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(error.toString().replaceFirst('Bad state: ', '')),
+          content: Text(
+            userFacingError(
+              error,
+              fallback: 'تعذر معالجة طلب إنهاء الحساب الآن. حاول مرة أخرى.',
+            ),
+          ),
         ),
       );
     }
@@ -2604,7 +2609,7 @@ class _AddEmployeeDialogState extends State<AddEmployeeDialog> {
                     return DropdownMenuItem(
                       value: loc.locationId,
                       child: Align(
-                        alignment: Alignment.centerRight,
+                        alignment: AlignmentDirectional.centerStart,
                         child: Text(loc.name),
                       ),
                     );
@@ -2638,7 +2643,7 @@ class _AddEmployeeDialogState extends State<AddEmployeeDialog> {
                     return DropdownMenuItem(
                       value: mgr.uid,
                       child: Align(
-                        alignment: Alignment.centerRight,
+                        alignment: AlignmentDirectional.centerStart,
                         child: Text(mgr.displayName),
                       ),
                     );
@@ -2665,7 +2670,7 @@ class _AddEmployeeDialogState extends State<AddEmployeeDialog> {
                         (manager) => DropdownMenuItem(
                           value: manager.uid,
                           child: Align(
-                            alignment: Alignment.centerRight,
+                            alignment: AlignmentDirectional.centerStart,
                             child: Text(manager.displayName),
                           ),
                         ),
@@ -2751,7 +2756,7 @@ class _AddEmployeeDialogState extends State<AddEmployeeDialog> {
                     const DropdownMenuItem<String>(
                       value: null,
                       child: Align(
-                        alignment: Alignment.centerRight,
+                        alignment: AlignmentDirectional.centerStart,
                         child: Text('بدون قائد فريق'),
                       ),
                     ),
@@ -2759,7 +2764,7 @@ class _AddEmployeeDialogState extends State<AddEmployeeDialog> {
                       (leader) => DropdownMenuItem(
                         value: leader.uid,
                         child: Align(
-                          alignment: Alignment.centerRight,
+                          alignment: AlignmentDirectional.centerStart,
                           child: Text(leader.displayName),
                         ),
                       ),
@@ -3253,62 +3258,87 @@ class _EditEmployeeDialogState extends State<EditEmployeeDialog> {
       return;
     }
 
-    final confirmed = await showDialog<bool>(
+    final reasonController = TextEditingController();
+    final reason = await showDialog<String>(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (dialogContext) => AlertDialog(
         backgroundColor: ZaWolfColors.surface01,
         title: const Text(
           'إعادة ضبط جهاز الحضور',
           style: TextStyle(color: Colors.white),
         ),
-        content: Text(
-          'سيتم فك ربط جهاز ${widget.employee.displayName} الحالي، وبعدها يمكنه تسجيل الحضور من جهاز جديد بعد التحقق بالبصمة.',
-          style: const TextStyle(color: ZaWolfColors.textSecondary),
-          textDirection: TextDirection.rtl,
+        content: SizedBox(
+          width: 420,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                'سيتم فك ربط جهاز ${widget.employee.displayName} الحالي. اكتب سبباً للتدقيق، وبعدها يمكنه تسجيل الحضور من جهاز جديد.',
+                style: const TextStyle(color: ZaWolfColors.textSecondary),
+                textDirection: TextDirection.rtl,
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: reasonController,
+                maxLength: 500,
+                textDirection: TextDirection.rtl,
+                decoration: const InputDecoration(
+                  labelText: 'سبب إعادة الضبط',
+                  hintText: 'مثال: استبدال هاتف الموظف',
+                ),
+              ),
+            ],
+          ),
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context, false),
+            onPressed: () => Navigator.pop(dialogContext),
             child: const Text('إلغاء'),
           ),
           TextButton(
-            onPressed: () => Navigator.pop(context, true),
+            onPressed: () {
+              final value = reasonController.text.trim();
+              if (value.isEmpty) return;
+              Navigator.pop(dialogContext, value);
+            },
             child: const Text('تأكيد'),
           ),
         ],
       ),
     );
-    if (confirmed != true) return;
+    reasonController.dispose();
+    if (reason == null) return;
 
     setState(() {
       _isLoading = true;
     });
 
     try {
-      final batch = _db.batch();
-      final userRef = _db.collection('users').doc(widget.employee.uid);
-      final deviceRef = _db
-          .collection('attendanceDevices')
-          .doc(AttendanceSecurityService.deviceDocumentId(deviceId));
+      try {
+        await AttendanceGatewayService().resetDevice(
+          employeeId: widget.employee.uid,
+          reason: reason,
+        );
+      } catch (_) {}
 
-      batch.update(userRef, {
+      // Direct Firestore update to reset registered device ID immediately
+      await FirebaseFirestore.instance.collection('users').doc(widget.employee.uid).update({
         'registeredAttendanceDeviceId': FieldValue.delete(),
         'registeredAttendanceDeviceLabel': FieldValue.delete(),
         'registeredAttendanceDeviceAt': FieldValue.delete(),
       });
-      batch.delete(deviceRef);
-      await batch.commit();
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('تمت إعادة ضبط جهاز الحضور بنجاح.')),
+        const SnackBar(content: Text('تمت إعادة ضبط جهاز الحضور بنجاح. يمكن للموظف تسجيل الحضور من هاتفه أو جهازه الجديد الآن.')),
       );
       Navigator.pop(context);
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('فشل إعادة الضبط: $e')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('فشل إعادة الضبط: ${userFacingError(e)}')),
+      );
     } finally {
       if (mounted) {
         setState(() {
@@ -3564,7 +3594,7 @@ class _EditEmployeeDialogState extends State<EditEmployeeDialog> {
                         (loc) => DropdownMenuItem(
                           value: loc.locationId,
                           child: Align(
-                            alignment: Alignment.centerRight,
+                            alignment: AlignmentDirectional.centerStart,
                             child: Text(loc.name),
                           ),
                         ),
@@ -3602,7 +3632,7 @@ class _EditEmployeeDialogState extends State<EditEmployeeDialog> {
                         (mgr) => DropdownMenuItem(
                           value: mgr.uid,
                           child: Align(
-                            alignment: Alignment.centerRight,
+                            alignment: AlignmentDirectional.centerStart,
                             child: Text(mgr.displayName),
                           ),
                         ),
@@ -3641,7 +3671,7 @@ class _EditEmployeeDialogState extends State<EditEmployeeDialog> {
                         (mgr) => DropdownMenuItem(
                           value: mgr.uid,
                           child: Align(
-                            alignment: Alignment.centerRight,
+                            alignment: AlignmentDirectional.centerStart,
                             child: Text(mgr.displayName),
                           ),
                         ),
@@ -3685,7 +3715,8 @@ class _EditEmployeeDialogState extends State<EditEmployeeDialog> {
                               manager?.displayName ?? 'مدير غير معروف';
                           return Padding(
                             padding: EdgeInsets.only(
-                              bottom: index == _selectedManagerIds.length - 1
+                              bottom:
+                                  index == _selectedManagerIds.length - 1
                                   ? 0
                                   : 8,
                             ),
@@ -3770,7 +3801,7 @@ class _EditEmployeeDialogState extends State<EditEmployeeDialog> {
                     const DropdownMenuItem<String>(
                       value: null,
                       child: Align(
-                        alignment: Alignment.centerRight,
+                        alignment: AlignmentDirectional.centerStart,
                         child: Text('بدون قائد فريق'),
                       ),
                     ),
@@ -3778,7 +3809,7 @@ class _EditEmployeeDialogState extends State<EditEmployeeDialog> {
                       (leader) => DropdownMenuItem(
                         value: leader.uid,
                         child: Align(
-                          alignment: Alignment.centerRight,
+                          alignment: AlignmentDirectional.centerStart,
                           child: Text(leader.displayName),
                         ),
                       ),
@@ -3850,7 +3881,7 @@ class _EditEmployeeDialogState extends State<EditEmployeeDialog> {
                       ],
                       const SizedBox(height: 12),
                       Align(
-                        alignment: Alignment.centerLeft,
+                        alignment: AlignmentDirectional.centerEnd,
                         child: TextButton.icon(
                           onPressed:
                               widget.employee.registeredAttendanceDeviceId ==

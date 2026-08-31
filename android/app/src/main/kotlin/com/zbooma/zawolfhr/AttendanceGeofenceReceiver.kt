@@ -8,6 +8,7 @@ import com.google.android.gms.location.GeofencingEvent
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
+import org.json.JSONObject
 
 class AttendanceGeofenceReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
@@ -20,18 +21,20 @@ class AttendanceGeofenceReceiver : BroadcastReceiver() {
             pending.finish()
             return
         }
-        val transition = when (event.geofenceTransition) {
-            Geofence.GEOFENCE_TRANSITION_ENTER -> "enter"
-            Geofence.GEOFENCE_TRANSITION_EXIT -> "exit"
-            else -> {
-                pending.finish()
-                return
-            }
+        val transition = event.geofenceTransition
+        if (transition != Geofence.GEOFENCE_TRANSITION_ENTER &&
+            transition != Geofence.GEOFENCE_TRANSITION_EXIT) {
+            pending.finish()
+            return
         }
         val prefs = context.getSharedPreferences("auto_attendance", Context.MODE_PRIVATE)
         val configuredUserId = prefs.getString("userId", null)
         val firebaseUser = FirebaseAuth.getInstance().currentUser
         val location = event.triggeringLocation
+        val triggeredRegion = event.triggeringGeofences
+            ?.mapNotNull { it.requestId.removePrefix("zawolf_").takeIf(String::isNotBlank) }
+            ?.sorted()
+            ?.firstOrNull()
         if (configuredUserId.isNullOrEmpty() || firebaseUser?.uid != configuredUserId || location == null) {
             pending.finish()
             return
@@ -40,14 +43,22 @@ class AttendanceGeofenceReceiver : BroadcastReceiver() {
             pending.finish()
             return
         }
+        if (triggeredRegion == null) {
+            pending.finish()
+            return
+        }
+        val metadata = try {
+            JSONObject(prefs.getString("locationMetadata", "{}") ?: "{}")
+                .optJSONObject(triggeredRegion) ?: JSONObject()
+        } catch (_: Exception) { JSONObject() }
         val data = hashMapOf<String, Any>(
             "userId" to configuredUserId,
             "employeeId" to (prefs.getString("employeeId", "") ?: ""),
             "deviceId" to (prefs.getString("deviceId", "") ?: ""),
             "deviceLabel" to (prefs.getString("deviceLabel", "") ?: ""),
-            "locationId" to (prefs.getString("locationId", "") ?: ""),
-            "locationName" to (prefs.getString("locationName", "") ?: ""),
-            "event" to transition,
+            "locationId" to triggeredRegion,
+            "locationName" to metadata.optString("locationName", ""),
+            "event" to if (transition == Geofence.GEOFENCE_TRANSITION_ENTER) "enter" else "exit",
             "latitude" to location.latitude,
             "longitude" to location.longitude,
             "accuracyMeters" to location.accuracy.toDouble(),
@@ -59,6 +70,10 @@ class AttendanceGeofenceReceiver : BroadcastReceiver() {
             ),
             "createdAt" to FieldValue.serverTimestamp(),
         )
+        val assignmentId = metadata.optString("assignmentId", "")
+        val assignmentVersion = metadata.optInt("assignmentVersion", 0)
+        if (assignmentId.isNotEmpty()) data["assignmentId"] = assignmentId
+        if (assignmentVersion > 0) data["assignmentVersion"] = assignmentVersion
         FirebaseFirestore.getInstance().collection("autoAttendanceSignals")
             .add(data)
             .addOnCompleteListener { pending.finish() }

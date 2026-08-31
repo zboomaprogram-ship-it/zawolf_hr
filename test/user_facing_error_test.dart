@@ -18,4 +18,21 @@ void main() {
 
     expect(message, contains('حاول مرة أخرى'));
   });
+
+  test('never exposes raw Firebase details from an arbitrary exception', () {
+    final message = userFacingError(
+      Exception('cloud_firestore/permission-denied: internal path /users/x'),
+      fallback: 'تعذر تنفيذ العملية بأمان.',
+    );
+
+    expect(message, 'تعذر تنفيذ العملية بأمان.');
+    expect(message, isNot(contains('cloud_firestore')));
+  });
+
+  test('keeps application-authored Arabic business guidance', () {
+    expect(
+      userFacingError(Exception('هذا الحساب مربوط بجهاز حضور آخر.')),
+      'هذا الحساب مربوط بجهاز حضور آخر.',
+    );
+  });
 }

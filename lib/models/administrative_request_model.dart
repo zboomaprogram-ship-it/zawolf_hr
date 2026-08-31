@@ -35,6 +35,7 @@ class AdministrativeRequestModel {
     required this.employeeName,
     required this.department,
     required this.category,
+    required this.categoryLabel,
     required this.notes,
     required this.status,
     required this.submittedAt,
@@ -56,6 +57,7 @@ class AdministrativeRequestModel {
   final String employeeName;
   final String department;
   final String category;
+  final String categoryLabel;
   final String notes;
   final String status;
   final DateTime submittedAt;
@@ -82,6 +84,11 @@ class AdministrativeRequestModel {
       department: data['department'] as String? ?? '',
       category:
           data['category'] as String? ?? AdministrativeRequestCategory.other,
+      categoryLabel:
+          data['categoryLabel'] as String? ??
+          AdministrativeRequestCategory.arabicLabel(
+            data['category'] as String? ?? AdministrativeRequestCategory.other,
+          ),
       notes: data['notes'] as String? ?? '',
       status: data['status'] as String? ?? 'pending_manager',
       submittedAt:

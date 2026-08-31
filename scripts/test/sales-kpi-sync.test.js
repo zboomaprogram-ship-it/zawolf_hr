@@ -7,6 +7,7 @@ const {
   cycleFor,
   duplicateConfiguredAgentKeys,
   departmentAgentStats,
+  providerSnapshotTotals,
   findAgent,
   findAgentMatch,
   taskDueDates,
@@ -17,7 +18,19 @@ const {
 const {
   analyzeIdentityContract,
   fetchSalesAnalytics,
+  salesAnalyticsEndpoint,
 } = require('../sales-analytics-client');
+
+test('Sales Analytics accepts either a provider root URL or the full endpoint', () => {
+  assert.equal(
+    salesAnalyticsEndpoint('https://kpi.samielmetwali.com'),
+    'https://kpi.samielmetwali.com/api/v1/sales-analytics',
+  );
+  assert.equal(
+    salesAnalyticsEndpoint('https://kpi.samielmetwali.com/api/v1/sales-analytics'),
+    'https://kpi.samielmetwali.com/api/v1/sales-analytics',
+  );
+});
 
 test('Sales Analytics requests aggregate duplicate source rows by default', async () => {
   const previousKey = process.env.SALES_API_KEY;
@@ -42,6 +55,28 @@ test('Sales Analytics requests aggregate duplicate source rows by default', asyn
   }
   assert.equal(requestedUrl.searchParams.get('cumulative'), 'true');
   assert.equal(requestedUrl.searchParams.get('idEmp'), 'BD-1201');
+});
+
+test('Sales Analytics preserves the requested filter echo contract', async () => {
+  const previousKey = process.env.SALES_API_KEY;
+  process.env.SALES_API_KEY = 'test-key';
+  try {
+    const response = await fetchSalesAnalytics(
+      { startDate: '2026-07-01', endDate: '2026-07-31', company: 'SEG', idEmp: 'BD-1201' },
+      async (url) => new Response(JSON.stringify({
+        success: true,
+        summary: {},
+        filters: { company: new URL(url).searchParams.get('company'), idEmp: 'BD-1201' },
+        salesKpi: { agents: [{ idEmp: 'BD-1201' }] },
+        teleSalesKpi: { agents: [] },
+      }), { status: 200 }),
+    );
+    assert.equal(response.filters.company, 'SEG');
+    assert.equal(response.integrationDiagnostics.employeeFilterApplied, true);
+  } finally {
+    if (previousKey == null) delete process.env.SALES_API_KEY;
+    else process.env.SALES_API_KEY = previousKey;
+  }
 });
 
 test('Sales Analytics retries one transient timeout before failing', async () => {
@@ -157,6 +192,21 @@ test('departmentAgentStats sums department targets and actuals', () => {
   assert.equal(stats.target, 40000);
   assert.equal(stats.actual, 40000);
   assert.equal(stats.averageKpi, 90);
+});
+
+test('provider snapshot totals keep unmapped sales visible', () => {
+  assert.deepEqual(
+    providerSnapshotTotals(
+      { actual: 17500, target: 40000 },
+      { actual: 94, target: 100 },
+    ),
+    {
+      salesActual: 17500,
+      teleSalesActual: 94,
+      salesEmployeeTarget: 40000,
+      teleSalesEmployeeTarget: 100,
+    },
+  );
 });
 
 test('agentActual reads normalized count-map keys', () => {

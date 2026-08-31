@@ -5,6 +5,7 @@ import '../services/auth_service.dart';
 import '../theme/theme.dart';
 import '../components/wolf_card.dart';
 import '../components/wolf_button.dart';
+import '../design_system/components/app_logo.dart';
 
 class PlaceholderScreen extends StatelessWidget {
   final String title;
@@ -46,17 +47,7 @@ class PlaceholderScreen extends StatelessWidget {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Container(
-                width: 80,
-                height: 80,
-                decoration: const BoxDecoration(
-                  shape: BoxShape.circle,
-                  boxShadow: [ZaWolfColors.wolfGlow],
-                ),
-                child: ClipOval(
-                  child: Image.asset('assets/images/wolf_head_geometric.png'),
-                ),
-              ),
+              const AppLogo(size: 80),
               const SizedBox(height: 24),
               Text(
                 '🐺 ZaWolf HR — $title',

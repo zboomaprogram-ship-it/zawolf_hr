@@ -9,8 +9,10 @@ import '../../models/user_model.dart';
 import '../../services/auth_service.dart';
 import '../../services/task_service.dart';
 import '../../theme/theme.dart';
+import '../../design_system/components/skeletons.dart' show SkeletonList;
 
 class TasksManagementScreen extends StatefulWidget {
+  // Legacy fallback retained while work_outcomes_v2 is piloted and reversible.
   const TasksManagementScreen({super.key});
 
   @override
@@ -36,8 +38,9 @@ class _TasksManagementScreenState extends State<TasksManagementScreen> {
 
     if (reviewer == null) {
       return const Scaffold(
-        body: Center(
-          child: CircularProgressIndicator(color: ZaWolfColors.primaryCyan),
+        body: Padding(
+          padding: EdgeInsets.all(16),
+          child: SkeletonList(itemCount: 5, itemHeight: 84),
         ),
       );
     }
@@ -150,7 +153,10 @@ class _TasksManagementScreenState extends State<TasksManagementScreen> {
                         labelText: 'الموظف',
                         border: OutlineInputBorder(),
                         isDense: true,
-                        contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                        contentPadding: EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 10,
+                        ),
                       ),
                       items: [
                         const DropdownMenuItem(
@@ -247,7 +253,8 @@ class _TasksManagementScreenState extends State<TasksManagementScreen> {
       case 'all':
         final endOfToday = DateTime(now.year, now.month, now.day, 23, 59, 59);
         return scoped.where((task) {
-          final isFutureKpiTask = task.dueDate.isAfter(endOfToday) &&
+          final isFutureKpiTask =
+              task.dueDate.isAfter(endOfToday) &&
               (task.source == 'sales_analytics_api' ||
                   task.progressMode == 'cumulative_daily' ||
                   task.periodKey.isNotEmpty);
@@ -255,17 +262,16 @@ class _TasksManagementScreenState extends State<TasksManagementScreen> {
         }).toList();
       default:
         final endOfToday = DateTime(now.year, now.month, now.day, 23, 59, 59);
-        return scoped
-            .where((task) {
-              final isFutureKpiTask = task.dueDate.isAfter(endOfToday) &&
-                  (task.source == 'sales_analytics_api' ||
-                      task.progressMode == 'cumulative_daily' ||
-                      task.periodKey.isNotEmpty);
-              return !isFutureKpiTask &&
-                  task.status != TaskStatus.done &&
-                  task.status != TaskStatus.cancelled;
-            })
-            .toList();
+        return scoped.where((task) {
+          final isFutureKpiTask =
+              task.dueDate.isAfter(endOfToday) &&
+              (task.source == 'sales_analytics_api' ||
+                  task.progressMode == 'cumulative_daily' ||
+                  task.periodKey.isNotEmpty);
+          return !isFutureKpiTask &&
+              task.status != TaskStatus.done &&
+              task.status != TaskStatus.cancelled;
+        }).toList();
     }
   }
 

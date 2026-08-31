@@ -286,8 +286,10 @@ class AttendanceService {
         userId: employee.uid,
         employeeId: employee.employeeId,
         employeeName: employee.displayName,
-        locationId: employee.locationId,
-        locationName: employee.locationName,
+        locationId: geoResult.locationId ?? employee.locationId,
+        locationName: geoResult.locationName,
+        assignmentId: geoResult.assignmentId,
+        assignmentVersion: geoResult.assignmentVersion,
         managerId: employee.managerId,
         date: todayStr,
         eventTime: now,
@@ -407,8 +409,10 @@ class AttendanceService {
         userId: employee.uid,
         employeeId: employee.employeeId,
         employeeName: employee.displayName,
-        locationId: employee.locationId,
-        locationName: employee.locationName,
+        locationId: geoResult.locationId ?? employee.locationId,
+        locationName: geoResult.locationName,
+        assignmentId: geoResult.assignmentId,
+        assignmentVersion: geoResult.assignmentVersion,
         managerId: employee.managerId,
         date: todayStr,
         eventTime: now,
@@ -627,7 +631,9 @@ class AttendanceService {
         metadata: {
           'attendanceAction': action,
           'result': result,
-          'locationId': employee.locationId,
+          'locationId': geoResult?.locationId ?? employee.locationId,
+          if (geoResult?.assignmentId != null)
+            'assignmentId': geoResult!.assignmentId,
           if (geoResult != null) ...{
             'distanceMeters': geoResult.distanceMeters.round(),
             'accuracyMeters': geoResult.accuracyMeters.round(),
@@ -1498,71 +1504,11 @@ class AttendanceService {
     String status, {
     required bool checkout,
   }) async {
-    if (checkout) {
-      final attendance = await _db
-          .collection('attendance')
-          .doc(attendanceId)
-          .get();
-      if (attendance.data()?['checkoutPolicyEnabled'] == false) {
-        throw Exception(
-          'لا تنطبق مراجعة الانصراف على فترة تم فيها إيقاف تسجيل الانصراف.',
-        );
-      }
-    }
-    final update = checkout
-        ? {
-            'checkoutSecurityReviewStatus': status,
-            'checkoutSecurityReviewedBy': reviewerId,
-            'checkoutSecurityReviewedAt': FieldValue.serverTimestamp(),
-          }
-        : {
-            'securityReviewStatus': status,
-            'securityReviewedBy': reviewerId,
-            'securityReviewedAt': FieldValue.serverTimestamp(),
-          };
-
-    await _db.collection('attendance').doc(attendanceId).update(update);
-
-    await AuditLogService.instance.record(
-      actorId: reviewerId,
-      action: checkout
-          ? 'checkout_security_review_$status'
-          : 'attendance_security_review_$status',
-      targetCollection: 'attendance',
-      targetId: attendanceId,
+    await _attendanceGateway.reviewAttendanceSecurity(
+      attendanceId: attendanceId,
+      status: status,
+      checkout: checkout,
     );
-
-    final doc = await _db.collection('attendance').doc(attendanceId).get();
-    if (!doc.exists) return;
-    final data = doc.data() ?? <String, dynamic>{};
-    final userId = data['userId'] as String?;
-    if (userId == null || userId.isEmpty) return;
-
-    final notifRef = _db
-        .collection('notifications')
-        .doc(userId)
-        .collection('items')
-        .doc();
-    await notifRef.set({
-      'notificationId': notifRef.id,
-      'type': 'attendance_security_reviewed',
-      'title': status == 'approved'
-          ? 'تم قبول مراجعة الحضور الأمنية'
-          : 'تم رفض مراجعة الحضور الأمنية',
-      'body': status == 'approved'
-          ? 'تم اعتماد حركة الحضور بعد مراجعة مؤشرات الموقع.'
-          : 'تم رفض حركة الحضور بعد مراجعة مؤشرات الموقع. تواصل مع HR إذا احتجت توضيحاً.',
-      'data': NotificationRoutePolicy.dataWithRoute(
-        'attendance_security_reviewed',
-        {'attendanceId': attendanceId},
-      ),
-      'isRead': false,
-      'pushSent': false,
-      'createdAt': FieldValue.serverTimestamp(),
-    });
-    await _db.collection('users').doc(userId).update({
-      'unreadNotifications': FieldValue.increment(1),
-    });
   }
 
   Future<void> _reviewSalaryDeduction(

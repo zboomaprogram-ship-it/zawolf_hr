@@ -47,6 +47,9 @@ class _FakeRepository implements CheckoutPolicyRepository {
     required bool enabled,
     required int expectedRevision,
     String? reason,
+    int? autoCheckoutReturnGraceMinutes,
+    String? companyBreakStartTime,
+    String? companyBreakEndTime,
   }) async {
     if (updateError != null) throw updateError!;
     return _snapshot(enabled: enabled, revision: expectedRevision + 1);

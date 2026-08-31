@@ -48,11 +48,33 @@ String userFacingError(
     return 'تعذر الاتصال بالخدمة مؤقتاً. لم يتم تنفيذ أي تعديل؛ تحقق من الإنترنت ثم أعد المحاولة.';
   }
 
-  final message = error.toString().replaceFirst('Exception: ', '').trim();
-  if (message.isNotEmpty &&
-      !message.contains('cloud_firestore/') &&
-      !message.contains('firebase_auth/')) {
+  final message = _safeArabicBusinessMessage(error);
+  if (message != null) {
     return message;
   }
   return fallback;
+}
+
+/// Legacy screens still use this utility directly. Keep the safety boundary
+/// here rather than coupling older presentation code to the new core layer.
+String? _safeArabicBusinessMessage(Object error) {
+  final message = error.toString().replaceFirst('Exception: ', '').trim();
+  if (message.isEmpty || !RegExp(r'[\u0600-\u06FF]').hasMatch(message)) {
+    return null;
+  }
+
+  const unsafeFragments = <String>[
+    'cloud_firestore',
+    'firebase_auth',
+    'firebase',
+    'permission-denied',
+    'unavailable',
+    'failed-precondition',
+    'http',
+    'exception',
+    'stack trace',
+    'typeerror',
+  ];
+  final normalized = message.toLowerCase();
+  return unsafeFragments.any(normalized.contains) ? null : message;
 }

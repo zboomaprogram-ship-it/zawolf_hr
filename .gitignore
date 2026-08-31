@@ -55,3 +55,8 @@ node_modules/
 /*.xls
 /*.ods
 /.tmp_*/
+
+# Real Phase 008/009 acceptance credentials and evidence stay local. The
+# committed `*.example.*` templates contain aliases only.
+/scripts/release-008-009-acceptance.env
+/scripts/acceptance/*-evidence.json

@@ -1,6 +1,8 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart' hide TextDirection;
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -10,18 +12,27 @@ import '../../components/wolf_card.dart';
 import '../../components/employee_request_history_section.dart';
 import '../../services/auth_service.dart';
 import '../../services/attendance_service.dart';
-import '../../services/attendance_gateway_service.dart';
 import '../../services/offline_attendance_queue_service.dart';
 import '../../services/automatic_attendance_service.dart';
 import '../../services/company_day_off_service.dart';
 import '../../services/geofence_service.dart';
 import '../../models/attendance_model.dart';
-import '../../models/attendance_policy.dart';
 import '../../models/company_day_off_status.dart';
 import '../../models/user_model.dart';
 import '../../utils/payroll_cycle.dart';
 import '../../features/attendance_checkin/attendance_checkin.dart';
+import '../../features/attendance_checkin/presentation/attendance_outcome_mapper.dart';
+import '../../design_system/components/app_logo.dart';
+import '../../design_system/components/stat_card.dart';
+import '../../design_system/tokens.dart';
 import 'checkin_confirm_modal.dart';
+import 'employee_attendance_gate_cubit.dart';
+import 'widgets/checkin_radar_button.dart';
+import 'widgets/checkin_action_state.dart';
+import 'widgets/employee_dashboard_header.dart';
+import 'widgets/employee_priority_strip.dart';
+import 'widgets/employee_quick_action.dart';
+import 'widgets/month_activity_section.dart';
 
 class EmployeeDashboardScreen extends StatefulWidget {
   const EmployeeDashboardScreen({super.key});
@@ -49,10 +60,8 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
   String? _preparedUserId;
   Timer? _clockTimer;
   DateTime _now = DateTime.now();
-  AttendancePolicyConfig _policyConfig = const AttendancePolicyConfig();
-  DateTime? _checkoutAllowedFrom;
-  bool _checkoutEnabled = false;
   AttendanceCheckInPilot? _checkInPilot;
+  int _pendingRequestsCount = 0;
 
   @override
   void initState() {
@@ -193,31 +202,11 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
   }
 
   Future<void> _refreshAttendanceGate(UserModel user) async {
-    final service = AttendanceService();
     try {
-      final results = await Future.wait([
-        service.policyConfigForDisplay(),
-        service.checkoutAllowedFromForDisplay(user),
-        AttendanceGatewayService().checkoutPolicy(),
-      ]);
-      if (!mounted) return;
-      setState(() {
-        _policyConfig = results[0] as AttendancePolicyConfig;
-        _checkoutAllowedFrom = results[1] as DateTime;
-        final policyResponse = results[2] as Map<String, dynamic>;
-        final checkoutPolicy = policyResponse['policy'];
-        _checkoutEnabled =
-            checkoutPolicy is Map && checkoutPolicy['enabled'] == true;
-        _now = DateTime.now();
-      });
-    } catch (_) {
-      if (!mounted) return;
-      setState(() {
-        _policyConfig = const AttendancePolicyConfig();
-        _checkoutAllowedFrom = null;
-        _checkoutEnabled = false;
-        _now = DateTime.now();
-      });
+      await context.read<EmployeeAttendanceGateCubit>().load(user);
+    } catch (_) {}
+    if (mounted) {
+      setState(() => _now = DateTime.now());
     }
   }
 
@@ -384,6 +373,7 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
 
   String _friendlyAttendanceError(Object error) {
     final raw = error.toString().replaceAll('Exception: ', '');
+    if (kDebugMode) debugPrint('Attendance action failure detail: $error');
     if (raw.contains('resource-exhausted') ||
         raw.contains('resource_exhausted') ||
         raw.contains('quota') ||
@@ -403,14 +393,18 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
     if (raw.contains('permission-denied')) {
       return 'تعذر حفظ الحضور بسبب إعداد أمان الحساب أو ربط الجهاز. لم يتم تسجيل العملية. أعد فتح التطبيق مرة واحدة؛ وإذا تكرر الخطأ، يراجع HR حالة الحساب وجهاز الحضور من شاشة الموظف.';
     }
-    // Never expose provider, transport, or rule text to an employee. The
-    // diagnostic is retained server-side; this screen gives a clear safe next
-    // action instead.
+    // Never expose server, Firebase, or transport strings. The gateway owns
+    // detailed business validation and this legacy surface renders a safe
+    // outcome only.
+    const outcomes = AttendanceOutcomeMapper();
+    if (raw.contains('مسجل') || raw.contains('مكرر')) {
+      return outcomes.messageFor('already_recorded');
+    }
+    if (raw.contains('انصراف') && raw.contains('مفع')) {
+      return outcomes.messageFor('checkout_disabled');
+    }
+    if (raw.contains('مزامنة')) return outcomes.messageFor('pending_sync');
     return 'تعذر تأكيد الحضور الآن. تحقق من اتصال الإنترنت والموقع، ثم أعد المحاولة. لن يُسجَّل حضور مكرر.';
-  }
-
-  String _formatGateTime(DateTime value) {
-    return '${value.hour.toString().padLeft(2, '0')}:${value.minute.toString().padLeft(2, '0')}';
   }
 
   @override
@@ -426,1012 +420,424 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
 
     final todayStr = DateFormat('yyyy-MM-dd').format(DateTime.now());
 
-    return Scaffold(
-      appBar: AppBar(
-        actions: [
-          IconButton(
-            tooltip: 'الإشعارات',
-            onPressed: () => context.push('/notifications'),
-            icon: Stack(
-              clipBehavior: Clip.none,
-              children: [
-                const Icon(Icons.notifications_none_rounded),
-                if (user.unreadNotifications > 0)
-                  PositionedDirectional(
-                    top: -5,
-                    start: -8,
-                    child: Container(
-                      constraints: const BoxConstraints(
-                        minWidth: 17,
-                        minHeight: 17,
-                      ),
-                      padding: const EdgeInsets.symmetric(horizontal: 4),
-                      decoration: const BoxDecoration(
-                        color: ZaWolfColors.error,
-                        shape: BoxShape.circle,
-                      ),
-                      alignment: Alignment.center,
-                      child: Text(
-                        user.unreadNotifications > 99
-                            ? '99+'
-                            : '${user.unreadNotifications}',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 9,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-          ),
-        ],
-        title: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Image.asset('assets/images/wolf_head_geometric.png', height: 28),
-            const SizedBox(width: 8),
-            Text(
-              'ZaWolf HR',
-              style:
-                  theme.textTheme.titleMedium?.copyWith(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w700,
-                  ) ??
-                  const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w700,
-                  ),
-            ),
-          ],
-        ),
-        centerTitle: true,
-      ),
-      body: StreamBuilder<List<AttendanceModel>>(
-        stream: _attendanceStream,
-        builder: (context, snapshot) {
-          final attendanceError = snapshot.hasError
-              ? 'تعذر تحميل سجل الحضور الآن. يمكنك السحب للتحديث أو المحاولة مرة أخرى.'
-              : null;
-          final logs = snapshot.data ?? [];
-          final todayLog = logs.firstWhere(
-            (log) => log.date == todayStr,
-            orElse: () => AttendanceModel(
-              attendanceId: '',
-              userId: '',
-              employeeId: '',
-              employeeName: '',
-              locationId: '',
-              locationName: '',
-              date: '',
-              checkInLocation: const GeoPoint(0, 0),
-              status: 'absent',
-            ),
-          );
-
-          final bool hasTodayRecord = todayLog.attendanceId.isNotEmpty;
-          final bool hasCheckedIn = todayLog.checkInTime != null;
-          final bool hasCheckedOut =
-              hasCheckedIn && todayLog.checkOutTime != null;
-          final policyCheckInOpenAt = AttendancePolicy.parseTimeOnDate(
-            _now,
-            _policyConfig.checkInOpenTime,
-          );
-          final employeeStartAt = AttendancePolicy.parseTimeOnDate(
-            _now,
-            user.workSchedule.startTime ?? _policyConfig.defaultStartTime,
-          );
-          final checkInOpenAt = employeeStartAt.isBefore(policyCheckInOpenAt)
-              ? employeeStartAt
-              : policyCheckInOpenAt;
-          final checkoutAllowedFrom =
-              _checkoutAllowedFrom ??
-              AttendancePolicy.parseTimeOnDate(
-                _now,
-                user.workSchedule.endTime ?? _policyConfig.defaultEndTime,
-              );
-          final latestCheckoutAt = AttendancePolicy.parseTimeOnDate(
-            _now,
-            _policyConfig.latestCheckoutTime,
-          );
-          final checkInNotOpenYet =
-              !hasCheckedIn && _now.isBefore(checkInOpenAt);
-          final checkoutNotOpenYet =
-              hasCheckedIn &&
-              !hasCheckedOut &&
-              _now.isBefore(checkoutAllowedFrom);
-          final checkoutExpired =
-              hasCheckedIn && !hasCheckedOut && _now.isAfter(latestCheckoutAt);
-          final checkoutPolicyDisabled =
-              hasCheckedIn && !hasCheckedOut && !_checkoutEnabled;
-          final pilotState = _isCheckInPilotEnabledFor(user)
-              ? _checkInPilot?.cubit.state
-              : null;
-          final pilotAwaitingConfirmation =
-              pilotState?.status == CheckInViewStatus.pendingSync ||
-              pilotState?.status == CheckInViewStatus.requiresStatusCheck ||
-              pilotState?.status == CheckInViewStatus.submitting;
-          final bool checkInDisabledForDayOff =
-              !hasTodayRecord && _dayOffStatus.isDayOff;
-          final bool actionDisabled =
-              _actionLoading ||
-              pilotAwaitingConfirmation ||
-              hasCheckedOut ||
-              checkInDisabledForDayOff ||
-              checkInNotOpenYet ||
-              checkoutPolicyDisabled ||
-              checkoutNotOpenYet ||
-              checkoutExpired;
-          final expectedAction = hasCheckedIn
-              ? AttendanceActionIntent.checkOut
-              : AttendanceActionIntent.checkIn;
-          final actionTitle = hasCheckedOut
-              ? 'اكتمل اليوم'
-              : checkInDisabledForDayOff
-              ? 'عطلة اليوم'
-              : checkInNotOpenYet
-              ? 'يفتح ${_formatGateTime(checkInOpenAt)}'
-              : checkoutExpired
-              ? 'انتهى اليوم'
-              : checkoutPolicyDisabled
-              ? 'تم تسجيل الحضور'
-              : checkoutNotOpenYet
-              ? 'يفتح ${_formatGateTime(checkoutAllowedFrom)}'
-              : hasCheckedIn
-              ? 'تسجيل انصراف'
-              : 'تسجيل حضور';
-          final actionSubtitle = hasCheckedOut
-              ? 'COMPLETED'
-              : checkInDisabledForDayOff
-              ? 'DAY OFF'
-              : checkInNotOpenYet
-              ? 'CHECK IN LATER'
-              : checkoutExpired
-              ? 'CHECKOUT CLOSED'
-              : checkoutPolicyDisabled
-              ? 'CHECK-IN SAVED'
-              : checkoutNotOpenYet
-              ? 'CHECK OUT AT ${_formatGateTime(checkoutAllowedFrom)}'
-              : hasCheckedIn
-              ? 'CHECK OUT'
-              : 'CHECK IN';
-          final actionIcon = hasCheckedOut
-              ? Icons.lock_clock
-              : checkInDisabledForDayOff
-              ? Icons.event_busy
-              : checkInNotOpenYet ||
-                    checkoutPolicyDisabled ||
-                    checkoutNotOpenYet ||
-                    checkoutExpired
-              ? Icons.schedule
-              : hasCheckedIn
-              ? Icons.logout
-              : Icons.fingerprint;
-
-          // Quick stats calculation
-          final workedDays = logs.where((l) => l.checkInTime != null).length;
-          final lates = logs.where((l) => l.isLate).length;
-          final absents = logs
-              .where((l) => l.status == 'absent')
-              .length; // normally we mark defaults, let's keep it simple
-
-          double disciplineScore = 100.0 - (lates * 5.0) - (absents * 10.0);
-          if (disciplineScore < 0.0) disciplineScore = 0.0;
-
-          return RefreshIndicator(
-            onRefresh: () async {
-              await attendanceService.syncPendingOfflineAttendance();
-              await Future.wait([
-                _checkCurrentGeofence(),
-                _checkCompanyDayOff(),
-              ]);
-            },
-            color: ZaWolfColors.primaryCyan,
-            child: SingleChildScrollView(
-              physics: const AlwaysScrollableScrollPhysics(),
-              padding: const EdgeInsets.all(16.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
+    return BlocProvider(
+      create: (_) => EmployeeAttendanceGateCubit()..load(user),
+      child: Scaffold(
+        appBar: AppBar(
+          actions: [
+            IconButton(
+              tooltip: 'الإشعارات',
+              onPressed: () => context.push('/notifications'),
+              icon: Stack(
+                clipBehavior: Clip.none,
                 children: [
-                  if (attendanceError != null) ...[
-                    WolfCard(
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Icon(
-                            Icons.cloud_off_outlined,
-                            color: ZaWolfColors.warning,
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Text(
-                              attendanceError,
-                              style: theme.textTheme.bodyMedium?.copyWith(
-                                color: ZaWolfColors.textSecondary,
-                              ),
-                              textDirection: TextDirection.rtl,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                  ],
-                  Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: ZaWolfColors.surface01,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: ZaWolfColors.surface03),
-                    ),
-                    child: Row(
-                      children: [
-                        InkWell(
-                          onTap: _checkingLocation
-                              ? null
-                              : _checkCurrentGeofence,
-                          borderRadius: BorderRadius.circular(8),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 12,
-                              vertical: 8,
-                            ),
-                            decoration: BoxDecoration(
-                              color:
-                                  (_geofenceResult?.isWithinZone == true
-                                          ? ZaWolfColors.success
-                                          : ZaWolfColors.error)
-                                      .withValues(alpha: 0.10),
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(
-                                color:
-                                    (_geofenceResult?.isWithinZone == true
-                                            ? ZaWolfColors.success
-                                            : ZaWolfColors.error)
-                                        .withValues(alpha: 0.25),
-                              ),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                if (_checkingLocation)
-                                  const SizedBox(
-                                    width: 14,
-                                    height: 14,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                      color: ZaWolfColors.primaryCyan,
-                                    ),
-                                  )
-                                else
-                                  Icon(
-                                    _geofenceResult?.isWithinZone == true
-                                        ? Icons.location_on
-                                        : Icons.location_off,
-                                    size: 16,
-                                    color: _geofenceResult?.isWithinZone == true
-                                        ? ZaWolfColors.success
-                                        : ZaWolfColors.error,
-                                  ),
-                                const SizedBox(width: 6),
-                                Text(
-                                  _checkingLocation
-                                      ? 'جاري التحديد'
-                                      : _geofenceResult?.isWithinZone == true
-                                      ? 'داخل النطاق'
-                                      : 'خارج النطاق',
-                                  style:
-                                      theme.textTheme.bodySmall?.copyWith(
-                                        color:
-                                            _geofenceResult?.isWithinZone ==
-                                                true
-                                            ? ZaWolfColors.success
-                                            : ZaWolfColors.error,
-                                        fontWeight: FontWeight.w700,
-                                      ) ??
-                                      TextStyle(
-                                        color:
-                                            _geofenceResult?.isWithinZone ==
-                                                true
-                                            ? ZaWolfColors.success
-                                            : ZaWolfColors.error,
-                                        fontWeight: FontWeight.w700,
-                                      ),
-                                ),
-                              ],
-                            ),
+                  const Icon(Icons.notifications_none_rounded),
+                  if (user.unreadNotifications > 0)
+                    PositionedDirectional(
+                      top: -5,
+                      start: -8,
+                      child: Container(
+                        constraints: const BoxConstraints(
+                          minWidth: 17,
+                          minHeight: 17,
+                        ),
+                        padding: const EdgeInsets.symmetric(horizontal: 4),
+                        decoration: const BoxDecoration(
+                          color: ZaWolfColors.error,
+                          shape: BoxShape.circle,
+                        ),
+                        alignment: Alignment.center,
+                        child: Text(
+                          user.unreadNotifications > 99
+                              ? '99+'
+                              : '${user.unreadNotifications}',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 9,
+                            fontWeight: FontWeight.w700,
                           ),
                         ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.end,
-                            children: [
-                              Text(
-                                'مرحباً، ${user.displayName}',
-                                style:
-                                    theme.textTheme.headlineSmall?.copyWith(
-                                      color: Colors.white,
-                                      fontSize: 22,
-                                    ) ??
-                                    const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 22,
-                                    ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                textDirection: TextDirection.rtl,
-                              ),
-                              Text(
-                                '${user.position} · ${user.department}',
-                                style: theme.textTheme.bodyMedium,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                textDirection: TextDirection.rtl,
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-
-                  if (_locationError != null) ...[
-                    WolfCard(
-                      child: Row(
-                        children: [
-                          TextButton.icon(
-                            onPressed: _checkingLocation
-                                ? null
-                                : _checkCurrentGeofence,
-                            icon: const Icon(Icons.refresh),
-                            label: const Text('تحديث'),
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: Text(
-                              _locationError!,
-                              style: const TextStyle(
-                                color: ZaWolfColors.warning,
-                                fontWeight: FontWeight.bold,
-                              ),
-                              textDirection: TextDirection.rtl,
-                            ),
-                          ),
-                          const SizedBox(width: 10),
-                          const Icon(
-                            Icons.location_disabled_outlined,
-                            color: ZaWolfColors.warning,
-                          ),
-                        ],
                       ),
-                    ),
-                    const SizedBox(height: 16),
-                  ],
-
-                  // Circular Pulsing Action Button
-                  Center(
-                    child: Stack(
-                      alignment: Alignment.center,
-                      children: [
-                        // Decorative glowing rings
-                        if (!actionDisabled)
-                          _buildRadarRing(
-                            hasCheckedIn
-                                ? ZaWolfColors.error
-                                : ZaWolfColors.success,
-                          ),
-
-                        // Main check-in button container
-                        GestureDetector(
-                          onTap: actionDisabled
-                              ? null
-                              : () => _handleCheckInCheckOut(
-                                  user,
-                                  expectedAction,
-                                ),
-                          child: Container(
-                            width: 160,
-                            height: 160,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              border: Border.all(
-                                color: Colors.white.withValues(alpha: 0.12),
-                              ),
-                              gradient: actionDisabled && !hasCheckedIn
-                                  ? const LinearGradient(
-                                      colors: [
-                                        ZaWolfColors.surface03,
-                                        ZaWolfColors.surface01,
-                                      ],
-                                    )
-                                  : hasCheckedOut
-                                  ? const LinearGradient(
-                                      colors: [
-                                        ZaWolfColors.surface03,
-                                        ZaWolfColors.surface01,
-                                      ],
-                                    )
-                                  : hasCheckedIn
-                                  ? const LinearGradient(
-                                      colors: [
-                                        ZaWolfColors.error,
-                                        Color(0xFFC62828),
-                                      ],
-                                    )
-                                  : ZaWolfColors.primaryGradient,
-                              boxShadow: actionDisabled
-                                  ? []
-                                  : [
-                                      BoxShadow(
-                                        color:
-                                            (hasCheckedIn
-                                                    ? ZaWolfColors.error
-                                                    : ZaWolfColors.primaryCyan)
-                                                .withValues(alpha: 0.35),
-                                        blurRadius: 30,
-                                        spreadRadius: 1,
-                                        offset: const Offset(0, 14),
-                                      ),
-                                    ],
-                            ),
-                            child: _actionLoading
-                                ? const Center(
-                                    child: CircularProgressIndicator(
-                                      color: Colors.white,
-                                    ),
-                                  )
-                                : Column(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
-                                      Icon(
-                                        actionIcon,
-                                        size: 44,
-                                        color: Colors.white,
-                                      ),
-                                      const SizedBox(height: 8),
-                                      Text(
-                                        actionTitle,
-                                        style:
-                                            theme.textTheme.titleMedium
-                                                ?.copyWith(
-                                                  color: Colors.white,
-                                                  fontWeight: FontWeight.bold,
-                                                ) ??
-                                            const TextStyle(
-                                              color: Colors.white,
-                                              fontWeight: FontWeight.bold,
-                                            ),
-                                      ),
-                                      Text(
-                                        actionSubtitle,
-                                        style:
-                                            theme.textTheme.bodySmall?.copyWith(
-                                              color: Colors.white70,
-                                              fontSize: 9,
-                                              fontWeight: FontWeight.bold,
-                                            ) ??
-                                            const TextStyle(
-                                              color: Colors.white70,
-                                              fontSize: 9,
-                                              fontWeight: FontWeight.bold,
-                                            ),
-                                      ),
-                                    ],
-                                  ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-
-                  if (pilotAwaitingConfirmation) ...[
-                    CheckInStatusFeedback(
-                      state: pilotState!,
-                      failureMessage: _checkInPilot!.cubit.safeFailureMessage(),
-                      onRetry: () {
-                        unawaited(_retryReliableCheckIn(user.uid));
-                      },
-                    ),
-                    const SizedBox(height: 16),
-                  ],
-
-                  if (_checkingDayOff || checkInDisabledForDayOff) ...[
-                    WolfCard(
-                      child: Row(
-                        children: [
-                          Icon(
-                            _checkingDayOff
-                                ? Icons.sync
-                                : Icons.event_busy_outlined,
-                            color: _checkingDayOff
-                                ? ZaWolfColors.primaryCyan
-                                : ZaWolfColors.warning,
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Text(
-                              _checkingDayOff
-                                  ? 'جاري التحقق من أيام العطلات...'
-                                  : 'تسجيل الحضور متوقف اليوم: ${_dayOffStatus.reason}',
-                              style:
-                                  theme.textTheme.bodyMedium?.copyWith(
-                                    color: _checkingDayOff
-                                        ? ZaWolfColors.textSecondary
-                                        : ZaWolfColors.warning,
-                                    fontWeight: FontWeight.bold,
-                                  ) ??
-                                  TextStyle(
-                                    color: _checkingDayOff
-                                        ? ZaWolfColors.textSecondary
-                                        : ZaWolfColors.warning,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                              textDirection: TextDirection.rtl,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                  ],
-
-                  // Location and Lateness Badge Card
-                  if (hasCheckedIn)
-                    WolfCard(
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          if (todayLog.checkInTime case final checkInTime?)
-                            Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  'حضور اليوم: ${DateFormat('hh:mm a').format(checkInTime)}',
-                                  style:
-                                      theme.textTheme.bodyMedium?.copyWith(
-                                        color: Colors.white,
-                                        fontWeight: FontWeight.bold,
-                                      ) ??
-                                      const TextStyle(
-                                        color: Colors.white,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                ),
-                                if (todayLog.checkOutTime
-                                    case final checkOutTime?)
-                                  Text(
-                                    'انصراف اليوم: ${DateFormat('hh:mm a').format(checkOutTime)}',
-                                    style:
-                                        theme.textTheme.bodyMedium?.copyWith(
-                                          color: Colors.white,
-                                          fontWeight: FontWeight.bold,
-                                        ) ??
-                                        const TextStyle(
-                                          color: Colors.white,
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                  )
-                                else
-                                  Text(
-                                    'قيد العمل في فرع (${todayLog.locationName})',
-                                    style: theme.textTheme.bodySmall,
-                                  ),
-                              ],
-                            )
-                          else
-                            Text(
-                              'لم يتم تسجيل وقت حضور صالح لهذا اليوم.',
-                              style:
-                                  theme.textTheme.bodyMedium?.copyWith(
-                                    color: ZaWolfColors.warning,
-                                    fontWeight: FontWeight.bold,
-                                  ) ??
-                                  const TextStyle(
-                                    color: ZaWolfColors.warning,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                            ),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 10,
-                              vertical: 4,
-                            ),
-                            decoration: BoxDecoration(
-                              color: todayLog.isLate
-                                  ? ZaWolfColors.warning.withValues(alpha: 0.2)
-                                  : ZaWolfColors.success.withValues(alpha: 0.2),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Text(
-                              todayLog.isLate
-                                  ? '${todayLog.salaryDeductionLabel} · ${todayLog.salaryDeductionAmount.toStringAsFixed(2)} ${todayLog.salaryCurrency}'
-                                  : 'في الموعد',
-                              style: TextStyle(
-                                color: todayLog.isLate
-                                    ? ZaWolfColors.warning
-                                    : ZaWolfColors.success,
-                                fontSize: 11,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-
-                  // Location error panel if any
-                  if (_locationError != null) ...[
-                    const SizedBox(height: 12),
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: ZaWolfColors.error.withValues(alpha: 0.12),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(
-                          color: ZaWolfColors.error.withValues(alpha: 0.4),
-                        ),
-                      ),
-                      child: Row(
-                        children: [
-                          const Icon(
-                            Icons.warning_amber_rounded,
-                            color: ZaWolfColors.error,
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Text(
-                              _locationError!,
-                              style:
-                                  theme.textTheme.bodySmall?.copyWith(
-                                    color: ZaWolfColors.error,
-                                  ) ??
-                                  const TextStyle(color: ZaWolfColors.error),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                  const SizedBox(height: 24),
-
-                  // Quick Action Buttons Row
-                  Row(
-                    children: [
-                      _buildQuickAction(
-                        theme: theme,
-                        icon: Icons.access_time,
-                        label: 'طلب إذن',
-                        subtitle: 'Permission',
-                        color: ZaWolfColors.permissionTeal,
-                        onTap: () => context.go('/employee/requests'),
-                      ),
-                      const SizedBox(width: 12),
-                      _buildQuickAction(
-                        theme: theme,
-                        icon: Icons.calendar_month,
-                        label: 'طلب إجازة',
-                        subtitle: 'Official Leave',
-                        color: ZaWolfColors.primaryCyan,
-                        onTap: () => context.go('/employee/requests'),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 28),
-
-                  // Quick Stats Row
-                  Row(
-                    children: [
-                      _buildStatCard(
-                        theme: theme,
-                        value: '$workedDays ي',
-                        label: 'أيام الحضور',
-                        englishLabel: 'Presence',
-                      ),
-                      const SizedBox(width: 12),
-                      _buildStatCard(
-                        theme: theme,
-                        value: '${disciplineScore.toInt()}%',
-                        label: 'الانضباط',
-                        englishLabel: 'Discipline',
-                        color: disciplineScore >= 85
-                            ? ZaWolfColors.success
-                            : ZaWolfColors.warning,
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 28),
-
-                  EmployeeRequestHistorySection(userId: user.uid),
-                  const SizedBox(height: 28),
-
-                  // Recent Activity Feed
-                  Text(
-                    'النشاط الأخير (هذا الشهر)',
-                    style:
-                        theme.textTheme.titleMedium?.copyWith(
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
-                        ) ??
-                        const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
-                        ),
-                  ),
-                  const SizedBox(height: 12),
-                  if (logs.isEmpty)
-                    Container(
-                      padding: const EdgeInsets.symmetric(vertical: 32),
-                      alignment: Alignment.center,
-                      child: Column(
-                        children: [
-                          Icon(
-                            Icons.history,
-                            color: ZaWolfColors.textMuted,
-                            size: 40,
-                          ),
-                          const SizedBox(height: 12),
-                          Text(
-                            'لا توجد سجلات حضور هذا الشهر.',
-                            style: theme.textTheme.bodyMedium,
-                          ),
-                        ],
-                      ),
-                    )
-                  else
-                    ListView.builder(
-                      shrinkWrap: true,
-                      physics: const NeverScrollableScrollPhysics(),
-                      itemCount: logs.length > 5 ? 5 : logs.length,
-                      itemBuilder: (context, index) {
-                        final log = logs[index];
-                        final dateParsed = DateTime.parse(log.date);
-                        final formatDay = DateFormat(
-                          'EEEE dd MMM',
-                          'ar',
-                        ).format(dateParsed);
-                        final checkInTime = log.checkInTime;
-                        final checkOutTime = log.checkOutTime;
-                        final checkInText = checkInTime == null
-                            ? 'لم يسجل حضور'
-                            : 'حضور: ${DateFormat('hh:mm a').format(checkInTime)}';
-                        final checkOutText = checkOutTime == null
-                            ? null
-                            : 'انصراف: ${DateFormat('hh:mm a').format(checkOutTime)}';
-
-                        return Container(
-                          margin: const EdgeInsets.only(bottom: 12),
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: ZaWolfColors.surface01,
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(color: ZaWolfColors.surface03),
-                          ),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    formatDay,
-                                    style:
-                                        theme.textTheme.bodyMedium?.copyWith(
-                                          color: Colors.white,
-                                          fontWeight: FontWeight.bold,
-                                        ) ??
-                                        const TextStyle(
-                                          color: Colors.white,
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                  ),
-                                  Text(
-                                    checkInText,
-                                    style: theme.textTheme.bodySmall,
-                                  ),
-                                  if (checkOutText != null)
-                                    Text(
-                                      checkOutText,
-                                      style: theme.textTheme.bodySmall,
-                                    ),
-                                ],
-                              ),
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 8,
-                                  vertical: 4,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: _getStatusColor(
-                                    log.status,
-                                  ).withValues(alpha: 0.12),
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: Text(
-                                  _getStatusLabel(log.status),
-                                  style: TextStyle(
-                                    color: _getStatusColor(log.status),
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        );
-                      },
                     ),
                 ],
               ),
             ),
-          );
-        },
-      ),
-    );
-  }
-
-  Widget _buildRadarRing(Color color) {
-    return Container(
-      width: 176,
-      height: 176,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        border: Border.all(color: color.withValues(alpha: 0.2), width: 2),
-      ),
-    );
-  }
-
-  Widget _buildQuickAction({
-    required ThemeData theme,
-    required IconData icon,
-    required String label,
-    required String subtitle,
-    required Color color,
-    required VoidCallback onTap,
-  }) {
-    return Expanded(
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(8),
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 16),
-          decoration: BoxDecoration(
-            color: ZaWolfColors.surface01,
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: color.withValues(alpha: 0.15)),
-          ),
-          child: Column(
+          ],
+          title: Row(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(icon, color: color, size: 28),
-              const SizedBox(height: 8),
+              const AppLogo(size: 28),
+              const SizedBox(width: 8),
               Text(
-                label,
+                'ZaWolf HR',
                 style:
-                    theme.textTheme.bodyMedium?.copyWith(
+                    theme.textTheme.titleMedium?.copyWith(
                       color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
                     ) ??
                     const TextStyle(
                       color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 13,
-                    ),
-              ),
-              Text(
-                subtitle.toUpperCase(),
-                style:
-                    theme.textTheme.bodySmall?.copyWith(
-                      color: ZaWolfColors.textMuted,
-                      fontSize: 8,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 0.5,
-                    ) ??
-                    const TextStyle(
-                      color: ZaWolfColors.textMuted,
-                      fontSize: 8,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 0.5,
+                      fontWeight: FontWeight.w700,
                     ),
               ),
             ],
           ),
+          centerTitle: true,
+        ),
+        body: StreamBuilder<List<AttendanceModel>>(
+          stream: _attendanceStream,
+          builder: (context, snapshot) {
+            final attendanceError = snapshot.hasError
+                ? 'تعذر تحميل سجل الحضور الآن. يمكنك السحب للتحديث أو المحاولة مرة أخرى.'
+                : null;
+            final logs = snapshot.data ?? [];
+            final todayLog = logs.firstWhere(
+              (log) => log.date == todayStr,
+              orElse: () => AttendanceModel(
+                attendanceId: '',
+                userId: '',
+                employeeId: '',
+                employeeName: '',
+                locationId: '',
+                locationName: '',
+                date: '',
+                checkInLocation: const GeoPoint(0, 0),
+                status: 'absent',
+              ),
+            );
+
+            final bool hasTodayRecord = todayLog.attendanceId.isNotEmpty;
+            final bool hasCheckedIn = todayLog.checkInTime != null;
+            final bool hasCheckedOut =
+                hasCheckedIn && todayLog.checkOutTime != null;
+            final pilotState = _isCheckInPilotEnabledFor(user)
+                ? _checkInPilot?.cubit.state
+                : null;
+            final pilotAwaitingConfirmation =
+                pilotState?.status == CheckInViewStatus.pendingSync ||
+                pilotState?.status == CheckInViewStatus.requiresStatusCheck ||
+                pilotState?.status == CheckInViewStatus.submitting;
+            final gateState = context
+                .watch<EmployeeAttendanceGateCubit>()
+                .state;
+            final gate = computeCheckInAction(
+              CheckInGateInputs(
+                now: _now,
+                hasTodayRecord: hasTodayRecord,
+                hasCheckedIn: hasCheckedIn,
+                hasCheckedOut: hasCheckedOut,
+                policyConfig: gateState.policyConfig,
+                scheduleStartTime: user.workSchedule.startTime,
+                scheduleEndTime: user.workSchedule.endTime,
+                checkoutAllowedFromOverride: gateState.checkoutAllowedFrom,
+                checkoutEnabled: gateState.checkoutEnabled,
+                dayOffStatus: _dayOffStatus,
+                actionLoading: _actionLoading,
+                pilotAwaitingConfirmation: pilotAwaitingConfirmation,
+              ),
+            );
+
+            // Quick stats calculation
+            final workedDays = logs.where((l) => l.checkInTime != null).length;
+            final lates = logs.where((l) => l.isLate).length;
+            final absents = logs
+                .where((l) => l.status == 'absent')
+                .length; // normally we mark defaults, let's keep it simple
+
+            double disciplineScore = 100.0 - (lates * 5.0) - (absents * 10.0);
+            if (disciplineScore < 0.0) disciplineScore = 0.0;
+
+            return RefreshIndicator(
+              onRefresh: () async {
+                await attendanceService.syncPendingOfflineAttendance();
+                await Future.wait([
+                  _checkCurrentGeofence(),
+                  _checkCompanyDayOff(),
+                ]);
+              },
+              color: ZaWolfColors.primaryCyan,
+              child: SingleChildScrollView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                padding: const EdgeInsets.all(16.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    if (attendanceError != null) ...[
+                      WolfCard(
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Icon(
+                              Icons.cloud_off_outlined,
+                              color: ZaWolfColors.warning,
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Text(
+                                attendanceError,
+                                style: theme.textTheme.bodyMedium?.copyWith(
+                                  color: ZaWolfColors.textSecondary,
+                                ),
+                                textDirection: TextDirection.rtl,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                    ],
+                    EmployeeDashboardHeader(
+                      user: user,
+                      geofenceResult: _geofenceResult,
+                      checkingLocation: _checkingLocation,
+                      onRetryGeofence: _checkCurrentGeofence,
+                    ),
+                    const SizedBox(height: 12),
+
+                    // My status today, first content per the dashboard anatomy
+                    MyStatusCard(todayLog: todayLog),
+                    const SizedBox(height: 12),
+
+                    // Priority strip: my pending requests + tasks due today
+                    EmployeePriorityStrip(
+                      userId: user.uid,
+                      pendingRequestsCount: _pendingRequestsCount,
+                    ),
+                    const SizedBox(height: 16),
+
+                    if (_locationError != null) ...[
+                      WolfCard(
+                        child: Row(
+                          children: [
+                            TextButton.icon(
+                              onPressed: _checkingLocation
+                                  ? null
+                                  : _checkCurrentGeofence,
+                              icon: const Icon(Icons.refresh),
+                              label: const Text('تحديث'),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                _locationError!,
+                                style: const TextStyle(
+                                  color: ZaWolfColors.warning,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                                textDirection: TextDirection.rtl,
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            const Icon(
+                              Icons.location_disabled_outlined,
+                              color: ZaWolfColors.warning,
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                    ],
+
+                    // Circular Pulsing Action Button
+                    CheckInRadarButton(
+                      title: gate.title,
+                      subtitle: gate.subtitle,
+                      icon: gate.icon,
+                      disabled: gate.disabled,
+                      loading: _actionLoading,
+                      active: hasCheckedIn,
+                      onTap: () =>
+                          _handleCheckInCheckOut(user, gate.expectedAction),
+                    ),
+                    const SizedBox(height: 24),
+
+                    if (pilotAwaitingConfirmation) ...[
+                      CheckInStatusFeedback(
+                        state: pilotState!,
+                        failureMessage: _checkInPilot!.cubit
+                            .safeFailureMessage(),
+                        onRetry: () {
+                          unawaited(_retryReliableCheckIn(user.uid));
+                        },
+                      ),
+                      const SizedBox(height: 16),
+                    ],
+
+                    if (_checkingDayOff ||
+                        (!hasTodayRecord && _dayOffStatus.isDayOff)) ...[
+                      WolfCard(
+                        child: Row(
+                          children: [
+                            Icon(
+                              _checkingDayOff
+                                  ? Icons.sync
+                                  : Icons.event_busy_outlined,
+                              color: _checkingDayOff
+                                  ? ZaWolfColors.primaryCyan
+                                  : ZaWolfColors.warning,
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Text(
+                                _checkingDayOff
+                                    ? 'جاري التحقق من أيام العطلات...'
+                                    : 'تسجيل الحضور متوقف اليوم: ${_dayOffStatus.reason}',
+                                style:
+                                    theme.textTheme.bodyMedium?.copyWith(
+                                      color: _checkingDayOff
+                                          ? ZaWolfColors.textSecondary
+                                          : ZaWolfColors.warning,
+                                      fontWeight: FontWeight.bold,
+                                    ) ??
+                                    TextStyle(
+                                      color: _checkingDayOff
+                                          ? ZaWolfColors.textSecondary
+                                          : ZaWolfColors.warning,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                textDirection: TextDirection.rtl,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                    ],
+
+                    // Location error panel if any
+                    if (_locationError != null) ...[
+                      const SizedBox(height: 12),
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: ZaWolfColors.error.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: ZaWolfColors.error.withValues(alpha: 0.4),
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(
+                              Icons.warning_amber_rounded,
+                              color: ZaWolfColors.error,
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Text(
+                                _locationError!,
+                                style:
+                                    theme.textTheme.bodySmall?.copyWith(
+                                      color: ZaWolfColors.error,
+                                    ) ??
+                                    const TextStyle(color: ZaWolfColors.error),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 24),
+
+                    // Quick Action Buttons Row (max four per spec: the radar
+                    // check-in control above + three navigation actions)
+                    Row(
+                      children: [
+                        EmployeeQuickAction(
+                          icon: Icons.add_circle_outline,
+                          label: 'طلب جديد',
+                          subtitle: 'New Request',
+                          color: ZaWolfColors.permissionTeal,
+                          onTap: () => context.go('/employee/requests'),
+                        ),
+                        const SizedBox(width: DsSpacing.md),
+                        EmployeeQuickAction(
+                          icon: Icons.task_alt_outlined,
+                          label: 'مهامي',
+                          subtitle: 'My Tasks',
+                          color: ZaWolfColors.wolfGreen,
+                          onTap: () => context.go('/employee/tasks'),
+                        ),
+                        const SizedBox(width: DsSpacing.md),
+                        EmployeeQuickAction(
+                          icon: Icons.payments_outlined,
+                          label: 'راتبي',
+                          subtitle: 'Payroll',
+                          color: ZaWolfColors.warning,
+                          onTap: () => context.go('/employee/payroll'),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: DsSpacing.md),
+                    Row(
+                      children: [
+                        EmployeeQuickAction(
+                          icon: Icons.business_center_outlined,
+                          label: 'الطلبات والدعم',
+                          subtitle: 'Requests & Support',
+                          color: ZaWolfColors.primaryCyan,
+                          onTap: () => context.go('/employee/requests'),
+                        ),
+                        const SizedBox(width: DsSpacing.md),
+                        EmployeeQuickAction(
+                          icon: Icons.chat_bubble_outline_rounded,
+                          label: 'شات القسم',
+                          subtitle: 'Department Chat',
+                          color: Colors.purpleAccent,
+                          onTap: () {
+                            final dept = user.department.isNotEmpty
+                                ? user.department
+                                : 'general';
+                            context.go('/conversations/department/$dept');
+                          },
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: DsSpacing.xl),
+
+                    // Quick Stats Row
+                    Row(
+                      children: [
+                        Expanded(
+                          child: StatCard(
+                            icon: Icons.how_to_reg_outlined,
+                            value: '$workedDays',
+                            label: 'أيام الحضور هذا الشهر',
+                          ),
+                        ),
+                        const SizedBox(width: DsSpacing.md),
+                        Expanded(
+                          child: StatCard(
+                            icon: Icons.workspace_premium_outlined,
+                            value: '${disciplineScore.toInt()}%',
+                            label: 'الانضباط',
+                            trendLabel: disciplineScore >= 85 ? null : 'تحسين',
+                            trendUp: disciplineScore >= 85,
+                            onTap: () => context.go('/employee/deductions'),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: DsSpacing.xl),
+
+                    EmployeeRequestHistorySection(
+                      userId: user.uid,
+                      onPendingCount: (pendingCount) {
+                        if (mounted && pendingCount != _pendingRequestsCount) {
+                          setState(() => _pendingRequestsCount = pendingCount);
+                        }
+                      },
+                    ),
+                    const SizedBox(height: DsSpacing.xl),
+
+                    MonthActivitySection(logs: logs),
+                  ],
+                ),
+              ),
+            );
+          },
         ),
       ),
     );
-  }
-
-  Widget _buildStatCard({
-    required ThemeData theme,
-    required String value,
-    required String label,
-    required String englishLabel,
-    Color? color,
-  }) {
-    return Expanded(
-      child: Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: ZaWolfColors.surface01,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: ZaWolfColors.surface03),
-        ),
-        child: Column(
-          children: [
-            Text(
-              value,
-              style:
-                  theme.textTheme.titleLarge?.copyWith(
-                    color: color ?? ZaWolfColors.primaryCyan,
-                    fontWeight: FontWeight.bold,
-                  ) ??
-                  TextStyle(
-                    color: color ?? ZaWolfColors.primaryCyan,
-                    fontWeight: FontWeight.bold,
-                  ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              label,
-              style:
-                  theme.textTheme.bodySmall?.copyWith(
-                    color: Colors.white70,
-                    fontSize: 11,
-                  ) ??
-                  const TextStyle(color: Colors.white70, fontSize: 11),
-              textAlign: TextAlign.center,
-            ),
-            Text(
-              englishLabel.toUpperCase(),
-              style:
-                  theme.textTheme.bodySmall?.copyWith(
-                    color: ZaWolfColors.textMuted,
-                    fontSize: 7,
-                    fontWeight: FontWeight.bold,
-                  ) ??
-                  const TextStyle(
-                    color: ZaWolfColors.textMuted,
-                    fontSize: 7,
-                    fontWeight: FontWeight.bold,
-                  ),
-              textAlign: TextAlign.center,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Color _getStatusColor(String status) {
-    switch (status) {
-      case 'present':
-        return ZaWolfColors.success;
-      case 'late':
-        return ZaWolfColors.warning;
-      case 'on-leave':
-        return ZaWolfColors.primaryBlue;
-      case 'absent':
-        return ZaWolfColors.error;
-      default:
-        return ZaWolfColors.textSecondary;
-    }
-  }
-
-  String _getStatusLabel(String status) {
-    switch (status) {
-      case 'present':
-        return 'حاضر';
-      case 'late':
-        return 'متأخر';
-      case 'on-leave':
-        return 'إجازة';
-      case 'absent':
-        return 'غائب';
-      default:
-        return status;
-    }
   }
 }

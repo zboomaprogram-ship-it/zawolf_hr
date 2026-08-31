@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart' hide TextDirection;
 import 'package:provider/provider.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../components/wolf_card.dart';
 import '../../models/user_model.dart';
@@ -8,6 +9,10 @@ import '../../services/auth_service.dart';
 import '../../services/dashboard_attendance_summary_service.dart';
 import '../../theme/theme.dart';
 import '../../utils/user_facing_error.dart';
+import '../../core/feature_flags/phase007_feature_flags.dart';
+import '../../design_system/components/feedback_states.dart'
+    show EmptyState, ErrorState;
+import '../../design_system/components/skeletons.dart' show SkeletonList;
 
 class AttendanceSummaryDetailsScreen extends StatefulWidget {
   const AttendanceSummaryDetailsScreen({super.key, this.initialStatus});
@@ -71,42 +76,18 @@ class _AttendanceSummaryDetailsScreenState
               future: _future,
               builder: (context, snapshot) {
                 if (snapshot.hasError) {
-                  return Center(
-                    child: Padding(
-                      padding: const EdgeInsets.all(24),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Icon(
-                            Icons.error_outline,
-                            color: ZaWolfColors.error,
-                            size: 40,
-                          ),
-                          const SizedBox(height: 12),
-                          Text(
-                            userFacingError(
-                              snapshot.error!,
-                              fallback: 'تعذر تحميل تفاصيل الحضور.',
-                            ),
-                            textAlign: TextAlign.center,
-                            textDirection: TextDirection.rtl,
-                          ),
-                          const SizedBox(height: 12),
-                          FilledButton.icon(
-                            onPressed: () => _reload(user),
-                            icon: const Icon(Icons.refresh),
-                            label: const Text('إعادة المحاولة'),
-                          ),
-                        ],
-                      ),
+                  return ErrorState(
+                    message: userFacingError(
+                      snapshot.error!,
+                      fallback: 'تعذر تحميل تفاصيل الحضور.',
                     ),
+                    onRetry: () => _reload(user),
                   );
                 }
                 if (!snapshot.hasData) {
-                  return const Center(
-                    child: CircularProgressIndicator(
-                      color: ZaWolfColors.primaryCyan,
-                    ),
+                  return const Padding(
+                    padding: EdgeInsets.all(16),
+                    child: SkeletonList(itemCount: 5, itemHeight: 120),
                   );
                 }
 
@@ -183,9 +164,12 @@ class _DaySummaryCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 12),
-          const Align(
+          Align(
             alignment: Alignment.centerLeft,
-            child: Icon(Icons.chevron_right, color: ZaWolfColors.primaryCyan),
+            child: Icon(
+              Icons.chevron_left,
+              color: ZaWolfColors.primaryCyan,
+            ),
           ),
           const SizedBox(height: 4),
           _MiniBar(summary: summary),
@@ -255,19 +239,14 @@ class _DayDetailsSheet extends StatelessWidget {
           future: service.loadDayDetails(user, date),
           builder: (context, snapshot) {
             if (snapshot.hasError) {
-              return const Center(
-                child: Text(
-                  'تعذر تحميل تفاصيل هذا اليوم. حاول مرة أخرى.',
-                  style: TextStyle(color: ZaWolfColors.error),
-                  textDirection: TextDirection.rtl,
-                ),
+              return const ErrorState(
+                message: 'تعذر تحميل تفاصيل هذا اليوم. حاول مرة أخرى.',
               );
             }
             if (!snapshot.hasData) {
-              return const Center(
-                child: CircularProgressIndicator(
-                  color: ZaWolfColors.primaryCyan,
-                ),
+              return const Padding(
+                padding: EdgeInsets.all(16),
+                child: SkeletonList(itemCount: 4, itemHeight: 96),
               );
             }
 
@@ -392,28 +371,54 @@ class _AttendancePeopleSection extends StatelessWidget {
           for (final person in people)
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 7),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Text(
-                    person.employee.displayName,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w600,
+              child: InkWell(
+                onTap: _timelineEnabled(context)
+                    ? () => context.go(
+                        '/operations/employee/${person.employee.uid}',
+                      )
+                    : null,
+                child: Row(
+                  children: [
+                    if (_timelineEnabled(context))
+                      const Icon(
+                        Icons.history,
+                        color: ZaWolfColors.primaryCyan,
+                      ),
+                    const Spacer(),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        Text(
+                          person.employee.displayName,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w600,
+                          ),
+                          textDirection: TextDirection.rtl,
+                        ),
+                        Text(
+                          _detailText(person, timeFormat),
+                          style: const TextStyle(color: ZaWolfColors.textMuted),
+                          textDirection: TextDirection.rtl,
+                        ),
+                      ],
                     ),
-                    textDirection: TextDirection.rtl,
-                  ),
-                  Text(
-                    _detailText(person, timeFormat),
-                    style: const TextStyle(color: ZaWolfColors.textMuted),
-                    textDirection: TextDirection.rtl,
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
         ],
       ),
     );
+  }
+
+  bool _timelineEnabled(BuildContext context) {
+    final actor = context.read<AuthService>().currentUser;
+    return actor != null &&
+        context.read<Phase007FeatureFlags>().isEnabledFor(
+          feature: Phase007Feature.operationalVisibility,
+          actorId: actor.uid,
+        );
   }
 
   String _detailText(DashboardAttendancePerson person, DateFormat timeFormat) {
@@ -467,10 +472,13 @@ class _TodayCategoryDetails extends StatelessWidget {
       future: service.loadDayDetails(user, DateTime.now()),
       builder: (context, snapshot) {
         if (snapshot.hasError) {
-          return const Center(child: Text('تعذر تحميل تفاصيل الحضور.'));
+          return const ErrorState(message: 'تعذر تحميل تفاصيل الحضور.');
         }
         if (!snapshot.hasData) {
-          return const Center(child: CircularProgressIndicator());
+          return const Padding(
+            padding: EdgeInsets.all(16),
+            child: SkeletonList(itemCount: 4, itemHeight: 84),
+          );
         }
         final people = snapshot.data!.people
             .where(
@@ -492,7 +500,7 @@ class _TodayCategoryDetails extends StatelessWidget {
             ),
             const SizedBox(height: 12),
             if (people.isEmpty)
-              const WolfCard(child: Center(child: Text('لا يوجد موظفون.')))
+              const EmptyState(title: 'لا يوجد موظفون في هذه الحالة اليوم.')
             else
               _AttendancePeopleSection(
                 title: metadata.$1,

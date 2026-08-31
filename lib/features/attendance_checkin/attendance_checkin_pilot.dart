@@ -2,6 +2,7 @@ import 'data/attendance_checkin_repository_impl.dart';
 import 'data/local/checkin_outbox_database.dart';
 import 'data/remote/attendance_gateway_checkin_client.dart';
 import 'presentation/cubit/checkin_cubit.dart';
+import '../../services/safe_diagnostics_service.dart';
 
 /// Composition root for the default-off check-in reliability pilot.
 ///
@@ -15,6 +16,7 @@ final class AttendanceCheckInPilot {
     final repository = AttendanceCheckInRepositoryImpl(
       remote: AttendanceGatewayCheckInClient(),
       outbox: DriftCheckInOutbox(database),
+      diagnostics: SafeDiagnosticsService.instance,
     );
     return AttendanceCheckInPilot._(database, CheckInCubit(repository));
   }

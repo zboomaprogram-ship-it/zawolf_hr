@@ -31,7 +31,12 @@ class ResignationService {
 
   Stream<List<ResignationModel>> watchPending(UserModel reviewer) {
     Query<Map<String, dynamic>> query = _db.collection('resignations');
-    if (reviewer.role == EmployeeRole.hrManager) {
+    final isCompanyCeo = reviewer.employeeId.trim().toUpperCase() == 'CEO-100';
+    if (isCompanyCeo) {
+      query = query
+          .where('status', isEqualTo: 'pending_manager')
+          .where('managerId', isEqualTo: reviewer.uid);
+    } else if (reviewer.role == EmployeeRole.hrManager) {
       query = query.where('status', isEqualTo: 'pending_hr');
     } else {
       query = query

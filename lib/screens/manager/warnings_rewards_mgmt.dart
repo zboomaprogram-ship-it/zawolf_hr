@@ -9,6 +9,7 @@ import '../../services/auth_service.dart';
 import '../../services/warning_reward_service.dart';
 import '../../theme/theme.dart';
 import '../../utils/payroll_cycle.dart';
+import '../../design_system/components/skeletons.dart' show SkeletonList;
 
 class WarningsRewardsManagementScreen extends StatefulWidget {
   const WarningsRewardsManagementScreen({super.key});
@@ -47,8 +48,9 @@ class _WarningsRewardsManagementScreenState
     final theme = Theme.of(context);
     if (reviewer == null) {
       return const Scaffold(
-        body: Center(
-          child: CircularProgressIndicator(color: ZaWolfColors.primaryCyan),
+        body: Padding(
+          padding: EdgeInsets.all(16),
+          child: SkeletonList(itemCount: 5, itemHeight: 84),
         ),
       );
     }

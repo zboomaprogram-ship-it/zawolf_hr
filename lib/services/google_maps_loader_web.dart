@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:js_interop';
+import 'dart:js_interop_unsafe';
 
 import 'package:web/web.dart' as web;
 
@@ -14,11 +16,15 @@ class GoogleMapsLoader {
   }
 
   static Future<void> _load() async {
+    if (_mapsApiReady) return;
     final existing = web.document.querySelector(
       'script[data-zawolf-google-maps="true"], '
       'script[src*="maps.googleapis.com/maps/api/js"]',
     );
-    if (existing != null) return;
+    if (existing != null) {
+      await _waitUntilReady();
+      return;
+    }
     if (_apiKey.trim().isEmpty) {
       throw StateError('Google Maps web API key is missing.');
     }
@@ -53,5 +59,28 @@ class GoogleMapsLoader {
     });
     web.document.head?.append(script);
     await completer.future.timeout(const Duration(seconds: 20));
+    await _waitUntilReady();
+  }
+
+  static bool get _mapsApiReady {
+    if (!globalContext.has('google')) return false;
+    final google = globalContext['google'];
+    if (google == null || !google.isA<JSObject>()) return false;
+    final googleObject = google as JSObject;
+    if (!googleObject.has('maps')) return false;
+    final maps = googleObject['maps'];
+    if (maps == null || !maps.isA<JSObject>()) return false;
+    final mapsObject = maps as JSObject;
+    return mapsObject.has('Map') && mapsObject.has('LatLng');
+  }
+
+  static Future<void> _waitUntilReady() async {
+    const interval = Duration(milliseconds: 100);
+    const attempts = 200;
+    for (var attempt = 0; attempt < attempts; attempt++) {
+      if (_mapsApiReady) return;
+      await Future<void>.delayed(interval);
+    }
+    throw TimeoutException('Google Maps API did not become ready.');
   }
 }

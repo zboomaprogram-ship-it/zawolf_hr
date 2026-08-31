@@ -11,6 +11,7 @@ import '../../services/payroll_service.dart';
 import '../../services/sheets_export_service.dart';
 import '../../theme/theme.dart';
 import '../../utils/payroll_cycle.dart';
+import 'widgets/payroll_pre_audit_dialog.dart';
 
 class PayrollScreen extends StatefulWidget {
   const PayrollScreen({super.key});
@@ -26,6 +27,16 @@ class _PayrollScreenState extends State<PayrollScreen> {
   bool _calculating = false;
 
   String get _monthKey => DateFormat('yyyy-MM').format(_selectedMonth);
+
+  Future<void> _preAuditAndCalculate() async {
+    final proceed = await showDialog<bool>(
+      context: context,
+      builder: (_) => const PayrollPreAuditDialog(),
+    );
+    if (proceed == true) {
+      await _calculate();
+    }
+  }
 
   Future<void> _calculate() async {
     final actor = context.read<AuthService>().currentUser;
@@ -88,15 +99,15 @@ class _PayrollScreenState extends State<PayrollScreen> {
             ),
           ),
           IconButton(
-            tooltip: 'حساب الرواتب',
-            onPressed: _calculating ? null : _calculate,
+            tooltip: 'التدقيق وحساب الرواتب',
+            onPressed: _calculating ? null : _preAuditAndCalculate,
             icon: _calculating
                 ? const SizedBox(
                     width: 20,
                     height: 20,
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
-                : const Icon(Icons.calculate, color: ZaWolfColors.wolfGreen),
+                : const Icon(Icons.fact_check_outlined, color: ZaWolfColors.wolfGreen),
           ),
         ],
       ),
@@ -145,9 +156,9 @@ class _PayrollScreenState extends State<PayrollScreen> {
                   ],
                   Expanded(
                     child: FilledButton.icon(
-                      onPressed: _calculating ? null : _calculate,
-                      icon: const Icon(Icons.calculate),
-                      label: Text('حساب $_monthKey'),
+                      onPressed: _calculating ? null : _preAuditAndCalculate,
+                      icon: const Icon(Icons.fact_check_outlined),
+                      label: Text('تدقيق وحساب $_monthKey'),
                     ),
                   ),
                 ],

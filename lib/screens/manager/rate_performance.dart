@@ -277,7 +277,7 @@ class _RatePerformanceScreenState extends State<RatePerformanceScreen> {
                       return DropdownMenuItem(
                         value: emp,
                         child: Align(
-                          alignment: Alignment.centerRight,
+                          alignment: AlignmentDirectional.centerStart,
                           child: Text('${emp.displayName} (${emp.employeeId})'),
                         ),
                       );

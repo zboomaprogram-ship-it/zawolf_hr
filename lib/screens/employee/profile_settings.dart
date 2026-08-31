@@ -6,12 +6,16 @@ import '../../theme/theme.dart';
 import '../../components/wolf_card.dart';
 import '../../components/wolf_button.dart';
 import '../../components/wolf_input_field.dart';
+import '../../components/performance_badges_widget.dart';
+import '../../design_system/components/app_logo.dart';
 import '../../services/auth_service.dart';
 import '../../models/employee_role.dart';
 import '../../models/user_model.dart';
 import '../../services/onesignal_service.dart';
 import '../../services/personal_alarm_service.dart';
 import '../../services/automatic_attendance_service.dart';
+import '../../utils/user_facing_error.dart';
+import '../../navigation/developer_tools_entry.dart';
 
 class ProfileSettingsScreen extends StatefulWidget {
   const ProfileSettingsScreen({super.key});
@@ -43,6 +47,7 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
   PersonalAlarmCapability? _personalAlarmCapability;
   bool _automaticAttendanceEnabled = false;
   bool _loadingAutomaticAttendance = false;
+  Future<bool>? _developerToolsAvailable;
 
   @override
   void didChangeDependencies() {
@@ -53,6 +58,8 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
       if (AutomaticAttendanceService.instance.isSupported) {
         _loadAutomaticAttendance(user.uid);
       }
+      _developerToolsAvailable ??=
+          DeveloperToolsAccess.isAvailableForCurrentUser();
     }
   }
 
@@ -93,7 +100,12 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(error.toString().replaceFirst('Exception: ', '')),
+          content: Text(
+            userFacingError(
+              error,
+              fallback: 'تعذر تحديث إعداد الحضور التلقائي الآن. حاول مرة أخرى.',
+            ),
+          ),
         ),
       );
     } finally {
@@ -205,7 +217,10 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
         SnackBar(
           backgroundColor: ZaWolfColors.error,
           content: Text(
-            'تعذر ربط الإشعارات: ${error.toString().replaceFirst('Exception: ', '')}',
+            userFacingError(
+              error,
+              fallback: 'تعذر ربط الإشعارات الآن. حاول مرة أخرى.',
+            ),
           ),
         ),
       );
@@ -293,7 +308,12 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(error.toString().replaceFirst('Exception: ', '')),
+            content: Text(
+              userFacingError(
+                error,
+                fallback: 'تعذر حفظ إعداد المنبه الآن. حاول مرة أخرى.',
+              ),
+            ),
           ),
         );
       }
@@ -404,10 +424,7 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                     child: ClipOval(
                       child: user.photoURL != null && user.photoURL!.isNotEmpty
                           ? Image.network(user.photoURL!, fit: BoxFit.cover)
-                          : Image.asset(
-                              'assets/images/wolf_head_geometric.png',
-                              fit: BoxFit.cover,
-                            ),
+                          : const AppLogo(size: 94),
                     ),
                   ),
                   const SizedBox(height: 16),
@@ -516,18 +533,19 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
             WolfCard(
               padding: EdgeInsets.zero,
               onTap: () => context.go('/employee/deductions'),
-              child: const ListTile(
-                leading: Icon(
+              child: ListTile(
+                leading: const Icon(
                   Icons.receipt_long_outlined,
                   color: ZaWolfColors.primaryCyan,
                 ),
-                title: Text('خصوماتي'),
-                subtitle: Text(
+                title: const Text('خصوماتي'),
+                subtitle: const Text(
                   'عرض الخصومات بالأيام وحالة مراجعة HR بدون مبالغ مالية',
                 ),
-                trailing: Icon(Icons.chevron_right),
+                trailing: const Icon(Icons.chevron_left),
               ),
             ),
+            const PerformanceBadgesWidget(),
             const SizedBox(height: 20),
 
             // Settings Panels
@@ -651,7 +669,7 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                     ),
                     title: const Text('مركز الإشعارات'),
                     subtitle: const Text('عرض التنبيهات والإعلانات السابقة'),
-                    trailing: const Icon(Icons.chevron_right),
+                    trailing: const Icon(Icons.chevron_left),
                     onTap: () => context.push('/notifications'),
                   ),
                   const Divider(color: ZaWolfColors.surface02, height: 1),
@@ -708,7 +726,7 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                     ),
                     title: const Text('سياسة الخصوصية'),
                     subtitle: const Text('اعرف كيف نستخدم بياناتك ونحميها'),
-                    trailing: const Icon(Icons.chevron_right),
+                    trailing: const Icon(Icons.chevron_left),
                     onTap: () => context.push('/privacy'),
                   ),
                   const Divider(color: ZaWolfColors.surface02, height: 1),
@@ -721,8 +739,34 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                     subtitle: const Text(
                       'قواعد استخدام النظام ومسؤوليات الحساب',
                     ),
-                    trailing: const Icon(Icons.chevron_right),
+                    trailing: const Icon(Icons.chevron_left),
                     onTap: () => context.push('/terms'),
+                  ),
+                  FutureBuilder<bool>(
+                    future: _developerToolsAvailable,
+                    builder: (context, snapshot) {
+                      if (snapshot.data != true) return const SizedBox.shrink();
+                      return Column(
+                        children: [
+                          const Divider(
+                            color: ZaWolfColors.surface02,
+                            height: 1,
+                          ),
+                          ListTile(
+                            leading: const Icon(
+                              Icons.developer_mode_outlined,
+                              color: ZaWolfColors.primaryCyan,
+                            ),
+                            title: const Text('أدوات المطوّر'),
+                            subtitle: const Text(
+                              'أدوات فحص داخل التطبيق بصلاحية مؤقتة',
+                            ),
+                            trailing: const Icon(Icons.chevron_left),
+                            onTap: () => context.push('/developer-tools'),
+                          ),
+                        ],
+                      );
+                    },
                   ),
                 ],
               ),

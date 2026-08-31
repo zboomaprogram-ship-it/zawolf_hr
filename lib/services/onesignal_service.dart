@@ -50,11 +50,13 @@ class OneSignalService with WidgetsBindingObserver {
       WidgetsBinding.instance.addObserver(this);
       OneSignal.Notifications.addClickListener((event) {
         final data = event.notification.additionalData ?? {};
-        final route = NotificationService.instance.safeRoute(
-          data['route'] as String?,
-          type: data['type'] as String? ?? '',
+        unawaited(
+          NotificationService.instance.handleRemoteNotificationData(
+            notificationId: data['notificationId'] as String?,
+            route: data['route'] as String?,
+            type: data['type'] as String? ?? '',
+          ),
         );
-        NotificationService.instance.handleRemoteNotificationRoute(route);
       });
       _installObservers();
       OneSignal.Notifications.addPermissionObserver((granted) {

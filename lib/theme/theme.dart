@@ -26,6 +26,26 @@ class ZaWolfColors {
 
   static const Color borderGlow = Color(0x2445F0FF);
 
+  // --- Semantic aliases (specs/ui_redesign/01_design_system_spec.md) ---
+  // Soft backgrounds for status surfaces; pair with the base status colors.
+  static const Color successSoft = Color(0x1F7DDC8A);
+  static const Color warningSoft = Color(0x1FE4B55D);
+  static const Color errorSoft = Color(0x1FFF6B6B);
+  static const Color info = Color(0xFF45F0FF);
+  static const Color infoSoft = Color(0x1F45F0FF);
+  static const Color surfaceElevated = surface03;
+  static const Color disabled = Color(0xFF3A444E);
+  static const Color onDisabled = Color(0xFF8A96A0);
+
+  // Sheet-editor (workspace) semantic tokens — specs/ui_redesign/01.
+  static const Color editorAccent = Color(0xFF41DDEB);
+  static const Color editorActivated = Color(0xFF123B46);
+  static const Color editorGridBorder = Color(0xFF34424A);
+  static const Color editorCellEdit = Color(0xFF16252C);
+  static const Color editorSurface = Color(0xFF11191E);
+  static const Color editorSurfaceDeep = Color(0xFF0D1418);
+  static const Color dangerDeep = Color(0xFFC62828);
+
   static const LinearGradient primaryGradient = LinearGradient(
     colors: [primaryCyan, Color(0xFF6AF2BC), primaryBlue],
     begin: Alignment.topLeft,
@@ -61,50 +81,99 @@ class ZaWolfTheme {
       cardColor: ZaWolfColors.surface01,
       colorScheme: const ColorScheme.dark(
         primary: ZaWolfColors.primaryCyan,
+        onPrimary: ZaWolfColors.background,
         secondary: ZaWolfColors.wolfGreen,
+        onSecondary: ZaWolfColors.background,
+        tertiary: ZaWolfColors.perfGold,
         surface: ZaWolfColors.surface01,
+        onSurface: ZaWolfColors.textPrimary,
+        surfaceContainerHighest: ZaWolfColors.surface03,
+        onSurfaceVariant: ZaWolfColors.textSecondary,
+        outline: ZaWolfColors.surface03,
+        outlineVariant: ZaWolfColors.surface02,
         error: ZaWolfColors.error,
+        onError: ZaWolfColors.background,
+        errorContainer: ZaWolfColors.errorSoft,
+      ),
+      // Focus-visible ring: keyboard/web tab focus shows the brand accent
+      // ring on every interactive component (specs/ui_redesign/04).
+      focusColor: ZaWolfColors.primaryCyan.withValues(alpha: 0.45),
+      actionIconTheme: ActionIconThemeData(
+        backButtonIconBuilder: (context) => const Icon(Icons.arrow_forward_rounded),
       ),
       textTheme: TextTheme(
         displayLarge: GoogleFonts.ibmPlexSansArabic(
           color: ZaWolfColors.textPrimary,
+          fontSize: 28,
           fontWeight: FontWeight.w700,
         ),
         displayMedium: GoogleFonts.ibmPlexSansArabic(
           color: ZaWolfColors.textPrimary,
+          fontSize: 28,
           fontWeight: FontWeight.w700,
         ),
         displaySmall: GoogleFonts.ibmPlexSansArabic(
           color: ZaWolfColors.textPrimary,
+          fontSize: 24,
           fontWeight: FontWeight.w700,
         ),
         headlineLarge: GoogleFonts.ibmPlexSansArabic(
           color: ZaWolfColors.textPrimary,
+          fontSize: 22,
           fontWeight: FontWeight.w700,
         ),
         headlineMedium: GoogleFonts.ibmPlexSansArabic(
           color: ZaWolfColors.textPrimary,
+          fontSize: 22,
           fontWeight: FontWeight.w700,
         ),
         headlineSmall: GoogleFonts.ibmPlexSansArabic(
           color: ZaWolfColors.textPrimary,
-          fontWeight: FontWeight.w700,
+          fontSize: 18,
+          fontWeight: FontWeight.w600,
         ),
         titleLarge: GoogleFonts.ibmPlexSansArabic(
           color: ZaWolfColors.textPrimary,
+          fontSize: 18,
           fontWeight: FontWeight.w600,
         ),
         titleMedium: GoogleFonts.ibmPlexSansArabic(
+          color: ZaWolfColors.textPrimary,
+          fontSize: 15,
+          fontWeight: FontWeight.w600,
+        ),
+        titleSmall: GoogleFonts.ibmPlexSansArabic(
           color: ZaWolfColors.textSecondary,
+          fontSize: 14,
           fontWeight: FontWeight.w500,
         ),
         bodyLarge: GoogleFonts.ibmPlexSansArabic(
           color: ZaWolfColors.textPrimary,
+          fontSize: 15,
         ),
         bodyMedium: GoogleFonts.ibmPlexSansArabic(
           color: ZaWolfColors.textSecondary,
+          fontSize: 14,
         ),
-        bodySmall: GoogleFonts.ibmPlexSansArabic(color: ZaWolfColors.textMuted),
+        bodySmall: GoogleFonts.ibmPlexSansArabic(
+          color: ZaWolfColors.textMuted,
+          fontSize: 12,
+        ),
+        labelLarge: GoogleFonts.ibmPlexSansArabic(
+          color: ZaWolfColors.textPrimary,
+          fontSize: 14,
+          fontWeight: FontWeight.w600,
+        ),
+        labelMedium: GoogleFonts.ibmPlexSansArabic(
+          color: ZaWolfColors.textSecondary,
+          fontSize: 12,
+          fontWeight: FontWeight.w500,
+        ),
+        labelSmall: GoogleFonts.ibmPlexSansArabic(
+          color: ZaWolfColors.textMuted,
+          fontSize: 12,
+          fontWeight: FontWeight.w500,
+        ),
       ),
       appBarTheme: const AppBarTheme(
         backgroundColor: ZaWolfColors.background,

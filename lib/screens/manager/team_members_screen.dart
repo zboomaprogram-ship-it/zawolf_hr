@@ -8,6 +8,10 @@ import '../../models/employee_role.dart';
 import '../../models/user_model.dart';
 import '../../services/auth_service.dart';
 import '../../theme/theme.dart';
+import '../../design_system/components/rtl_navigation.dart';
+import '../../design_system/components/feedback_states.dart'
+    show EmptyState, ErrorState;
+import '../../design_system/components/skeletons.dart' show SkeletonList;
 
 class TeamMembersScreen extends StatefulWidget {
   const TeamMembersScreen({super.key});
@@ -85,21 +89,22 @@ class _TeamMembersScreenState extends State<TeamMembersScreen> {
         future: _teamFuture,
         builder: (context, snapshot) {
           if (snapshot.hasError) {
-            return const Center(
-              child: Text(
-                'تعذر تحميل أعضاء الفريق. تحقق من الصلاحيات أو الاتصال.',
-              ),
+            return ErrorState(
+              message: 'تعذر تحميل أعضاء الفريق. تحقق من الصلاحيات أو الاتصال.',
+              onRetry: () => _refresh(manager),
             );
           }
           if (!snapshot.hasData) {
-            return const Center(
-              child: CircularProgressIndicator(color: ZaWolfColors.primaryCyan),
+            return const Padding(
+              padding: EdgeInsets.all(16),
+              child: SkeletonList(itemCount: 5, itemHeight: 84),
             );
           }
           final team = snapshot.data!;
           if (team.isEmpty) {
-            return const Center(
-              child: Text('لا يوجد موظفون مسندون إليك حالياً.'),
+            return const EmptyState(
+              title: 'لا يوجد موظفون مسندون إليك حالياً.',
+              icon: Icons.group_off_outlined,
             );
           }
           return RefreshIndicator(
@@ -157,8 +162,8 @@ class _TeamMembersScreenState extends State<TeamMembersScreen> {
                           ],
                         ),
                       ),
-                      const Icon(
-                        Icons.chevron_right,
+                      Icon(
+                        RtlNavigation.chevronEnd(context),
                         color: ZaWolfColors.primaryCyan,
                       ),
                     ],

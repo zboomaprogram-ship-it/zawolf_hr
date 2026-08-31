@@ -351,13 +351,23 @@ class DashboardAttendanceSummaryService {
   }
 
   Future<List<UserModel>> _loadEmployees(UserModel reviewer) async {
+    final hiddenSnapshot = await _bestEffortQueryResult(
+      _db
+          .collection('operationalVisibility')
+          .where('hiddenFromAttendance', isEqualTo: true)
+          .limit(500),
+    );
+    final hiddenIds = hiddenSnapshot.docs.map((doc) => doc.id).toSet();
     if (reviewer.role == EmployeeRole.teamLeader) {
       final result = await _safeQueryResult(
         _db.collection('users').where('teamLeaderId', isEqualTo: reviewer.uid),
       );
       return result.docs
           .map(UserModel.fromFirestore)
-          .where((employee) => employee.isActive)
+          .where(
+            (employee) =>
+                employee.isActive && !hiddenIds.contains(employee.uid),
+          )
           .toList();
     }
 
@@ -376,6 +386,7 @@ class DashboardAttendanceSummaryService {
       for (final doc in results.expand((result) => result.docs)) {
         final employee = UserModel.fromFirestore(doc);
         if (employee.isActive &&
+            !hiddenIds.contains(employee.uid) &&
             employee.role != EmployeeRole.superAdmin &&
             (employee.managerIds.contains(reviewer.uid) ||
                 employee.managerId == reviewer.uid)) {
@@ -389,7 +400,10 @@ class DashboardAttendanceSummaryService {
         .collection('users')
         .where('isActive', isEqualTo: true)
         .get();
-    return snap.docs.map(UserModel.fromFirestore).toList();
+    return snap.docs
+        .map(UserModel.fromFirestore)
+        .where((employee) => !hiddenIds.contains(employee.uid))
+        .toList();
   }
 
   Future<List<_SummaryQueryResult>> _loadManagerScopedDayData(

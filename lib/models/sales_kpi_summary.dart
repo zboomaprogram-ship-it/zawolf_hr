@@ -189,7 +189,12 @@ class SalesKpiAgentSummary {
   bool get isMapped => mappedUserId.isNotEmpty;
 
   factory SalesKpiAgentSummary.fromMap(Map<String, dynamic> map) {
-    double readDouble(String key) => (map[key] as num?)?.toDouble() ?? 0;
+    double readDouble(String key) {
+      final val = map[key];
+      if (val is num) return val.toDouble();
+      if (val is String) return double.tryParse(val) ?? 0.0;
+      return 0.0;
+    }
     return SalesKpiAgentSummary(
       kind: map['kind'] as String? ?? '',
       key: map['key'] as String? ?? '',
@@ -377,8 +382,18 @@ class SalesKpiSummary {
   bool get hasAgentBreakdown => agents.isNotEmpty;
 
   factory SalesKpiSummary.fromMap(Map<String, dynamic> map) {
-    int readInt(String key) => (map[key] as num?)?.toInt() ?? 0;
-    double readDouble(String key) => (map[key] as num?)?.toDouble() ?? 0;
+    int readInt(String key) {
+      final val = map[key];
+      if (val is num) return val.toInt();
+      if (val is String) return int.tryParse(val) ?? double.tryParse(val)?.toInt() ?? 0;
+      return 0;
+    }
+    double readDouble(String key) {
+      final val = map[key];
+      if (val is num) return val.toDouble();
+      if (val is String) return double.tryParse(val) ?? 0.0;
+      return 0.0;
+    }
 
     final parsedOptions = SalesKpiFilterOptions.fromMap(
       Map<String, dynamic>.from(map['options'] as Map? ?? const {}),

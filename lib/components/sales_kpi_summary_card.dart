@@ -4,11 +4,12 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../models/sales_kpi_summary.dart';
+import '../services/sales_kpi_integration_service.dart';
 import '../theme/theme.dart';
 import 'sales_kpi_details_panel.dart';
 import 'wolf_card.dart';
 
-class SalesKpiSummaryCard extends StatelessWidget {
+class SalesKpiSummaryCard extends StatefulWidget {
   final SalesKpiSummary summary;
   final List<SalesKpiSummary> history;
   final ValueChanged<SalesKpiSummary>? onPeriodChanged;
@@ -23,7 +24,41 @@ class SalesKpiSummaryCard extends StatelessWidget {
   });
 
   @override
+  State<SalesKpiSummaryCard> createState() => _SalesKpiSummaryCardState();
+}
+
+class _SalesKpiSummaryCardState extends State<SalesKpiSummaryCard> {
+  bool _isSyncing = false;
+
+  Future<void> _handleRefresh(BuildContext context) async {
+    if (_isSyncing) return;
+    final messenger = ScaffoldMessenger.of(context);
+    setState(() => _isSyncing = true);
+    final service = SalesKpiIntegrationService();
+    final ok = await service.triggerSync(
+      startDate: widget.summary.periodStart,
+      endDate: widget.summary.periodEnd,
+    );
+    if (!mounted) return;
+    setState(() => _isSyncing = false);
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(
+          ok
+              ? 'تمت المزامنة بنجاح واستلام البيانات المحدثة.'
+              : 'تعذر الاتصال بخادم المزامنة. أعد المحاولة لاحقاً.',
+        ),
+      ),
+    );
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final summary = widget.summary;
+    final history = widget.history;
+    final onPeriodChanged = widget.onPeriodChanged;
+    final onEditPeriod = widget.onEditPeriod;
+
     final theme = Theme.of(context);
     final money = NumberFormat.compactCurrency(
       locale: 'en_US',
@@ -66,15 +101,44 @@ class SalesKpiSummaryCard extends StatelessWidget {
           const SizedBox(height: 4),
           Row(
             children: [
-              if (onEditPeriod != null)
-                IconButton(
-                  tooltip: 'تعديل فترة KPI',
-                  onPressed: onEditPeriod,
-                  icon: const Icon(
-                    Icons.edit_calendar_outlined,
-                    color: ZaWolfColors.primaryCyan,
+              OutlinedButton.icon(
+                onPressed: _isSyncing ? null : () => _handleRefresh(context),
+                icon: _isSyncing
+                    ? const SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: ZaWolfColors.primaryCyan,
+                        ),
+                      )
+                    : const Icon(Icons.refresh, size: 16),
+                label: Text(_isSyncing ? 'جاري المزامنة...' : 'مزامنة الآن'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: ZaWolfColors.primaryCyan,
+                  side: const BorderSide(color: ZaWolfColors.primaryCyan),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 8,
                   ),
                 ),
+              ),
+              if (onEditPeriod != null) ...[
+                const SizedBox(width: 8),
+                OutlinedButton.icon(
+                  onPressed: onEditPeriod,
+                  icon: const Icon(Icons.edit_calendar_outlined, size: 16),
+                  label: const Text('تعديل الفترة'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: ZaWolfColors.primaryCyan,
+                    side: const BorderSide(color: ZaWolfColors.surface03),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
+                  ),
+                ),
+              ],
               const Spacer(),
               if (history.length > 1)
                 DropdownButtonHideUnderline(

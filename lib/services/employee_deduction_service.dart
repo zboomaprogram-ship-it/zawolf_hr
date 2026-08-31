@@ -14,6 +14,8 @@ class EmployeeDeductionEntry {
   final String reasonLabel;
   final double dayFraction;
   final String approvalStatus;
+  final double? amount;
+  final String? currency;
 
   const EmployeeDeductionEntry({
     required this.id,
@@ -22,7 +24,39 @@ class EmployeeDeductionEntry {
     required this.reasonLabel,
     required this.dayFraction,
     required this.approvalStatus,
+    this.amount,
+    this.currency,
   });
+
+  bool get hasCompleteDetails =>
+      date.trim().isNotEmpty &&
+      reasonLabel.trim().isNotEmpty &&
+      amount != null &&
+      (currency?.trim().isNotEmpty ?? false);
+
+  List<String> get detailLines => [
+    'المصدر: ${_orFallback(sourceLabel, 'غير محدد')}',
+    'السبب: ${_orFallback(reasonLabel, 'غير مسجل في السجل التاريخي')}',
+    'تاريخ الاستحقاق: ${_orFallback(date, 'غير متاح')}',
+    'الخصم: $fractionLabel',
+    'القيمة: ${_amountLabel()}',
+    'حالة المراجعة: $approvalLabel',
+  ];
+
+  static String _orFallback(String value, String fallback) =>
+      value.trim().isEmpty ? fallback : value.trim();
+
+  String _amountLabel() {
+    if (amount == null) return 'غير مسجلة';
+    final value = amount!;
+    final formatted = value == value.roundToDouble()
+        ? value.toStringAsFixed(2)
+        : value.toStringAsFixed(2);
+    final valueCurrency = currency?.trim();
+    return valueCurrency == null || valueCurrency.isEmpty
+        ? '$formatted (العملة غير مسجلة)'
+        : '$formatted $valueCurrency';
+  }
 
   String get fractionLabel {
     if (dayFraction >= 3.0) return '3 أيام';
@@ -130,6 +164,8 @@ class EmployeeDeductionService {
       reasonLabel: item.salaryDeductionLabel,
       dayFraction: item.salaryDeductionFraction,
       approvalStatus: _normalizedStatus(item.salaryDeductionApprovalStatus),
+      amount: item.salaryDeductionAmount,
+      currency: item.salaryCurrency,
     );
   }
 
@@ -144,6 +180,8 @@ class EmployeeDeductionService {
       reasonLabel: item.salaryDeductionLabel,
       dayFraction: item.salaryDeductionFraction,
       approvalStatus: status,
+      amount: item.salaryDeductionAmount,
+      currency: item.salaryCurrency,
     );
   }
 
@@ -155,6 +193,10 @@ class EmployeeDeductionService {
       reasonLabel: item.reason,
       dayFraction: item.dayFraction,
       approvalStatus: item.status,
+      // Manual deductions are recorded as a payroll fraction. They have no
+      // monetary amount unless payroll has written one, so do not invent it.
+      amount: null,
+      currency: null,
     );
   }
 

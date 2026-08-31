@@ -332,6 +332,31 @@ class AuthService with ChangeNotifier {
     }
   }
 
+  Future<void> updateAvatarCustomization({
+    required String gender,
+    String? faceUrl,
+    String? accent,
+  }) async {
+    final user = _auth.currentUser;
+    if (user == null) throw Exception('No user logged in');
+
+    await _db.collection('users').doc(user.uid).update({
+      'avatarGender': gender,
+      if (faceUrl != null) 'avatarFaceUrl': faceUrl,
+      if (accent != null) 'avatarAccent': accent,
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+
+    if (_currentUser != null) {
+      _currentUser = _currentUser!.copyWith(
+        avatarGender: gender,
+        avatarFaceUrl: faceUrl ?? _currentUser!.avatarFaceUrl,
+        avatarAccent: accent ?? _currentUser!.avatarAccent,
+      );
+      notifyListeners();
+    }
+  }
+
   // Send password reset email
   Future<void> resetPassword(String email) async {
     await _auth.sendPasswordResetEmail(email: email);
@@ -378,9 +403,7 @@ class AuthService with ChangeNotifier {
       }
       if ((role == EmployeeRole.superAdmin || EmployeeRole.isHrStaff(role)) &&
           !EmployeeRole.canManagePrivilegedAccounts(_currentUser?.role)) {
-        throw Exception(
-          'Only HR or super admin can create admin accounts',
-        );
+        throw Exception('Only HR or super admin can create admin accounts');
       }
       if (email.trim().isEmpty ||
           displayName.trim().isEmpty ||
