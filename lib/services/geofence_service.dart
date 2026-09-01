@@ -41,6 +41,16 @@ class GeofenceResult {
   });
 }
 
+/// The browser watch API can fail independently of a one-shot location read.
+/// Keep that failure locally so the employee receives an actionable, safe
+/// message instead of a generic retry instruction.
+class _WebPositionWatchResult {
+  final Position? position;
+  final Object? error;
+
+  const _WebPositionWatchResult({this.position, this.error});
+}
+
 class GeofenceService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
   final AttendanceLocationAssignmentRepository _assignmentRepository;
@@ -289,6 +299,7 @@ class GeofenceService {
     final webWatch = kIsWeb
         ? _getWebWatchPosition(timeLimit: const Duration(seconds: 28))
         : null;
+    Object? webLocationError;
     Position? cachedPosition;
     try {
       cachedPosition = await Geolocator.getLastKnownPosition();
@@ -323,7 +334,9 @@ class GeofenceService {
         );
         _throwIfMocked(second);
         if (_isFresh(second)) samples.add(second);
-      } catch (_) {}
+      } catch (error) {
+        if (kIsWeb) webLocationError ??= error;
+      }
 
       if (samples.isNotEmpty) {
         samples.sort((a, b) => a.accuracy.compareTo(b.accuracy));
@@ -331,10 +344,13 @@ class GeofenceService {
       }
     } catch (error) {
       if (_isMockLocationError(error)) rethrow;
+      if (kIsWeb) webLocationError ??= error;
     }
 
     if (webWatch != null) {
-      final watched = await webWatch;
+      final watchResult = await webWatch;
+      final watched = watchResult.position;
+      webLocationError ??= watchResult.error;
       if (watched != null) {
         _throwIfMocked(watched);
         return watched;
@@ -375,12 +391,12 @@ class GeofenceService {
       );
       _throwIfMocked(fallback);
       if (_isFresh(fallback)) return fallback;
-    } catch (_) {}
+    } catch (error) {
+      if (kIsWeb) webLocationError ??= error;
+    }
 
     if (kIsWeb) {
-      throw Exception(
-        'تعذر الحصول على موقع حديث من المتصفح. اسمح بالموقع الدقيق، أوقف VPN إن وجد، ثم حدّث الصفحة وأعد المحاولة.',
-      );
+      throw Exception(_webLocationFailureMessage(webLocationError));
     }
 
     throw Exception(
@@ -441,10 +457,12 @@ class GeofenceService {
   /// relax the attendance radius; it merely handles desktop browsers where a
   /// one-shot position request never settles although an active position watch
   /// can obtain a fresh Wi-Fi/GPS fix.
-  Future<Position?> _getWebWatchPosition({required Duration timeLimit}) async {
-    if (!kIsWeb) return null;
+  Future<_WebPositionWatchResult> _getWebWatchPosition({
+    required Duration timeLimit,
+  }) async {
+    if (!kIsWeb) return const _WebPositionWatchResult();
     try {
-      return await GeolocatorPlatform.instance
+      final position = await GeolocatorPlatform.instance
           .getPositionStream(
             locationSettings: WebSettings(
               // Desktop browsers frequently cannot resolve a high-accuracy
@@ -457,9 +475,26 @@ class GeofenceService {
           .where((position) => _isFresh(position))
           .first
           .timeout(timeLimit);
-    } catch (_) {
-      return null;
+      return _WebPositionWatchResult(position: position);
+    } catch (error) {
+      return _WebPositionWatchResult(error: error);
     }
+  }
+
+  String _webLocationFailureMessage(Object? error) {
+    final details = error?.toString().toLowerCase() ?? '';
+    if (details.contains('permission') || details.contains('denied')) {
+      return 'المتصفح رفض إذن الموقع. من رمز القفل بجانب عنوان الموقع اختر «الموقع: سماح»، ثم فعّل الموقع الدقيق وأعد فتح الصفحة.';
+    }
+    if (details.contains('timeout') || details.contains('time out')) {
+      return 'انتهت مهلة الحصول على الموقع من المتصفح. فعّل خدمات الموقع في نظام التشغيل، واتصل بشبكة Wi‑Fi، ثم أعد المحاولة.';
+    }
+    if (details.contains('position') ||
+        details.contains('unavailable') ||
+        details.contains('location')) {
+      return 'خدمة الموقع في الجهاز لم تُرجع إحداثيات. فعّل خدمات الموقع في نظام التشغيل واسمح لمتصفح Chrome باستخدامها، ثم أعد المحاولة.';
+    }
+    return 'تعذر الحصول على موقع حديث من المتصفح. اسمح بالموقع الدقيق، أوقف VPN إن وجد، ثم حدّث الصفحة وأعد المحاولة.';
   }
 
   Future<Position> _retryOutsidePosition(

@@ -236,11 +236,14 @@ class _WebManagementShellState extends State<WebManagementShell> {
                           IconButton(
                             onPressed: widget.canGoBack ? widget.onBack : null,
                             tooltip: 'رجوع',
-                            icon: Icon(
-                              Icons.arrow_forward_rounded,
-                              color: widget.canGoBack
-                                  ? ZaWolfColors.textSecondary
-                                  : ZaWolfColors.disabled,
+                            icon: Directionality(
+                              textDirection: TextDirection.ltr,
+                              child: Icon(
+                                Icons.arrow_forward_rounded,
+                                color: widget.canGoBack
+                                    ? ZaWolfColors.textSecondary
+                                    : ZaWolfColors.disabled,
+                              ),
                             ),
                           ),
                           const Spacer(),

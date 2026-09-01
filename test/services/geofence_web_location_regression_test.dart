@@ -13,6 +13,7 @@ void main() {
       expect(source, contains('.timeout(timeLimit);'));
       expect(source, contains('getPositionStream('));
       expect(source, contains('_getWebWatchPosition'));
+      expect(source, contains('_webLocationFailureMessage'));
     },
   );
 
@@ -24,6 +25,7 @@ void main() {
         contains('maxAccuracyAllowanceMeters: strictLocationOnly ? 12 : 25'),
       );
       expect(source, contains("تعذر الحصول على موقع حديث من المتصفح"));
+      expect(source, contains('خدمة الموقع في الجهاز لم تُرجع إحداثيات'));
       expect(source, isNot(contains('longitude: location.longitude')));
       expect(source, isNot(contains('final isWithin = kDebugMode ||')));
       expect(source, isNot(contains('if (kIsWeb) return true')));

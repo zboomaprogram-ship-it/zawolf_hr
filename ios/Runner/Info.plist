@@ -28,6 +28,8 @@
 	<false/>
 	<key>LSApplicationQueriesSchemes</key>
 	<array>
+		<!-- Used by the attendance-security package only to detect a compromised
+		     device before accepting an attendance action. -->
 		<string>undecimus</string>
 		<string>sileo</string>
 		<string>zbra</string>
@@ -53,6 +55,9 @@
 	<true/>
 	<key>UIBackgroundModes</key>
 	<array>
+		<!-- Region monitoring is enabled only after the employee explicitly opts
+		     into automatic attendance and grants the iOS "Always" permission. -->
+		<string>location</string>
 		<string>remote-notification</string>
 	</array>
 	<key>UILaunchStoryboardName</key>
