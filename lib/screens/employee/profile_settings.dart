@@ -13,6 +13,7 @@ import '../../models/employee_role.dart';
 import '../../models/user_model.dart';
 import '../../services/onesignal_service.dart';
 import '../../services/personal_alarm_service.dart';
+import '../../services/required_attendance_alarm_service.dart';
 import '../../services/automatic_attendance_service.dart';
 import '../../utils/user_facing_error.dart';
 import '../../navigation/developer_tools_entry.dart';
@@ -78,6 +79,9 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
   Future<void> _setAutomaticAttendanceEnabled(bool enabled) async {
     final user = Provider.of<AuthService>(context, listen: false).currentUser;
     if (user == null) return;
+    if (enabled && !await _confirmAutomaticAttendanceDisclosure()) {
+      return;
+    }
     setState(() => _loadingAutomaticAttendance = true);
     try {
       if (enabled) {
@@ -111,6 +115,37 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
     } finally {
       if (mounted) setState(() => _loadingAutomaticAttendance = false);
     }
+  }
+
+  /// Google Play requires this disclosure to be shown in the feature flow
+  /// before the Android runtime background-location request. The operating
+  /// system prompt remains the employee's permission decision.
+  Future<bool> _confirmAutomaticAttendanceDisclosure() async {
+    final continueToPermission = await showDialog<bool>(
+      context: context,
+      barrierDismissible: true,
+      builder:
+          (dialogContext) => AlertDialog(
+            title: const Text('إفصاح عن استخدام الموقع'),
+            content: const Text(
+              'يجمع ZaWolf HR بيانات الموقع لتفعيل الحضور التلقائي حتى عندما '
+              'يكون التطبيق مغلقاً أو غير مستخدم. يستخدم الموقع فقط لمراقبة '
+              'حدود موقع العمل المعيّن وتسجيل الدخول أو الخروج، ولا يستخدم '
+              'للإعلانات أو لتتبع مسار تنقلك. يمكنك إيقاف الميزة في أي وقت.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(false),
+                child: const Text('ليس الآن'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.of(dialogContext).pop(true),
+                child: const Text('متابعة'),
+              ),
+            ],
+          ),
+    );
+    return continueToPermission ?? false;
   }
 
   @override
@@ -200,9 +235,8 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          backgroundColor: state.isReady
-              ? ZaWolfColors.success
-              : ZaWolfColors.warning,
+          backgroundColor:
+              state.isReady ? ZaWolfColors.success : ZaWolfColors.warning,
           content: Text(
             state.isReady
                 ? 'تم تفعيل الإشعارات وربط هذا الجهاز بالحساب.'
@@ -270,6 +304,10 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
           hour: _personalAlarm.hour,
           minute: _personalAlarm.minute,
         );
+        // The manual alarm is deliberately an alternative to the
+        // date-aware attendance alarm.  Keeping both caused two alerts at
+        // the same work-start time for some employees.
+        await RequiredAttendanceAlarmService.instance.disable(userId);
         if (!mounted) return;
         setState(() => _personalAlarm = settings);
         ScaffoldMessenger.of(context).showSnackBar(
@@ -287,11 +325,12 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
         await PersonalAlarmService.instance.disable(userId);
         if (!mounted) return;
         setState(
-          () => _personalAlarm = PersonalAlarmSettings(
-            enabled: false,
-            hour: _personalAlarm.hour,
-            minute: _personalAlarm.minute,
-          ),
+          () =>
+              _personalAlarm = PersonalAlarmSettings(
+                enabled: false,
+                hour: _personalAlarm.hour,
+                minute: _personalAlarm.minute,
+              ),
         );
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
@@ -345,6 +384,7 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
           hour: settings.hour,
           minute: settings.minute,
         );
+        await RequiredAttendanceAlarmService.instance.disable(userId);
       } else {
         await PersonalAlarmService.instance.saveTime(
           userId: userId,
@@ -376,9 +416,10 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
-    final joinDateStr = user.joinDate != null
-        ? DateFormat('yyyy-MM-dd').format(user.joinDate!)
-        : 'غير متوفر';
+    final joinDateStr =
+        user.joinDate != null
+            ? DateFormat('yyyy-MM-dd').format(user.joinDate!)
+            : 'غير متوفر';
     final mustChangeDefaultPassword = user.passwordChangedAt == null;
     final pushState = OneSignalService.instance.registrationState();
 
@@ -422,9 +463,10 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                       boxShadow: const [ZaWolfColors.wolfGlow],
                     ),
                     child: ClipOval(
-                      child: user.photoURL != null && user.photoURL!.isNotEmpty
-                          ? Image.network(user.photoURL!, fit: BoxFit.cover)
-                          : const AppLogo(size: 94),
+                      child:
+                          user.photoURL != null && user.photoURL!.isNotEmpty
+                              ? Image.network(user.photoURL!, fit: BoxFit.cover)
+                              : const AppLogo(size: 94),
                     ),
                   ),
                   const SizedBox(height: 16),
@@ -596,17 +638,20 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                       subtitle: const Text(
                         'اختياري: يستخدم نطاق فرعك فقط لتسجيل الدخول والخروج، ولا يتتبع مسارك المستمر. يتطلب إذن الموقع دائماً ويمكن إيقافه في أي وقت.',
                       ),
-                      trailing: _loadingAutomaticAttendance
-                          ? const SizedBox(
-                              width: 22,
-                              height: 22,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : Switch(
-                              value: _automaticAttendanceEnabled,
-                              activeThumbColor: ZaWolfColors.primaryCyan,
-                              onChanged: _setAutomaticAttendanceEnabled,
-                            ),
+                      trailing:
+                          _loadingAutomaticAttendance
+                              ? const SizedBox(
+                                width: 22,
+                                height: 22,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                              : Switch(
+                                value: _automaticAttendanceEnabled,
+                                activeThumbColor: ZaWolfColors.primaryCyan,
+                                onChanged: _setAutomaticAttendanceEnabled,
+                              ),
                     ),
                   ],
                   const Divider(color: ZaWolfColors.surface02, height: 1),
@@ -637,9 +682,10 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                       pushState.isReady
                           ? Icons.notifications_active
                           : Icons.notifications_off_outlined,
-                      color: pushState.isReady
-                          ? ZaWolfColors.success
-                          : ZaWolfColors.warning,
+                      color:
+                          pushState.isReady
+                              ? ZaWolfColors.success
+                              : ZaWolfColors.warning,
                     ),
                     title: const Text('إشعارات الهاتف'),
                     subtitle: Text(
@@ -649,17 +695,19 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                           ? 'مفعلة ومرتبطة بهذا الحساب'
                           : 'تحتاج إلى تفعيل أو إعادة ربط',
                     ),
-                    trailing: _registeringNotifications
-                        ? const SizedBox(
-                            width: 22,
-                            height: 22,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : IconButton(
-                            tooltip: 'تفعيل الإشعارات',
-                            onPressed: () => _enablePushNotifications(user.uid),
-                            icon: const Icon(Icons.refresh),
-                          ),
+                    trailing:
+                        _registeringNotifications
+                            ? const SizedBox(
+                              width: 22,
+                              height: 22,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                            : IconButton(
+                              tooltip: 'تفعيل الإشعارات',
+                              onPressed:
+                                  () => _enablePushNotifications(user.uid),
+                              icon: const Icon(Icons.refresh),
+                            ),
                   ),
                   const Divider(color: ZaWolfColors.surface02, height: 1),
                   ListTile(
@@ -678,31 +726,33 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                       Icons.alarm,
                       color: ZaWolfColors.primaryCyan,
                     ),
-                    title: const Text('منبه الدوام'),
+                    title: const Text('منبه دوام يدوي'),
                     subtitle: Text(
                       _loadingPersonalAlarm
                           ? 'جارٍ التحميل'
                           : _personalAlarm.enabled
                           ? PersonalAlarmService.instance.usesAndroidClock
-                                ? 'مفعّل في ${_personalAlarm.formattedTime}'
-                                : _personalAlarmCapability?.nativeSystemAlarm ==
-                                      true
-                                ? 'منبه iPhone مفعّل في ${_personalAlarm.formattedTime}'
-                                : 'تذكير iPhone بالصوت مفعّل في ${_personalAlarm.formattedTime}'
-                          : 'غير مفعّل',
+                              ? 'مفعّل في ${_personalAlarm.formattedTime}'
+                              : _personalAlarmCapability?.nativeSystemAlarm ==
+                                  true
+                              ? 'منبه iPhone مفعّل في ${_personalAlarm.formattedTime}'
+                              : 'تذكير iPhone بالصوت مفعّل في ${_personalAlarm.formattedTime}'
+                          : 'غير مفعّل — يستخدم منبه الحضور الذكي إن كان مفعّلاً',
                     ),
-                    trailing: _savingPersonalAlarm || _loadingPersonalAlarm
-                        ? const SizedBox(
-                            width: 22,
-                            height: 22,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : Switch(
-                            value: _personalAlarm.enabled,
-                            activeThumbColor: ZaWolfColors.primaryCyan,
-                            onChanged: (value) =>
-                                _setPersonalAlarmEnabled(user.uid, value),
-                          ),
+                    trailing:
+                        _savingPersonalAlarm || _loadingPersonalAlarm
+                            ? const SizedBox(
+                              width: 22,
+                              height: 22,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                            : Switch(
+                              value: _personalAlarm.enabled,
+                              activeThumbColor: ZaWolfColors.primaryCyan,
+                              onChanged:
+                                  (value) =>
+                                      _setPersonalAlarmEnabled(user.uid, value),
+                            ),
                   ),
                   ListTile(
                     enabled: !_savingPersonalAlarm && !_loadingPersonalAlarm,
@@ -712,9 +762,10 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                     ),
                     title: const Text('وقت منبه الدوام'),
                     trailing: TextButton(
-                      onPressed: _savingPersonalAlarm || _loadingPersonalAlarm
-                          ? null
-                          : () => _choosePersonalAlarmTime(user.uid),
+                      onPressed:
+                          _savingPersonalAlarm || _loadingPersonalAlarm
+                              ? null
+                              : () => _choosePersonalAlarmTime(user.uid),
                       child: Text(_personalAlarm.formattedTime),
                     ),
                   ),
@@ -787,9 +838,10 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                   color: ZaWolfColors.surface01,
                   borderRadius: BorderRadius.circular(16),
                   border: Border.all(
-                    color: _showPasswordForm
-                        ? ZaWolfColors.primaryCyan.withValues(alpha: 0.3)
-                        : ZaWolfColors.surface02,
+                    color:
+                        _showPasswordForm
+                            ? ZaWolfColors.primaryCyan.withValues(alpha: 0.3)
+                            : ZaWolfColors.surface02,
                   ),
                 ),
                 child: Row(
@@ -840,9 +892,11 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                         labelText: 'كلمة المرور الحالية',
                         englishLabel: 'Current Password',
                         isPassword: true,
-                        validator: (val) => val == null || val.isEmpty
-                            ? 'يرجى إدخال كلمة المرور الحالية'
-                            : null,
+                        validator:
+                            (val) =>
+                                val == null || val.isEmpty
+                                    ? 'يرجى إدخال كلمة المرور الحالية'
+                                    : null,
                       ),
                       const SizedBox(height: 16),
 

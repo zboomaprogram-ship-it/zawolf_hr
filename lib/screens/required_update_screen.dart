@@ -18,7 +18,10 @@ class RequiredUpdateScreen extends StatelessWidget {
 
   Future<void> _openStore(BuildContext context) async {
     final url = status.policy.storeUrlForCurrentPlatform().trim();
-    if (url.isEmpty || !await launchUrl(Uri.parse(url))) {
+    final destination = Uri.tryParse(url);
+    if (destination == null ||
+        url.isEmpty ||
+        !await launchUrl(destination, mode: LaunchMode.externalApplication)) {
       await SafeDiagnosticsService.instance.capture(
         feature: 'required_update',
         safeCode: 'temporarily_unavailable',
@@ -43,86 +46,124 @@ class RequiredUpdateScreen extends StatelessWidget {
       home: Directionality(
         textDirection: TextDirection.rtl,
         child: Scaffold(
+          backgroundColor: const Color(0xFF07111F),
           body: SafeArea(
-            child: Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 520),
-                child: Padding(
-                  padding: const EdgeInsets.all(24),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(
-                        unavailable
-                            ? Icons.cloud_off_outlined
-                            : unsupported
-                            ? Icons.mobile_off_outlined
-                            : Icons.security_update_good_outlined,
-                        size: 72,
-                        color: unavailable
-                            ? ZaWolfColors.warning
-                            : ZaWolfColors.primaryCyan,
+            child: Container(
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [Color(0xFF102B46), Color(0xFF07111F)],
+                ),
+              ),
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 520),
+                  child: Container(
+                    margin: const EdgeInsets.all(24),
+                    padding: const EdgeInsets.all(28),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF13263A),
+                      borderRadius: BorderRadius.circular(24),
+                      border: Border.all(
+                        color: ZaWolfColors.primaryCyan.withValues(alpha: 0.6),
                       ),
-                      const SizedBox(height: 24),
-                      Text(
-                        unavailable
-                            ? 'تعذر التحقق من الإصدار'
-                            : unsupported
-                            ? 'هذا الإصدار لم يعد مدعوماً'
-                            : 'تحديث أمني مطلوب',
-                        style: Theme.of(context).textTheme.headlineMedium,
-                        textAlign: TextAlign.center,
-                      ),
-                      const SizedBox(height: 12),
-                      Text(
-                        unavailable
-                            ? 'تعذر الاتصال بسياسة أمان التطبيق. تحقق من الإنترنت ثم أعد المحاولة.'
-                            : unsupported
-                            ? 'لا توجد حزمة تحديث متاحة لهذا الجهاز حالياً. تواصل مع مسؤول النظام لمعرفة الإصدار المدعوم.'
-                            : status.policy.messageAr,
-                        style: Theme.of(context).textTheme.bodyLarge,
-                        textAlign: TextAlign.center,
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'الإصدار الحالي ${status.version}+${status.currentBuild}',
-                        style: Theme.of(context).textTheme.bodySmall,
-                      ),
-                      const SizedBox(height: 28),
-                      if (!unavailable && !unsupported)
-                        SizedBox(
-                          width: double.infinity,
-                          child: FilledButton.icon(
-                            onPressed: () => _openStore(context),
-                            icon: const Icon(Icons.system_update_alt),
-                            label: const Text('تحديث التطبيق'),
+                      boxShadow: const [
+                        BoxShadow(
+                          color: Color(0x66000000),
+                          blurRadius: 28,
+                          offset: Offset(0, 12),
+                        ),
+                      ],
+                    ),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          unavailable
+                              ? Icons.cloud_off_outlined
+                              : unsupported
+                              ? Icons.mobile_off_outlined
+                              : Icons.security_update_good_outlined,
+                          size: 72,
+                          color:
+                              unavailable
+                                  ? ZaWolfColors.warning
+                                  : ZaWolfColors.primaryCyan,
+                        ),
+                        const SizedBox(height: 24),
+                        Text(
+                          unavailable
+                              ? 'تعذر التحقق من الإصدار'
+                              : unsupported
+                              ? 'هذا الإصدار لم يعد مدعوماً'
+                              : 'تحديث أمني مطلوب',
+                          style: Theme.of(
+                            context,
+                          ).textTheme.headlineMedium?.copyWith(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w800,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: 12),
+                        Text(
+                          unavailable
+                              ? 'تعذر الاتصال بسياسة أمان التطبيق. تحقق من الإنترنت ثم أعد المحاولة.'
+                              : unsupported
+                              ? 'لا توجد حزمة تحديث متاحة لهذا الجهاز حالياً. تواصل مع مسؤول النظام لمعرفة الإصدار المدعوم.'
+                              : status.policy.messageAr,
+                          style: Theme.of(
+                            context,
+                          ).textTheme.bodyLarge?.copyWith(
+                            color: const Color(0xFFE0EDF8),
+                            height: 1.55,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'الإصدار الحالي ${status.version}+${status.currentBuild}',
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(color: const Color(0xFFAFC6D8)),
+                        ),
+                        const SizedBox(height: 28),
+                        if (!unavailable && !unsupported)
+                          SizedBox(
+                            width: double.infinity,
+                            child: FilledButton.icon(
+                              onPressed: () => _openStore(context),
+                              icon: const Icon(Icons.system_update_alt),
+                              label: const Text('تحديث التطبيق'),
+                            ),
+                          ),
+                        SizedBox(height: unavailable || unsupported ? 20 : 10),
+                        OutlinedButton.icon(
+                          onPressed: () {
+                            if (unavailable || unsupported) {
+                              SafeDiagnosticsService.instance.capture(
+                                feature: 'required_update',
+                                safeCode:
+                                    unavailable
+                                        ? 'temporarily_unavailable'
+                                        : 'validation_failed',
+                                operation: 'retry_policy',
+                                surface: 'required_update',
+                              );
+                            }
+                            onRetry();
+                          },
+                          icon: const Icon(Icons.refresh),
+                          label: Text(
+                            unavailable
+                                ? 'إعادة الاتصال'
+                                : unsupported
+                                ? 'التحقق من توفر إصدار جديد'
+                                : 'تحقق مرة أخرى',
                           ),
                         ),
-                      SizedBox(height: unavailable || unsupported ? 20 : 10),
-                      OutlinedButton.icon(
-                        onPressed: () {
-                          if (unavailable || unsupported) {
-                            SafeDiagnosticsService.instance.capture(
-                              feature: 'required_update',
-                              safeCode: unavailable
-                                  ? 'temporarily_unavailable'
-                                  : 'validation_failed',
-                              operation: 'retry_policy',
-                              surface: 'required_update',
-                            );
-                          }
-                          onRetry();
-                        },
-                        icon: const Icon(Icons.refresh),
-                        label: Text(
-                          unavailable
-                              ? 'إعادة الاتصال'
-                              : unsupported
-                              ? 'التحقق من توفر إصدار جديد'
-                              : 'تحقق مرة أخرى',
-                        ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
               ),

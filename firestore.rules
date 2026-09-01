@@ -23,6 +23,14 @@ service cloud.firestore {
     function isCompanyCeo() {
       return userDocExists() && userDoc().get('employeeId', '') == 'CEO-100';
     }
+    // Financial approvers are assigned explicitly. Department labels and
+    // titles are editable display data and must not grant payment authority.
+    function isAdvanceCeoApprover() {
+      return userDocExists() && userDoc().get('isAdvanceCeoApprover', false) == true;
+    }
+    function isAdvanceAccountsApprover() {
+      return userDocExists() && userDoc().get('isAdvanceAccountsApprover', false) == true;
+    }
     // Workspace control follows the current organisation data, never an
     // employee code.  Any manager assigned to an IT unit gains the same
     // controlled access as the next IT manager after a reassignment.
@@ -927,22 +935,33 @@ service cloud.firestore {
         && request.resource.data.diff(resource.data).affectedKeys()
           .hasOnly([
             'status', 'reviewedBy', 'reviewedAt', 'reviewerComment', 'isRead',
-            'managerId', 'managerName', 'managerApprovalIndex'
+            'managerId', 'managerName', 'managerApprovalIndex',
+            'managerApprovalTrail', 'approvalHistory', 'advanceRouteStage'
           ])
         && request.resource.data.status in ['pending_manager', 'approved', 'rejected']
         && request.resource.data.reviewedBy == uid();
     }
     function advanceManagerReview() {
       return (
-          (isManagerRole() && isMyManager(resource.data.managerId)
-            && sequentialManagerDecision()) ||
+          (
+            isMyManager(resource.data.managerId)
+            && sequentialManagerDecision()
+            && (
+              isManagerRole()
+              || (resource.data.get('advanceRouteStage', '') == 'ceo'
+                && isAdvanceCeoApprover())
+              || (resource.data.get('advanceRouteStage', '') == 'accounting'
+                && isAdvanceAccountsApprover())
+            )
+          ) ||
           isSuperAdmin()
         )
         && resource.data.status == 'pending_manager'
         && request.resource.data.diff(resource.data).affectedKeys()
           .hasOnly([
             'status', 'reviewedBy', 'reviewedAt', 'reviewerComment', 'isRead',
-            'managerId', 'managerName', 'managerApprovalIndex', 'managerApprovalTrail'
+            'managerId', 'managerName', 'managerApprovalIndex', 'managerApprovalTrail',
+            'approvalHistory', 'advanceRouteStage'
           ])
         && request.resource.data.status in ['pending_manager', 'approved', 'rejected']
         && request.resource.data.reviewedBy == uid();

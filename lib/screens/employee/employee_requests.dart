@@ -28,6 +28,7 @@ import '../../services/attendance_correction_request_service.dart';
 import '../../services/governed_drive_attachment_service.dart';
 import '../../services/task_service.dart';
 import '../../models/attendance_model.dart';
+import '../../models/attendance_policy.dart';
 import '../../models/permission_model.dart';
 import '../../models/permission_type_policy.dart';
 import '../../models/leave_model.dart';
@@ -3580,7 +3581,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
                   if (req.isDeductible) ...[
                     const SizedBox(height: 6),
                     Text(
-                      '${req.salaryDeductionLabel} · ${req.salaryDeductionAmount.toStringAsFixed(2)} ${req.salaryCurrency}',
+                      '${AttendancePolicy.arabicDeductionLabel(req.salaryDeductionCode, fallback: req.salaryDeductionLabel)} · ${req.salaryDeductionAmount.toStringAsFixed(2)} ${req.salaryCurrency}',
                       style: const TextStyle(color: ZaWolfColors.warning),
                     ),
                   ],

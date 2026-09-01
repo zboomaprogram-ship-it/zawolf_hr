@@ -138,8 +138,8 @@ class NotificationService {
             route: parts.length > 2 ? parts[2] : null,
           );
         } else if (payload.startsWith('route|')) {
-          final route = payload.split('|')[1];
-          _onNotificationTap.add(route);
+          final parts = payload.split('|');
+          handleRemoteNotificationRoute(parts.length > 1 ? parts[1] : null);
         }
       },
     );
@@ -152,8 +152,12 @@ class NotificationService {
     if (notificationAppLaunchDetails?.didNotificationLaunchApp ?? false) {
       final payload =
           notificationAppLaunchDetails!.notificationResponse?.payload ?? '';
-      if (payload.startsWith('route|')) {
-        initialRoute = payload.split('|')[1];
+      if (payload.startsWith('notification|')) {
+        final parts = payload.split('|');
+        initialRoute = safeRoute(parts.length > 2 ? parts[2] : null);
+      } else if (payload.startsWith('route|')) {
+        final parts = payload.split('|');
+        initialRoute = safeRoute(parts.length > 1 ? parts[1] : null);
       }
     }
   }

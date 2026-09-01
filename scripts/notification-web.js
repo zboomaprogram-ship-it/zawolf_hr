@@ -138,6 +138,10 @@ const {
   normalizeTimelineRows,
 } = require('./operational-visibility');
 const { operationCorsHeaderValue } = require('./http-cors');
+const {
+  createFieldMission,
+  decideFieldMission,
+} = require('./request-approval-routing');
 
 const port = Number(process.env.PORT || 3000);
 const dispatchSecret = process.env.NOTIFICATION_DISPATCH_SECRET || '';
@@ -3975,6 +3979,8 @@ const server = http.createServer(async (req, res) => {
     url.pathname === '/operations/employee-timeline' ||
     url.pathname === '/operations/request-management/archive' ||
     url.pathname === '/operations/request-management/notify' ||
+    url.pathname === '/operations/request-approval-routing/field-missions' ||
+    /^\/operations\/request-approval-routing\/field-missions\/[A-Za-z0-9_-]{8,128}\/decision$/.test(url.pathname) ||
     url.pathname === '/operations/sales-indicators' ||
     url.pathname === '/operations/sales-indicators/sync' ||
     url.pathname === '/operations/sales-indicators/mappings' ||
@@ -4088,6 +4094,47 @@ const server = http.createServer(async (req, res) => {
 
   if (url.pathname === '/operations/request-management/notify' && req.method === 'POST') {
     await handleRequestManagementNotification(req, res);
+    return;
+  }
+
+  if (url.pathname === '/operations/request-approval-routing/field-missions' && req.method === 'POST') {
+    const actor = await authorizeWorkspaceRequest(req);
+    if (!actor) {
+      sendJson(res, 401, { ok: false, code: 'session_expired' });
+      return;
+    }
+    try {
+      const result = await createFieldMission({
+        db: admin.firestore(initializeFirebase()), admin, actor,
+        body: await readJsonBody(req),
+      });
+      sendJson(res, 201, { ok: true, ...result });
+    } catch (error) {
+      sendJson(res, /صلاحية/.test(String(error.message || error)) ? 403 : 400, {
+        ok: false, code: 'field_mission_route_failed', error: String(error.message || error),
+      });
+    }
+    return;
+  }
+
+  const fieldMissionDecision = url.pathname.match(/^\/operations\/request-approval-routing\/field-missions\/([A-Za-z0-9_-]{8,128})\/decision$/);
+  if (fieldMissionDecision && req.method === 'POST') {
+    const actor = await authorizeWorkspaceRequest(req);
+    if (!actor) {
+      sendJson(res, 401, { ok: false, code: 'session_expired' });
+      return;
+    }
+    try {
+      const result = await decideFieldMission({
+        db: admin.firestore(initializeFirebase()), admin, actor,
+        requestId: fieldMissionDecision[1], body: await readJsonBody(req),
+      });
+      sendJson(res, 200, { ok: true, ...result });
+    } catch (error) {
+      sendJson(res, /انتظار قرارك|صلاحية/.test(String(error.message || error)) ? 403 : 400, {
+        ok: false, code: 'field_mission_decision_failed', error: String(error.message || error),
+      });
+    }
     return;
   }
 

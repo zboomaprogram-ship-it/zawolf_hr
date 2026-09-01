@@ -40,6 +40,19 @@ void main() {
     );
   });
 
+  test('every active approval stage opens the reviewer request queue', () {
+    expect(
+      service.routeForType('field_mission_approval_turn'),
+      '/manager/requests',
+    );
+    expect(service.routeForType('advance_pending_hr'), '/manager/requests');
+    expect(service.routeForType('advance_pending_ceo'), '/manager/requests');
+    expect(
+      service.routeForType('advance_pending_accounting'),
+      '/manager/requests',
+    );
+  });
+
   test('unknown push routes fall back to a valid route for the type', () {
     expect(
       service.safeRoute('/route-that-does-not-exist', type: 'hr_announcement'),

@@ -3,6 +3,17 @@ class NotificationRoutePolicy {
 
   static String routeForType(String type) {
     final value = type.trim();
+    if (value == 'advance_pending_hr' ||
+        value == 'advance_pending_ceo' ||
+        value == 'advance_pending_accounting' ||
+        value.contains('approval_turn')) {
+      return '/manager/requests';
+    }
+    if (value == 'field_mission_under_review' ||
+        value == 'field_mission_approved' ||
+        value == 'field_mission_rejected') {
+      return '/employee/requests';
+    }
     if (value.startsWith('company_os_request_pending_')) {
       return '/manager/requests';
     }

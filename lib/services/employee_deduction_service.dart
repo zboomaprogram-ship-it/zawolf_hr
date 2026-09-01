@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../models/attendance_model.dart';
+import '../models/attendance_policy.dart';
 import '../models/manual_deduction_model.dart';
 import '../models/permission_model.dart';
 import 'attendance_service.dart';
@@ -49,9 +50,10 @@ class EmployeeDeductionEntry {
   String _amountLabel() {
     if (amount == null) return 'غير مسجلة';
     final value = amount!;
-    final formatted = value == value.roundToDouble()
-        ? value.toStringAsFixed(2)
-        : value.toStringAsFixed(2);
+    final formatted =
+        value == value.roundToDouble()
+            ? value.toStringAsFixed(2)
+            : value.toStringAsFixed(2);
     final valueCurrency = currency?.trim();
     return valueCurrency == null || valueCurrency.isEmpty
         ? '$formatted (العملة غير مسجلة)'
@@ -131,9 +133,8 @@ class EmployeeDeductionService {
           .where('userId', isEqualTo: userId)
           .snapshots()
           .listen((snapshot) {
-            permissions = snapshot.docs
-                .map(PermissionModel.fromFirestore)
-                .toList();
+            permissions =
+                snapshot.docs.map(PermissionModel.fromFirestore).toList();
             emit();
           }, onError: controller.addError);
 
@@ -142,9 +143,8 @@ class EmployeeDeductionService {
           .where('userId', isEqualTo: userId)
           .snapshots()
           .listen((snapshot) {
-            manualDeductions = snapshot.docs
-                .map(ManualDeductionModel.fromFirestore)
-                .toList();
+            manualDeductions =
+                snapshot.docs.map(ManualDeductionModel.fromFirestore).toList();
             emit();
           }, onError: controller.addError);
 
@@ -161,7 +161,10 @@ class EmployeeDeductionService {
       id: item.attendanceId,
       date: item.date,
       sourceLabel: 'الحضور والانصراف',
-      reasonLabel: item.salaryDeductionLabel,
+      reasonLabel: AttendancePolicy.arabicDeductionLabel(
+        item.salaryDeductionCode,
+        fallback: item.salaryDeductionLabel,
+      ),
       dayFraction: item.salaryDeductionFraction,
       approvalStatus: _normalizedStatus(item.salaryDeductionApprovalStatus),
       amount: item.salaryDeductionAmount,
@@ -170,9 +173,10 @@ class EmployeeDeductionService {
   }
 
   EmployeeDeductionEntry _fromPermission(PermissionModel item) {
-    final status = item.status == 'rejected' || item.status == 'cancelled'
-        ? 'rejected'
-        : _normalizedStatus(item.salaryDeductionApprovalStatus);
+    final status =
+        item.status == 'rejected' || item.status == 'cancelled'
+            ? 'rejected'
+            : _normalizedStatus(item.salaryDeductionApprovalStatus);
     return EmployeeDeductionEntry(
       id: item.permissionId,
       date: item.requestDate,

@@ -27,6 +27,41 @@ class AttendancePolicy {
   static const int defaultQuarterDayUntilMinutes = 30;
   static const int defaultHalfDayUntilMinutes = 60;
 
+  /// Storage codes must stay stable for payroll reconciliation, but they must
+  /// never be shown as English/internal values to an employee.
+  static String arabicDeductionLabel(String code, {String? fallback}) {
+    switch (code.trim().toLowerCase()) {
+      case 'late_quarter_day':
+      case 'quarter_day':
+        return 'خصم ربع يوم بسبب التأخير';
+      case 'late_half_day':
+      case 'half_day':
+        return 'خصم نصف يوم بسبب التأخير';
+      case 'late_full_day':
+      case 'full_day':
+      case 'absence':
+      case 'absent':
+        return 'خصم يوم كامل';
+      case 'missed_checkout_quarter_day':
+        return 'خصم ربع يوم لعدم تسجيل الانصراف';
+      case 'early_checkout_quarter_day':
+        return 'خصم ربع يوم للانصراف المبكر';
+      case 'late_checkout_after_11_quarter_day':
+        return 'خصم ربع يوم لتأخر تسجيل الانصراف';
+      case 'none':
+      case '':
+        return fallback?.trim().isNotEmpty == true
+            ? fallback!.trim()
+            : 'لا يوجد خصم';
+      default:
+        final value = fallback?.trim() ?? '';
+        // Some historical rows wrote an internal code into the display label.
+        return value.isNotEmpty && !RegExp(r'^[a-z0-9_ -]+$').hasMatch(value)
+            ? value
+            : 'خصم راتب يحتاج مراجعة الموارد البشرية';
+    }
+  }
+
   static DateTime parseTimeOnDate(DateTime date, String timeStr) {
     final parts = timeStr.split(':');
     final hour = int.parse(parts[0]);
@@ -42,9 +77,10 @@ class AttendancePolicy {
     int halfDayUntilMinutes = defaultHalfDayUntilMinutes,
   }) {
     final shiftStart = parseTimeOnDate(arrivalTime, startTime);
-    final lateMinutes = arrivalTime.isAfter(shiftStart)
-        ? arrivalTime.difference(shiftStart).inMinutes
-        : 0;
+    final lateMinutes =
+        arrivalTime.isAfter(shiftStart)
+            ? arrivalTime.difference(shiftStart).inMinutes
+            : 0;
 
     if (lateMinutes <= graceMinutes) {
       return AttendanceDeduction(
@@ -183,8 +219,8 @@ class AttendancePolicyConfig {
       ),
       attendanceVerificationMode:
           map['attendanceVerificationMode'] == 'biometric'
-          ? 'biometric'
-          : 'location_only',
+              ? 'biometric'
+              : 'location_only',
     );
   }
 

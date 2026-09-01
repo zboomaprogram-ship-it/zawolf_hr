@@ -16,6 +16,7 @@ import '../../services/attendance_service.dart';
 import '../../services/complaint_service.dart';
 import '../../models/employee_role.dart';
 import '../../models/attendance_model.dart';
+import '../../models/attendance_policy.dart';
 import '../../models/complaint_model.dart';
 import '../../models/leave_model.dart';
 import '../../models/leave_type_policy.dart';
@@ -83,8 +84,8 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
   late final AuthenticatedOperationClient _requestOperations =
       AuthenticatedOperationClient(
         client: _requestOperationsHttp,
-        tokenProvider: () async =>
-            FirebaseAuth.instance.currentUser?.getIdToken(),
+        tokenProvider:
+            () async => FirebaseAuth.instance.currentUser?.getIdToken(),
       );
 
   bool _isRequestBusy(String requestId) => _busyRequestIds.contains(requestId);
@@ -186,51 +187,56 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
     String? validationMessage;
     final result = await showDialog<String>(
       context: context,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          title: Text(
-            target == 'manager'
-                ? 'تذكير المدير بالطلب'
-                : 'إبلاغ الموظف بالتعديل المطلوب',
+      builder:
+          (dialogContext) => StatefulBuilder(
+            builder:
+                (context, setDialogState) => AlertDialog(
+                  title: Text(
+                    target == 'manager'
+                        ? 'تذكير المدير بالطلب'
+                        : 'إبلاغ الموظف بالتعديل المطلوب',
+                  ),
+                  content: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 520),
+                    child: TextField(
+                      controller: controller,
+                      minLines: 3,
+                      maxLines: 6,
+                      maxLength: 700,
+                      autofocus: true,
+                      decoration: InputDecoration(
+                        labelText:
+                            target == 'manager'
+                                ? 'وصف التذكير'
+                                : 'ما التعديل المطلوب من الموظف؟',
+                        hintText: 'اكتب رسالة واضحة تظهر في الإشعار…',
+                        errorText: validationMessage,
+                        alignLabelWithHint: true,
+                      ),
+                    ),
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.of(dialogContext).pop(),
+                      child: const Text('إلغاء'),
+                    ),
+                    FilledButton.icon(
+                      onPressed: () {
+                        final value = controller.text.trim();
+                        if (value.isEmpty) {
+                          setDialogState(
+                            () => validationMessage = 'الوصف مطلوب.',
+                          );
+                          return;
+                        }
+                        Navigator.of(dialogContext).pop(value);
+                      },
+                      icon: const Icon(Icons.notifications_active_outlined),
+                      label: const Text('إرسال الإشعار'),
+                    ),
+                  ],
+                ),
           ),
-          content: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 520),
-            child: TextField(
-              controller: controller,
-              minLines: 3,
-              maxLines: 6,
-              maxLength: 700,
-              autofocus: true,
-              decoration: InputDecoration(
-                labelText: target == 'manager'
-                    ? 'وصف التذكير'
-                    : 'ما التعديل المطلوب من الموظف؟',
-                hintText: 'اكتب رسالة واضحة تظهر في الإشعار…',
-                errorText: validationMessage,
-                alignLabelWithHint: true,
-              ),
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(),
-              child: const Text('إلغاء'),
-            ),
-            FilledButton.icon(
-              onPressed: () {
-                final value = controller.text.trim();
-                if (value.isEmpty) {
-                  setDialogState(() => validationMessage = 'الوصف مطلوب.');
-                  return;
-                }
-                Navigator.of(dialogContext).pop(value);
-              },
-              icon: const Icon(Icons.notifications_active_outlined),
-              label: const Text('إرسال الإشعار'),
-            ),
-          ],
-        ),
-      ),
     );
     controller.dispose();
     return result;
@@ -293,29 +299,31 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
           children: [
             PopupMenuButton<String>(
               tooltip: 'إرسال إشعار بخصوص الطلب',
-              onSelected: (target) => _sendRequestNotification(
-                collection: collection,
-                requestId: requestId,
-                target: target,
-              ),
-              itemBuilder: (context) => const [
-                PopupMenuItem(
-                  value: 'manager',
-                  child: ListTile(
-                    leading: Icon(Icons.supervisor_account_outlined),
-                    title: Text('تذكير المدير بالطلب'),
-                    contentPadding: EdgeInsets.zero,
+              onSelected:
+                  (target) => _sendRequestNotification(
+                    collection: collection,
+                    requestId: requestId,
+                    target: target,
                   ),
-                ),
-                PopupMenuItem(
-                  value: 'employee',
-                  child: ListTile(
-                    leading: Icon(Icons.edit_notifications_outlined),
-                    title: Text('طلب تعديل من الموظف'),
-                    contentPadding: EdgeInsets.zero,
-                  ),
-                ),
-              ],
+              itemBuilder:
+                  (context) => const [
+                    PopupMenuItem(
+                      value: 'manager',
+                      child: ListTile(
+                        leading: Icon(Icons.supervisor_account_outlined),
+                        title: Text('تذكير المدير بالطلب'),
+                        contentPadding: EdgeInsets.zero,
+                      ),
+                    ),
+                    PopupMenuItem(
+                      value: 'employee',
+                      child: ListTile(
+                        leading: Icon(Icons.edit_notifications_outlined),
+                        title: Text('طلب تعديل من الموظف'),
+                        contentPadding: EdgeInsets.zero,
+                      ),
+                    ),
+                  ],
               child: const Padding(
                 padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                 child: Row(
@@ -331,12 +339,13 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
               ),
             ),
             TextButton.icon(
-              onPressed: busy
-                  ? null
-                  : () => _confirmAndArchiveRequest(
-                      collection: collection,
-                      requestId: requestId,
-                    ),
+              onPressed:
+                  busy
+                      ? null
+                      : () => _confirmAndArchiveRequest(
+                        collection: collection,
+                        requestId: requestId,
+                      ),
               icon: const Icon(Icons.delete_outline),
               label: const Text('حذف من القائمة'),
               style: TextButton.styleFrom(foregroundColor: ZaWolfColors.error),
@@ -399,10 +408,8 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
     var deductible = false;
     var saving = false;
 
-    final users = await _db
-        .collection('users')
-        .where('isActive', isEqualTo: true)
-        .get();
+    final users =
+        await _db.collection('users').where('isActive', isEqualTo: true).get();
     final employees =
         users.docs
             .map(UserModel.fromFirestore)
@@ -416,263 +423,316 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
     await showDialog<void>(
       context: context,
       barrierDismissible: false,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          title: const Text('إضافة مباشرة لموظف'),
-          content: SizedBox(
-            width: 480,
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  SegmentedButton<String>(
-                    segments: const [
-                      ButtonSegment(value: 'leave', label: Text('إجازة')),
-                      ButtonSegment(value: 'permission', label: Text('إذن')),
-                    ],
-                    selected: {kind},
-                    onSelectionChanged: saving
-                        ? null
-                        : (value) => setDialogState(() => kind = value.first),
-                  ),
-                  const SizedBox(height: 14),
-                  DropdownButtonFormField<UserModel>(
-                    initialValue: employee,
-                    isExpanded: true,
-                    decoration: const InputDecoration(labelText: 'الموظف'),
-                    items: employees
-                        .map(
-                          (user) => DropdownMenuItem(
-                            value: user,
-                            child: Text(
-                              '${user.displayName} (${user.employeeId})',
+      builder:
+          (dialogContext) => StatefulBuilder(
+            builder:
+                (context, setDialogState) => AlertDialog(
+                  title: const Text('إضافة مباشرة لموظف'),
+                  content: SizedBox(
+                    width: 480,
+                    child: SingleChildScrollView(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          SegmentedButton<String>(
+                            segments: const [
+                              ButtonSegment(
+                                value: 'leave',
+                                label: Text('إجازة'),
+                              ),
+                              ButtonSegment(
+                                value: 'permission',
+                                label: Text('إذن'),
+                              ),
+                            ],
+                            selected: {kind},
+                            onSelectionChanged:
+                                saving
+                                    ? null
+                                    : (value) => setDialogState(
+                                      () => kind = value.first,
+                                    ),
+                          ),
+                          const SizedBox(height: 14),
+                          DropdownButtonFormField<UserModel>(
+                            initialValue: employee,
+                            isExpanded: true,
+                            decoration: const InputDecoration(
+                              labelText: 'الموظف',
+                            ),
+                            items:
+                                employees
+                                    .map(
+                                      (user) => DropdownMenuItem(
+                                        value: user,
+                                        child: Text(
+                                          '${user.displayName} (${user.employeeId})',
+                                        ),
+                                      ),
+                                    )
+                                    .toList(),
+                            onChanged:
+                                saving
+                                    ? null
+                                    : (value) =>
+                                        setDialogState(() => employee = value),
+                          ),
+                          const SizedBox(height: 14),
+                          if (kind == 'leave') ...[
+                            DropdownButtonFormField<String>(
+                              initialValue: leaveType,
+                              decoration: const InputDecoration(
+                                labelText: 'نوع الإجازة',
+                              ),
+                              items:
+                                  LeaveTypePolicy.supportedTypes
+                                      .map(
+                                        (type) => DropdownMenuItem(
+                                          value: type,
+                                          child: Text(
+                                            LeaveTypePolicy.arabicLabel(type),
+                                          ),
+                                        ),
+                                      )
+                                      .toList(),
+                              onChanged:
+                                  saving
+                                      ? null
+                                      : (value) => setDialogState(
+                                        () => leaveType = value ?? leaveType,
+                                      ),
+                            ),
+                            ListTile(
+                              contentPadding: EdgeInsets.zero,
+                              title: const Text('فترة الإجازة'),
+                              subtitle: Text(
+                                '${DateFormat('yyyy/MM/dd').format(startDate)} - ${DateFormat('yyyy/MM/dd').format(endDate)}',
+                              ),
+                              trailing: const Icon(Icons.date_range),
+                              onTap:
+                                  saving
+                                      ? null
+                                      : () async {
+                                        final range = await showDateRangePicker(
+                                          context: context,
+                                          firstDate: DateTime.now().subtract(
+                                            const Duration(days: 365),
+                                          ),
+                                          lastDate: DateTime.now().add(
+                                            const Duration(days: 730),
+                                          ),
+                                          initialDateRange: DateTimeRange(
+                                            start: startDate,
+                                            end: endDate,
+                                          ),
+                                        );
+                                        if (range != null) {
+                                          setDialogState(() {
+                                            startDate = range.start;
+                                            endDate = range.end;
+                                          });
+                                        }
+                                      },
+                            ),
+                          ] else ...[
+                            DropdownButtonFormField<String>(
+                              initialValue: permissionType,
+                              decoration: const InputDecoration(
+                                labelText: 'نوع الإذن',
+                              ),
+                              items:
+                                  const [
+                                        PermissionTypePolicy.earlyLeave,
+                                        PermissionTypePolicy.lateArrival,
+                                        PermissionTypePolicy.midShiftExit,
+                                      ]
+                                      .map(
+                                        (type) => DropdownMenuItem(
+                                          value: type,
+                                          child: Text(
+                                            PermissionTypePolicy.arabicLabel(
+                                              type,
+                                            ),
+                                          ),
+                                        ),
+                                      )
+                                      .toList(),
+                              onChanged:
+                                  saving
+                                      ? null
+                                      : (value) => setDialogState(
+                                        () =>
+                                            permissionType =
+                                                value ?? permissionType,
+                                      ),
+                            ),
+                            ListTile(
+                              contentPadding: EdgeInsets.zero,
+                              title: const Text('تاريخ ووقت الإذن'),
+                              subtitle: Text(
+                                '${DateFormat('yyyy/MM/dd').format(permissionDate)} · ${permissionTime.format(context)}',
+                              ),
+                              onTap:
+                                  saving
+                                      ? null
+                                      : () async {
+                                        final date = await showDatePicker(
+                                          context: context,
+                                          initialDate: permissionDate,
+                                          firstDate: DateTime.now().subtract(
+                                            const Duration(days: 365),
+                                          ),
+                                          lastDate: DateTime.now().add(
+                                            const Duration(days: 365),
+                                          ),
+                                        );
+                                        if (date == null || !context.mounted) {
+                                          return;
+                                        }
+                                        final time = await showTimePicker(
+                                          context: context,
+                                          initialTime: permissionTime,
+                                        );
+                                        if (time != null) {
+                                          setDialogState(() {
+                                            permissionDate = date;
+                                            permissionTime = time;
+                                          });
+                                        }
+                                      },
+                            ),
+                            DropdownButtonFormField<int>(
+                              initialValue: durationHours,
+                              decoration: const InputDecoration(
+                                labelText: 'المدة',
+                              ),
+                              items:
+                                  const [1, 2, 3, 4]
+                                      .map(
+                                        (hours) => DropdownMenuItem(
+                                          value: hours,
+                                          child: Text('$hours ساعة'),
+                                        ),
+                                      )
+                                      .toList(),
+                              onChanged:
+                                  saving
+                                      ? null
+                                      : (value) => setDialogState(
+                                        () =>
+                                            durationHours =
+                                                value ?? durationHours,
+                                      ),
+                            ),
+                            SwitchListTile.adaptive(
+                              contentPadding: EdgeInsets.zero,
+                              value: deductible,
+                              title: const Text('إذن استقطاعي'),
+                              onChanged:
+                                  saving
+                                      ? null
+                                      : (value) => setDialogState(
+                                        () => deductible = value,
+                                      ),
+                            ),
+                          ],
+                          TextField(
+                            controller: reasonController,
+                            minLines: 2,
+                            maxLines: 4,
+                            textDirection: TextDirection.rtl,
+                            decoration: const InputDecoration(
+                              labelText: 'السبب / ملاحظة HR',
                             ),
                           ),
-                        )
-                        .toList(),
-                    onChanged: saving
-                        ? null
-                        : (value) => setDialogState(() => employee = value),
+                        ],
+                      ),
+                    ),
                   ),
-                  const SizedBox(height: 14),
-                  if (kind == 'leave') ...[
-                    DropdownButtonFormField<String>(
-                      initialValue: leaveType,
-                      decoration: const InputDecoration(
-                        labelText: 'نوع الإجازة',
-                      ),
-                      items: LeaveTypePolicy.supportedTypes
-                          .map(
-                            (type) => DropdownMenuItem(
-                              value: type,
-                              child: Text(LeaveTypePolicy.arabicLabel(type)),
-                            ),
-                          )
-                          .toList(),
-                      onChanged: saving
-                          ? null
-                          : (value) => setDialogState(
-                              () => leaveType = value ?? leaveType,
-                            ),
+                  actions: [
+                    TextButton(
+                      onPressed:
+                          saving ? null : () => Navigator.pop(dialogContext),
+                      child: const Text('إلغاء'),
                     ),
-                    ListTile(
-                      contentPadding: EdgeInsets.zero,
-                      title: const Text('فترة الإجازة'),
-                      subtitle: Text(
-                        '${DateFormat('yyyy/MM/dd').format(startDate)} - ${DateFormat('yyyy/MM/dd').format(endDate)}',
-                      ),
-                      trailing: const Icon(Icons.date_range),
-                      onTap: saving
-                          ? null
-                          : () async {
-                              final range = await showDateRangePicker(
-                                context: context,
-                                firstDate: DateTime.now().subtract(
-                                  const Duration(days: 365),
-                                ),
-                                lastDate: DateTime.now().add(
-                                  const Duration(days: 730),
-                                ),
-                                initialDateRange: DateTimeRange(
-                                  start: startDate,
-                                  end: endDate,
-                                ),
-                              );
-                              if (range != null) {
-                                setDialogState(() {
-                                  startDate = range.start;
-                                  endDate = range.end;
-                                });
-                              }
-                            },
-                    ),
-                  ] else ...[
-                    DropdownButtonFormField<String>(
-                      initialValue: permissionType,
-                      decoration: const InputDecoration(labelText: 'نوع الإذن'),
-                      items:
-                          const [
-                                PermissionTypePolicy.earlyLeave,
-                                PermissionTypePolicy.lateArrival,
-                                PermissionTypePolicy.midShiftExit,
-                              ]
-                              .map(
-                                (type) => DropdownMenuItem(
-                                  value: type,
-                                  child: Text(
-                                    PermissionTypePolicy.arabicLabel(type),
-                                  ),
+                    FilledButton(
+                      onPressed:
+                          saving
+                              ? null
+                              : () async {
+                                final messenger = ScaffoldMessenger.of(context);
+                                if (employee == null ||
+                                    reasonController.text.trim().isEmpty) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text('اختر الموظف واكتب السبب.'),
+                                    ),
+                                  );
+                                  return;
+                                }
+                                setDialogState(() => saving = true);
+                                try {
+                                  final service = HrDirectRequestService();
+                                  if (kind == 'leave') {
+                                    await service.grantLeave(
+                                      employee: employee!,
+                                      hr: hr,
+                                      leaveType: leaveType,
+                                      startDate: startDate,
+                                      endDate: endDate,
+                                      reason: reasonController.text,
+                                    );
+                                  } else {
+                                    final expectedTime =
+                                        '${permissionTime.hour.toString().padLeft(2, '0')}:${permissionTime.minute.toString().padLeft(2, '0')}';
+                                    await service.grantPermission(
+                                      employee: employee!,
+                                      hr: hr,
+                                      permissionType: permissionType,
+                                      date: permissionDate,
+                                      expectedTime: expectedTime,
+                                      durationMinutes: durationHours * 60,
+                                      reason: reasonController.text,
+                                      isDeductible: deductible,
+                                    );
+                                  }
+                                  if (!dialogContext.mounted || !mounted) {
+                                    return;
+                                  }
+                                  Navigator.pop(dialogContext);
+                                  messenger.showSnackBar(
+                                    const SnackBar(
+                                      content: Text(
+                                        'تمت الإضافة والاعتماد مباشرة.',
+                                      ),
+                                    ),
+                                  );
+                                } catch (error) {
+                                  if (!dialogContext.mounted || !mounted) {
+                                    return;
+                                  }
+                                  setDialogState(() => saving = false);
+                                  messenger.showSnackBar(
+                                    SnackBar(
+                                      content: Text(userFacingError(error)),
+                                    ),
+                                  );
+                                }
+                              },
+                      child:
+                          saving
+                              ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
                                 ),
                               )
-                              .toList(),
-                      onChanged: saving
-                          ? null
-                          : (value) => setDialogState(
-                              () => permissionType = value ?? permissionType,
-                            ),
-                    ),
-                    ListTile(
-                      contentPadding: EdgeInsets.zero,
-                      title: const Text('تاريخ ووقت الإذن'),
-                      subtitle: Text(
-                        '${DateFormat('yyyy/MM/dd').format(permissionDate)} · ${permissionTime.format(context)}',
-                      ),
-                      onTap: saving
-                          ? null
-                          : () async {
-                              final date = await showDatePicker(
-                                context: context,
-                                initialDate: permissionDate,
-                                firstDate: DateTime.now().subtract(
-                                  const Duration(days: 365),
-                                ),
-                                lastDate: DateTime.now().add(
-                                  const Duration(days: 365),
-                                ),
-                              );
-                              if (date == null || !context.mounted) return;
-                              final time = await showTimePicker(
-                                context: context,
-                                initialTime: permissionTime,
-                              );
-                              if (time != null) {
-                                setDialogState(() {
-                                  permissionDate = date;
-                                  permissionTime = time;
-                                });
-                              }
-                            },
-                    ),
-                    DropdownButtonFormField<int>(
-                      initialValue: durationHours,
-                      decoration: const InputDecoration(labelText: 'المدة'),
-                      items: const [1, 2, 3, 4]
-                          .map(
-                            (hours) => DropdownMenuItem(
-                              value: hours,
-                              child: Text('$hours ساعة'),
-                            ),
-                          )
-                          .toList(),
-                      onChanged: saving
-                          ? null
-                          : (value) => setDialogState(
-                              () => durationHours = value ?? durationHours,
-                            ),
-                    ),
-                    SwitchListTile.adaptive(
-                      contentPadding: EdgeInsets.zero,
-                      value: deductible,
-                      title: const Text('إذن استقطاعي'),
-                      onChanged: saving
-                          ? null
-                          : (value) => setDialogState(() => deductible = value),
+                              : const Text('إضافة واعتماد'),
                     ),
                   ],
-                  TextField(
-                    controller: reasonController,
-                    minLines: 2,
-                    maxLines: 4,
-                    textDirection: TextDirection.rtl,
-                    decoration: const InputDecoration(
-                      labelText: 'السبب / ملاحظة HR',
-                    ),
-                  ),
-                ],
-              ),
-            ),
+                ),
           ),
-          actions: [
-            TextButton(
-              onPressed: saving ? null : () => Navigator.pop(dialogContext),
-              child: const Text('إلغاء'),
-            ),
-            FilledButton(
-              onPressed: saving
-                  ? null
-                  : () async {
-                      final messenger = ScaffoldMessenger.of(context);
-                      if (employee == null ||
-                          reasonController.text.trim().isEmpty) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('اختر الموظف واكتب السبب.'),
-                          ),
-                        );
-                        return;
-                      }
-                      setDialogState(() => saving = true);
-                      try {
-                        final service = HrDirectRequestService();
-                        if (kind == 'leave') {
-                          await service.grantLeave(
-                            employee: employee!,
-                            hr: hr,
-                            leaveType: leaveType,
-                            startDate: startDate,
-                            endDate: endDate,
-                            reason: reasonController.text,
-                          );
-                        } else {
-                          final expectedTime =
-                              '${permissionTime.hour.toString().padLeft(2, '0')}:${permissionTime.minute.toString().padLeft(2, '0')}';
-                          await service.grantPermission(
-                            employee: employee!,
-                            hr: hr,
-                            permissionType: permissionType,
-                            date: permissionDate,
-                            expectedTime: expectedTime,
-                            durationMinutes: durationHours * 60,
-                            reason: reasonController.text,
-                            isDeductible: deductible,
-                          );
-                        }
-                        if (!dialogContext.mounted || !mounted) return;
-                        Navigator.pop(dialogContext);
-                        messenger.showSnackBar(
-                          const SnackBar(
-                            content: Text('تمت الإضافة والاعتماد مباشرة.'),
-                          ),
-                        );
-                      } catch (error) {
-                        if (!dialogContext.mounted || !mounted) return;
-                        setDialogState(() => saving = false);
-                        messenger.showSnackBar(
-                          SnackBar(content: Text(userFacingError(error))),
-                        );
-                      }
-                    },
-              child: saving
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Text('إضافة واعتماد'),
-            ),
-          ],
-        ),
-      ),
     );
     reasonController.dispose();
   }
@@ -805,8 +865,8 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                             ),
                           ],
                           selected: {mode},
-                          onSelectionChanged: (val) =>
-                              setDialogState(() => mode = val.first),
+                          onSelectionChanged:
+                              (val) => setDialogState(() => mode = val.first),
                         ),
                         const SizedBox(height: 16),
                         if (mode == 'request') ...[
@@ -885,9 +945,10 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                                   child: Text('مرضية'),
                                 ),
                               ],
-                              onChanged: (val) => setDialogState(
-                                () => leaveType = val ?? 'casual',
-                              ),
+                              onChanged:
+                                  (val) => setDialogState(
+                                    () => leaveType = val ?? 'casual',
+                                  ),
                             ),
                           ],
                           if (collection == 'permissions') ...[
@@ -1086,11 +1147,8 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
     required String requestId,
     required String collection,
   }) async {
-    final notifRef = _db
-        .collection('notifications')
-        .doc(userId)
-        .collection('items')
-        .doc();
+    final notifRef =
+        _db.collection('notifications').doc(userId).collection('items').doc();
     await notifRef.set({
       'notificationId': notifRef.id,
       'type': 'request_modification_update',
@@ -1248,8 +1306,10 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                   border: OutlineInputBorder(),
                   isDense: true,
                 ),
-                onChanged: (value) =>
-                    setState(() => _searchQuery = value.trim().toLowerCase()),
+                onChanged:
+                    (value) => setState(
+                      () => _searchQuery = value.trim().toLowerCase(),
+                    ),
               ),
             ),
             Expanded(
@@ -1280,13 +1340,14 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
           return _buildLoadingState('تحميل الخصومات الإدارية...');
         }
         final allItems = snapshot.data ?? [];
-        final items = allItems.where((item) {
-          if (_searchQuery.isEmpty) return true;
-          return item.employeeName.toLowerCase().contains(_searchQuery) ||
-              item.employeeId.toLowerCase().contains(_searchQuery) ||
-              item.department.toLowerCase().contains(_searchQuery) ||
-              item.reason.toLowerCase().contains(_searchQuery);
-        }).toList();
+        final items =
+            allItems.where((item) {
+              if (_searchQuery.isEmpty) return true;
+              return item.employeeName.toLowerCase().contains(_searchQuery) ||
+                  item.employeeId.toLowerCase().contains(_searchQuery) ||
+                  item.department.toLowerCase().contains(_searchQuery) ||
+                  item.reason.toLowerCase().contains(_searchQuery);
+            }).toList();
 
         return ListView(
           padding: const EdgeInsets.all(16),
@@ -1547,20 +1608,21 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                         initialValue: selectedUser,
                         isExpanded: true,
                         dropdownColor: ZaWolfColors.surface02,
-                        items: employees.map((emp) {
-                          return DropdownMenuItem(
-                            value: emp,
-                            child: Text(
-                              '${emp.displayName} (${emp.employeeId.isNotEmpty ? emp.employeeId : emp.department})',
-                              textDirection: TextDirection.rtl,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          );
-                        }).toList(),
-                        onChanged: (val) =>
-                            setDialogState(() => selectedUser = val),
-                        validator: (val) =>
-                            val == null ? 'يرجى اختيار الموظف' : null,
+                        items:
+                            employees.map((emp) {
+                              return DropdownMenuItem(
+                                value: emp,
+                                child: Text(
+                                  '${emp.displayName} (${emp.employeeId.isNotEmpty ? emp.employeeId : emp.department})',
+                                  textDirection: TextDirection.rtl,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              );
+                            }).toList(),
+                        onChanged:
+                            (val) => setDialogState(() => selectedUser = val),
+                        validator:
+                            (val) => val == null ? 'يرجى اختيار الموظف' : null,
                       ),
                       const SizedBox(height: 14),
                       const Text(
@@ -1634,9 +1696,11 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                           hintText: 'أدخل سبب الخصم تفصيلياً (مطلوب)',
                           hintStyle: TextStyle(color: ZaWolfColors.textMuted),
                         ),
-                        validator: (val) => val == null || val.trim().isEmpty
-                            ? 'يرجى كتابة سبب الخصم'
-                            : null,
+                        validator:
+                            (val) =>
+                                val == null || val.trim().isEmpty
+                                    ? 'يرجى كتابة سبب الخصم'
+                                    : null,
                       ),
                     ],
                   ),
@@ -1715,18 +1779,19 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
         final pendingDocs = snapshot.data?.docs ?? [];
         final isCompanyCeo =
             reviewer.employeeId.trim().toUpperCase() == 'CEO-100';
-        final scopedDocs = isCompanyCeo
-            ? pendingDocs
-                  .where((doc) {
-                    final data = doc.data();
-                    final status = (data['status'] ?? '').toString();
-                    return (status == 'pending_manager' &&
-                            data['managerId'] == reviewer.uid) ||
-                        (status == 'pending_ceo' &&
-                            data['ceoId'] == reviewer.uid);
-                  })
-                  .toList(growable: false)
-            : pendingDocs;
+        final scopedDocs =
+            isCompanyCeo
+                ? pendingDocs
+                    .where((doc) {
+                      final data = doc.data();
+                      final status = (data['status'] ?? '').toString();
+                      return (status == 'pending_manager' &&
+                              data['managerId'] == reviewer.uid) ||
+                          (status == 'pending_ceo' &&
+                              data['ceoId'] == reviewer.uid);
+                    })
+                    .toList(growable: false)
+                : pendingDocs;
         final docs = _visibleApprovalDocs(scopedDocs, reviewer);
         if (docs.isEmpty) {
           return _buildEmptyState('لا توجد طلبات إدارية معلقة');
@@ -1786,33 +1851,38 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                     const SizedBox(height: 10),
                     if (request.category == 'company_os')
                       FilledButton.icon(
-                        onPressed: () => context.push(
-                          '${EmployeeRole.isHr(reviewer.role) || reviewer.role == EmployeeRole.superAdmin ? '/hr' : '/manager'}/requests/operational/${request.id}',
-                        ),
+                        onPressed:
+                            () => context.push(
+                              '${EmployeeRole.isHr(reviewer.role) || reviewer.role == EmployeeRole.superAdmin ? '/hr' : '/manager'}/requests/operational/${request.id}',
+                            ),
                         icon: const Icon(Icons.route_outlined),
                         label: const Text('فتح مسار الموافقات'),
                       )
-                    else
+                    else if (_canActOnApproval(doc.data(), reviewer))
                       _buildApprovalActions(
                         disabled: _isRequestBusy(request.id),
-                        onDelete: () => _deleteRequestDocument(
-                          collection: 'administrativeRequests',
-                          docId: request.id,
-                          requestTitle: 'الطلب الإداري',
-                        ),
-                        onApprove: () => _confirmAndRun(
-                          requestId: request.id,
-                          title: 'اعتماد الطلب الإداري',
-                          confirmLabel: 'اعتماد',
-                          run: () => _administrativeRequestService.approve(
-                            request.id,
-                            reviewer,
-                          ),
-                        ),
-                        onReject: () => _showRejectionDialog(
-                          requestId: request.id,
-                          type: 'administrative',
-                        ),
+                        onDelete:
+                            () => _deleteRequestDocument(
+                              collection: 'administrativeRequests',
+                              docId: request.id,
+                              requestTitle: 'الطلب الإداري',
+                            ),
+                        onApprove:
+                            () => _confirmAndRun(
+                              requestId: request.id,
+                              title: 'اعتماد الطلب الإداري',
+                              confirmLabel: 'اعتماد',
+                              run:
+                                  () => _administrativeRequestService.approve(
+                                    request.id,
+                                    reviewer,
+                                  ),
+                            ),
+                        onReject:
+                            () => _showRejectionDialog(
+                              requestId: request.id,
+                              type: 'administrative',
+                            ),
                       ),
                     _buildArchiveRequestAction(
                       reviewer: reviewer,
@@ -1852,16 +1922,17 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
         }
         var requests = snapshot.data!;
         if (_searchQuery.isNotEmpty) {
-          requests = requests
-              .where(
-                (r) => _matchesSearch([
-                  r.employeeName,
-                  r.employeeId,
-                  r.department,
-                  r.reason,
-                ]),
-              )
-              .toList();
+          requests =
+              requests
+                  .where(
+                    (r) => _matchesSearch([
+                      r.employeeName,
+                      r.employeeId,
+                      r.department,
+                      r.reason,
+                    ]),
+                  )
+                  .toList();
         }
         if (requests.isEmpty) {
           return const Center(child: Text('لا توجد طلبات استقالة معلقة.'));
@@ -1894,18 +1965,20 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                     children: [
                       Expanded(
                         child: WolfButton(
-                          onPressed: _isRequestBusy(request.resignationId)
-                              ? null
-                              : () => _confirmAndRun(
-                                  requestId: request.resignationId,
-                                  title: 'اعتماد طلب الاستقالة',
-                                  confirmLabel: 'اعتماد',
-                                  run: () => _resignationService.review(
-                                    resignationId: request.resignationId,
-                                    reviewer: reviewer,
-                                    approve: true,
+                          onPressed:
+                              _isRequestBusy(request.resignationId)
+                                  ? null
+                                  : () => _confirmAndRun(
+                                    requestId: request.resignationId,
+                                    title: 'اعتماد طلب الاستقالة',
+                                    confirmLabel: 'اعتماد',
+                                    run:
+                                        () => _resignationService.review(
+                                          resignationId: request.resignationId,
+                                          reviewer: reviewer,
+                                          approve: true,
+                                        ),
                                   ),
-                                ),
                           text: 'موافقة',
                           variant: WolfButtonVariant.teal,
                           height: 42,
@@ -1914,12 +1987,13 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                       const SizedBox(width: 8),
                       Expanded(
                         child: WolfButton(
-                          onPressed: () => _showModificationDialog(
-                            requestId: request.resignationId,
-                            collection: 'resignations',
-                            userId: request.userId,
-                            requestTitle: 'طلب الاستقالة',
-                          ),
+                          onPressed:
+                              () => _showModificationDialog(
+                                requestId: request.resignationId,
+                                collection: 'resignations',
+                                userId: request.userId,
+                                requestTitle: 'طلب الاستقالة',
+                              ),
                           text: 'طلب تعديل',
                           variant: WolfButtonVariant.purple,
                           height: 42,
@@ -1928,9 +2002,10 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                       const SizedBox(width: 8),
                       Expanded(
                         child: WolfButton(
-                          onPressed: _isRequestBusy(request.resignationId)
-                              ? null
-                              : () => _rejectResignation(request, reviewer),
+                          onPressed:
+                              _isRequestBusy(request.resignationId)
+                                  ? null
+                                  : () => _rejectResignation(request, reviewer),
                           text: 'رفض',
                           variant: WolfButtonVariant.danger,
                           height: 42,
@@ -2053,17 +2128,18 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
     // pending_manager records and then silently removed them unless HR was
     // also their assigned manager, so valid requests looked missing.
     if (_searchQuery.isNotEmpty) {
-      filtered = filtered.where((doc) {
-        final data = doc.data();
-        return _matchesSearch([
-          data['employeeName'],
-          data['employeeId'],
-          data['department'],
-          data['reason'],
-          data['notes'],
-          data['categoryLabel'],
-        ]);
-      }).toList();
+      filtered =
+          filtered.where((doc) {
+            final data = doc.data();
+            return _matchesSearch([
+              data['employeeName'],
+              data['employeeId'],
+              data['department'],
+              data['reason'],
+              data['notes'],
+              data['categoryLabel'],
+            ]);
+          }).toList();
     }
     final reviewerIsCeo = reviewer.employeeId.trim().toUpperCase() == 'CEO-100';
     if (reviewerIsCeo) {
@@ -2084,6 +2160,10 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
 
   bool _canActOnApproval(Map<String, dynamic> data, UserModel reviewer) {
     final status = '${data['status'] ?? ''}';
+    if (data['approvalRouteVersion'] == 1) {
+      return status == 'pending_manager' &&
+          data['currentApproverId'] == reviewer.uid;
+    }
     final isCompanyCeo = reviewer.employeeId.trim().toUpperCase() == 'CEO-100';
     if (isCompanyCeo) {
       if (status == 'pending_manager' && data['managerId'] == reviewer.uid) {
@@ -2189,11 +2269,12 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
               return ListView.builder(
                 padding: const EdgeInsets.all(16),
                 itemCount: docs.length,
-                itemBuilder: (context, index) => _buildLeaveRequestCard(
-                  doc: docs[index],
-                  reviewer: reviewer,
-                  theme: theme,
-                ),
+                itemBuilder:
+                    (context, index) => _buildLeaveRequestCard(
+                      doc: docs[index],
+                      reviewer: reviewer,
+                      theme: theme,
+                    ),
               );
             }
             return DsMasterDetailView(
@@ -2306,31 +2387,36 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
             if (_canActOnApproval(doc.data(), reviewer))
               _buildApprovalActions(
                 disabled: _isRequestBusy(leave.leaveId),
-                onDelete: () => _deleteRequestDocument(
-                  collection: 'leaves',
-                  docId: leave.leaveId,
-                  requestTitle: 'طلب الإجازة',
-                ),
-                onApprove: () => _confirmAndRun(
-                  requestId: leave.leaveId,
-                  title: 'اعتماد طلب الإجازة',
-                  confirmLabel: 'اعتماد',
-                  run: () => _leaveService.approveLeave(
-                    leave.leaveId,
-                    reviewer.uid,
-                    reviewer.role,
-                  ),
-                ),
-                onReject: () => _showRejectionDialog(
-                  requestId: leave.leaveId,
-                  type: 'leave',
-                ),
-                onModify: () => _showModificationDialog(
-                  requestId: leave.leaveId,
-                  collection: 'leaves',
-                  userId: leave.userId,
-                  requestTitle: 'طلب الإجازة',
-                ),
+                onDelete:
+                    () => _deleteRequestDocument(
+                      collection: 'leaves',
+                      docId: leave.leaveId,
+                      requestTitle: 'طلب الإجازة',
+                    ),
+                onApprove:
+                    () => _confirmAndRun(
+                      requestId: leave.leaveId,
+                      title: 'اعتماد طلب الإجازة',
+                      confirmLabel: 'اعتماد',
+                      run:
+                          () => _leaveService.approveLeave(
+                            leave.leaveId,
+                            reviewer.uid,
+                            reviewer.role,
+                          ),
+                    ),
+                onReject:
+                    () => _showRejectionDialog(
+                      requestId: leave.leaveId,
+                      type: 'leave',
+                    ),
+                onModify:
+                    () => _showModificationDialog(
+                      requestId: leave.leaveId,
+                      collection: 'leaves',
+                      userId: leave.userId,
+                      requestTitle: 'طلب الإجازة',
+                    ),
               ),
             _buildArchiveRequestAction(
               reviewer: reviewer,
@@ -2420,11 +2506,12 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
               return ListView.builder(
                 padding: const EdgeInsets.all(16),
                 itemCount: docs.length,
-                itemBuilder: (context, index) => _buildPermissionRequestCard(
-                  doc: docs[index],
-                  reviewer: reviewer,
-                  theme: theme,
-                ),
+                itemBuilder:
+                    (context, index) => _buildPermissionRequestCard(
+                      doc: docs[index],
+                      reviewer: reviewer,
+                      theme: theme,
+                    ),
               );
             }
             return DsMasterDetailView(
@@ -2533,7 +2620,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
             ),
             if (perm.salaryDeductionFraction > 0)
               Text(
-                'أثر الراتب: ${perm.salaryDeductionLabel} · ${perm.salaryDeductionAmount.toStringAsFixed(2)} ${perm.salaryCurrency}',
+                'أثر الراتب: ${AttendancePolicy.arabicDeductionLabel(perm.salaryDeductionCode, fallback: perm.salaryDeductionLabel)} · ${perm.salaryDeductionAmount.toStringAsFixed(2)} ${perm.salaryCurrency}',
                 style: const TextStyle(color: ZaWolfColors.warning),
               ),
             Text(
@@ -2553,30 +2640,35 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
             if (_canActOnApproval(doc.data(), reviewer))
               _buildApprovalActions(
                 disabled: _isRequestBusy(perm.permissionId),
-                onDelete: () => _deleteRequestDocument(
-                  collection: 'permissions',
-                  docId: perm.permissionId,
-                  requestTitle: 'طلب الإذن',
-                ),
-                onApprove: () => _confirmAndRun(
-                  requestId: perm.permissionId,
-                  title: 'اعتماد طلب الإذن',
-                  confirmLabel: 'اعتماد',
-                  run: () => _permissionService.approvePermission(
-                    perm.permissionId,
-                    reviewer.uid,
-                  ),
-                ),
-                onReject: () => _showRejectionDialog(
-                  requestId: perm.permissionId,
-                  type: 'permission',
-                ),
-                onModify: () => _showModificationDialog(
-                  requestId: perm.permissionId,
-                  collection: 'permissions',
-                  userId: perm.userId,
-                  requestTitle: 'طلب الإذن',
-                ),
+                onDelete:
+                    () => _deleteRequestDocument(
+                      collection: 'permissions',
+                      docId: perm.permissionId,
+                      requestTitle: 'طلب الإذن',
+                    ),
+                onApprove:
+                    () => _confirmAndRun(
+                      requestId: perm.permissionId,
+                      title: 'اعتماد طلب الإذن',
+                      confirmLabel: 'اعتماد',
+                      run:
+                          () => _permissionService.approvePermission(
+                            perm.permissionId,
+                            reviewer.uid,
+                          ),
+                    ),
+                onReject:
+                    () => _showRejectionDialog(
+                      requestId: perm.permissionId,
+                      type: 'permission',
+                    ),
+                onModify:
+                    () => _showModificationDialog(
+                      requestId: perm.permissionId,
+                      collection: 'permissions',
+                      userId: perm.userId,
+                      requestTitle: 'طلب الإذن',
+                    ),
               ),
             _buildArchiveRequestAction(
               reviewer: reviewer,
@@ -2619,9 +2711,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                   advance.submittedAt == null
                       ? ''
                       : DateFormat('yyyy-MM-dd').format(advance.submittedAt!),
-                  advance.status == 'pending_hr'
-                      ? 'بانتظار HR'
-                      : 'بانتظار المدير النهائي',
+                  _advanceStageLabel(doc.data()),
                 ],
               );
             }(),
@@ -2637,11 +2727,12 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
               return ListView.builder(
                 padding: const EdgeInsets.all(16),
                 itemCount: docs.length,
-                itemBuilder: (context, index) => _buildAdvanceRequestCard(
-                  doc: docs[index],
-                  reviewer: reviewer,
-                  theme: theme,
-                ),
+                itemBuilder:
+                    (context, index) => _buildAdvanceRequestCard(
+                      doc: docs[index],
+                      reviewer: reviewer,
+                      theme: theme,
+                    ),
               );
             }
             return DsMasterDetailView(
@@ -2707,30 +2798,35 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
             if (_canActOnApproval(doc.data(), reviewer))
               _buildApprovalActions(
                 disabled: _isRequestBusy(advance.advanceId),
-                onDelete: () => _deleteRequestDocument(
-                  collection: 'advances',
-                  docId: advance.advanceId,
-                  requestTitle: 'طلب السلفة',
-                ),
-                onApprove: () => _confirmAndRun(
-                  requestId: advance.advanceId,
-                  title: 'اعتماد طلب السلفة',
-                  confirmLabel: 'اعتماد',
-                  run: () => _advanceService.approveAdvanceRequest(
-                    advanceId: advance.advanceId,
-                    reviewer: reviewer,
-                  ),
-                ),
-                onReject: () => _showRejectionDialog(
-                  requestId: advance.advanceId,
-                  type: 'advance',
-                ),
-                onModify: () => _showModificationDialog(
-                  requestId: advance.advanceId,
-                  collection: 'advances',
-                  userId: advance.userId,
-                  requestTitle: 'طلب السلفة',
-                ),
+                onDelete:
+                    () => _deleteRequestDocument(
+                      collection: 'advances',
+                      docId: advance.advanceId,
+                      requestTitle: 'طلب السلفة',
+                    ),
+                onApprove:
+                    () => _confirmAndRun(
+                      requestId: advance.advanceId,
+                      title: 'اعتماد طلب السلفة',
+                      confirmLabel: 'اعتماد',
+                      run:
+                          () => _advanceService.approveAdvanceRequest(
+                            advanceId: advance.advanceId,
+                            reviewer: reviewer,
+                          ),
+                    ),
+                onReject:
+                    () => _showRejectionDialog(
+                      requestId: advance.advanceId,
+                      type: 'advance',
+                    ),
+                onModify:
+                    () => _showModificationDialog(
+                      requestId: advance.advanceId,
+                      collection: 'advances',
+                      userId: advance.userId,
+                      requestTitle: 'طلب السلفة',
+                    ),
               ),
             _buildArchiveRequestAction(
               reviewer: reviewer,
@@ -2739,15 +2835,25 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
             ),
             const SizedBox(height: 8),
             Text(
-              advance.status == 'pending_hr'
-                  ? 'المرحلة الحالية: مراجعة HR'
-                  : 'المرحلة الحالية: موافقة المدير النهائية',
+              'المرحلة الحالية: ${_advanceStageLabel(doc.data())}',
               style: const TextStyle(color: ZaWolfColors.primaryCyan),
             ),
           ],
         ),
       ),
     );
+  }
+
+  String _advanceStageLabel(Map<String, dynamic> data) {
+    if (data['status'] == 'pending_hr') return 'مراجعة HR';
+    switch (data['advanceRouteStage']) {
+      case 'ceo':
+        return 'موافقة الرئيس التنفيذي';
+      case 'accounting':
+        return 'اعتماد الحسابات النهائي';
+      default:
+        return 'موافقة المدير';
+    }
   }
 
   Widget _buildComplaintsTab(UserModel reviewer, ThemeData theme) {
@@ -2769,17 +2875,18 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
           return _buildLoadingState('تحميل الشكاوى...');
         }
 
-        final docs = (snapshot.data?.docs ?? []).where((doc) {
-          if (_searchQuery.isEmpty) return true;
-          final data = doc.data();
-          return _matchesSearch([
-            data['employeeName'],
-            data['employeeId'],
-            data['department'],
-            data['title'],
-            data['body'],
-          ]);
-        }).toList();
+        final docs =
+            (snapshot.data?.docs ?? []).where((doc) {
+              if (_searchQuery.isEmpty) return true;
+              final data = doc.data();
+              return _matchesSearch([
+                data['employeeName'],
+                data['employeeId'],
+                data['department'],
+                data['title'],
+                data['body'],
+              ]);
+            }).toList();
         if (docs.isEmpty) {
           return _buildEmptyState('لا توجد شكاوى جديدة');
         }
@@ -2964,11 +3071,17 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
     );
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
       stream: attendanceStream,
-      builder: (context, attendanceSnapshot) =>
-          StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      builder:
+          (
+            context,
+            attendanceSnapshot,
+          ) => StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
             stream: permissionStream,
-            builder: (context, permissionSnapshot) =>
-                StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+            builder:
+                (
+                  context,
+                  permissionSnapshot,
+                ) => StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
                   stream: manualStream,
                   builder: (context, manualSnapshot) {
                     if (attendanceSnapshot.hasError ||
@@ -3001,9 +3114,10 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                                       'approved',
                             )
                             .toList();
-                    final manual = (manualSnapshot.data?.docs ?? const [])
-                        .map(ManualDeductionModel.fromFirestore)
-                        .toList();
+                    final manual =
+                        (manualSnapshot.data?.docs ?? const [])
+                            .map(ManualDeductionModel.fromFirestore)
+                            .toList();
                     final items =
                         <_ConfirmedDeductionItem>[
                             ...attendance.map(
@@ -3014,7 +3128,10 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                                 employeeId: item.employeeId,
                                 department: item.locationName,
                                 date: item.date,
-                                reason: item.salaryDeductionLabel,
+                                reason: AttendancePolicy.arabicDeductionLabel(
+                                  item.salaryDeductionCode,
+                                  fallback: item.salaryDeductionLabel,
+                                ),
                                 fraction: item.salaryDeductionFraction,
                                 amount: item.salaryDeductionAmount,
                                 currency: item.salaryCurrency,
@@ -3029,7 +3146,10 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                                 employeeId: item.employeeId,
                                 department: item.department,
                                 date: item.requestDate,
-                                reason: item.salaryDeductionLabel,
+                                reason: AttendancePolicy.arabicDeductionLabel(
+                                  item.salaryDeductionCode,
+                                  fallback: item.salaryDeductionLabel,
+                                ),
                                 fraction: item.salaryDeductionFraction,
                                 amount: item.salaryDeductionAmount,
                                 currency: item.salaryCurrency,
@@ -3051,13 +3171,14 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                             ),
                           ]
                           ..removeWhere(
-                            (item) => !_matchesSearch([
-                              item.employeeName,
-                              item.employeeId,
-                              item.department,
-                              item.source,
-                              item.reason,
-                            ]),
+                            (item) =>
+                                !_matchesSearch([
+                                  item.employeeName,
+                                  item.employeeId,
+                                  item.department,
+                                  item.source,
+                                  item.reason,
+                                ]),
                           )
                           ..sort((a, b) => b.date.compareTo(a.date));
                     if (items.isEmpty) {
@@ -3088,14 +3209,15 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                           return ListView.separated(
                             padding: const EdgeInsets.all(16),
                             itemCount: items.length,
-                            separatorBuilder: (_, __) =>
-                                const SizedBox(height: 12),
-                            itemBuilder: (context, index) =>
-                                _buildConfirmedDeductionCard(
-                                  item: items[index],
-                                  reviewer: reviewer,
-                                  theme: theme,
-                                ),
+                            separatorBuilder:
+                                (_, __) => const SizedBox(height: 12),
+                            itemBuilder:
+                                (context, index) =>
+                                    _buildConfirmedDeductionCard(
+                                      item: items[index],
+                                      reviewer: reviewer,
+                                      theme: theme,
+                                    ),
                           );
                         }
                         return DsMasterDetailView(
@@ -3163,10 +3285,11 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
             SizedBox(
               width: double.infinity,
               child: OutlinedButton.icon(
-                onPressed: () => _reverseSalaryDeduction(
-                  attendance: item.attendance!,
-                  reviewer: reviewer,
-                ),
+                onPressed:
+                    () => _reverseSalaryDeduction(
+                      attendance: item.attendance!,
+                      reviewer: reviewer,
+                    ),
                 icon: const Icon(Icons.undo),
                 label: const Text('إلغاء خصم الحضور المعتمد'),
               ),
@@ -3219,22 +3342,23 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                 .map((doc) => AttendanceModel.fromFirestore(doc))
                 .toList() ??
             [];
-        final allItems = loadedItems.where((attendance) {
-          final status = attendance.salaryDeductionApprovalStatus;
-          if (reversalOnly) {
-            return status == 'approved' || status == 'reversed';
-          }
-          final isPending = status == 'pending_hr';
-          if (!isPending) return false;
+        final allItems =
+            loadedItems.where((attendance) {
+              final status = attendance.salaryDeductionApprovalStatus;
+              if (reversalOnly) {
+                return status == 'approved' || status == 'reversed';
+              }
+              final isPending = status == 'pending_hr';
+              if (!isPending) return false;
 
-          final isAbsence =
-              attendance.salaryDeductionFraction >= 1.0 ||
-              attendance.status == 'absent' ||
-              attendance.salaryDeductionCode == 'ABSENCE' ||
-              attendance.salaryDeductionCode == 'full_day';
+              final isAbsence =
+                  attendance.salaryDeductionFraction >= 1.0 ||
+                  attendance.status == 'absent' ||
+                  attendance.salaryDeductionCode == 'ABSENCE' ||
+                  attendance.salaryDeductionCode == 'full_day';
 
-          return absenceOnly ? isAbsence : !isAbsence;
-        }).toList();
+              return absenceOnly ? isAbsence : !isAbsence;
+            }).toList();
         allItems.sort((a, b) => b.date.compareTo(a.date));
         final items = _filterSalaryDeductions(allItems);
 
@@ -3257,8 +3381,8 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                   reversalOnly
                       ? 'لا توجد خصومات معتمدة قابلة للإلغاء'
                       : (absenceOnly
-                            ? 'لا توجد خصومات غياب تنتظر مراجعة HR'
-                            : 'لا توجد خصومات تأخير تنتظر مراجعة HR'),
+                          ? 'لا توجد خصومات غياب تنتظر مراجعة HR'
+                          : 'لا توجد خصومات تأخير تنتظر مراجعة HR'),
                 ),
               ),
             ],
@@ -3313,7 +3437,10 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                         ),
                         const SizedBox(height: 12),
                         Text(
-                          attendance.salaryDeductionLabel,
+                          AttendancePolicy.arabicDeductionLabel(
+                            attendance.salaryDeductionCode,
+                            fallback: attendance.salaryDeductionLabel,
+                          ),
                           style: theme.textTheme.titleMedium!.copyWith(
                             color: Colors.white,
                           ),
@@ -3327,8 +3454,9 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                           Align(
                             alignment: AlignmentDirectional.centerStart,
                             child: TextButton.icon(
-                              onPressed: () =>
-                                  _correctArrivalTime(attendance, reviewer),
+                              onPressed:
+                                  () =>
+                                      _correctArrivalTime(attendance, reviewer),
                               icon: const Icon(Icons.access_time),
                               label: const Text('تصحيح وقت الوصول'),
                             ),
@@ -3374,27 +3502,31 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                             'pending_hr')
                           _buildApprovalActions(
                             disabled: _isRequestBusy(attendance.attendanceId),
-                            onApprove: () => _confirmAndRun(
-                              requestId: attendance.attendanceId,
-                              title: 'اعتماد الخصم',
-                              confirmLabel: 'اعتماد',
-                              run: () =>
-                                  _attendanceService.approveSalaryDeduction(
-                                    attendance.attendanceId,
-                                    reviewer.uid,
-                                  ),
-                            ),
-                            onReject: () => _confirmAndRun(
-                              requestId: attendance.attendanceId,
-                              title: 'رفض الخصم',
-                              confirmLabel: 'رفض',
-                              destructive: true,
-                              run: () =>
-                                  _attendanceService.rejectSalaryDeduction(
-                                    attendance.attendanceId,
-                                    reviewer.uid,
-                                  ),
-                            ),
+                            onApprove:
+                                () => _confirmAndRun(
+                                  requestId: attendance.attendanceId,
+                                  title: 'اعتماد الخصم',
+                                  confirmLabel: 'اعتماد',
+                                  run:
+                                      () => _attendanceService
+                                          .approveSalaryDeduction(
+                                            attendance.attendanceId,
+                                            reviewer.uid,
+                                          ),
+                                ),
+                            onReject:
+                                () => _confirmAndRun(
+                                  requestId: attendance.attendanceId,
+                                  title: 'رفض الخصم',
+                                  confirmLabel: 'رفض',
+                                  destructive: true,
+                                  run:
+                                      () => _attendanceService
+                                          .rejectSalaryDeduction(
+                                            attendance.attendanceId,
+                                            reviewer.uid,
+                                          ),
+                                ),
                           )
                         else if (reversalOnly &&
                             attendance.salaryDeductionApprovalStatus ==
@@ -3402,10 +3534,11 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                           SizedBox(
                             width: double.infinity,
                             child: OutlinedButton.icon(
-                              onPressed: () => _reverseSalaryDeduction(
-                                attendance: attendance,
-                                reviewer: reviewer,
-                              ),
+                              onPressed:
+                                  () => _reverseSalaryDeduction(
+                                    attendance: attendance,
+                                    reviewer: reviewer,
+                                  ),
                               icon: const Icon(Icons.undo),
                               label: const Text('إلغاء الخصم المعتمد'),
                             ),
@@ -3517,11 +3650,12 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                 padding: const EdgeInsets.all(16),
                 itemCount: docs.length,
                 separatorBuilder: (_, _) => const SizedBox(height: 12),
-                itemBuilder: (context, index) => _buildCorrectionRequestCard(
-                  doc: docs[index],
-                  reviewer: reviewer,
-                  theme: theme,
-                ),
+                itemBuilder:
+                    (context, index) => _buildCorrectionRequestCard(
+                      doc: docs[index],
+                      reviewer: reviewer,
+                      theme: theme,
+                    ),
               );
             }
             return DsMasterDetailView(
@@ -3590,21 +3724,24 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
           const SizedBox(height: 14),
           _buildApprovalActions(
             disabled: _isRequestBusy(doc.id),
-            onDelete: () => _deleteRequestDocument(
-              collection: 'attendanceCorrectionRequests',
-              docId: doc.id,
-              requestTitle: 'طلب تصحيح الحضور',
-            ),
-            onApprove: () => _reviewAttendanceCorrection(
-              requestId: doc.id,
-              reviewer: reviewer,
-              approve: true,
-            ),
-            onReject: () => _reviewAttendanceCorrection(
-              requestId: doc.id,
-              reviewer: reviewer,
-              approve: false,
-            ),
+            onDelete:
+                () => _deleteRequestDocument(
+                  collection: 'attendanceCorrectionRequests',
+                  docId: doc.id,
+                  requestTitle: 'طلب تصحيح الحضور',
+                ),
+            onApprove:
+                () => _reviewAttendanceCorrection(
+                  requestId: doc.id,
+                  reviewer: reviewer,
+                  approve: true,
+                ),
+            onReject:
+                () => _reviewAttendanceCorrection(
+                  requestId: doc.id,
+                  reviewer: reviewer,
+                  approve: false,
+                ),
           ),
           _buildArchiveRequestAction(
             reviewer: reviewer,
@@ -3625,14 +3762,14 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
     final confirmed = await showConfirmationSheet(
       context,
       title: approve ? 'اعتماد تصحيح الحضور' : 'رفض تصحيح الحضور',
-      message: approve
-          ? 'سيتم تصحيح الوقت وإعادة حساب الخصم.'
-          : 'سيتم رفض طلب التصحيح وإشعار الموظف بالسبب.',
+      message:
+          approve
+              ? 'سيتم تصحيح الوقت وإعادة حساب الخصم.'
+              : 'سيتم رفض طلب التصحيح وإشعار الموظف بالسبب.',
       confirmLabel: approve ? 'اعتماد' : 'رفض',
       destructive: !approve,
-      commentHint: approve
-          ? 'ملاحظة اختيارية للموظف'
-          : 'اكتب سبب الرفض للموظف (مطلوب)',
+      commentHint:
+          approve ? 'ملاحظة اختيارية للموظف' : 'اكتب سبب الرفض للموظف (مطلوب)',
       requireComment: !approve,
       commentController: commentController,
     );
@@ -3686,26 +3823,27 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
     final reasonController = TextEditingController();
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('سبب تصحيح وقت الوصول'),
-        content: TextField(
-          controller: reasonController,
-          maxLines: 2,
-          decoration: const InputDecoration(
-            hintText: 'مثال: الموظف وصل مبكراً وتعذر التسجيل',
+      builder:
+          (dialogContext) => AlertDialog(
+            title: const Text('سبب تصحيح وقت الوصول'),
+            content: TextField(
+              controller: reasonController,
+              maxLines: 2,
+              decoration: const InputDecoration(
+                hintText: 'مثال: الموظف وصل مبكراً وتعذر التسجيل',
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext, false),
+                child: const Text('إلغاء'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(dialogContext, true),
+                child: const Text('حفظ وإعادة الحساب'),
+              ),
+            ],
           ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('إلغاء'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(dialogContext, true),
-            child: const Text('حفظ وإعادة الحساب'),
-          ),
-        ],
-      ),
     );
     if (confirmed != true || !mounted) return;
     final day = _parseDateKey(attendance.date) ?? parsedDay;
@@ -3792,9 +3930,10 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
     required List<AttendanceModel> visibleItems,
     required UserModel reviewer,
   }) {
-    final pendingItems = visibleItems
-        .where((item) => item.salaryDeductionApprovalStatus == 'pending_hr')
-        .toList();
+    final pendingItems =
+        visibleItems
+            .where((item) => item.salaryDeductionApprovalStatus == 'pending_hr')
+            .toList();
     return WolfCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -3823,13 +3962,14 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
             children: [
               Expanded(
                 child: WolfButton(
-                  onPressed: pendingItems.isEmpty
-                      ? null
-                      : () => _reviewVisibleSalaryDeductions(
-                          items: pendingItems,
-                          reviewer: reviewer,
-                          approve: false,
-                        ),
+                  onPressed:
+                      pendingItems.isEmpty
+                          ? null
+                          : () => _reviewVisibleSalaryDeductions(
+                            items: pendingItems,
+                            reviewer: reviewer,
+                            approve: false,
+                          ),
                   text: 'رفض المعروض',
                   secondaryText: 'REJECT FILTER',
                   variant: WolfButtonVariant.outline,
@@ -3839,13 +3979,14 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
               const SizedBox(width: 12),
               Expanded(
                 child: WolfButton(
-                  onPressed: pendingItems.isEmpty
-                      ? null
-                      : () => _reviewVisibleSalaryDeductions(
-                          items: pendingItems,
-                          reviewer: reviewer,
-                          approve: true,
-                        ),
+                  onPressed:
+                      pendingItems.isEmpty
+                          ? null
+                          : () => _reviewVisibleSalaryDeductions(
+                            items: pendingItems,
+                            reviewer: reviewer,
+                            approve: true,
+                          ),
                   text: 'اعتماد المعروض',
                   secondaryText: 'APPROVE FILTER',
                   variant: WolfButtonVariant.primary,
@@ -3881,9 +4022,10 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
     required UserModel reviewer,
     required bool approve,
   }) async {
-    final pendingItems = items
-        .where((item) => item.salaryDeductionApprovalStatus == 'pending_hr')
-        .toList();
+    final pendingItems =
+        items
+            .where((item) => item.salaryDeductionApprovalStatus == 'pending_hr')
+            .toList();
     if (pendingItems.isEmpty) return;
     final confirmed = await showConfirmationSheet(
       context,
@@ -3939,54 +4081,66 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
     final confirmed = await showDialog<bool>(
       context: context,
       barrierDismissible: false,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          title: const Text(
-            'إلغاء خصم معتمد',
-            textDirection: TextDirection.rtl,
+      builder:
+          (dialogContext) => StatefulBuilder(
+            builder:
+                (context, setDialogState) => AlertDialog(
+                  title: const Text(
+                    'إلغاء خصم معتمد',
+                    textDirection: TextDirection.rtl,
+                  ),
+                  content: Form(
+                    key: formKey,
+                    child: TextFormField(
+                      controller: reasonController,
+                      minLines: 2,
+                      maxLines: 4,
+                      autofocus: true,
+                      textDirection: TextDirection.rtl,
+                      decoration: const InputDecoration(
+                        labelText: 'سبب الإلغاء',
+                        hintText: 'اكتب سبباً واضحاً من 5 أحرف على الأقل',
+                      ),
+                      validator:
+                          (value) =>
+                              (value ?? '').trim().length < 5
+                                  ? 'سبب الإلغاء يجب أن يكون 5 أحرف على الأقل.'
+                                  : null,
+                    ),
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed:
+                          saving
+                              ? null
+                              : () => Navigator.pop(dialogContext, false),
+                      child: const Text('تراجع'),
+                    ),
+                    FilledButton(
+                      onPressed:
+                          saving
+                              ? null
+                              : () {
+                                if (!(formKey.currentState?.validate() ??
+                                    false)) {
+                                  return;
+                                }
+                                setDialogState(() => saving = true);
+                                Navigator.pop(dialogContext, true);
+                              },
+                      child:
+                          saving
+                              ? const SizedBox.square(
+                                dimension: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                              : const Text('إلغاء الخصم'),
+                    ),
+                  ],
+                ),
           ),
-          content: Form(
-            key: formKey,
-            child: TextFormField(
-              controller: reasonController,
-              minLines: 2,
-              maxLines: 4,
-              autofocus: true,
-              textDirection: TextDirection.rtl,
-              decoration: const InputDecoration(
-                labelText: 'سبب الإلغاء',
-                hintText: 'اكتب سبباً واضحاً من 5 أحرف على الأقل',
-              ),
-              validator: (value) => (value ?? '').trim().length < 5
-                  ? 'سبب الإلغاء يجب أن يكون 5 أحرف على الأقل.'
-                  : null,
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: saving
-                  ? null
-                  : () => Navigator.pop(dialogContext, false),
-              child: const Text('تراجع'),
-            ),
-            FilledButton(
-              onPressed: saving
-                  ? null
-                  : () {
-                      if (!(formKey.currentState?.validate() ?? false)) return;
-                      setDialogState(() => saving = true);
-                      Navigator.pop(dialogContext, true);
-                    },
-              child: saving
-                  ? const SizedBox.square(
-                      dimension: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Text('إلغاء الخصم'),
-            ),
-          ],
-        ),
-      ),
     );
     final reason = reasonController.text.trim();
     reasonController.dispose();
@@ -4074,14 +4228,15 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
 
             if (_searchQuery.isNotEmpty) {
               items.removeWhere(
-                (item) => !_matchesSearch([
-                  item.attendance.employeeName,
-                  item.attendance.employeeId,
-                  item.attendance.locationName,
-                  item.attendance.date,
-                  item.attendance.locationRiskMessage,
-                  item.attendance.checkoutLocationRiskMessage,
-                ]),
+                (item) =>
+                    !_matchesSearch([
+                      item.attendance.employeeName,
+                      item.attendance.employeeId,
+                      item.attendance.locationName,
+                      item.attendance.date,
+                      item.attendance.locationRiskMessage,
+                      item.attendance.checkoutLocationRiskMessage,
+                    ]),
               );
             }
 
@@ -4112,11 +4267,12 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                   return ListView.builder(
                     padding: const EdgeInsets.all(16),
                     itemCount: items.length,
-                    itemBuilder: (context, index) => _buildSecurityReviewCard(
-                      item: items[index],
-                      reviewer: reviewer,
-                      theme: theme,
-                    ),
+                    itemBuilder:
+                        (context, index) => _buildSecurityReviewCard(
+                          item: items[index],
+                          reviewer: reviewer,
+                          theme: theme,
+                        ),
                   );
                 }
                 return DsMasterDetailView(
@@ -4153,22 +4309,27 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
     required ThemeData theme,
   }) {
     final attendance = item.attendance;
-    final reasons = item.checkout
-        ? attendance.checkoutLocationRiskReasons
-        : attendance.locationRiskReasons;
-    final riskMessage = item.checkout
-        ? (attendance.checkoutLocationRiskMessage ??
-              'مراجعة انصراف: تحقق من مؤشرات الموقع المسجلة')
-        : (attendance.locationRiskMessage ?? 'مؤشرات موقع غير معتادة');
-    final accuracy = item.checkout
-        ? attendance.checkoutLocationAccuracyMeters
-        : attendance.locationAccuracyMeters;
-    final distance = item.checkout
-        ? attendance.checkoutLocationDistanceMeters
-        : attendance.locationDistanceMeters;
-    final radius = item.checkout
-        ? attendance.checkoutLocationAllowedRadiusMeters
-        : attendance.locationAllowedRadiusMeters;
+    final reasons =
+        item.checkout
+            ? attendance.checkoutLocationRiskReasons
+            : attendance.locationRiskReasons;
+    final riskMessage =
+        item.checkout
+            ? (attendance.checkoutLocationRiskMessage ??
+                'مراجعة انصراف: تحقق من مؤشرات الموقع المسجلة')
+            : (attendance.locationRiskMessage ?? 'مؤشرات موقع غير معتادة');
+    final accuracy =
+        item.checkout
+            ? attendance.checkoutLocationAccuracyMeters
+            : attendance.locationAccuracyMeters;
+    final distance =
+        item.checkout
+            ? attendance.checkoutLocationDistanceMeters
+            : attendance.locationDistanceMeters;
+    final radius =
+        item.checkout
+            ? attendance.checkoutLocationAllowedRadiusMeters
+            : attendance.locationAllowedRadiusMeters;
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 16.0),
@@ -4226,9 +4387,10 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
             ),
             _buildRequestDateLine(
               label: item.checkout ? 'وقت الانصراف' : 'وقت الحضور',
-              date: item.checkout
-                  ? attendance.checkOutTime
-                  : attendance.checkInTime,
+              date:
+                  item.checkout
+                      ? attendance.checkOutTime
+                      : attendance.checkInTime,
               fallback: _parseDateKey(attendance.date),
             ),
             if (accuracy != null)
@@ -4247,44 +4409,49 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                 child: Wrap(
                   spacing: 8,
                   runSpacing: 8,
-                  children: reasons
-                      .map(
-                        (reason) => Chip(
-                          label: Text(_riskReasonLabel(reason)),
-                          backgroundColor: ZaWolfColors.surface02,
-                          labelStyle: const TextStyle(
-                            color: ZaWolfColors.textSecondary,
-                            fontSize: 12,
-                          ),
-                        ),
-                      )
-                      .toList(),
+                  children:
+                      reasons
+                          .map(
+                            (reason) => Chip(
+                              label: Text(_riskReasonLabel(reason)),
+                              backgroundColor: ZaWolfColors.surface02,
+                              labelStyle: const TextStyle(
+                                color: ZaWolfColors.textSecondary,
+                                fontSize: 12,
+                              ),
+                            ),
+                          )
+                          .toList(),
                 ),
               ),
             const SizedBox(height: 16),
             _buildApprovalActions(
               disabled: _isRequestBusy(item.docId),
-              onApprove: () => _confirmAndRun(
-                requestId: item.docId,
-                title: 'اعتماد المراجعة الأمنية',
-                confirmLabel: 'اعتماد',
-                run: () => _attendanceService.approveSecurityReview(
-                  item.docId,
-                  reviewer.uid,
-                  checkout: item.checkout,
-                ),
-              ),
-              onReject: () => _confirmAndRun(
-                requestId: item.docId,
-                title: 'رفض المراجعة الأمنية',
-                confirmLabel: 'رفض',
-                destructive: true,
-                run: () => _attendanceService.rejectSecurityReview(
-                  item.docId,
-                  reviewer.uid,
-                  checkout: item.checkout,
-                ),
-              ),
+              onApprove:
+                  () => _confirmAndRun(
+                    requestId: item.docId,
+                    title: 'اعتماد المراجعة الأمنية',
+                    confirmLabel: 'اعتماد',
+                    run:
+                        () => _attendanceService.approveSecurityReview(
+                          item.docId,
+                          reviewer.uid,
+                          checkout: item.checkout,
+                        ),
+                  ),
+              onReject:
+                  () => _confirmAndRun(
+                    requestId: item.docId,
+                    title: 'رفض المراجعة الأمنية',
+                    confirmLabel: 'رفض',
+                    destructive: true,
+                    run:
+                        () => _attendanceService.rejectSecurityReview(
+                          item.docId,
+                          reviewer.uid,
+                          checkout: item.checkout,
+                        ),
+                  ),
             ),
           ],
         ),
@@ -4339,26 +4506,29 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
     final messenger = ScaffoldMessenger.of(context);
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (dialogContext) => Directionality(
-        textDirection: TextDirection.rtl,
-        child: AlertDialog(
-          title: Text('حذف $requestTitle نهائياً'),
-          content: Text(
-            'هل أنت متأكد من حذف هذا الطلب ($requestTitle) نهائياً من النظام؟\nلن يمكن استعادة الطلب بعد الحذف.',
+      builder:
+          (dialogContext) => Directionality(
+            textDirection: TextDirection.rtl,
+            child: AlertDialog(
+              title: Text('حذف $requestTitle نهائياً'),
+              content: Text(
+                'هل أنت متأكد من حذف هذا الطلب ($requestTitle) نهائياً من النظام؟\nلن يمكن استعادة الطلب بعد الحذف.',
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogContext, false),
+                  child: const Text('إلغاء'),
+                ),
+                FilledButton(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: Colors.redAccent,
+                  ),
+                  onPressed: () => Navigator.pop(dialogContext, true),
+                  child: const Text('حذف نهائي'),
+                ),
+              ],
+            ),
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext, false),
-              child: const Text('إلغاء'),
-            ),
-            FilledButton(
-              style: FilledButton.styleFrom(backgroundColor: Colors.redAccent),
-              onPressed: () => Navigator.pop(dialogContext, true),
-              child: const Text('حذف نهائي'),
-            ),
-          ],
-        ),
-      ),
     );
 
     if (confirmed == true) {

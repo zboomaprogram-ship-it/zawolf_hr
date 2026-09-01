@@ -9,17 +9,15 @@ class AdvanceService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
 
   List<String> _approvalManagerIds(UserModel employee, String fallbackId) {
-    final ids = employee.managerIds
-        .where((id) => id.trim().isNotEmpty)
-        .toList();
+    final ids =
+        employee.managerIds.where((id) => id.trim().isNotEmpty).toList();
     if (ids.isNotEmpty) return ids;
     return fallbackId.trim().isEmpty ? <String>[] : <String>[fallbackId];
   }
 
   List<String> _approvalManagerNames(UserModel employee, String? fallbackName) {
-    final names = employee.managerNames
-        .where((name) => name.trim().isNotEmpty)
-        .toList();
+    final names =
+        employee.managerNames.where((name) => name.trim().isNotEmpty).toList();
     if (names.isNotEmpty) return names;
     return fallbackName == null || fallbackName.trim().isEmpty
         ? <String>[]
@@ -57,9 +55,8 @@ class AdvanceService {
       return {
         'status': 'pending_manager',
         'managerId': managerIds[nextIndex],
-        'managerName': nextIndex < managerNames.length
-            ? managerNames[nextIndex]
-            : null,
+        'managerName':
+            nextIndex < managerNames.length ? managerNames[nextIndex] : null,
         'managerApprovalIndex': nextIndex,
         'managerApprovalTrail': FieldValue.arrayUnion([trail]),
         'reviewedBy': reviewerId,
@@ -186,12 +183,14 @@ class AdvanceService {
         await _createNotification(
           recipientId: advance.userId,
           type: status == 'approved' ? 'advance_approved' : 'advance_rejected',
-          title: status == 'approved'
-              ? 'تم قبول طلب السلفة ✅'
-              : 'تم رفض طلب السلفة ❌',
-          body: status == 'approved'
-              ? 'تمت الموافقة على طلب السلفة بقيمة ${advance.amount.toStringAsFixed(2)}.'
-              : 'تم رفض طلب السلفة${comment == null || comment.trim().isEmpty ? "." : ". السبب: ${comment.trim()}"}',
+          title:
+              status == 'approved'
+                  ? 'تم قبول طلب السلفة ✅'
+                  : 'تم رفض طلب السلفة ❌',
+          body:
+              status == 'approved'
+                  ? 'تمت الموافقة على طلب السلفة بقيمة ${advance.amount.toStringAsFixed(2)}.'
+                  : 'تم رفض طلب السلفة${comment == null || comment.trim().isEmpty ? "." : ". السبب: ${comment.trim()}"}',
           data: {'advanceId': advanceId},
         );
       } catch (_) {}
@@ -210,27 +209,46 @@ class AdvanceService {
 
     Map<String, dynamic> update;
     if (EmployeeRole.isHr(reviewer.role) && advance.status == 'pending_hr') {
-      final managerIds =
-          (data['managerIds'] as List<dynamic>?)
-              ?.whereType<String>()
-              .toList() ??
-          (advance.managerId.isEmpty
-              ? <String>[]
-              : <String>[advance.managerId]);
-      final managerNames =
-          (data['managerNames'] as List<dynamic>?)
-              ?.whereType<String>()
-              .toList() ??
-          <String>[];
-      final firstManagerId = managerIds.isNotEmpty ? managerIds.first : '';
+      final ceo = await _findAssignedCeo(advance.userId);
       update = {
-        'status': firstManagerId.isEmpty ? 'approved' : 'pending_manager',
-        if (firstManagerId.isNotEmpty) 'managerId': firstManagerId,
-        if (managerNames.isNotEmpty) 'managerName': managerNames.first,
+        'status': 'pending_manager',
+        'managerId': ceo.uid,
+        'managerName': ceo.displayName,
         'managerApprovalIndex': 0,
+        'advanceRouteStage': 'ceo',
+        'approvalHistory': FieldValue.arrayUnion([
+          _routeEvent('hr', reviewer, 'approved'),
+        ]),
         'reviewedBy': reviewer.uid,
         'reviewedAt': FieldValue.serverTimestamp(),
         'isRead': false,
+      };
+    } else if (data['advanceRouteStage'] == 'ceo' &&
+        advance.managerId == reviewer.uid) {
+      final accountant = await _findAdvanceAccountant();
+      update = {
+        'status': 'pending_manager',
+        'managerId': accountant.uid,
+        'managerName': accountant.displayName,
+        'advanceRouteStage': 'accounting',
+        'reviewedBy': reviewer.uid,
+        'reviewedAt': FieldValue.serverTimestamp(),
+        'isRead': false,
+        'approvalHistory': FieldValue.arrayUnion([
+          _routeEvent('ceo', reviewer, 'approved'),
+        ]),
+      };
+    } else if (data['advanceRouteStage'] == 'accounting' &&
+        advance.managerId == reviewer.uid) {
+      update = {
+        'status': 'approved',
+        'advanceRouteStage': 'completed',
+        'reviewedBy': reviewer.uid,
+        'reviewedAt': FieldValue.serverTimestamp(),
+        'isRead': false,
+        'approvalHistory': FieldValue.arrayUnion([
+          _routeEvent('accounting', reviewer, 'approved'),
+        ]),
       };
     } else {
       update = _nextManagerApprovalUpdate(
@@ -257,9 +275,15 @@ class AdvanceService {
         try {
           await _createNotification(
             recipientId: nextManagerId,
-            type: 'advance_pending_manager',
+            type:
+                data['advanceRouteStage'] == 'ceo'
+                    ? 'advance_pending_accounting'
+                    : 'advance_pending_ceo',
             title: 'طلب سلفة بانتظار موافقتك',
-            body: '${advance.employeeName} حصل على موافقة HR وينتظر قرارك.',
+            body:
+                data['advanceRouteStage'] == 'ceo'
+                    ? '${advance.employeeName} حصل على موافقة CEO وينتظر اعتماد الحسابات.'
+                    : '${advance.employeeName} حصل على موافقة HR وينتظر قرار الرئيس التنفيذي.',
             data: {'advanceId': advanceId},
           );
         } catch (_) {}
@@ -279,6 +303,66 @@ class AdvanceService {
         );
       } catch (_) {}
     }
+  }
+
+  Map<String, dynamic> _routeEvent(
+    String stage,
+    UserModel reviewer,
+    String action,
+  ) => {
+    'stage': stage,
+    'status': action,
+    'actorId': reviewer.uid,
+    'actorName': reviewer.displayName,
+    'at': Timestamp.now(),
+  };
+
+  Future<UserModel> _findAssignedCeo(String employeeUid) async {
+    var nextIds = <String>[employeeUid];
+    final seen = <String>{};
+    for (var depth = 0; depth < 12 && nextIds.isNotEmpty; depth++) {
+      final current = nextIds.removeAt(0);
+      if (!seen.add(current)) continue;
+      final doc = await _db.collection('users').doc(current).get();
+      if (!doc.exists) continue;
+      final user = UserModel.fromFirestore(doc);
+      final isCeo = user.employeeId.trim().toUpperCase().startsWith('CEO-');
+      final canApproveAdvance =
+          doc.data()?['isAdvanceCeoApprover'] == true ||
+          user.role == EmployeeRole.manager;
+      if (isCeo && canApproveAdvance) return user;
+      nextIds.addAll(user.managerIds.where((id) => id.isNotEmpty));
+      final directManagerId = user.managerId;
+      if (directManagerId != null && directManagerId.isNotEmpty) {
+        nextIds.add(directManagerId);
+      }
+    }
+    throw StateError(
+      'لا يمكن تحديد CEO مفعّل لمسار سلفة الموظف. اربط الموظف بـ CEO وفعّل isAdvanceCeoApprover عند الحاجة.',
+    );
+  }
+
+  Future<UserModel> _findAdvanceAccountant() async {
+    final snapshot =
+        await _db
+            .collection('users')
+            .where('isActive', isEqualTo: true)
+            .limit(500)
+            .get();
+    // Finance approval is an explicit role assignment, not an inferred
+    // department. A department rename must never silently reroute money.
+    final candidates =
+        snapshot.docs
+            .where((doc) => doc.data()['isAdvanceAccountsApprover'] == true)
+            .map(UserModel.fromFirestore)
+            .toList()
+          ..sort((a, b) => a.employeeId.compareTo(b.employeeId));
+    if (candidates.isEmpty) {
+      throw StateError(
+        'لا يوجد مسؤول حسابات مفعّل لمسار السلف. فعّل isAdvanceAccountsApprover لحساب المحاسب.',
+      );
+    }
+    return candidates.first;
   }
 
   Future<void> markAsRead(String advanceId) async {

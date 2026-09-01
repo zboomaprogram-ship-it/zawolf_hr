@@ -4,6 +4,7 @@ import 'package:intl/intl.dart' hide TextDirection;
 import '../../../components/wolf_card.dart';
 import '../../../design_system/components/avatar.dart';
 import '../../../models/attendance_model.dart';
+import '../../../models/attendance_policy.dart';
 import '../../../models/user_model.dart';
 import '../../../services/geofence_service.dart';
 import '../../../design_system/bidi.dart';
@@ -210,7 +211,7 @@ class MyStatusCard extends StatelessWidget {
               ),
               child: Text(
                 todayLog.isLate
-                    ? '${todayLog.salaryDeductionLabel} · ${dsBidi(todayLog.salaryDeductionAmount.toStringAsFixed(2))} ${todayLog.salaryCurrency}'
+                    ? '${AttendancePolicy.arabicDeductionLabel(todayLog.salaryDeductionCode, fallback: todayLog.salaryDeductionLabel)} · ${dsBidi(todayLog.salaryDeductionAmount.toStringAsFixed(2))} ${todayLog.salaryCurrency}'
                     : 'في الموعد',
                 style: TextStyle(
                   color: todayLog.isLate

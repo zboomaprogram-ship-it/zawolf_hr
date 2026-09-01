@@ -11,7 +11,11 @@ import 'notification_service.dart';
 
 /// Smart daily reminder IDs — using fixed ranges so we can always cancel/replace them.
 const int kMorningCheckInReminderId = 9001;
-const int kCheckOutReminderId = 9002;
+// Keep this range separate from the morning range.  The old value (9002)
+// overlapped with the second morning reminder, which made a replacement
+// schedule ambiguous on devices that still had the legacy reminders.
+const int kCheckOutReminderId = 9101;
+const int kLegacyCheckOutReminderId = 9002;
 const int kReminderScheduleDays = 30;
 
 /// Service responsible for scheduling and managing daily attendance reminders.
@@ -109,6 +113,11 @@ class DailyReminderService {
       await NotificationService.instance.cancelNotification(
         kCheckOutReminderId + offset,
       );
+      // Clear the overlapping checkout IDs written by app versions released
+      // before the reminder ranges were separated.
+      await NotificationService.instance.cancelNotification(
+        kLegacyCheckOutReminderId + offset,
+      );
     }
   }
 
@@ -176,10 +185,8 @@ class DailyReminderService {
   Future<bool> _isCompanyDayOff(DateTime date) async {
     try {
       final dayOffKey = CompanyDayOffModel.keyFor(date);
-      final dayOffDoc = await _db
-          .collection('companyDayOffs')
-          .doc(dayOffKey)
-          .get();
+      final dayOffDoc =
+          await _db.collection('companyDayOffs').doc(dayOffKey).get();
       return dayOffDoc.exists && dayOffDoc.data()?['isActive'] == true;
     } catch (_) {
       return false;
@@ -207,10 +214,8 @@ class DailyReminderService {
     // 2. Check company day off (applies to all employees)
     try {
       final dayOffKey = CompanyDayOffModel.keyFor(now);
-      final dayOffDoc = await _db
-          .collection('companyDayOffs')
-          .doc(dayOffKey)
-          .get();
+      final dayOffDoc =
+          await _db.collection('companyDayOffs').doc(dayOffKey).get();
       if (dayOffDoc.exists) {
         final data = dayOffDoc.data()!;
         if (data['isActive'] == true) {
@@ -227,11 +232,12 @@ class DailyReminderService {
     // 3. Check employee's personal approved leave (HR-added or self-submitted)
     //    Suppresses both reminders if today is within an approved leave period.
     try {
-      final leavesSnap = await _db
-          .collection('leaves')
-          .where('userId', isEqualTo: userId)
-          .where('status', isEqualTo: 'approved')
-          .get();
+      final leavesSnap =
+          await _db
+              .collection('leaves')
+              .where('userId', isEqualTo: userId)
+              .where('status', isEqualTo: 'approved')
+              .get();
 
       for (final doc in leavesSnap.docs) {
         final data = doc.data();
@@ -266,12 +272,13 @@ class DailyReminderService {
 
     // 3. Check approved permissions for today
     try {
-      final permsSnap = await _db
-          .collection('permissions')
-          .where('userId', isEqualTo: userId)
-          .where('requestDate', isEqualTo: todayStr)
-          .where('status', isEqualTo: 'approved')
-          .get();
+      final permsSnap =
+          await _db
+              .collection('permissions')
+              .where('userId', isEqualTo: userId)
+              .where('requestDate', isEqualTo: todayStr)
+              .where('status', isEqualTo: 'approved')
+              .get();
 
       for (final doc in permsSnap.docs) {
         final data = doc.data();
@@ -302,12 +309,13 @@ class DailyReminderService {
     // 4. Check if employee already checked in today (suppress morning reminder)
     if (checkType == 'check_in') {
       try {
-        final attendanceSnap = await _db
-            .collection('attendance')
-            .where('userId', isEqualTo: userId)
-            .where('date', isEqualTo: todayStr)
-            .limit(1)
-            .get();
+        final attendanceSnap =
+            await _db
+                .collection('attendance')
+                .where('userId', isEqualTo: userId)
+                .where('date', isEqualTo: todayStr)
+                .limit(1)
+                .get();
         if (attendanceSnap.docs.isNotEmpty) {
           if (kDebugMode) {
             print('DailyReminder: Suppressed check-in — already checked in');
@@ -320,12 +328,13 @@ class DailyReminderService {
     // 5. Check if employee already checked out today (suppress checkout reminder)
     if (checkType == 'check_out') {
       try {
-        final attendanceSnap = await _db
-            .collection('attendance')
-            .where('userId', isEqualTo: userId)
-            .where('date', isEqualTo: todayStr)
-            .limit(1)
-            .get();
+        final attendanceSnap =
+            await _db
+                .collection('attendance')
+                .where('userId', isEqualTo: userId)
+                .where('date', isEqualTo: todayStr)
+                .limit(1)
+                .get();
         if (attendanceSnap.docs.isNotEmpty) {
           final data = attendanceSnap.docs.first.data();
           if (data['checkOutTime'] != null) {

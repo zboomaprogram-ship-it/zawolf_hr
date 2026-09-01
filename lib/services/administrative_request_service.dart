@@ -4,6 +4,7 @@ import '../models/administrative_request_model.dart';
 import '../models/employee_role.dart';
 import '../models/manager_approval_chain.dart';
 import '../models/user_model.dart';
+import '../features/request_approval_routing/data/request_approval_routing_gateway.dart';
 import 'role_notification_service.dart';
 import 'package:intl/intl.dart';
 
@@ -12,6 +13,8 @@ class AdministrativeRequestService {
     : _db = firestore ?? FirebaseFirestore.instance;
 
   final FirebaseFirestore _db;
+  final RequestApprovalRoutingGateway _routingGateway =
+      RequestApprovalRoutingGateway();
 
   Map<String, dynamic> _event({
     required String stage,
@@ -227,6 +230,13 @@ class AdministrativeRequestService {
     if (!snapshot.exists) throw Exception('الطلب الإداري غير موجود.');
     final data = snapshot.data()!;
     final status = data['status'] as String? ?? '';
+    if (data['approvalRouteVersion'] == 1) {
+      await _routingGateway.decideFieldMission(
+        requestId: requestId,
+        approved: true,
+      );
+      return;
+    }
     final isFieldMission =
         data['category'] == AdministrativeRequestCategory.fieldMission;
     if (status == 'pending_ceo') {
@@ -312,24 +322,27 @@ class AdministrativeRequestService {
     if (status != 'pending_manager' || data['managerId'] != reviewer.uid) {
       throw Exception('هذا الطلب ينتظر مراجعاً آخر.');
     }
-    final ids = (data['managerIds'] as List<dynamic>? ?? const [])
-        .whereType<String>()
-        .toList();
-    final names = (data['managerNames'] as List<dynamic>? ?? const [])
-        .whereType<String>()
-        .toList();
+    final ids =
+        (data['managerIds'] as List<dynamic>? ?? const [])
+            .whereType<String>()
+            .toList();
+    final names =
+        (data['managerNames'] as List<dynamic>? ?? const [])
+            .whereType<String>()
+            .toList();
     final index = (data['managerApprovalIndex'] as num?)?.toInt() ?? 0;
     final next = index + 1;
     var nextStatus = next < ids.length ? 'pending_manager' : 'pending_hr';
     String? ceoId;
     String? ceoName;
     if (isFieldMission && next >= ids.length) {
-      final ceo = await _db
-          .collection('users')
-          .where('employeeId', isEqualTo: 'CEO-100')
-          .where('isActive', isEqualTo: true)
-          .limit(1)
-          .get();
+      final ceo =
+          await _db
+              .collection('users')
+              .where('employeeId', isEqualTo: 'CEO-100')
+              .where('isActive', isEqualTo: true)
+              .limit(1)
+              .get();
       if (ceo.docs.isEmpty) {
         throw Exception('لا يوجد حساب نشط بكود CEO-100.');
       }
@@ -404,6 +417,14 @@ class AdministrativeRequestService {
     if (!snapshot.exists) throw Exception('الطلب الإداري غير موجود.');
     final data = snapshot.data()!;
     final status = data['status'] as String? ?? '';
+    if (data['approvalRouteVersion'] == 1) {
+      await _routingGateway.decideFieldMission(
+        requestId: requestId,
+        approved: false,
+        comment: reason,
+      );
+      return;
+    }
     final allowed =
         (status == 'pending_manager' && data['managerId'] == reviewer.uid) ||
         (status == 'pending_ceo' &&
@@ -422,9 +443,10 @@ class AdministrativeRequestService {
       'finalApprovalAt': FieldValue.serverTimestamp(),
       'approvalHistory': FieldValue.arrayUnion([
         _event(
-          stage: status == 'pending_hr'
-              ? 'hr'
-              : (status == 'pending_ceo' ? 'ceo' : 'manager'),
+          stage:
+              status == 'pending_hr'
+                  ? 'hr'
+                  : (status == 'pending_ceo' ? 'ceo' : 'manager'),
           status: 'rejected',
           actorId: reviewer.uid,
           actorName: reviewer.displayName,

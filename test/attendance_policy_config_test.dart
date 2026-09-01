@@ -100,4 +100,15 @@ void main() {
 
     expect(alarms.single.triggerAt, DateTime(2026, 7, 18, 11));
   });
+
+  test('deduction display labels never expose internal late status codes', () {
+    expect(
+      AttendancePolicy.arabicDeductionLabel('late_quarter_day'),
+      'خصم ربع يوم بسبب التأخير',
+    );
+    expect(
+      AttendancePolicy.arabicDeductionLabel('unknown_code'),
+      'خصم راتب يحتاج مراجعة الموارد البشرية',
+    );
+  });
 }

@@ -99,9 +99,10 @@ class ZaWolfTheme {
       // ring on every interactive component (specs/ui_redesign/04).
       focusColor: ZaWolfColors.primaryCyan.withValues(alpha: 0.45),
       actionIconTheme: ActionIconThemeData(
-        backButtonIconBuilder: (context) => const Directionality(
-          textDirection: TextDirection.ltr,
-          child: Icon(Icons.arrow_forward_rounded),
+        backButtonIconBuilder: (context) => Icon(
+          Directionality.of(context) == TextDirection.rtl
+              ? Icons.arrow_forward_rounded
+              : Icons.arrow_back_rounded,
         ),
       ),
       textTheme: TextTheme(

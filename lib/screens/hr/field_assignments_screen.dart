@@ -5,6 +5,8 @@ import 'package:provider/provider.dart';
 
 import '../../components/wolf_card.dart';
 import '../../components/wolf_input_field.dart';
+import '../../features/request_approval_routing/data/request_approval_routing_gateway.dart';
+import '../../models/employee_role.dart';
 import '../../models/field_assignment_model.dart';
 import '../../models/user_model.dart';
 import '../../services/auth_service.dart';
@@ -20,6 +22,7 @@ class FieldAssignmentsScreen extends StatefulWidget {
 
 class _FieldAssignmentsScreenState extends State<FieldAssignmentsScreen> {
   final _service = FieldAssignmentService();
+  final _routingGateway = RequestApprovalRoutingGateway();
   final _formKey = GlobalKey<FormState>();
   final _reason = TextEditingController();
   final _site = TextEditingController();
@@ -30,6 +33,7 @@ class _FieldAssignmentsScreenState extends State<FieldAssignmentsScreen> {
   bool _requiresReturn = false;
   bool _requiresCheckout = false;
   bool _saving = false;
+  List<UserModel> _approvers = <UserModel>[];
 
   @override
   void dispose() {
@@ -73,38 +77,129 @@ class _FieldAssignmentsScreenState extends State<FieldAssignmentsScreen> {
       if (_employee == null) _message('اختر الموظف أولاً.', error: true);
       return;
     }
+    if (_approvers.isEmpty) {
+      _message('اختر مسؤول موافقة واحداً على الأقل.', error: true);
+      return;
+    }
     if (_time(_end).compareTo(_time(_start)) <= 0) {
       _message('وقت نهاية المهمة يجب أن يكون بعد وقت بدايتها.', error: true);
       return;
     }
-    final currentUser = Provider.of<AuthService>(
-      context,
-      listen: false,
-    ).currentUser;
+    final currentUser =
+        Provider.of<AuthService>(context, listen: false).currentUser;
     if (currentUser == null) return;
     setState(() => _saving = true);
     try {
-      await _service.create(
-        employee: _employee!,
-        date: _date,
+      await _routingGateway.createFieldMission(
+        employeeUid: _employee!.uid,
+        approvers:
+            _approvers
+                .map((user) => {'id': user.uid, 'labelAr': user.displayName})
+                .toList(),
+        missionDate: DateFormat('yyyy-MM-dd').format(_date),
         startTime: _time(_start),
         endTime: _time(_end),
         reason: _reason.text,
         siteName: _site.text,
         requiresReturnToOffice: _requiresReturn,
         requiresCheckout: _requiresCheckout,
-        createdBy: currentUser.uid,
       );
-      _message('تم تسجيل المهمة الميدانية للموظف.');
+      _message(
+        'تم إرسال المأمورية لمسار الموافقات وإشعار الموظف والمسؤول الأول.',
+      );
       setState(() {
         _reason.clear();
         _site.clear();
+        _approvers = <UserModel>[];
       });
     } catch (error) {
       _message('تعذر حفظ المهمة: $error', error: true);
     } finally {
       if (mounted) setState(() => _saving = false);
     }
+  }
+
+  Future<void> _chooseApprovers() async {
+    final snapshot =
+        await FirebaseFirestore.instance
+            .collection('users')
+            .where('isActive', isEqualTo: true)
+            .get();
+    final candidates =
+        snapshot.docs
+            .where((doc) {
+              final user = UserModel.fromFirestore(doc);
+              final scope = '${user.department} ${user.position}'.toLowerCase();
+              final isAccounting =
+                  doc.data()['isAdvanceAccountsApprover'] == true ||
+                  scope.contains('account') ||
+                  scope.contains('finance') ||
+                  scope.contains('حساب') ||
+                  scope.contains('مالي');
+              return EmployeeRole.canActAsApprovalManager(user.role) ||
+                  isAccounting;
+            })
+            .map(UserModel.fromFirestore)
+            .where((user) => user.uid != _employee?.uid)
+            .toList()
+          ..sort((a, b) => a.displayName.compareTo(b.displayName));
+    if (!mounted) return;
+    var selected = List<UserModel>.from(_approvers);
+    await showDialog<void>(
+      context: context,
+      builder:
+          (dialogContext) => StatefulBuilder(
+            builder:
+                (context, setDialogState) => AlertDialog(
+                  title: const Text('مسار الموافقات (بالترتيب)'),
+                  content: SizedBox(
+                    width: 520,
+                    child: ListView(
+                      shrinkWrap: true,
+                      children:
+                          candidates.map((user) {
+                            final index = selected.indexWhere(
+                              (item) => item.uid == user.uid,
+                            );
+                            return CheckboxListTile(
+                              value: index >= 0,
+                              title: Text(
+                                '${user.displayName} — ${user.employeeId}',
+                              ),
+                              subtitle:
+                                  index >= 0
+                                      ? Text('المرحلة ${index + 1}')
+                                      : null,
+                              onChanged:
+                                  (checked) => setDialogState(() {
+                                    if (checked == true &&
+                                        index < 0 &&
+                                        selected.length < 4) {
+                                      selected.add(user);
+                                    } else if (checked != true && index >= 0) {
+                                      selected.removeAt(index);
+                                    }
+                                  }),
+                            );
+                          }).toList(),
+                    ),
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(dialogContext),
+                      child: const Text('إلغاء'),
+                    ),
+                    FilledButton(
+                      onPressed: () {
+                        setState(() => _approvers = selected);
+                        Navigator.pop(dialogContext);
+                      },
+                      child: const Text('حفظ المسار'),
+                    ),
+                  ],
+                ),
+          ),
+    );
   }
 
   void _message(String value, {bool error = false}) {
@@ -148,10 +243,11 @@ class _FieldAssignmentsScreenState extends State<FieldAssignmentsScreen> {
                   ),
                   const SizedBox(height: 16),
                   StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-                    stream: FirebaseFirestore.instance
-                        .collection('users')
-                        .where('isActive', isEqualTo: true)
-                        .snapshots(),
+                    stream:
+                        FirebaseFirestore.instance
+                            .collection('users')
+                            .where('isActive', isEqualTo: true)
+                            .snapshots(),
                     builder: (context, snapshot) {
                       final employees =
                           snapshot.data?.docs
@@ -161,25 +257,37 @@ class _FieldAssignmentsScreenState extends State<FieldAssignmentsScreen> {
                       return DropdownButtonFormField<UserModel>(
                         initialValue:
                             employees.any((user) => user.uid == _employee?.uid)
-                            ? _employee
-                            : null,
+                                ? _employee
+                                : null,
                         isExpanded: true,
                         decoration: const InputDecoration(labelText: 'الموظف'),
-                        items: employees
-                            .map(
-                              (user) => DropdownMenuItem(
-                                value: user,
-                                child: Text(
-                                  '${user.displayName} - ${user.employeeId}',
-                                  overflow: TextOverflow.ellipsis,
-                                  textDirection: TextDirection.rtl,
-                                ),
-                              ),
-                            )
-                            .toList(),
+                        items:
+                            employees
+                                .map(
+                                  (user) => DropdownMenuItem(
+                                    value: user,
+                                    child: Text(
+                                      '${user.displayName} - ${user.employeeId}',
+                                      overflow: TextOverflow.ellipsis,
+                                      textDirection: TextDirection.rtl,
+                                    ),
+                                  ),
+                                )
+                                .toList(),
                         onChanged: (value) => setState(() => _employee = value),
                       );
                     },
+                  ),
+                  const SizedBox(height: 12),
+                  OutlinedButton.icon(
+                    onPressed: _chooseApprovers,
+                    icon: const Icon(Icons.account_tree_outlined),
+                    label: Text(
+                      _approvers.isEmpty
+                          ? 'اختر مسار الموافقات (1–4)'
+                          : 'مسار الموافقات: ${_approvers.map((user) => user.displayName).join(' ← ')}',
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ),
                   const SizedBox(height: 12),
                   OutlinedButton.icon(
@@ -221,16 +329,18 @@ class _FieldAssignmentsScreenState extends State<FieldAssignmentsScreen> {
                     labelText: 'سبب المهمة',
                     prefixIcon: Icons.assignment_outlined,
                     maxLines: 3,
-                    validator: (value) => (value?.trim().length ?? 0) >= 3
-                        ? null
-                        : 'اكتب سبباً واضحاً للمهمة',
+                    validator:
+                        (value) =>
+                            (value?.trim().length ?? 0) >= 3
+                                ? null
+                                : 'اكتب سبباً واضحاً للمهمة',
                   ),
                   const SizedBox(height: 8),
                   SwitchListTile.adaptive(
                     contentPadding: EdgeInsets.zero,
                     value: _requiresReturn,
-                    onChanged: (value) =>
-                        setState(() => _requiresReturn = value),
+                    onChanged:
+                        (value) => setState(() => _requiresReturn = value),
                     title: const Text('يجب أن يعود الموظف إلى الفرع'),
                     subtitle: const Text(
                       'اتركه مغلقاً إذا كان مسموحاً له بالبقاء خارج الفرع حتى نهاية المهمة.',
@@ -239,8 +349,8 @@ class _FieldAssignmentsScreenState extends State<FieldAssignmentsScreen> {
                   SwitchListTile.adaptive(
                     contentPadding: EdgeInsets.zero,
                     value: _requiresCheckout,
-                    onChanged: (value) =>
-                        setState(() => _requiresCheckout = value),
+                    onChanged:
+                        (value) => setState(() => _requiresCheckout = value),
                     title: const Text('يتطلب تسجيل انصراف'),
                     subtitle: const Text(
                       'عند إيقافه لن يُنشأ خصم عدم تسجيل الانصراف لهذا اليوم.',
@@ -249,13 +359,14 @@ class _FieldAssignmentsScreenState extends State<FieldAssignmentsScreen> {
                   const SizedBox(height: 12),
                   FilledButton.icon(
                     onPressed: _saving ? null : _save,
-                    icon: _saving
-                        ? const SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.add_task),
+                    icon:
+                        _saving
+                            ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                            : const Icon(Icons.add_task),
                     label: const Text('حفظ المهمة الميدانية'),
                   ),
                 ],
@@ -284,49 +395,50 @@ class _FieldAssignmentsScreenState extends State<FieldAssignmentsScreen> {
                   ),
                 );
               }
-              final actor = Provider.of<AuthService>(
-                context,
-                listen: false,
-              ).currentUser;
+              final actor =
+                  Provider.of<AuthService>(context, listen: false).currentUser;
               return Column(
-                children: assignments
-                    .map(
-                      (item) => Padding(
-                        padding: const EdgeInsets.only(bottom: 10),
-                        child: WolfCard(
-                          child: ListTile(
-                            leading: const Icon(
-                              Icons.directions_walk,
-                              color: ZaWolfColors.primaryCyan,
-                            ),
-                            title: Text(
-                              item.employeeName,
-                              textDirection: TextDirection.rtl,
-                            ),
-                            subtitle: Text(
-                              '${item.startTime} - ${item.endTime} | ${item.siteName.isEmpty ? item.reason : item.siteName}\n${item.requiresCheckout ? 'يتطلب انصراف' : 'لا يتطلب انصراف'}',
-                              textDirection: TextDirection.rtl,
-                            ),
-                            trailing: item.status == 'active'
-                                ? IconButton(
-                                    icon: const Icon(
-                                      Icons.cancel_outlined,
-                                      color: ZaWolfColors.error,
-                                    ),
-                                    tooltip: 'إلغاء المهمة',
-                                    onPressed: actor == null
-                                        ? null
-                                        : () => _service.cancel(
-                                            item.assignmentId,
-                                            actor.uid,
+                children:
+                    assignments
+                        .map(
+                          (item) => Padding(
+                            padding: const EdgeInsets.only(bottom: 10),
+                            child: WolfCard(
+                              child: ListTile(
+                                leading: const Icon(
+                                  Icons.directions_walk,
+                                  color: ZaWolfColors.primaryCyan,
+                                ),
+                                title: Text(
+                                  item.employeeName,
+                                  textDirection: TextDirection.rtl,
+                                ),
+                                subtitle: Text(
+                                  '${item.startTime} - ${item.endTime} | ${item.siteName.isEmpty ? item.reason : item.siteName}\n${item.requiresCheckout ? 'يتطلب انصراف' : 'لا يتطلب انصراف'}',
+                                  textDirection: TextDirection.rtl,
+                                ),
+                                trailing:
+                                    item.status == 'active'
+                                        ? IconButton(
+                                          icon: const Icon(
+                                            Icons.cancel_outlined,
+                                            color: ZaWolfColors.error,
                                           ),
-                                  )
-                                : const Text('ملغاة'),
+                                          tooltip: 'إلغاء المهمة',
+                                          onPressed:
+                                              actor == null
+                                                  ? null
+                                                  : () => _service.cancel(
+                                                    item.assignmentId,
+                                                    actor.uid,
+                                                  ),
+                                        )
+                                        : const Text('ملغاة'),
+                              ),
+                            ),
                           ),
-                        ),
-                      ),
-                    )
-                    .toList(),
+                        )
+                        .toList(),
               );
             },
           ),

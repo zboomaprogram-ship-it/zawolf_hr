@@ -21,4 +21,9 @@ void main() {
     expect(source, contains('_isSupportedNotificationPath(uri.path)'));
     expect(source, contains('/operational/'));
   });
+
+  test('cold-start local notifications preserve their safe deep link', () {
+    expect(source, contains("payload.startsWith('notification|')"));
+    expect(source, contains('initialRoute = safeRoute'));
+  });
 }

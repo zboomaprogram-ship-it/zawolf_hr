@@ -3,6 +3,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/attendance_policy.dart';
 import '../models/user_model.dart';
+import 'daily_reminder_service.dart';
 import 'personal_alarm_service.dart';
 
 class AttendanceAlarmLeaveRange {
@@ -128,20 +129,21 @@ class RequiredAttendanceAlarmService {
       _db.collection('companyDayOffs').where('isActive', isEqualTo: true).get(),
     ]);
 
-    final approvedLeaves = snapshots[0].docs
-        .where((doc) => doc.data()['status'] == 'approved')
-        .map((doc) {
-          final data = doc.data();
-          final start = data['startDate'];
-          final end = data['endDate'];
-          if (start is! Timestamp || end is! Timestamp) return null;
-          return AttendanceAlarmLeaveRange(
-            start: start.toDate(),
-            end: end.toDate(),
-          );
-        })
-        .whereType<AttendanceAlarmLeaveRange>()
-        .toList();
+    final approvedLeaves =
+        snapshots[0].docs
+            .where((doc) => doc.data()['status'] == 'approved')
+            .map((doc) {
+              final data = doc.data();
+              final start = data['startDate'];
+              final end = data['endDate'];
+              if (start is! Timestamp || end is! Timestamp) return null;
+              return AttendanceAlarmLeaveRange(
+                start: start.toDate(),
+                end: end.toDate(),
+              );
+            })
+            .whereType<AttendanceAlarmLeaveRange>()
+            .toList();
 
     final latePermissions = <String, int>{};
     for (final doc in snapshots[1].docs) {
@@ -157,10 +159,11 @@ class RequiredAttendanceAlarmService {
       }
     }
 
-    final companyDaysOff = snapshots[2].docs
-        .where((doc) => doc.data()['isActive'] == true)
-        .map((doc) => doc.data()['date'] as String? ?? doc.id)
-        .toSet();
+    final companyDaysOff =
+        snapshots[2].docs
+            .where((doc) => doc.data()['isActive'] == true)
+            .map((doc) => doc.data()['date'] as String? ?? doc.id)
+            .toSet();
     final startTime = startTimeFor(user);
     final alarms = AttendanceAlarmPlanner.build(
       now: DateTime.now(),
@@ -173,12 +176,17 @@ class RequiredAttendanceAlarmService {
       latePermissionMinutes: latePermissions,
     );
 
-    // Remove the old weekly alarm before installing the date-aware schedule.
-    await PersonalAlarmService.instance.disable(ownerId);
+    // There must be one audible work alarm per employee.  Earlier versions
+    // could leave a manually configured weekly alarm (keyed by `user.uid`) in
+    // place beside this date-aware attendance schedule (keyed by `ownerId`).
+    // Install the replacement first, then remove every legacy/manual source
+    // only after the new schedule has been accepted by the operating system.
     await PersonalAlarmService.instance.replaceDatedAttendanceSchedule(
       ownerId: ownerId,
       alarms: alarms,
     );
+    await PersonalAlarmService.instance.disable(user.uid);
+    await DailyReminderService.instance.cancelAll();
     final time = _parseTime(startTime);
     return PersonalAlarmSettings(enabled: true, hour: time.$1, minute: time.$2);
   }

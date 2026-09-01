@@ -17,6 +17,24 @@ Upload every file in this ZIP into the same Node.js application root, including
 the `workspace/` directory. Do not upload `node_modules`; Hostinger installs
 dependencies with `npm install`.
 
+## Request-approval routing release
+
+The field-mission approval gateway is included in the backend package. Upload
+the current release ZIP, run `npm install`, and use **Restart** for the Node.js
+application. The web client calls
+`/operations/request-approval-routing/field-missions` for HR-created missions.
+
+For advance approvals, set these boolean fields on the active `users` documents
+before the first request reaches that stage:
+
+- `isAdvanceCeoApprover: true` for any assigned CEO whose account is not a
+  `manager`.
+- `isAdvanceAccountsApprover: true` for the authorised Accounts approver.
+
+These flags are permission grants; do not set them on general employee
+accounts. Rollback is non-destructive: restore the previous Hostinger package
+and leave already-routed field missions readable in Firestore.
+
 The `workspace/` directory is required by the governed Company Files / Google
 Workspace API. Uploading only `notification-web.js` will make `/health` work
 but causes Company Files requests to fail with a module-not-found error.
