@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:intl/intl.dart' hide TextDirection;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:go_router/go_router.dart';
 import '../../theme/theme.dart';
 import '../../utils/user_facing_error.dart';
@@ -46,8 +47,13 @@ import '../../utils/permission_cycle_accounting.dart';
 import '../../core/feature_flags/company_os_feature_flags.dart';
 import 'widgets/virtual_office_game_widget.dart';
 
+enum _RequestAttachmentSource { gallery, files }
+
 class EmployeeRequestsScreen extends StatefulWidget {
-  const EmployeeRequestsScreen({super.key});
+  const EmployeeRequestsScreen({super.key, this.initialView = 1});
+
+  /// 1 is the request form and 2 is the employee-owned request history.
+  final int initialView;
 
   @override
   State<EmployeeRequestsScreen> createState() => _EmployeeRequestsScreenState();
@@ -73,6 +79,8 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
   String _leaveType = LeaveTypePolicy.normal;
   DateTime _leaveStart = DateTime.now().add(const Duration(days: 2));
   DateTime _leaveEnd = DateTime.now().add(const Duration(days: 2));
+  bool _leaveMultipleDays = false;
+  int? _leaveWorkingDays;
   final _leaveReasonController = TextEditingController();
   final _workHandoverController = TextEditingController();
   final _leaveAttachmentController = TextEditingController();
@@ -98,8 +106,10 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
   DateTime _fieldMissionDate = DateTime.now();
   TimeOfDay _fieldMissionStart = const TimeOfDay(hour: 9, minute: 0);
   TimeOfDay _fieldMissionEnd = const TimeOfDay(hour: 17, minute: 0);
-  bool _fieldMissionRequiresReturn = true;
-  bool _fieldMissionRequiresCheckout = true;
+  // A field mission is an approved absence from the office. HR can explicitly
+  // turn either requirement back on when the mission policy needs it.
+  bool _fieldMissionRequiresReturn = false;
+  bool _fieldMissionRequiresCheckout = false;
   final _attendanceCorrectionReasonController = TextEditingController();
   AttendanceModel? _selectedCorrectionAttendance;
   TimeOfDay? _requestedCorrectionTime;
@@ -114,6 +124,12 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
   int _requestTypeIndex = 0;
   String _historyStatusFilter = 'all';
   final Map<String, Stream<dynamic>> _streamCache = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _requestCentreView = widget.initialView == 2 ? 2 : 1;
+  }
 
   Stream<T> _cachedStream<T>(String key, Stream<T> Function() create) {
     return _streamCache.putIfAbsent(key, create) as Stream<T>;
@@ -154,9 +170,8 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
     }
   }
 
-  String _attachmentContentType(
-    PlatformFile file,
-  ) => switch ((file.extension ?? '').toLowerCase()) {
+  String _attachmentContentType(String? extension) => switch ((extension ?? '')
+      .toLowerCase()) {
     'pdf' => 'application/pdf',
     'png' => 'image/png',
     'jpg' || 'jpeg' => 'image/jpeg',
@@ -167,21 +182,68 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
   };
 
   Future<String?> _uploadRequestAttachment() async {
-    final result = await FilePicker.pickFiles(
-      type: FileType.any,
-      withData: true,
+    final source = await showModalBottomSheet<_RequestAttachmentSource>(
+      context: context,
+      builder:
+          (sheetContext) => SafeArea(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ListTile(
+                  leading: const Icon(Icons.photo_library_outlined),
+                  title: const Text('صورة من المعرض'),
+                  onTap:
+                      () => Navigator.pop(
+                        sheetContext,
+                        _RequestAttachmentSource.gallery,
+                      ),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.folder_open_outlined),
+                  title: const Text('ملف من الجهاز'),
+                  onTap:
+                      () => Navigator.pop(
+                        sheetContext,
+                        _RequestAttachmentSource.files,
+                      ),
+                ),
+              ],
+            ),
+          ),
     );
-    if (result == null || result.files.isEmpty || !mounted) return null;
-    final file = result.files.first;
-    if (file.bytes == null ||
-        file.bytes!.isEmpty ||
-        file.size > 10 * 1024 * 1024) {
+    if (source == null) return null;
+
+    String? name;
+    String? extension;
+    List<int>? bytes;
+    if (source == _RequestAttachmentSource.gallery) {
+      final image = await ImagePicker().pickImage(
+        source: ImageSource.gallery,
+        maxWidth: 1920,
+        maxHeight: 1920,
+        imageQuality: 82,
+      );
+      name = image?.name;
+      extension = name?.split('.').last;
+      bytes = await image?.readAsBytes();
+    } else {
+      final result = await FilePicker.pickFiles(
+        type: FileType.any,
+        withData: true,
+      );
+      final file = result?.files.singleOrNull;
+      name = file?.name;
+      extension = file?.extension;
+      bytes = file?.bytes;
+    }
+    if (name == null || bytes == null || !mounted) return null;
+    if (bytes.isEmpty || bytes.length > 10 * 1024 * 1024) {
       throw ArgumentError('اختر ملفاً صالحاً بحجم لا يتجاوز 10 ميغابايت');
     }
     return (await GovernedDriveAttachmentService().upload(
-      fileName: file.name,
-      contentType: _attachmentContentType(file),
-      bytes: file.bytes!,
+      fileName: name,
+      contentType: _attachmentContentType(extension),
+      bytes: bytes,
     )).opaqueUri;
   }
 
@@ -279,44 +341,94 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
   Future<void> _selectLeaveDateRange(
     BuildContext context,
     String leaveType,
+    UserModel user,
   ) async {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
-    final firstAllowed = leaveType == LeaveTypePolicy.normal
-        ? today.add(const Duration(days: 2))
-        : today;
-    final initialStart = _leaveStart.isBefore(firstAllowed)
-        ? firstAllowed
-        : _leaveStart;
-    final initialEnd = _leaveEnd.isBefore(initialStart)
-        ? initialStart
-        : _leaveEnd;
-    final DateTimeRange? picked = await showDateRangePicker(
+    final firstAllowed =
+        leaveType == LeaveTypePolicy.normal
+            ? today.add(const Duration(days: 2))
+            : today;
+    final initialStart =
+        _leaveStart.isBefore(firstAllowed) ? firstAllowed : _leaveStart;
+    final initialEnd =
+        _leaveEnd.isBefore(initialStart) ? initialStart : _leaveEnd;
+    if (!_leaveMultipleDays) {
+      final picked = await showDatePicker(
+        context: context,
+        initialDate: initialStart,
+        firstDate: firstAllowed,
+        lastDate: today.add(const Duration(days: 365)),
+        locale: const Locale('ar'),
+      );
+      if (picked != null) {
+        setState(() {
+          _leaveStart = picked;
+          _leaveEnd = picked;
+        });
+        await _refreshLeaveWorkingDays(user);
+      }
+      return;
+    }
+    final picked = await showDateRangePicker(
       context: context,
       initialDateRange: DateTimeRange(start: initialStart, end: initialEnd),
       firstDate: firstAllowed,
       lastDate: today.add(const Duration(days: 365)),
+      locale: const Locale('ar'),
     );
     if (picked != null) {
       setState(() {
         _leaveStart = picked.start;
         _leaveEnd = picked.end;
       });
+      await _refreshLeaveWorkingDays(user);
+    }
+  }
+
+  Future<void> _refreshLeaveWorkingDays(UserModel user) async {
+    final start = DateFormat('yyyy-MM-dd').format(_leaveStart);
+    final end = DateFormat('yyyy-MM-dd').format(_leaveEnd);
+    try {
+      final snapshot =
+          await FirebaseFirestore.instance
+              .collection('companyDayOffs')
+              .where('date', isGreaterThanOrEqualTo: start)
+              .where('date', isLessThanOrEqualTo: end)
+              .get();
+      final dayOffKeys =
+          snapshot.docs
+              .where((doc) => doc.data()['isActive'] == true)
+              .map((doc) => '${doc.data()['date'] ?? doc.id}')
+              .toSet();
+      final days = LeaveService.countChargeableDays(
+        start: _leaveStart,
+        end: _leaveEnd,
+        schedule: user.workSchedule,
+        companyDayOffKeys: dayOffKeys,
+      );
+      if (mounted) setState(() => _leaveWorkingDays = days);
+    } catch (_) {
+      // The submission service repeats this calculation authoritatively.
+      if (mounted) setState(() => _leaveWorkingDays = null);
     }
   }
 
   void _setLeaveType(String type) {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
-    final firstAllowed = type == LeaveTypePolicy.normal
-        ? today.add(const Duration(days: 2))
-        : today;
+    final firstAllowed =
+        type == LeaveTypePolicy.normal
+            ? today.add(const Duration(days: 2))
+            : today;
     setState(() {
       _leaveType = type;
       if (_leaveStart.isBefore(firstAllowed)) {
         _leaveStart = firstAllowed;
         _leaveEnd = firstAllowed;
       }
+      _leaveMultipleDays = false;
+      _leaveWorkingDays = null;
     });
   }
 
@@ -522,11 +634,11 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
       final days = _leaveEnd.difference(_leaveStart).inDays + 1;
       final leaveType =
           LeaveEntitlementPolicy.isOnProbation(
-            employee.hiringDate,
-            onDate: _leaveStart,
-          )
-          ? LeaveTypePolicy.unpaid
-          : _leaveType;
+                employee.hiringDate,
+                onDate: _leaveStart,
+              )
+              ? LeaveTypePolicy.unpaid
+              : _leaveType;
 
       final req = LeaveModel(
         leaveId: '',
@@ -816,6 +928,17 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
     setState(() => _requestCentreView = 1);
   }
 
+  Future<void> _editAdvanceRequest(AdvanceModel request) async {
+    final cancelled = await _cancelRequest('advances', request.advanceId);
+    if (!cancelled || !mounted) return;
+    setState(() {
+      _requestTypeIndex = 2;
+      _advanceAmountController.text = request.amount.toStringAsFixed(2);
+      _advanceReasonController.text = request.reason ?? '';
+      _requestCentreView = 1;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final authService = Provider.of<AuthService>(context);
@@ -834,19 +957,16 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
         ),
         actions: [
           IconButton(
-            icon: const Icon(
-              Icons.history_toggle_off,
-              color: ZaWolfColors.primaryCyan,
+            tooltip: _requestCentreView == 2 ? 'تقديم طلب جديد' : 'سجل طلباتي',
+            icon: Icon(
+              _requestCentreView == 2
+                  ? Icons.add_circle_outline_rounded
+                  : Icons.history_outlined,
             ),
-            tooltip: 'قسم الأرشيف وسجل الطلبات',
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const RequestsLogScreen(),
-                ),
-              );
-            },
+            onPressed:
+                () => setState(() {
+                  _requestCentreView = _requestCentreView == 2 ? 1 : 2;
+                }),
           ),
         ],
       ),
@@ -854,64 +974,88 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
         children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-            child: Align(
-              alignment: AlignmentDirectional.centerStart,
-              child: _requestCentreView == 0
-                  ? OutlinedButton.icon(
-                      onPressed: () => setState(() => _requestCentreView = 1),
-                      icon: const Icon(Icons.edit_note_outlined),
-                      label: const Text('إرسال طلب مباشر'),
-                    )
-                  : TextButton.icon(
-                      onPressed: () => setState(() => _requestCentreView = 0),
-                      icon: const Icon(Icons.sports_esports_outlined),
-                      label: const Text('استكشف المقر الافتراضي'),
-                    ),
+            child: Wrap(
+              alignment: WrapAlignment.center,
+              spacing: 8,
+              runSpacing: 4,
+              children: [
+                if (_requestCentreView == 0)
+                  OutlinedButton.icon(
+                    onPressed: () => setState(() => _requestCentreView = 1),
+                    icon: const Icon(Icons.edit_note_outlined),
+                    label: const Text('إرسال طلب مباشر'),
+                  )
+                else if (_requestCentreView == 2)
+                  TextButton.icon(
+                    onPressed: () => setState(() => _requestCentreView = 1),
+                    icon: const Icon(Icons.add_circle_outline),
+                    label: const Text('تقديم طلب جديد'),
+                  )
+                else
+                  TextButton.icon(
+                    onPressed: () => setState(() => _requestCentreView = 0),
+                    icon: const Icon(Icons.sports_esports_outlined),
+                    label: const Text('استكشف المقر الافتراضي'),
+                  ),
+              ],
             ),
           ),
           Expanded(
-            child: _requestCentreView == 0
-                ? Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 12.0),
-                    child: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-                      stream: FirebaseFirestore.instance
-                          .collection('attendance')
-                          .doc(
-                            '${user.uid}_${DateFormat('yyyy-MM-dd').format(DateTime.now())}',
-                          )
-                          .snapshots(),
-                      builder: (context, attendanceSnapshot) =>
-                          StreamBuilder<List<EmployeeTaskModel>>(
-                            stream: TaskService().watchMyTasks(user.uid),
-                            builder: (context, taskSnapshot) {
-                              final weekStart = DateTime.now().subtract(
-                                Duration(days: DateTime.now().weekday - 1),
-                              );
-                              final completedThisWeek =
-                                  (taskSnapshot.data ??
-                                          const <EmployeeTaskModel>[])
-                                      .where(
-                                        (task) =>
-                                            task.status == TaskStatus.done &&
-                                            task.completedAt != null &&
-                                            !task.completedAt!.isBefore(
-                                              weekStart,
-                                            ),
-                                      )
-                                      .length;
-                              return VirtualOfficeGameWidget(
-                                user: user,
-                                attendedToday:
-                                    attendanceSnapshot.data?.exists ?? false,
-                                completedTasksThisWeek: completedThisWeek,
-                                onHotspotTapped: (hotspot) =>
-                                    _handleHotspotAction(user, theme, hotspot),
-                              );
-                            },
-                          ),
-                    ),
-                  )
-                : _buildSubmitConsole(user, theme),
+            child:
+                _requestCentreView == 0
+                    ? Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 12.0),
+                      child: StreamBuilder<
+                        DocumentSnapshot<Map<String, dynamic>>
+                      >(
+                        stream:
+                            FirebaseFirestore.instance
+                                .collection('attendance')
+                                .doc(
+                                  '${user.uid}_${DateFormat('yyyy-MM-dd').format(DateTime.now())}',
+                                )
+                                .snapshots(),
+                        builder:
+                            (
+                              context,
+                              attendanceSnapshot,
+                            ) => StreamBuilder<List<EmployeeTaskModel>>(
+                              stream: TaskService().watchMyTasks(user.uid),
+                              builder: (context, taskSnapshot) {
+                                final weekStart = DateTime.now().subtract(
+                                  Duration(days: DateTime.now().weekday - 1),
+                                );
+                                final completedThisWeek =
+                                    (taskSnapshot.data ??
+                                            const <EmployeeTaskModel>[])
+                                        .where(
+                                          (task) =>
+                                              task.status == TaskStatus.done &&
+                                              task.completedAt != null &&
+                                              !task.completedAt!.isBefore(
+                                                weekStart,
+                                              ),
+                                        )
+                                        .length;
+                                return VirtualOfficeGameWidget(
+                                  user: user,
+                                  attendedToday:
+                                      attendanceSnapshot.data?.exists ?? false,
+                                  completedTasksThisWeek: completedThisWeek,
+                                  onHotspotTapped:
+                                      (hotspot) => _handleHotspotAction(
+                                        user,
+                                        theme,
+                                        hotspot,
+                                      ),
+                                );
+                              },
+                            ),
+                      ),
+                    )
+                    : _requestCentreView == 2
+                    ? _buildHistoryConsole(user, theme)
+                    : _buildSubmitConsole(user, theme),
           ),
         ],
       ),
@@ -986,38 +1130,43 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
-      builder: (context) => Container(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.sensor_door, size: 48, color: Colors.greenAccent),
-            const SizedBox(height: 12),
-            const Text(
-              '🚪 بوابة الشركة الرئيسية',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-              ),
+      builder:
+          (context) => Container(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(
+                  Icons.sensor_door,
+                  size: 48,
+                  color: Colors.greenAccent,
+                ),
+                const SizedBox(height: 12),
+                const Text(
+                  '🚪 بوابة الشركة الرئيسية',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'يمكنك تسجيل الحضور (Check-In) عند وصولك للبوابة الرئيسية.',
+                  style: TextStyle(color: Colors.white70),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 20),
+                WolfButton(
+                  text: 'تسجيل الحضور الآن (Clock In)',
+                  onPressed: () {
+                    Navigator.pop(context);
+                    context.go('/attendance');
+                  },
+                ),
+              ],
             ),
-            const SizedBox(height: 8),
-            const Text(
-              'يمكنك تسجيل الحضور (Check-In) عند وصولك للبوابة الرئيسية.',
-              style: TextStyle(color: Colors.white70),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 20),
-            WolfButton(
-              text: 'تسجيل الحضور الآن (Clock In)',
-              onPressed: () {
-                Navigator.pop(context);
-                context.go('/attendance');
-              },
-            ),
-          ],
-        ),
-      ),
+          ),
     );
   }
 
@@ -1029,93 +1178,95 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
-      builder: (context) => DraggableScrollableSheet(
-        initialChildSize: 0.75,
-        maxChildSize: 0.95,
-        minChildSize: 0.5,
-        expand: false,
-        builder: (context, scrollController) => SingleChildScrollView(
-          controller: scrollController,
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            children: [
-              const Icon(
-                Icons.badge_outlined,
-                size: 42,
-                color: Colors.cyanAccent,
-              ),
-              const SizedBox(height: 8),
-              const Text(
-                '📄 مكتب الموارد البشرية (HR)',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
+      builder:
+          (context) => DraggableScrollableSheet(
+            initialChildSize: 0.75,
+            maxChildSize: 0.95,
+            minChildSize: 0.5,
+            expand: false,
+            builder:
+                (context, scrollController) => SingleChildScrollView(
+                  controller: scrollController,
+                  padding: const EdgeInsets.all(20),
+                  child: Column(
+                    children: [
+                      const Icon(
+                        Icons.badge_outlined,
+                        size: 42,
+                        color: Colors.cyanAccent,
+                      ),
+                      const SizedBox(height: 8),
+                      const Text(
+                        '📄 مكتب الموارد البشرية (HR)',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      _buildLeaveBalanceSummary(user, theme),
+                      const SizedBox(height: 20),
+                      ListTile(
+                        leading: const Icon(
+                          Icons.calendar_month,
+                          color: ZaWolfColors.primaryCyan,
+                        ),
+                        title: const Text(
+                          'طلب إجازة (Leave Request)',
+                          style: TextStyle(color: Colors.white),
+                        ),
+                        onTap: () {
+                          Navigator.pop(context);
+                          _openDirectRequest(1);
+                        },
+                      ),
+                      ListTile(
+                        leading: const Icon(
+                          Icons.access_time,
+                          color: ZaWolfColors.primaryCyan,
+                        ),
+                        title: const Text(
+                          'طلب استئذان (Time Permission)',
+                          style: TextStyle(color: Colors.white),
+                        ),
+                        onTap: () {
+                          Navigator.pop(context);
+                          _openDirectRequest(0);
+                        },
+                      ),
+                      ListTile(
+                        leading: const Icon(
+                          Icons.fingerprint,
+                          color: ZaWolfColors.primaryCyan,
+                        ),
+                        title: const Text(
+                          'تصحيح بصمة / حضور',
+                          style: TextStyle(color: Colors.white),
+                        ),
+                        onTap: () {
+                          Navigator.pop(context);
+                          _openDirectRequest(6);
+                        },
+                      ),
+                      ListTile(
+                        leading: const Icon(
+                          Icons.receipt_long,
+                          color: Colors.amberAccent,
+                        ),
+                        title: const Text(
+                          'تفاصيل الخصومات وسجل الحضور',
+                          style: TextStyle(color: Colors.white),
+                        ),
+                        onTap: () {
+                          Navigator.pop(context);
+                          context.push('/employee/deductions');
+                        },
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-              const SizedBox(height: 16),
-              _buildLeaveBalanceSummary(user, theme),
-              const SizedBox(height: 20),
-              ListTile(
-                leading: const Icon(
-                  Icons.calendar_month,
-                  color: ZaWolfColors.primaryCyan,
-                ),
-                title: const Text(
-                  'طلب إجازة (Leave Request)',
-                  style: TextStyle(color: Colors.white),
-                ),
-                onTap: () {
-                  Navigator.pop(context);
-                  _openDirectRequest(1);
-                },
-              ),
-              ListTile(
-                leading: const Icon(
-                  Icons.access_time,
-                  color: ZaWolfColors.primaryCyan,
-                ),
-                title: const Text(
-                  'طلب استئذان (Time Permission)',
-                  style: TextStyle(color: Colors.white),
-                ),
-                onTap: () {
-                  Navigator.pop(context);
-                  _openDirectRequest(0);
-                },
-              ),
-              ListTile(
-                leading: const Icon(
-                  Icons.fingerprint,
-                  color: ZaWolfColors.primaryCyan,
-                ),
-                title: const Text(
-                  'تصحيح بصمة / حضور',
-                  style: TextStyle(color: Colors.white),
-                ),
-                onTap: () {
-                  Navigator.pop(context);
-                  _openDirectRequest(6);
-                },
-              ),
-              ListTile(
-                leading: const Icon(
-                  Icons.receipt_long,
-                  color: Colors.amberAccent,
-                ),
-                title: const Text(
-                  'تفاصيل الخصومات وسجل الحضور',
-                  style: TextStyle(color: Colors.white),
-                ),
-                onTap: () {
-                  Navigator.pop(context);
-                  context.push('/employee/deductions');
-                },
-              ),
-            ],
           ),
-        ),
-      ),
     );
   }
 
@@ -1126,69 +1277,77 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
-      builder: (context) => Container(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.computer, size: 42, color: Colors.purpleAccent),
-            const SizedBox(height: 8),
-            const Text(
-              '💻 مكتب الدعم التقني والتشغيل',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 16),
-            ListTile(
-              leading: const Icon(
-                Icons.support_agent,
-                color: Colors.purpleAccent,
-              ),
-              title: const Text(
-                'طلب دعم تقني / اشتراك برامج',
-                style: TextStyle(color: Colors.white),
-              ),
-              onTap: () {
-                Navigator.pop(context);
-                _openOperationalRequest('technical');
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.devices, color: Colors.purpleAccent),
-              title: const Text(
-                'طلب عهدة / أجهزة ومعدات',
-                style: TextStyle(color: Colors.white),
-              ),
-              onTap: () {
-                Navigator.pop(context);
-                _openOperationalRequest('assets');
-              },
-            ),
-            if (kIsWeb)
-              ListTile(
-                leading: const Icon(
-                  Icons.folder_shared,
-                  color: ZaWolfColors.primaryCyan,
+      builder:
+          (context) => Container(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(
+                  Icons.computer,
+                  size: 42,
+                  color: Colors.purpleAccent,
                 ),
-                title: const Text(
-                  'بوابة مستندات الشركة (Google Workspace)',
-                  style: TextStyle(color: Colors.white),
+                const SizedBox(height: 8),
+                const Text(
+                  '💻 مكتب الدعم التقني والتشغيل',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
-                subtitle: const Text(
-                  'متاحة عبر المتصفح ومساحة العمل الرسمية',
-                  style: TextStyle(color: Colors.white54, fontSize: 11),
+                const SizedBox(height: 16),
+                ListTile(
+                  leading: const Icon(
+                    Icons.support_agent,
+                    color: Colors.purpleAccent,
+                  ),
+                  title: const Text(
+                    'طلب دعم تقني / اشتراك برامج',
+                    style: TextStyle(color: Colors.white),
+                  ),
+                  onTap: () {
+                    Navigator.pop(context);
+                    _openOperationalRequest('technical');
+                  },
                 ),
-                onTap: () {
-                  Navigator.pop(context);
-                  context.push('/workspace');
-                },
-              ),
-          ],
-        ),
-      ),
+                ListTile(
+                  leading: const Icon(
+                    Icons.devices,
+                    color: Colors.purpleAccent,
+                  ),
+                  title: const Text(
+                    'طلب عهدة / أجهزة ومعدات',
+                    style: TextStyle(color: Colors.white),
+                  ),
+                  onTap: () {
+                    Navigator.pop(context);
+                    _openOperationalRequest('assets');
+                  },
+                ),
+                if (kIsWeb)
+                  ListTile(
+                    leading: const Icon(
+                      Icons.folder_shared,
+                      color: ZaWolfColors.primaryCyan,
+                    ),
+                    title: const Text(
+                      'بوابة مستندات الشركة (Google Workspace)',
+                      style: TextStyle(color: Colors.white),
+                    ),
+                    subtitle: const Text(
+                      'متاحة عبر المتصفح ومساحة العمل الرسمية',
+                      style: TextStyle(color: Colors.white54, fontSize: 11),
+                    ),
+                    onTap: () {
+                      Navigator.pop(context);
+                      context.push('/workspace');
+                    },
+                  ),
+              ],
+            ),
+          ),
     );
   }
 
@@ -1199,51 +1358,58 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
-      builder: (context) => Container(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(
-              Icons.account_balance_wallet_outlined,
-              size: 42,
-              color: Colors.amberAccent,
+      builder:
+          (context) => Container(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(
+                  Icons.account_balance_wallet_outlined,
+                  size: 42,
+                  color: Colors.amberAccent,
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  '💰 المكتب المالي',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                ListTile(
+                  leading: const Icon(
+                    Icons.payments,
+                    color: Colors.amberAccent,
+                  ),
+                  title: const Text(
+                    'طلب سلفة مالية (Salary Advance)',
+                    style: TextStyle(color: Colors.white),
+                  ),
+                  onTap: () {
+                    Navigator.pop(context);
+                    _openDirectRequest(2);
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(
+                    Icons.description,
+                    color: Colors.amberAccent,
+                  ),
+                  title: const Text(
+                    'تقديم اعتراض / تسوية خصم',
+                    style: TextStyle(color: Colors.white),
+                  ),
+                  onTap: () {
+                    Navigator.pop(context);
+                    _openDirectRequest(3);
+                  },
+                ),
+              ],
             ),
-            const SizedBox(height: 8),
-            const Text(
-              '💰 المكتب المالي',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 16),
-            ListTile(
-              leading: const Icon(Icons.payments, color: Colors.amberAccent),
-              title: const Text(
-                'طلب سلفة مالية (Salary Advance)',
-                style: TextStyle(color: Colors.white),
-              ),
-              onTap: () {
-                Navigator.pop(context);
-                _openDirectRequest(2);
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.description, color: Colors.amberAccent),
-              title: const Text(
-                'تقديم اعتراض / تسوية خصم',
-                style: TextStyle(color: Colors.white),
-              ),
-              onTap: () {
-                Navigator.pop(context);
-                _openDirectRequest(3);
-              },
-            ),
-          ],
-        ),
-      ),
+          ),
     );
   }
 
@@ -1254,84 +1420,88 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
-      builder: (context) => Container(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(
-              Icons.business_center_outlined,
-              size: 42,
-              color: Colors.blueAccent,
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              '👔 مكتب الإدارة والمهمات',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 16),
-            ListTile(
-              leading: const Icon(Icons.alt_route, color: Colors.blueAccent),
-              title: const Text(
-                'طلب مهمة ميدانية (Field Mission)',
-                style: TextStyle(color: Colors.white),
-              ),
-              onTap: () {
-                Navigator.pop(context);
-                setState(() {
-                  _administrativeCategory =
-                      AdministrativeRequestCategory.fieldMission;
-                });
-                _openDirectRequest(5);
-              },
-            ),
-            if ([
-              'manager',
-              'team_leader',
-              'hr',
-              'hr_admin',
-              'hr_manager',
-              'super_admin',
-            ].contains(user.role))
-              ListTile(
-                leading: const Icon(
-                  Icons.forum_outlined,
-                  color: Colors.cyanAccent,
+      builder:
+          (context) => Container(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(
+                  Icons.business_center_outlined,
+                  size: 42,
+                  color: Colors.blueAccent,
                 ),
-                title: const Text(
-                  'قناة المديرين',
-                  style: TextStyle(color: Colors.white),
+                const SizedBox(height: 8),
+                const Text(
+                  '👔 مكتب الإدارة والمهمات',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
-                subtitle: const Text(
-                  'محادثة الإدارة والمنسقين',
-                  style: TextStyle(color: Colors.white60),
+                const SizedBox(height: 16),
+                ListTile(
+                  leading: const Icon(
+                    Icons.alt_route,
+                    color: Colors.blueAccent,
+                  ),
+                  title: const Text(
+                    'طلب مهمة ميدانية (Field Mission)',
+                    style: TextStyle(color: Colors.white),
+                  ),
+                  onTap: () {
+                    Navigator.pop(context);
+                    setState(() {
+                      _administrativeCategory =
+                          AdministrativeRequestCategory.fieldMission;
+                    });
+                    _openDirectRequest(5);
+                  },
                 ),
-                onTap: () {
-                  Navigator.pop(context);
-                  context.push('/conversations/managers');
-                },
-              ),
-            ListTile(
-              leading: const Icon(
-                Icons.meeting_room_outlined,
-                color: ZaWolfColors.error,
-              ),
-              title: const Text(
-                'تقديم استقالة (Resignation Notice)',
-                style: TextStyle(color: Colors.white),
-              ),
-              onTap: () {
-                Navigator.pop(context);
-                _openDirectRequest(4);
-              },
+                if ([
+                  'manager',
+                  'team_leader',
+                  'hr',
+                  'hr_admin',
+                  'hr_manager',
+                  'super_admin',
+                ].contains(user.role))
+                  ListTile(
+                    leading: const Icon(
+                      Icons.forum_outlined,
+                      color: Colors.cyanAccent,
+                    ),
+                    title: const Text(
+                      'قناة المديرين',
+                      style: TextStyle(color: Colors.white),
+                    ),
+                    subtitle: const Text(
+                      'محادثة الإدارة والمنسقين',
+                      style: TextStyle(color: Colors.white60),
+                    ),
+                    onTap: () {
+                      Navigator.pop(context);
+                      context.push('/conversations/managers');
+                    },
+                  ),
+                ListTile(
+                  leading: const Icon(
+                    Icons.meeting_room_outlined,
+                    color: ZaWolfColors.error,
+                  ),
+                  title: const Text(
+                    'تقديم استقالة (Resignation Notice)',
+                    style: TextStyle(color: Colors.white),
+                  ),
+                  onTap: () {
+                    Navigator.pop(context);
+                    _openDirectRequest(4);
+                  },
+                ),
+              ],
             ),
-          ],
-        ),
-      ),
+          ),
     );
   }
 
@@ -1470,9 +1640,10 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
                       vertical: 13,
                     ),
                     decoration: BoxDecoration(
-                      color: selected
-                          ? type.color.withValues(alpha: 0.14)
-                          : ZaWolfColors.surface01,
+                      color:
+                          selected
+                              ? type.color.withValues(alpha: 0.14)
+                              : ZaWolfColors.surface01,
                       borderRadius: BorderRadius.circular(8),
                       border: Border.all(
                         color: selected ? type.color : ZaWolfColors.surface03,
@@ -1483,17 +1654,19 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
                       children: [
                         Icon(
                           type.icon,
-                          color: selected
-                              ? type.color
-                              : ZaWolfColors.textSecondary,
+                          color:
+                              selected
+                                  ? type.color
+                                  : ZaWolfColors.textSecondary,
                         ),
                         const SizedBox(width: 9),
                         Text(
                           type.label,
                           style: theme.textTheme.titleMedium?.copyWith(
-                            color: selected
-                                ? Colors.white
-                                : ZaWolfColors.textSecondary,
+                            color:
+                                selected
+                                    ? Colors.white
+                                    : ZaWolfColors.textSecondary,
                             fontWeight: FontWeight.bold,
                           ),
                         ),
@@ -1610,12 +1783,13 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
       // The legacy user counter can be polluted by an approval from an older
       // cycle. Permission documents for this cycle are the source of truth.
       initialData: PermissionCycleUsage.zero,
-      builder: (context, snapshot) => _buildPermissionFormForCycle(
-        user,
-        theme,
-        cycle,
-        snapshot.data ?? PermissionCycleUsage.zero,
-      ),
+      builder:
+          (context, snapshot) => _buildPermissionFormForCycle(
+            user,
+            theme,
+            cycle,
+            snapshot.data ?? PermissionCycleUsage.zero,
+          ),
     );
   }
 
@@ -1721,21 +1895,6 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
             ),
             const SizedBox(height: 16),
 
-            Container(
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: ZaWolfColors.permissionTeal.withValues(alpha: 0.08),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Text(
-                'الإذن بالمغادرة المبكرة متاح حتى عند إيقاف تسجيل الانصراف؛ عند الموافقة يمر الطلب بمسار الموافقات المعتاد.',
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: ZaWolfColors.textSecondary,
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-
             if (quotaExhausted) ...[
               Container(
                 padding: const EdgeInsets.all(12),
@@ -1752,8 +1911,8 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
                     ChoiceChip(
                       label: const Text('إذن استقطاعي'),
                       selected: deductibleSelected,
-                      onSelected: (_) =>
-                          setState(() => _isDeductiblePermission = true),
+                      onSelected:
+                          (_) => setState(() => _isDeductiblePermission = true),
                       selectedColor: ZaWolfColors.warning,
                     ),
                     const SizedBox(height: 8),
@@ -1954,8 +2113,11 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
               englishLabel: 'Reason',
               hintText: 'اكتب سبب طلب الإذن بالتفصيل...',
               maxLines: 2,
-              validator: (val) =>
-                  val == null || val.trim().isEmpty ? 'يرجى كتابة السبب' : null,
+              validator:
+                  (val) =>
+                      val == null || val.trim().isEmpty
+                          ? 'يرجى كتابة السبب'
+                          : null,
             ),
             const SizedBox(height: 20),
 
@@ -1996,9 +2158,8 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
       user.hiringDate,
       onDate: _leaveStart,
     );
-    final selectedLeaveType = isOnProbation
-        ? LeaveTypePolicy.unpaid
-        : _leaveType;
+    final selectedLeaveType =
+        isOnProbation ? LeaveTypePolicy.unpaid : _leaveType;
 
     return Form(
       key: _formKeyLeave,
@@ -2089,18 +2250,43 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
             ),
             const SizedBox(height: 12),
 
-            // Date Picker Range
+            SwitchListTile.adaptive(
+              contentPadding: EdgeInsets.zero,
+              value: _leaveMultipleDays,
+              title: const Text('إجازة متعددة الأيام'),
+              subtitle: const Text(
+                'فعّل هذا الخيار فقط إذا كانت الإجازة تمتد لأكثر من يوم واحد.',
+              ),
+              onChanged: (enabled) {
+                setState(() {
+                  _leaveMultipleDays = enabled;
+                  if (!enabled) _leaveEnd = _leaveStart;
+                });
+                _refreshLeaveWorkingDays(user);
+              },
+            ),
+            const SizedBox(height: 4),
+            // A single day is intentional by default; selecting a range is
+            // an explicit extra action so mobile users do not add a day by
+            // accident.
             LayoutBuilder(
               builder: (context, constraints) {
                 final dateDetails = Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'الفترة المحددة: $requestedDays أيام',
+                      _leaveMultipleDays
+                          ? 'الفترة المحددة: $requestedDays أيام تقويمية'
+                          : 'اليوم المحدد: يوم واحد',
                       style: const TextStyle(fontWeight: FontWeight.bold),
                     ),
                     Text(
-                      'من ${DateFormat('yyyy-MM-dd').format(_leaveStart)} إلى ${DateFormat('yyyy-MM-dd').format(_leaveEnd)}',
+                      _leaveMultipleDays
+                          ? 'من ${DateFormat('yyyy-MM-dd').format(_leaveStart)} إلى ${DateFormat('yyyy-MM-dd').format(_leaveEnd)}'
+                          : DateFormat(
+                            'EEEE yyyy-MM-dd',
+                            'ar',
+                          ).format(_leaveStart),
                       style: theme.textTheme.bodySmall,
                     ),
                   ],
@@ -2110,12 +2296,16 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
                     Icons.date_range,
                     color: ZaWolfColors.primaryCyan,
                   ),
-                  label: const Text(
-                    'تغيير التواريخ',
+                  label: Text(
+                    _leaveMultipleDays ? 'اختيار الفترة' : 'اختيار اليوم',
                     style: TextStyle(color: ZaWolfColors.primaryCyan),
                   ),
-                  onPressed: () =>
-                      _selectLeaveDateRange(context, selectedLeaveType),
+                  onPressed:
+                      () => _selectLeaveDateRange(
+                        context,
+                        selectedLeaveType,
+                        user,
+                      ),
                 );
 
                 if (constraints.maxWidth < 430) {
@@ -2140,6 +2330,16 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
                 );
               },
             ),
+            if (_leaveWorkingDays != null) ...[
+              const SizedBox(height: 8),
+              Text(
+                'أيام العمل التي ستُحتسب: $_leaveWorkingDays (لا تشمل الجمعة أو عطلات الشركة).',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: ZaWolfColors.primaryCyan,
+                ),
+                textDirection: TextDirection.rtl,
+              ),
+            ],
             const Divider(color: ZaWolfColors.surface02),
 
             // Reason
@@ -2149,8 +2349,11 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
               englishLabel: 'Reason',
               hintText: 'اكتب تفاصيل الإجازة والسبب...',
               maxLines: 2,
-              validator: (val) =>
-                  val == null || val.trim().isEmpty ? 'يرجى كتابة السبب' : null,
+              validator:
+                  (val) =>
+                      val == null || val.trim().isEmpty
+                          ? 'يرجى كتابة السبب'
+                          : null,
             ),
             const SizedBox(height: 12),
 
@@ -2160,9 +2363,11 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
               englishLabel: 'Work Handover',
               hintText: 'اكتب اسم الموظف البديل أو الفريق المسؤول',
               maxLines: 2,
-              validator: (val) => val == null || val.trim().isEmpty
-                  ? 'يرجى تحديد من سيقوم بالعمل أثناء الإجازة'
-                  : null,
+              validator:
+                  (val) =>
+                      val == null || val.trim().isEmpty
+                          ? 'يرجى تحديد من سيقوم بالعمل أثناء الإجازة'
+                          : null,
             ),
             const SizedBox(height: 12),
 
@@ -2173,12 +2378,13 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
                     ? 'إرفاق مستند للإجازة (اختياري)'
                     : 'تم إرفاق مستند في ملفات الشركة',
               ),
-              onPressed: _loading
-                  ? null
-                  : () => _pickAndStoreAttachment(
-                      controller: _leaveAttachmentController,
-                      onStored: (uri) => setState(() => _attachmentUrl = uri),
-                    ),
+              onPressed:
+                  _loading
+                      ? null
+                      : () => _pickAndStoreAttachment(
+                        controller: _leaveAttachmentController,
+                        onStored: (uri) => setState(() => _attachmentUrl = uri),
+                      ),
             ),
             const SizedBox(height: 16),
 
@@ -2283,31 +2489,35 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
             const SizedBox(height: 16),
             Container(
               decoration: BoxDecoration(
-                color: _submitComplaintAnonymously
-                    ? ZaWolfColors.primaryCyan.withValues(alpha: 0.08)
-                    : ZaWolfColors.surface01,
+                color:
+                    _submitComplaintAnonymously
+                        ? ZaWolfColors.primaryCyan.withValues(alpha: 0.08)
+                        : ZaWolfColors.surface01,
                 borderRadius: BorderRadius.circular(8),
                 border: Border.all(
-                  color: _submitComplaintAnonymously
-                      ? ZaWolfColors.primaryCyan.withValues(alpha: 0.55)
-                      : ZaWolfColors.surface02,
+                  color:
+                      _submitComplaintAnonymously
+                          ? ZaWolfColors.primaryCyan.withValues(alpha: 0.55)
+                          : ZaWolfColors.surface02,
                 ),
               ),
               child: SwitchListTile.adaptive(
                 value: _submitComplaintAnonymously,
                 activeTrackColor: ZaWolfColors.primaryCyan,
-                onChanged: _loading
-                    ? null
-                    : (value) {
-                        setState(() => _submitComplaintAnonymously = value);
-                      },
+                onChanged:
+                    _loading
+                        ? null
+                        : (value) {
+                          setState(() => _submitComplaintAnonymously = value);
+                        },
                 secondary: Icon(
                   _submitComplaintAnonymously
                       ? Icons.visibility_off_outlined
                       : Icons.badge_outlined,
-                  color: _submitComplaintAnonymously
-                      ? ZaWolfColors.primaryCyan
-                      : ZaWolfColors.textSecondary,
+                  color:
+                      _submitComplaintAnonymously
+                          ? ZaWolfColors.primaryCyan
+                          : ZaWolfColors.textSecondary,
                 ),
                 title: const Text(
                   'إرسال الشكوى كمجهول',
@@ -2325,8 +2535,11 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
               labelText: 'عنوان الشكوى',
               englishLabel: 'Complaint Title',
               hintText: 'اكتب عنواناً واضحاً للشكوى...',
-              validator: (val) =>
-                  val == null || val.trim().length < 3 ? 'العنوان مطلوب' : null,
+              validator:
+                  (val) =>
+                      val == null || val.trim().length < 3
+                          ? 'العنوان مطلوب'
+                          : null,
             ),
             const SizedBox(height: 16),
             WolfInputField(
@@ -2335,9 +2548,11 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
               englishLabel: 'Details',
               hintText: 'اكتب تفاصيل الشكوى بوضوح...',
               maxLines: 4,
-              validator: (val) => val == null || val.trim().length < 10
-                  ? 'يرجى كتابة تفاصيل كافية'
-                  : null,
+              validator:
+                  (val) =>
+                      val == null || val.trim().length < 10
+                          ? 'يرجى كتابة تفاصيل كافية'
+                          : null,
             ),
             const SizedBox(height: 16),
             OutlinedButton.icon(
@@ -2347,13 +2562,15 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
                     ? 'إرفاق ملف للشكوى (اختياري)'
                     : 'تم إرفاق ملف في ملفات الشركة',
               ),
-              onPressed: _loading
-                  ? null
-                  : () => _pickAndStoreAttachment(
-                      controller: _complaintAttachmentController,
-                      onStored: (uri) =>
-                          setState(() => _complaintAttachmentUrl = uri),
-                    ),
+              onPressed:
+                  _loading
+                      ? null
+                      : () => _pickAndStoreAttachment(
+                        controller: _complaintAttachmentController,
+                        onStored:
+                            (uri) =>
+                                setState(() => _complaintAttachmentUrl = uri),
+                      ),
             ),
             const SizedBox(height: 20),
             WolfButton(
@@ -2396,12 +2613,12 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
           }
           final selected =
               records.any(
-                (item) =>
-                    item.attendanceId ==
-                    _selectedCorrectionAttendance?.attendanceId,
-              )
-              ? _selectedCorrectionAttendance
-              : null;
+                    (item) =>
+                        item.attendanceId ==
+                        _selectedCorrectionAttendance?.attendanceId,
+                  )
+                  ? _selectedCorrectionAttendance
+                  : null;
           return Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -2424,42 +2641,45 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
                   labelText: 'يوم الحضور',
                   prefixIcon: Icon(Icons.event_note_outlined),
                 ),
-                items: records
-                    .map(
-                      (item) => DropdownMenuItem(
-                        value: item,
-                        child: Text(
-                          '${item.date} · ${item.checkInTime == null ? '--:--' : DateFormat('hh:mm a', 'ar').format(item.checkInTime!)}',
-                        ),
-                      ),
-                    )
-                    .toList(),
+                items:
+                    records
+                        .map(
+                          (item) => DropdownMenuItem(
+                            value: item,
+                            child: Text(
+                              '${item.date} · ${item.checkInTime == null ? '--:--' : DateFormat('hh:mm a', 'ar').format(item.checkInTime!)}',
+                            ),
+                          ),
+                        )
+                        .toList(),
                 onChanged: (value) {
                   setState(() {
                     _selectedCorrectionAttendance = value;
-                    _requestedCorrectionTime = value?.checkInTime == null
-                        ? null
-                        : TimeOfDay.fromDateTime(value!.checkInTime!);
+                    _requestedCorrectionTime =
+                        value?.checkInTime == null
+                            ? null
+                            : TimeOfDay.fromDateTime(value!.checkInTime!);
                   });
                 },
-                validator: (value) =>
-                    value == null ? 'اختر سجل الحضور المطلوب' : null,
+                validator:
+                    (value) => value == null ? 'اختر سجل الحضور المطلوب' : null,
               ),
               const SizedBox(height: 14),
               OutlinedButton.icon(
-                onPressed: selected == null
-                    ? null
-                    : () async {
-                        final picked = await showTimePicker(
-                          context: context,
-                          initialTime:
-                              _requestedCorrectionTime ??
-                              TimeOfDay.fromDateTime(selected.checkInTime!),
-                        );
-                        if (picked != null && mounted) {
-                          setState(() => _requestedCorrectionTime = picked);
-                        }
-                      },
+                onPressed:
+                    selected == null
+                        ? null
+                        : () async {
+                          final picked = await showTimePicker(
+                            context: context,
+                            initialTime:
+                                _requestedCorrectionTime ??
+                                TimeOfDay.fromDateTime(selected.checkInTime!),
+                          );
+                          if (picked != null && mounted) {
+                            setState(() => _requestedCorrectionTime = picked);
+                          }
+                        },
                 icon: const Icon(Icons.access_time),
                 label: Text(
                   _requestedCorrectionTime == null
@@ -2474,9 +2694,11 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
                 englishLabel: 'Reason',
                 hintText: 'مثال: وصلت مبكراً وتعذر تسجيل الحضور',
                 maxLines: 3,
-                validator: (value) => (value?.trim().length ?? 0) < 5
-                    ? 'اكتب سبباً واضحاً'
-                    : null,
+                validator:
+                    (value) =>
+                        (value?.trim().length ?? 0) < 5
+                            ? 'اكتب سبباً واضحاً'
+                            : null,
               ),
               const SizedBox(height: 20),
               WolfButton(
@@ -2561,15 +2783,13 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
                 : value,
             style: theme.textTheme.bodySmall?.copyWith(
               color: ZaWolfColors.primaryCyan,
-              decoration: governedDriveAttachment
-                  ? null
-                  : TextDecoration.underline,
+              decoration:
+                  governedDriveAttachment ? null : TextDecoration.underline,
             ),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            textDirection: governedDriveAttachment
-                ? TextDirection.rtl
-                : TextDirection.ltr,
+            textDirection:
+                governedDriveAttachment ? TextDirection.rtl : TextDirection.ltr,
           ),
         ),
       ],
@@ -2598,9 +2818,10 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
           );
         });
         docs.removeWhere(
-          (doc) => !_matchesHistoryFilter(
-            doc.data()['status'] as String? ?? 'pending_hr',
-          ),
+          (doc) =>
+              !_matchesHistoryFilter(
+                doc.data()['status'] as String? ?? 'pending_hr',
+              ),
         );
         if (docs.isEmpty) {
           return const Center(child: Text('لا توجد طلبات تصحيح وقت.'));
@@ -2665,10 +2886,11 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
                     if (status == 'pending_hr') ...[
                       const SizedBox(height: 12),
                       WolfButton(
-                        onPressed: () => _confirmCancel(
-                          'attendanceCorrectionRequests',
-                          docs[index].id,
-                        ),
+                        onPressed:
+                            () => _confirmCancel(
+                              'attendanceCorrectionRequests',
+                              docs[index].id,
+                            ),
                         text: 'حذف الطلب',
                         secondaryText: 'CANCEL REQUEST',
                         variant: WolfButtonVariant.outline,
@@ -2695,16 +2917,17 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
             initialValue: _administrativeCategory,
             decoration: const InputDecoration(labelText: 'نوع الطلب الإداري'),
             dropdownColor: ZaWolfColors.surface01,
-            items: AdministrativeRequestCategory.values
-                .map(
-                  (value) => DropdownMenuItem(
-                    value: value,
-                    child: Text(
-                      AdministrativeRequestCategory.arabicLabel(value),
-                    ),
-                  ),
-                )
-                .toList(),
+            items:
+                AdministrativeRequestCategory.values
+                    .map(
+                      (value) => DropdownMenuItem(
+                        value: value,
+                        child: Text(
+                          AdministrativeRequestCategory.arabicLabel(value),
+                        ),
+                      ),
+                    )
+                    .toList(),
             onChanged: (value) {
               if (value != null) {
                 setState(() => _administrativeCategory = value);
@@ -2721,8 +2944,11 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
                 labelText: 'مكان المهمة الميدانية',
                 prefixIcon: Icon(Icons.place_outlined),
               ),
-              validator: (value) =>
-                  (value?.trim().isEmpty ?? true) ? 'مكان المهمة مطلوب' : null,
+              validator:
+                  (value) =>
+                      (value?.trim().isEmpty ?? true)
+                          ? 'مكان المهمة مطلوب'
+                          : null,
             ),
             const SizedBox(height: 14),
             ListTile(
@@ -2786,15 +3012,17 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
               contentPadding: EdgeInsets.zero,
               value: _fieldMissionRequiresReturn,
               title: const Text('العودة إلى المكتب بعد المهمة'),
-              onChanged: (value) =>
-                  setState(() => _fieldMissionRequiresReturn = value),
+              onChanged:
+                  (value) =>
+                      setState(() => _fieldMissionRequiresReturn = value),
             ),
             SwitchListTile.adaptive(
               contentPadding: EdgeInsets.zero,
               value: _fieldMissionRequiresCheckout,
               title: const Text('يتطلب تسجيل الانصراف'),
-              onChanged: (value) =>
-                  setState(() => _fieldMissionRequiresCheckout = value),
+              onChanged:
+                  (value) =>
+                      setState(() => _fieldMissionRequiresCheckout = value),
             ),
           ],
           TextFormField(
@@ -2806,8 +3034,11 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
               labelText: 'تفاصيل الطلب',
               hintText: 'اكتب المطلوب والسبب والتفاصيل...',
             ),
-            validator: (value) =>
-                (value?.trim().isEmpty ?? true) ? 'تفاصيل الطلب مطلوبة' : null,
+            validator:
+                (value) =>
+                    (value?.trim().isEmpty ?? true)
+                        ? 'تفاصيل الطلب مطلوبة'
+                        : null,
           ),
           if (_administrativeCategory !=
               AdministrativeRequestCategory.fieldMission) ...[
@@ -2819,13 +3050,16 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
                     ? 'إرفاق ملف داعم (اختياري)'
                     : 'تم إرفاق ملف في ملفات الشركة',
               ),
-              onPressed: _loading
-                  ? null
-                  : () => _pickAndStoreAttachment(
-                      controller: _administrativeAttachmentController,
-                      onStored: (uri) =>
-                          setState(() => _administrativeAttachmentUrl = uri),
-                    ),
+              onPressed:
+                  _loading
+                      ? null
+                      : () => _pickAndStoreAttachment(
+                        controller: _administrativeAttachmentController,
+                        onStored:
+                            (uri) => setState(
+                              () => _administrativeAttachmentUrl = uri,
+                            ),
+                      ),
             ),
           ],
           const SizedBox(height: 20),
@@ -2833,14 +3067,14 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
             onPressed: () => _submitAdministrativeRequest(user),
             text:
                 _administrativeCategory ==
-                    AdministrativeRequestCategory.fieldMission
-                ? 'إرسال طلب المهمة الميدانية'
-                : 'إرسال الطلب الإداري',
+                        AdministrativeRequestCategory.fieldMission
+                    ? 'إرسال طلب المهمة الميدانية'
+                    : 'إرسال الطلب الإداري',
             secondaryText:
                 _administrativeCategory ==
-                    AdministrativeRequestCategory.fieldMission
-                ? 'SUBMIT FIELD MISSION'
-                : 'SUBMIT ADMIN REQUEST',
+                        AdministrativeRequestCategory.fieldMission
+                    ? 'SUBMIT FIELD MISSION'
+                    : 'SUBMIT ADMIN REQUEST',
             loading: _loading,
           ),
         ],
@@ -2862,12 +3096,14 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
           return _buildHistoryError();
         }
         final docs = snapshot.data?.docs ?? const [];
-        final filteredDocs = docs
-            .where(
-              (doc) =>
-                  _matchesHistoryFilter(doc.data()['status'] as String? ?? ''),
-            )
-            .toList();
+        final filteredDocs =
+            docs
+                .where(
+                  (doc) => _matchesHistoryFilter(
+                    doc.data()['status'] as String? ?? '',
+                  ),
+                )
+                .toList();
         if (filteredDocs.isEmpty) {
           return _buildEmptyState('لا توجد طلبات إدارية سابقة.');
         }
@@ -2928,9 +3164,10 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
                   if (request.category == 'company_os') ...[
                     const SizedBox(height: 12),
                     FilledButton.icon(
-                      onPressed: () => context.push(
-                        '/employee/requests/operational/${request.id}',
-                      ),
+                      onPressed:
+                          () => context.push(
+                            '/employee/requests/operational/${request.id}',
+                          ),
                       icon: const Icon(Icons.route_outlined),
                       label: const Text('عرض مسار الطلب'),
                     ),
@@ -2938,8 +3175,11 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
                   if (request.status.startsWith('pending_')) ...[
                     const SizedBox(height: 12),
                     WolfButton(
-                      onPressed: () =>
-                          _confirmCancel('administrativeRequests', request.id),
+                      onPressed:
+                          () => _confirmCancel(
+                            'administrativeRequests',
+                            request.id,
+                          ),
                       text: 'حذف الطلب',
                       secondaryText: 'CANCEL REQUEST',
                       variant: WolfButtonVariant.outline,
@@ -3007,8 +3247,11 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
               labelText: 'سبب الاستقالة',
               hintText: 'اكتب سبب الاستقالة بوضوح...',
             ),
-            validator: (value) =>
-                (value?.trim().isEmpty ?? true) ? 'سبب الاستقالة مطلوب' : null,
+            validator:
+                (value) =>
+                    (value?.trim().isEmpty ?? true)
+                        ? 'سبب الاستقالة مطلوب'
+                        : null,
           ),
           const SizedBox(height: 20),
           WolfButton(
@@ -3036,9 +3279,10 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
         if (snapshot.hasError) {
           return _buildHistoryError();
         }
-        final requests = (snapshot.data ?? const <ResignationModel>[])
-            .where((request) => _matchesHistoryFilter(request.status))
-            .toList();
+        final requests =
+            (snapshot.data ?? const <ResignationModel>[])
+                .where((request) => _matchesHistoryFilter(request.status))
+                .toList();
         if (requests.isEmpty) {
           return _buildEmptyState('لا توجد طلبات استقالة سابقة.');
         }
@@ -3093,8 +3337,11 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
                   if (request.status.startsWith('pending_')) ...[
                     const SizedBox(height: 12),
                     WolfButton(
-                      onPressed: () =>
-                          _confirmCancel('resignations', request.resignationId),
+                      onPressed:
+                          () => _confirmCancel(
+                            'resignations',
+                            request.resignationId,
+                          ),
                       text: 'حذف الطلب',
                       secondaryText: 'CANCEL REQUEST',
                       variant: WolfButtonVariant.outline,
@@ -3114,12 +3361,13 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
     return StreamBuilder<QuerySnapshot>(
       stream: _cachedStream(
         'advance-history|$userId',
-        () => FirebaseFirestore.instance
-            .collection('advances')
-            .where('userId', isEqualTo: userId)
-            .orderBy('submittedAt', descending: true)
-            .limit(25)
-            .snapshots(),
+        () =>
+            FirebaseFirestore.instance
+                .collection('advances')
+                .where('userId', isEqualTo: userId)
+                .orderBy('submittedAt', descending: true)
+                .limit(25)
+                .snapshots(),
       ),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
@@ -3128,12 +3376,14 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
         if (snapshot.hasError) {
           return _buildHistoryError();
         }
-        final docs = (snapshot.data?.docs ?? [])
-            .where(
-              (doc) =>
-                  _matchesHistoryFilter(AdvanceModel.fromFirestore(doc).status),
-            )
-            .toList();
+        final docs =
+            (snapshot.data?.docs ?? [])
+                .where(
+                  (doc) => _matchesHistoryFilter(
+                    AdvanceModel.fromFirestore(doc).status,
+                  ),
+                )
+                .toList();
         if (docs.isEmpty) {
           return _buildEmptyState('لا توجد طلبات سلفة سابقة.');
         }
@@ -3197,17 +3447,35 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
                     ),
                     const SizedBox(height: 8),
                   ],
-                  if (req.status == 'pending' ||
-                      req.status == 'pending_hr' ||
-                      req.status == 'pending_manager') ...[
+                  RequestApprovalTimeline(
+                    data: Map<String, dynamic>.from(
+                      doc.data() as Map<String, dynamic>,
+                    ),
+                    compact: true,
+                  ),
+                  if (req.status.startsWith('pending')) ...[
                     const SizedBox(height: 12),
-                    WolfButton(
-                      onPressed: () =>
-                          _confirmCancel('advances', req.advanceId),
-                      text: 'حذف الطلب',
-                      secondaryText: 'CANCEL REQUEST',
-                      variant: WolfButtonVariant.outline,
-                      height: 40,
+                    Row(
+                      children: [
+                        Expanded(
+                          child: WolfButton(
+                            onPressed:
+                                () => _confirmCancel('advances', req.advanceId),
+                            text: 'حذف الطلب',
+                            variant: WolfButtonVariant.outline,
+                            height: 40,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: WolfButton(
+                            onPressed: () => _editAdvanceRequest(req),
+                            text: 'تعديل',
+                            variant: WolfButtonVariant.teal,
+                            height: 40,
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ],
@@ -3223,12 +3491,13 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
     return StreamBuilder<QuerySnapshot>(
       stream: _cachedStream(
         'complaint-history|$userId',
-        () => FirebaseFirestore.instance
-            .collection('complaints')
-            .where('userId', isEqualTo: userId)
-            .orderBy('submittedAt', descending: true)
-            .limit(25)
-            .snapshots(),
+        () =>
+            FirebaseFirestore.instance
+                .collection('complaints')
+                .where('userId', isEqualTo: userId)
+                .orderBy('submittedAt', descending: true)
+                .limit(25)
+                .snapshots(),
       ),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
@@ -3237,15 +3506,16 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
         if (snapshot.hasError) {
           return _buildHistoryError();
         }
-        final docs = (snapshot.data?.docs ?? [])
-            .where(
-              (doc) => _matchesHistoryFilter(
-                ComplaintModel.fromFirestore(doc).status == 'new'
-                    ? 'pending'
-                    : ComplaintModel.fromFirestore(doc).status,
-              ),
-            )
-            .toList();
+        final docs =
+            (snapshot.data?.docs ?? [])
+                .where(
+                  (doc) => _matchesHistoryFilter(
+                    ComplaintModel.fromFirestore(doc).status == 'new'
+                        ? 'pending'
+                        : ComplaintModel.fromFirestore(doc).status,
+                  ),
+                )
+                .toList();
         if (docs.isEmpty) {
           return _buildEmptyState('لا توجد شكاوى سابقة.');
         }
@@ -3311,8 +3581,11 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
                   if (complaint.status == 'new') ...[
                     const SizedBox(height: 12),
                     WolfButton(
-                      onPressed: () =>
-                          _confirmCancel('complaints', complaint.complaintId),
+                      onPressed:
+                          () => _confirmCancel(
+                            'complaints',
+                            complaint.complaintId,
+                          ),
                       text: 'حذف الشكوى',
                       secondaryText: 'CANCEL COMPLAINT',
                       variant: WolfButtonVariant.outline,
@@ -3332,12 +3605,13 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
     return StreamBuilder<QuerySnapshot>(
       stream: _cachedStream(
         'leave-history|$userId',
-        () => FirebaseFirestore.instance
-            .collection('leaves')
-            .where('userId', isEqualTo: userId)
-            .orderBy('submittedAt', descending: true)
-            .limit(25)
-            .snapshots(),
+        () =>
+            FirebaseFirestore.instance
+                .collection('leaves')
+                .where('userId', isEqualTo: userId)
+                .orderBy('submittedAt', descending: true)
+                .limit(25)
+                .snapshots(),
       ),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
@@ -3346,12 +3620,14 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
         if (snapshot.hasError) {
           return _buildHistoryError();
         }
-        final docs = (snapshot.data?.docs ?? [])
-            .where(
-              (doc) =>
-                  _matchesHistoryFilter(LeaveModel.fromFirestore(doc).status),
-            )
-            .toList();
+        final docs =
+            (snapshot.data?.docs ?? [])
+                .where(
+                  (doc) => _matchesHistoryFilter(
+                    LeaveModel.fromFirestore(doc).status,
+                  ),
+                )
+                .toList();
         if (docs.isEmpty) {
           return _buildEmptyState('لا توجد طلبات إجازة سابقة.');
         }
@@ -3455,19 +3731,14 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
                     ),
                     compact: true,
                   ),
-                  if (req.status == 'pending' ||
-                      req.status == 'pending_hr' ||
-                      req.status == 'pending_manager' ||
-                      req.status == 'pending_ceo' ||
-                      (req.status == 'approved' &&
-                          req.startDate.isAfter(DateTime.now()))) ...[
+                  if (req.status.startsWith('pending')) ...[
                     const SizedBox(height: 12),
                     Row(
                       children: [
                         Expanded(
                           child: WolfButton(
-                            onPressed: () =>
-                                _confirmCancel('leaves', req.leaveId),
+                            onPressed:
+                                () => _confirmCancel('leaves', req.leaveId),
                             text: 'حذف الطلب',
                             variant: WolfButtonVariant.outline,
                             height: 40,
@@ -3498,12 +3769,13 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
     return StreamBuilder<QuerySnapshot>(
       stream: _cachedStream(
         'permission-history|$userId',
-        () => FirebaseFirestore.instance
-            .collection('permissions')
-            .where('userId', isEqualTo: userId)
-            .orderBy('submittedAt', descending: true)
-            .limit(25)
-            .snapshots(),
+        () =>
+            FirebaseFirestore.instance
+                .collection('permissions')
+                .where('userId', isEqualTo: userId)
+                .orderBy('submittedAt', descending: true)
+                .limit(25)
+                .snapshots(),
       ),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
@@ -3512,13 +3784,14 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
         if (snapshot.hasError) {
           return _buildHistoryError();
         }
-        final docs = (snapshot.data?.docs ?? [])
-            .where(
-              (doc) => _matchesHistoryFilter(
-                PermissionModel.fromFirestore(doc).status,
-              ),
-            )
-            .toList();
+        final docs =
+            (snapshot.data?.docs ?? [])
+                .where(
+                  (doc) => _matchesHistoryFilter(
+                    PermissionModel.fromFirestore(doc).status,
+                  ),
+                )
+                .toList();
         if (docs.isEmpty) {
           return _buildEmptyState('لا توجد طلبات إذن سابقة.');
         }
@@ -3614,20 +3887,17 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
                     ),
                     compact: true,
                   ),
-                  if (req.status == 'pending' ||
-                      req.status == 'pending_team_leader' ||
-                      req.status == 'pending_hr' ||
-                      req.status == 'pending_manager' ||
-                      req.status == 'pending_ceo' ||
-                      (req.status == 'approved' &&
-                          _permissionHasNotStarted(req))) ...[
+                  if (req.status.startsWith('pending')) ...[
                     const SizedBox(height: 12),
                     Row(
                       children: [
                         Expanded(
                           child: WolfButton(
-                            onPressed: () =>
-                                _confirmCancel('permissions', req.permissionId),
+                            onPressed:
+                                () => _confirmCancel(
+                                  'permissions',
+                                  req.permissionId,
+                                ),
                             text: 'حذف الطلب',
                             variant: WolfButtonVariant.outline,
                             height: 40,
@@ -3654,22 +3924,6 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
     );
   }
 
-  bool _permissionHasNotStarted(PermissionModel request) {
-    try {
-      final date = DateTime.parse(request.requestDate);
-      final time = request.expectedTime.split(':');
-      return DateTime(
-        date.year,
-        date.month,
-        date.day,
-        int.parse(time[0]),
-        int.parse(time[1]),
-      ).isAfter(DateTime.now());
-    } catch (_) {
-      return false;
-    }
-  }
-
   (String, String) _permissionPeriod(PermissionModel request) {
     final parts = request.expectedTime.split(':');
     if (parts.length != 2) {
@@ -3682,12 +3936,14 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
     }
     final anchor = DateTime(2000, 1, 1, hour, minute);
     final duration = Duration(minutes: request.durationMinutes);
-    final start = request.permissionType == PermissionTypePolicy.lateArrival
-        ? anchor.subtract(duration)
-        : anchor;
-    final end = request.permissionType == PermissionTypePolicy.lateArrival
-        ? anchor
-        : anchor.add(duration);
+    final start =
+        request.permissionType == PermissionTypePolicy.lateArrival
+            ? anchor.subtract(duration)
+            : anchor;
+    final end =
+        request.permissionType == PermissionTypePolicy.lateArrival
+            ? anchor
+            : anchor.add(duration);
     final formatter = DateFormat('HH:mm');
     return (formatter.format(start), formatter.format(end));
   }

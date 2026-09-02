@@ -100,6 +100,10 @@ class AttendanceInsightsCard extends StatelessWidget {
                     color: ZaWolfColors.dayoffPurple,
                   ),
                   _BarSegment(
+                    flex: summary.fieldMission,
+                    color: Colors.amber,
+                  ),
+                  _BarSegment(
                     flex: summary.notAttended,
                     color: ZaWolfColors.error,
                   ),
@@ -190,6 +194,14 @@ class AttendanceInsightsCard extends StatelessWidget {
                   color: ZaWolfColors.dayoffPurple,
                   icon: Icons.beach_access_outlined,
                   onTap: () => onCategoryTap?.call('day_off'),
+                ),
+                _InsightTile(
+                  label: 'مأمورية ميدانية',
+                  value: summary.fieldMission,
+                  percent: summary.percentOf(summary.fieldMission),
+                  color: Colors.amber,
+                  icon: Icons.badge_outlined,
+                  onTap: () => onCategoryTap?.call('field_mission'),
                 ),
                 _InsightTile(
                   label: 'لم يسجل',

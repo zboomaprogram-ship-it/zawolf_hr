@@ -1,4 +1,4 @@
-const { GoogleAuth } = require('google-auth-library');
+const { GoogleAuth, OAuth2Client } = require('google-auth-library');
 const crypto = require('node:crypto');
 
 const SHEETS_SCOPE = 'https://www.googleapis.com/auth/spreadsheets';
@@ -146,20 +146,45 @@ function validateUpdate(input) {
   return update;
 }
 
-function createGoogleSheetsIntegration({ env = process.env, authClient } = {}) {
+function createGoogleSheetsIntegration({
+  env = process.env,
+  authClient,
+  driveUploadAuthClient,
+} = {}) {
   const config = integrationConfig(env);
-  const credentials = authClient
-    ? null
-    : parseServiceAccount(env.GOOGLE_SHEETS_SERVICE_ACCOUNT || '');
-  const auth = authClient || new GoogleAuth({
-    credentials,
-    scopes: [SHEETS_SCOPE, DRIVE_SCOPE],
-  });
+  const oauthClientId = String(env.GOOGLE_DRIVE_OAUTH_CLIENT_ID || '').trim();
+  const oauthClientSecret = String(env.GOOGLE_DRIVE_OAUTH_CLIENT_SECRET || '').trim();
+  const oauthRefreshToken = String(env.GOOGLE_DRIVE_OAUTH_REFRESH_TOKEN || '').trim();
+
+  // Reports and Sheets continue to use the restricted service account.  A
+  // personal Google Drive can instead provide an OAuth account only for file
+  // uploads/downloads, so its storage quota is used without granting it
+  // access to HR Sheets APIs.
+  let auth;
+  if (authClient) {
+    auth = authClient;
+  } else {
+    const credentials = parseServiceAccount(env.GOOGLE_SHEETS_SERVICE_ACCOUNT || '');
+    auth = new GoogleAuth({
+      credentials,
+      scopes: [SHEETS_SCOPE, DRIVE_SCOPE],
+    });
+  }
+  let driveUploadAuth = driveUploadAuthClient || null;
+  if (!driveUploadAuth && oauthClientId && oauthClientSecret && oauthRefreshToken) {
+    driveUploadAuth = new OAuth2Client(oauthClientId, oauthClientSecret);
+    driveUploadAuth.setCredentials({ refresh_token: oauthRefreshToken });
+  }
   let cachedRows = null;
   let cacheExpiresAt = 0;
 
-  async function request(options) {
-    const client = typeof auth.getClient === 'function' ? await auth.getClient() : auth;
+  async function request(options, { useDriveUploadOAuth = false } = {}) {
+    const selectedAuth = useDriveUploadOAuth && driveUploadAuth
+      ? driveUploadAuth
+      : auth;
+    const client = typeof selectedAuth.getClient === 'function'
+      ? await selectedAuth.getClient()
+      : selectedAuth;
     return client.request(options);
   }
 
@@ -480,7 +505,9 @@ function createGoogleSheetsIntegration({ env = process.env, authClient } = {}) {
     return response.data?.files || [];
   }
 
-  async function workspaceDriveChildMetadata(rawFolderId, rawFileId) {
+  async function workspaceDriveChildMetadata(rawFolderId, rawFileId, {
+    useDriveUploadOAuth = false,
+  } = {}) {
     const folderId = assertGoogleId(rawFolderId, 'Drive folder id');
     const fileId = assertGoogleId(rawFileId, 'Drive file id');
     const response = await request({
@@ -491,7 +518,7 @@ function createGoogleSheetsIntegration({ env = process.env, authClient } = {}) {
         supportsAllDrives: true,
       },
       retry: true,
-    });
+    }, { useDriveUploadOAuth });
     const metadata = response.data || {};
     if (metadata.trashed === true ||
         !Array.isArray(metadata.parents) ||
@@ -503,8 +530,14 @@ function createGoogleSheetsIntegration({ env = process.env, authClient } = {}) {
     return metadata;
   }
 
-  async function downloadWorkspaceDriveFile({ folderId, fileId }) {
-    const metadata = await workspaceDriveChildMetadata(folderId, fileId);
+  async function downloadWorkspaceDriveFile({
+    folderId,
+    fileId,
+    useDriveUploadOAuth = false,
+  }) {
+    const metadata = await workspaceDriveChildMetadata(folderId, fileId, {
+      useDriveUploadOAuth,
+    });
     const declaredSize = Number(metadata.size || 0);
     if (declaredSize > MAX_DRIVE_DOWNLOAD_BYTES) {
       const error = new Error('Drive file is larger than the 20 MB app limit.');
@@ -529,7 +562,7 @@ function createGoogleSheetsIntegration({ env = process.env, authClient } = {}) {
         params: { mimeType },
         responseType: 'arraybuffer',
         retry: true,
-      });
+      }, { useDriveUploadOAuth });
     } else {
       response = await request({
         method: 'GET',
@@ -537,7 +570,7 @@ function createGoogleSheetsIntegration({ env = process.env, authClient } = {}) {
         params: { alt: 'media', supportsAllDrives: true },
         responseType: 'arraybuffer',
         retry: true,
-      });
+      }, { useDriveUploadOAuth });
     }
     const contents = Buffer.from(response.data || []);
     if (contents.length > MAX_DRIVE_DOWNLOAD_BYTES) {
@@ -548,13 +581,25 @@ function createGoogleSheetsIntegration({ env = process.env, authClient } = {}) {
     return { contents, fileName, mimeType, metadata };
   }
 
-  async function createWorkspaceDriveFolder({ parentFolderId, name }) {
+  async function createWorkspaceDriveFolder({
+    parentFolderId,
+    name,
+    useDriveUploadOAuth = false,
+  }) {
     const parentId = assertGoogleId(parentFolderId, 'Drive folder id');
-    const folder = await ensureDriveFolder(parentId, safeFolderName(name, 'New folder'));
+    const folder = await ensureDriveFolder(parentId, safeFolderName(name, 'New folder'), {
+      useDriveUploadOAuth,
+    });
     return { id: folder.id, name: folder.name, mimeType: 'application/vnd.google-apps.folder' };
   }
 
-  async function uploadWorkspaceDriveFile({ parentFolderId, name, mimeType, contentsBase64 }) {
+  async function uploadWorkspaceDriveFile({
+    parentFolderId,
+    name,
+    mimeType,
+    contentsBase64,
+    useDriveUploadOAuth = false,
+  }) {
     const parentId = assertGoogleId(parentFolderId, 'Drive folder id');
     const fileName = safeFolderName(name, 'upload');
     const safeMimeType = String(mimeType || 'application/octet-stream').trim();
@@ -585,7 +630,7 @@ function createGoogleSheetsIntegration({ env = process.env, authClient } = {}) {
       headers: { 'content-type': `multipart/related; boundary=${boundary}` },
       data: Buffer.concat([prefix, contents, suffix]),
       retry: true,
-    });
+    }, { useDriveUploadOAuth });
     return response.data || {};
   }
 
@@ -754,7 +799,7 @@ function createGoogleSheetsIntegration({ env = process.env, authClient } = {}) {
     return String(value || '').replace(/'/g, "\\'");
   }
 
-  async function findDriveFolder(parentId, name) {
+  async function findDriveFolder(parentId, name, { useDriveUploadOAuth = false } = {}) {
     const response = await request({
       method: 'GET',
       url: `${DRIVE_API}/files`,
@@ -767,13 +812,13 @@ function createGoogleSheetsIntegration({ env = process.env, authClient } = {}) {
         includeItemsFromAllDrives: true,
       },
       retry: true,
-    });
+    }, { useDriveUploadOAuth });
     return (response.data?.files || [])[0] || null;
   }
 
-  async function ensureDriveFolder(parentId, rawName) {
+  async function ensureDriveFolder(parentId, rawName, { useDriveUploadOAuth = false } = {}) {
     const name = safeFolderName(rawName, 'Untitled');
-    const existing = await findDriveFolder(parentId, name);
+    const existing = await findDriveFolder(parentId, name, { useDriveUploadOAuth });
     if (existing?.id) return { id: String(existing.id), created: false, name };
     const response = await request({
       method: 'POST',
@@ -788,7 +833,7 @@ function createGoogleSheetsIntegration({ env = process.env, authClient } = {}) {
         parents: [parentId],
       },
       retry: true,
-    });
+    }, { useDriveUploadOAuth });
     if (!response.data?.id) throw new Error(`Google Drive did not create folder: ${name}`);
     return { id: String(response.data.id), created: true, name };
   }

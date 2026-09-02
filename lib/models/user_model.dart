@@ -161,6 +161,7 @@ class UserModel {
   /// attendance, approvals, payroll, or performance evaluation.
   final String avatarAccent;
   final String preferredViewMode;
+  final List<String> seenCelebrationBadgeIds;
 
   UserModel({
     required this.uid,
@@ -211,6 +212,7 @@ class UserModel {
     this.avatarFaceUrl,
     this.avatarAccent = 'cyan',
     this.preferredViewMode = 'virtual_office',
+    this.seenCelebrationBadgeIds = const [],
   });
 
   UserModel copyWith({
@@ -403,6 +405,11 @@ class UserModel {
       avatarAccent: data['avatarAccent'] as String? ?? 'cyan',
       preferredViewMode:
           data['preferredViewMode'] as String? ?? 'virtual_office',
+      seenCelebrationBadgeIds:
+          (data['seenCelebrationBadgeIds'] as List<dynamic>?)
+              ?.map((e) => e as String)
+              .toList() ??
+          const [],
     );
   }
 
@@ -467,6 +474,7 @@ class UserModel {
       if (avatarFaceUrl != null) 'avatarFaceUrl': avatarFaceUrl,
       'avatarAccent': avatarAccent,
       'preferredViewMode': preferredViewMode,
+      'seenCelebrationBadgeIds': seenCelebrationBadgeIds,
     };
   }
 

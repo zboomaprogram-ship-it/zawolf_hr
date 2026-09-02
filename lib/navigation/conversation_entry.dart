@@ -1,5 +1,6 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:http/http.dart' as http;
 
 import '../core/sync/authenticated_operation_client.dart';
@@ -33,8 +34,8 @@ final class _ConversationEntryState extends State<ConversationEntry> {
     _repository = ConversationRepositoryImpl(
       operationClient: AuthenticatedOperationClient(
         client: _httpClient,
-        tokenProvider: () async =>
-            FirebaseAuth.instance.currentUser?.getIdToken(),
+        tokenProvider:
+            () async => FirebaseAuth.instance.currentUser?.getIdToken(),
       ),
       operationsBaseUri: Uri.parse('https://notification.zawolf.ai'),
     );
@@ -124,6 +125,14 @@ final class _ConversationEntryState extends State<ConversationEntry> {
           availableDepartments: data.departments,
           selectedDepartment: data.department,
           onDepartmentSelected: _selectDepartment,
+          onBack: () {
+            final router = GoRouter.of(context);
+            if (router.canPop()) {
+              router.pop();
+            } else {
+              context.go('/employee/dashboard');
+            }
+          },
         );
       },
     );

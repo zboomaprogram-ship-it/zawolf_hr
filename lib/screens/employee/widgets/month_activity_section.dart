@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart' hide TextDirection;
 
+import '../../../models/attendance_policy.dart';
 import '../../../models/attendance_model.dart';
 import '../../../theme/theme.dart';
 import '../../../design_system/components/status_pill.dart';
@@ -117,11 +118,12 @@ class MonthActivitySection extends StatelessWidget {
       case 'late':
         return 'متأخر';
       case 'on-leave':
+      case 'leave':
         return 'إجازة';
       case 'absent':
         return 'غائب';
       default:
-        return status;
+        return AttendancePolicy.arabicDeductionLabel(status, fallback: status);
     }
   }
 }

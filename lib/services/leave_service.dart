@@ -116,15 +116,17 @@ class LeaveService {
         '${request.endDate.year.toString().padLeft(4, '0')}-'
         '${request.endDate.month.toString().padLeft(2, '0')}-'
         '${request.endDate.day.toString().padLeft(2, '0')}';
-    final dayOffs = await _db
-        .collection('companyDayOffs')
-        .where('date', isGreaterThanOrEqualTo: startKey)
-        .where('date', isLessThanOrEqualTo: endKey)
-        .get();
-    final keys = dayOffs.docs
-        .where((doc) => doc.data()['isActive'] == true)
-        .map((doc) => (doc.data()['date'] as String? ?? doc.id).trim())
-        .toSet();
+    final dayOffs =
+        await _db
+            .collection('companyDayOffs')
+            .where('date', isGreaterThanOrEqualTo: startKey)
+            .where('date', isLessThanOrEqualTo: endKey)
+            .get();
+    final keys =
+        dayOffs.docs
+            .where((doc) => doc.data()['isActive'] == true)
+            .map((doc) => (doc.data()['date'] as String? ?? doc.id).trim())
+            .toSet();
     return countChargeableDays(
       start: request.startDate,
       end: request.endDate,
@@ -209,9 +211,8 @@ class LeaveService {
       return {
         'status': 'pending_manager',
         'managerId': managerIds[nextIndex],
-        'managerName': nextIndex < managerNames.length
-            ? managerNames[nextIndex]
-            : null,
+        'managerName':
+            nextIndex < managerNames.length ? managerNames[nextIndex] : null,
         'managerApprovalIndex': nextIndex,
         'managerApprovalTrail': FieldValue.arrayUnion([trail]),
         'reviewedBy': reviewerId,
@@ -222,9 +223,15 @@ class LeaveService {
     }
 
     return {
-      'status': requiresCeoApproval && finalStatus == 'approved'
-          ? 'pending_hr'
-          : finalStatus,
+      // For a long leave the CEO stage is deliberately before HR.  If the
+      // assigned CEO is already one of the employee's managers, that manager
+      // stage is the CEO approval and the request goes straight to HR.
+      'status':
+          requiresCeoApproval
+              ? (data['ceoApprovalViaManagerChain'] == true
+                  ? 'pending_hr'
+                  : 'pending_ceo')
+              : finalStatus,
       'managerApprovalIndex': managerIds.isEmpty ? 0 : managerIds.length - 1,
       'managerApprovalTrail': FieldValue.arrayUnion([trail]),
       'reviewedBy': reviewerId,
@@ -252,19 +259,28 @@ class LeaveService {
     };
   }
 
-  Future<QueryDocumentSnapshot<Map<String, dynamic>>> _companyCeo() async {
-    final result = await _db
-        .collection('users')
-        .where('employeeId', isEqualTo: 'CEO-100')
-        .where('isActive', isEqualTo: true)
-        .limit(1)
-        .get();
-    if (result.docs.isEmpty) {
-      throw Exception(
-        'لا يوجد حساب نشط بكود CEO-100. أضف الحساب قبل اعتماد إجازة تتجاوز 4 أيام.',
-      );
+  Future<UserModel> _findAssignedCeo(String employeeUid) async {
+    final pending = <String>[employeeUid];
+    final visited = <String>{};
+    while (pending.isNotEmpty && visited.length < 12) {
+      final currentId = pending.removeAt(0);
+      if (!visited.add(currentId)) continue;
+      final doc = await _db.collection('users').doc(currentId).get();
+      if (!doc.exists) continue;
+      final candidate = UserModel.fromFirestore(doc);
+      final code = candidate.employeeId.trim().toUpperCase();
+      if (currentId != employeeUid &&
+          code.startsWith('CEO-') &&
+          candidate.isActive) {
+        return candidate;
+      }
+      pending.addAll(candidate.managerIds.where((id) => id.trim().isNotEmpty));
+      final directManager = candidate.managerId?.trim() ?? '';
+      if (directManager.isNotEmpty) pending.add(directManager);
     }
-    return result.docs.first;
+    throw StateError(
+      'لا يمكن تحديد CEO المعيّن للموظف. اربط الموظف بسلسلة مديرين تنتهي بحساب CEO نشط.',
+    );
   }
 
   // Upload certificate attachment to Firebase Storage (supports mobile & web via bytes)
@@ -343,9 +359,8 @@ class LeaveService {
           employee.hiringDate,
           onDate: req.startDate,
         );
-    final effectiveType = probationConversion
-        ? LeaveTypePolicy.unpaid
-        : req.leaveType;
+    final effectiveType =
+        probationConversion ? LeaveTypePolicy.unpaid : req.leaveType;
     final effectiveRequest = LeaveModel(
       leaveId: req.leaveId,
       userId: req.userId,
@@ -367,18 +382,24 @@ class LeaveService {
     validateBalance(effectiveRequest, employee.leaveBalance);
 
     // 1. Validate overlaps (basic check against other active leaves)
-    final overlaps = await _db
-        .collection('leaves')
-        .where('userId', isEqualTo: req.userId)
-        .where(
-          'status',
-          whereIn: ['approved', 'pending_hr', 'pending_manager', 'pending_ceo'],
-        )
-        .where(
-          'startDate',
-          isLessThanOrEqualTo: Timestamp.fromDate(req.endDate),
-        )
-        .get();
+    final overlaps =
+        await _db
+            .collection('leaves')
+            .where('userId', isEqualTo: req.userId)
+            .where(
+              'status',
+              whereIn: [
+                'approved',
+                'pending_hr',
+                'pending_manager',
+                'pending_ceo',
+              ],
+            )
+            .where(
+              'startDate',
+              isLessThanOrEqualTo: Timestamp.fromDate(req.endDate),
+            )
+            .get();
 
     for (final doc in overlaps.docs) {
       final existing = LeaveModel.fromFirestore(doc);
@@ -407,12 +428,17 @@ class LeaveService {
       );
     }
     final approvalManagerIds = isAutoApprovedCasual ? <String>[] : managerIds;
-    final approvalManagerNames = isAutoApprovedCasual
-        ? <String>[]
-        : managerNames;
-    final firstManagerId = approvalManagerIds.isEmpty
-        ? ''
-        : approvalManagerIds.first;
+    final approvalManagerNames =
+        isAutoApprovedCasual ? <String>[] : managerNames;
+    final firstManagerId =
+        approvalManagerIds.isEmpty ? '' : approvalManagerIds.first;
+    final requiresCeoApproval =
+        !isAutoApprovedCasual &&
+        LeaveTypePolicy.requiresCeoApproval(req.leaveType, req.numberOfDays);
+    final assignedCeo =
+        requiresCeoApproval ? await _findAssignedCeo(employee.uid) : null;
+    final ceoApprovalViaManagerChain =
+        assignedCeo != null && approvalManagerIds.contains(assignedCeo.uid);
     final finalModel = LeaveModel(
       leaveId: reqRef.id,
       userId: req.userId,
@@ -428,17 +454,19 @@ class LeaveService {
       reason: req.reason,
       attachmentUrl: req.attachmentUrl,
       workHandoverTo: req.workHandoverTo,
-      status: isAutoApprovedCasual
-          ? 'approved'
-          : (usesHrFallback ? 'pending_hr' : 'pending_manager'),
+      status:
+          isAutoApprovedCasual
+              ? 'approved'
+              : (usesHrFallback
+                  ? (requiresCeoApproval ? 'pending_ceo' : 'pending_hr')
+                  : 'pending_manager'),
       submittedAt: DateTime.now(),
     );
 
     final leaveData = {
       ...finalModel.toFirestore(),
-      'deductsLeaveBalance': LeaveTypePolicy.balanceKeys(
-        effectiveType,
-      ).isNotEmpty,
+      'deductsLeaveBalance':
+          LeaveTypePolicy.balanceKeys(effectiveType).isNotEmpty,
       if (LeaveTypePolicy.balanceKey(effectiveType) != null)
         'leaveBalanceKey': LeaveTypePolicy.balanceKey(effectiveType),
       if (LeaveTypePolicy.balanceKeys(effectiveType).isNotEmpty)
@@ -452,7 +480,9 @@ class LeaveService {
       'managerApprovalTrail': <Map<String, dynamic>>[],
       'requiresHrApproval':
           !isAutoApprovedCasual &&
-          (approvalPolicy.requireHrAfterManagerApproval || usesHrFallback),
+          (requiresCeoApproval ||
+              approvalPolicy.requireHrAfterManagerApproval ||
+              usesHrFallback),
       'approvalHistory': [
         _approvalEvent(
           stage: 'submitted',
@@ -468,9 +498,12 @@ class LeaveService {
             actorName: 'النظام',
           ),
       ],
-      'requiresCeoApproval':
-          !isAutoApprovedCasual &&
-          LeaveTypePolicy.requiresCeoApproval(req.leaveType, req.numberOfDays),
+      'requiresCeoApproval': requiresCeoApproval,
+      if (assignedCeo != null) ...{
+        'ceoId': assignedCeo.uid,
+        'ceoName': assignedCeo.displayName,
+        'ceoApprovalViaManagerChain': ceoApprovalViaManagerChain,
+      },
       if (probationConversion) ...{
         'originalLeaveType': req.leaveType,
         'probationConverted': true,
@@ -489,9 +522,8 @@ class LeaveService {
       await _db.runTransaction((transaction) async {
         final userSnapshot = await transaction.get(userRef);
         if (!userSnapshot.exists) throw Exception('حساب الموظف غير موجود.');
-        final latestBalance = UserModel.fromFirestore(
-          userSnapshot,
-        ).leaveBalance;
+        final latestBalance =
+            UserModel.fromFirestore(userSnapshot).leaveBalance;
         validateBalance(effectiveRequest, latestBalance);
         transaction.set(reqRef, leaveData);
         transaction.update(userRef, {
@@ -523,7 +555,16 @@ class LeaveService {
 
     await reqRef.set(leaveData);
 
-    if (usesHrFallback) {
+    if (requiresCeoApproval && usesHrFallback && assignedCeo != null) {
+      await _createNotification(
+        recipientId: assignedCeo.uid,
+        type: 'leave_request_submitted',
+        title: 'إجازة طويلة بانتظار موافقتك',
+        body:
+            'طلب ${req.employeeName} لمدة ${req.numberOfDays} أيام ينتظر اعتمادك قبل مراجعة HR.',
+        data: {'leaveId': reqRef.id},
+      );
+    } else if (usesHrFallback) {
       await RoleNotificationService.instance.notifyRole(
         role: EmployeeRole.hrManager,
         includeSuperAdmins: false,
@@ -547,35 +588,19 @@ class LeaveService {
 
   Future<void> cancelLeave(String leaveId, String userId) async {
     final ref = _db.collection('leaves').doc(leaveId);
-    final userRef = _db.collection('users').doc(userId);
     await _db.runTransaction((transaction) async {
       final doc = await transaction.get(ref);
       if (!doc.exists) throw Exception('طلب الإجازة غير موجود.');
       final leave = LeaveModel.fromFirestore(doc);
       if (leave.userId != userId) throw Exception('غير مسموح بإلغاء الطلب.');
-      if (leave.status == 'rejected' || leave.status == 'cancelled') {
-        throw Exception('لا يمكن إلغاء هذا الطلب.');
+      if (!leave.status.startsWith('pending')) {
+        throw Exception('لا يمكن إلغاء الطلب بعد صدور القرار النهائي.');
       }
-      final today = DateTime.now();
-      final todayOnly = DateTime(today.year, today.month, today.day);
-      if (leave.status == 'approved' && !leave.startDate.isAfter(todayOnly)) {
-        throw Exception('لا يمكن إلغاء إجازة بدأت بالفعل.');
-      }
-      final balanceKeys = LeaveTypePolicy.balanceKeys(leave.leaveType);
       transaction.update(ref, {
         'status': 'cancelled',
         'cancelledAt': FieldValue.serverTimestamp(),
         'cancelledBy': userId,
-        if (leave.status == 'approved' && balanceKeys.isNotEmpty)
-          'balanceRestored': true,
       });
-      if (leave.status == 'approved' && balanceKeys.isNotEmpty) {
-        transaction.update(userRef, {
-          for (final key in balanceKeys)
-            'leaveBalance.$key': FieldValue.increment(leave.numberOfDays),
-          'lastLeaveBalanceRestorationId': leaveId,
-        });
-      }
     });
   }
 
@@ -604,8 +629,9 @@ class LeaveService {
     if (leave.status == 'pending_ceo') {
       final reviewerCode =
           (reviewerDoc.data()?['employeeId'] as String?)?.trim() ?? '';
-      if (reviewerCode != 'CEO-100') {
-        throw Exception('الاعتماد النهائي لهذا الطلب متاح لحساب CEO-100 فقط.');
+      if (!reviewerCode.toUpperCase().startsWith('CEO-') ||
+          data['ceoId'] != reviewerId) {
+        throw Exception('هذه المرحلة متاحة للـ CEO المعيّن للموظف فقط.');
       }
       final event = _approvalEvent(
         stage: 'ceo',
@@ -614,24 +640,27 @@ class LeaveService {
         actorName: reviewerName,
       );
       await docRef.update({
-        'status': 'approved',
+        'status': 'pending_hr',
         'reviewedBy': reviewerId,
         'reviewerName': reviewerName,
         'reviewedAt': FieldValue.serverTimestamp(),
-        'finalApproverId': reviewerId,
-        'finalApproverName': reviewerName,
-        'finalApprovalAt': FieldValue.serverTimestamp(),
         'approvalHistory': FieldValue.arrayUnion([event]),
       });
-      await _finalizeApprovedLeave(leave, reviewerId);
+      await RoleNotificationService.instance.notifyRole(
+        role: EmployeeRole.hrAdmin,
+        includeSuperAdmins: false,
+        type: 'leave_request_submitted',
+        title: 'إجازة طويلة بانتظار مراجعة HR',
+        body:
+            'اعتمد CEO المعيّن طلب ${leave.employeeName} وهو الآن بانتظار القرار النهائي من HR.',
+        data: {'leaveId': leaveId},
+      );
       return;
     }
 
     if (leave.status == 'pending_hr') {
-      final requesterDoc = await _db
-          .collection('users')
-          .doc(leave.userId)
-          .get();
+      final requesterDoc =
+          await _db.collection('users').doc(leave.userId).get();
       final requesterRole = requesterDoc.data()?['role'] as String? ?? '';
       if (leave.userId == reviewerId) {
         throw Exception('لا يمكن اعتماد طلبك الشخصي. يجب أن يراجعه HR آخر.');
@@ -678,9 +707,10 @@ class LeaveService {
         final managersCompleted =
             managerIds.isEmpty || approvalTrail.length >= managerIds.length;
         final firstManagerId = managerIds.isNotEmpty ? managerIds.first : '';
-        final nextStatus = managersCompleted
-            ? (requiresCeoApproval ? 'pending_ceo' : 'approved')
-            : 'pending_manager';
+        final nextStatus =
+            requiresCeoApproval
+                ? 'approved'
+                : (managersCompleted ? 'approved' : 'pending_manager');
         update = {
           'status': nextStatus,
           if (!managersCompleted && firstManagerId.isNotEmpty)
@@ -700,11 +730,6 @@ class LeaveService {
             ),
           ]),
         };
-        if (nextStatus == 'pending_ceo') {
-          final ceo = await _companyCeo();
-          update['ceoId'] = ceo.id;
-          update['ceoName'] = ceo.data()['displayName'] as String? ?? 'CEO';
-        }
         isFinalApproval = nextStatus == 'approved';
       } else {
         if (leave.managerId != reviewerId) {
@@ -811,14 +836,14 @@ class LeaveService {
     if (update['status'] == 'pending_ceo') {
       final ceoId = update['ceoId'] as String?;
       if (ceoId == null || ceoId.isEmpty) {
-        throw Exception('تعذر تحديد حساب CEO-100.');
+        throw Exception('تعذر تحديد CEO المعيّن للموظف.');
       }
       await _createNotification(
         recipientId: ceoId,
         type: 'leave_request_submitted',
         title: 'إجازة طويلة بانتظار اعتماد CEO',
         body:
-            'طلب ${leave.employeeName} لمدة ${leave.numberOfDays} أيام أكمل موافقة المدير وHR.',
+            'طلب ${leave.employeeName} لمدة ${leave.numberOfDays} أيام أكمل موافقات المديرين وينتظر اعتمادك قبل HR.',
         data: {'leaveId': leaveId},
       );
       return;
@@ -841,36 +866,6 @@ class LeaveService {
           'decision': 'approved',
           'resyncAttendanceAlarm': true,
         },
-      );
-    } catch (_) {}
-  }
-
-  Future<void> _finalizeApprovedLeave(
-    LeaveModel leave,
-    String reviewerId,
-  ) async {
-    final balanceKeys = LeaveTypePolicy.balanceKeys(leave.leaveType);
-    if (balanceKeys.isNotEmpty) {
-      final userRef = _db.collection('users').doc(leave.userId);
-      final userSnapshot = await userRef.get();
-      if (!userSnapshot.exists) throw Exception('حساب الموظف غير موجود.');
-      final balance = UserModel.fromFirestore(userSnapshot).leaveBalance;
-      validateBalance(leave, balance);
-      await userRef.update({
-        for (final key in balanceKeys)
-          'leaveBalance.$key': FieldValue.increment(-leave.numberOfDays),
-      });
-    }
-    try {
-      await _reconciliationService.reconcileApprovedLeave(leave);
-    } catch (_) {}
-    try {
-      await _createNotification(
-        recipientId: leave.userId,
-        type: 'leave_approved',
-        title: 'تم قبول طلب الإجازة',
-        body: 'تم اعتماد إجازتك لمدة ${leave.numberOfDays} يوم.',
-        data: {'leaveId': leave.leaveId, 'route': '/employee/requests'},
       );
     } catch (_) {}
   }
@@ -898,10 +893,8 @@ class LeaveService {
       }
     }
     if (leave.status == 'pending_hr') {
-      final requesterDoc = await _db
-          .collection('users')
-          .doc(leave.userId)
-          .get();
+      final requesterDoc =
+          await _db.collection('users').doc(leave.userId).get();
       final requesterRole = requesterDoc.data()?['role'] as String? ?? '';
       if (leave.userId == reviewerId) {
         throw Exception('لا يمكن رفض طلبك الشخصي. يجب أن يراجعه HR آخر.');
@@ -940,11 +933,12 @@ class LeaveService {
       'finalApprovalAt': FieldValue.serverTimestamp(),
       'approvalHistory': FieldValue.arrayUnion([
         _approvalEvent(
-          stage: leave.status == 'pending_ceo'
-              ? 'ceo'
-              : leave.status == 'pending_hr'
-              ? 'hr'
-              : 'manager',
+          stage:
+              leave.status == 'pending_ceo'
+                  ? 'ceo'
+                  : leave.status == 'pending_hr'
+                  ? 'hr'
+                  : 'manager',
           status: 'rejected',
           actorId: reviewerId,
           actorName: reviewerName,

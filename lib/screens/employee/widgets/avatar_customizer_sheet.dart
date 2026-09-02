@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:image_picker/image_picker.dart';
 import '../../../theme/theme.dart';
 import '../../../models/user_model.dart';
 import '../../../components/wolf_button.dart';
@@ -31,20 +32,61 @@ class _AvatarCustomizerSheetState extends State<AvatarCustomizerSheet> {
   }
 
   Future<void> _pickFaceImage() async {
-    final result = await FilePicker.pickFiles(
-      type: FileType.image,
-      withData: true,
+    final source = await showModalBottomSheet<_AvatarImageSource>(
+      context: context,
+      builder:
+          (sheetContext) => SafeArea(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ListTile(
+                  leading: const Icon(Icons.photo_library_outlined),
+                  title: const Text('اختيار صورة من المعرض'),
+                  onTap:
+                      () => Navigator.pop(
+                        sheetContext,
+                        _AvatarImageSource.gallery,
+                      ),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.folder_open_outlined),
+                  title: const Text('اختيار صورة من الملفات'),
+                  onTap:
+                      () =>
+                          Navigator.pop(sheetContext, _AvatarImageSource.files),
+                ),
+              ],
+            ),
+          ),
     );
+    if (source == null) return;
 
-    if (result == null || result.files.isEmpty) return;
-
-    final fileBytes = result.files.first.bytes;
-    if (fileBytes != null) {
-      final base64Image = 'data:image/jpeg;base64,${base64Encode(fileBytes)}';
-      setState(() {
-        _faceUrl = base64Image;
-      });
+    List<int>? bytes;
+    if (source == _AvatarImageSource.gallery) {
+      final image = await ImagePicker().pickImage(
+        source: ImageSource.gallery,
+        maxWidth: 960,
+        maxHeight: 960,
+        imageQuality: 72,
+      );
+      bytes = await image?.readAsBytes();
+    } else {
+      final result = await FilePicker.pickFiles(
+        type: FileType.image,
+        withData: true,
+      );
+      bytes = result?.files.singleOrNull?.bytes;
     }
+    if (bytes == null || bytes.isEmpty) return;
+    if (bytes.length > 220 * 1024) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('اختر صورة أصغر من 220 كيلوبايت.')),
+        );
+      }
+      return;
+    }
+    setState(() => _faceUrl = 'data:image/jpeg;base64,${base64Encode(bytes!)}');
   }
 
   Future<void> _saveAvatar() async {
@@ -109,13 +151,14 @@ class _AvatarCustomizerSheetState extends State<AvatarCustomizerSheet> {
             radius: 46,
             backgroundColor: ZaWolfColors.primaryCyan.withValues(alpha: 0.2),
             backgroundImage: _faceUrl != null ? NetworkImage(_faceUrl!) : null,
-            child: _faceUrl == null
-                ? Icon(
-                    _selectedGender == 'male' ? Icons.face : Icons.face_3,
-                    size: 52,
-                    color: ZaWolfColors.primaryCyan,
-                  )
-                : null,
+            child:
+                _faceUrl == null
+                    ? Icon(
+                      _selectedGender == 'male' ? Icons.face : Icons.face_3,
+                      size: 52,
+                      color: ZaWolfColors.primaryCyan,
+                    )
+                    : null,
           ),
           const SizedBox(height: 16),
           TextButton.icon(
@@ -145,26 +188,22 @@ class _AvatarCustomizerSheetState extends State<AvatarCustomizerSheet> {
             alignment: WrapAlignment.spaceEvenly,
             spacing: 10,
             runSpacing: 8,
-            children:
-                [
-                      ('cyan', const Color(0xFF22D3EE), 'سماوي'),
-                      ('violet', const Color(0xFFA78BFA), 'بنفسجي'),
-                      ('amber', const Color(0xFFFBBF24), 'ذهبي'),
-                      ('rose', const Color(0xFFFB7185), 'وردي'),
-                    ]
-                    .map(
-                      (choice) => ChoiceChip(
-                        selected: _selectedAccent == choice.$1,
-                        onSelected: (_) =>
-                            setState(() => _selectedAccent = choice.$1),
-                        label: Text(choice.$3),
-                        avatar: CircleAvatar(
-                          backgroundColor: choice.$2,
-                          radius: 7,
-                        ),
-                      ),
-                    )
-                    .toList(growable: false),
+            children: [
+                  ('cyan', const Color(0xFF22D3EE), 'سماوي'),
+                  ('violet', const Color(0xFFA78BFA), 'بنفسجي'),
+                  ('amber', const Color(0xFFFBBF24), 'ذهبي'),
+                  ('rose', const Color(0xFFFB7185), 'وردي'),
+                ]
+                .map(
+                  (choice) => ChoiceChip(
+                    selected: _selectedAccent == choice.$1,
+                    onSelected:
+                        (_) => setState(() => _selectedAccent = choice.$1),
+                    label: Text(choice.$3),
+                    avatar: CircleAvatar(backgroundColor: choice.$2, radius: 7),
+                  ),
+                )
+                .toList(growable: false),
           ),
           const SizedBox(height: 20),
           const Align(
@@ -186,13 +225,15 @@ class _AvatarCustomizerSheetState extends State<AvatarCustomizerSheet> {
                   child: Container(
                     padding: const EdgeInsets.symmetric(vertical: 14),
                     decoration: BoxDecoration(
-                      color: _selectedGender == 'male'
-                          ? ZaWolfColors.primaryCyan.withValues(alpha: 0.2)
-                          : Colors.white.withValues(alpha: 0.05),
+                      color:
+                          _selectedGender == 'male'
+                              ? ZaWolfColors.primaryCyan.withValues(alpha: 0.2)
+                              : Colors.white.withValues(alpha: 0.05),
                       border: Border.all(
-                        color: _selectedGender == 'male'
-                            ? ZaWolfColors.primaryCyan
-                            : Colors.transparent,
+                        color:
+                            _selectedGender == 'male'
+                                ? ZaWolfColors.primaryCyan
+                                : Colors.transparent,
                         width: 2,
                       ),
                       borderRadius: BorderRadius.circular(12),
@@ -217,13 +258,15 @@ class _AvatarCustomizerSheetState extends State<AvatarCustomizerSheet> {
                   child: Container(
                     padding: const EdgeInsets.symmetric(vertical: 14),
                     decoration: BoxDecoration(
-                      color: _selectedGender == 'female'
-                          ? ZaWolfColors.primaryCyan.withValues(alpha: 0.2)
-                          : Colors.white.withValues(alpha: 0.05),
+                      color:
+                          _selectedGender == 'female'
+                              ? ZaWolfColors.primaryCyan.withValues(alpha: 0.2)
+                              : Colors.white.withValues(alpha: 0.05),
                       border: Border.all(
-                        color: _selectedGender == 'female'
-                            ? ZaWolfColors.primaryCyan
-                            : Colors.transparent,
+                        color:
+                            _selectedGender == 'female'
+                                ? ZaWolfColors.primaryCyan
+                                : Colors.transparent,
                         width: 2,
                       ),
                       borderRadius: BorderRadius.circular(12),
@@ -251,3 +294,5 @@ class _AvatarCustomizerSheetState extends State<AvatarCustomizerSheet> {
     );
   }
 }
+
+enum _AvatarImageSource { gallery, files }

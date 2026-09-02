@@ -21,7 +21,7 @@ class RequestApprovalRoutingGateway {
       ).join();
 
   Future<Map<String, dynamic>> createFieldMission({
-    required String employeeUid,
+    required List<String> employeeUids,
     required List<Map<String, String>> approvers,
     required String missionDate,
     required String startTime,
@@ -33,7 +33,7 @@ class RequestApprovalRoutingGateway {
     bool requiresCheckout = false,
   }) => _post('/operations/request-approval-routing/field-missions', {
     'operationId': _operationId(),
-    'employeeUid': employeeUid,
+    'employeeUids': employeeUids,
     'approvers': approvers,
     'missionDate': missionDate,
     'startTime': startTime,

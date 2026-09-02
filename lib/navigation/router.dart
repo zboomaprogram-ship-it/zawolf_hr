@@ -31,6 +31,7 @@ import '../screens/hr/attendance_policy_settings_screen.dart';
 import '../screens/hr/field_assignments_screen.dart';
 import '../screens/hr/location_mgmt.dart';
 import '../screens/hr/payroll_screen.dart';
+import '../screens/hr/custom_badges_screen.dart';
 import '../screens/manager/manager_dashboard.dart';
 import '../screens/manager/kpi_mgmt.dart';
 import '../screens/manager/productivity_ranking_screen.dart';
@@ -203,17 +204,19 @@ class ZaWolfRouter {
             ),
             GoRoute(
               path: '/conversations/department/:channelId',
-              builder: (context, state) => ConversationEntry(
-                channelId: state.pathParameters['channelId']!,
-                channelName: state.uri.queryParameters['name'],
-              ),
+              builder:
+                  (context, state) => ConversationEntry(
+                    channelId: state.pathParameters['channelId']!,
+                    channelName: state.uri.queryParameters['name'],
+                  ),
             ),
             GoRoute(
               path: '/conversations/managers',
-              builder: (context, state) => const ConversationEntry(
-                channelId: 'manager-channel',
-                channelName: 'قناة المديرين',
-              ),
+              builder:
+                  (context, state) => const ConversationEntry(
+                    channelId: 'manager-channel',
+                    channelName: 'قناة المديرين',
+                  ),
             ),
             GoRoute(
               path: '/operations/employee/:employeeUserId',
@@ -289,8 +292,8 @@ class ZaWolfRouter {
             ])
               GoRoute(
                 path: route.$1,
-                builder: (context, state) =>
-                    CompanyOsItEntry(surface: route.$2),
+                builder:
+                    (context, state) => CompanyOsItEntry(surface: route.$2),
               ),
             for (final route in const <(String, CompanyOsOperationsSurface)>[
               ('/company-os/operations', CompanyOsOperationsSurface.dashboard),
@@ -313,51 +316,61 @@ class ZaWolfRouter {
               ),
             GoRoute(
               path: '/employee/requests',
-              builder: (context, state) => const EmployeeRequestsScreen(),
+              builder:
+                  (context, state) => EmployeeRequestsScreen(
+                    initialView:
+                        state.uri.queryParameters['view'] == 'history' ? 2 : 1,
+                  ),
             ),
             GoRoute(
               path: '/employee/requests/operational/new',
-              builder: (_, state) => CompanyOsRequestsEntry(
-                surface: CompanyOsRequestSurface.create,
-                initialCategory:
-                    switch (state.uri.queryParameters['category']) {
+              builder:
+                  (_, state) => CompanyOsRequestsEntry(
+                    surface: CompanyOsRequestSurface.create,
+                    initialCategory: switch (state
+                        .uri
+                        .queryParameters['category']) {
                       'technical' => OperationalRequestCategory.technical,
                       'financial' => OperationalRequestCategory.financial,
                       _ => null,
                     },
-              ),
+                  ),
             ),
             GoRoute(
               path: '/employee/requests/operational/:requestId',
-              builder: (_, state) => CompanyOsRequestsEntry(
-                surface: CompanyOsRequestSurface.detail,
-                requestId: state.pathParameters['requestId'],
-              ),
+              builder:
+                  (_, state) => CompanyOsRequestsEntry(
+                    surface: CompanyOsRequestSurface.detail,
+                    requestId: state.pathParameters['requestId'],
+                  ),
             ),
             GoRoute(
               path: '/manager/requests/operational/:requestId',
-              builder: (_, state) => CompanyOsRequestsEntry(
-                surface: CompanyOsRequestSurface.detail,
-                requestId: state.pathParameters['requestId'],
-                canDecide: true,
-              ),
+              builder:
+                  (_, state) => CompanyOsRequestsEntry(
+                    surface: CompanyOsRequestSurface.detail,
+                    requestId: state.pathParameters['requestId'],
+                    canDecide: true,
+                  ),
             ),
             GoRoute(
               path: '/hr/requests/operational/:requestId',
-              builder: (_, state) => CompanyOsRequestsEntry(
-                surface: CompanyOsRequestSurface.detail,
-                requestId: state.pathParameters['requestId'],
-                canDecide: true,
-              ),
+              builder:
+                  (_, state) => CompanyOsRequestsEntry(
+                    surface: CompanyOsRequestSurface.detail,
+                    requestId: state.pathParameters['requestId'],
+                    canDecide: true,
+                  ),
             ),
             GoRoute(
               path: '/requests/operational/:requestId',
-              builder: (_, state) => CompanyOsRequestsEntry(
-                surface: CompanyOsRequestSurface.detail,
-                requestId: state.pathParameters['requestId'],
-                canDecide:
-                    authService.currentUser?.role != EmployeeRole.employee,
-              ),
+              builder:
+                  (_, state) => CompanyOsRequestsEntry(
+                    surface: CompanyOsRequestSurface.detail,
+                    requestId: state.pathParameters['requestId'],
+                    canDecide:
+                        authService.currentUser?.role != EmployeeRole.employee,
+                  ),
             ),
             GoRoute(
               path: '/employee/tasks',
@@ -376,8 +389,8 @@ class ZaWolfRouter {
             ),
             GoRoute(
               path: '/employee/performance',
-              builder: (context, state) =>
-                  const EmployeePerformanceViewScreen(),
+              builder:
+                  (context, state) => const EmployeePerformanceViewScreen(),
             ),
             GoRoute(
               path: '/employee/kpi',
@@ -420,8 +433,8 @@ class ZaWolfRouter {
             ),
             GoRoute(
               path: '/employee/warnings-rewards',
-              builder: (context, state) =>
-                  const EmployeeWarningsRewardsScreen(),
+              builder:
+                  (context, state) => const EmployeeWarningsRewardsScreen(),
             ),
             GoRoute(
               path: '/employee/payroll',
@@ -466,9 +479,10 @@ class ZaWolfRouter {
             ),
             GoRoute(
               path: '/team-leader/attendance-summary',
-              builder: (context, state) => AttendanceSummaryDetailsScreen(
-                initialStatus: state.uri.queryParameters['status'],
-              ),
+              builder:
+                  (context, state) => AttendanceSummaryDetailsScreen(
+                    initialStatus: state.uri.queryParameters['status'],
+                  ),
             ),
             GoRoute(
               path: '/team-leader/employees',
@@ -480,13 +494,22 @@ class ZaWolfRouter {
             ),
             GoRoute(
               path: '/team-leader/requests',
-              builder: (context, state) => const RequestsManagementScreen(),
+              builder:
+                  (context, state) => RequestsManagementScreen(
+                    initialCategory:
+                        state.uri.queryParameters['category'] ??
+                        state.uri.queryParameters['tab'],
+                    smartTabSelect:
+                        state.uri.queryParameters['smart'] == 'true' ||
+                        state.uri.queryParameters.isEmpty,
+                  ),
             ),
             GoRoute(
               path: '/team-leader/employee/:userId',
-              builder: (context, state) => EmployeeInsightsScreen(
-                employeeUid: state.pathParameters['userId']!,
-              ),
+              builder:
+                  (context, state) => EmployeeInsightsScreen(
+                    employeeUid: state.pathParameters['userId']!,
+                  ),
             ),
             // Manager Routes
             GoRoute(
@@ -495,13 +518,22 @@ class ZaWolfRouter {
             ),
             GoRoute(
               path: '/manager/attendance-summary',
-              builder: (context, state) => AttendanceSummaryDetailsScreen(
-                initialStatus: state.uri.queryParameters['status'],
-              ),
+              builder:
+                  (context, state) => AttendanceSummaryDetailsScreen(
+                    initialStatus: state.uri.queryParameters['status'],
+                  ),
             ),
             GoRoute(
               path: '/manager/requests',
-              builder: (context, state) => const RequestsManagementScreen(),
+              builder:
+                  (context, state) => RequestsManagementScreen(
+                    initialCategory:
+                        state.uri.queryParameters['category'] ??
+                        state.uri.queryParameters['tab'],
+                    smartTabSelect:
+                        state.uri.queryParameters['smart'] == 'true' ||
+                        state.uri.queryParameters.isEmpty,
+                  ),
             ),
             GoRoute(
               path: '/manager/tasks',
@@ -515,9 +547,9 @@ class ZaWolfRouter {
                     );
                 return enabled
                     ? WorkOutcomesEntry(
-                        actorUserId: actorId,
-                        mode: WorkOutcomesPageMode.manager,
-                      )
+                      actorUserId: actorId,
+                      mode: WorkOutcomesPageMode.manager,
+                    )
                     : const TasksManagementScreen();
               },
             ),
@@ -531,9 +563,10 @@ class ZaWolfRouter {
             ),
             GoRoute(
               path: '/manager/employee/:userId',
-              builder: (context, state) => EmployeeInsightsScreen(
-                employeeUid: state.pathParameters['userId']!,
-              ),
+              builder:
+                  (context, state) => EmployeeInsightsScreen(
+                    employeeUid: state.pathParameters['userId']!,
+                  ),
             ),
             GoRoute(
               path: '/manager/performance',
@@ -557,8 +590,8 @@ class ZaWolfRouter {
             ),
             GoRoute(
               path: '/manager/warnings-rewards',
-              builder: (context, state) =>
-                  const WarningsRewardsManagementScreen(),
+              builder:
+                  (context, state) => const WarningsRewardsManagementScreen(),
             ),
             // HR Admin Routes
             GoRoute(
@@ -567,13 +600,22 @@ class ZaWolfRouter {
             ),
             GoRoute(
               path: '/hr/attendance-summary',
-              builder: (context, state) => AttendanceSummaryDetailsScreen(
-                initialStatus: state.uri.queryParameters['status'],
-              ),
+              builder:
+                  (context, state) => AttendanceSummaryDetailsScreen(
+                    initialStatus: state.uri.queryParameters['status'],
+                  ),
             ),
             GoRoute(
               path: '/hr/requests',
-              builder: (context, state) => const RequestsManagementScreen(),
+              builder:
+                  (context, state) => RequestsManagementScreen(
+                    initialCategory:
+                        state.uri.queryParameters['category'] ??
+                        state.uri.queryParameters['tab'],
+                    smartTabSelect:
+                        state.uri.queryParameters['smart'] == 'true' ||
+                        state.uri.queryParameters.isEmpty,
+                  ),
             ),
             GoRoute(
               path: '/hr/employees',
@@ -581,9 +623,10 @@ class ZaWolfRouter {
             ),
             GoRoute(
               path: '/hr/employee/:userId',
-              builder: (context, state) => EmployeeInsightsScreen(
-                employeeUid: state.pathParameters['userId']!,
-              ),
+              builder:
+                  (context, state) => EmployeeInsightsScreen(
+                    employeeUid: state.pathParameters['userId']!,
+                  ),
             ),
             GoRoute(
               path: '/hr/locations',
@@ -595,35 +638,42 @@ class ZaWolfRouter {
             ),
             GoRoute(
               path: '/hr/google-workspace',
-              builder: (context, state) => kIsWeb
-                  ? const GoogleWorkspaceScreen()
-                  : const _WorkspaceWebOnlyPage(),
+              builder:
+                  (context, state) =>
+                      kIsWeb
+                          ? const GoogleWorkspaceScreen()
+                          : const _WorkspaceWebOnlyPage(),
             ),
             // Domain hubs (additive, specs/ui_redesign/02)
             GoRoute(
               path: '/hub/time',
-              builder: (context, state) =>
-                  const DomainHubScreen(domain: NavDomain.time),
+              builder:
+                  (context, state) =>
+                      const DomainHubScreen(domain: NavDomain.time),
             ),
             GoRoute(
               path: '/hub/approvals',
-              builder: (context, state) =>
-                  const DomainHubScreen(domain: NavDomain.approvals),
+              builder:
+                  (context, state) =>
+                      const DomainHubScreen(domain: NavDomain.approvals),
             ),
             GoRoute(
               path: '/hub/payroll',
-              builder: (context, state) =>
-                  const DomainHubScreen(domain: NavDomain.payroll),
+              builder:
+                  (context, state) =>
+                      const DomainHubScreen(domain: NavDomain.payroll),
             ),
             GoRoute(
               path: '/hub/performance',
-              builder: (context, state) =>
-                  const DomainHubScreen(domain: NavDomain.performance),
+              builder:
+                  (context, state) =>
+                      const DomainHubScreen(domain: NavDomain.performance),
             ),
             GoRoute(
               path: '/hub/people',
-              builder: (context, state) =>
-                  const DomainHubScreen(domain: NavDomain.people),
+              builder:
+                  (context, state) =>
+                      const DomainHubScreen(domain: NavDomain.people),
             ),
             GoRoute(
               path: '/hr/payroll',
@@ -645,24 +695,26 @@ class ZaWolfRouter {
               path: '/hr/departments',
               // Keep the live hierarchy and the additive multi-tree editor in
               // one page. The legacy tab remains the default rollback seam.
-              builder: (context, state) => DepartmentPerformanceScreen(
-                organizationTreesBuilder: (_) =>
-                    const CompanyOsOrganizationEntry(embedded: true),
-              ),
+              builder:
+                  (context, state) => DepartmentPerformanceScreen(
+                    organizationTreesBuilder:
+                        (_) => const CompanyOsOrganizationEntry(embedded: true),
+                  ),
             ),
             GoRoute(
               path: '/hr/organization-trees',
-              builder: (context, state) => DepartmentPerformanceScreen(
-                initialTab: 1,
-                initialOrganizationTreesView: true,
-                organizationTreesBuilder: (_) =>
-                    const CompanyOsOrganizationEntry(embedded: true),
-              ),
+              builder:
+                  (context, state) => DepartmentPerformanceScreen(
+                    initialTab: 1,
+                    initialOrganizationTreesView: true,
+                    organizationTreesBuilder:
+                        (_) => const CompanyOsOrganizationEntry(embedded: true),
+                  ),
             ),
             GoRoute(
               path: '/hr/warnings-rewards',
-              builder: (context, state) =>
-                  const WarningsRewardsManagementScreen(),
+              builder:
+                  (context, state) => const WarningsRewardsManagementScreen(),
             ),
             GoRoute(
               path: '/hr/announcements',
@@ -674,12 +726,16 @@ class ZaWolfRouter {
             ),
             GoRoute(
               path: '/hr/attendance-policy',
-              builder: (context, state) =>
-                  const AttendancePolicySettingsScreen(),
+              builder:
+                  (context, state) => const AttendancePolicySettingsScreen(),
             ),
             GoRoute(
               path: '/hr/field-assignments',
               builder: (context, state) => const FieldAssignmentsScreen(),
+            ),
+            GoRoute(
+              path: '/hr/custom-badges',
+              builder: (context, state) => const CustomBadgesScreen(),
             ),
           ],
         ),

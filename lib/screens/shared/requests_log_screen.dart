@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../../components/wolf_card.dart';
+import '../../components/request_approval_timeline.dart';
 import '../../services/auth_service.dart';
 import '../../services/request_log_service.dart';
 import '../../theme/theme.dart';
@@ -143,9 +144,8 @@ class _RequestsLogScreenState extends State<RequestsLogScreen> {
       return;
     }
     final csv = _createCsv(logs);
-    final fileName = _allTime
-        ? 'سجل_الطلبات_كامل'
-        : 'سجل_الطلبات_${_selectedCycle.key}';
+    final fileName =
+        _allTime ? 'سجل_الطلبات_كامل' : 'سجل_الطلبات_${_selectedCycle.key}';
     try {
       if (await downloadCsvFile(csv, fileName)) {
         if (!mounted) return;
@@ -228,48 +228,51 @@ class _RequestsLogScreenState extends State<RequestsLogScreen> {
                 nameController: _nameController,
                 type: _typeFilter,
                 status: _statusFilter,
-                department: departments.contains(_departmentFilter)
-                    ? _departmentFilter
-                    : 'all',
-                requestType: requestTypes.contains(_requestFilter)
-                    ? _requestFilter
-                    : 'all',
+                department:
+                    departments.contains(_departmentFilter)
+                        ? _departmentFilter
+                        : 'all',
+                requestType:
+                    requestTypes.contains(_requestFilter)
+                        ? _requestFilter
+                        : 'all',
                 departments: departments,
                 requestTypes: requestTypes,
                 resultCount: filtered.length,
-                onChanged:
-                    ({
-                      String? type,
-                      String? status,
-                      String? department,
-                      String? requestType,
-                    }) {
-                      setState(() {
-                        if (type != null) _typeFilter = type;
-                        if (status != null) _statusFilter = status;
-                        if (department != null) _departmentFilter = department;
-                        if (requestType != null) _requestFilter = requestType;
-                      });
-                    },
+                onChanged: ({
+                  String? type,
+                  String? status,
+                  String? department,
+                  String? requestType,
+                }) {
+                  setState(() {
+                    if (type != null) _typeFilter = type;
+                    if (status != null) _statusFilter = status;
+                    if (department != null) _departmentFilter = department;
+                    if (requestType != null) _requestFilter = requestType;
+                  });
+                },
                 onNameChanged: (_) => setState(() {}),
                 onExport: () => _export(filtered),
               ),
               _RequestSummary(logs: filtered),
               Expanded(
-                child: filtered.isEmpty
-                    ? const _EmptyState()
-                    : RefreshIndicator(
-                        onRefresh: () async => _refreshLogs(),
-                        color: ZaWolfColors.primaryCyan,
-                        child: ListView.separated(
-                          padding: const EdgeInsets.all(16),
-                          itemCount: filtered.length,
-                          separatorBuilder: (_, _) =>
-                              const SizedBox(height: 10),
-                          itemBuilder: (_, index) =>
-                              _RequestLogCard(item: filtered[index]),
+                child:
+                    filtered.isEmpty
+                        ? const _EmptyState()
+                        : RefreshIndicator(
+                          onRefresh: () async => _refreshLogs(),
+                          color: ZaWolfColors.primaryCyan,
+                          child: ListView.separated(
+                            padding: const EdgeInsets.all(16),
+                            itemCount: filtered.length,
+                            separatorBuilder:
+                                (_, _) => const SizedBox(height: 10),
+                            itemBuilder:
+                                (_, index) =>
+                                    _RequestLogCard(item: filtered[index]),
+                          ),
                         ),
-                      ),
               ),
             ],
           );
@@ -320,7 +323,7 @@ class _PeriodSelector extends StatelessWidget {
                   IconButton(
                     tooltip: 'الدورة السابقة',
                     onPressed: onPrevious,
-                    icon: const Icon(Icons.chevron_right),
+                    icon: const Icon(Icons.chevron_left),
                   ),
                   Expanded(
                     child: Column(
@@ -345,7 +348,7 @@ class _PeriodSelector extends StatelessWidget {
                   IconButton(
                     tooltip: 'الدورة التالية',
                     onPressed: isCurrent ? null : onNext,
-                    icon: const Icon(Icons.chevron_left),
+                    icon: const Icon(Icons.chevron_right),
                   ),
                 ],
               ),
@@ -479,24 +482,26 @@ class _Filters extends StatelessWidget {
             onChanged: onNameChanged,
             decoration: _decoration('بحث بالاسم أو كود الموظف').copyWith(
               prefixIcon: const Icon(Icons.search),
-              suffixIcon: nameController.text.isEmpty
-                  ? null
-                  : IconButton(
-                      tooltip: 'مسح البحث',
-                      onPressed: () {
-                        nameController.clear();
-                        onNameChanged('');
-                      },
-                      icon: const Icon(Icons.close),
-                    ),
+              suffixIcon:
+                  nameController.text.isEmpty
+                      ? null
+                      : IconButton(
+                        tooltip: 'مسح البحث',
+                        onPressed: () {
+                          nameController.clear();
+                          onNameChanged('');
+                        },
+                        icon: const Icon(Icons.close),
+                      ),
             ),
           ),
           const SizedBox(height: 8),
           LayoutBuilder(
             builder: (context, constraints) {
-              final width = constraints.maxWidth > 720
-                  ? (constraints.maxWidth - 24) / 4
-                  : (constraints.maxWidth - 8) / 2;
+              final width =
+                  constraints.maxWidth > 720
+                      ? (constraints.maxWidth - 24) / 4
+                      : (constraints.maxWidth - 8) / 2;
               return Wrap(
                 spacing: 8,
                 runSpacing: 8,
@@ -574,14 +579,15 @@ class _Filters extends StatelessWidget {
       initialValue: value,
       decoration: _decoration(label),
       dropdownColor: ZaWolfColors.surface01,
-      items: values.entries
-          .map(
-            (entry) => DropdownMenuItem(
-              value: entry.key,
-              child: Text(entry.value, overflow: TextOverflow.ellipsis),
-            ),
-          )
-          .toList(),
+      items:
+          values.entries
+              .map(
+                (entry) => DropdownMenuItem(
+                  value: entry.key,
+                  child: Text(entry.value, overflow: TextOverflow.ellipsis),
+                ),
+              )
+              .toList(),
       onChanged: (value) {
         if (value != null) onChanged(value);
       },
@@ -695,13 +701,17 @@ class _RequestLogCard extends StatelessWidget {
             ),
           if (item.reviewedAt != null)
             Text(
-              'تاريخ الرد: ${dateFormat.format(item.reviewedAt!)}'
+              'تاريخ الرد والاعتماد: ${dateFormat.format(item.reviewedAt!)}'
               '${item.reviewedBy.isEmpty ? '' : ' · ${item.reviewedBy}'}',
               style: const TextStyle(
                 color: ZaWolfColors.textMuted,
                 fontSize: 11,
               ),
             ),
+          if (item.rawMap.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            RequestApprovalTimeline(data: item.rawMap, compact: true),
+          ],
         ],
       ),
     );

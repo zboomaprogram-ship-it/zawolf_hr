@@ -9,6 +9,7 @@ final class EmployeeTimelineState {
     this.items = const [],
     this.loading = false,
     this.hasMore = false,
+    this.summary = const EmployeeTimelineSummary(),
     this.nextCursor,
     this.safeErrorCode,
   });
@@ -16,6 +17,7 @@ final class EmployeeTimelineState {
   final List<EmployeeTimelineEntry> items;
   final bool loading;
   final bool hasMore;
+  final EmployeeTimelineSummary summary;
   final String? nextCursor;
   final String? safeErrorCode;
 }
@@ -41,6 +43,7 @@ final class EmployeeTimelineCubit extends Cubit<EmployeeTimelineState> {
         items: state.items,
         loading: true,
         hasMore: state.hasMore,
+        summary: state.summary,
         nextCursor: state.nextCursor,
       ),
     );
@@ -66,6 +69,7 @@ final class EmployeeTimelineCubit extends Cubit<EmployeeTimelineState> {
         EmployeeTimelineState(
           items: [if (append) ...state.items, ...page.items],
           hasMore: page.hasMore,
+          summary: page.summary,
           nextCursor: page.nextCursor,
         ),
       );

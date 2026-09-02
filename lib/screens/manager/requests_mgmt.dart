@@ -28,6 +28,7 @@ import '../../services/advance_service.dart';
 import '../../services/request_approval_policy_service.dart';
 import '../../services/resignation_service.dart';
 import '../../services/administrative_request_service.dart';
+import '../../services/pending_requests_service.dart';
 import '../../services/attendance_correction_request_service.dart';
 import '../../services/hr_direct_request_service.dart';
 import '../../models/request_approval_policy.dart';
@@ -54,7 +55,14 @@ import '../shared/requests_log_screen.dart';
 const bool _requestMasterDetailEnabled = false;
 
 class RequestsManagementScreen extends StatefulWidget {
-  const RequestsManagementScreen({super.key});
+  const RequestsManagementScreen({
+    super.key,
+    this.initialCategory,
+    this.smartTabSelect = false,
+  });
+
+  final String? initialCategory;
+  final bool smartTabSelect;
 
   @override
   State<RequestsManagementScreen> createState() =>
@@ -1251,8 +1259,46 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
       ),
     ];
 
+    final initialCategory =
+        widget.initialCategory ??
+        (widget.smartTabSelect
+            ? PendingRequestsService.instance.firstPendingCategory
+            : null);
+
+    int initialTabIndex = 0;
+    if (initialCategory != null && initialCategory.isNotEmpty) {
+      final cat = initialCategory.trim().toLowerCase();
+      if (cat.contains('leave') || cat.contains('إجاز')) {
+        initialTabIndex = 0;
+      } else if (cat.contains('permission') ||
+          cat.contains('إذن') ||
+          cat.contains('أذون')) {
+        initialTabIndex = 1;
+      } else if (cat.contains('advance') || cat.contains('سلف')) {
+        initialTabIndex = 2;
+      } else if (cat.contains('admin') ||
+          cat.contains('مهم') ||
+          cat.contains('إداري')) {
+        final found = tabs.indexWhere(
+          (t) => (t.text ?? '').contains('إدارية'),
+        );
+        if (found >= 0) initialTabIndex = found;
+      } else if (cat.contains('resign') || cat.contains('استقال')) {
+        final found = tabs.indexWhere(
+          (t) => (t.text ?? '').contains('الاستقالات'),
+        );
+        if (found >= 0) initialTabIndex = found;
+      } else if (cat.contains('complaint') || cat.contains('شكا')) {
+        final found = tabs.indexWhere(
+          (t) => (t.text ?? '').contains('الشكاوى'),
+        );
+        if (found >= 0) initialTabIndex = found;
+      }
+    }
+
     return DefaultTabController(
       length: tabs.length,
+      initialIndex: initialTabIndex,
       child: Scaffold(
         appBar: AppBar(
           title: Text(
@@ -4465,36 +4511,53 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
     String dept,
     ThemeData theme,
   ) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Text('القسم: $dept', style: theme.textTheme.bodySmall),
-        Row(
-          children: [
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                Text(
-                  name,
-                  style: theme.textTheme.titleMedium!.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Row(
+            children: [
+              CircleAvatar(
+                radius: 18,
+                backgroundColor: ZaWolfColors.surface02,
+                child: Text(
+                  name.isNotEmpty ? name.substring(0, 1) : 'م',
+                  style: const TextStyle(color: ZaWolfColors.primaryCyan),
                 ),
-                Text('كود: $code', style: theme.textTheme.bodySmall),
-              ],
+              ),
+              const SizedBox(width: 8),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    name,
+                    style: theme.textTheme.titleMedium!.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
+                    textAlign: TextAlign.right,
+                  ),
+                  Text('كود: $code', style: theme.textTheme.bodySmall),
+                ],
+              ),
+            ],
+          ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            decoration: BoxDecoration(
+              color: ZaWolfColors.surface02,
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(color: ZaWolfColors.surface03),
             ),
-            const SizedBox(width: 8),
-            CircleAvatar(
-              radius: 18,
-              backgroundColor: ZaWolfColors.surface02,
-              child: Text(
-                name.substring(0, 1),
-                style: const TextStyle(color: ZaWolfColors.primaryCyan),
+            child: Text(
+              'القسم: $dept',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: ZaWolfColors.textSecondary,
               ),
             ),
-          ],
-        ),
-      ],
+          ),
+        ],
+      ),
     );
   }
 

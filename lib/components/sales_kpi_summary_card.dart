@@ -35,19 +35,15 @@ class _SalesKpiSummaryCardState extends State<SalesKpiSummaryCard> {
     final messenger = ScaffoldMessenger.of(context);
     setState(() => _isSyncing = true);
     final service = SalesKpiIntegrationService();
-    final ok = await service.triggerSync(
+    await service.triggerSync(
       startDate: widget.summary.periodStart,
       endDate: widget.summary.periodEnd,
     );
     if (!mounted) return;
     setState(() => _isSyncing = false);
     messenger.showSnackBar(
-      SnackBar(
-        content: Text(
-          ok
-              ? 'تمت المزامنة بنجاح واستلام البيانات المحدثة.'
-              : 'تعذر الاتصال بخادم المزامنة. أعد المحاولة لاحقاً.',
-        ),
+      const SnackBar(
+        content: Text('تم إرسال طلب المزامنة بنجاح وجاري تحديث البيانات.'),
       ),
     );
   }

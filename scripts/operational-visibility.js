@@ -75,6 +75,11 @@ function normalizeTimelineRows(sourceRows, period, cursor, pageSize) {
       effectiveAt: date.toISOString(),
       status: String(sourceRow.data?.status || sourceRow.data?.salaryDeductionApprovalStatus || 'unknown'),
       summaryAr: String(sourceRow.data?.reason || sourceRow.data?.salaryDeductionLabel || ''),
+      deductionDays: Number(
+        sourceRow.data?.salaryDeductionFraction ??
+          sourceRow.data?.dayFraction ??
+          deductionDayFraction(sourceRow.data?.status),
+      ) || 0,
     });
   }
   rows.sort((a, b) => b.effectiveAt.localeCompare(a.effectiveAt) || a.id.localeCompare(b.id));
@@ -85,9 +90,54 @@ function normalizeTimelineRows(sourceRows, period, cursor, pageSize) {
   const last = items.at(-1);
   return {
     items,
+    summary: summarizeTimelineRows(rows),
     hasMore: afterCursor.length > items.length,
     nextCursor: last ? `${last.effectiveAt}|${last.id}` : null,
   };
+}
+
+function deductionDayFraction(status) {
+  switch (String(status || '').trim().toLowerCase()) {
+    case 'late_quarter_day':
+    case 'quarter_day':
+    case 'missed_checkout_quarter_day':
+    case 'early_checkout_quarter_day':
+    case 'late_checkout_after_11_quarter_day':
+      return 0.25;
+    case 'late_half_day':
+    case 'half_day':
+      return 0.5;
+    case 'late_full_day':
+    case 'full_day':
+    case 'absence':
+    case 'absent':
+      return 1;
+    default:
+      return 0;
+  }
+}
+
+/// Counts are based on every bounded row in the chosen period, before UI
+/// pagination. They are informational and never recalculate payroll.
+function summarizeTimelineRows(rows) {
+  const summary = {
+    salaryDeductionDays: 0,
+    leaveRequests: 0,
+    permissionRequests: 0,
+    otherRequests: 0,
+  };
+  for (const row of rows) {
+    if (row.kind === 'attendance' || row.kind === 'deduction') {
+      summary.salaryDeductionDays += Number(row.deductionDays || 0);
+    }
+    if (row.kind === 'leave') summary.leaveRequests += 1;
+    if (row.kind === 'permission') summary.permissionRequests += 1;
+    if (!['attendance', 'leave', 'permission', 'deduction'].includes(row.kind)) {
+      summary.otherRequests += 1;
+    }
+  }
+  summary.salaryDeductionDays = Math.round(summary.salaryDeductionDays * 100) / 100;
+  return summary;
 }
 
 module.exports = {
@@ -97,4 +147,6 @@ module.exports = {
   canInspectEmployee,
   effectiveDate,
   normalizeTimelineRows,
+  deductionDayFraction,
+  summarizeTimelineRows,
 };

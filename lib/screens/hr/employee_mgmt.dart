@@ -23,13 +23,13 @@ import '../../components/wolf_card.dart';
 import '../../components/wolf_button.dart';
 import '../../components/wolf_input_field.dart';
 import '../../components/dynamic_dropdown.dart';
+import '../../components/performance_badges_widget.dart';
 import '../../services/department_service.dart';
 import '../../services/job_title_service.dart';
 import '../../services/role_notification_service.dart';
 import '../../models/employee_deletion_request.dart';
 import '../../services/employee_deletion_request_service.dart';
-import '../../design_system/components/feedback_states.dart'
-    show EmptyState;
+import '../../design_system/components/feedback_states.dart' show EmptyState;
 import '../../design_system/components/skeletons.dart' show SkeletonList;
 
 List<DropdownMenuItem<String>> _roleMenuItems({
@@ -169,19 +169,21 @@ class _OrganizationProfileFields extends StatelessWidget {
           ),
           const SizedBox(height: 12),
           DropdownButtonFormField<String>(
-            initialValue: OrganizationLevel.values.contains(organizationLevel)
-                ? organizationLevel
-                : OrganizationLevel.employee,
+            initialValue:
+                OrganizationLevel.values.contains(organizationLevel)
+                    ? organizationLevel
+                    : OrganizationLevel.employee,
             decoration: const InputDecoration(labelText: 'المستوى التنظيمي'),
             dropdownColor: ZaWolfColors.surface02,
-            items: OrganizationLevel.values
-                .map(
-                  (value) => DropdownMenuItem(
-                    value: value,
-                    child: Text(OrganizationLevel.arabicLabel(value)),
-                  ),
-                )
-                .toList(),
+            items:
+                OrganizationLevel.values
+                    .map(
+                      (value) => DropdownMenuItem(
+                        value: value,
+                        child: Text(OrganizationLevel.arabicLabel(value)),
+                      ),
+                    )
+                    .toList(),
             onChanged: (value) {
               if (value != null) onLevelChanged(value);
             },
@@ -190,10 +192,10 @@ class _OrganizationProfileFields extends StatelessWidget {
           DropdownButtonFormField<String?>(
             initialValue:
                 OrganizationDefaults.divisions.any(
-                  (division) => division.id == organizationDivisionId,
-                )
-                ? organizationDivisionId
-                : null,
+                      (division) => division.id == organizationDivisionId,
+                    )
+                    ? organizationDivisionId
+                    : null,
             decoration: const InputDecoration(
               labelText: 'القطاع التنظيمي',
               helperText: 'يمكن نقل القسم كاملاً من شاشة الهيكل الوظيفي.',
@@ -356,6 +358,86 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
     );
   }
 
+  Future<void> _managePerformanceBadges(UserModel employee) async {
+    final document = await _db.collection('users').doc(employee.uid).get();
+    if (!mounted) return;
+    final selected =
+        ((document.data()?['performanceBadgeIds'] as List?)
+                ?.whereType<String>()
+                .where(
+                  (id) =>
+                      performanceBadgeCatalog.any((badge) => badge.id == id),
+                )
+                .toSet() ??
+            <String>{});
+    final saved = await showDialog<bool>(
+      context: context,
+      builder:
+          (dialogContext) => StatefulBuilder(
+            builder:
+                (context, setDialogState) => AlertDialog(
+                  backgroundColor: ZaWolfColors.surface01,
+                  title: Text('شارات التميز: ${employee.displayName}'),
+                  content: SizedBox(
+                    width: 520,
+                    child: SingleChildScrollView(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: performanceBadgeCatalog
+                            .map(
+                              (badge) => CheckboxListTile(
+                                value: selected.contains(badge.id),
+                                activeColor: badge.color,
+                                title: Text(badge.title),
+                                subtitle: Text(badge.description),
+                                secondary: Icon(badge.icon, color: badge.color),
+                                onChanged:
+                                    (value) => setDialogState(() {
+                                      if (value ?? false) {
+                                        selected.add(badge.id);
+                                      } else {
+                                        selected.remove(badge.id);
+                                      }
+                                    }),
+                              ),
+                            )
+                            .toList(growable: false),
+                      ),
+                    ),
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(dialogContext),
+                      child: const Text('إلغاء'),
+                    ),
+                    FilledButton(
+                      onPressed: () => Navigator.pop(dialogContext, true),
+                      child: const Text('حفظ الشارات'),
+                    ),
+                  ],
+                ),
+          ),
+    );
+    if (saved != true) return;
+    try {
+      await _db.collection('users').doc(employee.uid).update({
+        'performanceBadgeIds': selected.toList()..sort(),
+        'performanceBadgesUpdatedAt': FieldValue.serverTimestamp(),
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('تم حفظ شارات التميز.')));
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('تعذر حفظ شارات التميز.')));
+      }
+    }
+  }
+
   void _showBulkImportSheet() {
     showModalBottomSheet(
       context: context,
@@ -460,13 +542,14 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
                       children: [
                         Expanded(
                           child: WolfButton(
-                            onPressed: _bulkImporting
-                                ? null
-                                : () async {
-                                    final nav = Navigator.of(context);
-                                    await _importEmployeesCsv(setSheetState);
-                                    if (mounted) nav.pop();
-                                  },
+                            onPressed:
+                                _bulkImporting
+                                    ? null
+                                    : () async {
+                                      final nav = Navigator.of(context);
+                                      await _importEmployeesCsv(setSheetState);
+                                      if (mounted) nav.pop();
+                                    },
                             text: 'رفع الملف',
                             secondaryText: 'UPLOAD CSV',
                             variant: WolfButtonVariant.teal,
@@ -507,9 +590,10 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
                   if (_bulkImporting) ...[
                     const SizedBox(height: 16),
                     LinearProgressIndicator(
-                      value: _importTotal > 0
-                          ? _importProgress / _importTotal
-                          : null,
+                      value:
+                          _importTotal > 0
+                              ? _importProgress / _importTotal
+                              : null,
                       backgroundColor: ZaWolfColors.surface02,
                       valueColor: const AlwaysStoppedAnimation(
                         ZaWolfColors.primaryCyan,
@@ -613,9 +697,10 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
         throw Exception('الملف لا يحتوي على بيانات موظفين.');
       }
 
-      final headers = rows.first
-          .map((cell) => '$cell'.replaceFirst('\ufeff', '').trim())
-          .toList();
+      final headers =
+          rows.first
+              .map((cell) => '$cell'.replaceFirst('\ufeff', '').trim())
+              .toList();
       final headerLookup = <String, int>{};
       for (var i = 0; i < headers.length; i++) {
         headerLookup[_normalizeImportHeader(headers[i])] = i;
@@ -627,10 +712,11 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
         List<String> aliases = const [],
       ]) {
         final keys = [key, ...aliases].map(_normalizeImportHeader);
-        final index = keys
-            .map((candidate) => headerLookup[candidate])
-            .whereType<int>()
-            .firstOrNull;
+        final index =
+            keys
+                .map((candidate) => headerLookup[candidate])
+                .whereType<int>()
+                .firstOrNull;
         if (index == null || index >= row.length) return '';
         return '${row[index]}'.trim();
       }
@@ -653,10 +739,11 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
         }
       }
 
-      final dataRows = rows
-          .skip(1)
-          .where((row) => !row.every((cell) => '$cell'.trim().isEmpty))
-          .toList();
+      final dataRows =
+          rows
+              .skip(1)
+              .where((row) => !row.every((cell) => '$cell'.trim().isEmpty))
+              .toList();
       setState(() {
         _importTotal = dataRows.length;
         _importProgress = 0;
@@ -677,9 +764,10 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
             'الصف $rowNumber ناقص: email, displayName, employeeId مطلوبة.',
           );
         }
-        final role = value(row, 'role', ['Role']).isEmpty
-            ? EmployeeRole.employee
-            : _normalizeImportRole(value(row, 'role', ['Role']));
+        final role =
+            value(row, 'role', ['Role']).isEmpty
+                ? EmployeeRole.employee
+                : _normalizeImportRole(value(row, 'role', ['Role']));
         const allowedRoles = [
           EmployeeRole.employee,
           EmployeeRole.teamLeader,
@@ -716,12 +804,12 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
         final managerCodes = _splitImportList(
           value(row, 'managerCodes', ['managerCode', 'Manager Code']),
         );
-        var managerId = value(row, 'managerId').isEmpty
-            ? null
-            : value(row, 'managerId');
-        var managerName = value(row, 'managerName').isEmpty
-            ? null
-            : value(row, 'managerName');
+        var managerId =
+            value(row, 'managerId').isEmpty ? null : value(row, 'managerId');
+        var managerName =
+            value(row, 'managerName').isEmpty
+                ? null
+                : value(row, 'managerName');
         var resolvedSupervisorIds = <String>[];
         var resolvedSupervisorNames = <String>[];
         var resolvedSupervisorCodes = <String>[];
@@ -742,12 +830,10 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
             supervisors.add(supervisor);
           }
           resolvedSupervisorIds = supervisors.map((item) => item.uid).toList();
-          resolvedSupervisorNames = supervisors
-              .map((item) => item.name)
-              .toList();
-          resolvedSupervisorCodes = supervisors
-              .map((item) => item.code)
-              .toList();
+          resolvedSupervisorNames =
+              supervisors.map((item) => item.name).toList();
+          resolvedSupervisorCodes =
+              supervisors.map((item) => item.code).toList();
           managerId ??= resolvedSupervisorIds.firstOrNull;
           managerName ??= resolvedSupervisorNames.firstOrNull;
         }
@@ -779,9 +865,10 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
           locationId: locationId,
           locationName: locationName,
           baseMonthlySalary: monthlySalary,
-          salaryCurrency: value(row, 'salaryCurrency', ['Currency']).isEmpty
-              ? 'EGP'
-              : value(row, 'salaryCurrency', ['Currency']),
+          salaryCurrency:
+              value(row, 'salaryCurrency', ['Currency']).isEmpty
+                  ? 'EGP'
+                  : value(row, 'salaryCurrency', ['Currency']),
           managerId: managerId,
           managerName: managerName,
           managerIds: resolvedSupervisorIds,
@@ -828,11 +915,12 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
   }
 
   Future<UserModel?> _findSupervisorByEmail(String email) async {
-    final snap = await _db
-        .collection('users')
-        .where('email', isEqualTo: email)
-        .limit(1)
-        .get();
+    final snap =
+        await _db
+            .collection('users')
+            .where('email', isEqualTo: email)
+            .limit(1)
+            .get();
     if (snap.docs.isEmpty) return null;
     final user = UserModel.fromFirestore(snap.docs.first);
     if (!_canBeSupervisor(user.role)) return null;
@@ -840,11 +928,12 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
   }
 
   Future<_SupervisorRef?> _findSupervisorByCode(String code) async {
-    final snap = await _db
-        .collection('users')
-        .where('employeeId', isEqualTo: code)
-        .limit(1)
-        .get();
+    final snap =
+        await _db
+            .collection('users')
+            .where('employeeId', isEqualTo: code)
+            .limit(1)
+            .get();
     if (snap.docs.isEmpty) return null;
     final user = UserModel.fromFirestore(snap.docs.first);
     if (!_canBeSupervisor(user.role)) return null;
@@ -1015,9 +1104,10 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
                 final docs = snapshot.data?.docs ?? [];
 
                 // Filter client side for searches
-                final employees = docs
-                    .map((doc) => UserModel.fromFirestore(doc))
-                    .where((user) {
+                final employees =
+                    docs.map((doc) => UserModel.fromFirestore(doc)).where((
+                      user,
+                    ) {
                       if (_filterRole != null &&
                           _filterRole!.isNotEmpty &&
                           user.role != _filterRole) {
@@ -1049,8 +1139,7 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
                           user.department.toLowerCase().contains(q) ||
                           user.locationName.toLowerCase().contains(q) ||
                           user.position.toLowerCase().contains(q);
-                    })
-                    .toList();
+                    }).toList();
 
                 if (employees.isEmpty) {
                   return const EmptyState(
@@ -1072,8 +1161,8 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
                         onTap: () {
                           showDialog(
                             context: context,
-                            builder: (context) =>
-                                EditEmployeeDialog(employee: emp),
+                            builder:
+                                (context) => EditEmployeeDialog(employee: emp),
                           );
                         },
                         child: Column(
@@ -1174,9 +1263,10 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
                                   child: _buildInfoItem(
                                     icon: Icons.business_outlined,
                                     label: 'القسم',
-                                    value: emp.department.isNotEmpty
-                                        ? emp.department
-                                        : '—',
+                                    value:
+                                        emp.department.isNotEmpty
+                                            ? emp.department
+                                            : '—',
                                   ),
                                 ),
                               ],
@@ -1188,18 +1278,20 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
                                   child: _buildInfoItem(
                                     icon: Icons.location_on_outlined,
                                     label: 'الفرع',
-                                    value: emp.locationName.isNotEmpty
-                                        ? emp.locationName
-                                        : '—',
+                                    value:
+                                        emp.locationName.isNotEmpty
+                                            ? emp.locationName
+                                            : '—',
                                   ),
                                 ),
                                 Expanded(
                                   child: _buildInfoItem(
                                     icon: Icons.person_outline,
                                     label: 'المدير',
-                                    value: emp.managerNames.isNotEmpty
-                                        ? emp.managerNames.join('، ')
-                                        : (emp.managerName ?? '—'),
+                                    value:
+                                        emp.managerNames.isNotEmpty
+                                            ? emp.managerNames.join('، ')
+                                            : (emp.managerName ?? '—'),
                                   ),
                                 ),
                               ],
@@ -1229,22 +1321,23 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
                                       vertical: 3,
                                     ),
                                     decoration: BoxDecoration(
-                                      color: emp.isActive
-                                          ? ZaWolfColors.success.withValues(
-                                              alpha: 0.1,
-                                            )
-                                          : ZaWolfColors.error.withValues(
-                                              alpha: 0.1,
-                                            ),
+                                      color:
+                                          emp.isActive
+                                              ? ZaWolfColors.success.withValues(
+                                                alpha: 0.1,
+                                              )
+                                              : ZaWolfColors.error.withValues(
+                                                alpha: 0.1,
+                                              ),
                                       borderRadius: BorderRadius.circular(6),
                                       border: Border.all(
-                                        color: emp.isActive
-                                            ? ZaWolfColors.success.withValues(
-                                                alpha: 0.3,
-                                              )
-                                            : ZaWolfColors.error.withValues(
-                                                alpha: 0.3,
-                                              ),
+                                        color:
+                                            emp.isActive
+                                                ? ZaWolfColors.success
+                                                    .withValues(alpha: 0.3)
+                                                : ZaWolfColors.error.withValues(
+                                                  alpha: 0.3,
+                                                ),
                                       ),
                                     ),
                                     child: Row(
@@ -1255,17 +1348,19 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
                                               ? Icons.check_circle_outline
                                               : Icons.block_outlined,
                                           size: 12,
-                                          color: emp.isActive
-                                              ? ZaWolfColors.success
-                                              : ZaWolfColors.error,
+                                          color:
+                                              emp.isActive
+                                                  ? ZaWolfColors.success
+                                                  : ZaWolfColors.error,
                                         ),
                                         const SizedBox(width: 4),
                                         Text(
                                           emp.isActive ? 'نشط' : 'معطل',
                                           style: TextStyle(
-                                            color: emp.isActive
-                                                ? ZaWolfColors.success
-                                                : ZaWolfColors.error,
+                                            color:
+                                                emp.isActive
+                                                    ? ZaWolfColors.success
+                                                    : ZaWolfColors.error,
                                             fontSize: 10,
                                             fontWeight: FontWeight.bold,
                                           ),
@@ -1284,8 +1379,22 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
                                     color: ZaWolfColors.success,
                                     size: 20,
                                   ),
-                                  onPressed: () =>
-                                      context.go('/hr/employee/${emp.uid}'),
+                                  onPressed:
+                                      () =>
+                                          context.go('/hr/employee/${emp.uid}'),
+                                ),
+                                const SizedBox(width: 16),
+                                IconButton(
+                                  padding: EdgeInsets.zero,
+                                  constraints: const BoxConstraints(),
+                                  tooltip: 'إدارة شارات التميز',
+                                  icon: const Icon(
+                                    Icons.emoji_events_outlined,
+                                    color: Color(0xFFFFD700),
+                                    size: 20,
+                                  ),
+                                  onPressed:
+                                      () => _managePerformanceBadges(emp),
                                 ),
                                 const SizedBox(width: 16),
                                 // Edit button
@@ -1301,8 +1410,9 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
                                   onPressed: () {
                                     showDialog(
                                       context: context,
-                                      builder: (context) =>
-                                          EditEmployeeDialog(employee: emp),
+                                      builder:
+                                          (context) =>
+                                              EditEmployeeDialog(employee: emp),
                                     );
                                   },
                                 ),
@@ -1381,65 +1491,67 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
       builder: (dialogContext) {
         String? validationError;
         return StatefulBuilder(
-          builder: (context, setDialogState) => AlertDialog(
-            backgroundColor: ZaWolfColors.surface01,
-            title: Text(
-              emp.isActive ? 'تعطيل الحساب؟' : 'تفعيل الحساب؟',
-              style: const TextStyle(color: Colors.white),
-            ),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  emp.isActive
-                      ? 'لن يتمكن ${emp.displayName} من استخدام التطبيق حتى إعادة تفعيل الحساب.'
-                      : 'سيتمكن ${emp.displayName} من استخدام التطبيق مرة أخرى.',
-                  style: const TextStyle(color: ZaWolfColors.textSecondary),
+          builder:
+              (context, setDialogState) => AlertDialog(
+                backgroundColor: ZaWolfColors.surface01,
+                title: Text(
+                  emp.isActive ? 'تعطيل الحساب؟' : 'تفعيل الحساب؟',
+                  style: const TextStyle(color: Colors.white),
                 ),
-                if (emp.isActive) ...[
-                  const SizedBox(height: 16),
-                  TextField(
-                    controller: reasonController,
-                    maxLines: 3,
-                    textDirection: TextDirection.rtl,
-                    decoration: InputDecoration(
-                      labelText: 'سبب التعطيل (مطلوب)',
-                      errorText: validationError,
+                content: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      emp.isActive
+                          ? 'لن يتمكن ${emp.displayName} من استخدام التطبيق حتى إعادة تفعيل الحساب.'
+                          : 'سيتمكن ${emp.displayName} من استخدام التطبيق مرة أخرى.',
+                      style: const TextStyle(color: ZaWolfColors.textSecondary),
+                    ),
+                    if (emp.isActive) ...[
+                      const SizedBox(height: 16),
+                      TextField(
+                        controller: reasonController,
+                        maxLines: 3,
+                        textDirection: TextDirection.rtl,
+                        decoration: InputDecoration(
+                          labelText: 'سبب التعطيل (مطلوب)',
+                          errorText: validationError,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(dialogContext),
+                    child: const Text(
+                      'إلغاء',
+                      style: TextStyle(color: ZaWolfColors.textSecondary),
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: () {
+                      final reason = reasonController.text.trim();
+                      if (emp.isActive && reason.isEmpty) {
+                        setDialogState(
+                          () => validationError = 'اكتب سبب تعطيل الحساب.',
+                        );
+                        return;
+                      }
+                      Navigator.pop(dialogContext, emp.isActive ? reason : '');
+                    },
+                    child: Text(
+                      emp.isActive ? 'تعطيل' : 'تفعيل',
+                      style: TextStyle(
+                        color:
+                            emp.isActive
+                                ? ZaWolfColors.error
+                                : ZaWolfColors.success,
+                      ),
                     ),
                   ),
                 ],
-              ],
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(dialogContext),
-                child: const Text(
-                  'إلغاء',
-                  style: TextStyle(color: ZaWolfColors.textSecondary),
-                ),
               ),
-              TextButton(
-                onPressed: () {
-                  final reason = reasonController.text.trim();
-                  if (emp.isActive && reason.isEmpty) {
-                    setDialogState(
-                      () => validationError = 'اكتب سبب تعطيل الحساب.',
-                    );
-                    return;
-                  }
-                  Navigator.pop(dialogContext, emp.isActive ? reason : '');
-                },
-                child: Text(
-                  emp.isActive ? 'تعطيل' : 'تفعيل',
-                  style: TextStyle(
-                    color: emp.isActive
-                        ? ZaWolfColors.error
-                        : ZaWolfColors.success,
-                  ),
-                ),
-              ),
-            ],
-          ),
         );
       },
     );
@@ -1465,21 +1577,21 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
         .update(
           emp.isActive
               ? {
-                  'isActive': false,
-                  'deactivationReason': result,
-                  'deactivatedBy': actor.uid,
-                  'deactivatedByName': actor.displayName,
-                  'deactivatedAt': FieldValue.serverTimestamp(),
-                  'updatedAt': FieldValue.serverTimestamp(),
-                }
+                'isActive': false,
+                'deactivationReason': result,
+                'deactivatedBy': actor.uid,
+                'deactivatedByName': actor.displayName,
+                'deactivatedAt': FieldValue.serverTimestamp(),
+                'updatedAt': FieldValue.serverTimestamp(),
+              }
               : {
-                  'isActive': true,
-                  'deactivationReason': FieldValue.delete(),
-                  'deactivatedBy': FieldValue.delete(),
-                  'deactivatedByName': FieldValue.delete(),
-                  'deactivatedAt': FieldValue.delete(),
-                  'updatedAt': FieldValue.serverTimestamp(),
-                },
+                'isActive': true,
+                'deactivationReason': FieldValue.delete(),
+                'deactivatedBy': FieldValue.delete(),
+                'deactivatedByName': FieldValue.delete(),
+                'deactivatedAt': FieldValue.delete(),
+                'updatedAt': FieldValue.serverTimestamp(),
+              },
         );
     reasonController.dispose();
   }
@@ -1492,51 +1604,52 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
 
     final reason = await showDialog<String>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        backgroundColor: ZaWolfColors.surface01,
-        title: Text(
-          isSuperAdmin ? 'إيقاف وحذف الحساب' : 'طلب إنهاء الحساب',
-          style: const TextStyle(color: Colors.white),
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              isSuperAdmin
-                  ? 'بصفتك الأدمن الرئيسي، سيتم إيقاف وحذف حساب ${emp.displayName} فوراً بدون الحاجة لتقديم طلب موافقة.'
-                  : 'لن يُحذف ${emp.displayName} فورًا. سيمر الطلب بمسار الموافقات، ثم يُعطل الحساب مع الاحتفاظ بالسجلات.',
-              style: const TextStyle(color: ZaWolfColors.textSecondary),
-              textDirection: TextDirection.rtl,
+      builder:
+          (dialogContext) => AlertDialog(
+            backgroundColor: ZaWolfColors.surface01,
+            title: Text(
+              isSuperAdmin ? 'إيقاف وحذف الحساب' : 'طلب إنهاء الحساب',
+              style: const TextStyle(color: Colors.white),
             ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: reasonController,
-              maxLines: 3,
-              textDirection: TextDirection.rtl,
-              decoration: const InputDecoration(labelText: 'سبب الإنهاء'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  isSuperAdmin
+                      ? 'بصفتك الأدمن الرئيسي، سيتم إيقاف وحذف حساب ${emp.displayName} فوراً بدون الحاجة لتقديم طلب موافقة.'
+                      : 'لن يُحذف ${emp.displayName} فورًا. سيمر الطلب بمسار الموافقات، ثم يُعطل الحساب مع الاحتفاظ بالسجلات.',
+                  style: const TextStyle(color: ZaWolfColors.textSecondary),
+                  textDirection: TextDirection.rtl,
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: reasonController,
+                  maxLines: 3,
+                  textDirection: TextDirection.rtl,
+                  decoration: const InputDecoration(labelText: 'سبب الإنهاء'),
+                ),
+              ],
             ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text(
-              'إلغاء',
-              style: TextStyle(color: ZaWolfColors.textSecondary),
-            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: const Text(
+                  'إلغاء',
+                  style: TextStyle(color: ZaWolfColors.textSecondary),
+                ),
+              ),
+              TextButton(
+                onPressed: () {
+                  final value = reasonController.text.trim();
+                  if (value.isNotEmpty) Navigator.pop(dialogContext, value);
+                },
+                child: Text(
+                  isSuperAdmin ? 'إيقاف وحذف مباشر' : 'إرسال للموافقة',
+                  style: const TextStyle(color: ZaWolfColors.error),
+                ),
+              ),
+            ],
           ),
-          TextButton(
-            onPressed: () {
-              final value = reasonController.text.trim();
-              if (value.isNotEmpty) Navigator.pop(dialogContext, value);
-            },
-            child: Text(
-              isSuperAdmin ? 'إيقاف وحذف مباشر' : 'إرسال للموافقة',
-              style: const TextStyle(color: ZaWolfColors.error),
-            ),
-          ),
-        ],
-      ),
     );
     reasonController.dispose();
     if (reason == null || reason.isEmpty) return;
@@ -1578,138 +1691,151 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
       context: context,
       isScrollControlled: true,
       backgroundColor: ZaWolfColors.surface01,
-      builder: (sheetContext) => SafeArea(
-        child: SizedBox(
-          height: MediaQuery.sizeOf(sheetContext).height * .75,
-          child: StreamBuilder<List<EmployeeDeletionRequest>>(
-            stream: EmployeeDeletionRequestService().watchPending(),
-            builder: (context, snapshot) {
-              final requests = snapshot.data ?? const [];
-              return Column(
-                children: [
-                  const Padding(
-                    padding: EdgeInsets.all(20),
-                    child: Text(
-                      'طلبات إنهاء الحسابات',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 22,
-                        fontWeight: FontWeight.bold,
+      builder:
+          (sheetContext) => SafeArea(
+            child: SizedBox(
+              height: MediaQuery.sizeOf(sheetContext).height * .75,
+              child: StreamBuilder<List<EmployeeDeletionRequest>>(
+                stream: EmployeeDeletionRequestService().watchPending(),
+                builder: (context, snapshot) {
+                  final requests = snapshot.data ?? const [];
+                  return Column(
+                    children: [
+                      const Padding(
+                        padding: EdgeInsets.all(20),
+                        child: Text(
+                          'طلبات إنهاء الحسابات',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 22,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
                       ),
-                    ),
-                  ),
-                  Expanded(
-                    child: requests.isEmpty
-                        ? const Center(child: Text('لا توجد طلبات معلقة.'))
-                        : ListView.separated(
-                            padding: const EdgeInsets.all(16),
-                            itemCount: requests.length,
-                            separatorBuilder: (_, __) => const Divider(),
-                            itemBuilder: (context, index) {
-                              final request = requests[index];
-                              final canReview =
-                                  request.requesterId != actor.uid &&
-                                  ((request.status == 'pending_hr_manager' &&
-                                          actor.role ==
-                                              EmployeeRole.hrManager) ||
-                                      (request.status ==
-                                              'pending_super_admin' &&
-                                          actor.role ==
-                                              EmployeeRole.superAdmin));
-                              final pendingLabel =
-                                  request.status == 'pending_hr_manager'
-                                  ? 'بانتظار اعتماد HR'
-                                  : 'بانتظار الاعتماد النهائي من مالك النظام';
-                              return Container(
-                                padding: const EdgeInsets.all(16),
-                                decoration: BoxDecoration(
-                                  color: ZaWolfColors.surface02,
-                                  borderRadius: BorderRadius.circular(8),
-                                  border: Border.all(
-                                    color: ZaWolfColors.surface03,
-                                  ),
-                                ),
-                                child: Column(
-                                  crossAxisAlignment:
-                                      CrossAxisAlignment.stretch,
-                                  children: [
-                                    Text(
-                                      request.employeeName,
-                                      style: const TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 17,
-                                        fontWeight: FontWeight.w700,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 8),
-                                    Text(
-                                      request.reason,
-                                      style: const TextStyle(
-                                        color: ZaWolfColors.textSecondary,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 6),
-                                    Text(
-                                      'مقدم الطلب: ${request.requesterName}',
-                                      style: const TextStyle(
-                                        color: ZaWolfColors.textMuted,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 14),
-                                    if (canReview)
-                                      Row(
-                                        children: [
-                                          Expanded(
-                                            child: WolfButton(
-                                              height: 46,
-                                              variant:
-                                                  WolfButtonVariant.outline,
-                                              text: 'رفض الطلب',
-                                              onPressed: () => _reviewDeletion(
-                                                request,
-                                                actor,
-                                                false,
-                                              ),
-                                            ),
-                                          ),
-                                          const SizedBox(width: 12),
-                                          Expanded(
-                                            child: WolfButton(
-                                              height: 46,
-                                              variant: WolfButtonVariant.danger,
-                                              text: 'اعتماد وإيقاف الحساب',
-                                              onPressed: () => _reviewDeletion(
-                                                request,
-                                                actor,
-                                                true,
-                                              ),
-                                            ),
-                                          ),
-                                        ],
-                                      )
-                                    else
-                                      Align(
-                                        alignment: AlignmentDirectional.centerStart,
-                                        child: Text(
-                                          pendingLabel,
-                                          style: const TextStyle(
-                                            color: ZaWolfColors.warning,
-                                            fontWeight: FontWeight.w600,
-                                          ),
+                      Expanded(
+                        child:
+                            requests.isEmpty
+                                ? const Center(
+                                  child: Text('لا توجد طلبات معلقة.'),
+                                )
+                                : ListView.separated(
+                                  padding: const EdgeInsets.all(16),
+                                  itemCount: requests.length,
+                                  separatorBuilder: (_, __) => const Divider(),
+                                  itemBuilder: (context, index) {
+                                    final request = requests[index];
+                                    final canReview =
+                                        request.requesterId != actor.uid &&
+                                        ((request.status ==
+                                                    'pending_hr_manager' &&
+                                                actor.role ==
+                                                    EmployeeRole.hrManager) ||
+                                            (request.status ==
+                                                    'pending_super_admin' &&
+                                                actor.role ==
+                                                    EmployeeRole.superAdmin));
+                                    final pendingLabel =
+                                        request.status == 'pending_hr_manager'
+                                            ? 'بانتظار اعتماد HR'
+                                            : 'بانتظار الاعتماد النهائي من مالك النظام';
+                                    return Container(
+                                      padding: const EdgeInsets.all(16),
+                                      decoration: BoxDecoration(
+                                        color: ZaWolfColors.surface02,
+                                        borderRadius: BorderRadius.circular(8),
+                                        border: Border.all(
+                                          color: ZaWolfColors.surface03,
                                         ),
                                       ),
-                                  ],
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.stretch,
+                                        children: [
+                                          Text(
+                                            request.employeeName,
+                                            style: const TextStyle(
+                                              color: Colors.white,
+                                              fontSize: 17,
+                                              fontWeight: FontWeight.w700,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 8),
+                                          Text(
+                                            request.reason,
+                                            style: const TextStyle(
+                                              color: ZaWolfColors.textSecondary,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 6),
+                                          Text(
+                                            'مقدم الطلب: ${request.requesterName}',
+                                            style: const TextStyle(
+                                              color: ZaWolfColors.textMuted,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 14),
+                                          if (canReview)
+                                            Row(
+                                              children: [
+                                                Expanded(
+                                                  child: WolfButton(
+                                                    height: 46,
+                                                    variant:
+                                                        WolfButtonVariant
+                                                            .outline,
+                                                    text: 'رفض الطلب',
+                                                    onPressed:
+                                                        () => _reviewDeletion(
+                                                          request,
+                                                          actor,
+                                                          false,
+                                                        ),
+                                                  ),
+                                                ),
+                                                const SizedBox(width: 12),
+                                                Expanded(
+                                                  child: WolfButton(
+                                                    height: 46,
+                                                    variant:
+                                                        WolfButtonVariant
+                                                            .danger,
+                                                    text:
+                                                        'اعتماد وإيقاف الحساب',
+                                                    onPressed:
+                                                        () => _reviewDeletion(
+                                                          request,
+                                                          actor,
+                                                          true,
+                                                        ),
+                                                  ),
+                                                ),
+                                              ],
+                                            )
+                                          else
+                                            Align(
+                                              alignment:
+                                                  AlignmentDirectional
+                                                      .centerStart,
+                                              child: Text(
+                                                pendingLabel,
+                                                style: const TextStyle(
+                                                  color: ZaWolfColors.warning,
+                                                  fontWeight: FontWeight.w600,
+                                                ),
+                                              ),
+                                            ),
+                                        ],
+                                      ),
+                                    );
+                                  },
                                 ),
-                              );
-                            },
-                          ),
-                  ),
-                ],
-              );
-            },
+                      ),
+                    ],
+                  );
+                },
+              ),
+            ),
           ),
-        ),
-      ),
     );
   }
 
@@ -1720,30 +1846,30 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
   ) async {
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        backgroundColor: ZaWolfColors.surface02,
-        title: Text(approve ? 'تأكيد إيقاف الحساب' : 'تأكيد رفض الطلب'),
-        content: Text(
-          approve
-              ? 'سيتم إيقاف حساب ${request.employeeName}. لن يستطيع تسجيل الدخول، وستبقى سجلاته محفوظة للمراجعة.'
-              : 'سيتم رفض طلب إنهاء حساب ${request.employeeName}.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: const Text('إلغاء'),
-          ),
-          FilledButton(
-            style: FilledButton.styleFrom(
-              backgroundColor: approve
-                  ? ZaWolfColors.error
-                  : ZaWolfColors.warning,
+      builder:
+          (dialogContext) => AlertDialog(
+            backgroundColor: ZaWolfColors.surface02,
+            title: Text(approve ? 'تأكيد إيقاف الحساب' : 'تأكيد رفض الطلب'),
+            content: Text(
+              approve
+                  ? 'سيتم إيقاف حساب ${request.employeeName}. لن يستطيع تسجيل الدخول، وستبقى سجلاته محفوظة للمراجعة.'
+                  : 'سيتم رفض طلب إنهاء حساب ${request.employeeName}.',
             ),
-            onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: Text(approve ? 'إيقاف الحساب' : 'رفض الطلب'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(false),
+                child: const Text('إلغاء'),
+              ),
+              FilledButton(
+                style: FilledButton.styleFrom(
+                  backgroundColor:
+                      approve ? ZaWolfColors.error : ZaWolfColors.warning,
+                ),
+                onPressed: () => Navigator.of(dialogContext).pop(true),
+                child: Text(approve ? 'إيقاف الحساب' : 'رفض الطلب'),
+              ),
+            ],
           ),
-        ],
-      ),
     );
     if (confirmed != true) return;
     try {
@@ -1804,9 +1930,10 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
         decoration: BoxDecoration(
-          color: isActive
-              ? ZaWolfColors.primaryCyan.withValues(alpha: 0.15)
-              : ZaWolfColors.surface01,
+          color:
+              isActive
+                  ? ZaWolfColors.primaryCyan.withValues(alpha: 0.15)
+                  : ZaWolfColors.surface01,
           borderRadius: BorderRadius.circular(20),
           border: Border.all(
             color: isActive ? ZaWolfColors.primaryCyan : ZaWolfColors.surface02,
@@ -1818,9 +1945,10 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
             Text(
               label,
               style: TextStyle(
-                color: isActive
-                    ? ZaWolfColors.primaryCyan
-                    : ZaWolfColors.textSecondary,
+                color:
+                    isActive
+                        ? ZaWolfColors.primaryCyan
+                        : ZaWolfColors.textSecondary,
                 fontSize: 12,
                 fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
               ),
@@ -1949,10 +2077,11 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
   }
 
   void _showLocationFilterSheet() async {
-    final snap = await _db
-        .collection('locations')
-        .where('isActive', isEqualTo: true)
-        .get();
+    final snap =
+        await _db
+            .collection('locations')
+            .where('isActive', isEqualTo: true)
+            .get();
     if (!mounted) return;
     showModalBottomSheet(
       context: context,
@@ -2064,9 +2193,10 @@ class _AddEmployeeDialogState extends State<AddEmployeeDialog> {
       final leaderSnap = results[2];
 
       setState(() {
-        _locations = locSnap.docs
-            .map((doc) => LocationModel.fromFirestore(doc))
-            .toList();
+        _locations =
+            locSnap.docs
+                .map((doc) => LocationModel.fromFirestore(doc))
+                .toList();
         if (_selectedLocationId != null &&
             _selectedLocationId!.isNotEmpty &&
             !_locations.any((loc) => loc.locationId == _selectedLocationId)) {
@@ -2080,13 +2210,13 @@ class _AddEmployeeDialogState extends State<AddEmployeeDialog> {
             ),
           );
         }
-        _managers = mgrSnap.docs
-            .map((doc) => UserModel.fromFirestore(doc))
-            .toList();
-        _teamLeaders = leaderSnap.docs
-            .map((doc) => UserModel.fromFirestore(doc))
-            .where((leader) => leader.isActive)
-            .toList();
+        _managers =
+            mgrSnap.docs.map((doc) => UserModel.fromFirestore(doc)).toList();
+        _teamLeaders =
+            leaderSnap.docs
+                .map((doc) => UserModel.fromFirestore(doc))
+                .where((leader) => leader.isActive)
+                .toList();
       });
     } catch (_) {}
   }
@@ -2195,18 +2325,16 @@ class _AddEmployeeDialogState extends State<AddEmployeeDialog> {
     final authService = Provider.of<AuthService>(context, listen: false);
 
     try {
-      final selectedManagers = _selectedManagerIds
-          .map(_managerById)
-          .whereType<UserModel>()
-          .toList();
+      final selectedManagers =
+          _selectedManagerIds.map(_managerById).whereType<UserModel>().toList();
       final primaryManager = selectedManagers.firstOrNull;
       final organizationLevel =
           _selectedOrganizationLevel == OrganizationLevel.employee
-          ? OrganizationLevel.defaultFor(
-              employeeId: _codeController.text,
-              appRole: _selectedRole,
-            )
-          : _selectedOrganizationLevel;
+              ? OrganizationLevel.defaultFor(
+                employeeId: _codeController.text,
+                appRole: _selectedRole,
+              )
+              : _selectedOrganizationLevel;
       final organizationDivisionId =
           _selectedOrganizationDivisionId ??
           OrganizationDefaults.inferDivisionId(
@@ -2227,13 +2355,13 @@ class _AddEmployeeDialogState extends State<AddEmployeeDialog> {
         managerId: primaryManager?.uid,
         managerName: primaryManager?.displayName,
         managerIds: selectedManagers.map((manager) => manager.uid).toList(),
-        managerNames: selectedManagers
-            .map((manager) => manager.displayName)
-            .toList(),
-        managerCodes: selectedManagers
-            .map((manager) => manager.employeeId)
-            .where((code) => code.isNotEmpty)
-            .toList(),
+        managerNames:
+            selectedManagers.map((manager) => manager.displayName).toList(),
+        managerCodes:
+            selectedManagers
+                .map((manager) => manager.employeeId)
+                .where((code) => code.isNotEmpty)
+                .toList(),
         teamLeaderId: _selectedTeamLeaderId,
         teamLeaderName: _selectedTeamLeaderName,
         workSchedule: WorkSchedule(
@@ -2249,77 +2377,78 @@ class _AddEmployeeDialogState extends State<AddEmployeeDialog> {
         'organizationOrder': 999,
         'salesAnalyticsEnabled': _salesAnalyticsEnabled,
         'salesAnalyticsRole': _salesAnalyticsEnabled ? _salesAnalyticsRole : '',
-        'salesAnalyticsAgentKey': _salesAnalyticsEnabled
-            ? _salesAgentKeyController.text.trim()
-            : '',
-        'salesAnalyticsCompany': _salesAnalyticsEnabled
-            ? _salesCompanyController.text.trim()
-            : '',
+        'salesAnalyticsAgentKey':
+            _salesAnalyticsEnabled ? _salesAgentKeyController.text.trim() : '',
+        'salesAnalyticsCompany':
+            _salesAnalyticsEnabled ? _salesCompanyController.text.trim() : '',
       });
 
       if (mounted) {
         Navigator.pop(context);
         showDialog(
           context: context,
-          builder: (context) => AlertDialog(
-            backgroundColor: ZaWolfColors.surface01,
-            title: const Text(
-              'تم إنشاء الحساب بنجاح ✅',
-              textDirection: TextDirection.rtl,
-            ),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Text(
-                  'الاسم: ${newEmp.displayName}',
+          builder:
+              (context) => AlertDialog(
+                backgroundColor: ZaWolfColors.surface01,
+                title: const Text(
+                  'تم إنشاء الحساب بنجاح ✅',
                   textDirection: TextDirection.rtl,
                 ),
-                Text(
-                  'البريد الإلكتروني: ${newEmp.email}',
-                  textDirection: TextDirection.rtl,
-                ),
-                const SizedBox(height: 12),
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: ZaWolfColors.primaryCyan.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(
-                      color: ZaWolfColors.primaryCyan.withValues(alpha: 0.3),
+                content: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(
+                      'الاسم: ${newEmp.displayName}',
+                      textDirection: TextDirection.rtl,
                     ),
-                  ),
-                  child: Column(
-                    children: [
-                      const Text(
-                        'كلمة المرور المؤقتة',
-                        style: TextStyle(
-                          color: ZaWolfColors.primaryCyan,
-                          fontWeight: FontWeight.bold,
+                    Text(
+                      'البريد الإلكتروني: ${newEmp.email}',
+                      textDirection: TextDirection.rtl,
+                    ),
+                    const SizedBox(height: 12),
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: ZaWolfColors.primaryCyan.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: ZaWolfColors.primaryCyan.withValues(
+                            alpha: 0.3,
+                          ),
                         ),
                       ),
-                      const SizedBox(height: 4),
-                      SelectableText(
-                        newEmp.initialPassword ?? '',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 18,
-                          fontFamily: 'JetBrains Mono',
-                          fontWeight: FontWeight.bold,
-                        ),
+                      child: Column(
+                        children: [
+                          const Text(
+                            'كلمة المرور المؤقتة',
+                            style: TextStyle(
+                              color: ZaWolfColors.primaryCyan,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          SelectableText(
+                            newEmp.initialPassword ?? '',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 18,
+                              fontFamily: 'JetBrains Mono',
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
-              ],
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('إغلاق'),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text('إغلاق'),
+                  ),
+                ],
               ),
-            ],
-          ),
         );
       }
     } catch (e) {
@@ -2398,8 +2527,9 @@ class _AddEmployeeDialogState extends State<AddEmployeeDialog> {
                   labelText: 'الاسم الكامل',
                   englishLabel: 'Full Name',
                   hintText: 'أحمد محمد علي',
-                  validator: (val) =>
-                      val == null || val.isEmpty ? 'حقل الاسم مطلوب' : null,
+                  validator:
+                      (val) =>
+                          val == null || val.isEmpty ? 'حقل الاسم مطلوب' : null,
                 ),
                 const SizedBox(height: 16),
 
@@ -2441,9 +2571,11 @@ class _AddEmployeeDialogState extends State<AddEmployeeDialog> {
                   englishLabel: 'Email Address',
                   hintText: 'employee@zawolf.ai',
                   keyboardType: TextInputType.emailAddress,
-                  validator: (val) => val == null || val.isEmpty
-                      ? 'البريد الإلكتروني مطلوب'
-                      : null,
+                  validator:
+                      (val) =>
+                          val == null || val.isEmpty
+                              ? 'البريد الإلكتروني مطلوب'
+                              : null,
                 ),
                 const SizedBox(height: 16),
 
@@ -2453,8 +2585,11 @@ class _AddEmployeeDialogState extends State<AddEmployeeDialog> {
                   labelText: 'الكود التعريفي (ID)',
                   englishLabel: 'Employee Code',
                   hintText: 'ZW-1002',
-                  validator: (val) =>
-                      val == null || val.isEmpty ? 'كود الموظف مطلوب' : null,
+                  validator:
+                      (val) =>
+                          val == null || val.isEmpty
+                              ? 'كود الموظف مطلوب'
+                              : null,
                 ),
                 const SizedBox(height: 16),
 
@@ -2463,9 +2598,10 @@ class _AddEmployeeDialogState extends State<AddEmployeeDialog> {
                   label: 'المسمى الوظيفي',
                   actionLabel: 'مسمى جديد',
                   dialogTitle: 'إضافة مسمى وظيفي جديد',
-                  initialValue: _jobTitleController.text.isNotEmpty
-                      ? _jobTitleController.text
-                      : null,
+                  initialValue:
+                      _jobTitleController.text.isNotEmpty
+                          ? _jobTitleController.text
+                          : null,
                   onChanged: (val) {
                     if (val != null) _jobTitleController.text = val;
                   },
@@ -2605,15 +2741,16 @@ class _AddEmployeeDialogState extends State<AddEmployeeDialog> {
                     labelStyle: TextStyle(color: ZaWolfColors.primaryCyan),
                   ),
                   style: const TextStyle(color: Colors.white),
-                  items: _locations.map((loc) {
-                    return DropdownMenuItem(
-                      value: loc.locationId,
-                      child: Align(
-                        alignment: AlignmentDirectional.centerStart,
-                        child: Text(loc.name),
-                      ),
-                    );
-                  }).toList(),
+                  items:
+                      _locations.map((loc) {
+                        return DropdownMenuItem(
+                          value: loc.locationId,
+                          child: Align(
+                            alignment: AlignmentDirectional.centerStart,
+                            child: Text(loc.name),
+                          ),
+                        );
+                      }).toList(),
                   onChanged: (val) {
                     if (val != null) {
                       final selected = _locations.firstWhere(
@@ -2639,15 +2776,16 @@ class _AddEmployeeDialogState extends State<AddEmployeeDialog> {
                     labelStyle: TextStyle(color: ZaWolfColors.primaryCyan),
                   ),
                   style: const TextStyle(color: Colors.white),
-                  items: _managers.map((mgr) {
-                    return DropdownMenuItem(
-                      value: mgr.uid,
-                      child: Align(
-                        alignment: AlignmentDirectional.centerStart,
-                        child: Text(mgr.displayName),
-                      ),
-                    );
-                  }).toList(),
+                  items:
+                      _managers.map((mgr) {
+                        return DropdownMenuItem(
+                          value: mgr.uid,
+                          child: Align(
+                            alignment: AlignmentDirectional.centerStart,
+                            child: Text(mgr.displayName),
+                          ),
+                        );
+                      }).toList(),
                   onChanged: _selectPrimaryManager,
                 ),
                 const SizedBox(height: 12),
@@ -2662,20 +2800,22 @@ class _AddEmployeeDialogState extends State<AddEmployeeDialog> {
                     labelStyle: TextStyle(color: ZaWolfColors.primaryCyan),
                   ),
                   style: const TextStyle(color: Colors.white),
-                  items: _managers
-                      .where(
-                        (manager) => !_selectedManagerIds.contains(manager.uid),
-                      )
-                      .map(
-                        (manager) => DropdownMenuItem(
-                          value: manager.uid,
-                          child: Align(
-                            alignment: AlignmentDirectional.centerStart,
-                            child: Text(manager.displayName),
-                          ),
-                        ),
-                      )
-                      .toList(),
+                  items:
+                      _managers
+                          .where(
+                            (manager) =>
+                                !_selectedManagerIds.contains(manager.uid),
+                          )
+                          .map(
+                            (manager) => DropdownMenuItem(
+                              value: manager.uid,
+                              child: Align(
+                                alignment: AlignmentDirectional.centerStart,
+                                child: Text(manager.displayName),
+                              ),
+                            ),
+                          )
+                          .toList(),
                   onChanged: _addAssignedManager,
                 ),
                 if (_selectedManagerIds.isNotEmpty) ...[
@@ -2690,50 +2830,57 @@ class _AddEmployeeDialogState extends State<AddEmployeeDialog> {
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: _selectedManagerIds.asMap().entries.map((
-                        entry,
-                      ) {
-                        final index = entry.key;
-                        final managerId = entry.value;
-                        final managerName =
-                            _managerById(managerId)?.displayName ??
-                            'مدير غير معروف';
-                        return Row(
-                          children: [
-                            IconButton(
-                              tooltip: 'حذف',
-                              onPressed: () =>
-                                  _removeAssignedManager(managerId),
-                              icon: const Icon(
-                                Icons.close,
-                                color: ZaWolfColors.error,
-                              ),
-                            ),
-                            IconButton(
-                              tooltip: 'تحريك لأسفل',
-                              onPressed: index == _selectedManagerIds.length - 1
-                                  ? null
-                                  : () => _moveAssignedManager(managerId, 1),
-                              icon: const Icon(Icons.keyboard_arrow_down),
-                            ),
-                            IconButton(
-                              tooltip: 'تحريك لأعلى',
-                              onPressed: index == 0
-                                  ? null
-                                  : () => _moveAssignedManager(managerId, -1),
-                              icon: const Icon(Icons.keyboard_arrow_up),
-                            ),
-                            Expanded(
-                              child: Text(
-                                index == 0
-                                    ? '$managerName · المدير المباشر'
-                                    : '$managerName · موافقة رقم ${index + 1}',
-                                textDirection: TextDirection.rtl,
-                              ),
-                            ),
-                          ],
-                        );
-                      }).toList(),
+                      children:
+                          _selectedManagerIds.asMap().entries.map((entry) {
+                            final index = entry.key;
+                            final managerId = entry.value;
+                            final managerName =
+                                _managerById(managerId)?.displayName ??
+                                'مدير غير معروف';
+                            return Row(
+                              children: [
+                                IconButton(
+                                  tooltip: 'حذف',
+                                  onPressed:
+                                      () => _removeAssignedManager(managerId),
+                                  icon: const Icon(
+                                    Icons.close,
+                                    color: ZaWolfColors.error,
+                                  ),
+                                ),
+                                IconButton(
+                                  tooltip: 'تحريك لأسفل',
+                                  onPressed:
+                                      index == _selectedManagerIds.length - 1
+                                          ? null
+                                          : () => _moveAssignedManager(
+                                            managerId,
+                                            1,
+                                          ),
+                                  icon: const Icon(Icons.keyboard_arrow_down),
+                                ),
+                                IconButton(
+                                  tooltip: 'تحريك لأعلى',
+                                  onPressed:
+                                      index == 0
+                                          ? null
+                                          : () => _moveAssignedManager(
+                                            managerId,
+                                            -1,
+                                          ),
+                                  icon: const Icon(Icons.keyboard_arrow_up),
+                                ),
+                                Expanded(
+                                  child: Text(
+                                    index == 0
+                                        ? '$managerName · المدير المباشر'
+                                        : '$managerName · موافقة رقم ${index + 1}',
+                                    textDirection: TextDirection.rtl,
+                                  ),
+                                ),
+                              ],
+                            );
+                          }).toList(),
                     ),
                   ),
                   const SizedBox(height: 8),
@@ -2771,11 +2918,12 @@ class _AddEmployeeDialogState extends State<AddEmployeeDialog> {
                     ),
                   ],
                   onChanged: (value) {
-                    final leader = value == null
-                        ? null
-                        : _teamLeaders
-                              .where((item) => item.uid == value)
-                              .firstOrNull;
+                    final leader =
+                        value == null
+                            ? null
+                            : _teamLeaders
+                                .where((item) => item.uid == value)
+                                .firstOrNull;
                     setState(() {
                       _selectedTeamLeaderId = leader?.uid;
                       _selectedTeamLeaderName = leader?.displayName;
@@ -2896,16 +3044,16 @@ class _EditEmployeeDialogState extends State<EditEmployeeDialog> {
       text: emp.salesAnalyticsCompany,
     );
     _salesAnalyticsEnabled = emp.salesAnalyticsEnabled;
-    _salesAnalyticsRole = emp.salesAnalyticsRole.isEmpty
-        ? 'sales'
-        : emp.salesAnalyticsRole;
+    _salesAnalyticsRole =
+        emp.salesAnalyticsRole.isEmpty ? 'sales' : emp.salesAnalyticsRole;
     _selectedDepartment = emp.department;
-    _selectedOrganizationLevel = emp.organizationLevel == 'employee'
-        ? OrganizationLevel.defaultFor(
-            employeeId: emp.employeeId,
-            appRole: emp.role,
-          )
-        : emp.organizationLevel;
+    _selectedOrganizationLevel =
+        emp.organizationLevel == 'employee'
+            ? OrganizationLevel.defaultFor(
+              employeeId: emp.employeeId,
+              appRole: emp.role,
+            )
+            : emp.organizationLevel;
     _selectedOrganizationDivisionId =
         emp.organizationDivisionId ??
         OrganizationDefaults.inferDivisionId(emp.department);
@@ -2923,12 +3071,13 @@ class _EditEmployeeDialogState extends State<EditEmployeeDialog> {
       emp.workSchedule.workDays ?? const [6, 7, 1, 2, 3, 4],
     );
     _hiringDate = emp.joinDate;
-    _selectedManagerIds = emp.managerIds.isNotEmpty
-        ? List<String>.from(emp.managerIds)
-        : [
-            if (emp.managerId != null && emp.managerId!.isNotEmpty)
-              emp.managerId!,
-          ];
+    _selectedManagerIds =
+        emp.managerIds.isNotEmpty
+            ? List<String>.from(emp.managerIds)
+            : [
+              if (emp.managerId != null && emp.managerId!.isNotEmpty)
+                emp.managerId!,
+            ];
 
     _fetchLocationsAndManagers();
   }
@@ -2959,9 +3108,10 @@ class _EditEmployeeDialogState extends State<EditEmployeeDialog> {
       final leaderSnap = results[2];
 
       setState(() {
-        _locations = locSnap.docs
-            .map((doc) => LocationModel.fromFirestore(doc))
-            .toList();
+        _locations =
+            locSnap.docs
+                .map((doc) => LocationModel.fromFirestore(doc))
+                .toList();
         if (_selectedLocationId != null &&
             _selectedLocationId!.isNotEmpty &&
             !_locations.any((loc) => loc.locationId == _selectedLocationId)) {
@@ -2975,24 +3125,25 @@ class _EditEmployeeDialogState extends State<EditEmployeeDialog> {
             ),
           );
         }
-        _managers = mgrSnap.docs
-            .map((doc) => UserModel.fromFirestore(doc))
-            .toList();
-        _teamLeaders = leaderSnap.docs
-            .map((doc) => UserModel.fromFirestore(doc))
-            .where((leader) => leader.isActive)
-            .toList();
-        final missingManagerIds = {
-          ..._selectedManagerIds,
-          if (_selectedManagerId != null && _selectedManagerId!.isNotEmpty)
-            _selectedManagerId!,
-        }.where((id) => !_managers.any((mgr) => mgr.uid == id)).toList();
+        _managers =
+            mgrSnap.docs.map((doc) => UserModel.fromFirestore(doc)).toList();
+        _teamLeaders =
+            leaderSnap.docs
+                .map((doc) => UserModel.fromFirestore(doc))
+                .where((leader) => leader.isActive)
+                .toList();
+        final missingManagerIds =
+            {
+              ..._selectedManagerIds,
+              if (_selectedManagerId != null && _selectedManagerId!.isNotEmpty)
+                _selectedManagerId!,
+            }.where((id) => !_managers.any((mgr) => mgr.uid == id)).toList();
         for (final managerId in missingManagerIds) {
           final index = widget.employee.managerIds.indexOf(managerId);
           final fallbackName =
               index >= 0 && index < widget.employee.managerNames.length
-              ? widget.employee.managerNames[index]
-              : (_selectedManagerName ?? 'المدير الحالي');
+                  ? widget.employee.managerNames[index]
+                  : (_selectedManagerName ?? 'المدير الحالي');
           _managers.add(
             widget.employee.copyWith(
               uid: managerId,
@@ -3046,52 +3197,56 @@ class _EditEmployeeDialogState extends State<EditEmployeeDialog> {
     final managerName = _managerById(managerId)?.displayName ?? 'المدير';
     final assignmentType = await showDialog<String>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        backgroundColor: ZaWolfColors.surface01,
-        title: Text(
-          'كيف تريد إسناد $managerName؟',
-          textDirection: TextDirection.rtl,
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(
-                Icons.person_pin,
-                color: ZaWolfColors.primaryCyan,
-              ),
-              title: const Text('مدير مباشر', textDirection: TextDirection.rtl),
-              subtitle: const Text(
-                'سيظهر الموظف في جميع شاشات هذا المدير ويبدأ مسار الموافقات منه.',
-                textDirection: TextDirection.rtl,
-              ),
-              onTap: () => Navigator.pop(dialogContext, 'direct'),
+      builder:
+          (dialogContext) => AlertDialog(
+            backgroundColor: ZaWolfColors.surface01,
+            title: Text(
+              'كيف تريد إسناد $managerName؟',
+              textDirection: TextDirection.rtl,
             ),
-            const Divider(color: ZaWolfColors.surface03),
-            ListTile(
-              leading: const Icon(
-                Icons.account_tree_outlined,
-                color: ZaWolfColors.textSecondary,
-              ),
-              title: const Text(
-                'مدير أعلى في المسار',
-                textDirection: TextDirection.rtl,
-              ),
-              subtitle: const Text(
-                'يأتي بعد المدير المباشر ولا يستبدله في ملكية الفريق.',
-                textDirection: TextDirection.rtl,
-              ),
-              onTap: () => Navigator.pop(dialogContext, 'higher'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ListTile(
+                  leading: const Icon(
+                    Icons.person_pin,
+                    color: ZaWolfColors.primaryCyan,
+                  ),
+                  title: const Text(
+                    'مدير مباشر',
+                    textDirection: TextDirection.rtl,
+                  ),
+                  subtitle: const Text(
+                    'سيظهر الموظف في جميع شاشات هذا المدير ويبدأ مسار الموافقات منه.',
+                    textDirection: TextDirection.rtl,
+                  ),
+                  onTap: () => Navigator.pop(dialogContext, 'direct'),
+                ),
+                const Divider(color: ZaWolfColors.surface03),
+                ListTile(
+                  leading: const Icon(
+                    Icons.account_tree_outlined,
+                    color: ZaWolfColors.textSecondary,
+                  ),
+                  title: const Text(
+                    'مدير أعلى في المسار',
+                    textDirection: TextDirection.rtl,
+                  ),
+                  subtitle: const Text(
+                    'يأتي بعد المدير المباشر ولا يستبدله في ملكية الفريق.',
+                    textDirection: TextDirection.rtl,
+                  ),
+                  onTap: () => Navigator.pop(dialogContext, 'higher'),
+                ),
+              ],
             ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('إلغاء'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: const Text('إلغاء'),
+              ),
+            ],
           ),
-        ],
-      ),
     );
 
     if (!mounted || assignmentType == null) return;
@@ -3164,16 +3319,14 @@ class _EditEmployeeDialogState extends State<EditEmployeeDialog> {
           widget.employee.role == EmployeeRole.superAdmin ||
           widget.employee.role == EmployeeRole.hrManager ||
           widget.employee.role == EmployeeRole.hrAdmin;
-      final effectiveRole = !canUseSuperAdmin && existingRoleIsPrivileged
-          ? widget.employee.role
-          : _selectedRole;
-      final selectedManagers = _selectedManagerIds
-          .map(_managerById)
-          .whereType<UserModel>()
-          .toList();
-      final primaryManager = selectedManagers.isEmpty
-          ? null
-          : selectedManagers.first;
+      final effectiveRole =
+          !canUseSuperAdmin && existingRoleIsPrivileged
+              ? widget.employee.role
+              : _selectedRole;
+      final selectedManagers =
+          _selectedManagerIds.map(_managerById).whereType<UserModel>().toList();
+      final primaryManager =
+          selectedManagers.isEmpty ? null : selectedManagers.first;
       final organizationDivisionId =
           _selectedOrganizationDivisionId ??
           OrganizationDefaults.inferDivisionId(
@@ -3202,28 +3355,27 @@ class _EditEmployeeDialogState extends State<EditEmployeeDialog> {
         'managerId': primaryManager?.uid,
         'managerName': primaryManager?.displayName,
         'managerIds': selectedManagers.map((manager) => manager.uid).toList(),
-        'managerNames': selectedManagers
-            .map((manager) => manager.displayName)
-            .toList(),
-        'managerCodes': selectedManagers
-            .map((manager) => manager.employeeId)
-            .where((code) => code.isNotEmpty)
-            .toList(),
+        'managerNames':
+            selectedManagers.map((manager) => manager.displayName).toList(),
+        'managerCodes':
+            selectedManagers
+                .map((manager) => manager.employeeId)
+                .where((code) => code.isNotEmpty)
+                .toList(),
         'teamLeaderId': _selectedTeamLeaderId,
         'teamLeaderName': _selectedTeamLeaderName,
-        'workSchedule': WorkSchedule(
-          startTime: _workStartTime,
-          endTime: _workEndTime,
-          workDays: _workDays,
-        ).toMap(),
+        'workSchedule':
+            WorkSchedule(
+              startTime: _workStartTime,
+              endTime: _workEndTime,
+              workDays: _workDays,
+            ).toMap(),
         'salesAnalyticsEnabled': _salesAnalyticsEnabled,
         'salesAnalyticsRole': _salesAnalyticsEnabled ? _salesAnalyticsRole : '',
-        'salesAnalyticsAgentKey': _salesAnalyticsEnabled
-            ? _salesAgentKeyController.text.trim()
-            : '',
-        'salesAnalyticsCompany': _salesAnalyticsEnabled
-            ? _salesCompanyController.text.trim()
-            : '',
+        'salesAnalyticsAgentKey':
+            _salesAnalyticsEnabled ? _salesAgentKeyController.text.trim() : '',
+        'salesAnalyticsCompany':
+            _salesAnalyticsEnabled ? _salesCompanyController.text.trim() : '',
       };
 
       await _db.collection('users').doc(widget.employee.uid).update(updateData);
@@ -3261,51 +3413,52 @@ class _EditEmployeeDialogState extends State<EditEmployeeDialog> {
     final reasonController = TextEditingController();
     final reason = await showDialog<String>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        backgroundColor: ZaWolfColors.surface01,
-        title: const Text(
-          'إعادة ضبط جهاز الحضور',
-          style: TextStyle(color: Colors.white),
-        ),
-        content: SizedBox(
-          width: 420,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text(
-                'سيتم فك ربط جهاز ${widget.employee.displayName} الحالي. اكتب سبباً للتدقيق، وبعدها يمكنه تسجيل الحضور من جهاز جديد.',
-                style: const TextStyle(color: ZaWolfColors.textSecondary),
-                textDirection: TextDirection.rtl,
+      builder:
+          (dialogContext) => AlertDialog(
+            backgroundColor: ZaWolfColors.surface01,
+            title: const Text(
+              'إعادة ضبط جهاز الحضور',
+              style: TextStyle(color: Colors.white),
+            ),
+            content: SizedBox(
+              width: 420,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    'سيتم فك ربط جهاز ${widget.employee.displayName} الحالي. اكتب سبباً للتدقيق، وبعدها يمكنه تسجيل الحضور من جهاز جديد.',
+                    style: const TextStyle(color: ZaWolfColors.textSecondary),
+                    textDirection: TextDirection.rtl,
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: reasonController,
+                    maxLength: 500,
+                    textDirection: TextDirection.rtl,
+                    decoration: const InputDecoration(
+                      labelText: 'سبب إعادة الضبط',
+                      hintText: 'مثال: استبدال هاتف الموظف',
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: reasonController,
-                maxLength: 500,
-                textDirection: TextDirection.rtl,
-                decoration: const InputDecoration(
-                  labelText: 'سبب إعادة الضبط',
-                  hintText: 'مثال: استبدال هاتف الموظف',
-                ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: const Text('إلغاء'),
+              ),
+              TextButton(
+                onPressed: () {
+                  final value = reasonController.text.trim();
+                  if (value.isEmpty) return;
+                  Navigator.pop(dialogContext, value);
+                },
+                child: const Text('تأكيد'),
               ),
             ],
           ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('إلغاء'),
-          ),
-          TextButton(
-            onPressed: () {
-              final value = reasonController.text.trim();
-              if (value.isEmpty) return;
-              Navigator.pop(dialogContext, value);
-            },
-            child: const Text('تأكيد'),
-          ),
-        ],
-      ),
     );
     reasonController.dispose();
     if (reason == null) return;
@@ -3323,15 +3476,22 @@ class _EditEmployeeDialogState extends State<EditEmployeeDialog> {
       } catch (_) {}
 
       // Direct Firestore update to reset registered device ID immediately
-      await FirebaseFirestore.instance.collection('users').doc(widget.employee.uid).update({
-        'registeredAttendanceDeviceId': FieldValue.delete(),
-        'registeredAttendanceDeviceLabel': FieldValue.delete(),
-        'registeredAttendanceDeviceAt': FieldValue.delete(),
-      });
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(widget.employee.uid)
+          .update({
+            'registeredAttendanceDeviceId': FieldValue.delete(),
+            'registeredAttendanceDeviceLabel': FieldValue.delete(),
+            'registeredAttendanceDeviceAt': FieldValue.delete(),
+          });
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('تمت إعادة ضبط جهاز الحضور بنجاح. يمكن للموظف تسجيل الحضور من هاتفه أو جهازه الجديد الآن.')),
+        const SnackBar(
+          content: Text(
+            'تمت إعادة ضبط جهاز الحضور بنجاح. يمكن للموظف تسجيل الحضور من هاتفه أو جهازه الجديد الآن.',
+          ),
+        ),
       );
       Navigator.pop(context);
     } catch (e) {
@@ -3402,16 +3562,20 @@ class _EditEmployeeDialogState extends State<EditEmployeeDialog> {
                 WolfInputField(
                   controller: _nameController,
                   labelText: 'الاسم الكامل',
-                  validator: (val) =>
-                      val == null || val.isEmpty ? 'حقل الاسم مطلوب' : null,
+                  validator:
+                      (val) =>
+                          val == null || val.isEmpty ? 'حقل الاسم مطلوب' : null,
                 ),
                 const SizedBox(height: 16),
 
                 WolfInputField(
                   controller: _codeController,
                   labelText: 'الكود التعريفي (ID)',
-                  validator: (val) =>
-                      val == null || val.isEmpty ? 'كود الموظف مطلوب' : null,
+                  validator:
+                      (val) =>
+                          val == null || val.isEmpty
+                              ? 'كود الموظف مطلوب'
+                              : null,
                 ),
                 const SizedBox(height: 16),
 
@@ -3419,9 +3583,10 @@ class _EditEmployeeDialogState extends State<EditEmployeeDialog> {
                   label: 'المسمى الوظيفي',
                   actionLabel: 'مسمى جديد',
                   dialogTitle: 'إضافة مسمى وظيفي جديد',
-                  initialValue: _jobTitleController.text.isNotEmpty
-                      ? _jobTitleController.text
-                      : null,
+                  initialValue:
+                      _jobTitleController.text.isNotEmpty
+                          ? _jobTitleController.text
+                          : null,
                   onChanged: (val) {
                     if (val != null) _jobTitleController.text = val;
                   },
@@ -3566,40 +3731,42 @@ class _EditEmployeeDialogState extends State<EditEmployeeDialog> {
                         widget.employee.role == EmployeeRole.superAdmin,
                     includeEnglish: false,
                   ),
-                  onChanged: canEditRole
-                      ? (val) {
-                          if (val != null) {
-                            setState(() {
-                              _selectedRole = val;
-                            });
+                  onChanged:
+                      canEditRole
+                          ? (val) {
+                            if (val != null) {
+                              setState(() {
+                                _selectedRole = val;
+                              });
+                            }
                           }
-                        }
-                      : null,
+                          : null,
                 ),
                 const SizedBox(height: 16),
 
                 DropdownButtonFormField<String>(
                   initialValue:
                       _locations.any((l) => l.locationId == _selectedLocationId)
-                      ? _selectedLocationId
-                      : null,
+                          ? _selectedLocationId
+                          : null,
                   dropdownColor: ZaWolfColors.surface01,
                   decoration: const InputDecoration(
                     labelText: 'فرع العمل الجغرافي',
                     labelStyle: TextStyle(color: ZaWolfColors.primaryCyan),
                   ),
                   style: const TextStyle(color: Colors.white),
-                  items: _locations
-                      .map(
-                        (loc) => DropdownMenuItem(
-                          value: loc.locationId,
-                          child: Align(
-                            alignment: AlignmentDirectional.centerStart,
-                            child: Text(loc.name),
-                          ),
-                        ),
-                      )
-                      .toList(),
+                  items:
+                      _locations
+                          .map(
+                            (loc) => DropdownMenuItem(
+                              value: loc.locationId,
+                              child: Align(
+                                alignment: AlignmentDirectional.centerStart,
+                                child: Text(loc.name),
+                              ),
+                            ),
+                          )
+                          .toList(),
                   onChanged: (val) {
                     if (val != null) {
                       final selected = _locations.firstWhere(
@@ -3617,8 +3784,8 @@ class _EditEmployeeDialogState extends State<EditEmployeeDialog> {
                 DropdownButtonFormField<String>(
                   initialValue:
                       _managers.any((m) => m.uid == _selectedManagerId)
-                      ? _selectedManagerId
-                      : null,
+                          ? _selectedManagerId
+                          : null,
                   dropdownColor: ZaWolfColors.surface01,
                   decoration: const InputDecoration(
                     labelText: 'المدير المباشر (مالك الفريق)',
@@ -3627,17 +3794,18 @@ class _EditEmployeeDialogState extends State<EditEmployeeDialog> {
                     labelStyle: TextStyle(color: ZaWolfColors.primaryCyan),
                   ),
                   style: const TextStyle(color: Colors.white),
-                  items: _managers
-                      .map(
-                        (mgr) => DropdownMenuItem(
-                          value: mgr.uid,
-                          child: Align(
-                            alignment: AlignmentDirectional.centerStart,
-                            child: Text(mgr.displayName),
-                          ),
-                        ),
-                      )
-                      .toList(),
+                  items:
+                      _managers
+                          .map(
+                            (mgr) => DropdownMenuItem(
+                              value: mgr.uid,
+                              child: Align(
+                                alignment: AlignmentDirectional.centerStart,
+                                child: Text(mgr.displayName),
+                              ),
+                            ),
+                          )
+                          .toList(),
                   onChanged: (val) {
                     setState(() {
                       if (val != null) {
@@ -3665,18 +3833,21 @@ class _EditEmployeeDialogState extends State<EditEmployeeDialog> {
                     labelStyle: TextStyle(color: ZaWolfColors.primaryCyan),
                   ),
                   style: const TextStyle(color: Colors.white),
-                  items: _managers
-                      .where((mgr) => !_selectedManagerIds.contains(mgr.uid))
-                      .map(
-                        (mgr) => DropdownMenuItem(
-                          value: mgr.uid,
-                          child: Align(
-                            alignment: AlignmentDirectional.centerStart,
-                            child: Text(mgr.displayName),
-                          ),
-                        ),
-                      )
-                      .toList(),
+                  items:
+                      _managers
+                          .where(
+                            (mgr) => !_selectedManagerIds.contains(mgr.uid),
+                          )
+                          .map(
+                            (mgr) => DropdownMenuItem(
+                              value: mgr.uid,
+                              child: Align(
+                                alignment: AlignmentDirectional.centerStart,
+                                child: Text(mgr.displayName),
+                              ),
+                            ),
+                          )
+                          .toList(),
                   onChanged: _addManagerWithAssignmentType,
                 ),
                 const SizedBox(height: 10),
@@ -3717,8 +3888,8 @@ class _EditEmployeeDialogState extends State<EditEmployeeDialog> {
                             padding: EdgeInsets.only(
                               bottom:
                                   index == _selectedManagerIds.length - 1
-                                  ? 0
-                                  : 8,
+                                      ? 0
+                                      : 8,
                             ),
                             child: Row(
                               children: [
@@ -3728,8 +3899,8 @@ class _EditEmployeeDialogState extends State<EditEmployeeDialog> {
                                     Icons.close,
                                     color: ZaWolfColors.error,
                                   ),
-                                  onPressed: () =>
-                                      _removeAssignedManager(managerId),
+                                  onPressed:
+                                      () => _removeAssignedManager(managerId),
                                 ),
                                 IconButton(
                                   tooltip: 'تحريك لأسفل',
@@ -3739,11 +3910,13 @@ class _EditEmployeeDialogState extends State<EditEmployeeDialog> {
                                   ),
                                   onPressed:
                                       index == 0 ||
-                                          index ==
-                                              _selectedManagerIds.length - 1
-                                      ? null
-                                      : () =>
-                                            _moveAssignedManager(managerId, 1),
+                                              index ==
+                                                  _selectedManagerIds.length - 1
+                                          ? null
+                                          : () => _moveAssignedManager(
+                                            managerId,
+                                            1,
+                                          ),
                                 ),
                                 IconButton(
                                   tooltip: 'تحريك لأعلى',
@@ -3751,10 +3924,13 @@ class _EditEmployeeDialogState extends State<EditEmployeeDialog> {
                                     Icons.keyboard_arrow_up,
                                     color: ZaWolfColors.textSecondary,
                                   ),
-                                  onPressed: index <= 1
-                                      ? null
-                                      : () =>
-                                            _moveAssignedManager(managerId, -1),
+                                  onPressed:
+                                      index <= 1
+                                          ? null
+                                          : () => _moveAssignedManager(
+                                            managerId,
+                                            -1,
+                                          ),
                                 ),
                                 Expanded(
                                   child: Text(
@@ -3769,8 +3945,8 @@ class _EditEmployeeDialogState extends State<EditEmployeeDialog> {
                                 ),
                                 if (index != 0)
                                   TextButton(
-                                    onPressed: () =>
-                                        _setPrimaryManager(managerId),
+                                    onPressed:
+                                        () => _setPrimaryManager(managerId),
                                     child: const Text('تعيين مباشر'),
                                   ),
                               ],
@@ -3816,11 +3992,12 @@ class _EditEmployeeDialogState extends State<EditEmployeeDialog> {
                     ),
                   ],
                   onChanged: (value) {
-                    final leader = value == null
-                        ? null
-                        : _teamLeaders
-                              .where((item) => item.uid == value)
-                              .firstOrNull;
+                    final leader =
+                        value == null
+                            ? null
+                            : _teamLeaders
+                                .where((item) => item.uid == value)
+                                .firstOrNull;
                     setState(() {
                       _selectedTeamLeaderId = leader?.uid;
                       _selectedTeamLeaderName = leader?.displayName;
@@ -3885,9 +4062,9 @@ class _EditEmployeeDialogState extends State<EditEmployeeDialog> {
                         child: TextButton.icon(
                           onPressed:
                               widget.employee.registeredAttendanceDeviceId ==
-                                  null
-                              ? null
-                              : _resetAttendanceDevice,
+                                      null
+                                  ? null
+                                  : _resetAttendanceDevice,
                           icon: const Icon(Icons.phonelink_erase),
                           label: const Text('إعادة ضبط الجهاز'),
                           style: TextButton.styleFrom(
@@ -4027,26 +4204,27 @@ class _WorkScheduleEditor extends StatelessWidget {
             alignment: WrapAlignment.end,
             spacing: 8,
             runSpacing: 8,
-            children: _dayLabels.entries.map((entry) {
-              final selected = workDays.contains(entry.key);
-              return FilterChip(
-                label: Text(entry.value),
-                selected: selected,
-                onSelected: (enabled) {
-                  final days = List<int>.from(workDays);
-                  enabled ? days.add(entry.key) : days.remove(entry.key);
-                  if (days.isEmpty) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('يجب اختيار يوم عمل واحد على الأقل.'),
-                      ),
-                    );
-                    return;
-                  }
-                  onChanged(startTime, endTime, days);
-                },
-              );
-            }).toList(),
+            children:
+                _dayLabels.entries.map((entry) {
+                  final selected = workDays.contains(entry.key);
+                  return FilterChip(
+                    label: Text(entry.value),
+                    selected: selected,
+                    onSelected: (enabled) {
+                      final days = List<int>.from(workDays);
+                      enabled ? days.add(entry.key) : days.remove(entry.key);
+                      if (days.isEmpty) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('يجب اختيار يوم عمل واحد على الأقل.'),
+                          ),
+                        );
+                        return;
+                      }
+                      onChanged(startTime, endTime, days);
+                    },
+                  );
+                }).toList(),
           ),
         ],
       ),

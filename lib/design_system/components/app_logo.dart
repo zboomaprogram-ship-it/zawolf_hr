@@ -12,20 +12,23 @@ class AppLogo extends StatelessWidget {
   /// Square edge length in logical pixels.
   final double size;
 
-  static const String _preferredAsset =
-      'assets/images/wolf_logo_gradient.png';
-  static const String _fallbackAsset = 'assets/images/wolf_head_geometric.png';
+  static const String _logoAsset = 'assets/logo.png';
+  static const String _fallbackAsset = 'assets/images/wolf_logo_gradient.png';
 
   @override
   Widget build(BuildContext context) {
     return SizedBox.square(
       dimension: size,
       child: Image.asset(
-        _preferredAsset,
+        _logoAsset,
         fit: BoxFit.contain,
         errorBuilder: (_, _, _) => Image.asset(
           _fallbackAsset,
           fit: BoxFit.contain,
+          errorBuilder: (_, _, _) => Image.asset(
+            'assets/images/wolf_head_geometric.png',
+            fit: BoxFit.contain,
+          ),
         ),
       ),
     );

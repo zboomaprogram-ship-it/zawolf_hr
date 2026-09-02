@@ -11,6 +11,7 @@ class DashboardAttendanceSummary {
   final int permission;
   final int dayOff;
   final int notAttended;
+  final int fieldMission;
   final DateTime date;
   final bool teamScoped;
   final bool isComplete;
@@ -22,14 +23,15 @@ class DashboardAttendanceSummary {
     required this.permission,
     required this.dayOff,
     required this.notAttended,
+    this.fieldMission = 0,
     required this.date,
     required this.teamScoped,
     this.isComplete = true,
   });
 
-  int get attended => present + late;
+  int get attended => present + late + fieldMission;
 
-  int get accounted => present + late + permission + dayOff + notAttended;
+  int get accounted => present + late + permission + dayOff + notAttended + fieldMission;
 
   double percentOf(int value) {
     if (totalEmployees == 0) return 0;
@@ -278,6 +280,16 @@ class DashboardAttendanceSummaryService {
       }
     }
 
+    final fieldMissionUsers = <String>{};
+    if (results.length > 3) {
+      for (final doc in results[3].docs) {
+        final data = doc.data();
+        if (data == null) continue;
+        final userId = data['userId'] as String? ?? '';
+        if (employeeIds.contains(userId)) fieldMissionUsers.add(userId);
+      }
+    }
+
     final people = <DashboardAttendancePerson>[];
 
     for (final employee in employees) {
@@ -287,7 +299,12 @@ class DashboardAttendanceSummaryService {
       DateTime? checkOutTime;
       var lateMinutes = 0;
       bool? checkoutPolicyEnabled;
-      if (dayOffUsers.contains(employee.uid)) {
+      if (fieldMissionUsers.contains(employee.uid)) {
+        status = 'field_mission';
+        checkInTime = (attendance?['checkInTime'] as Timestamp?)?.toDate();
+        checkOutTime = (attendance?['checkOutTime'] as Timestamp?)?.toDate();
+        checkoutPolicyEnabled = attendance?['checkoutPolicyEnabled'] as bool?;
+      } else if (dayOffUsers.contains(employee.uid)) {
         status = 'day_off';
       } else if (permissionUsers.contains(employee.uid)) {
         // An approved time permission remains visible in the company status
@@ -342,6 +359,7 @@ class DashboardAttendanceSummaryService {
         permission: count('permission'),
         dayOff: count('day_off'),
         notAttended: count('not_attended'),
+        fieldMission: count('field_mission'),
         date: date,
         teamScoped: isTeamScope,
         isComplete: results.every((result) => result.isComplete),

@@ -56,6 +56,24 @@ test('timeline recognizes legacy request and deduction date fields', () => {
   ]);
 });
 
+test('timeline returns period totals without exposing internal deduction codes', () => {
+  const period = normalizePeriod('2026-07-01', '2026-07-31T23:59:59Z');
+  const page = normalizeTimelineRows([
+    { id: 'a1', source: 'attendance', kind: 'attendance', data: { date: '2026-07-01', status: 'late_quarter_day' } },
+    { id: 'a2', source: 'attendance', kind: 'attendance', data: { date: '2026-07-02', status: 'late_half_day' } },
+    { id: 'l1', source: 'leaves', kind: 'leave', data: { date: '2026-07-03', status: 'approved' } },
+    { id: 'p1', source: 'permissions', kind: 'permission', data: { date: '2026-07-04', status: 'approved' } },
+    { id: 'r1', source: 'administrativeRequests', kind: 'request', data: { date: '2026-07-05', status: 'pending_hr' } },
+    { id: 'd1', source: 'manual_deductions', kind: 'deduction', data: { date: '2026-07-06', dayFraction: 1 } },
+  ], period, null, 1);
+  assert.deepEqual(page.summary, {
+    salaryDeductionDays: 1.75,
+    leaveRequests: 1,
+    permissionRequests: 1,
+    otherRequests: 1,
+  });
+});
+
 test('timeline rejects invalid or overlong periods', () => {
   assert.equal(normalizePeriod('bad', '2026-07-01'), null);
   assert.equal(normalizePeriod('2025-01-01', '2026-08-01'), null);

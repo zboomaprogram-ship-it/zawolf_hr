@@ -103,6 +103,7 @@ class ZaWolfTheme {
           Directionality.of(context) == TextDirection.rtl
               ? Icons.arrow_forward_rounded
               : Icons.arrow_back_rounded,
+          textDirection: TextDirection.ltr,
         ),
       ),
       textTheme: TextTheme(

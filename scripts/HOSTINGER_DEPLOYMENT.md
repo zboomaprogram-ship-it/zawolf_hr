@@ -67,22 +67,46 @@ For the governed Company Workspace V2 pilot, also set:
 - `GOOGLE_WORKSPACE_ROOT_FOLDER_ID`: the restricted company root-folder ID. This
   is required for **Workspace Audit** and governed HR reports: the server creates
   their Sheets inside `04_التقارير` below this folder.
-- `GOOGLE_CONVERSATIONS_FOLDER_ID`: optional existing Drive folder dedicated to
-  chat attachments. When omitted, the server creates or reuses
+- `GOOGLE_CONVERSATIONS_FOLDER_ID`: optional existing **Google Shared Drive**
+  folder dedicated to chat attachments. When omitted, the server creates or reuses
   `05_ملفات_مشتركة/مرفقات_المحادثات` below
   `GOOGLE_WORKSPACE_ROOT_FOLDER_ID` on the first attachment. The resolved folder
   ID is retained server-side in `integrationConfig/conversationAttachmentsDrive`.
   An HR/admin can explicitly initialize it with
   `POST /conversations/attachments/bootstrap`; the authenticated response returns
   the Folder ID for the Hostinger operator.
-- `GOOGLE_OPERATIONAL_REQUESTS_FOLDER_ID`: optional existing Drive folder for
+- `GOOGLE_OPERATIONAL_REQUESTS_FOLDER_ID`: optional existing **Google Shared
+  Drive** folder for
   employee request attachments. When omitted, the server creates or reuses
   `05_ملفات_مشتركة/مرفقات_الطلبات` on the first upload. The app receives only
   opaque attachment ids; Drive file ids remain server-side.
 
-After setting `GOOGLE_WORKSPACE_ROOT_FOLDER_ID`, open that Google Drive folder
+For a personal Google Drive (where Shared Drives are unavailable), set all of
+the following Hostinger environment values. They are used only for governed
+attachment uploads and downloads; Google Sheets and HR reports remain on
+`GOOGLE_SHEETS_SERVICE_ACCOUNT`:
+
+- `GOOGLE_DRIVE_OAUTH_CLIENT_ID`
+- `GOOGLE_DRIVE_OAUTH_CLIENT_SECRET`
+- `GOOGLE_DRIVE_OAUTH_REFRESH_TOKEN`
+
+Generate the refresh token using the Google account that owns, or is an Editor
+of, the attachment folder and grant the Google Drive scope. Keep the OAuth
+consent screen in Production before going live: a Testing consent screen issues
+refresh tokens that expire after seven days. Enter the three values directly in
+Hostinger and never add them to a ZIP file, source code, or chat message.
+
+For uploads, the root and attachment folders must be inside a **Google Shared
+Drive**, not a personal "My Drive" folder shared with the service account. A
+service account can read a personal shared folder but has no personal Drive
+storage quota to create uploaded files there. Add the exact service-account
+email as a Shared Drive **Content manager** (or Manager), then set
+`GOOGLE_WORKSPACE_ROOT_FOLDER_ID` to that Shared Drive folder ID. Optionally
+set `GOOGLE_CONVERSATIONS_FOLDER_ID` to the dedicated attachment subfolder ID.
+
+After setting `GOOGLE_WORKSPACE_ROOT_FOLDER_ID`, open that Shared Drive folder
 and share it with the exact `client_email` inside Hostinger's
-`GOOGLE_SHEETS_SERVICE_ACCOUNT` JSON as **Editor**. Do not assume it is the
+`GOOGLE_SHEETS_SERVICE_ACCOUNT` JSON as **Content manager**. Do not assume it is the
 same account used in another environment. That permission is required not only
 for the folder itself, but also to create the `04_التقارير` child folder and the
 report Sheets. For a Google Shared Drive, grant that exact account **Content

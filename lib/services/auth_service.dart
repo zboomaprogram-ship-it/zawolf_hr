@@ -332,6 +332,14 @@ class AuthService with ChangeNotifier {
     }
   }
 
+  void updateUnreadNotificationCount(int count) {
+    if (_currentUser != null && _currentUser!.unreadNotifications != count) {
+      final validCount = count < 0 ? 0 : count;
+      _currentUser = _currentUser!.copyWith(unreadNotifications: validCount);
+      notifyListeners();
+    }
+  }
+
   Future<void> updateAvatarCustomization({
     required String gender,
     String? faceUrl,
@@ -355,6 +363,15 @@ class AuthService with ChangeNotifier {
       );
       notifyListeners();
     }
+  }
+
+  Future<void> updateAvatarAccent(String accent) async {
+    if (_currentUser == null) return;
+    await updateAvatarCustomization(
+      gender: _currentUser!.avatarGender,
+      faceUrl: _currentUser!.avatarFaceUrl,
+      accent: accent,
+    );
   }
 
   // Send password reset email

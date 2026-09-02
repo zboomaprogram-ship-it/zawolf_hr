@@ -26,7 +26,7 @@ class _FieldAssignmentsScreenState extends State<FieldAssignmentsScreen> {
   final _formKey = GlobalKey<FormState>();
   final _reason = TextEditingController();
   final _site = TextEditingController();
-  UserModel? _employee;
+  List<UserModel> _employees = <UserModel>[];
   DateTime _date = DateTime.now();
   TimeOfDay _start = const TimeOfDay(hour: 12, minute: 0);
   TimeOfDay _end = const TimeOfDay(hour: 17, minute: 0);
@@ -73,8 +73,10 @@ class _FieldAssignmentsScreenState extends State<FieldAssignmentsScreen> {
   }
 
   Future<void> _save() async {
-    if (!(_formKey.currentState?.validate() ?? false) || _employee == null) {
-      if (_employee == null) _message('اختر الموظف أولاً.', error: true);
+    if (!(_formKey.currentState?.validate() ?? false) || _employees.isEmpty) {
+      if (_employees.isEmpty) {
+        _message('اختر موظفاً واحداً على الأقل.', error: true);
+      }
       return;
     }
     if (_approvers.isEmpty) {
@@ -91,7 +93,7 @@ class _FieldAssignmentsScreenState extends State<FieldAssignmentsScreen> {
     setState(() => _saving = true);
     try {
       await _routingGateway.createFieldMission(
-        employeeUid: _employee!.uid,
+        employeeUids: _employees.map((employee) => employee.uid).toList(),
         approvers:
             _approvers
                 .map((user) => {'id': user.uid, 'labelAr': user.displayName})
@@ -104,13 +106,12 @@ class _FieldAssignmentsScreenState extends State<FieldAssignmentsScreen> {
         requiresReturnToOffice: _requiresReturn,
         requiresCheckout: _requiresCheckout,
       );
-      _message(
-        'تم إرسال المأمورية لمسار الموافقات وإشعار الموظف والمسؤول الأول.',
-      );
+      _message('تم إنشاء مأمورية مرتبطة لكل موظف وإشعارهم والمسؤول الأول.');
       setState(() {
         _reason.clear();
         _site.clear();
         _approvers = <UserModel>[];
+        _employees = <UserModel>[];
       });
     } catch (error) {
       _message('تعذر حفظ المهمة: $error', error: true);
@@ -140,7 +141,9 @@ class _FieldAssignmentsScreenState extends State<FieldAssignmentsScreen> {
                   isAccounting;
             })
             .map(UserModel.fromFirestore)
-            .where((user) => user.uid != _employee?.uid)
+            .where(
+              (user) => !_employees.any((selected) => selected.uid == user.uid),
+            )
             .toList()
           ..sort((a, b) => a.displayName.compareTo(b.displayName));
     if (!mounted) return;
@@ -202,6 +205,72 @@ class _FieldAssignmentsScreenState extends State<FieldAssignmentsScreen> {
     );
   }
 
+  Future<void> _chooseEmployees(List<UserModel> candidates) async {
+    var selected = List<UserModel>.from(_employees);
+    await showDialog<void>(
+      context: context,
+      builder:
+          (dialogContext) => StatefulBuilder(
+            builder:
+                (context, setDialogState) => AlertDialog(
+                  title: const Text('الموظفون المشمولون بالمأمورية'),
+                  content: SizedBox(
+                    width: 520,
+                    child: ListView(
+                      shrinkWrap: true,
+                      children: candidates
+                          .map((user) {
+                            final selectedNow = selected.any(
+                              (item) => item.uid == user.uid,
+                            );
+                            return CheckboxListTile(
+                              value: selectedNow,
+                              title: Text(
+                                '${user.displayName} — ${user.employeeId}',
+                              ),
+                              onChanged:
+                                  (checked) => setDialogState(() {
+                                    if (checked == true && !selectedNow) {
+                                      selected.add(user);
+                                    } else if (checked != true) {
+                                      selected.removeWhere(
+                                        (item) => item.uid == user.uid,
+                                      );
+                                    }
+                                  }),
+                            );
+                          })
+                          .toList(growable: false),
+                    ),
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(dialogContext),
+                      child: const Text('إلغاء'),
+                    ),
+                    FilledButton(
+                      onPressed: () {
+                        setState(() {
+                          _employees = selected;
+                          // A mission recipient cannot also approve their own
+                          // mission. Keep an already-configured route valid when HR
+                          // changes the employee selection.
+                          _approvers.removeWhere(
+                            (approver) => selected.any(
+                              (employee) => employee.uid == approver.uid,
+                            ),
+                          );
+                        });
+                        Navigator.pop(dialogContext);
+                      },
+                      child: const Text('حفظ الاختيار'),
+                    ),
+                  ],
+                ),
+          ),
+    );
+  }
+
   void _message(String value, {bool error = false}) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
@@ -254,27 +323,17 @@ class _FieldAssignmentsScreenState extends State<FieldAssignmentsScreen> {
                               .map((doc) => UserModel.fromFirestore(doc))
                               .toList() ??
                           <UserModel>[];
-                      return DropdownButtonFormField<UserModel>(
-                        initialValue:
-                            employees.any((user) => user.uid == _employee?.uid)
-                                ? _employee
-                                : null,
-                        isExpanded: true,
-                        decoration: const InputDecoration(labelText: 'الموظف'),
-                        items:
-                            employees
-                                .map(
-                                  (user) => DropdownMenuItem(
-                                    value: user,
-                                    child: Text(
-                                      '${user.displayName} - ${user.employeeId}',
-                                      overflow: TextOverflow.ellipsis,
-                                      textDirection: TextDirection.rtl,
-                                    ),
-                                  ),
-                                )
-                                .toList(),
-                        onChanged: (value) => setState(() => _employee = value),
+                      return OutlinedButton.icon(
+                        onPressed: () => _chooseEmployees(employees),
+                        icon: const Icon(Icons.groups_outlined),
+                        label: Text(
+                          _employees.isEmpty
+                              ? 'اختر الموظفين المشمولين بالمأمورية'
+                              : '${_employees.length} موظف: ${_employees.map((user) => user.displayName).join('، ')}',
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          textDirection: TextDirection.rtl,
+                        ),
                       );
                     },
                   ),

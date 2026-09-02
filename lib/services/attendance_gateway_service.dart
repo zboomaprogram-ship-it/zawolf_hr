@@ -22,6 +22,18 @@ class AttendanceGatewayException implements Exception {
     'no_assignment' => 'لا يوجد موقع حضور نشط مسند إلى حسابك. تواصل مع HR.',
     'assignment_changed' =>
       'تم تحديث مواقع حضورك. حدّث الصفحة ثم أعد المحاولة.',
+    'account_inactive' =>
+      'حسابك غير نشط لتسجيل الحضور حالياً. تواصل مع HR لتفعيل الحساب.',
+    'device_conflict' =>
+      'هذا الجهاز مربوط بحساب موظف آخر. استخدم جهازك المسجل أو اطلب من HR إعادة ضبط الجهاز.',
+    'device_mismatch' =>
+      'حسابك مربوط بجهاز حضور آخر. اطلب من HR إعادة ضبط جهاز الحضور ثم أعد المحاولة.',
+    'stale_event' =>
+      'انتهت صلاحية محاولة الحضور. افتح التطبيق مجدداً ثم سجّل الحضور الآن.',
+    'invalid_request' =>
+      'لم تكتمل بيانات الحضور بشكل صحيح. حدّث التطبيق وتأكد من الموقع ثم أعد المحاولة.',
+    'checkin_missing' =>
+      'لا يوجد تسجيل حضور صالح لهذا اليوم. سجّل الحضور أولاً ثم حاول تسجيل الانصراف.',
     'inactive_location' => 'موقع الحضور غير نشط حالياً. اختر موقعاً آخر.',
     'outside_range' =>
       'أنت خارج نطاق مواقع الحضور المسندة إليك. اقترب من الموقع ثم أعد المحاولة.',
@@ -214,9 +226,8 @@ class AttendanceGatewayService {
           )
           .timeout(const Duration(seconds: 15));
       final decoded = jsonDecode(response.body);
-      final body = decoded is Map<String, dynamic>
-          ? decoded
-          : const <String, dynamic>{};
+      final body =
+          decoded is Map<String, dynamic> ? decoded : const <String, dynamic>{};
       if (response.statusCode < 200 || response.statusCode >= 300) {
         throw AttendanceGatewayException(
           '${body['code'] ?? 'server_unavailable'}',

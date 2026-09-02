@@ -8,6 +8,7 @@ import '../../components/wolf_button.dart';
 import '../../components/wolf_input_field.dart';
 import '../../components/performance_badges_widget.dart';
 import '../../design_system/components/app_logo.dart';
+import '../../design_system/components/rtl_navigation.dart';
 import '../../services/auth_service.dart';
 import '../../models/employee_role.dart';
 import '../../models/user_model.dart';
@@ -15,8 +16,10 @@ import '../../services/onesignal_service.dart';
 import '../../services/personal_alarm_service.dart';
 import '../../services/required_attendance_alarm_service.dart';
 import '../../services/automatic_attendance_service.dart';
+import '../../services/performance_badge_service.dart';
 import '../../utils/user_facing_error.dart';
 import '../../navigation/developer_tools_entry.dart';
+import '../shared/performance_badges_overview_screen.dart';
 
 class ProfileSettingsScreen extends StatefulWidget {
   const ProfileSettingsScreen({super.key});
@@ -574,6 +577,22 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
             const SizedBox(height: 20),
             WolfCard(
               padding: EdgeInsets.zero,
+              onTap: () => context.push('/employee/requests?view=history'),
+              child: ListTile(
+                leading: const Icon(
+                  Icons.history_outlined,
+                  color: ZaWolfColors.primaryCyan,
+                ),
+                title: const Text('سجل طلباتي'),
+                subtitle: const Text(
+                  'عرض الطلبات السابقة ومسار الموافقات وحالة كل طلب',
+                ),
+                trailing: Icon(RtlNavigation.chevronStart(context)),
+              ),
+            ),
+            const SizedBox(height: 20),
+            WolfCard(
+              padding: EdgeInsets.zero,
               onTap: () => context.go('/employee/deductions'),
               child: ListTile(
                 leading: const Icon(
@@ -584,10 +603,45 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                 subtitle: const Text(
                   'عرض الخصومات بالأيام وحالة مراجعة HR بدون مبالغ مالية',
                 ),
-                trailing: const Icon(Icons.chevron_left),
+                trailing: Icon(RtlNavigation.chevronStart(context)),
               ),
             ),
-            const PerformanceBadgesWidget(),
+            StreamBuilder<Set<String>>(
+              stream: PerformanceBadgeService.instance.watchAwardedBadgeIds(
+                user.uid,
+              ),
+              builder: (context, snapshot) {
+                final ids = snapshot.data ?? const <String>{};
+                return PerformanceBadgesWidget(awardedBadgeIds: ids);
+              },
+            ),
+            if (EmployeeRole.hasTeamScope(user.role)) ...[
+              WolfCard(
+                padding: EdgeInsets.zero,
+                onTap:
+                    () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder:
+                            (_) => PerformanceBadgesOverviewScreen(
+                              viewerId: user.uid,
+                              canViewAll: EmployeeRole.isHr(user.role),
+                            ),
+                      ),
+                    ),
+                child: ListTile(
+                  leading: const Icon(
+                    Icons.emoji_events_outlined,
+                    color: ZaWolfColors.primaryCyan,
+                  ),
+                  title: const Text('شارات فريق العمل'),
+                  subtitle: const Text('عرض الموظفين الذين حصلوا على شارات التميز'),
+                  trailing: Icon(RtlNavigation.chevronStart(context), size: 18),
+                ),
+              ),
+              const SizedBox(height: 8),
+            ],
+            const SizedBox(height: 14),
+
             const SizedBox(height: 20),
 
             // Settings Panels
@@ -717,7 +771,7 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                     ),
                     title: const Text('مركز الإشعارات'),
                     subtitle: const Text('عرض التنبيهات والإعلانات السابقة'),
-                    trailing: const Icon(Icons.chevron_left),
+                    trailing: Icon(RtlNavigation.chevronStart(context)),
                     onTap: () => context.push('/notifications'),
                   ),
                   const Divider(color: ZaWolfColors.surface02, height: 1),
@@ -777,7 +831,7 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                     ),
                     title: const Text('سياسة الخصوصية'),
                     subtitle: const Text('اعرف كيف نستخدم بياناتك ونحميها'),
-                    trailing: const Icon(Icons.chevron_left),
+                    trailing: Icon(RtlNavigation.chevronStart(context)),
                     onTap: () => context.push('/privacy'),
                   ),
                   const Divider(color: ZaWolfColors.surface02, height: 1),
@@ -790,7 +844,7 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                     subtitle: const Text(
                       'قواعد استخدام النظام ومسؤوليات الحساب',
                     ),
-                    trailing: const Icon(Icons.chevron_left),
+                    trailing: Icon(RtlNavigation.chevronStart(context)),
                     onTap: () => context.push('/terms'),
                   ),
                   FutureBuilder<bool>(
@@ -812,7 +866,7 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                             subtitle: const Text(
                               'أدوات فحص داخل التطبيق بصلاحية مؤقتة',
                             ),
-                            trailing: const Icon(Icons.chevron_left),
+                            trailing: Icon(RtlNavigation.chevronStart(context)),
                             onTap: () => context.push('/developer-tools'),
                           ),
                         ],

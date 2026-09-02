@@ -218,7 +218,15 @@ class _ManagerDashboardScreenState extends State<ManagerDashboardScreen> {
                             count: pendingCount,
                             icon: Icons.pending_actions,
                             accent: ZaWolfColors.warning,
-                            onTap: () => context.go('/manager/requests'),
+                            onTap: () {
+                              final firstPending =
+                                  PendingRequestsService.instance.firstPendingCategory;
+                              if (firstPending != null) {
+                                context.go('/manager/requests?category=$firstPending');
+                              } else {
+                                context.go('/manager/requests?smart=true');
+                              }
+                            },
                           ),
                         ],
                       ),
@@ -615,7 +623,15 @@ class _ManagerMetricsRow extends StatelessWidget {
                           icon: Icons.rule_outlined,
                           value: '$pendingCount',
                           label: 'طلبات معلقة',
-                          onTap: () => context.go('/manager/requests'),
+                          onTap: () {
+                            final firstPending =
+                                PendingRequestsService.instance.firstPendingCategory;
+                            if (firstPending != null) {
+                              context.go('/manager/requests?category=$firstPending');
+                            } else {
+                              context.go('/manager/requests?smart=true');
+                            }
+                          },
                         ),
                       ),
                       const SizedBox(width: DsSpacing.md),

@@ -1,10 +1,11 @@
 {
-  "name": "zawolf-hr-scripts",
+  "name": "zawolf-hr-backend",
   "version": "1.0.0",
-  "description": "Backend cron scripts for ZaWolf HR",
-  "main": "daily-tasks.js",
+  "description": "Backend dispatcher & Sales KPI service for ZaWolf HR",
+  "main": "notification-web.js",
   "scripts": {
-    "build": "node -e \"console.log('No build step required for the notification dispatcher.')\"",
+    "build": "node -e \"console.log('Build completed.')\"",
+    "start": "node notification-web.js",
     "daily": "node daily-tasks.js",
     "monthly": "node monthly-tasks.js",
     "dispatch-notifications": "node dispatch-notifications.js",
@@ -17,10 +18,11 @@
     "sync-notification-recipients": "node sync-notification-recipients.js",
     "accept-company-os": "node company-os-acceptance.js",
     "accept-008-009": "node release-008-009-acceptance.js",
-    "accept-008-009-emulator": "firebase emulators:exec --only auth,firestore --project zawolf-acceptance --config ../firebase.json \"node run-008-009-emulator-matrix.js\"",
     "migrate-hr-role": "node migrate-hr-manager-role.js",
-    "test": "node --test test/*.test.js",
-    "start": "node notification-web.js"
+    "test": "node --test test/*.test.js"
+  },
+  "engines": {
+    "node": ">=18.0.0"
   },
   "dependencies": {
     "firebase-admin": "^14.1.0",

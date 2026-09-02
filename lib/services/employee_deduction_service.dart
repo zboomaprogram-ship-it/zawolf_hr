@@ -17,6 +17,8 @@ class EmployeeDeductionEntry {
   final String approvalStatus;
   final double? amount;
   final String? currency;
+  final DateTime? approvedAt;
+  final String? approvedByName;
 
   const EmployeeDeductionEntry({
     required this.id,
@@ -27,6 +29,8 @@ class EmployeeDeductionEntry {
     required this.approvalStatus,
     this.amount,
     this.currency,
+    this.approvedAt,
+    this.approvedByName,
   });
 
   bool get hasCompleteDetails =>
@@ -157,6 +161,7 @@ class EmployeeDeductionService {
   }
 
   EmployeeDeductionEntry _fromAttendance(AttendanceModel item) {
+    final isApproved = item.salaryDeductionApprovalStatus == 'approved';
     return EmployeeDeductionEntry(
       id: item.attendanceId,
       date: item.date,
@@ -169,6 +174,8 @@ class EmployeeDeductionService {
       approvalStatus: _normalizedStatus(item.salaryDeductionApprovalStatus),
       amount: item.salaryDeductionAmount,
       currency: item.salaryCurrency,
+      approvedAt: item.salaryDeductionReviewedAt ?? (isApproved ? item.checkInTime : null),
+      approvedByName: item.salaryDeductionReviewedBy,
     );
   }
 
@@ -186,6 +193,8 @@ class EmployeeDeductionService {
       approvalStatus: status,
       amount: item.salaryDeductionAmount,
       currency: item.salaryCurrency,
+      approvedAt: item.reviewedAt ?? item.hrReviewedAt,
+      approvedByName: item.reviewerName ?? item.reviewedBy,
     );
   }
 
@@ -201,6 +210,8 @@ class EmployeeDeductionService {
       // monetary amount unless payroll has written one, so do not invent it.
       amount: null,
       currency: null,
+      approvedAt: item.approvedAt ?? item.createdAt,
+      approvedByName: item.approvedByName ?? item.createdByName,
     );
   }
 

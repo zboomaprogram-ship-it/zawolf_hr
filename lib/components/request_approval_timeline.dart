@@ -46,10 +46,11 @@ class RequestApprovalTimeline extends StatelessWidget {
     return FutureBuilder<RequestApprovalPolicy>(
       future: _approvalPolicy,
       initialData: const RequestApprovalPolicy(),
-      builder: (context, snapshot) => _buildTimeline(
-        context,
-        snapshot.data ?? const RequestApprovalPolicy(),
-      ),
+      builder:
+          (context, snapshot) => _buildTimeline(
+            context,
+            snapshot.data ?? const RequestApprovalPolicy(),
+          ),
     );
   }
 
@@ -58,15 +59,42 @@ class RequestApprovalTimeline extends StatelessWidget {
     RequestApprovalPolicy approvalPolicy,
   ) {
     final status = data['status'] as String? ?? 'pending';
-    final managerNames = (data['managerNames'] as List<dynamic>? ?? const [])
-        .whereType<String>()
-        .toList();
+    final route =
+        (data['approvalRoute'] as List<dynamic>? ?? const [])
+            .whereType<Map>()
+            .map((item) => Map<String, dynamic>.from(item))
+            .toList()
+          ..sort(
+            (left, right) => ((left['order'] as num?)?.toInt() ?? 0).compareTo(
+              (right['order'] as num?)?.toInt() ?? 0,
+            ),
+          );
+    if (route.isNotEmpty) {
+      return _buildCustomRouteTimeline(context, status, route);
+    }
+    if (data['advanceRouteStage'] != null ||
+        _history.any(
+          (event) => event['stage'] == 'accounting' || event['stage'] == 'ceo',
+        )) {
+      return _buildAdvanceRouteTimeline(context, status);
+    }
+    final managerNames =
+        (data['managerNames'] as List<dynamic>? ?? const [])
+            .whereType<String>()
+            .toList();
+    final managerIds =
+        (data['managerIds'] as List<dynamic>? ?? const [])
+            .whereType<String>()
+            .toList();
+    final assignedCeoId = '${data['ceoId'] ?? ''}';
     final managerTrail =
         (data['managerApprovalTrail'] as List<dynamic>? ?? const [])
             .whereType<Map>()
             .map((item) => Map<String, dynamic>.from(item))
             .toList();
     final requiresCeo = data['requiresCeoApproval'] == true;
+    final standaloneCeo =
+        requiresCeo && data['ceoApprovalViaManagerChain'] != true;
     final hrEvent = _event('hr');
     final hasRecordedHrReview =
         hrEvent != null ||
@@ -89,20 +117,31 @@ class RequestApprovalTimeline extends StatelessWidget {
       ),
       for (var i = 0; i < managerNames.length; i++)
         _TimelineStage(
-          label: i == 0 ? 'المدير المباشر' : 'المدير الأعلى',
+          label:
+              i < managerIds.length && managerIds[i] == assignedCeoId
+                  ? 'CEO المعيّن'
+                  : (i == 0 ? 'المدير المباشر' : 'المدير الأعلى'),
           person: managerNames[i],
-          jobTitle: _roleLabel(
-            i < managerTrail.length
-                ? managerTrail[i]['reviewerRole'] as String?
-                : null,
-          ),
-          icon: Icons.supervisor_account_outlined,
+          jobTitle:
+              _roleLabel(
+                i < managerTrail.length
+                    ? managerTrail[i]['reviewerRole'] as String?
+                    : null,
+              ) ??
+              (i < managerIds.length && managerIds[i] == assignedCeoId
+                  ? 'الرئيس التنفيذي'
+                  : null),
+          icon:
+              i < managerIds.length && managerIds[i] == assignedCeoId
+                  ? Icons.workspace_premium_outlined
+                  : Icons.supervisor_account_outlined,
           state: _managerState(status, managerTrail, i),
-          timestamp: i < managerTrail.length
-              ? _date(managerTrail[i]['timestamp'])
-              : null,
+          timestamp:
+              i < managerTrail.length
+                  ? _date(managerTrail[i]['timestamp'])
+                  : null,
         ),
-      if (showHrStage)
+      if (showHrStage && !requiresCeo)
         _TimelineStage(
           label: 'الموارد البشرية',
           person:
@@ -116,7 +155,7 @@ class RequestApprovalTimeline extends StatelessWidget {
           timestamp:
               _date(hrEvent?['timestamp']) ?? _date(data['hrReviewedAt']),
         ),
-      if (requiresCeo)
+      if (standaloneCeo)
         _TimelineStage(
           label: 'اعتماد CEO',
           person:
@@ -128,31 +167,229 @@ class RequestApprovalTimeline extends StatelessWidget {
           state: _namedStageState(status, 'ceo', _event('ceo')),
           timestamp: _date(_event('ceo')?['timestamp']),
         ),
+      if (showHrStage && requiresCeo)
+        _TimelineStage(
+          label: 'الموارد البشرية',
+          person:
+              (hrEvent?['actorName'] as String?) ??
+              (data['hrReviewerName'] as String?) ??
+              'HR',
+          jobTitle:
+              _roleLabel(hrEvent?['actorRole'] as String?) ?? 'الموارد البشرية',
+          icon: Icons.badge_outlined,
+          state: _namedStageState(status, 'hr', hrEvent),
+          timestamp:
+              _date(hrEvent?['timestamp']) ?? _date(data['hrReviewedAt']),
+        ),
       _TimelineStage(
-        label: status == 'rejected'
-            ? 'مرفوض'
-            : status == 'cancelled'
-            ? 'ملغي'
-            : 'مقبول نهائياً',
+        label:
+            status == 'rejected'
+                ? 'مرفوض'
+                : status == 'cancelled'
+                ? 'ملغي'
+                : 'مقبول نهائياً',
         person:
             data['finalApproverName'] as String? ??
             data['reviewerName'] as String? ??
             '',
         jobTitle: _finalApproverRoleLabel(),
-        icon: status == 'rejected'
-            ? Icons.cancel_outlined
-            : status == 'cancelled'
-            ? Icons.block_outlined
-            : Icons.verified_outlined,
-        state: status == 'rejected' || status == 'cancelled'
-            ? _StageState.rejected
-            : status == 'approved'
-            ? _StageState.done
-            : _StageState.waiting,
+        icon:
+            status == 'rejected'
+                ? Icons.cancel_outlined
+                : status == 'cancelled'
+                ? Icons.block_outlined
+                : Icons.verified_outlined,
+        state:
+            status == 'rejected' || status == 'cancelled'
+                ? _StageState.rejected
+                : status == 'approved'
+                ? _StageState.done
+                : _StageState.waiting,
         timestamp: _date(data['finalApprovalAt']) ?? _date(data['reviewedAt']),
       ),
     ];
 
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const Divider(color: ZaWolfColors.surface03),
+        Text(
+          'مسار الموافقات',
+          style: Theme.of(context).textTheme.titleSmall?.copyWith(
+            color: ZaWolfColors.textPrimary,
+            fontWeight: FontWeight.w700,
+          ),
+          textDirection: TextDirection.rtl,
+        ),
+        const SizedBox(height: 10),
+        SizedBox(
+          height: compact ? 112 : 132,
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              textDirection: TextDirection.rtl,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                for (var index = 0; index < stages.length; index++) ...[
+                  _StageTile(stage: stages[index], compact: compact),
+                  if (index < stages.length - 1)
+                    _TimelineConnector(compact: compact),
+                ],
+              ],
+            ),
+          ),
+        ),
+        if (status == 'rejected' &&
+            (data['reviewerComment'] as String?)?.trim().isNotEmpty == true)
+          Text(
+            'سبب الرفض: ${data['reviewerComment']}',
+            style: const TextStyle(color: ZaWolfColors.error),
+            textDirection: TextDirection.rtl,
+          ),
+      ],
+    );
+  }
+
+  Widget _buildCustomRouteTimeline(
+    BuildContext context,
+    String status,
+    List<Map<String, dynamic>> route,
+  ) {
+    final currentApproverId = '${data['currentApproverId'] ?? ''}';
+    final stages = <_TimelineStage>[
+      _TimelineStage(
+        label: 'تم الإرسال',
+        person: data['employeeName'] as String? ?? '',
+        icon: Icons.send_outlined,
+        state: _StageState.done,
+        timestamp:
+            _date(_event('submitted')?['at']) ?? _date(data['submittedAt']),
+      ),
+      for (var index = 0; index < route.length; index++)
+        _TimelineStage(
+          label: 'الموافقة ${index + 1}',
+          person: '${route[index]['approverName'] ?? 'مسؤول الموافقة'}',
+          jobTitle:
+              '${route[index]['approverRole'] ?? ''}'.trim().isEmpty
+                  ? null
+                  : '${route[index]['approverRole']}',
+          icon: Icons.how_to_reg_outlined,
+          state: _customRouteState(route[index], currentApproverId),
+          timestamp: _date(route[index]['actedAt']),
+        ),
+      _TimelineStage(
+        label:
+            status == 'rejected'
+                ? 'مرفوض'
+                : status == 'cancelled'
+                ? 'ملغي'
+                : 'مقبول نهائياً',
+        person:
+            data['finalApproverName'] as String? ??
+            data['reviewerName'] as String? ??
+            '',
+        icon:
+            status == 'rejected'
+                ? Icons.cancel_outlined
+                : status == 'cancelled'
+                ? Icons.block_outlined
+                : Icons.verified_outlined,
+        state:
+            status == 'rejected' || status == 'cancelled'
+                ? _StageState.rejected
+                : status == 'approved'
+                ? _StageState.done
+                : _StageState.waiting,
+        timestamp: _date(data['finalApprovalAt']) ?? _date(data['reviewedAt']),
+      ),
+    ];
+    return _renderStages(context, status, stages);
+  }
+
+  Widget _buildAdvanceRouteTimeline(BuildContext context, String status) {
+    final routeStage = '${data['advanceRouteStage'] ?? ''}';
+    final currentName = '${data['managerName'] ?? ''}';
+    _TimelineStage stage(String key, String label, IconData icon) {
+      final event = _event(key);
+      final isCurrent =
+          (key == 'hr' && status == 'pending_hr') ||
+          (key == 'ceo' &&
+              routeStage == 'ceo' &&
+              status == 'pending_manager') ||
+          (key == 'accounting' &&
+              routeStage == 'accounting' &&
+              status == 'pending_manager');
+      return _TimelineStage(
+        label: label,
+        person:
+            (event?['actorName'] as String?) ?? (isCurrent ? currentName : ''),
+        jobTitle: label,
+        icon: icon,
+        state:
+            event == null
+                ? (isCurrent ? _StageState.current : _StageState.waiting)
+                : event['status'] == 'rejected'
+                ? _StageState.rejected
+                : _StageState.done,
+        timestamp: _date(event?['at']) ?? _date(event?['timestamp']),
+      );
+    }
+
+    return _renderStages(context, status, [
+      _TimelineStage(
+        label: 'تم الإرسال',
+        person: data['employeeName'] as String? ?? '',
+        icon: Icons.send_outlined,
+        state: _StageState.done,
+        timestamp:
+            _date(_event('submitted')?['at']) ?? _date(data['submittedAt']),
+      ),
+      stage('hr', 'الموارد البشرية', Icons.badge_outlined),
+      stage('ceo', 'الرئيس التنفيذي', Icons.workspace_premium_outlined),
+      stage('accounting', 'الحسابات', Icons.account_balance_outlined),
+      _TimelineStage(
+        label:
+            status == 'rejected'
+                ? 'مرفوض'
+                : status == 'cancelled'
+                ? 'ملغي'
+                : 'مقبول نهائياً',
+        person: data['reviewerName'] as String? ?? '',
+        icon:
+            status == 'rejected'
+                ? Icons.cancel_outlined
+                : status == 'cancelled'
+                ? Icons.block_outlined
+                : Icons.verified_outlined,
+        state:
+            status == 'rejected' || status == 'cancelled'
+                ? _StageState.rejected
+                : status == 'approved'
+                ? _StageState.done
+                : _StageState.waiting,
+        timestamp: _date(data['reviewedAt']),
+      ),
+    ]);
+  }
+
+  _StageState _customRouteState(
+    Map<String, dynamic> stage,
+    String currentApproverId,
+  ) {
+    return switch ('${stage['state'] ?? 'pending'}') {
+      'approved' => _StageState.done,
+      'rejected' => _StageState.rejected,
+      _ when '${stage['approverId'] ?? ''}' == currentApproverId =>
+        _StageState.current,
+      _ => _StageState.waiting,
+    };
+  }
+
+  Widget _renderStages(
+    BuildContext context,
+    String status,
+    List<_TimelineStage> stages,
+  ) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [

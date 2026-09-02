@@ -61,20 +61,24 @@ class _EmployeeDeductionsScreenState extends State<EmployeeDeductionsScreen> {
             children: [
               _CycleSelector(
                 cycle: cycle,
-                onPrevious: () => setState(
-                  () => _cycleDate = DateTime(
-                    _cycleDate.year,
-                    _cycleDate.month - 1,
-                    15,
-                  ),
-                ),
-                onNext: () => setState(
-                  () => _cycleDate = DateTime(
-                    _cycleDate.year,
-                    _cycleDate.month + 1,
-                    15,
-                  ),
-                ),
+                onPrevious:
+                    () => setState(
+                      () =>
+                          _cycleDate = DateTime(
+                            _cycleDate.year,
+                            _cycleDate.month - 1,
+                            15,
+                          ),
+                    ),
+                onNext:
+                    () => setState(
+                      () =>
+                          _cycleDate = DateTime(
+                            _cycleDate.year,
+                            _cycleDate.month + 1,
+                            15,
+                          ),
+                    ),
               ),
               const SizedBox(height: 12),
               _Summary(entries: entries),
@@ -125,7 +129,7 @@ class _CycleSelector extends StatelessWidget {
             IconButton(
               tooltip: 'الدورة السابقة',
               onPressed: onPrevious,
-              icon: const Icon(Icons.chevron_right),
+              icon: const Icon(Icons.chevron_left),
             ),
             Expanded(
               child: Column(
@@ -141,7 +145,7 @@ class _CycleSelector extends StatelessWidget {
             IconButton(
               tooltip: 'الدورة التالية',
               onPressed: onNext,
-              icon: const Icon(Icons.chevron_left),
+              icon: const Icon(Icons.chevron_right),
             ),
           ],
         ),
@@ -191,9 +195,10 @@ class _Summary extends StatelessWidget {
   }
 
   String _days(double value) {
-    final text = value == value.roundToDouble()
-        ? value.toInt().toString()
-        : value.toStringAsFixed(2);
+    final text =
+        value == value.roundToDouble()
+            ? value.toInt().toString()
+            : value.toStringAsFixed(2);
     return '$text يوم';
   }
 }
@@ -288,6 +293,19 @@ class _DeductionTile extends StatelessWidget {
             textAlign: TextAlign.right,
             style: Theme.of(context).textTheme.bodySmall,
           ),
+          if (entry.approvedAt != null) ...[
+            const SizedBox(height: 4),
+            Text(
+              'تاريخ الاعتماد: ${DateFormat('yyyy/MM/dd hh:mm a', 'ar').format(entry.approvedAt!)}'
+              '${(entry.approvedByName ?? '').isEmpty ? '' : ' · المراجع: ${entry.approvedByName}'}',
+              textAlign: TextAlign.right,
+              style: const TextStyle(
+                color: ZaWolfColors.primaryCyan,
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
           const SizedBox(height: 10),
           TextButton.icon(
             onPressed: () => _showDetails(context),
@@ -302,34 +320,35 @@ class _DeductionTile extends StatelessWidget {
   void _showDetails(BuildContext context) {
     showDialog<void>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('تفاصيل خصم الراتب'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            for (final line in entry.detailLines)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: SelectableText(line, textAlign: TextAlign.right),
+      builder:
+          (dialogContext) => AlertDialog(
+            title: const Text('تفاصيل خصم الراتب'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                for (final line in entry.detailLines)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: SelectableText(line, textAlign: TextAlign.right),
+                  ),
+                if (!entry.hasCompleteDetails)
+                  const Padding(
+                    padding: EdgeInsets.only(top: 4),
+                    child: Text(
+                      'بعض تفاصيل هذا السجل التاريخي غير متاحة. لم يتم تعديل أي قيمة في الراتب.',
+                      textAlign: TextAlign.right,
+                    ),
+                  ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(),
+                child: const Text('إغلاق'),
               ),
-            if (!entry.hasCompleteDetails)
-              const Padding(
-                padding: EdgeInsets.only(top: 4),
-                child: Text(
-                  'بعض تفاصيل هذا السجل التاريخي غير متاحة. لم يتم تعديل أي قيمة في الراتب.',
-                  textAlign: TextAlign.right,
-                ),
-              ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(),
-            child: const Text('إغلاق'),
+            ],
           ),
-        ],
-      ),
     );
   }
 }

@@ -109,8 +109,8 @@ void main() {
 
   test('remote day and long leave require CEO approval', () {
     expect(LeaveTypePolicy.requiresCeoApproval('remote', 1), isTrue);
-    expect(LeaveTypePolicy.requiresCeoApproval('day_off', 5), isTrue);
-    expect(LeaveTypePolicy.requiresCeoApproval('day_off', 4), isFalse);
+    expect(LeaveTypePolicy.requiresCeoApproval('day_off', 3), isTrue);
+    expect(LeaveTypePolicy.requiresCeoApproval('day_off', 2), isFalse);
   });
 
   test('every leave request requires a reason', () {
@@ -154,16 +154,17 @@ void main() {
   });
 
   test('early leave, late arrival, and official leave remain selectable', () {
-    final requestScreen = File(
-      'lib/screens/employee/employee_requests.dart',
-    ).readAsStringSync();
+    final requestScreen =
+        File('lib/screens/employee/employee_requests.dart').readAsStringSync();
 
     expect(requestScreen, contains("_permissionType == 'early_leave'"));
     expect(requestScreen, contains("_permissionType == 'late_arrival'"));
     expect(requestScreen, contains("selectedLeaveType == 'day_off'"));
     expect(
       requestScreen,
-      contains('الإذن بالمغادرة المبكرة متاح حتى عند إيقاف تسجيل الانصراف'),
+      isNot(
+        contains('الإذن بالمغادرة المبكرة متاح حتى عند إيقاف تسجيل الانصراف'),
+      ),
     );
   });
 }

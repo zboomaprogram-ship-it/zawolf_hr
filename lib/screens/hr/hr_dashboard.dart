@@ -101,6 +101,12 @@ class _HrDashboardScreenState extends State<HrDashboardScreen> {
     if (updated != null && mounted) {
       await service.updateFilters(filters: updated, actorId: actorId);
       if (!mounted) return;
+      final newPeriodKey = updated.startDate.length >= 7
+          ? updated.startDate.substring(0, 7)
+          : '';
+      setState(() {
+        _selectedSalesKpiPeriod = newPeriodKey;
+      });
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('تم حفظ الفلاتر والفترة بنجاح وتم ربطها بالمزامنة.'),
@@ -162,7 +168,12 @@ class _HrDashboardScreenState extends State<HrDashboardScreen> {
         ],
       ),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(DsSpacing.lg),
+        padding: const EdgeInsets.fromLTRB(
+          DsSpacing.lg,
+          DsSpacing.lg,
+          DsSpacing.lg,
+          110,
+        ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -209,30 +220,48 @@ class _HrDashboardScreenState extends State<HrDashboardScreen> {
             // 2. Priority strip — pending approvals & attendance access
             ValueListenableBuilder<int>(
               valueListenable: PendingRequestsService.instance.pendingCount,
-              builder: (context, pendingCount, _) => PriorityStrip(
-                items: [
-                  PriorityItem(
-                    label: 'بصمتي الشخصية (تسجيل الحضور)',
-                    count: 0,
-                    icon: Icons.fingerprint,
-                    accent: ZaWolfColors.primaryCyan,
-                    onTap: () => context.go('/employee/dashboard'),
+              builder:
+                  (context, pendingCount, _) => PriorityStrip(
+                    items: [
+                      PriorityItem(
+                        label: 'بصمتي الشخصية (تسجيل الحضور)',
+                        count: 0,
+                        icon: Icons.fingerprint,
+                        accent: ZaWolfColors.primaryCyan,
+                        onTap: () => context.go('/employee/dashboard'),
+                      ),
+                      PriorityItem(
+                        label: 'إدارة وسجلات الحضور',
+                        count: 0,
+                        icon: Icons.co_present_outlined,
+                        accent: ZaWolfColors.primaryBlue,
+                        onTap: () => context.go('/hr/attendance-summary'),
+                      ),
+                      PriorityItem(
+                        label: 'طلبات معلقة بانتظار المراجعة',
+                        count: pendingCount,
+                        icon: Icons.rule_outlined,
+                        onTap: () {
+                          final firstPending =
+                              PendingRequestsService
+                                  .instance
+                                  .firstPendingCategory;
+                          if (firstPending != null) {
+                            context.go('/hr/requests?category=$firstPending');
+                          } else {
+                            context.go('/hr/requests?smart=true');
+                          }
+                        },
+                      ),
+                      PriorityItem(
+                        label: 'إدارة كؤوس وشارات التميز',
+                        count: 0,
+                        icon: Icons.emoji_events,
+                        accent: const Color(0xFFFFD700),
+                        onTap: () => context.push('/hr/custom-badges'),
+                      ),
+                    ],
                   ),
-                  PriorityItem(
-                    label: 'إدارة وسجلات الحضور',
-                    count: 0,
-                    icon: Icons.co_present_outlined,
-                    accent: ZaWolfColors.primaryBlue,
-                    onTap: () => context.go('/hr/attendance-summary'),
-                  ),
-                  PriorityItem(
-                    label: 'طلبات معلقة بانتظار المراجعة',
-                    count: pendingCount,
-                    icon: Icons.rule_outlined,
-                    onTap: () => context.go('/hr/requests'),
-                  ),
-                ],
-              ),
             ),
             const EndOfDayBriefingCard(isHr: true),
             const SizedBox(height: DsSpacing.md),
@@ -295,8 +324,9 @@ class _HrDashboardScreenState extends State<HrDashboardScreen> {
                   summary: snapshot.data!,
                   onRefresh: _loadAttendanceSummary,
                   onTap: () => context.go('/hr/attendance-summary'),
-                  onCategoryTap: (status) =>
-                      context.go('/hr/attendance-summary?status=$status'),
+                  onCategoryTap:
+                      (status) =>
+                          context.go('/hr/attendance-summary?status=$status'),
                 );
               },
             ),
@@ -312,10 +342,13 @@ class _HrDashboardScreenState extends State<HrDashboardScreen> {
                   return StreamBuilder<List<SalesKpiSummary>>(
                     stream: SalesKpiIntegrationService().watchSummaryHistory(),
                     builder: (context, historySnapshot) {
+                      final seenKeys = <String>{current.periodKey};
                       final history = <SalesKpiSummary>[
                         current,
                         ...?historySnapshot.data?.where(
-                          (item) => item.periodKey != current.periodKey,
+                          (item) =>
+                              item.periodKey.isNotEmpty &&
+                              seenKeys.add(item.periodKey),
                         ),
                       ];
                       final selected = history.firstWhere(
@@ -327,11 +360,12 @@ class _HrDashboardScreenState extends State<HrDashboardScreen> {
                         child: SalesKpiSummaryCard(
                           summary: selected,
                           history: history,
-                          onPeriodChanged: (value) => setState(
-                            () => _selectedSalesKpiPeriod = value.periodKey,
-                          ),
-                          onEditPeriod: () =>
-                              _editSalesKpiPeriod(current, hrAdmin.uid),
+                          onPeriodChanged:
+                              (value) => setState(
+                                () => _selectedSalesKpiPeriod = value.periodKey,
+                              ),
+                          onEditPeriod:
+                              () => _editSalesKpiPeriod(selected, hrAdmin.uid),
                         ),
                       );
                     },
@@ -351,9 +385,8 @@ class _HrDashboardScreenState extends State<HrDashboardScreen> {
               crossAxisCount: MediaQuery.sizeOf(context).width >= 1200 ? 4 : 2,
               crossAxisSpacing: DsSpacing.lg,
               mainAxisSpacing: DsSpacing.lg,
-              childAspectRatio: MediaQuery.sizeOf(context).width >= 1200
-                  ? 1.45
-                  : 1.3,
+              childAspectRatio:
+                  MediaQuery.sizeOf(context).width >= 1200 ? 1.45 : 1.3,
               children: [
                 _actionTile(
                   'تسجيل بصمتي الشخصية',
@@ -411,9 +444,8 @@ class _HrDashboardScreenState extends State<HrDashboardScreen> {
               crossAxisCount: MediaQuery.sizeOf(context).width >= 1200 ? 4 : 2,
               crossAxisSpacing: DsSpacing.lg,
               mainAxisSpacing: DsSpacing.lg,
-              childAspectRatio: MediaQuery.sizeOf(context).width >= 1200
-                  ? 1.45
-                  : 1.3,
+              childAspectRatio:
+                  MediaQuery.sizeOf(context).width >= 1200 ? 1.45 : 1.3,
               children: [
                 _actionTile(
                   'إدارة الطلبات',
@@ -474,9 +506,8 @@ class _HrDashboardScreenState extends State<HrDashboardScreen> {
               crossAxisCount: MediaQuery.sizeOf(context).width >= 1200 ? 4 : 2,
               crossAxisSpacing: DsSpacing.lg,
               mainAxisSpacing: DsSpacing.lg,
-              childAspectRatio: MediaQuery.sizeOf(context).width >= 1200
-                  ? 1.45
-                  : 1.3,
+              childAspectRatio:
+                  MediaQuery.sizeOf(context).width >= 1200 ? 1.45 : 1.3,
               children: [
                 _actionTile(
                   'خدمات الشركة',
@@ -583,17 +614,15 @@ class _HrMetricsRow extends StatelessWidget {
           future: attendanceSummaryFuture,
           builder: (context, summarySnapshot) {
             final summary = summarySnapshot.data;
-            final attendancePercent = summary
-                ?.percentOf(summary.attended)
-                .round();
+            final attendancePercent =
+                summary?.percentOf(summary.attended).round();
             return Row(
               children: [
                 Expanded(
                   child: StatCard(
                     icon: Icons.today_outlined,
-                    value: attendancePercent == null
-                        ? '—'
-                        : '$attendancePercent%',
+                    value:
+                        attendancePercent == null ? '—' : '$attendancePercent%',
                     label: 'حضور اليوم',
                     onTap: () => context.go('/hr/attendance-summary'),
                   ),
@@ -612,7 +641,15 @@ class _HrMetricsRow extends StatelessWidget {
                     icon: Icons.rule_outlined,
                     value: '$pendingCount',
                     label: 'طلبات معلقة',
-                    onTap: () => context.go('/hr/requests'),
+                    onTap: () {
+                      final category =
+                          PendingRequestsService.instance.firstPendingCategory;
+                      context.go(
+                        category == null
+                            ? '/hr/requests?smart=true'
+                            : '/hr/requests?category=$category',
+                      );
+                    },
                   ),
                 ),
                 const SizedBox(width: DsSpacing.md),

@@ -1,11 +1,15 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart' hide TextDirection;
 
 import '../../domain/entities/conversation.dart';
 import '../../domain/entities/governed_attachment.dart';
 import '../../domain/repositories/conversation_repository.dart';
 import '../../../../utils/binary_file_action.dart';
+import '../../../../utils/user_facing_error.dart';
 
 final class DepartmentChatChannelPage extends StatefulWidget {
   const DepartmentChatChannelPage({
@@ -17,6 +21,7 @@ final class DepartmentChatChannelPage extends StatefulWidget {
     this.availableDepartments = const <String>[],
     this.selectedDepartment,
     this.onDepartmentSelected,
+    this.onBack,
   });
 
   final String channelId;
@@ -26,6 +31,7 @@ final class DepartmentChatChannelPage extends StatefulWidget {
   final List<String> availableDepartments;
   final String? selectedDepartment;
   final ValueChanged<String>? onDepartmentSelected;
+  final VoidCallback? onBack;
 
   @override
   State<DepartmentChatChannelPage> createState() =>
@@ -36,7 +42,9 @@ class _DepartmentChatChannelPageState extends State<DepartmentChatChannelPage> {
   final TextEditingController _messageController = TextEditingController();
   bool _sending = false;
   bool _uploading = false;
+  double? _horizontalDragStart;
   final List<String> _attachmentResourceIds = <String>[];
+  final List<ConversationMessage> _optimisticMessages = <ConversationMessage>[];
 
   @override
   void dispose() {
@@ -44,26 +52,52 @@ class _DepartmentChatChannelPageState extends State<DepartmentChatChannelPage> {
     super.dispose();
   }
 
+  void _goBack() {
+    final navigator = Navigator.of(context);
+    if (navigator.canPop()) {
+      navigator.pop();
+      return;
+    }
+    widget.onBack?.call();
+  }
+
   Future<void> _sendMessage() async {
     final text = _messageController.text.trim();
     if (text.isEmpty && _attachmentResourceIds.isEmpty) return;
 
-    setState(() => _sending = true);
+    final pendingId =
+        'optimistic-${DateTime.now().microsecondsSinceEpoch}';
+    final pendingMessage = ConversationMessage(
+      id: pendingId,
+      conversationId: widget.channelId,
+      senderUserId: widget.currentUserId,
+      senderDisplayName: 'أنت',
+      body: text.isEmpty ? 'مرفق' : text,
+      sentAt: DateTime.now(),
+      state: ConversationMessageState.pending,
+      attachmentResourceIds: List<String>.from(_attachmentResourceIds),
+    );
+
+    final attachmentsToSend = List<String>.from(_attachmentResourceIds);
+    _messageController.clear();
+    setState(() {
+      _attachmentResourceIds.clear();
+      _optimisticMessages.add(pendingMessage);
+      _sending = true;
+    });
+
     try {
       final message = await widget.repository.sendMessage(
         conversationId: widget.channelId,
         senderUserId: widget.currentUserId,
-        body: text.isEmpty ? 'مرفق' : text,
+        body: pendingMessage.body,
         operationId:
             'conversation-message-${DateTime.now().microsecondsSinceEpoch}',
-        attachmentResourceIds: List<String>.from(_attachmentResourceIds),
+        attachmentResourceIds: attachmentsToSend,
       );
       if (message.state == ConversationMessageState.failed) {
         throw StateError('message send failed');
       }
-
-      _messageController.clear();
-      setState(() => _attachmentResourceIds.clear());
     } catch (_) {
       if (mounted) {
         ScaffoldMessenger.of(
@@ -72,7 +106,10 @@ class _DepartmentChatChannelPageState extends State<DepartmentChatChannelPage> {
       }
     } finally {
       if (mounted) {
-        setState(() => _sending = false);
+        setState(() {
+          _optimisticMessages.removeWhere((m) => m.id == pendingId);
+          _sending = false;
+        });
       }
     }
   }
@@ -81,13 +118,59 @@ class _DepartmentChatChannelPageState extends State<DepartmentChatChannelPage> {
     final repository = widget.repository;
     if (repository is! GovernedAttachmentGateway || _uploading) return;
     final gateway = repository as GovernedAttachmentGateway;
-    final selection = await FilePicker.pickFiles(
-      allowMultiple: false,
-      withData: true,
+    final source = await showModalBottomSheet<_AttachmentSource>(
+      context: context,
+      builder:
+          (sheetContext) => SafeArea(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ListTile(
+                  leading: const Icon(Icons.photo_library_outlined),
+                  title: const Text('صورة من المعرض'),
+                  onTap:
+                      () => Navigator.pop(
+                        sheetContext,
+                        _AttachmentSource.gallery,
+                      ),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.attach_file_rounded),
+                  title: const Text('ملف من الجهاز'),
+                  onTap:
+                      () =>
+                          Navigator.pop(sheetContext, _AttachmentSource.files),
+                ),
+              ],
+            ),
+          ),
     );
-    final file = selection?.files.singleOrNull;
-    final bytes = file?.bytes;
-    if (file == null || bytes == null || !mounted) return;
+    if (source == null) return;
+
+    String? name;
+    String? extension;
+    List<int>? bytes;
+    if (source == _AttachmentSource.gallery) {
+      final image = await ImagePicker().pickImage(
+        source: ImageSource.gallery,
+        maxWidth: 1920,
+        maxHeight: 1920,
+        imageQuality: 82,
+      );
+      name = image?.name;
+      extension = name?.split('.').last;
+      bytes = await image?.readAsBytes();
+    } else {
+      final selection = await FilePicker.pickFiles(
+        allowMultiple: false,
+        withData: true,
+      );
+      final file = selection?.files.singleOrNull;
+      name = file?.name;
+      extension = file?.extension;
+      bytes = file?.bytes;
+    }
+    if (name == null || bytes == null || !mounted) return;
     if (bytes.isEmpty || bytes.length > 10 * 1024 * 1024) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('حجم الملف يجب ألا يتجاوز 10 MB.')),
@@ -99,8 +182,8 @@ class _DepartmentChatChannelPageState extends State<DepartmentChatChannelPage> {
       final attachment = await gateway.upload(
         conversationId: widget.channelId,
         actorUserId: widget.currentUserId,
-        fileName: file.name,
-        mimeType: _mimeTypeFor(file.extension),
+        fileName: name,
+        mimeType: _mimeTypeFor(extension),
         bytes: bytes,
         operationId: 'chat-file-${DateTime.now().microsecondsSinceEpoch}',
       );
@@ -110,13 +193,20 @@ class _DepartmentChatChannelPageState extends State<DepartmentChatChannelPage> {
       if (mounted) {
         setState(() => _attachmentResourceIds.add(attachment.resourceId));
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('تم إرفاق ${file.name} عبر Google Drive.')),
+          SnackBar(content: Text('تم إرفاق $name عبر Google Drive.')),
         );
       }
-    } catch (_) {
+    } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('تعذر رفع الملف إلى Google Drive.')),
+          SnackBar(
+            content: Text(
+              userFacingError(
+                error,
+                fallback: 'تعذر رفع الملف إلى Google Drive.',
+              ),
+            ),
+          ),
         );
       }
     } finally {
@@ -136,22 +226,40 @@ class _DepartmentChatChannelPageState extends State<DepartmentChatChannelPage> {
     _ => 'application/octet-stream',
   };
 
-  Future<void> _downloadAttachment(String resourceId) async {
+  Future<void> _openAttachment(String resourceId) async {
     final repository = widget.repository;
     if (repository is! GovernedAttachmentGateway) return;
     final gateway = repository as GovernedAttachmentGateway;
-    final preparedView = prepareBinaryView();
     try {
       final file = await gateway.download(
         conversationId: widget.channelId,
         actorUserId: widget.currentUserId,
         resourceId: resourceId,
       );
+      if (file.mimeType.startsWith('image/')) {
+        if (!mounted) return;
+        await showDialog<void>(
+          context: context,
+          builder:
+              (dialogContext) => Dialog(
+                backgroundColor: const Color(0xFF0F172A),
+                child: InteractiveViewer(
+                  minScale: 0.6,
+                  maxScale: 4,
+                  child: Image.memory(
+                    Uint8List.fromList(file.bytes),
+                    fit: BoxFit.contain,
+                  ),
+                ),
+              ),
+        );
+        return;
+      }
       final opened = await viewBinaryFile(
         file.bytes,
         file.fileName,
         file.mimeType,
-        preparedView: preparedView,
+        preparedView: prepareBinaryView(),
       );
       if (!opened && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -176,7 +284,16 @@ class _DepartmentChatChannelPageState extends State<DepartmentChatChannelPage> {
       child: Scaffold(
         backgroundColor: const Color(0xFF0F172A),
         appBar: AppBar(
+          automaticallyImplyLeading: false,
           backgroundColor: const Color(0xFF1E293B),
+          leading: IconButton(
+            tooltip: 'رجوع',
+            icon: const Icon(
+              Icons.arrow_forward_rounded,
+              textDirection: TextDirection.ltr,
+            ),
+            onPressed: _goBack,
+          ),
           title: Row(
             children: [
               const CircleAvatar(
@@ -213,67 +330,109 @@ class _DepartmentChatChannelPageState extends State<DepartmentChatChannelPage> {
             ],
           ),
         ),
-        body: Column(
-          children: [
-            Expanded(
-              child: StreamBuilder<List<ConversationMessage>>(
-                stream: widget.repository.watchMessages(
-                  conversationId: widget.channelId,
-                  memberUserId: widget.currentUserId,
-                ),
-                builder: (context, snapshot) {
-                  final messages = snapshot.data ?? const [];
-                  if (snapshot.hasError) {
-                    return const Center(
-                      child: Text(
-                        'تعذر تحميل رسائل القسم. أعد فتح القناة.',
-                        style: TextStyle(color: Colors.white70),
-                      ),
-                    );
-                  }
-                  if (messages.isEmpty) {
-                    return Center(
-                      child: Padding(
-                        padding: const EdgeInsets.all(24),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: const [
-                            Icon(
-                              Icons.forum_outlined,
-                              size: 48,
-                              color: Colors.white38,
-                            ),
-                            SizedBox(height: 12),
-                            Text(
-                              'لا توجد رسائل في هذه القناة بعد.\nابدأ المحادثة مع فريق العمل.',
-                              textAlign: TextAlign.center,
-                              style: TextStyle(color: Colors.white54),
-                            ),
-                          ],
+        body: GestureDetector(
+          behavior: HitTestBehavior.translucent,
+          onHorizontalDragStart:
+              (details) => _horizontalDragStart = details.localPosition.dx,
+          onHorizontalDragEnd: (details) {
+            final start = _horizontalDragStart;
+            _horizontalDragStart = null;
+            final velocity = details.primaryVelocity ?? 0;
+            final width = MediaQuery.sizeOf(context).width;
+            final startedAtEdge =
+                start != null && (start < 32 || start > width - 32);
+            if (startedAtEdge && velocity.abs() >= 450) {
+              _goBack();
+            }
+          },
+          child: Column(
+            children: [
+              Expanded(
+                child: StreamBuilder<List<ConversationMessage>>(
+                  stream: widget.repository.watchMessages(
+                    conversationId: widget.channelId,
+                    memberUserId: widget.currentUserId,
+                  ),
+                  builder: (context, snapshot) {
+                    final remoteMessages = snapshot.data ?? const [];
+                    final Map<String, ConversationMessage> mergedMap = {};
+                    for (final m in remoteMessages) {
+                      mergedMap[m.id] = m;
+                    }
+                    for (final m in _optimisticMessages) {
+                      if (!mergedMap.containsKey(m.id)) {
+                        mergedMap[m.id] = m;
+                      }
+                    }
+                    final messages = mergedMap.values.toList()
+                      ..sort((a, b) => a.sentAt.compareTo(b.sentAt));
+
+                    if (snapshot.connectionState == ConnectionState.waiting &&
+                        remoteMessages.isEmpty &&
+                        _optimisticMessages.isEmpty) {
+                      return const Center(
+                        child: CircularProgressIndicator(
+                          color: Color(0xFF38BDF8),
                         ),
-                      ),
-                    );
-                  }
-                  return ListView.builder(
-                    padding: const EdgeInsets.all(16),
-                    itemCount: messages.length,
-                    itemBuilder: (context, index) {
-                      final message = messages[messages.length - index - 1];
-                      return _MessageBubble(
-                        senderName: message.senderDisplayName,
-                        body: message.body,
-                        createdAt: message.sentAt.toIso8601String(),
-                        isMe: message.senderUserId == widget.currentUserId,
-                        attachmentResourceIds: message.attachmentResourceIds,
-                        onAttachmentTap: _downloadAttachment,
                       );
-                    },
-                  );
-                },
+                    }
+
+                    if (snapshot.hasError && messages.isEmpty) {
+                      return const Center(
+                        child: Text(
+                          'تعذر تحميل رسائل القسم. أعد فتح القناة.',
+                          style: TextStyle(color: Colors.white70),
+                        ),
+                      );
+                    }
+                    if (messages.isEmpty) {
+                      return Center(
+                        child: Padding(
+                          padding: const EdgeInsets.all(24),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: const [
+                              Icon(
+                                Icons.forum_outlined,
+                                size: 48,
+                                color: Colors.white38,
+                              ),
+                              SizedBox(height: 12),
+                              Text(
+                                'لا توجد رسائل في هذه القناة بعد.\nابدأ المحادثة مع فريق العمل.',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(color: Colors.white54),
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    }
+                    return ListView.builder(
+                      padding: const EdgeInsets.all(16),
+                      itemCount: messages.length,
+                      itemBuilder: (context, index) {
+                        final message = messages[messages.length - index - 1];
+                        return _MessageBubble(
+                          senderName: message.senderDisplayName.isNotEmpty
+                              ? message.senderDisplayName
+                              : (message.senderUserId == widget.currentUserId
+                                  ? 'أنت'
+                                  : 'عضو الفريق'),
+                          body: message.body,
+                          createdAt: message.sentAt.toIso8601String(),
+                          isMe: message.senderUserId == widget.currentUserId,
+                          attachmentResourceIds: message.attachmentResourceIds,
+                          onAttachmentTap: _openAttachment,
+                        );
+                      },
+                    );
+                  },
+                ),
               ),
-            ),
-            _buildInputArea(),
-          ],
+              _buildInputArea(),
+            ],
+          ),
         ),
       ),
     );
@@ -289,16 +448,17 @@ class _DepartmentChatChannelPageState extends State<DepartmentChatChannelPage> {
       child: Row(
         children: [
           IconButton(
-            icon: _uploading
-                ? const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(
-                    Icons.attach_file_rounded,
-                    color: Color(0xFF38BDF8),
-                  ),
+            icon:
+                _uploading
+                    ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                    : const Icon(
+                      Icons.attach_file_rounded,
+                      color: Color(0xFF38BDF8),
+                    ),
             tooltip: 'إرفاق ملف Google Drive',
             onPressed: _uploading ? null : _attachFile,
           ),
@@ -330,20 +490,21 @@ class _DepartmentChatChannelPageState extends State<DepartmentChatChannelPage> {
               shape: BoxShape.circle,
             ),
             child: IconButton(
-              icon: _sending
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
+              icon:
+                  _sending
+                      ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.black,
+                        ),
+                      )
+                      : const Icon(
+                        Icons.send_rounded,
                         color: Colors.black,
+                        size: 20,
                       ),
-                    )
-                  : const Icon(
-                      Icons.send_rounded,
-                      color: Colors.black,
-                      size: 20,
-                    ),
               onPressed: _sending ? null : _sendMessage,
             ),
           ),
@@ -360,6 +521,8 @@ class _DepartmentChatChannelPageState extends State<DepartmentChatChannelPage> {
     );
   }
 }
+
+enum _AttachmentSource { gallery, files }
 
 class _MessageBubble extends StatelessWidget {
   const _MessageBubble({
@@ -380,12 +543,12 @@ class _MessageBubble extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final bg = isMe
-        ? const Color(0xFF0284C7).withValues(alpha: 0.3)
-        : const Color(0xFF334155);
-    final border = isMe
-        ? const Color(0xFF38BDF8).withValues(alpha: 0.5)
-        : Colors.white12;
+    final bg =
+        isMe
+            ? const Color(0xFF0284C7).withValues(alpha: 0.3)
+            : const Color(0xFF334155);
+    final border =
+        isMe ? const Color(0xFF38BDF8).withValues(alpha: 0.5) : Colors.white12;
 
     String timeFormatted = '';
     if (createdAt.isNotEmpty) {
@@ -404,19 +567,16 @@ class _MessageBubble extends StatelessWidget {
         decoration: BoxDecoration(
           color: bg,
           borderRadius: BorderRadius.circular(16).copyWith(
-            bottomRight: isMe
-                ? const Radius.circular(2)
-                : const Radius.circular(16),
-            bottomLeft: !isMe
-                ? const Radius.circular(2)
-                : const Radius.circular(16),
+            bottomRight:
+                isMe ? const Radius.circular(2) : const Radius.circular(16),
+            bottomLeft:
+                !isMe ? const Radius.circular(2) : const Radius.circular(16),
           ),
           border: Border.all(color: border),
         ),
         child: Column(
-          crossAxisAlignment: isMe
-              ? CrossAxisAlignment.start
-              : CrossAxisAlignment.start,
+          crossAxisAlignment:
+              isMe ? CrossAxisAlignment.start : CrossAxisAlignment.start,
           children: [
             if (!isMe && senderName.isNotEmpty) ...[
               Text(
@@ -447,8 +607,8 @@ class _MessageBubble extends StatelessWidget {
                     ActionChip(
                       avatar: const Icon(Icons.attach_file, size: 14),
                       label: Text('فتح المرفق ${index + 1}'),
-                      onPressed: () =>
-                          onAttachmentTap(attachmentResourceIds[index]),
+                      onPressed:
+                          () => onAttachmentTap(attachmentResourceIds[index]),
                     ),
                 ],
               ),

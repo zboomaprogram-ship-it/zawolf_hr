@@ -91,7 +91,12 @@ async function performWorkspaceDriveOperation({
 /// Workspace files, but deliberately expose only an opaque application
 /// resource id to callers. Membership and audit checks stay at the HTTP
 /// boundary; this helper owns the provider operation only.
-async function uploadGovernedAttachment({ connector, parentFolderId, payload }) {
+async function uploadGovernedAttachment({
+  connector,
+  parentFolderId,
+  payload,
+  useDriveUploadOAuth = false,
+}) {
   return connector.uploadWorkspaceDriveFile({
     parentFolderId: requiredString({ parentFolderId }, 'parentFolderId', 256),
     name: requiredString(payload, 'name', 160),
@@ -101,6 +106,7 @@ async function uploadGovernedAttachment({ connector, parentFolderId, payload }) 
       'contentsBase64',
       14 * 1024 * 1024,
     ),
+    useDriveUploadOAuth,
   });
 }
 
@@ -108,10 +114,12 @@ async function downloadGovernedAttachment({
   connector,
   parentFolderId,
   externalFileId,
+  useDriveUploadOAuth = false,
 }) {
   return connector.downloadWorkspaceDriveFile({
     folderId: requiredString({ parentFolderId }, 'parentFolderId', 256),
     fileId: requiredString({ externalFileId }, 'externalFileId', 256),
+    useDriveUploadOAuth,
   });
 }
 

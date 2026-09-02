@@ -172,12 +172,12 @@ List<NavigationItem> mobileTabsForRole(String role) {
         domain: NavDomain.home,
       ),
       NavigationItem(
-        icon: Icons.people_outline,
-        activeIcon: Icons.people,
-        label: 'الأعضاء',
-        englishLabel: 'Members',
-        path: '/team-leader/employees',
-        domain: NavDomain.people,
+        icon: Icons.fingerprint,
+        activeIcon: Icons.fingerprint,
+        label: 'الحضور',
+        englishLabel: 'Attendance',
+        path: '/employee/dashboard',
+        domain: NavDomain.time,
       ),
       NavigationItem(
         icon: Icons.rule_outlined,
@@ -207,12 +207,12 @@ List<NavigationItem> mobileTabsForRole(String role) {
         domain: NavDomain.home,
       ),
       NavigationItem(
-        icon: Icons.groups_2_outlined,
-        activeIcon: Icons.groups_2,
-        label: 'الفريق',
-        englishLabel: 'My Team',
-        path: '/manager/team',
-        domain: NavDomain.people,
+        icon: Icons.fingerprint,
+        activeIcon: Icons.fingerprint,
+        label: 'الحضور',
+        englishLabel: 'Attendance',
+        path: '/employee/dashboard',
+        domain: NavDomain.time,
       ),
       NavigationItem(
         icon: Icons.rule_outlined,
@@ -223,12 +223,11 @@ List<NavigationItem> mobileTabsForRole(String role) {
         domain: NavDomain.approvals,
       ),
       NavigationItem(
-        icon: Icons.domain_outlined,
-        activeIcon: Icons.domain,
-        label: 'التقارير',
-        englishLabel: 'Reports',
-        path: '/manager/departments',
-        domain: NavDomain.performance,
+        icon: Icons.person_outline,
+        activeIcon: Icons.person,
+        label: 'حسابي',
+        englishLabel: 'Profile',
+        path: '/employee/profile',
       ),
     ];
   }
@@ -247,7 +246,7 @@ List<NavigationItem> mobileTabsForRole(String role) {
       activeIcon: Icons.fingerprint,
       label: 'الحضور',
       englishLabel: 'Attendance',
-      path: '/hr/attendance-summary',
+      path: '/employee/dashboard',
       domain: NavDomain.time,
     ),
     NavigationItem(
@@ -259,12 +258,11 @@ List<NavigationItem> mobileTabsForRole(String role) {
       domain: NavDomain.approvals,
     ),
     NavigationItem(
-      icon: Icons.payments_outlined,
-      activeIcon: Icons.payments,
-      label: 'الرواتب',
-      englishLabel: 'Payroll',
-      path: '/hr/payroll',
-      domain: NavDomain.payroll,
+      icon: Icons.person_outline,
+      activeIcon: Icons.person,
+      label: 'حسابي',
+      englishLabel: 'Profile',
+      path: '/employee/profile',
     ),
   ];
 }

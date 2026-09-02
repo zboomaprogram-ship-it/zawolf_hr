@@ -55,14 +55,20 @@ function validateRoute(approvers) {
 async function createFieldMission({ db, admin, actor, body }) {
   if (!isHr(actor)) throw new Error('لا تتوفر لك صلاحية إنشاء مأمورية.');
   const operationId = clean(body.operationId, 160);
-  const employeeUid = clean(body.employeeUid, 128);
-  if (!safeId(operationId) || !safeId(employeeUid)) throw new Error('بيانات العملية غير صالحة.');
+  // One group operation deliberately creates one approval record per employee.
+  // This keeps approval history, notifications, rejection and attendance
+  // evidence independent while allowing HR to create a shared mission once.
+  const employeeUids = [...new Set((Array.isArray(body.employeeUids) ? body.employeeUids : [body.employeeUid])
+    .map((value) => clean(value, 128)).filter(Boolean))];
+  if (!safeId(operationId) || employeeUids.length < 1 || employeeUids.length > 50 || employeeUids.some((id) => !safeId(id))) {
+    throw new Error('اختر من موظف واحد إلى 50 موظفاً بصورة صحيحة.');
+  }
   const approverIds = validateRoute(body.approvers);
-  const [employeeSnap, ...approverSnaps] = await Promise.all([
-    db.collection('users').doc(employeeUid).get(),
-    ...approverIds.map((id) => db.collection('users').doc(id).get()),
+  const [employeeSnaps, approverSnaps] = await Promise.all([
+    Promise.all(employeeUids.map((id) => db.collection('users').doc(id).get())),
+    Promise.all(approverIds.map((id) => db.collection('users').doc(id).get())),
   ]);
-  if (!employeeSnap.exists || !isActiveUser(employeeSnap.data())) throw new Error('الموظف المختار غير نشط.');
+  if (employeeSnaps.some((snap) => !snap.exists || !isActiveUser(snap.data()))) throw new Error('أحد الموظفين المختارين غير نشط.');
   if (approverSnaps.some((snap) => !snap.exists || !isActiveUser(snap.data()))) {
     throw new Error('أحد مسؤولي الموافقة غير نشط أو لم يعد موجودًا.');
   }
@@ -74,41 +80,48 @@ async function createFieldMission({ db, admin, actor, body }) {
       !/^\d{2}:\d{2}$/.test(endTime) || startTime >= endTime || !reason) {
     throw new Error('أكمل تاريخ ووقت وسبب المأمورية بصورة صحيحة.');
   }
-  const ref = db.collection('administrativeRequests').doc(`field-mission-${eventId(actor.uid, operationId)}`);
   const operationRef = db.collection('requestRoutingOperations').doc(`field-mission-${eventId(actor.uid, operationId)}`);
-  const employee = employeeSnap.data();
-  const route = approverSnaps.map((snap, index) => {
-    const data = snap.data();
-    return {
-      stageId: `field-mission:${ref.id}:${index + 1}`, order: index + 1,
-      approverId: snap.id, approverName: userName(data), approverRole: clean(data.role, 80),
-      labelAr: clean(body.approvers[index]?.labelAr || 'مسؤول الموافقة', 120), state: 'pending',
-    };
+  const missionGroupId = `field-mission-group-${eventId(actor.uid, operationId)}`;
+  const missions = employeeSnaps.map((employeeSnap) => {
+    const employee = employeeSnap.data();
+    const ref = db.collection('administrativeRequests').doc(`field-mission-${eventId(actor.uid, operationId, employeeSnap.id)}`);
+    const route = approverSnaps.map((snap, index) => {
+      const data = snap.data();
+      return {
+        stageId: `field-mission:${ref.id}:${index + 1}`, order: index + 1,
+        approverId: snap.id, approverName: userName(data), approverRole: clean(data.role, 80),
+        labelAr: clean(body.approvers[index]?.labelAr || 'مسؤول الموافقة', 120), state: 'pending',
+      };
+    });
+    return { ref, employeeUid: employeeSnap.id, employee, route };
   });
   await db.runTransaction(async (tx) => {
-    if ((await tx.get(operationRef)).exists || (await tx.get(ref)).exists) return;
-    tx.set(ref, {
-      userId: employeeUid, employeeId: clean(employee.employeeId || employee.employeeCode, 80),
-      employeeName: userName(employee), department: clean(employee.department || employee.departmentName, 160),
-      category: 'field_mission', categoryLabel: 'مأمورية / مهمة ميدانية', notes: reason,
-      locationId: clean(body.locationId, 128), missionDate, startTime, endTime,
-      siteName: clean(body.siteName, 240), requiresReturnToOffice: body.requiresReturnToOffice === true,
-      requiresCheckout: body.requiresCheckout === true, status: 'pending_manager', isRead: false,
-      routeKind: 'hr_field_mission', approvalRouteVersion: 1, approvalRoute: route,
-      currentApprovalIndex: 0, currentApproverId: route[0].approverId,
-      currentApproverName: route[0].approverName, managerId: route[0].approverId,
-      managerName: route[0].approverName, managerIds: route.map((stage) => stage.approverId),
-      approvalHistory: [{ action: 'submitted', actorId: actor.uid, actorName: actor.displayName || 'HR', at: stamp() }],
-      createdByHrId: actor.uid, createdByHrName: clean(actor.displayName || actor.name || 'HR', 160),
-      submittedAt: admin.firestore.FieldValue.serverTimestamp(),
-    });
-    tx.set(operationRef, { operationId, requestId: ref.id, kind: 'field_mission_create', createdAt: admin.firestore.FieldValue.serverTimestamp() });
+    if ((await tx.get(operationRef)).exists) return;
+    for (const mission of missions) {
+      tx.set(mission.ref, {
+        userId: mission.employeeUid, employeeId: clean(mission.employee.employeeId || mission.employee.employeeCode, 80),
+        employeeName: userName(mission.employee), department: clean(mission.employee.department || mission.employee.departmentName, 160),
+        category: 'field_mission', categoryLabel: 'مأمورية / مهمة ميدانية', notes: reason,
+        locationId: clean(body.locationId, 128), missionDate, startTime, endTime,
+        siteName: clean(body.siteName, 240), requiresReturnToOffice: body.requiresReturnToOffice === true,
+        requiresCheckout: body.requiresCheckout === true, status: 'pending_manager', isRead: false,
+        missionGroupId, missionGroupSize: missions.length,
+        routeKind: 'hr_field_mission', approvalRouteVersion: 1, approvalRoute: mission.route,
+        currentApprovalIndex: 0, currentApproverId: mission.route[0].approverId,
+        currentApproverName: mission.route[0].approverName, managerId: mission.route[0].approverId,
+        managerName: mission.route[0].approverName, managerIds: mission.route.map((stage) => stage.approverId),
+        approvalHistory: [{ action: 'submitted', actorId: actor.uid, actorName: actor.displayName || 'HR', at: stamp() }],
+        createdByHrId: actor.uid, createdByHrName: clean(actor.displayName || actor.name || 'HR', 160),
+        submittedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+    }
+    tx.set(operationRef, { operationId, requestIds: missions.map((mission) => mission.ref.id), missionGroupId, kind: 'field_mission_create', createdAt: admin.firestore.FieldValue.serverTimestamp() });
   });
-  await Promise.allSettled([
-    queueNotification(db, admin, { recipientId: employeeUid, type: 'field_mission_under_review', title: 'مأموريتك قيد المراجعة', body: 'أنشأت الموارد البشرية مأمورية لك وهي الآن بانتظار الموافقات.', data: { administrativeRequestId: ref.id, route: '/employee/requests' }, key: `${ref.id}:submitted` }),
-    queueNotification(db, admin, { recipientId: route[0].approverId, type: 'field_mission_approval_turn', title: 'مأمورية بانتظار موافقتك', body: `${userName(employee)} لديه مأمورية تحتاج قرارك.`, data: { administrativeRequestId: ref.id, route: '/manager/requests' }, key: `${ref.id}:turn:0` }),
-  ]);
-  return { requestId: ref.id, currentApproverId: route[0].approverId };
+  await Promise.allSettled(missions.flatMap((mission) => [
+    queueNotification(db, admin, { recipientId: mission.employeeUid, type: 'field_mission_under_review', title: 'مأموريتك قيد المراجعة', body: 'أنشأت الموارد البشرية مأمورية لك وهي الآن بانتظار الموافقات.', data: { administrativeRequestId: mission.ref.id, route: '/employee/requests' }, key: `${mission.ref.id}:submitted` }),
+    queueNotification(db, admin, { recipientId: mission.route[0].approverId, type: 'field_mission_approval_turn', title: 'مأمورية بانتظار موافقتك', body: `${userName(mission.employee)} لديه مأمورية تحتاج قرارك.`, data: { administrativeRequestId: mission.ref.id, route: '/manager/requests' }, key: `${mission.ref.id}:turn:0` }),
+  ]));
+  return { requestIds: missions.map((mission) => mission.ref.id), missionGroupId, currentApproverId: missions[0].route[0].approverId };
 }
 
 async function decideFieldMission({ db, admin, actor, requestId, body }) {

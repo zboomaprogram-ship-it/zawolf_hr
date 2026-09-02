@@ -7,6 +7,18 @@ String userFacingError(
   Object error, {
   String fallback = 'تعذر تنفيذ العملية.',
 }) {
+  final errorStr = error.toString();
+  if (errorStr.contains('INTERNAL ASSERTION') ||
+      errorStr.contains('Unexpected state') ||
+      errorStr.contains('firebase-firestore') ||
+      errorStr.contains('gstatic') ||
+      errorStr.contains('b815') ||
+      errorStr.contains('ca9') ||
+      errorStr.contains('__PRIVATE__') ||
+      errorStr.contains('WatchChangeAggregator')) {
+    return 'تم تحديث اتصال شبكة البيانات تلقائياً. يمكنك إجراء المحاولة الآن أو إعادة تنشيط الصفحة.';
+  }
+
   if (error is FirebaseAuthException) {
     return switch (error.code) {
       'invalid-credential' ||
@@ -58,7 +70,13 @@ String userFacingError(
 /// Legacy screens still use this utility directly. Keep the safety boundary
 /// here rather than coupling older presentation code to the new core layer.
 String? _safeArabicBusinessMessage(Object error) {
-  final message = error.toString().replaceFirst('Exception: ', '').trim();
+  // StateError.toString() prefixes an otherwise-safe Arabic message with
+  // "Bad state:".  That implementation detail must never leak into the UI.
+  final message =
+      error
+          .toString()
+          .replaceFirst(RegExp(r'^(?:Exception|Bad state|StateError):\\s*'), '')
+          .trim();
   if (message.isEmpty || !RegExp(r'[\u0600-\u06FF]').hasMatch(message)) {
     return null;
   }

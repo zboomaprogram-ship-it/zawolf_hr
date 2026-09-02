@@ -150,9 +150,10 @@ class _DepartmentPerformanceScreenState
   ) {
     // If manager, only consider their department
     final isManager = reviewer.role == EmployeeRole.manager;
-    final relevantScores = isManager
-        ? scores.where((s) => s.department == reviewer.department).toList()
-        : scores;
+    final relevantScores =
+        isManager
+            ? scores.where((s) => s.department == reviewer.department).toList()
+            : scores;
 
     final Map<String, List<ProductivityScoreModel>> grouped = {};
     for (var s in relevantScores) {
@@ -160,18 +161,19 @@ class _DepartmentPerformanceScreenState
       grouped.putIfAbsent(dept, () => []).add(s);
     }
 
-    final results = grouped.entries.map((e) {
-      final totalScore = e.value.fold<double>(
-        0,
-        (total, item) => total + item.overallScore,
-      );
-      final avg = totalScore / e.value.length;
-      return DepartmentPerformanceData(
-        departmentName: e.key,
-        averageScore: avg,
-        employeeCount: e.value.length,
-      );
-    }).toList();
+    final results =
+        grouped.entries.map((e) {
+          final totalScore = e.value.fold<double>(
+            0,
+            (total, item) => total + item.overallScore,
+          );
+          final avg = totalScore / e.value.length;
+          return DepartmentPerformanceData(
+            departmentName: e.key,
+            averageScore: avg,
+            employeeCount: e.value.length,
+          );
+        }).toList();
 
     // Sort by average score descending
     results.sort((a, b) => b.averageScore.compareTo(a.averageScore));
@@ -197,9 +199,8 @@ class _DepartmentPerformanceScreenState
     }
 
     final organizationTabSelected = _tabController.index == 1;
-    final activeRefresh = organizationTabSelected
-        ? _organizationRefreshing
-        : _refreshing;
+    final activeRefresh =
+        organizationTabSelected ? _organizationRefreshing : _refreshing;
     return Scaffold(
       appBar: AppBar(
         title: Text(
@@ -209,21 +210,31 @@ class _DepartmentPerformanceScreenState
         actions: [
           if (!(organizationTabSelected && _showOrganizationTrees))
             IconButton(
-              tooltip: organizationTabSelected
-                  ? 'تحديث الهيكل الوظيفي'
-                  : 'تحديث أداء الأقسام',
-              onPressed: activeRefresh
-                  ? null
-                  : () => organizationTabSelected
-                        ? _refreshOrganization(reviewer, showConfirmation: true)
-                        : _refresh(reviewer),
-              icon: activeRefresh
-                  ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.refresh, color: ZaWolfColors.primaryCyan),
+              tooltip:
+                  organizationTabSelected
+                      ? 'تحديث الهيكل الوظيفي'
+                      : 'تحديث أداء الأقسام',
+              onPressed:
+                  activeRefresh
+                      ? null
+                      : () =>
+                          organizationTabSelected
+                              ? _refreshOrganization(
+                                reviewer,
+                                showConfirmation: true,
+                              )
+                              : _refresh(reviewer),
+              icon:
+                  activeRefresh
+                      ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                      : const Icon(
+                        Icons.refresh,
+                        color: ZaWolfColors.primaryCyan,
+                      ),
             ),
         ],
         bottom: TabBar(
@@ -339,28 +350,30 @@ class _DepartmentPerformanceScreenState
               return Padding(
                 padding: const EdgeInsets.only(bottom: 12),
                 child: WolfCard(
-                  onTap: () => showDepartmentProductivityDetails(
-                    context,
-                    department: dept.departmentName,
-                    scores: scores
-                        .where(
-                          (score) =>
-                              (score.department.trim().isEmpty
-                                  ? 'غير محدد'
-                                  : score.department) ==
-                              dept.departmentName,
-                        )
-                        .toList(),
-                    onUpdateBehavior: (score, value, reason) async {
-                      await _service.updateBehaviorScore(
-                        employeeUserId: score.userId,
-                        reviewer: reviewer,
-                        monthKey: score.monthKey,
-                        behaviorScore: value,
-                        reason: reason,
-                      );
-                    },
-                  ),
+                  onTap:
+                      () => showDepartmentProductivityDetails(
+                        context,
+                        department: dept.departmentName,
+                        scores:
+                            scores
+                                .where(
+                                  (score) =>
+                                      (score.department.trim().isEmpty
+                                          ? 'غير محدد'
+                                          : score.department) ==
+                                      dept.departmentName,
+                                )
+                                .toList(),
+                        onUpdateBehavior: (score, value, reason) async {
+                          await _service.updateBehaviorScore(
+                            employeeUserId: score.userId,
+                            reviewer: reviewer,
+                            monthKey: score.monthKey,
+                            behaviorScore: value,
+                            reason: reason,
+                          );
+                        },
+                      ),
                   child: Row(
                     children: [
                       _RankBadge(rank: rank),
@@ -438,10 +451,11 @@ class _DepartmentPerformanceScreenState
 
   Future<List<UserModel>> _loadOrganization(UserModel reviewer) async {
     if (EmployeeRole.isHr(reviewer.role)) {
-      final snapshot = await FirebaseFirestore.instance
-          .collection('users')
-          .where('isActive', isEqualTo: true)
-          .get();
+      final snapshot =
+          await FirebaseFirestore.instance
+              .collection('users')
+              .where('isActive', isEqualTo: true)
+              .get();
       final users = snapshot.docs.map(UserModel.fromFirestore).toList();
       users.sort((a, b) => a.displayName.compareTo(b.displayName));
       return users;
@@ -538,12 +552,14 @@ class _OrganizationChart extends StatelessWidget {
           );
         }
         final values = snapshot.data;
-        final divisions = values == null
-            ? OrganizationDefaults.divisions
-            : values[0] as List<OrganizationDivision>;
-        final departments = values == null
-            ? const <OrganizationDepartment>[]
-            : values[1] as List<OrganizationDepartment>;
+        final divisions =
+            values == null
+                ? OrganizationDefaults.divisions
+                : values[0] as List<OrganizationDivision>;
+        final departments =
+            values == null
+                ? const <OrganizationDepartment>[]
+                : values[1] as List<OrganizationDepartment>;
         return _OrganizationChartBody(
           users: users,
           divisions: divisions,
@@ -621,15 +637,15 @@ class _OrganizationChartBodyState extends State<_OrganizationChartBody> {
 
   Future<void> _loadCustomTrees() async {
     try {
-      final snapshot = await FirebaseFirestore.instance
-          .collection('custom_org_trees')
-          .orderBy('createdAt')
-          .get();
+      final snapshot =
+          await FirebaseFirestore.instance
+              .collection('custom_org_trees')
+              .orderBy('createdAt')
+              .get();
       if (!mounted) return;
       setState(() {
-        _customTrees = snapshot.docs
-            .map(_CustomCeoTreeInfo.fromFirestore)
-            .toList();
+        _customTrees =
+            snapshot.docs.map(_CustomCeoTreeInfo.fromFirestore).toList();
       });
     } catch (_) {
       // Silently fail – trees will just not be loaded
@@ -692,9 +708,8 @@ class _OrganizationChartBodyState extends State<_OrganizationChartBody> {
       final ceoUser = userById[activeCustomTree.ceoUid];
       if (ceoUser != null) {
         final subordinateUids = _findSubordinates(ceoUser.uid, allUsers);
-        treeUsers = allUsers
-            .where((u) => subordinateUids.contains(u.uid))
-            .toList();
+        treeUsers =
+            allUsers.where((u) => subordinateUids.contains(u.uid)).toList();
         executives = [ceoUser];
       } else {
         treeUsers = allUsers;
@@ -702,9 +717,12 @@ class _OrganizationChartBodyState extends State<_OrganizationChartBody> {
       }
     } else {
       treeUsers = allUsers;
-      executives = allUsers
-          .where((user) => user.employeeId.trim().toUpperCase() == 'CEO-100')
-          .toList();
+      executives =
+          allUsers
+              .where(
+                (user) => user.employeeId.trim().toUpperCase() == 'CEO-100',
+              )
+              .toList();
     }
 
     final departmentNames =
@@ -715,26 +733,29 @@ class _OrganizationChartBodyState extends State<_OrganizationChartBody> {
             .toList()
           ..sort();
 
-    final visibleDepartments = departmentNames.where((department) {
-      if (_selectedDepartment != null && department != _selectedDepartment) {
-        return false;
-      }
-      if (_query.isEmpty) return true;
-      return treeUsers
-          .where((user) => _departmentOf(user) == department)
-          .any(_matchesQuery);
-    }).toList();
+    final visibleDepartments =
+        departmentNames.where((department) {
+          if (_selectedDepartment != null &&
+              department != _selectedDepartment) {
+            return false;
+          }
+          if (_query.isEmpty) return true;
+          return treeUsers
+              .where((user) => _departmentOf(user) == department)
+              .any(_matchesQuery);
+        }).toList();
 
     final groups = {
       for (final department in visibleDepartments)
-        department: treeUsers
-            .where(
-              (user) =>
-                  user.role != EmployeeRole.superAdmin &&
-                  _departmentOf(user) == department &&
-                  (_query.isEmpty || _matchesQuery(user)),
-            )
-            .toList(),
+        department:
+            treeUsers
+                .where(
+                  (user) =>
+                      user.role != EmployeeRole.superAdmin &&
+                      _departmentOf(user) == department &&
+                      (_query.isEmpty || _matchesQuery(user)),
+                )
+                .toList(),
     };
     final departmentRecords = <String, OrganizationDepartment>{
       for (final department in widget.departments) department.name: department,
@@ -743,29 +764,33 @@ class _OrganizationChartBodyState extends State<_OrganizationChartBody> {
       ..sort((a, b) => a.order.compareTo(b.order));
     final departmentsByDivision = {
       for (final division in divisions)
-        division.id: visibleDepartments.where((department) {
-          final record = departmentRecords[department];
-          return (record?.divisionId ??
-                  OrganizationDefaults.inferDivisionId(department)) ==
-              division.id;
-        }).toList(),
+        division.id:
+            visibleDepartments.where((department) {
+              final record = departmentRecords[department];
+              return (record?.divisionId ??
+                      OrganizationDefaults.inferDivisionId(department)) ==
+                  division.id;
+            }).toList(),
     };
 
-    final managerCount = treeUsers
-        .where(
-          (user) =>
-              user.organizationLevel == OrganizationLevel.divisionManager ||
-              user.organizationLevel == OrganizationLevel.departmentManager ||
-              _isManagerRole(user),
-        )
-        .length;
-    final teamLeaderCount = treeUsers
-        .where(
-          (user) =>
-              user.organizationLevel == OrganizationLevel.teamLeader ||
-              user.role == EmployeeRole.teamLeader,
-        )
-        .length;
+    final managerCount =
+        treeUsers
+            .where(
+              (user) =>
+                  user.organizationLevel == OrganizationLevel.divisionManager ||
+                  user.organizationLevel ==
+                      OrganizationLevel.departmentManager ||
+                  _isManagerRole(user),
+            )
+            .length;
+    final teamLeaderCount =
+        treeUsers
+            .where(
+              (user) =>
+                  user.organizationLevel == OrganizationLevel.teamLeader ||
+                  user.role == EmployeeRole.teamLeader,
+            )
+            .length;
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -840,14 +865,15 @@ class _OrganizationChartBodyState extends State<_OrganizationChartBody> {
   }
 
   bool _matchesQuery(UserModel user) {
-    final searchable = [
-      user.displayName,
-      user.employeeId,
-      user.position,
-      user.department,
-      user.teamLeaderName ?? '',
-      ...user.managerNames,
-    ].join(' ').toLowerCase();
+    final searchable =
+        [
+          user.displayName,
+          user.employeeId,
+          user.position,
+          user.department,
+          user.teamLeaderName ?? '',
+          ...user.managerNames,
+        ].join(' ').toLowerCase();
     return searchable.contains(_query);
   }
 
@@ -870,62 +896,87 @@ class _OrganizationChartBodyState extends State<_OrganizationChartBody> {
           color: const Color(0xFF00E5FF).withValues(alpha: 0.3),
         ),
       ),
-      child: Row(
-        children: [
-          const Icon(Icons.account_tree_outlined, color: Color(0xFF00E5FF)),
-          const SizedBox(width: 10),
-          const Text(
-            'اختر الهيكل الوظيفي:',
-            style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(width: 12),
-          DropdownButton<String?>(
-            value: _selectedTreeId,
-            dropdownColor: const Color(0xFF0F2B33),
-            style: const TextStyle(
-              color: Color(0xFF00E5FF),
-              fontWeight: FontWeight.bold,
-            ),
-            underline: const SizedBox(),
-            items: [
-              const DropdownMenuItem<String?>(
-                value: null,
-                child: Text('الهيكل الأساسي (ZAWOLF)'),
-              ),
-              for (final tree in _customTrees)
-                DropdownMenuItem<String?>(
-                  value: tree.id,
-                  child: Text(
-                    '${tree.name} · (${_ceoDisplayName(tree.ceoUid)})',
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final compact = constraints.maxWidth < 680;
+          final selector = Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.account_tree_outlined, color: Color(0xFF00E5FF)),
+              const SizedBox(width: 10),
+              if (!compact) ...[
+                const Text(
+                  'اختر الهيكل الوظيفي:',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
                   ),
                 ),
-            ],
-            onChanged: (id) {
-              setState(() => _selectedTreeId = id);
-            },
-          ),
-          const Spacer(),
-          if (_selectedTreeId != null)
-            IconButton.outlined(
-              tooltip: 'حذف هذا الهيكل نهائياً',
-              style: IconButton.styleFrom(
-                foregroundColor: Colors.redAccent,
-                side: const BorderSide(color: Colors.redAccent),
+                const SizedBox(width: 12),
+              ],
+              ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxWidth: compact ? constraints.maxWidth - 36 : 300,
+                ),
+                child: DropdownButton<String?>(
+                  isExpanded: compact,
+                  value: _selectedTreeId,
+                  dropdownColor: const Color(0xFF0F2B33),
+                  style: const TextStyle(
+                    color: Color(0xFF00E5FF),
+                    fontWeight: FontWeight.bold,
+                  ),
+                  underline: const SizedBox(),
+                  items: [
+                    const DropdownMenuItem<String?>(
+                      value: null,
+                      child: Text('الهيكل الأساسي (ZAWOLF)'),
+                    ),
+                    for (final tree in _customTrees)
+                      DropdownMenuItem<String?>(
+                        value: tree.id,
+                        child: Text(
+                          '${tree.name} · (${_ceoDisplayName(tree.ceoUid)})',
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                  ],
+                  onChanged: (id) => setState(() => _selectedTreeId = id),
+                ),
               ),
-              icon: const Icon(Icons.delete_forever_outlined),
-              onPressed: _deleteCurrentCustomTree,
-            ),
-          const SizedBox(width: 8),
-          FilledButton.icon(
-            style: FilledButton.styleFrom(
-              backgroundColor: const Color(0xFF00E5FF),
-              foregroundColor: const Color(0xFF08181E),
-            ),
-            icon: const Icon(Icons.person_add_alt_1_outlined),
-            label: const Text('هيكل جديد بـ CEO'),
-            onPressed: () => _createCeoTreeDialog(allUsers),
-          ),
-        ],
+            ],
+          );
+          return Wrap(
+            spacing: 8,
+            runSpacing: 10,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              if (compact)
+                SizedBox(width: constraints.maxWidth, child: selector)
+              else
+                selector,
+              if (_selectedTreeId != null)
+                IconButton.outlined(
+                  tooltip: 'حذف هذا الهيكل نهائياً',
+                  style: IconButton.styleFrom(
+                    foregroundColor: Colors.redAccent,
+                    side: const BorderSide(color: Colors.redAccent),
+                  ),
+                  icon: const Icon(Icons.delete_forever_outlined),
+                  onPressed: _deleteCurrentCustomTree,
+                ),
+              FilledButton.icon(
+                style: FilledButton.styleFrom(
+                  backgroundColor: const Color(0xFF00E5FF),
+                  foregroundColor: const Color(0xFF08181E),
+                ),
+                icon: const Icon(Icons.person_add_alt_1_outlined),
+                label: const Text('هيكل جديد بـ CEO'),
+                onPressed: () => _createCeoTreeDialog(allUsers),
+              ),
+            ],
+          );
+        },
       ),
     );
   }
@@ -937,63 +988,66 @@ class _OrganizationChartBodyState extends State<_OrganizationChartBody> {
 
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (context, setDialogState) => Directionality(
-          textDirection: TextDirection.rtl,
-          child: AlertDialog(
-            title: const Text('إنشاء هيكل جديد بـ CEO'),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(
-                  controller: nameController,
-                  decoration: const InputDecoration(
-                    labelText: 'اسم الهيكل التنظيمي الجديد',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                DropdownButtonFormField<UserModel>(
-                  decoration: const InputDecoration(
-                    labelText: 'اختر المدير التنفيذي (CEO) لهذا الهيكل',
-                    border: OutlineInputBorder(),
-                  ),
-                  items: [
-                    for (final user in allUsers)
-                      DropdownMenuItem<UserModel>(
-                        value: user,
-                        child: Text(
-                          '${user.displayName} (${user.position.isNotEmpty ? user.position : 'موظف'})',
+      builder:
+          (dialogContext) => StatefulBuilder(
+            builder:
+                (context, setDialogState) => Directionality(
+                  textDirection: TextDirection.rtl,
+                  child: AlertDialog(
+                    title: const Text('إنشاء هيكل جديد بـ CEO'),
+                    content: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        TextField(
+                          controller: nameController,
+                          decoration: const InputDecoration(
+                            labelText: 'اسم الهيكل التنظيمي الجديد',
+                            border: OutlineInputBorder(),
+                          ),
                         ),
+                        const SizedBox(height: 16),
+                        DropdownButtonFormField<UserModel>(
+                          decoration: const InputDecoration(
+                            labelText: 'اختر المدير التنفيذي (CEO) لهذا الهيكل',
+                            border: OutlineInputBorder(),
+                          ),
+                          items: [
+                            for (final user in allUsers)
+                              DropdownMenuItem<UserModel>(
+                                value: user,
+                                child: Text(
+                                  '${user.displayName} (${user.position.isNotEmpty ? user.position : 'موظف'})',
+                                ),
+                              ),
+                          ],
+                          onChanged: (val) {
+                            if (val != null) {
+                              setDialogState(() => selectedCeo = val);
+                            }
+                          },
+                        ),
+                      ],
+                    ),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(dialogContext, false),
+                        child: const Text('إلغاء'),
                       ),
-                  ],
-                  onChanged: (val) {
-                    if (val != null) {
-                      setDialogState(() => selectedCeo = val);
-                    }
-                  },
+                      FilledButton(
+                        onPressed: () => Navigator.pop(dialogContext, true),
+                        child: const Text('تأكيد وحفظ الهيكل'),
+                      ),
+                    ],
+                  ),
                 ),
-              ],
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(dialogContext, false),
-                child: const Text('إلغاء'),
-              ),
-              FilledButton(
-                onPressed: () => Navigator.pop(dialogContext, true),
-                child: const Text('تأكيد وحفظ الهيكل'),
-              ),
-            ],
           ),
-        ),
-      ),
     );
 
     if (confirmed == true && selectedCeo != null) {
-      final treeName = nameController.text.trim().isEmpty
-          ? 'هيكل ${selectedCeo!.displayName}'
-          : nameController.text.trim();
+      final treeName =
+          nameController.text.trim().isEmpty
+              ? 'هيكل ${selectedCeo!.displayName}'
+              : nameController.text.trim();
       final newTree = _CustomCeoTreeInfo(
         id: '', // Will be set by Firestore doc id
         name: treeName,
@@ -1045,26 +1099,29 @@ class _OrganizationChartBodyState extends State<_OrganizationChartBody> {
 
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (dialogContext) => Directionality(
-        textDirection: TextDirection.rtl,
-        child: AlertDialog(
-          title: Text('حذف ${tree.name} نهائياً'),
-          content: Text(
-            'هل أنت متأكد من حذف هيكل "${tree.name}" نهائياً من النظام؟\nلن يتم أرشفته بل سيحذف بالكامل وسيعود العرض إلى الهيكل الأساسي.',
+      builder:
+          (dialogContext) => Directionality(
+            textDirection: TextDirection.rtl,
+            child: AlertDialog(
+              title: Text('حذف ${tree.name} نهائياً'),
+              content: Text(
+                'هل أنت متأكد من حذف هيكل "${tree.name}" نهائياً من النظام؟\nلن يتم أرشفته بل سيحذف بالكامل وسيعود العرض إلى الهيكل الأساسي.',
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogContext, false),
+                  child: const Text('إلغاء'),
+                ),
+                FilledButton(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: Colors.redAccent,
+                  ),
+                  onPressed: () => Navigator.pop(dialogContext, true),
+                  child: const Text('حذف نهائي'),
+                ),
+              ],
+            ),
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext, false),
-              child: const Text('إلغاء'),
-            ),
-            FilledButton(
-              style: FilledButton.styleFrom(backgroundColor: Colors.redAccent),
-              onPressed: () => Navigator.pop(dialogContext, true),
-              child: const Text('حذف نهائي'),
-            ),
-          ],
-        ),
-      ),
     );
 
     if (confirmed == true) {
@@ -1253,16 +1310,17 @@ class _OrganizationControls extends StatelessWidget {
           decoration: InputDecoration(
             labelText: 'بحث بالاسم أو المسمى أو الكود',
             prefixIcon: const Icon(Icons.search),
-            suffixIcon: controller.text.isEmpty
-                ? null
-                : IconButton(
-                    tooltip: 'مسح البحث',
-                    onPressed: () {
-                      controller.clear();
-                      onSearchChanged('');
-                    },
-                    icon: const Icon(Icons.close),
-                  ),
+            suffixIcon:
+                controller.text.isEmpty
+                    ? null
+                    : IconButton(
+                      tooltip: 'مسح البحث',
+                      onPressed: () {
+                        controller.clear();
+                        onSearchChanged('');
+                      },
+                      icon: const Icon(Icons.close),
+                    ),
           ),
         );
         final department = DropdownButtonFormField<String?>(
@@ -1399,9 +1457,10 @@ class _DesktopOrganizationMapState extends State<_DesktopOrganizationMap> {
     final position = _scrollController.position;
     final positiveOffsetMovesLeft =
         position.axisDirection == AxisDirection.left;
-    final delta = towardLeft
-        ? (positiveOffsetMovesLeft ? 460.0 : -460.0)
-        : (positiveOffsetMovesLeft ? -460.0 : 460.0);
+    final delta =
+        towardLeft
+            ? (positiveOffsetMovesLeft ? 460.0 : -460.0)
+            : (positiveOffsetMovesLeft ? -460.0 : 460.0);
     final target = (position.pixels + delta).clamp(
       position.minScrollExtent,
       position.maxScrollExtent,
@@ -1491,37 +1550,38 @@ class _DesktopOrganizationMapState extends State<_DesktopOrganizationMap> {
                         Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           mainAxisAlignment: MainAxisAlignment.center,
-                          children: widget.divisions.map((division) {
-                            return SizedBox(
-                              width: branchWidth + branchSpacing,
-                              child: Column(
-                                children: [
-                                  Container(
-                                    width: 2,
-                                    height: 20,
-                                    color: ZaWolfColors.primaryCyan.withValues(
-                                      alpha: 0.38,
-                                    ),
+                          children:
+                              widget.divisions.map((division) {
+                                return SizedBox(
+                                  width: branchWidth + branchSpacing,
+                                  child: Column(
+                                    children: [
+                                      Container(
+                                        width: 2,
+                                        height: 20,
+                                        color: ZaWolfColors.primaryCyan
+                                            .withValues(alpha: 0.38),
+                                      ),
+                                      Padding(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: branchSpacing / 2,
+                                        ),
+                                        child: _DivisionBranch(
+                                          division: division,
+                                          departments:
+                                              widget
+                                                  .departmentsByDivision[division
+                                                  .id] ??
+                                              const [],
+                                          groups: widget.groups,
+                                          allUsers: widget.allUsers,
+                                          showEmployees: widget.showEmployees,
+                                        ),
+                                      ),
+                                    ],
                                   ),
-                                  Padding(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: branchSpacing / 2,
-                                    ),
-                                    child: _DivisionBranch(
-                                      division: division,
-                                      departments:
-                                          widget.departmentsByDivision[division
-                                              .id] ??
-                                          const [],
-                                      groups: widget.groups,
-                                      allUsers: widget.allUsers,
-                                      showEmployees: widget.showEmployees,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            );
-                          }).toList(),
+                                );
+                              }).toList(),
                         ),
                         const SizedBox(height: 20),
                       ],
@@ -1607,21 +1667,23 @@ class _ExecutiveTier extends StatelessWidget {
       alignment: WrapAlignment.center,
       spacing: 10,
       runSpacing: 10,
-      children: executives
-          .map(
-            (user) => SizedBox(
-              width: 300,
-              child: _OrganizationPerson(
-                user: user,
-                roleLabel: user.employeeId.toUpperCase() == 'CEO-100'
-                    ? 'المدير التنفيذي'
-                    : EmployeeRole.arabicLabel(user.role),
-                accent: ZaWolfColors.warning,
-                icon: Icons.admin_panel_settings_outlined,
-              ),
-            ),
-          )
-          .toList(),
+      children:
+          executives
+              .map(
+                (user) => SizedBox(
+                  width: 300,
+                  child: _OrganizationPerson(
+                    user: user,
+                    roleLabel:
+                        user.employeeId.toUpperCase() == 'CEO-100'
+                            ? 'المدير التنفيذي'
+                            : EmployeeRole.arabicLabel(user.role),
+                    accent: ZaWolfColors.warning,
+                    icon: Icons.admin_panel_settings_outlined,
+                  ),
+                ),
+              )
+              .toList(),
     );
   }
 }
@@ -1790,29 +1852,30 @@ class _OrganizationConfigurationPanelState
                             ),
                           ),
                         ],
-                        onChanged: _saving
-                            ? null
-                            : (managerId) {
-                                UserModel? manager;
-                                for (final candidate in managerCandidates) {
-                                  if (candidate.uid == managerId) {
-                                    manager = candidate;
-                                    break;
+                        onChanged:
+                            _saving
+                                ? null
+                                : (managerId) {
+                                  UserModel? manager;
+                                  for (final candidate in managerCandidates) {
+                                    if (candidate.uid == managerId) {
+                                      manager = candidate;
+                                      break;
+                                    }
                                   }
-                                }
-                                _save(
-                                  () => widget.service.saveDivision(
-                                    OrganizationDivision(
-                                      id: division.id,
-                                      name: division.name,
-                                      order: division.order,
-                                      managerId: managerId,
-                                      managerEmployeeId: manager?.employeeId,
-                                      isActive: division.isActive,
+                                  _save(
+                                    () => widget.service.saveDivision(
+                                      OrganizationDivision(
+                                        id: division.id,
+                                        name: division.name,
+                                        order: division.order,
+                                        managerId: managerId,
+                                        managerEmployeeId: manager?.employeeId,
+                                        isActive: division.isActive,
+                                      ),
                                     ),
-                                  ),
-                                );
-                              },
+                                  );
+                                },
                       ),
                     );
                   }),
@@ -1823,35 +1886,37 @@ class _OrganizationConfigurationPanelState
                       child: DropdownButtonFormField<String>(
                         initialValue:
                             widget.divisions.any(
-                              (division) =>
-                                  division.id == department.divisionId,
-                            )
-                            ? department.divisionId
-                            : OrganizationDefaults.operations,
+                                  (division) =>
+                                      division.id == department.divisionId,
+                                )
+                                ? department.divisionId
+                                : OrganizationDefaults.operations,
                         decoration: InputDecoration(
                           labelText: department.name,
                           prefixIcon: const Icon(Icons.apartment_outlined),
                         ),
                         dropdownColor: ZaWolfColors.surface02,
-                        items: widget.divisions
-                            .map(
-                              (division) => DropdownMenuItem(
-                                value: division.id,
-                                child: Text(division.name),
-                              ),
-                            )
-                            .toList(),
-                        onChanged: _saving
-                            ? null
-                            : (divisionId) {
-                                if (divisionId == null) return;
-                                _save(
-                                  () => widget.service.moveDepartment(
-                                    departmentId: department.id,
-                                    divisionId: divisionId,
+                        items:
+                            widget.divisions
+                                .map(
+                                  (division) => DropdownMenuItem(
+                                    value: division.id,
+                                    child: Text(division.name),
                                   ),
-                                );
-                              },
+                                )
+                                .toList(),
+                        onChanged:
+                            _saving
+                                ? null
+                                : (divisionId) {
+                                  if (divisionId == null) return;
+                                  _save(
+                                    () => widget.service.moveDepartment(
+                                      departmentId: department.id,
+                                      divisionId: divisionId,
+                                    ),
+                                  );
+                                },
                       ),
                     ),
                   ),
@@ -1977,15 +2042,16 @@ class _DepartmentBranch extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final allById = {for (final user in allUsers) user.uid: user};
-    final supervisorIds = users
-        .expand(
-          (user) => <String>[
-            ...user.managerIds,
-            if ((user.managerId ?? '').isNotEmpty) user.managerId!,
-          ],
-        )
-        .where((id) => id.isNotEmpty)
-        .toSet();
+    final supervisorIds =
+        users
+            .expand(
+              (user) => <String>[
+                ...user.managerIds,
+                if ((user.managerId ?? '').isNotEmpty) user.managerId!,
+              ],
+            )
+            .where((id) => id.isNotEmpty)
+            .toSet();
     final managers = <String, UserModel>{};
     for (final user in users.where(_isManagerRole)) {
       managers[user.uid] = user;
@@ -2134,11 +2200,12 @@ class _DepartmentBranch extends StatelessWidget {
       ...user.managerIds,
       if ((user.managerId ?? '').isNotEmpty) user.managerId!,
     };
-    final managerNames = managerIds
-        .map((id) => allById[id]?.displayName)
-        .whereType<String>()
-        .where((name) => name.isNotEmpty)
-        .toList();
+    final managerNames =
+        managerIds
+            .map((id) => allById[id]?.displayName)
+            .whereType<String>()
+            .where((name) => name.isNotEmpty)
+            .toList();
     if (managerNames.isNotEmpty) {
       return 'المدير: ${managerNames.join('، ')}';
     }
@@ -2204,12 +2271,14 @@ class _OrganizationPerson extends StatelessWidget {
           CircleAvatar(
             radius: 19,
             backgroundColor: accent.withValues(alpha: 0.13),
-            foregroundImage: (user.photoURL ?? '').isNotEmpty
-                ? NetworkImage(user.photoURL!)
-                : null,
-            child: (user.photoURL ?? '').isEmpty
-                ? Icon(icon, color: accent, size: 20)
-                : null,
+            foregroundImage:
+                (user.photoURL ?? '').isNotEmpty
+                    ? NetworkImage(user.photoURL!)
+                    : null,
+            child:
+                (user.photoURL ?? '').isEmpty
+                    ? Icon(icon, color: accent, size: 20)
+                    : null,
           ),
           const SizedBox(width: 10),
           Expanded(

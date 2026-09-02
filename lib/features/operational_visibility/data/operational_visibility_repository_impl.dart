@@ -66,6 +66,7 @@ final class OperationalVisibilityRepositoryImpl
     final response = await _operationClient.get(uri);
     if (!response.ok) throw StateError(response.safeCode);
     final rows = (response.data['items'] as List?) ?? const [];
+    final summary = response.data['summary'] as Map?;
     return EmployeeTimelinePage(
       items: rows
           .whereType<Map>()
@@ -84,6 +85,14 @@ final class OperationalVisibilityRepositoryImpl
           })
           .toList(growable: false),
       hasMore: response.data['hasMore'] == true,
+      summary: EmployeeTimelineSummary(
+        salaryDeductionDays:
+            (summary?['salaryDeductionDays'] as num?)?.toDouble() ?? 0,
+        leaveRequests: (summary?['leaveRequests'] as num?)?.toInt() ?? 0,
+        permissionRequests:
+            (summary?['permissionRequests'] as num?)?.toInt() ?? 0,
+        otherRequests: (summary?['otherRequests'] as num?)?.toInt() ?? 0,
+      ),
       nextCursor: response.data['nextCursor']?.toString(),
     );
   }

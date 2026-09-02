@@ -71,25 +71,30 @@ final class ConversationRepositoryImpl
     required String memberUserId,
   }) async* {
     while (true) {
-      final response = await _operationClient.get(
-        _operationsBaseUri.resolve(
-          '/conversations/$conversationId/messages?limit=100',
-        ),
-      );
-      if (!response.ok) throw StateError(response.safeCode);
-      final messages =
-          (response.data['messages'] as List?)
-              ?.whereType<Map>()
-              .map(
-                (value) => _message(
-                  value['id']?.toString() ?? '',
-                  Map<String, dynamic>.from(value),
-                ),
-              )
-              .toList(growable: false) ??
-          const <ConversationMessage>[];
-      yield messages;
-      await Future<void>.delayed(const Duration(seconds: 5));
+      try {
+        final response = await _operationClient.get(
+          _operationsBaseUri.resolve(
+            '/conversations/$conversationId/messages?limit=100',
+          ),
+        );
+        if (response.ok) {
+          final messages =
+              (response.data['messages'] as List?)
+                  ?.whereType<Map>()
+                  .map(
+                    (value) => _message(
+                      value['id']?.toString() ?? '',
+                      Map<String, dynamic>.from(value),
+                    ),
+                  )
+                  .toList(growable: false) ??
+              const <ConversationMessage>[];
+          yield messages;
+        }
+      } catch (_) {
+        // Silently swallow transient network glitches during background polling
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 1500));
     }
   }
 
@@ -113,9 +118,10 @@ final class ConversationRepositoryImpl
       senderDisplayName: '',
       body: body,
       sentAt: DateTime.now().toUtc(),
-      state: response.ok
-          ? ConversationMessageState.sent
-          : ConversationMessageState.failed,
+      state:
+          response.ok
+              ? ConversationMessageState.sent
+              : ConversationMessageState.failed,
       attachmentResourceIds: attachmentResourceIds,
     );
   }
@@ -138,13 +144,24 @@ final class ConversationRepositoryImpl
         'contentsBase64': base64Encode(bytes),
       },
     );
+    if (!response.ok) {
+      throw StateError(switch (response.safeCode) {
+        'session_expired' => 'انتهت جلسة الدخول. سجل الدخول مرة أخرى.',
+        'access_denied' => 'ليس لديك صلاحية رفع مرفق في هذه القناة.',
+        'temporarily_unavailable' =>
+          'مجلد مرفقات المحادثات في Google Drive غير جاهز حالياً. أعد المحاولة لاحقاً أو تواصل مع HR.',
+        'drive_upload_not_ready' =>
+          'مرفقات المحادثات تحتاج مجلد Google Shared Drive مهيأً للرفع. تواصل مع HR لإكمال الإعداد.',
+        'connection_interrupted' =>
+          'تعذر الاتصال بخدمة Google Drive. تحقق من الإنترنت ثم أعد المحاولة.',
+        _ => 'تعذر رفع المرفق إلى Google Drive. حاول مرة أخرى.',
+      });
+    }
     return GovernedAttachment(
       resourceId: response.data['resourceId']?.toString() ?? operationId,
       mimeType: mimeType,
       sizeBytes: bytes.length,
-      status: response.ok
-          ? GovernedAttachmentStatus.uploaded
-          : GovernedAttachmentStatus.failed,
+      status: GovernedAttachmentStatus.uploaded,
     );
   }
 

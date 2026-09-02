@@ -139,9 +139,10 @@ class _VirtualOfficeGameWidgetState extends State<VirtualOfficeGameWidget>
     final rawDelta = localPos - center;
     const maxRadius = 32.0;
     final distance = rawDelta.distance;
-    final clampedDelta = distance > maxRadius
-        ? Offset.fromDirection(rawDelta.direction, maxRadius)
-        : rawDelta;
+    final clampedDelta =
+        distance > maxRadius
+            ? Offset.fromDirection(rawDelta.direction, maxRadius)
+            : rawDelta;
 
     final normX = clampedDelta.dx / maxRadius;
     final normY = clampedDelta.dy / maxRadius;
@@ -218,6 +219,7 @@ class _VirtualOfficeGameWidgetState extends State<VirtualOfficeGameWidget>
               message: config.title,
               child: Badge(
                 isLabelVisible: _hasPendingAction(hotspot),
+                alignment: Alignment.topRight,
                 label: const Text('!'),
                 child: IconButton(
                   visualDensity: VisualDensity.compact,
@@ -257,12 +259,14 @@ class _VirtualOfficeGameWidgetState extends State<VirtualOfficeGameWidget>
       final normX = _joystickDelta.dx / 32.0;
       final normY = _joystickDelta.dy / 32.0;
       const speed = 11.0;
-      final nextX = (avatarPos.dx + normX * speed)
-          .clamp(38.0, _mapSize.width - 38.0)
-          .toDouble();
-      final nextY = (avatarPos.dy + normY * speed)
-          .clamp(38.0, _mapSize.height - 38.0)
-          .toDouble();
+      final nextX =
+          (avatarPos.dx + normX * speed)
+              .clamp(38.0, _mapSize.width - 38.0)
+              .toDouble();
+      final nextY =
+          (avatarPos.dy + normY * speed)
+              .clamp(38.0, _mapSize.height - 38.0)
+              .toDouble();
       _avatarPosition.value = Offset(nextX, nextY);
       _targetPos = Offset(
         (nextX + normX * 34).clamp(38.0, _mapSize.width - 38.0).toDouble(),
@@ -323,21 +327,22 @@ class _VirtualOfficeGameWidgetState extends State<VirtualOfficeGameWidget>
     Navigator.of(context).push(
       MaterialPageRoute<void>(
         fullscreenDialog: true,
-        builder: (context) => Scaffold(
-          backgroundColor: const Color(0xFF050914),
-          body: SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.all(12),
-              child: VirtualOfficeGameWidget(
-                user: widget.user,
-                onHotspotTapped: widget.onHotspotTapped,
-                fullScreen: true,
-                attendedToday: widget.attendedToday,
-                completedTasksThisWeek: widget.completedTasksThisWeek,
+        builder:
+            (context) => Scaffold(
+              backgroundColor: const Color(0xFF050914),
+              body: SafeArea(
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: VirtualOfficeGameWidget(
+                    user: widget.user,
+                    onHotspotTapped: widget.onHotspotTapped,
+                    fullScreen: true,
+                    attendedToday: widget.attendedToday,
+                    completedTasksThisWeek: widget.completedTasksThisWeek,
+                  ),
+                ),
               ),
             ),
-          ),
-        ),
       ),
     );
   }
@@ -395,17 +400,20 @@ class _VirtualOfficeGameWidgetState extends State<VirtualOfficeGameWidget>
                                 ),
                                 backgroundImage:
                                     widget.user.avatarFaceUrl != null
-                                    ? NetworkImage(widget.user.avatarFaceUrl!)
-                                    : null,
-                                child: widget.user.avatarFaceUrl == null
-                                    ? Icon(
-                                        widget.user.avatarGender == 'female'
-                                            ? Icons.face_3
-                                            : Icons.face,
-                                        color: _avatarAccent,
-                                        size: 20,
-                                      )
-                                    : null,
+                                        ? NetworkImage(
+                                          widget.user.avatarFaceUrl!,
+                                        )
+                                        : null,
+                                child:
+                                    widget.user.avatarFaceUrl == null
+                                        ? Icon(
+                                          widget.user.avatarGender == 'female'
+                                              ? Icons.face_3
+                                              : Icons.face,
+                                          color: _avatarAccent,
+                                          size: 20,
+                                        )
+                                        : null,
                               ),
                             ),
                             const SizedBox(width: 8),
@@ -447,9 +455,10 @@ class _VirtualOfficeGameWidgetState extends State<VirtualOfficeGameWidget>
                   ),
                   const Spacer(),
                   IconButton(
-                    tooltip: widget.fullScreen
-                        ? 'إغلاق ملء الشاشة'
-                        : 'فتح المكتب بملء الشاشة',
+                    tooltip:
+                        widget.fullScreen
+                            ? 'إغلاق ملء الشاشة'
+                            : 'فتح المكتب بملء الشاشة',
                     onPressed: _toggleFullScreen,
                     icon: Icon(
                       widget.fullScreen
@@ -623,131 +632,146 @@ class _VirtualOfficeGameWidgetState extends State<VirtualOfficeGameWidget>
                     child: Image.asset(
                       'assets/images/iso_office_floor_bg.png',
                       fit: BoxFit.cover,
-                      errorBuilder: (context, error, stackTrace) =>
-                          const SizedBox.shrink(),
+                      errorBuilder:
+                          (context, error, stackTrace) =>
+                              const SizedBox.shrink(),
                     ),
                   ),
                   ValueListenableBuilder<Offset>(
                     valueListenable: _avatarPosition,
-                    builder: (context, avatarPos, _) => TweenAnimationBuilder<Offset>(
-                      duration: const Duration(milliseconds: 220),
-                      curve: Curves.easeOutCubic,
-                      tween: Tween(
-                        end: Offset(
-                          (512 - avatarPos.dx) * 0.16,
-                          (512 - avatarPos.dy) * 0.16,
-                        ),
-                      ),
-                      builder: (context, cameraOffset, child) =>
-                          Transform.translate(
-                            offset: cameraOffset,
-                            child: Transform.scale(
-                              // A modest zoom plus the animated offset gives a
-                              // room-follow camera without hiding the navigation.
-                              scale: widget.fullScreen ? 1.16 : 1.08,
-                              child: child,
+                    builder:
+                        (
+                          context,
+                          avatarPos,
+                          _,
+                        ) => TweenAnimationBuilder<Offset>(
+                          duration: const Duration(milliseconds: 220),
+                          curve: Curves.easeOutCubic,
+                          tween: Tween(
+                            end: Offset(
+                              (512 - avatarPos.dx) * 0.16,
+                              (512 - avatarPos.dy) * 0.16,
                             ),
                           ),
-                      child: FittedBox(
-                        // The playable map gets every available vertical pixel,
-                        // while the same artwork fills unused desktop width behind
-                        // it. This avoids both the old tiny portrait map and the
-                        // cropping caused by a cover-fitted interactive surface.
-                        fit: BoxFit.contain,
-                        alignment: Alignment.center,
-                        child: SizedBox(
-                          width: _mapSize.width,
-                          height: _mapSize.height,
-                          child: GestureDetector(
-                            behavior: HitTestBehavior.deferToChild,
-                            onTapDown: _onTapCanvas,
-                            child: Stack(
-                              children: [
-                                // Layer 0: High-Resolution 2.5D Isometric Office Floor Background Map Asset
-                                Positioned.fill(
-                                  child: Image.asset(
-                                    'assets/images/iso_office_floor_bg.png',
-                                    fit: BoxFit.cover,
-                                    errorBuilder:
-                                        (context, error, stackTrace) =>
-                                            const SizedBox.shrink(),
-                                  ),
+                          builder:
+                              (
+                                context,
+                                cameraOffset,
+                                child,
+                              ) => Transform.translate(
+                                offset: cameraOffset,
+                                child: Transform.scale(
+                                  // A modest zoom plus the animated offset gives a
+                                  // room-follow camera without hiding the navigation.
+                                  scale: widget.fullScreen ? 1.16 : 1.08,
+                                  child: child,
                                 ),
-
-                                // Layer 1: Target Trail & Path Painter
-                                ValueListenableBuilder<Offset>(
-                                  valueListenable: _avatarPosition,
-                                  builder: (context, avatarPos, _) {
-                                    return CustomPaint(
-                                      size: Size.infinite,
-                                      painter: _IsometricOfficePainter(
-                                        hotspots: _hotspots,
-                                        avatarPos: avatarPos,
-                                        targetPos: _targetPos,
-                                        isMoving: _isMoving,
-                                        pulseProgress: _pulseController.value,
-                                      ),
-                                    );
-                                  },
-                                ),
-
-                                // Layer 2: Standalone 2.5D Department Assets
-                                ..._hotspots.entries.map((entry) {
-                                  final type = entry.key;
-                                  final rect = entry.value;
-                                  return Positioned(
-                                    left: rect.left,
-                                    top: rect.top,
-                                    width: rect.width,
-                                    height: rect.height,
-                                    child: Semantics(
-                                      button: true,
-                                      label: _hotspotSemantics(type),
-                                      child: Material(
-                                        color: Colors.transparent,
-                                        child: InkWell(
-                                          onTap: () => _moveToHotspot(type),
-                                          borderRadius: BorderRadius.circular(
-                                            16,
-                                          ),
-                                          child: _buildDepartmentBadge(type),
-                                        ),
+                              ),
+                          child: FittedBox(
+                            // The playable map gets every available vertical pixel,
+                            // while the same artwork fills unused desktop width behind
+                            // it. This avoids both the old tiny portrait map and the
+                            // cropping caused by a cover-fitted interactive surface.
+                            fit: BoxFit.contain,
+                            alignment: Alignment.center,
+                            child: SizedBox(
+                              width: _mapSize.width,
+                              height: _mapSize.height,
+                              child: GestureDetector(
+                                behavior: HitTestBehavior.deferToChild,
+                                onTapDown: _onTapCanvas,
+                                child: Stack(
+                                  children: [
+                                    // Layer 0: High-Resolution 2.5D Isometric Office Floor Background Map Asset
+                                    Positioned.fill(
+                                      child: Image.asset(
+                                        'assets/images/iso_office_floor_bg.png',
+                                        fit: BoxFit.cover,
+                                        errorBuilder:
+                                            (context, error, stackTrace) =>
+                                                const SizedBox.shrink(),
                                       ),
                                     ),
-                                  );
-                                }),
 
-                                // Layer 3: Animated 2.5D Male Main Character Sprite with Speech Bubble
-                                ValueListenableBuilder<Offset>(
-                                  valueListenable: _avatarPosition,
-                                  builder: (context, avatarPos, _) {
-                                    final bob = _isMoving
-                                        ? math.sin(avatarPos.dx * 0.1) * 4.0
-                                        : 0.0;
-                                    return Positioned(
-                                      left: avatarPos.dx - 60,
-                                      top: avatarPos.dy - 75 + bob,
-                                      child: Column(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          // Floating RPG Speech Bubble
-                                          _buildSpeechBubble(),
-                                          const SizedBox(height: 4),
-                                          Transform.scale(
-                                            scaleX: _avatarFacing,
-                                            child: _buildAnimatedAvatarSprite(),
+                                    // Layer 1: Target Trail & Path Painter
+                                    ValueListenableBuilder<Offset>(
+                                      valueListenable: _avatarPosition,
+                                      builder: (context, avatarPos, _) {
+                                        return CustomPaint(
+                                          size: Size.infinite,
+                                          painter: _IsometricOfficePainter(
+                                            hotspots: _hotspots,
+                                            avatarPos: avatarPos,
+                                            targetPos: _targetPos,
+                                            isMoving: _isMoving,
+                                            pulseProgress:
+                                                _pulseController.value,
                                           ),
-                                        ],
-                                      ),
-                                    );
-                                  },
+                                        );
+                                      },
+                                    ),
+
+                                    // Layer 2: Standalone 2.5D Department Assets
+                                    ..._hotspots.entries.map((entry) {
+                                      final type = entry.key;
+                                      final rect = entry.value;
+                                      return Positioned(
+                                        left: rect.left,
+                                        top: rect.top,
+                                        width: rect.width,
+                                        height: rect.height,
+                                        child: Semantics(
+                                          button: true,
+                                          label: _hotspotSemantics(type),
+                                          child: Material(
+                                            color: Colors.transparent,
+                                            child: InkWell(
+                                              onTap: () => _moveToHotspot(type),
+                                              borderRadius:
+                                                  BorderRadius.circular(16),
+                                              child: _buildDepartmentBadge(
+                                                type,
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      );
+                                    }),
+
+                                    // Layer 3: Animated 2.5D Male Main Character Sprite with Speech Bubble
+                                    ValueListenableBuilder<Offset>(
+                                      valueListenable: _avatarPosition,
+                                      builder: (context, avatarPos, _) {
+                                        final bob =
+                                            _isMoving
+                                                ? math.sin(avatarPos.dx * 0.1) *
+                                                    4.0
+                                                : 0.0;
+                                        return Positioned(
+                                          left: avatarPos.dx - 60,
+                                          top: avatarPos.dy - 75 + bob,
+                                          child: Column(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              // Floating RPG Speech Bubble
+                                              _buildSpeechBubble(),
+                                              const SizedBox(height: 4),
+                                              Transform.scale(
+                                                scaleX: _avatarFacing,
+                                                child:
+                                                    _buildAnimatedAvatarSprite(),
+                                              ),
+                                            ],
+                                          ),
+                                        );
+                                      },
+                                    ),
+                                  ],
                                 ),
-                              ],
+                              ),
                             ),
                           ),
                         ),
-                      ),
-                    ),
                   ),
                   // HUD controls intentionally live outside the transformed
                   // world. The camera follows the employee, while controls
@@ -779,9 +803,10 @@ class _VirtualOfficeGameWidgetState extends State<VirtualOfficeGameWidget>
 
   Widget _buildSpeechBubble() {
     final nearby = _nearbyHotspot;
-    final text = nearby != null
-        ? _speechForDepartment(nearby)
-        : 'المس أي قسم للتحرك وإرسال الطلبات 💬';
+    final text =
+        nearby != null
+            ? _speechForDepartment(nearby)
+            : 'المس أي قسم للتحرك وإرسال الطلبات 💬';
 
     return Container(
       constraints: const BoxConstraints(maxWidth: 130),
@@ -810,97 +835,107 @@ class _VirtualOfficeGameWidgetState extends State<VirtualOfficeGameWidget>
   }
 
   Widget _buildAnalogJoystick() {
-    return GestureDetector(
-      onPanStart: (details) => _updateJoystickOffset(details.localPosition),
-      onPanUpdate: (details) => _updateJoystickOffset(details.localPosition),
-      onPanEnd: (_) => _resetJoystick(),
-      onPanCancel: () => _resetJoystick(),
-      child: Container(
-        width: 90,
-        height: 90,
-        decoration: BoxDecoration(
-          color: const Color(0xFF0F172A).withValues(alpha: 0.75),
-          shape: BoxShape.circle,
-          border: Border.all(
-            color: ZaWolfColors.primaryCyan.withValues(alpha: 0.6),
-            width: 2.0,
+    // iOS can let a parent viewport win the gesture arena.  Listening to the
+    // physical pointer lifecycle guarantees the thumb returns to centre even
+    // when GestureDetector does not receive its normal pan-end callback.
+    return Listener(
+      onPointerUp: (_) => _resetJoystick(),
+      onPointerCancel: (_) => _resetJoystick(),
+      child: GestureDetector(
+        onPanStart: (details) => _updateJoystickOffset(details.localPosition),
+        onPanUpdate: (details) => _updateJoystickOffset(details.localPosition),
+        onPanEnd: (_) => _resetJoystick(),
+        onPanCancel: () => _resetJoystick(),
+        child: Container(
+          width: 90,
+          height: 90,
+          decoration: BoxDecoration(
+            color: const Color(0xFF0F172A).withValues(alpha: 0.75),
+            shape: BoxShape.circle,
+            border: Border.all(
+              color: ZaWolfColors.primaryCyan.withValues(alpha: 0.6),
+              width: 2.0,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: ZaWolfColors.primaryCyan.withValues(alpha: 0.2),
+                blurRadius: 12,
+                spreadRadius: 2,
+              ),
+            ],
           ),
-          boxShadow: [
-            BoxShadow(
-              color: ZaWolfColors.primaryCyan.withValues(alpha: 0.2),
-              blurRadius: 12,
-              spreadRadius: 2,
-            ),
-          ],
-        ),
-        child: Stack(
-          alignment: Alignment.center,
-          children: [
-            // Directional Arrow Indicators
-            const Positioned(
-              top: 4,
-              child: Icon(
-                Icons.arrow_drop_up_rounded,
-                color: Colors.white38,
-                size: 20,
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              // Directional Arrow Indicators
+              const Positioned(
+                top: 4,
+                child: Icon(
+                  Icons.arrow_drop_up_rounded,
+                  color: Colors.white38,
+                  size: 20,
+                ),
               ),
-            ),
-            const Positioned(
-              bottom: 4,
-              child: Icon(
-                Icons.arrow_drop_down_rounded,
-                color: Colors.white38,
-                size: 20,
+              const Positioned(
+                bottom: 4,
+                child: Icon(
+                  Icons.arrow_drop_down_rounded,
+                  color: Colors.white38,
+                  size: 20,
+                ),
               ),
-            ),
-            const Positioned(
-              left: 4,
-              child: Icon(
-                Icons.arrow_left_rounded,
-                color: Colors.white38,
-                size: 20,
+              const Positioned(
+                left: 4,
+                child: Icon(
+                  Icons.arrow_left_rounded,
+                  color: Colors.white38,
+                  size: 20,
+                ),
               ),
-            ),
-            const Positioned(
-              right: 4,
-              child: Icon(
-                Icons.arrow_right_rounded,
-                color: Colors.white38,
-                size: 20,
+              const Positioned(
+                right: 4,
+                child: Icon(
+                  Icons.arrow_right_rounded,
+                  color: Colors.white38,
+                  size: 20,
+                ),
               ),
-            ),
 
-            // Draggable Inner Thumbstick Knob
-            Transform.translate(
-              offset: _joystickDelta,
-              child: Container(
-                width: 44,
-                height: 44,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  gradient: LinearGradient(
-                    colors: [
-                      ZaWolfColors.primaryCyan,
-                      ZaWolfColors.primaryCyan.withValues(alpha: 0.7),
-                    ],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
-                  border: Border.all(color: Colors.white, width: 2.0),
-                  boxShadow: const [
-                    BoxShadow(
-                      color: Colors.black54,
-                      blurRadius: 6,
-                      offset: Offset(0, 2),
+              // Draggable Inner Thumbstick Knob
+              Transform.translate(
+                offset: _joystickDelta,
+                child: Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: LinearGradient(
+                      colors: [
+                        ZaWolfColors.primaryCyan,
+                        ZaWolfColors.primaryCyan.withValues(alpha: 0.7),
+                      ],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
                     ),
-                  ],
-                ),
-                child: const Center(
-                  child: CircleAvatar(radius: 6, backgroundColor: Colors.black),
+                    border: Border.all(color: Colors.white, width: 2.0),
+                    boxShadow: const [
+                      BoxShadow(
+                        color: Colors.black54,
+                        blurRadius: 6,
+                        offset: Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: const Center(
+                    child: CircleAvatar(
+                      radius: 6,
+                      backgroundColor: Colors.black,
+                    ),
+                  ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -974,14 +1009,15 @@ class _VirtualOfficeGameWidgetState extends State<VirtualOfficeGameWidget>
                 width: 58,
                 height: 58,
                 fit: BoxFit.contain,
-                errorBuilder: (context, error, stackTrace) => Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: config.color.withValues(alpha: 0.25),
-                    shape: BoxShape.circle,
-                  ),
-                  child: Icon(config.icon, color: config.color, size: 28),
-                ),
+                errorBuilder:
+                    (context, error, stackTrace) => Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: config.color.withValues(alpha: 0.25),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(config.icon, color: config.color, size: 28),
+                    ),
               ),
             ),
             const SizedBox(height: 2),
@@ -1023,10 +1059,11 @@ class _VirtualOfficeGameWidgetState extends State<VirtualOfficeGameWidget>
           ],
         ),
         if (_hasPendingAction(type))
-          const PositionedDirectional(
+          const Positioned(
             top: -6,
-            end: -4,
+            right: -4,
             child: Badge(
+              alignment: Alignment.topRight,
               label: Text('!'),
               child: Icon(
                 Icons.notifications_active,
@@ -1044,15 +1081,18 @@ class _VirtualOfficeGameWidgetState extends State<VirtualOfficeGameWidget>
       animation: _walkController,
       builder: (context, child) {
         final walkValue = _walkController.value;
-        final tiltAngle = (_isMoving || _isDraggingJoystick)
-            ? math.sin(walkValue * math.pi * 2) * 0.12
-            : 0.0;
-        final stepY = (_isMoving || _isDraggingJoystick)
-            ? (math.sin(walkValue * math.pi * 2).abs() * -6.0)
-            : 0.0;
-        final legScale = (_isMoving || _isDraggingJoystick)
-            ? (1.0 + math.sin(walkValue * math.pi * 2) * 0.08)
-            : 1.0;
+        final tiltAngle =
+            (_isMoving || _isDraggingJoystick)
+                ? math.sin(walkValue * math.pi * 2) * 0.12
+                : 0.0;
+        final stepY =
+            (_isMoving || _isDraggingJoystick)
+                ? (math.sin(walkValue * math.pi * 2).abs() * -6.0)
+                : 0.0;
+        final legScale =
+            (_isMoving || _isDraggingJoystick)
+                ? (1.0 + math.sin(walkValue * math.pi * 2) * 0.08)
+                : 1.0;
 
         return Transform.translate(
           offset: Offset(0, stepY),
@@ -1080,18 +1120,20 @@ class _VirtualOfficeGameWidgetState extends State<VirtualOfficeGameWidget>
                     child: CircleAvatar(
                       radius: 14,
                       backgroundColor: ZaWolfColors.primaryCyan,
-                      backgroundImage: widget.user.avatarFaceUrl != null
-                          ? NetworkImage(widget.user.avatarFaceUrl!)
-                          : null,
-                      child: widget.user.avatarFaceUrl == null
-                          ? Icon(
-                              widget.user.avatarGender == 'female'
-                                  ? Icons.face_3
-                                  : Icons.face,
-                              size: 16,
-                              color: Colors.black,
-                            )
-                          : null,
+                      backgroundImage:
+                          widget.user.avatarFaceUrl != null
+                              ? NetworkImage(widget.user.avatarFaceUrl!)
+                              : null,
+                      child:
+                          widget.user.avatarFaceUrl == null
+                              ? Icon(
+                                widget.user.avatarGender == 'female'
+                                    ? Icons.face_3
+                                    : Icons.face,
+                                size: 16,
+                                color: Colors.black,
+                              )
+                              : null,
                     ),
                   ),
                   const SizedBox(height: 1),
@@ -1104,24 +1146,26 @@ class _VirtualOfficeGameWidgetState extends State<VirtualOfficeGameWidget>
                     width: 46,
                     height: 52,
                     fit: BoxFit.contain,
-                    errorBuilder: (context, error, stackTrace) => Container(
-                      width: 24,
-                      height: 28,
-                      decoration: BoxDecoration(
-                        color: widget.user.avatarGender == 'female'
-                            ? const Color(0xFFEC4899)
-                            : const Color(0xFF0EA5E9),
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: Colors.white, width: 1.2),
-                      ),
-                      child: Icon(
-                        widget.user.avatarGender == 'female'
-                            ? Icons.female
-                            : Icons.male,
-                        color: Colors.white,
-                        size: 16,
-                      ),
-                    ),
+                    errorBuilder:
+                        (context, error, stackTrace) => Container(
+                          width: 24,
+                          height: 28,
+                          decoration: BoxDecoration(
+                            color:
+                                widget.user.avatarGender == 'female'
+                                    ? const Color(0xFFEC4899)
+                                    : const Color(0xFF0EA5E9),
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: Colors.white, width: 1.2),
+                          ),
+                          child: Icon(
+                            widget.user.avatarGender == 'female'
+                                ? Icons.female
+                                : Icons.male,
+                            color: Colors.white,
+                            size: 16,
+                          ),
+                        ),
                   ),
 
                   // Animated Dynamic Drop Shadow Floor Projection
@@ -1202,13 +1246,14 @@ class _VirtualOfficeGameWidgetState extends State<VirtualOfficeGameWidget>
   };
 }
 
-typedef _DeptConfig = ({
-  String title,
-  String subtitle,
-  IconData icon,
-  Color color,
-  String assetPath,
-});
+typedef _DeptConfig =
+    ({
+      String title,
+      String subtitle,
+      IconData icon,
+      Color color,
+      String assetPath,
+    });
 
 /// CustomPainter rendering 3D Isometric floor grid, 3D room slabs, isometric furniture,
 /// corridor pathways, and destination pulse targets.
@@ -1235,16 +1280,18 @@ class _IsometricOfficePainter extends CustomPainter {
 
   void _drawCorridorPathways(Canvas canvas) {
     // Neon Main Corridor Carpet Lines
-    final pathPaint = Paint()
-      ..color = ZaWolfColors.primaryCyan.withValues(alpha: 0.15)
-      ..strokeWidth = 24
-      ..strokeCap = StrokeCap.round
-      ..style = PaintingStyle.stroke;
+    final pathPaint =
+        Paint()
+          ..color = ZaWolfColors.primaryCyan.withValues(alpha: 0.15)
+          ..strokeWidth = 24
+          ..strokeCap = StrokeCap.round
+          ..style = PaintingStyle.stroke;
 
-    final glowPaint = Paint()
-      ..color = ZaWolfColors.primaryCyan.withValues(alpha: 0.3)
-      ..strokeWidth = 3
-      ..style = PaintingStyle.stroke;
+    final glowPaint =
+        Paint()
+          ..color = ZaWolfColors.primaryCyan.withValues(alpha: 0.3)
+          ..strokeWidth = 3
+          ..style = PaintingStyle.stroke;
 
     // Central Vertical Corridor
     canvas.drawLine(const Offset(200, 50), const Offset(200, 480), pathPaint);
@@ -1259,22 +1306,24 @@ class _IsometricOfficePainter extends CustomPainter {
   void _drawTargetMarker(Canvas canvas) {
     if (!isMoving) return;
 
-    final ringPaint = Paint()
-      ..color = ZaWolfColors.primaryCyan.withValues(
-        alpha: 0.8 - (pulseProgress * 0.4),
-      )
-      ..strokeWidth = 2.0
-      ..style = PaintingStyle.stroke;
+    final ringPaint =
+        Paint()
+          ..color = ZaWolfColors.primaryCyan.withValues(
+            alpha: 0.8 - (pulseProgress * 0.4),
+          )
+          ..strokeWidth = 2.0
+          ..style = PaintingStyle.stroke;
 
     final radius = 10.0 + (pulseProgress * 8.0);
     canvas.drawCircle(targetPos, radius, ringPaint);
     canvas.drawCircle(targetPos, 3, Paint()..color = ZaWolfColors.primaryCyan);
 
     // Path Line Dotted Trail from Avatar to Target
-    final trailPaint = Paint()
-      ..color = ZaWolfColors.primaryCyan.withValues(alpha: 0.4)
-      ..strokeWidth = 1.5
-      ..style = PaintingStyle.stroke;
+    final trailPaint =
+        Paint()
+          ..color = ZaWolfColors.primaryCyan.withValues(alpha: 0.4)
+          ..strokeWidth = 1.5
+          ..style = PaintingStyle.stroke;
 
     final dx = targetPos.dx - avatarPos.dx;
     final dy = targetPos.dy - avatarPos.dy;

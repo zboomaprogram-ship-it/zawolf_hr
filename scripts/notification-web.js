@@ -247,7 +247,7 @@ function recordWorkspaceDiagnostic(area, error) {
   diagnostics.workspace = {
     lastFailureAt: new Date().toISOString(),
     lastFailureArea: String(area || 'unknown').slice(0, 80),
-    lastFailureCode: String(error?.code || error?.statusCode || error?.status || 'unknown').slice(0, 80),
+    lastFailureCode: String(error?.message || error?.code || error?.statusCode || error?.status || 'unknown').slice(0, 120),
   };
 }
 
@@ -2741,10 +2741,12 @@ async function ensureConversationAttachmentsFolder(db) {
     : await connector.createWorkspaceDriveFolder({
       parentFolderId: rootFolderId,
       name: '05_ملفات_مشتركة',
+      useDriveUploadOAuth: true,
     });
   const attachments = await connector.createWorkspaceDriveFolder({
     parentFolderId: shared.id,
     name: 'مرفقات_المحادثات',
+    useDriveUploadOAuth: true,
   });
   await configRef.set({
     folderId: attachments.id,
@@ -2771,10 +2773,12 @@ async function ensureOperationalRequestAttachmentsFolder(db) {
   const shared = await connector.createWorkspaceDriveFolder({
     parentFolderId: rootFolderId,
     name: '05_ملفات_مشتركة',
+    useDriveUploadOAuth: true,
   });
   const attachments = await connector.createWorkspaceDriveFolder({
     parentFolderId: shared.id,
     name: 'مرفقات_الطلبات',
+    useDriveUploadOAuth: true,
   });
   await configRef.set({
     folderId: attachments.id,
@@ -2816,6 +2820,7 @@ async function uploadOperationalRequestAttachment({ db, actor, resourceId, paylo
   const uploaded = await uploadGovernedAttachment({
     connector: getGoogleSheetsIntegration(),
     parentFolderId: folderId,
+    useDriveUploadOAuth: true,
     payload: {
       name: payload.displayName,
       mimeType: payload.contentType,
@@ -3176,6 +3181,7 @@ async function handleConversationRequest(req, res, url) {
       const uploaded = await uploadGovernedAttachment({
         connector: getGoogleSheetsIntegration(),
         parentFolderId: folderId,
+        useDriveUploadOAuth: true,
         payload,
       });
       const externalId = String(uploaded?.id || '').trim();
@@ -3225,6 +3231,7 @@ async function handleConversationRequest(req, res, url) {
         connector: getGoogleSheetsIntegration(),
         parentFolderId: String(secret.data()?.parentExternalId || ''),
         externalFileId: String(secret.data()?.externalId || ''),
+        useDriveUploadOAuth: true,
       });
       await recordConversationAudit(db, {
         actorId: actor.uid, conversationId: conversation.id,
@@ -3237,6 +3244,15 @@ async function handleConversationRequest(req, res, url) {
     sendJson(res, 404, { ok: false, code: 'not_found' });
   } catch (error) {
     recordWorkspaceDiagnostic('conversation_operation', error);
+    // A service account can read a folder shared from a personal Drive but
+    // cannot own uploaded files there because it has no Drive storage quota.
+    // Keep the provider response private, while returning an actionable code
+    // that the client can explain without exposing a raw Node/Google error.
+    const providerStatus = Number(error?.response?.status || error?.status || 0);
+    if (providerStatus === 403) {
+      sendJson(res, 503, { ok: false, code: 'drive_upload_not_ready' });
+      return;
+    }
     sendJson(res, 503, { ok: false, code: 'temporarily_unavailable' });
   }
 }
@@ -4217,10 +4233,7 @@ const server = http.createServer(async (req, res) => {
         sendJson(res, 400, { ok: false, code: 'validation_failed' });
         return;
       }
-      runningSalesKpiSync = withRuntimeLease('sales_kpi_sync', () =>
-        syncSalesKpis(filters),
-      );
-      const result = await runningSalesKpiSync;
+      const result = await syncSalesKpis(filters);
       diagnostics.lastSalesKpiAt = new Date().toISOString();
       diagnostics.lastSalesKpiResult = result;
       sendJson(res, 200, { ok: true, code: 'synced', ...result });

@@ -15,6 +15,10 @@ import '../../services/attendance_service.dart';
 import '../../services/offline_attendance_queue_service.dart';
 import '../../services/automatic_attendance_service.dart';
 import '../../services/company_day_off_service.dart';
+import '../../services/attendance_period_summary_service.dart';
+import '../../services/performance_badge_service.dart';
+import '../../components/badge_celebration_dialog.dart';
+import '../../components/performance_badges_widget.dart';
 import '../../services/geofence_service.dart';
 import '../../models/attendance_model.dart';
 import '../../models/company_day_off_status.dart';
@@ -178,13 +182,13 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
       final workDays = user?.workSchedule.workDays;
       final status =
           workDays != null &&
-              workDays.isNotEmpty &&
-              !workDays.contains(now.weekday)
-          ? const CompanyDayOffStatus(
-              isDayOff: true,
-              reason: 'ليس ضمن جدول عملك',
-            )
-          : await CompanyDayOffService().getDayOffStatus(now);
+                  workDays.isNotEmpty &&
+                  !workDays.contains(now.weekday)
+              ? const CompanyDayOffStatus(
+                isDayOff: true,
+                reason: 'ليس ضمن جدول عملك',
+              )
+              : await CompanyDayOffService().getDayOffStatus(now);
       if (mounted) {
         setState(() {
           _dayOffStatus = status;
@@ -229,9 +233,10 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
       await attendanceService.handleCheckInOrCheckOut(
         employee,
         expectedAction: expectedAction,
-        reliableCheckInSubmitter: useCheckInPilot
-            ? (verifiedAction) => _submitReliableCheckIn(verifiedAction)
-            : null,
+        reliableCheckInSubmitter:
+            useCheckInPilot
+                ? (verifiedAction) => _submitReliableCheckIn(verifiedAction)
+                : null,
       );
       if (useCheckInPilot &&
           _checkInPilot!.cubit.state.status != CheckInViewStatus.saved) {
@@ -250,9 +255,8 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
 
       if (log != null && mounted) {
         final isCheckOut = log.checkOutTime != null;
-        final confirmationTime = isCheckOut
-            ? log.checkOutTime
-            : log.checkInTime;
+        final confirmationTime =
+            isCheckOut ? log.checkOutTime : log.checkInTime;
         if (confirmationTime == null) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
@@ -267,13 +271,14 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
         showDialog(
           context: context,
           barrierDismissible: false,
-          builder: (context) => CheckInConfirmModal(
-            isCheckOut: isCheckOut,
-            time: confirmationTime,
-            locationName: log.locationName,
-            status: log.status,
-            lateMinutes: log.lateMinutes,
-          ),
+          builder:
+              (context) => CheckInConfirmModal(
+                isCheckOut: isCheckOut,
+                time: confirmationTime,
+                locationName: log.locationName,
+                status: log.status,
+                lateMinutes: log.lateMinutes,
+              ),
         );
       } else if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -289,26 +294,47 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
         final message = _friendlyAttendanceError(e);
         showDialog(
           context: context,
-          builder: (context) => AlertDialog(
-            backgroundColor: ZaWolfColors.surface01,
-            title: const Text(
-              'خطأ في تسجيل الحضور ⚠️',
-              style: TextStyle(color: Colors.white),
-            ),
-            content: Text(
-              message,
-              style: const TextStyle(color: ZaWolfColors.textSecondary),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text(
-                  'حسناً',
-                  style: TextStyle(color: ZaWolfColors.primaryCyan),
+          builder:
+              (dialogContext) => Directionality(
+                textDirection: TextDirection.rtl,
+                child: AlertDialog(
+                  backgroundColor: ZaWolfColors.surface01,
+                  title: const Row(
+                    children: [
+                      Icon(
+                        Icons.warning_amber_rounded,
+                        color: ZaWolfColors.warning,
+                      ),
+                      SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'لم يكتمل تسجيل الحضور',
+                          textAlign: TextAlign.right,
+                          style: TextStyle(color: Colors.white),
+                        ),
+                      ),
+                    ],
+                  ),
+                  content: Text(
+                    message,
+                    textAlign: TextAlign.right,
+                    style: const TextStyle(
+                      color: ZaWolfColors.textSecondary,
+                      height: 1.7,
+                    ),
+                  ),
+                  actionsAlignment: MainAxisAlignment.start,
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(dialogContext),
+                      child: const Text(
+                        'حسنًا',
+                        style: TextStyle(color: ZaWolfColors.primaryCyan),
+                      ),
+                    ),
+                  ],
                 ),
               ),
-            ],
-          ),
         );
       }
     } finally {
@@ -343,23 +369,24 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
     if (pilot == null) return;
     showDialog<void>(
       context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: ZaWolfColors.surface01,
-        title: const Text(
-          'حالة تسجيل الحضور',
-          style: TextStyle(color: Colors.white),
-        ),
-        content: CheckInStatusFeedback(
-          state: pilot.cubit.state,
-          failureMessage: pilot.cubit.safeFailureMessage(),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('حسناً'),
+      builder:
+          (context) => AlertDialog(
+            backgroundColor: ZaWolfColors.surface01,
+            title: const Text(
+              'حالة تسجيل الحضور',
+              style: TextStyle(color: Colors.white),
+            ),
+            content: CheckInStatusFeedback(
+              state: pilot.cubit.state,
+              failureMessage: pilot.cubit.safeFailureMessage(),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('حسناً'),
+              ),
+            ],
           ),
-        ],
-      ),
     );
   }
 
@@ -372,39 +399,132 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
   }
 
   String _friendlyAttendanceError(Object error) {
-    final raw = error.toString().replaceAll('Exception: ', '');
+    final raw = error.toString().replaceAll('Exception: ', '').trim();
     if (kDebugMode) debugPrint('Attendance action failure detail: $error');
+
+    if (raw.contains('INTERNAL ASSERTION') ||
+        raw.contains('Unexpected state') ||
+        raw.contains('firebase-firestore') ||
+        raw.contains('ASSERTION') ||
+        raw.contains('gstatic') ||
+        raw.contains('b815') ||
+        raw.contains('ca9') ||
+        raw.contains('__PRIVATE__') ||
+        raw.contains('WatchChangeAggregator')) {
+      return 'تم تحديث اتصال شبكة البيانات تلقائياً. يمكنك إجراء المحاولة الآن أو إعادة تنشيط الصفحة.';
+    }
+
     if (raw.contains('resource-exhausted') ||
         raw.contains('resource_exhausted') ||
         raw.contains('quota') ||
         raw.contains('RESOURCE_EXHAUSTED')) {
       return 'تم حفظ حضورك محلياً على الجهاز بنجاح لتجاوز الحد اليومي لقواعد البيانات، وستتم المزامنة تلقائياً عند تجديد الحد.';
     }
+
     if (raw.contains('cloud_firestore/unavailable') ||
         raw.contains('service is currently unavailable') ||
         raw.contains('deadline-exceeded') ||
-        raw.contains('aborted')) {
-      return 'خدمة الحضور مشغولة مؤقتاً. أعدنا المحاولة تلقائياً، لكن لم يتم تأكيد الحفظ بعد. انتظر دقيقة واحدة مع بقاء الإنترنت وGPS مفعّلين ثم أعد المحاولة. لن يُسجَّل حضور مكرر.';
+        raw.contains('aborted') ||
+        raw.contains('network') ||
+        raw.contains('SocketException')) {
+      return 'خدمة الحضور مشغولة مؤقتاً أو يتعذر الاتصال بالشبكة. أعدنا المحاولة تلقائياً، وسيحفظ النظام حضورك للمزامنة فور توفر الإنترنت.';
     }
+
     if (raw.contains('TimeoutException') ||
-        raw.contains('Future not completed')) {
-      return 'تعذر تحديد موقعك خلال الوقت المحدد. فعّل GPS، افتح الإنترنت، وانتقل لمكان أقرب لإشارة الموقع ثم أعد المحاولة.';
+        raw.contains('Future not completed') ||
+        raw.contains('timeout')) {
+      return 'استغرقت عملية تحديد الموقع وقتاً أطول من المعتاد. يرجى التأكد من تشغيل الـ GPS والإنترنت، والانتقال لمكان مكشوف ثم أعد المحاولة.';
     }
-    if (raw.contains('permission-denied')) {
+
+    if (raw.contains('permission-denied') ||
+        raw.contains('SecurityException')) {
       return 'تعذر حفظ الحضور بسبب إعداد أمان الحساب أو ربط الجهاز. لم يتم تسجيل العملية. أعد فتح التطبيق مرة واحدة؛ وإذا تكرر الخطأ، يراجع HR حالة الحساب وجهاز الحضور من شاشة الموظف.';
     }
-    // Never expose server, Firebase, or transport strings. The gateway owns
-    // detailed business validation and this legacy surface renders a safe
-    // outcome only.
+
+    if (raw.contains('Mock GPS') ||
+        raw.contains('mock') ||
+        raw.contains('تزييف')) {
+      return 'تم الكشف عن استخدام تطبيق لتزييف الموقع الجغرافي (Mock GPS). لا يمكن تسجيل الحضور أثناء تفعيل التزييف.';
+    }
+
+    if (raw.contains('خارج نطاق') ||
+        raw.contains('outside_geofence') ||
+        raw.contains('outside')) {
+      return 'أنت حالياً خارج نطاق التغطية الجغرافية لفرع العمل الخاص بك. يرجى الاقتراب من الفرع أو التأكد من تفعيل خدمة الموقع الدقيق (GPS).';
+    }
+
+    if (raw.contains('location') &&
+        (raw.contains('empty') ||
+            raw.contains('null') ||
+            raw.contains('missing') ||
+            raw.contains('تعيين'))) {
+      return 'لم يتم تعيين موقع أو فرع عمل لحسابك بعد. يرجى التواصل مع إدارة الموارد البشرية لربط حسابك بفرع العمل الخاص بك.';
+    }
+
+    if (raw.contains('دقة') || raw.contains('accuracy')) {
+      return 'إشارة موقع GPS ضعيفة جداً. يرجى التواجد في مكان مكشوف والتأكد من تفعيل إذن الموقع الدقيق (High Accuracy) ثم إعادة المحاولة.';
+    }
+
     const outcomes = AttendanceOutcomeMapper();
-    if (raw.contains('مسجل') || raw.contains('مكرر')) {
+    if (raw.contains('مسجل') ||
+        raw.contains('مكرر') ||
+        raw.contains('already_recorded')) {
       return outcomes.messageFor('already_recorded');
     }
     if (raw.contains('انصراف') && raw.contains('مفع')) {
       return outcomes.messageFor('checkout_disabled');
     }
     if (raw.contains('مزامنة')) return outcomes.messageFor('pending_sync');
-    return 'تعذر تأكيد الحضور الآن. تحقق من اتصال الإنترنت والموقع، ثم أعد المحاولة. لن يُسجَّل حضور مكرر.';
+
+    return 'لم يتم حفظ تسجيل الحضور لهذه المحاولة، ولم يُسجَّل حضور مكرر. '
+        'تأكد من تشغيل الإنترنت والموقع الدقيق، ثم أغلق التطبيق وافتحه وأعد المحاولة. '
+        'إذا تكرر الأمر، يراجع HR حالة الحساب وموقع الحضور والجهاز المسجل من شاشة الموظف.';
+  }
+
+  bool _checkedCelebrations = false;
+
+  void _checkUnseenCelebrationBadges(UserModel user) {
+    if (_checkedCelebrations) return;
+    _checkedCelebrations = true;
+    final awarded = PerformanceBadgeService.instance.watchAwardedBadgeIds(
+      user.uid,
+    );
+    awarded.first.then((ids) {
+      if (!mounted) return;
+      final unseen =
+          ids
+              .where((id) => !user.seenCelebrationBadgeIds.contains(id))
+              .toList();
+      if (unseen.isNotEmpty) {
+        final badgeId = unseen.first;
+        final def = performanceBadgeCatalog.firstWhere(
+          (b) => b.id == badgeId,
+          orElse:
+              () => PerformanceBadgeDefinition(
+                id: badgeId,
+                title: performanceBadgeTitle(badgeId),
+                description: 'تهانينا! حصلت على شارة تميز جديدة من الشركة 🏆',
+                icon: Icons.emoji_events_rounded,
+                color: const Color(0xFFFFD700),
+              ),
+        );
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            BadgeCelebrationDialog.show(
+              context,
+              userId: user.uid,
+              userName: user.displayName,
+              department: user.department,
+              badgeId: def.id,
+              badgeTitle: def.title,
+              badgeDescription: def.description,
+              iconData: def.icon,
+              color: def.color,
+            );
+          }
+        });
+      }
+    });
   }
 
   @override
@@ -487,39 +607,41 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
         body: StreamBuilder<List<AttendanceModel>>(
           stream: _attendanceStream,
           builder: (context, snapshot) {
-            final attendanceError = snapshot.hasError
-                ? 'تعذر تحميل سجل الحضور الآن. يمكنك السحب للتحديث أو المحاولة مرة أخرى.'
-                : null;
+            final attendanceError =
+                snapshot.hasError
+                    ? 'تعذر تحميل سجل الحضور الآن. يمكنك السحب للتحديث أو المحاولة مرة أخرى.'
+                    : null;
             final logs = snapshot.data ?? [];
             final todayLog = logs.firstWhere(
               (log) => log.date == todayStr,
-              orElse: () => AttendanceModel(
-                attendanceId: '',
-                userId: '',
-                employeeId: '',
-                employeeName: '',
-                locationId: '',
-                locationName: '',
-                date: '',
-                checkInLocation: const GeoPoint(0, 0),
-                status: 'absent',
-              ),
+              orElse:
+                  () => AttendanceModel(
+                    attendanceId: '',
+                    userId: '',
+                    employeeId: '',
+                    employeeName: '',
+                    locationId: '',
+                    locationName: '',
+                    date: '',
+                    checkInLocation: const GeoPoint(0, 0),
+                    status: 'absent',
+                  ),
             );
 
             final bool hasTodayRecord = todayLog.attendanceId.isNotEmpty;
             final bool hasCheckedIn = todayLog.checkInTime != null;
             final bool hasCheckedOut =
                 hasCheckedIn && todayLog.checkOutTime != null;
-            final pilotState = _isCheckInPilotEnabledFor(user)
-                ? _checkInPilot?.cubit.state
-                : null;
+            final pilotState =
+                _isCheckInPilotEnabledFor(user)
+                    ? _checkInPilot?.cubit.state
+                    : null;
             final pilotAwaitingConfirmation =
                 pilotState?.status == CheckInViewStatus.pendingSync ||
                 pilotState?.status == CheckInViewStatus.requiresStatusCheck ||
                 pilotState?.status == CheckInViewStatus.submitting;
-            final gateState = context
-                .watch<EmployeeAttendanceGateCubit>()
-                .state;
+            final gateState =
+                context.watch<EmployeeAttendanceGateCubit>().state;
             final gate = computeCheckInAction(
               CheckInGateInputs(
                 now: _now,
@@ -537,15 +659,27 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
               ),
             );
 
-            // Quick stats calculation
-            final workedDays = logs.where((l) => l.checkInTime != null).length;
-            final lates = logs.where((l) => l.isLate).length;
-            final absents = logs
-                .where((l) => l.status == 'absent')
-                .length; // normally we mark defaults, let's keep it simple
+            // Quick stats calculation for current payroll cycle up to today
+            final cycle = PayrollCycle.forDate(_now);
+            final periodSummary = AttendancePeriodSummaryService.buildSummary(
+              user: user,
+              start: cycle.start,
+              end: _now,
+              now: _now,
+              attendanceByDate: {for (final l in logs) l.date: l},
+              approvedLeaves: const [],
+              companyDaysOff: const {},
+            );
+
+            final workedDays = periodSummary.presentDays;
+            final lates = periodSummary.lateDays;
+            final absents = periodSummary.absentDays;
 
             double disciplineScore = 100.0 - (lates * 5.0) - (absents * 10.0);
             if (disciplineScore < 0.0) disciplineScore = 0.0;
+
+            // Check for unseen celebration badges
+            _checkUnseenCelebrationBadges(user);
 
             return RefreshIndicator(
               onRefresh: () async {
@@ -610,9 +744,10 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
                         child: Row(
                           children: [
                             TextButton.icon(
-                              onPressed: _checkingLocation
-                                  ? null
-                                  : _checkCurrentGeofence,
+                              onPressed:
+                                  _checkingLocation
+                                      ? null
+                                      : _checkCurrentGeofence,
                               icon: const Icon(Icons.refresh),
                               label: const Text('تحديث'),
                             ),
@@ -646,16 +781,17 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
                       disabled: gate.disabled,
                       loading: _actionLoading,
                       active: hasCheckedIn,
-                      onTap: () =>
-                          _handleCheckInCheckOut(user, gate.expectedAction),
+                      onTap:
+                          () =>
+                              _handleCheckInCheckOut(user, gate.expectedAction),
                     ),
                     const SizedBox(height: 24),
 
                     if (pilotAwaitingConfirmation) ...[
                       CheckInStatusFeedback(
                         state: pilotState!,
-                        failureMessage: _checkInPilot!.cubit
-                            .safeFailureMessage(),
+                        failureMessage:
+                            _checkInPilot!.cubit.safeFailureMessage(),
                         onRetry: () {
                           unawaited(_retryReliableCheckIn(user.uid));
                         },
@@ -672,9 +808,10 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
                               _checkingDayOff
                                   ? Icons.sync
                                   : Icons.event_busy_outlined,
-                              color: _checkingDayOff
-                                  ? ZaWolfColors.primaryCyan
-                                  : ZaWolfColors.warning,
+                              color:
+                                  _checkingDayOff
+                                      ? ZaWolfColors.primaryCyan
+                                      : ZaWolfColors.warning,
                             ),
                             const SizedBox(width: 12),
                             Expanded(
@@ -684,15 +821,17 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
                                     : 'تسجيل الحضور متوقف اليوم: ${_dayOffStatus.reason}',
                                 style:
                                     theme.textTheme.bodyMedium?.copyWith(
-                                      color: _checkingDayOff
-                                          ? ZaWolfColors.textSecondary
-                                          : ZaWolfColors.warning,
+                                      color:
+                                          _checkingDayOff
+                                              ? ZaWolfColors.textSecondary
+                                              : ZaWolfColors.warning,
                                       fontWeight: FontWeight.bold,
                                     ) ??
                                     TextStyle(
-                                      color: _checkingDayOff
-                                          ? ZaWolfColors.textSecondary
-                                          : ZaWolfColors.warning,
+                                      color:
+                                          _checkingDayOff
+                                              ? ZaWolfColors.textSecondary
+                                              : ZaWolfColors.warning,
                                       fontWeight: FontWeight.bold,
                                     ),
                                 textDirection: TextDirection.rtl,
@@ -785,9 +924,10 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
                           subtitle: 'Department Chat',
                           color: Colors.purpleAccent,
                           onTap: () {
-                            final dept = user.department.isNotEmpty
-                                ? user.department
-                                : 'general';
+                            final dept =
+                                user.department.isNotEmpty
+                                    ? user.department
+                                    : 'general';
                             context.go('/conversations/department/$dept');
                           },
                         ),

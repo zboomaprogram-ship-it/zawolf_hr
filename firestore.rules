@@ -21,7 +21,8 @@ service cloud.firestore {
     function isHRManagerRole() { return isHRRole(); }
     function isSuperAdmin() { return role() == 'super_admin'; }
     function isCompanyCeo() {
-      return userDocExists() && userDoc().get('employeeId', '') == 'CEO-100';
+      return userDocExists()
+        && userDoc().get('employeeId', '').matches('^CEO-[A-Za-z0-9_-]+$');
     }
     // Financial approvers are assigned explicitly. Department labels and
     // titles are editable display data and must not grant payment authority.
@@ -408,6 +409,18 @@ service cloud.firestore {
       return request.resource.data.diff(resource.data).affectedKeys()
         .hasOnly(['passwordChangedAt', 'photoURL', 'notificationTokens', 'updatedAt']);
     }
+    function ownerAvatarCustomization() {
+      return request.resource.data.diff(resource.data).affectedKeys()
+        .hasOnly(['avatarGender', 'avatarAccent', 'avatarFaceUrl', 'updatedAt'])
+        && request.resource.data.avatarGender in ['male', 'female']
+        && request.resource.data.avatarAccent in ['cyan', 'violet', 'amber', 'rose']
+        // Face images are resized by the client before being stored. This
+        // bound prevents an avatar preference from approaching Firestore's
+        // document-size limit.
+        && (!('avatarFaceUrl' in request.resource.data)
+          || (request.resource.data.avatarFaceUrl is string
+            && request.resource.data.avatarFaceUrl.size() <= 300000));
+    }
     function ownerAttendanceDeviceBind() {
       return request.resource.data.diff(resource.data).affectedKeys()
         .hasAny([
@@ -566,7 +579,10 @@ service cloud.firestore {
           'registeredAttendanceDeviceLabel',
           'registeredAttendanceDeviceAt',
           'salesAnalyticsEnabled', 'salesAnalyticsRole',
-          'salesAnalyticsAgentKey', 'salesAnalyticsCompany'
+          'salesAnalyticsAgentKey', 'salesAnalyticsCompany',
+          // Recognition-only metadata managed by HR. It is intentionally
+          // separate from payroll, attendance, and performance scoring.
+          'performanceBadgeIds', 'performanceBadgesUpdatedAt'
         ]);
     }
     function validAccountStatusChange() {
@@ -926,7 +942,7 @@ service cloud.firestore {
             'reviewerName', 'approvalHistory', 'finalApproverId',
             'finalApproverName', 'finalApprovalAt'
           ])
-        && request.resource.data.status in ['approved', 'rejected']
+        && request.resource.data.status in ['pending_hr', 'approved', 'rejected']
         && request.resource.data.reviewedBy == uid();
     }
     function advanceHrReview() {
@@ -1344,6 +1360,7 @@ service cloud.firestore {
       );
       allow update: if isAuth() && isActive() && (
         (isOwner(userId) && ownerProfileUpdate()) ||
+        (isOwner(userId) && ownerAvatarCustomization()) ||
         (isOwner(userId) && ownerAttendanceDeviceBind()) ||
         (isOwner(userId) && ownerAttendanceDeviceLegacyMigration()) ||
         managerBalanceUpdate() ||
@@ -1623,7 +1640,7 @@ service cloud.firestore {
       allow create: if isAuth() && isActive()
         && isValidSelfCreate()
         && request.resource.data.status in [
-          'pending_manager', 'pending_hr', 'approved'
+          'pending_manager', 'pending_hr', 'pending_ceo', 'approved'
         ]
         && request.resource.data.managerIds is list
         && (
@@ -1644,6 +1661,16 @@ service cloud.firestore {
             request.resource.data.status == 'pending_hr'
             && request.resource.data.managerIds.size() == 0
             && request.resource.data.managerId == ''
+          )
+          || (
+            request.resource.data.status == 'pending_ceo'
+            && request.resource.data.managerIds.size() == 0
+            && request.resource.data.managerId == ''
+            && request.resource.data.ceoId is string
+            && request.resource.data.ceoId.size() > 0
+            && exists(userPath(request.resource.data.ceoId))
+            && get(userPath(request.resource.data.ceoId)).data.get('employeeId', '')
+              .matches('^CEO-[A-Za-z0-9_-]+$')
           )
           || (
             request.resource.data.status == 'approved'
@@ -1732,7 +1759,8 @@ service cloud.firestore {
           'managerApprovalTotal', 'managerApprovalTrail',
           'deductsLeaveBalance', 'leaveBalanceKey', 'leaveBalanceKeys',
           'requiresFullDaySalaryDeduction', 'autoApproved',
-          'approvalHistory', 'requiresCeoApproval',
+          'approvalHistory', 'requiresCeoApproval', 'ceoId', 'ceoName',
+          'ceoApprovalViaManagerChain',
           'originalLeaveType', 'probationConverted', 'requiresHrApproval',
           'reviewedAt', 'reviewedBy', 'reviewerName', 'reviewerComment'
         ]);
@@ -1764,14 +1792,13 @@ service cloud.firestore {
         (
           isOwner(resource.data.userId)
           && resource.data.status in [
-            'pending', 'pending_hr', 'pending_manager', 'pending_ceo', 'approved'
+            'pending', 'pending_hr', 'pending_manager', 'pending_ceo'
           ]
           && request.resource.data.status == 'cancelled'
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-            'status', 'cancelledAt', 'cancelledBy', 'balanceRestored'
+            'status', 'cancelledAt', 'cancelledBy'
           ])
           && request.resource.data.cancelledBy == uid()
-          && (resource.data.status != 'approved' || resource.data.startDate > request.time)
         ) ||
         leaveHrReview() ||
         leaveManagerReview() ||
@@ -1855,16 +1882,12 @@ service cloud.firestore {
       allow update: if isAuth() && isActive() && (
         (
           isOwner(resource.data.userId)
-          && resource.data.status in ['pending_hr', 'pending_manager', 'approved']
+          && resource.data.status in ['pending_hr', 'pending_manager']
           && request.resource.data.status == 'cancelled'
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-            'status', 'cancelledAt', 'cancelledBy', 'balanceRestored'
+            'status', 'cancelledAt', 'cancelledBy'
           ])
           && request.resource.data.cancelledBy == uid()
-          && (
-            resource.data.status != 'approved'
-            || resource.data.get('expectedTimestamp', request.time) > request.time
-          )
         ) ||
         permissionHrReview() ||
         permissionManagerReview() ||
@@ -2074,7 +2097,7 @@ service cloud.firestore {
       allow update: if isAuth() && isActive() && (
         (
           isOwner(resource.data.userId)
-          && resource.data.status == 'pending_hr'
+          && resource.data.status in ['pending_hr', 'pending_manager']
           && request.resource.data.status == 'cancelled'
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
         ) ||

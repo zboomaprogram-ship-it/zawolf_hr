@@ -227,15 +227,15 @@ class _DayDetailsSheet extends StatelessWidget {
   Widget build(BuildContext context) {
     final dateLabel = DateFormat('EEEE، yyyy/MM/dd', 'ar').format(date);
     return DraggableScrollableSheet(
-      initialChildSize: 0.90,
-      minChildSize: 0.55,
-      maxChildSize: 0.96,
       builder: (context, scrollController) => Container(
         decoration: const BoxDecoration(
           color: ZaWolfColors.surface01,
           borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
         ),
-        child: FutureBuilder<DashboardAttendanceDayDetails>(
+        child: SafeArea(
+          top: true,
+          bottom: false,
+          child: FutureBuilder<DashboardAttendanceDayDetails>(
           future: service.loadDayDetails(user, date),
           builder: (context, snapshot) {
             if (snapshot.hasError) {
@@ -330,6 +330,7 @@ class _DayDetailsSheet extends StatelessWidget {
           },
         ),
       ),
+      ),
     );
   }
 }
@@ -378,30 +379,56 @@ class _AttendancePeopleSection extends StatelessWidget {
                       )
                     : null,
                 child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     if (_timelineEnabled(context))
-                      const Icon(
-                        Icons.history,
-                        color: ZaWolfColors.primaryCyan,
+                      const Padding(
+                        padding: EdgeInsets.only(top: 4),
+                        child: Icon(
+                          Icons.history,
+                          color: ZaWolfColors.primaryCyan,
+                        ),
                       ),
-                    const Spacer(),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.end,
-                      children: [
-                        Text(
-                          person.employee.displayName,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w600,
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          Text(
+                            person.employee.displayName,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 14,
+                            ),
+                            textDirection: TextDirection.rtl,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                           ),
-                          textDirection: TextDirection.rtl,
-                        ),
-                        Text(
-                          _detailText(person, timeFormat),
-                          style: const TextStyle(color: ZaWolfColors.textMuted),
-                          textDirection: TextDirection.rtl,
-                        ),
-                      ],
+                          const SizedBox(height: 2),
+                          Text(
+                            _metaText(person),
+                            style: const TextStyle(
+                              color: ZaWolfColors.textSecondary,
+                              fontSize: 11,
+                            ),
+                            textDirection: TextDirection.rtl,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            _timeText(person, timeFormat),
+                            style: const TextStyle(
+                              color: ZaWolfColors.textMuted,
+                              fontSize: 11,
+                            ),
+                            textDirection: TextDirection.rtl,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ),
                     ),
                   ],
                 ),
@@ -421,7 +448,7 @@ class _AttendancePeopleSection extends StatelessWidget {
         );
   }
 
-  String _detailText(DashboardAttendancePerson person, DateFormat timeFormat) {
+  String _metaText(DashboardAttendancePerson person) {
     final parts = <String>[];
     if (person.employee.department.isNotEmpty) {
       parts.add(person.employee.department);
@@ -432,17 +459,22 @@ class _AttendancePeopleSection extends StatelessWidget {
     if (person.employee.employeeId.isNotEmpty) {
       parts.add(person.employee.employeeId);
     }
+    return parts.join(' · ');
+  }
+
+  String _timeText(DashboardAttendancePerson person, DateFormat timeFormat) {
+    final parts = <String>[];
     if (person.checkInTime != null) {
       parts.add('حضور ${timeFormat.format(person.checkInTime!)}');
     }
+    if (person.lateMinutes > 0) parts.add('تأخير ${person.lateMinutes} د');
     if (person.checkOutTime != null) {
       parts.add('انصراف ${timeFormat.format(person.checkOutTime!)}');
+    } else if (person.needsCheckout) {
+      parts.add('لم يسجل الانصراف');
+    } else if (person.checkoutNotRequired) {
+      parts.add('لا ينطبق تسجيل الانصراف');
     }
-    if (person.checkoutNotRequired) {
-      parts.add('لا ينطبق تسجيل الانصراف (سياسة HR)');
-    }
-    if (person.lateMinutes > 0) parts.add('تأخير ${person.lateMinutes} د');
-    if (person.needsCheckout) parts.add('لم يسجل الانصراف');
     return parts.isEmpty ? 'لا يوجد سجل حضور لهذا اليوم' : parts.join(' · ');
   }
 }

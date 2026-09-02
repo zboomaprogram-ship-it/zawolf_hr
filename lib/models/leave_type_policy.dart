@@ -78,6 +78,10 @@ class LeaveTypePolicy {
   static bool get requiresReason => true;
   static bool requiresTwoDayNotice(String type) => type == normal;
   static bool requiresFullDaySalaryDeduction(String type) => type == unpaid;
+
+  /// Three chargeable workdays or more require the employee's assigned CEO.
+  /// The leave service calculates chargeable days before this policy is used,
+  /// so Fridays and active company holidays never create an extra approval.
   static bool requiresCeoApproval(String type, int numberOfDays) =>
-      type == remote || numberOfDays > 4;
+      type == remote || numberOfDays >= 3;
 }

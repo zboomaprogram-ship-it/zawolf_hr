@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -491,6 +492,10 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       });
       if (mounted) {
         setState(() => _locallyRead.add(ref.id));
+        final auth = context.read<AuthService>();
+        final currentUnread = auth.currentUser?.unreadNotifications ?? 0;
+        auth.updateUnreadNotificationCount(currentUnread > 0 ? currentUnread - 1 : 0);
+        unawaited(auth.fetchUserData(userId, showLoading: false));
       }
     } catch (_) {}
   }
@@ -508,6 +513,9 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       setState(
         () => _locallyRead.addAll(_notifications.map((item) => item.id)),
       );
+      final auth = context.read<AuthService>();
+      auth.updateUnreadNotificationCount(0);
+      unawaited(auth.fetchUserData(userId, showLoading: false));
       return;
     }
     final db = FirebaseFirestore.instance;
@@ -532,6 +540,9 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     }
     if (!mounted) return;
     setState(() => _locallyRead.addAll(_notifications.map((item) => item.id)));
+    final auth = context.read<AuthService>();
+    auth.updateUnreadNotificationCount(0);
+    unawaited(auth.fetchUserData(userId, showLoading: false));
   }
 }
 

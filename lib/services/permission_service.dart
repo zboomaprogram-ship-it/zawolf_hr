@@ -69,9 +69,8 @@ class PermissionService {
     Map<String, dynamic>? userData,
   ) {
     final balance = userData?['permissionBalance'];
-    final activeCycleKey = balance is Map
-        ? '${balance['lastResetMonth'] ?? ''}'
-        : '';
+    final activeCycleKey =
+        balance is Map ? '${balance['lastResetMonth'] ?? ''}' : '';
     return permissionBelongsToActiveBalance(
       requestDate: permission.requestDate,
       activeCycleKey: activeCycleKey,
@@ -93,9 +92,8 @@ class PermissionService {
       final map = policy is Map ? policy : const <String, dynamic>{};
       return {
         'checkoutPolicyEnabled': map['enabled'] == true,
-        'checkoutPolicyRevision': map['revision'] is int
-            ? map['revision'] as int
-            : 0,
+        'checkoutPolicyRevision':
+            map['revision'] is int ? map['revision'] as int : 0,
         'checkoutPolicyEvaluatedAt': FieldValue.serverTimestamp(),
         'checkoutPolicyDecisionPoint': 'permission_approval',
       };
@@ -177,9 +175,8 @@ class PermissionService {
       return {
         'status': 'pending_manager',
         'managerId': managerIds[nextIndex],
-        'managerName': nextIndex < managerNames.length
-            ? managerNames[nextIndex]
-            : null,
+        'managerName':
+            nextIndex < managerNames.length ? managerNames[nextIndex] : null,
         'managerApprovalIndex': nextIndex,
         'managerApprovalTrail': FieldValue.arrayUnion([trail]),
         'approvalHistory': FieldValue.arrayUnion([approvalEvent]),
@@ -238,22 +235,23 @@ class PermissionService {
 
     // Only free permissions consume the regular monthly allowance. Deductible
     // permissions remain separate so they cannot expand or corrupt that quota.
-    final monthlyDocs = await _db
-        .collection('permissions')
-        .where('userId', isEqualTo: req.userId)
-        .where('monthKey', isEqualTo: monthKey)
-        .where(
-          'status',
-          whereIn: const [
-            'pending',
-            'pending_team_leader',
-            'pending_manager',
-            'pending_hr',
-            'pending_ceo',
-            'approved',
-          ],
-        )
-        .get();
+    final monthlyDocs =
+        await _db
+            .collection('permissions')
+            .where('userId', isEqualTo: req.userId)
+            .where('monthKey', isEqualTo: monthKey)
+            .where(
+              'status',
+              whereIn: const [
+                'pending',
+                'pending_team_leader',
+                'pending_manager',
+                'pending_hr',
+                'pending_ceo',
+                'approved',
+              ],
+            )
+            .get();
 
     final cycleUsage = _usageFromDocs(monthlyDocs.docs);
     final usedCount = cycleUsage.usedCount;
@@ -302,27 +300,28 @@ class PermissionService {
       isLateSubmission = now.isAfter(workStart);
     }
 
-    final deduction = req.isDeductible
-        ? AttendanceDeduction(
-            dayFraction: PermissionTypePolicy.deductibleDayFraction(
-              req.durationMinutes,
-            ),
-            code: PermissionTypePolicy.deductionCode(req.durationMinutes),
-            arabicLabel: PermissionTypePolicy.deductionLabel(
-              req.durationMinutes,
-            ),
-            status: 'permission_deduction',
-            isLate: false,
-            lateMinutes: 0,
-          )
-        : const AttendanceDeduction(
-            dayFraction: 0,
-            code: 'none',
-            arabicLabel: 'لا يوجد خصم',
-            status: 'present',
-            isLate: false,
-            lateMinutes: 0,
-          );
+    final deduction =
+        req.isDeductible
+            ? AttendanceDeduction(
+              dayFraction: PermissionTypePolicy.deductibleDayFraction(
+                req.durationMinutes,
+              ),
+              code: PermissionTypePolicy.deductionCode(req.durationMinutes),
+              arabicLabel: PermissionTypePolicy.deductionLabel(
+                req.durationMinutes,
+              ),
+              status: 'permission_deduction',
+              isLate: false,
+              lateMinutes: 0,
+            )
+            : const AttendanceDeduction(
+              dayFraction: 0,
+              code: 'none',
+              arabicLabel: 'لا يوجد خصم',
+              status: 'present',
+              isLate: false,
+              lateMinutes: 0,
+            );
     final salaryDeductionAmount = policyConfig.calculateSalaryDeductionAmount(
       monthlySalary: employee.baseMonthlySalary,
       dayFraction: deduction.dayFraction,
@@ -439,51 +438,21 @@ class PermissionService {
 
   Future<void> cancelPermission(String permissionId, String userId) async {
     final ref = _db.collection('permissions').doc(permissionId);
-    final userRef = _db.collection('users').doc(userId);
     await _db.runTransaction((transaction) async {
       final doc = await transaction.get(ref);
       if (!doc.exists) throw Exception('طلب الإذن غير موجود.');
       final permission = PermissionModel.fromFirestore(doc);
-      final userDoc =
-          permission.status == 'approved' && !permission.isDeductible
-          ? await transaction.get(userRef)
-          : null;
       if (permission.userId != userId) {
         throw Exception('غير مسموح بإلغاء الطلب.');
       }
-      if (permission.status == 'rejected' || permission.status == 'cancelled') {
-        throw Exception('لا يمكن إلغاء هذا الطلب.');
-      }
-      final requestDay = DateTime.parse(permission.requestDate);
-      final expectedParts = permission.expectedTime.split(':');
-      final effectiveTime = DateTime(
-        requestDay.year,
-        requestDay.month,
-        requestDay.day,
-        int.parse(expectedParts[0]),
-        int.parse(expectedParts[1]),
-      );
-      final today = DateTime.now();
-      if (permission.status == 'approved' && !effectiveTime.isAfter(today)) {
-        throw Exception('لا يمكن إلغاء إذن بدأ موعده بالفعل.');
+      if (!permission.status.startsWith('pending')) {
+        throw Exception('لا يمكن إلغاء الطلب بعد صدور القرار النهائي.');
       }
       transaction.update(ref, {
         'status': 'cancelled',
         'cancelledAt': FieldValue.serverTimestamp(),
         'cancelledBy': userId,
-        if (permission.status == 'approved') 'balanceRestored': true,
       });
-      if (permission.status == 'approved' &&
-          !permission.isDeductible &&
-          _updatesActiveBalance(permission, userDoc?.data())) {
-        transaction.update(userRef, {
-          'permissionBalance.usedThisMonth': FieldValue.increment(-1),
-          'permissionBalance.usedHoursThisMonth': FieldValue.increment(
-            -(permission.durationMinutes / 60.0),
-          ),
-          'lastPermissionBalanceRestorationId': permissionId,
-        });
-      }
     });
   }
 
@@ -651,9 +620,10 @@ class PermissionService {
       reviewerId: reviewerId,
       reviewerRole: reviewerRole,
       reviewerName: reviewerName,
-      finalStatus: perm.isDeductible
-          ? 'pending_hr'
-          : approvalPolicy.finalManagerApprovalStatus,
+      finalStatus:
+          perm.isDeductible
+              ? 'pending_hr'
+              : approvalPolicy.finalManagerApprovalStatus,
     );
     nextUpdate['reviewerName'] = reviewerName;
     if (nextUpdate['status'] == 'approved') {

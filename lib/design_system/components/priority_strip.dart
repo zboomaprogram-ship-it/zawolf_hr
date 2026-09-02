@@ -34,7 +34,8 @@ class PriorityStrip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final visible = items.where((item) => item.isVisible).take(maxItems).toList();
+    final visible =
+        items.where((item) => item.isVisible).take(maxItems).toList();
     if (visible.isEmpty) return const SizedBox.shrink();
 
     return Column(
@@ -68,22 +69,20 @@ class PriorityStrip extends StatelessWidget {
                           children: [
                             TextSpan(
                               text: '${dsBidi(item.count)} ',
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .titleMedium!
-                                  .copyWith(color: color),
+                              style: Theme.of(
+                                context,
+                              ).textTheme.titleMedium!.copyWith(color: color),
                             ),
                             TextSpan(
                               text: item.label,
-                              style:
-                                  Theme.of(context).textTheme.bodyMedium,
+                              style: Theme.of(context).textTheme.bodyMedium,
                             ),
                           ],
                         ),
                       ),
                     ),
                     Icon(
-                      RtlNavigation.chevronEnd(context),
+                      RtlNavigation.chevronStart(context),
                       color: ZaWolfColors.textMuted,
                       size: 20,
                     ),

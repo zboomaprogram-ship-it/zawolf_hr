@@ -120,6 +120,43 @@ test('lists Drive files only inside the configured test folder', async () => {
   assert.match(requests[0].params.q, /trashed = false/);
 });
 
+test('uses the Drive OAuth account only for governed attachment uploads', async () => {
+  const serviceRequests = [];
+  const driveOAuthRequests = [];
+  const integration = createGoogleSheetsIntegration({
+    env: {
+      GOOGLE_SHEETS_TEST_SPREADSHEET_ID: '1h3eNfVdY5wTHszPN0w0gPNI-BGGauoGWSSal4fLnwIM',
+    },
+    authClient: {
+      async request(options) {
+        serviceRequests.push(options);
+        return { data: { values: [headers] } };
+      },
+    },
+    driveUploadAuthClient: {
+      async request(options) {
+        driveOAuthRequests.push(options);
+        return { data: { id: 'oauth-owned-file' } };
+      },
+    },
+  });
+
+  const uploaded = await integration.uploadWorkspaceDriveFile({
+    parentFolderId: '1dhO2ORwDH5Ue9FAMfo3LLer_Dgj70ck_',
+    name: 'chat-proof.txt',
+    mimeType: 'text/plain',
+    contentsBase64: 'c2FmZQ==',
+    useDriveUploadOAuth: true,
+  });
+  assert.equal(uploaded.id, 'oauth-owned-file');
+  assert.equal(driveOAuthRequests.length, 1);
+  assert.equal(serviceRequests.length, 0);
+
+  await integration.readRows();
+  assert.equal(serviceRequests.length, 1);
+  assert.equal(driveOAuthRequests.length, 1);
+});
+
 test('downloads only files inside the configured Drive folder', async () => {
   const requests = [];
   const authClient = {

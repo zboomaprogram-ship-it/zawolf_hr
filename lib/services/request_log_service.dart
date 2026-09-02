@@ -22,6 +22,7 @@ class RequestLogItem {
     required this.details,
     required this.reason,
     required this.response,
+    this.rawMap = const {},
   });
 
   final String id;
@@ -39,6 +40,7 @@ class RequestLogItem {
   final String details;
   final String reason;
   final String response;
+  final Map<String, dynamic> rawMap;
 
   bool get isPending => status.startsWith('pending');
 
@@ -141,18 +143,19 @@ class RequestLogService {
     final isCompanyCeo = user.employeeId.trim().toUpperCase() == 'CEO-100';
     if (!isCompanyCeo && EmployeeRole.isHr(user.role)) {
       final base = _db.collection(collection);
-      final snapshot = allTime
-          ? await base.limit(2000).get()
-          : await base
-                .where(
-                  'submittedAt',
-                  isGreaterThanOrEqualTo: Timestamp.fromDate(cycle.start),
-                )
-                .where(
-                  'submittedAt',
-                  isLessThan: Timestamp.fromDate(cycle.nextStart),
-                )
-                .get();
+      final snapshot =
+          allTime
+              ? await base.limit(2000).get()
+              : await base
+                  .where(
+                    'submittedAt',
+                    isGreaterThanOrEqualTo: Timestamp.fromDate(cycle.start),
+                  )
+                  .where(
+                    'submittedAt',
+                    isLessThan: Timestamp.fromDate(cycle.nextStart),
+                  )
+                  .get();
       return snapshot.docs;
     }
 
@@ -176,10 +179,11 @@ class RequestLogService {
       return byId.values.toList();
     }
 
-    final snapshot = await _db
-        .collection(collection)
-        .where('userId', isEqualTo: user.uid)
-        .get();
+    final snapshot =
+        await _db
+            .collection(collection)
+            .where('userId', isEqualTo: user.uid)
+            .get();
     return allTime
         ? snapshot.docs
         : snapshot.docs.where((doc) => _isInCycle(doc.data(), cycle)).toList();
@@ -247,6 +251,7 @@ class RequestLogService {
             data['reviewerComment'] as String? ??
             data['hrReviewerComment'] as String? ??
             '',
+        rawMap: data,
       );
     }
 
@@ -306,13 +311,22 @@ class RequestLogService {
       }),
       fetch('administrativeRequests', 'administrative', (doc) {
         final data = doc.data();
+        final category = data['category'] as String? ?? '';
+        final isFieldMission =
+            category == AdministrativeRequestCategory.fieldMission ||
+            data['requestType'] == AdministrativeRequestCategory.fieldMission;
         return genericItem(
           doc,
           type: 'administrative',
-          requestType: AdministrativeRequestCategory.arabicLabel(
-            data['category'] as String? ?? AdministrativeRequestCategory.other,
-          ),
-          details: 'طلب إداري',
+          requestType:
+              isFieldMission
+                  ? 'مأمورية / مهمة ميدانية'
+                  : AdministrativeRequestCategory.arabicLabel(
+                    category.isEmpty
+                        ? AdministrativeRequestCategory.other
+                        : category,
+                  ),
+          details: isFieldMission ? 'مأمورية ميدانية' : 'طلب إداري',
         );
       }),
       fetch('resignations', 'resignation', (doc) {
@@ -322,10 +336,24 @@ class RequestLogService {
           doc,
           type: 'resignation',
           requestType: 'استقالة',
-          details: resignationDate == null
-              ? 'طلب استقالة'
-              : '${resignationDate.year}/${resignationDate.month}/${resignationDate.day}',
+          details:
+              resignationDate == null
+                  ? 'طلب استقالة'
+                  : '${resignationDate.year}/${resignationDate.month}/${resignationDate.day}',
           occursAt: resignationDate,
+        );
+      }),
+      fetch('manual_deductions', 'manual_deduction', (doc) {
+        final data = doc.data();
+        final deductionDate = _date(data['date']);
+        return genericItem(
+          doc,
+          type: 'manual_deduction',
+          requestType: 'خصم راتب إداري',
+          details:
+              data['fractionLabel'] as String? ??
+              '${data['dayFraction'] as num? ?? 1} يوم',
+          occursAt: deductionDate,
         );
       }),
     ]);
