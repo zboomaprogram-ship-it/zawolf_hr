@@ -75,7 +75,7 @@ String? _safeArabicBusinessMessage(Object error) {
   final message =
       error
           .toString()
-          .replaceFirst(RegExp(r'^(?:Exception|Bad state|StateError):\\s*'), '')
+          .replaceFirst(RegExp(r'^(?:Exception|Bad state|StateError):\s*'), '')
           .trim();
   if (message.isEmpty || !RegExp(r'[\u0600-\u06FF]').hasMatch(message)) {
     return null;

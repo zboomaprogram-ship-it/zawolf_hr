@@ -262,7 +262,28 @@ function serializeTimestamp(value) {
   return date ? date.toISOString() : null;
 }
 
-async function listAssignments({ admin, actor, employeeUid, limit = 20 }) {
+async function listAssignments({ admin, actor, employeeUid, limit = 20, all = false }) {
+  if (all === true) {
+    requireManager(actor);
+    const safeLimit = Math.max(1, Math.min(Number(limit) || 100, 200));
+    const db = admin.firestore();
+    // Old documents used only `isActive`; querying the bounded collection and
+    // filtering in memory keeps the management page useful during migration.
+    const snapshot = await db.collection('attendanceLocationAssignments').limit(safeLimit).get();
+    const activeDocs = snapshot.docs.filter((doc) => {
+      const value = doc.data() || {};
+      return value.status === 'active' || value.isActive === true;
+    });
+    const employeeIds = [...new Set(activeDocs.map((doc) => String(doc.data()?.employeeUid || '')).filter(Boolean))];
+    const employeeSnaps = await Promise.all(employeeIds.map((id) => db.collection('users').doc(id).get()));
+    const names = new Map(employeeSnaps.map((snap, index) => [employeeIds[index], snap.exists ? (snap.data() || {}) : {}]));
+    const results = await Promise.all(employeeIds.map((id) => listAssignments({ admin, actor, employeeUid: id, limit: safeLimit })));
+    return results.flat().map((item) => ({
+      ...item,
+      employeeName: String(names.get(item.employeeUid)?.displayName || names.get(item.employeeUid)?.name || ''),
+      employeeCode: String(names.get(item.employeeUid)?.employeeId || names.get(item.employeeUid)?.employeeCode || ''),
+    })).slice(0, safeLimit);
+  }
   const targetUid = String(employeeUid || actor?.uid || '').trim();
   if (!targetUid) throw assignmentError('حساب الموظف غير محدد.');
   if (targetUid !== actor?.uid) requireManager(actor);

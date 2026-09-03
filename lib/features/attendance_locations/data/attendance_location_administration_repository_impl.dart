@@ -3,6 +3,7 @@ import 'package:http/http.dart' as http;
 
 import '../../../core/sync/authenticated_operation_client.dart';
 import '../domain/repositories/attendance_location_assignment_repository.dart';
+import '../domain/entities/attendance_location_assignment.dart';
 
 final class AttendanceLocationAdministrationRepositoryImpl
     implements AttendanceLocationAdministrationRepository {
@@ -16,12 +17,62 @@ final class AttendanceLocationAdministrationRepositoryImpl
            client ??
            AuthenticatedOperationClient(
              client: http.Client(),
-             tokenProvider: () async =>
-                 FirebaseAuth.instance.currentUser?.getIdToken(),
+             tokenProvider:
+                 () async => FirebaseAuth.instance.currentUser?.getIdToken(),
            );
 
   final AuthenticatedOperationClient _client;
   final String baseUri;
+
+  @override
+  Future<List<AttendanceLocationAssignment>> listAssignments(
+    String employeeUid,
+  ) async {
+    final response = await _client.get(
+      Uri.parse(
+        '$baseUri/attendance/locations/assignments?employeeUid=$employeeUid&limit=100',
+      ),
+    );
+    return _decodeAssignments(_requireSuccess(response));
+  }
+
+  @override
+  Future<List<AttendanceLocationAssignment>> listAllAssignments() async {
+    final response = await _client.get(
+      Uri.parse('$baseUri/attendance/locations/assignments?all=true&limit=200'),
+    );
+    return _decodeAssignments(_requireSuccess(response));
+  }
+
+  List<AttendanceLocationAssignment> _decodeAssignments(
+    Map<String, dynamic> data,
+  ) {
+    return (data['assignments'] as List? ?? const [])
+        .whereType<Map>()
+        .map((raw) {
+          final from = DateTime.tryParse('${raw['effectiveFrom'] ?? ''}');
+          final to = DateTime.tryParse('${raw['effectiveTo'] ?? ''}');
+          return AttendanceLocationAssignment(
+            id: '${raw['id']}',
+            employeeUid: '${raw['employeeUid']}',
+            locationId: '${raw['locationId']}',
+            locationName: '${raw['locationName']}',
+            latitude: (raw['latitude'] as num?)?.toDouble() ?? 0,
+            longitude: (raw['longitude'] as num?)?.toDouble() ?? 0,
+            radiusMeters: (raw['radiusMeters'] as num?)?.toDouble() ?? 0,
+            version: (raw['version'] as num?)?.toInt() ?? 1,
+            priority: (raw['priority'] as num?)?.toInt() ?? 0,
+            employeeName: '${raw['employeeName'] ?? ''}',
+            employeeCode: '${raw['employeeCode'] ?? ''}',
+            isDefault: raw['isDefault'] == true,
+            isActive: raw['isActive'] == true,
+            locationIsActive: raw['locationIsActive'] != false,
+            effectiveFrom: from,
+            effectiveTo: to,
+          );
+        })
+        .toList(growable: false);
+  }
 
   Map<String, Object?> _payload({
     required List<String> employeeUids,

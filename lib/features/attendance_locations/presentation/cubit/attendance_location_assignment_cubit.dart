@@ -1,6 +1,7 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../domain/repositories/attendance_location_assignment_repository.dart';
+import '../../domain/entities/attendance_location_assignment.dart';
 
 enum AttendanceLocationAssignmentPhase {
   editing,
@@ -15,11 +16,13 @@ class AttendanceLocationAssignmentState {
   const AttendanceLocationAssignmentState({
     this.phase = AttendanceLocationAssignmentPhase.editing,
     this.preview = const {},
+    this.activeAssignments = const [],
     this.message,
   });
 
   final AttendanceLocationAssignmentPhase phase;
   final Map<String, dynamic> preview;
+  final List<AttendanceLocationAssignment> activeAssignments;
   final String? message;
 
   bool get busy =>
@@ -33,6 +36,19 @@ class AttendanceLocationAssignmentCubit
     : super(const AttendanceLocationAssignmentState());
 
   final AttendanceLocationAdministrationRepository _repository;
+
+  Future<void> loadActiveAssignments() async {
+    try {
+      final assignments = await _repository.listAllAssignments();
+      emit(AttendanceLocationAssignmentState(activeAssignments: assignments));
+    } catch (_) {
+      emit(
+        const AttendanceLocationAssignmentState(
+          message: 'تعذر تحميل الإسنادات الحالية. أعد المحاولة.',
+        ),
+      );
+    }
+  }
 
   Future<void> preview({
     required List<String> employeeUids,
@@ -106,6 +122,7 @@ class AttendanceLocationAssignmentCubit
         AttendanceLocationAssignmentState(
           phase: AttendanceLocationAssignmentPhase.applied,
           preview: receipt,
+          activeAssignments: await _repository.listAllAssignments(),
           message: 'تم حفظ إسنادات المواقع وتسجيل العملية بنجاح.',
         ),
       );

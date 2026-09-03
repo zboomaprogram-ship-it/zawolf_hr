@@ -384,7 +384,9 @@ class DashboardAttendanceSummaryService {
           .map(UserModel.fromFirestore)
           .where(
             (employee) =>
-                employee.isActive && !hiddenIds.contains(employee.uid),
+                employee.isActive &&
+                !hiddenIds.contains(employee.uid) &&
+                !employee.excludeFromAttendanceReports,
           )
           .toList();
     }
@@ -405,6 +407,7 @@ class DashboardAttendanceSummaryService {
         final employee = UserModel.fromFirestore(doc);
         if (employee.isActive &&
             !hiddenIds.contains(employee.uid) &&
+            !employee.excludeFromAttendanceReports &&
             employee.role != EmployeeRole.superAdmin &&
             (employee.managerIds.contains(reviewer.uid) ||
                 employee.managerId == reviewer.uid)) {
@@ -420,7 +423,11 @@ class DashboardAttendanceSummaryService {
         .get();
     return snap.docs
         .map(UserModel.fromFirestore)
-        .where((employee) => !hiddenIds.contains(employee.uid))
+        .where(
+          (employee) =>
+              !hiddenIds.contains(employee.uid) &&
+              !employee.excludeFromAttendanceReports,
+        )
         .toList();
   }
 

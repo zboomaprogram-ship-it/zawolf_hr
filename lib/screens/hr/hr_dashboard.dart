@@ -101,9 +101,10 @@ class _HrDashboardScreenState extends State<HrDashboardScreen> {
     if (updated != null && mounted) {
       await service.updateFilters(filters: updated, actorId: actorId);
       if (!mounted) return;
-      final newPeriodKey = updated.startDate.length >= 7
-          ? updated.startDate.substring(0, 7)
-          : '';
+      final newPeriodKey =
+          updated.startDate.length >= 7
+              ? updated.startDate.substring(0, 7)
+              : '';
       setState(() {
         _selectedSalesKpiPeriod = newPeriodKey;
       });
@@ -403,6 +404,13 @@ class _HrDashboardScreenState extends State<HrDashboardScreen> {
                   theme,
                 ),
                 _actionTile(
+                  'تسجيل حضور يدوي',
+                  'تسجيل حضور أو انصراف استثنائي لموظف مع سبب ومراجعة',
+                  Icons.edit_calendar_outlined,
+                  () => context.go('/hr/manual-attendance'),
+                  theme,
+                ),
+                _actionTile(
                   'إدارة الفروع والمواقع',
                   'تحديد النطاقات الجغرافية ومطابقة الحضور',
                   Icons.map_outlined,
@@ -428,6 +436,27 @@ class _HrDashboardScreenState extends State<HrDashboardScreen> {
                   'تصريح عمل خارج الفرع ومتابعة الانصراف',
                   Icons.directions_walk_outlined,
                   () => context.go('/hr/field-assignments'),
+                  theme,
+                ),
+                _actionTile(
+                  'قاعات الاجتماعات',
+                  'إضافة القاعات المتاحة لطلبات الموظفين',
+                  Icons.meeting_room_outlined,
+                  () => context.go('/hr/meeting-rooms'),
+                  theme,
+                ),
+                _actionTile(
+                  'طلبات الاجتماعات',
+                  'طلبات تنتظر قرارك وسجل الاجتماعات',
+                  Icons.groups_2_outlined,
+                  () => context.go('/meeting/approvals'),
+                  theme,
+                ),
+                _actionTile(
+                  'أنواع الطلبات المخصصة',
+                  'إنشاء نماذج الطلبات ومسارات الموافقة',
+                  Icons.playlist_add_check_outlined,
+                  () => context.go('/hr/custom-request-types'),
                   theme,
                 ),
               ],

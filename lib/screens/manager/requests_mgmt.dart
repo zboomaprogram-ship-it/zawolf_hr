@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
@@ -43,6 +44,8 @@ import '../../components/wolf_button.dart';
 import '../../components/request_approval_timeline.dart';
 import '../../design_system/components/confirmation_sheet.dart';
 import '../../design_system/components/data_presentations.dart';
+import '../../features/configurable_requests/data/configurable_requests_repository_impl.dart';
+import '../../features/configurable_requests/presentation/custom_request_screens.dart';
 import '../../design_system/bidi.dart';
 import '../../utils/user_facing_error.dart';
 import '../../core/sync/authenticated_operation_client.dart';
@@ -1210,6 +1213,10 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
       const Tab(text: 'الإجازات'),
       const Tab(text: 'الأذونات'),
       const Tab(text: 'السلف'),
+      const Tab(text: 'طلبات الاجتماعات'),
+      const Tab(text: 'مصروفات ومدفوعات الشركة'),
+      const Tab(text: 'خدمات تقنية وتشغيلية'),
+      const Tab(text: 'طلبات مخصصة'),
       if (canReviewSalaryDeductions) const Tab(text: 'خصومات التأخير'),
       if (canReviewSalaryDeductions) const Tab(text: 'خصومات الغياب'),
       if (canReviewSalaryDeductions) const Tab(text: 'الخصومات المعتمدة'),
@@ -1225,6 +1232,10 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
       _buildLeavesTab(manager, theme),
       _buildPermissionsTab(manager, theme),
       _buildAdvancesTab(manager, theme),
+      _buildMeetingRequestsTab(manager, theme),
+      _buildCompanyExpensesTab(manager, theme),
+      _buildItOperationalServicesTab(manager, theme),
+      _buildCustomRequestsTab(manager, theme),
       if (canReviewSalaryDeductions)
         _buildSalaryDeductionsTab(
           manager,
@@ -1945,6 +1956,256 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
     );
   }
 
+  Widget _buildMeetingRequestsTab(UserModel reviewer, ThemeData theme) {
+    final isHrOrAdmin = EmployeeRole.isHr(reviewer.role) ||
+        reviewer.role == 'admin' ||
+        reviewer.role == 'super_admin';
+    final stream = isHrOrAdmin
+        ? FirebaseFirestore.instance
+            .collection('meetingRequests')
+            .where('status', isEqualTo: 'pending')
+            .snapshots()
+        : FirebaseFirestore.instance
+            .collection('meetingRequests')
+            .where('currentApproverId', isEqualTo: reviewer.uid)
+            .where('status', isEqualTo: 'pending')
+            .snapshots();
+
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      stream: stream,
+      builder: (context, snapshot) {
+        if (snapshot.hasError) return _buildStreamError('تعذر تحميل طلبات الاجتماعات');
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return _buildLoadingState('تحميل طلبات الاجتماعات...');
+        }
+        final docs = snapshot.data?.docs ?? [];
+        if (docs.isEmpty) return _buildEmptyState('لا توجد طلبات اجتماعات معلقة');
+
+        return ListView.builder(
+          padding: const EdgeInsets.all(16),
+          itemCount: docs.length,
+          itemBuilder: (context, index) {
+            final doc = docs[index];
+            final data = doc.data();
+            final startAt = (data['startAt'] as Timestamp?)?.toDate();
+            final endAt = (data['endAt'] as Timestamp?)?.toDate();
+
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: WolfCard(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildEmployeeHeader(
+                      '${data['requesterName'] ?? 'موظف'}',
+                      '',
+                      'طلب اجتماع',
+                      theme,
+                    ),
+                    const SizedBox(height: 10),
+                    Text(
+                      'القاعة: ${data['roomName'] ?? 'غرفة الاجتماعات'}',
+                      style: const TextStyle(color: ZaWolfColors.primaryCyan, fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'السبب: ${data['purpose'] ?? ''}',
+                      style: const TextStyle(color: Colors.white),
+                    ),
+                    if (startAt != null) ...[
+                      const SizedBox(height: 6),
+                      Text(
+                        'موعد الاجتماع: ${DateFormat('yyyy/MM/dd hh:mm a').format(startAt)} ${endAt != null ? "حتى ${DateFormat('yyyy/MM/dd hh:mm a').format(endAt)}" : ""}',
+                        style: const TextStyle(color: ZaWolfColors.textSecondary, fontSize: 12),
+                      ),
+                    ],
+                    const SizedBox(height: 12),
+                    _buildApprovalActions(
+                      disabled: _isRequestBusy(doc.id),
+                      onDelete: () => _deleteRequestDocument(
+                        collection: 'meetingRequests',
+                        docId: doc.id,
+                        requestTitle: 'طلب اجتماع',
+                      ),
+                      onApprove: () => _confirmAndRun(
+                        requestId: doc.id,
+                        title: 'اعتماد طلب الاجتماع',
+                        confirmLabel: 'اعتماد',
+                        run: () => _decideMeetingCall(doc.id, true),
+                      ),
+                      onReject: () => _confirmAndRun(
+                        requestId: doc.id,
+                        title: 'رفض طلب الاجتماع',
+                        confirmLabel: 'رفض',
+                        run: () => _decideMeetingCall(doc.id, false),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _decideMeetingCall(String requestId, bool approved) async {
+    final token = await FirebaseAuth.instance.currentUser?.getIdToken();
+    if (token == null) throw StateError('سجل الدخول مرة أخرى.');
+    final response = await http.post(
+      Uri.parse('https://notification.zawolf.ai/operations/meeting-requests/$requestId/decision'),
+      headers: {
+        'authorization': 'Bearer $token',
+        'content-type': 'application/json',
+      },
+      body: jsonEncode({
+        'decision': approved ? 'approved' : 'rejected',
+        'comment': '',
+        'operationId': DateTime.now().millisecondsSinceEpoch.toString(),
+      }),
+    );
+    if (response.statusCode >= 300) {
+      throw StateError('تعذر حفظ القرار.');
+    }
+  }
+
+  Widget _buildCompanyExpensesTab(UserModel reviewer, ThemeData theme) {
+    return _buildCategoryFilteredAdminTab(
+      reviewer: reviewer,
+      theme: theme,
+      title: 'مصروفات ومدفوعات الشركة',
+      emptyMessage: 'لا توجد طلبات مصروفات ومدفوعات معلقة',
+      categoryPredicate: (cat) =>
+          cat == 'company_expenses' ||
+          cat == 'expenses' ||
+          cat.contains('مصروف') ||
+          cat.contains('مدفوع') ||
+          cat.contains('مالي'),
+    );
+  }
+
+  Widget _buildItOperationalServicesTab(UserModel reviewer, ThemeData theme) {
+    return _buildCategoryFilteredAdminTab(
+      reviewer: reviewer,
+      theme: theme,
+      title: 'خدمات تقنية وتشغيلية',
+      emptyMessage: 'لا توجد طلبات خدمات تقنية وتشغيلية معلقة',
+      categoryPredicate: (cat) =>
+          cat == 'it_services' ||
+          cat == 'software_subscription' ||
+          cat == 'equipment' ||
+          cat.contains('تقن') ||
+          cat.contains('تشغيل') ||
+          cat.contains('برنامج') ||
+          cat.contains('جهاز'),
+    );
+  }
+
+  Widget _buildCustomRequestsTab(UserModel reviewer, ThemeData theme) {
+    return CustomRequestQueueScreen(repository: ConfigurableRequestsRepositoryImpl());
+  }
+
+  Widget _buildCategoryFilteredAdminTab({
+    required UserModel reviewer,
+    required ThemeData theme,
+    required String title,
+    required String emptyMessage,
+    required bool Function(String category) categoryPredicate,
+  }) {
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      stream: _cachedDerivedStream(
+        'admin-cat|$title|${reviewer.uid}|${reviewer.role}',
+        () => _administrativeRequestService.watchPending(reviewer),
+      ),
+      builder: (context, snapshot) {
+        if (snapshot.hasError) return _buildStreamError('تعذر تحميل $title');
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return _buildLoadingState('تحميل $title...');
+        }
+        final pendingDocs = snapshot.data?.docs ?? [];
+        final scopedDocs = _visibleApprovalDocs(pendingDocs, reviewer);
+        final filteredDocs = scopedDocs.where((doc) {
+          final data = doc.data();
+          final cat = '${data['category'] ?? ''}'.toLowerCase();
+          final catLabel = '${data['categoryLabel'] ?? ''}'.toLowerCase();
+          return categoryPredicate(cat) || categoryPredicate(catLabel);
+        }).toList();
+
+        if (filteredDocs.isEmpty) return _buildEmptyState(emptyMessage);
+
+        return ListView.builder(
+          padding: const EdgeInsets.all(16),
+          itemCount: filteredDocs.length,
+          itemBuilder: (context, index) {
+            final doc = filteredDocs[index];
+            final request = AdministrativeRequestModel.fromFirestore(doc);
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: WolfCard(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildEmployeeHeader(
+                      request.employeeName,
+                      request.employeeId,
+                      request.department,
+                      theme,
+                    ),
+                    const SizedBox(height: 10),
+                    Text(
+                      request.categoryLabel,
+                      style: const TextStyle(
+                        color: ZaWolfColors.primaryCyan,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    Text(request.notes),
+                    _buildRequestDateLine(
+                      label: 'تاريخ تقديم الطلب',
+                      date: request.submittedAt,
+                      fallback: request.submittedAt,
+                    ),
+                    if ((request.attachmentUrl ?? '').isNotEmpty)
+                      Text(
+                        request.attachmentUrl!,
+                        style: const TextStyle(color: ZaWolfColors.primaryCyan),
+                        textDirection: TextDirection.ltr,
+                      ),
+                    RequestApprovalTimeline(data: doc.data(), compact: true),
+                    const SizedBox(height: 10),
+                    if (_canActOnApproval(doc.data(), reviewer))
+                      _buildApprovalActions(
+                        disabled: _isRequestBusy(request.id),
+                        onDelete: () => _deleteRequestDocument(
+                          collection: 'administrativeRequests',
+                          docId: request.id,
+                          requestTitle: title,
+                        ),
+                        onApprove: () => _confirmAndRun(
+                          requestId: request.id,
+                          title: 'اعتماد $title',
+                          confirmLabel: 'اعتماد',
+                          run: () => _administrativeRequestService.approve(
+                            request.id,
+                            reviewer,
+                          ),
+                        ),
+                        onReject: () => _showRejectionDialog(
+                          requestId: request.id,
+                          type: 'administrative',
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
   Widget _buildResignationsTab(UserModel reviewer, ThemeData theme) {
     return StreamBuilder<List<ResignationModel>>(
       stream: _cachedDerivedStream(
@@ -2469,17 +2730,242 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
               collection: 'leaves',
               requestId: leave.leaveId,
             ),
+            if (leave.autoApprovedOverridden ||
+                leave.autoApprovalOverrideReason != null) ...[
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: ZaWolfColors.warning.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(
+                    color: ZaWolfColors.warning.withValues(alpha: 0.4),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.warning_amber_rounded,
+                      color: ZaWolfColors.warning,
+                      size: 16,
+                    ),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        'حوّلتها الموارد البشرية للمراجعة: ${leave.autoApprovalOverrideReason ?? "تحويل إداري للمراجعة اليدوية"}',
+                        style: const TextStyle(
+                          color: ZaWolfColors.warning,
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                        ),
+                        textDirection: TextDirection.rtl,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+            if ((EmployeeRole.isHr(reviewer.role) ||
+                    reviewer.role == 'admin' ||
+                    reviewer.role == 'super_admin' ||
+                    reviewer.role == 'hr_admin' ||
+                    reviewer.role == 'hr_manager' ||
+                    reviewer.role == 'hr_staff' ||
+                    reviewer.role == 'hr') &&
+                (leave.leaveType == 'casual' ||
+                    leave.leaveType == 'casual_leave' ||
+                    leave.leaveType.contains('casual') ||
+                    leave.leaveType.contains('عارض'))) ...[
+              const SizedBox(height: 10),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: ZaWolfColors.primaryCyan,
+                    side: const BorderSide(color: ZaWolfColors.primaryCyan),
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    minimumSize: Size.zero,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  onPressed: () => _promptEditCasualLeaveDates(leave),
+                  icon: const Icon(Icons.edit_calendar, size: 14),
+                  label: const Text(
+                    'تعديل تاريخ الإجازة العارضة',
+                    style: TextStyle(fontSize: 11),
+                  ),
+                ),
+              ),
+            ],
             const SizedBox(height: 8),
             Text(
               leave.status == 'pending_hr'
                   ? 'المرحلة الحالية: المراجعة النهائية لدى HR'
-                  : 'المرحلة الحالية: موافقة المدير المسؤول',
+                  : (leave.status == 'approved'
+                      ? 'تم اعتماد الإجازة'
+                      : 'المرحلة الحالية: موافقة المدير المسؤول'),
               style: const TextStyle(color: ZaWolfColors.primaryCyan),
             ),
           ],
         ),
       ),
     );
+  }
+
+  Future<void> _promptEditCasualLeaveDates(LeaveModel leave) async {
+    final pickedRange = await showDateRangePicker(
+      context: context,
+      initialDateRange: DateTimeRange(
+        start: leave.startDate,
+        end: leave.endDate,
+      ),
+      firstDate: DateTime.now().subtract(const Duration(days: 90)),
+      lastDate: DateTime.now().add(const Duration(days: 365)),
+      locale: const Locale('ar'),
+    );
+    if (pickedRange == null) return;
+
+    final controller = TextEditingController();
+    final reason = await showDialog<String>(
+      context: context,
+      builder:
+          (dialogContext) => AlertDialog(
+            backgroundColor: ZaWolfColors.surface01,
+            title: const Text(
+              'تعديل تاريخ الإجازة العارضة',
+              style: TextStyle(color: Colors.white),
+            ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'سيتم تعديل تاريخ الإجازة إلى:\n${DateFormat('yyyy-MM-dd').format(pickedRange.start)} إلى ${DateFormat('yyyy-MM-dd').format(pickedRange.end)}',
+                  style: const TextStyle(color: ZaWolfColors.primaryCyan),
+                  textAlign: TextAlign.center,
+                  textDirection: TextDirection.rtl,
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: controller,
+                  maxLines: 2,
+                  textDirection: TextDirection.rtl,
+                  decoration: const InputDecoration(
+                    labelText: 'سبب التعديل الإداري (اختياري)',
+                  ),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: const Text('إلغاء'),
+              ),
+              FilledButton(
+                onPressed:
+                    () => Navigator.pop(dialogContext, controller.text.trim()),
+                child: const Text('تأكيد وحفظ التعديل'),
+              ),
+            ],
+          ),
+    );
+    controller.dispose();
+    if (reason == null) return;
+
+    try {
+      await _leaveService.editCasualLeaveDates(
+        leaveId: leave.leaveId,
+        startDate: pickedRange.start,
+        endDate: pickedRange.end,
+        reason: reason,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'تم تعديل موعد الإجازة العارضة بنجاح وإشعار الموظف والمدير.',
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('فشل تعديل تاريخ الإجازة: $e')),
+      );
+    }
+  }
+
+  Future<void> _promptOverrideCasualLeave(String leaveId) async {
+    final controller = TextEditingController();
+    final reason = await showDialog<String>(
+      context: context,
+      builder:
+          (dialogContext) => AlertDialog(
+            backgroundColor: ZaWolfColors.surface01,
+            title: const Text(
+              'تحويل الإجازة العارضة للمراجعة',
+              style: TextStyle(color: Colors.white),
+            ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  'سيتم تحويل هذه الإجازة العارضة المعتمدة تلقائياً إلى مسار المراجعة اليدوية بدلاً من الاعتماد التلقائي.',
+                  style: TextStyle(color: ZaWolfColors.textSecondary),
+                  textDirection: TextDirection.rtl,
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: controller,
+                  maxLines: 3,
+                  textDirection: TextDirection.rtl,
+                  decoration: const InputDecoration(
+                    labelText: 'سبب تحويل الإجازة للمراجعة (مطلوب)',
+                  ),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: const Text(
+                  'إلغاء',
+                  style: TextStyle(color: ZaWolfColors.textSecondary),
+                ),
+              ),
+              TextButton(
+                onPressed: () {
+                  final val = controller.text.trim();
+                  if (val.isNotEmpty) Navigator.pop(dialogContext, val);
+                },
+                child: const Text(
+                  'تحويل للمراجعة',
+                  style: TextStyle(color: ZaWolfColors.warning),
+                ),
+              ),
+            ],
+          ),
+    );
+    controller.dispose();
+    if (reason == null || reason.isEmpty) return;
+
+    try {
+      await _leaveService.overrideCasualLeave(
+        leaveId: leaveId,
+        reason: reason,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'تم تحويل الإجازة العارضة للمراجعة وإشعار الموظف والمدير بنجاح.',
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('فشل تحويل الإجازة: $e')),
+      );
+    }
   }
 
   Stream<QuerySnapshot<Map<String, dynamic>>> _permissionReviewStream(

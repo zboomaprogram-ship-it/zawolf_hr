@@ -29,6 +29,14 @@ import '../screens/employee/suggestions_screen.dart';
 import '../screens/hr/company_day_offs_screen.dart';
 import '../screens/hr/attendance_policy_settings_screen.dart';
 import '../screens/hr/field_assignments_screen.dart';
+import '../features/manual_attendance/data/manual_attendance_repository_impl.dart';
+import '../features/manual_attendance/presentation/manual_attendance_screen.dart';
+import '../features/meeting_requests/data/meeting_repository_impl.dart';
+import '../features/meeting_requests/presentation/meeting_request_screen.dart';
+import '../features/meeting_requests/presentation/meeting_rooms_management_screen.dart';
+import '../features/meeting_requests/presentation/meeting_requests_list_screen.dart';
+import '../features/configurable_requests/data/configurable_requests_repository_impl.dart';
+import '../features/configurable_requests/presentation/custom_request_screens.dart';
 import '../screens/hr/location_mgmt.dart';
 import '../screens/hr/payroll_screen.dart';
 import '../screens/hr/custom_badges_screen.dart';
@@ -603,6 +611,63 @@ class ZaWolfRouter {
               builder:
                   (context, state) => AttendanceSummaryDetailsScreen(
                     initialStatus: state.uri.queryParameters['status'],
+                  ),
+            ),
+            GoRoute(
+              path: '/hr/manual-attendance',
+              builder:
+                  (context, state) => ManualAttendanceScreen(
+                    repository: ManualAttendanceRepositoryImpl(),
+                  ),
+            ),
+            GoRoute(
+              path: '/employee/meeting-request',
+              builder:
+                  (context, state) =>
+                      MeetingRequestScreen(repository: MeetingRepositoryImpl()),
+            ),
+            GoRoute(
+              path: '/meeting/history',
+              builder:
+                  (context, state) => MeetingRequestsListScreen(
+                    repository: MeetingRepositoryImpl(),
+                    approvalQueue: false,
+                  ),
+            ),
+            GoRoute(
+              path: '/meeting/approvals',
+              builder:
+                  (context, state) => MeetingRequestsListScreen(
+                    repository: MeetingRepositoryImpl(),
+                    approvalQueue: true,
+                  ),
+            ),
+            GoRoute(
+              path: '/hr/custom-request-types',
+              builder:
+                  (context, state) => CustomRequestTypesScreen(
+                    repository: ConfigurableRequestsRepositoryImpl(),
+                  ),
+            ),
+            GoRoute(
+              path: '/employee/custom-requests',
+              builder:
+                  (context, state) => CustomRequestSubmissionScreen(
+                    repository: ConfigurableRequestsRepositoryImpl(),
+                  ),
+            ),
+            GoRoute(
+              path: '/approver/custom-requests',
+              builder:
+                  (context, state) => CustomRequestQueueScreen(
+                    repository: ConfigurableRequestsRepositoryImpl(),
+                  ),
+            ),
+            GoRoute(
+              path: '/hr/meeting-rooms',
+              builder:
+                  (context, state) => MeetingRoomsManagementScreen(
+                    repository: MeetingRepositoryImpl(),
                   ),
             ),
             GoRoute(

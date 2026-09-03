@@ -1,6 +1,8 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../../features/meeting_requests/data/meeting_repository_impl.dart';
+import '../../features/meeting_requests/presentation/meeting_requests_list_screen.dart';
 import 'package:intl/intl.dart' hide TextDirection;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:file_picker/file_picker.dart';
@@ -162,6 +164,19 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
       helpText: 'اختر وقت المغادرة',
       cancelText: 'إلغاء',
       confirmText: 'تم',
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: ColorScheme.dark(
+              primary: ZaWolfColors.primaryCyan,
+              onPrimary: Colors.black,
+              surface: ZaWolfColors.surface01,
+              onSurface: Colors.white,
+            ),
+          ),
+          child: child ?? const SizedBox.shrink(),
+        );
+      },
     );
     if (picked != null && picked != _selectedTime) {
       setState(() {
@@ -332,6 +347,20 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
       initialDate: _permissionDate.isBefore(today) ? today : _permissionDate,
       firstDate: today,
       lastDate: today.add(const Duration(days: 365)),
+      locale: const Locale('ar'),
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: ColorScheme.dark(
+              primary: ZaWolfColors.primaryCyan,
+              onPrimary: Colors.black,
+              surface: ZaWolfColors.surface01,
+              onSurface: Colors.white,
+            ),
+          ),
+          child: child ?? const SizedBox.shrink(),
+        );
+      },
     );
     if (picked != null && picked != _permissionDate) {
       setState(() => _permissionDate = picked);
@@ -360,6 +389,19 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
         firstDate: firstAllowed,
         lastDate: today.add(const Duration(days: 365)),
         locale: const Locale('ar'),
+        builder: (context, child) {
+          return Theme(
+            data: Theme.of(context).copyWith(
+              colorScheme: ColorScheme.dark(
+                primary: ZaWolfColors.primaryCyan,
+                onPrimary: Colors.black,
+                surface: ZaWolfColors.surface01,
+                onSurface: Colors.white,
+              ),
+            ),
+            child: child ?? const SizedBox.shrink(),
+          );
+        },
       );
       if (picked != null) {
         setState(() {
@@ -376,6 +418,19 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
       firstDate: firstAllowed,
       lastDate: today.add(const Duration(days: 365)),
       locale: const Locale('ar'),
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: ColorScheme.dark(
+              primary: ZaWolfColors.primaryCyan,
+              onPrimary: Colors.black,
+              surface: ZaWolfColors.surface01,
+              onSurface: Colors.white,
+            ),
+          ),
+          child: child ?? const SizedBox.shrink(),
+        );
+      },
     );
     if (picked != null) {
       setState(() {
@@ -1596,6 +1651,12 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
         color: ZaWolfColors.success,
         route: null,
       ),
+      (
+        label: 'طلب اجتماع',
+        icon: Icons.groups_2_outlined,
+        color: ZaWolfColors.primaryCyan,
+        route: '/employee/meeting-request',
+      ),
       if (operationalEnabled)
         (
           label: 'خدمات تقنية وتشغيلية',
@@ -1833,17 +1894,49 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'الأذونات المستخدمة في دورة ${cycle.arabicRangeLabel}: ${usage.usedCount}/2',
+                          'دورة الأذونات: ${cycle.arabicRangeLabel}',
                           style: theme.textTheme.bodyMedium!.copyWith(
                             color: Colors.white,
                             fontWeight: FontWeight.bold,
                           ),
                         ),
-                        Text(
-                          'إجمالي الساعات المستخدمة: ${usage.usedHours.toStringAsFixed(1)}/5 ساعات',
-                          style: theme.textTheme.bodySmall!.copyWith(
-                            color: ZaWolfColors.textSecondary,
-                          ),
+                        const SizedBox(height: 4),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              'عدد الأذونات المستخدمة:',
+                              style: theme.textTheme.bodySmall!.copyWith(
+                                color: ZaWolfColors.textSecondary,
+                              ),
+                            ),
+                            Text(
+                              '${usage.usedCount} / 2 أذونات',
+                              style: theme.textTheme.bodySmall!.copyWith(
+                                color: ZaWolfColors.permissionTeal,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 2),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              'إجمالي الساعات المستخدمة:',
+                              style: theme.textTheme.bodySmall!.copyWith(
+                                color: ZaWolfColors.textSecondary,
+                              ),
+                            ),
+                            Text(
+                              '${usage.usedHours.toStringAsFixed(1)} / 5 ساعات',
+                              style: theme.textTheme.bodySmall!.copyWith(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
                         ),
                       ],
                     ),
@@ -2717,7 +2810,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
   // ignore: unused_element
   Widget _buildHistoryConsole(UserModel user, ThemeData theme) {
     return DefaultTabController(
-      length: 7,
+      length: 8,
       child: Column(
         children: [
           Padding(
@@ -2743,6 +2836,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
               Tab(text: 'الاستقالة'),
               Tab(text: 'إدارية'),
               Tab(text: 'تصحيح الحضور'),
+              Tab(text: 'الاجتماعات'),
             ],
             labelColor: ZaWolfColors.primaryCyan,
             unselectedLabelColor: ZaWolfColors.textSecondary,
@@ -2758,6 +2852,11 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
                 _buildResignationsHistory(user.uid, theme),
                 _buildAdministrativeHistory(user.uid, theme),
                 _buildAttendanceCorrectionHistory(user.uid, theme),
+                MeetingRequestsListScreen(
+                  repository: MeetingRepositoryImpl(),
+                  approvalQueue: false,
+                  embedded: true,
+                ),
               ],
             ),
           ),

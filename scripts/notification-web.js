@@ -24,6 +24,26 @@ const {
   resetAttendanceDevice,
   resolveCheckInStatus,
 } = require('./attendance-gateway');
+const { recordManualAttendance, listManualAttendanceEmployees } = require('./manual-attendance');
+const { overrideAutoApprovedCasualLeave, editCasualLeaveDates } = require('./casual-leave-override');
+const {
+  listRooms,
+  saveRoom,
+  createMeeting,
+  decideMeeting,
+  cancelMeeting,
+  listMeetingApprovers,
+  checkAvailability,
+  listMeetingRequests,
+} = require('./meeting-requests');
+const {
+  listRequestTypes: listCustomRequestTypes,
+  listCustomRequestDirectory,
+  saveRequestType: saveCustomRequestType,
+  createCustomRequest,
+  decideCustomRequest,
+  listCustomRequests,
+} = require('./configurable-requests');
 const {
   listAssignments: listAttendanceLocationAssignments,
   previewAssignments: previewAttendanceLocationAssignments,
@@ -920,6 +940,7 @@ async function handleAttendanceLocationAssignments(req, res, url) {
           actor,
           employeeUid: url.searchParams.get('employeeUid'),
           limit: url.searchParams.get('limit'),
+          all: url.searchParams.get('all') === 'true',
         }),
       };
     } else if (url.pathname === '/attendance/locations/assignments/preview' && req.method === 'POST') {
@@ -3985,36 +4006,20 @@ const server = http.createServer(async (req, res) => {
     /^\/conversations\/department\/[^/]{1,256}$/.test(url.pathname) ||
     /^\/conversations\/[A-Za-z0-9_.:%-]{1,256}\/(?:messages|attachments)(?:\/[A-Za-z0-9_.:%-]{1,256}\/download)?$/.test(url.pathname);
   const isCompanyOsRoute = url.pathname.startsWith('/company-os/');
+  // HR operational routes are consumed by the Flutter web application too.
+  // Keep them in the same CORS boundary as the established operations routes;
+  // otherwise browsers block authenticated preflight requests before the
+  // endpoint has a chance to return its useful Arabic error response.
+  const isHrOperationsRoute = url.pathname.startsWith('/operations/');
+  const isPhase007OperationRoute = url.pathname.startsWith('/operations/');
 
-  const isPhase007OperationRoute =
-    url.pathname === '/operations/diagnostics' ||
-    url.pathname === '/operations/feature-flags' ||
-    url.pathname === '/operations/notification-read-all' ||
-    url.pathname === '/operations/resolve-notification' ||
-    url.pathname === '/operations/attendance-corrections' ||
-    url.pathname === '/operations/employee-timeline' ||
-    url.pathname === '/operations/request-management/archive' ||
-    url.pathname === '/operations/request-management/notify' ||
-    url.pathname === '/operations/request-approval-routing/field-missions' ||
-    /^\/operations\/request-approval-routing\/field-missions\/[A-Za-z0-9_-]{8,128}\/decision$/.test(url.pathname) ||
-    url.pathname === '/operations/sales-indicators' ||
-    url.pathname === '/operations/sales-indicators/sync' ||
-    url.pathname === '/operations/sales-indicators/mappings' ||
-    /^\/operations\/visibility\/[A-Za-z0-9_-]{1,128}$/.test(url.pathname) ||
-    url.pathname === '/operations/developer-tools/me' ||
-    url.pathname === '/operations/developer-tools/entitlements' ||
-    /^\/operations\/developer-tools\/entitlements\/[A-Za-z0-9_-]{1,128}$/.test(url.pathname);
-
-  if ((isGoogleWorkspaceRoute || isAttendanceGatewayRoute || isPhase007OperationRoute || isConversationRoute || isCompanyOsRoute) && req.method === 'OPTIONS') {
-    if (!applyGoogleWorkspaceCors(req, res)) {
-      sendJson(res, 403, { ok: false, error: 'Origin is not allowed.' });
-      return;
-    }
+  if ((isGoogleWorkspaceRoute || isAttendanceGatewayRoute || isPhase007OperationRoute || isConversationRoute || isCompanyOsRoute || isHrOperationsRoute) && req.method === 'OPTIONS') {
+    applyGoogleWorkspaceCors(req, res);
     res.writeHead(204);
     res.end();
     return;
   }
-  if (isGoogleWorkspaceRoute || isAttendanceGatewayRoute || isPhase007OperationRoute || isConversationRoute || isCompanyOsRoute) {
+  if (isGoogleWorkspaceRoute || isAttendanceGatewayRoute || isPhase007OperationRoute || isConversationRoute || isCompanyOsRoute || isHrOperationsRoute) {
     applyGoogleWorkspaceCors(req, res);
   }
 
@@ -4094,6 +4099,245 @@ const server = http.createServer(async (req, res) => {
       isPhase007FlagEnabled(name, phase007FlagConfig, actor.uid),
     );
     sendJson(res, 200, { ok: true, enabled });
+    return;
+  }
+
+  if (url.pathname === '/operations/manual-attendance/employees' && req.method === 'GET') {
+    const actor = await authorizeWorkspaceRequest(req);
+    if (!actor) {
+      sendJson(res, 401, { ok: false, code: 'session_expired' });
+      return;
+    }
+    try {
+      const employees = await listManualAttendanceEmployees({
+        db: admin.firestore(initializeFirebase()),
+        actor,
+        query: url.searchParams.get('query') || '',
+      });
+      sendJson(res, 200, { ok: true, employees });
+    } catch (error) {
+      sendJson(res, /صلاحية/.test(String(error.message || error)) ? 403 : 400, {
+        ok: false,
+        code: 'manual_attendance_employees_failed',
+        error: String(error.message || error),
+      });
+    }
+    return;
+  }
+
+  if (url.pathname === '/operations/manual-attendance' && req.method === 'POST') {
+    const actor = await authorizeWorkspaceRequest(req);
+    if (!actor) {
+      sendJson(res, 401, { ok: false, code: 'session_expired' });
+      return;
+    }
+    try {
+      const result = await recordManualAttendance({
+        db: admin.firestore(initializeFirebase()),
+        admin,
+        actor,
+        body: await readJsonBody(req),
+      });
+      sendJson(res, 200, { ok: true, ...result });
+    } catch (error) {
+      sendJson(res, /صلاحية/.test(String(error.message || error)) ? 403 : 400, {
+        ok: false,
+        code: 'manual_attendance_failed',
+        error: String(error.message || error),
+      });
+    }
+    return;
+  }
+
+  const casualOverride = url.pathname.match(/^\/operations\/leaves\/([A-Za-z0-9_-]{8,160})\/(?:auto-approval-override|override-casual)$/);
+  if (casualOverride && req.method === 'POST') {
+    const actor = await authorizeWorkspaceRequest(req);
+    if (!actor) return sendJson(res, 401, { ok: false, code: 'session_expired' });
+    try {
+      const result = await overrideAutoApprovedCasualLeave({ db: admin.firestore(initializeFirebase()), admin, actor, leaveId: casualOverride[1], body: await readJsonBody(req) });
+      sendJson(res, 200, { ok: true, ...result });
+    } catch (error) {
+      sendJson(res, /صلاحية/.test(String(error.message || error)) ? 403 : 400, { ok: false, code: 'casual_leave_override_failed', error: String(error.message || error) });
+    }
+    return;
+  }
+
+  const casualEditDates = url.pathname.match(/^\/operations\/leaves\/([A-Za-z0-9_-]{8,160})\/(?:edit-casual-dates|edit-dates)$/);
+  if (casualEditDates && req.method === 'POST') {
+    const actor = await authorizeWorkspaceRequest(req);
+    if (!actor) return sendJson(res, 401, { ok: false, code: 'session_expired' });
+    try {
+      const result = await editCasualLeaveDates({ db: admin.firestore(initializeFirebase()), admin, actor, leaveId: casualEditDates[1], body: await readJsonBody(req) });
+      sendJson(res, 200, { ok: true, ...result });
+    } catch (error) {
+      sendJson(res, /صلاحية/.test(String(error.message || error)) ? 403 : 400, { ok: false, code: 'casual_leave_edit_failed', error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (url.pathname === '/operations/meeting-rooms' && req.method === 'GET') {
+    const actor = await authorizeWorkspaceRequest(req);
+    if (!actor) return sendJson(res, 401, { ok: false, code: 'session_expired' });
+    try {
+      sendJson(res, 200, { ok: true, rooms: await listRooms({ db: admin.firestore(initializeFirebase()), admin, actor }) });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, code: 'meeting_rooms_failed', error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (url.pathname === '/operations/meeting-approvers' && req.method === 'GET') {
+    const actor = await authorizeWorkspaceRequest(req);
+    if (!actor) return sendJson(res, 401, { ok: false, code: 'session_expired' });
+    sendJson(res, 200, { ok: true, approvers: await listMeetingApprovers({ db: admin.firestore(initializeFirebase()) }) });
+    return;
+  }
+
+  if (url.pathname === '/operations/meeting-availability' && req.method === 'GET') {
+    const actor = await authorizeWorkspaceRequest(req);
+    if (!actor) return sendJson(res, 401, { ok: false, code: 'session_expired' });
+    const roomId = String(url.searchParams.get('roomId') || '');
+    const startAt = new Date(String(url.searchParams.get('startAt') || ''));
+    const endAt = new Date(String(url.searchParams.get('endAt') || ''));
+    if (!/^[A-Za-z0-9_-]{8,160}$/.test(roomId) || Number.isNaN(startAt.getTime()) || Number.isNaN(endAt.getTime()) || startAt >= endAt) {
+      return sendJson(res, 400, { ok: false, code: 'invalid_meeting_time', error: 'اختر قاعة ووقت بداية ونهاية صحيحين.' });
+    }
+    const available = await checkAvailability({ db: admin.firestore(initializeFirebase()), roomId, startAt, endAt });
+    sendJson(res, 200, { ok: true, available, message: available ? 'القاعة متاحة في هذا الوقت.' : 'القاعة مشغولة في هذا الوقت. اختر موعداً أو قاعة أخرى.' });
+    return;
+  }
+
+  if (url.pathname === '/operations/meeting-requests' && req.method === 'GET') {
+    const actor = await authorizeWorkspaceRequest(req);
+    if (!actor) return sendJson(res, 401, { ok: false, code: 'session_expired' });
+    const queue = url.searchParams.get('queue') === 'true';
+    sendJson(res, 200, { ok: true, requests: await listMeetingRequests({ db: admin.firestore(initializeFirebase()), actor, queue }) });
+    return;
+  }
+
+  if (url.pathname === '/operations/meeting-rooms' && req.method === 'POST') {
+    const actor = await authorizeWorkspaceRequest(req);
+    if (!actor) return sendJson(res, 401, { ok: false, code: 'session_expired' });
+    try {
+      sendJson(res, 201, { ok: true, ...(await saveRoom({ db: admin.firestore(initializeFirebase()), admin, actor, body: await readJsonBody(req) })) });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, code: 'meeting_room_save_failed', error: String(error.message || error) });
+    }
+    return;
+  }
+
+  const meetingRoomEdit = url.pathname.match(/^\/operations\/meeting-rooms\/([A-Za-z0-9_-]{1,160})$/);
+  if (meetingRoomEdit && req.method === 'PATCH') {
+    const actor = await authorizeWorkspaceRequest(req);
+    if (!actor) return sendJson(res, 401, { ok: false, code: 'session_expired' });
+    try {
+      sendJson(res, 200, { ok: true, ...(await saveRoom({ db: admin.firestore(initializeFirebase()), admin, actor, roomId: meetingRoomEdit[1], body: await readJsonBody(req) })) });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, code: 'meeting_room_save_failed', error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (url.pathname === '/operations/meeting-requests' && req.method === 'POST') {
+    const actor = await authorizeWorkspaceRequest(req);
+    if (!actor) return sendJson(res, 401, { ok: false, code: 'session_expired' });
+    try {
+      sendJson(res, 201, { ok: true, ...(await createMeeting({ db: admin.firestore(initializeFirebase()), admin, actor, body: await readJsonBody(req) })) });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, code: 'meeting_request_failed', error: String(error.message || error) });
+    }
+    return;
+  }
+
+  const meetingDecision = url.pathname.match(/^\/operations\/meeting-requests\/([A-Za-z0-9_-]{8,160})\/decision$/);
+  if (meetingDecision && req.method === 'POST') {
+    const actor = await authorizeWorkspaceRequest(req);
+    if (!actor) return sendJson(res, 401, { ok: false, code: 'session_expired' });
+    try {
+      sendJson(res, 200, { ok: true, ...(await decideMeeting({ db: admin.firestore(initializeFirebase()), admin, actor, requestId: meetingDecision[1], body: await readJsonBody(req) })) });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, code: 'meeting_decision_failed', error: String(error.message || error) });
+    }
+    return;
+  }
+
+  const meetingCancel = url.pathname.match(/^\/operations\/meeting-requests\/([A-Za-z0-9_-]{8,160})\/cancel$/);
+  if (meetingCancel && req.method === 'POST') {
+    const actor = await authorizeWorkspaceRequest(req);
+    if (!actor) return sendJson(res, 401, { ok: false, code: 'session_expired' });
+    try {
+      sendJson(res, 200, { ok: true, ...(await cancelMeeting({ db: admin.firestore(initializeFirebase()), admin, actor, requestId: meetingCancel[1], body: await readJsonBody(req) })) });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, code: 'meeting_cancel_failed', error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if ((url.pathname === '/operations/custom-request-types' || url.pathname === '/operations/custom-request-directory') && req.method === 'GET') {
+    const actor = await authorizeWorkspaceRequest(req);
+    if (!actor) return sendJson(res, 401, { ok: false, code: 'session_expired' });
+    try {
+      sendJson(res, 200, { ok: true, types: await listCustomRequestTypes({ db: admin.firestore(initializeFirebase()), actor }) });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, code: 'list_request_types_failed', error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (url.pathname === '/operations/custom-request-directory' && req.method === 'GET') {
+    const actor = await authorizeWorkspaceRequest(req);
+    if (!actor) return sendJson(res, 401, { ok: false, code: 'session_expired' });
+    try {
+      sendJson(res, 200, { ok: true, users: await listCustomRequestDirectory({ db: admin.firestore(initializeFirebase()), actor }) });
+    } catch (error) {
+      sendJson(res, 403, { ok: false, code: 'custom_request_directory_failed', error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (url.pathname === '/operations/custom-request-types' && req.method === 'POST') {
+    const actor = await authorizeWorkspaceRequest(req);
+    if (!actor) return sendJson(res, 401, { ok: false, code: 'session_expired' });
+    try {
+      sendJson(res, 200, { ok: true, ...(await saveCustomRequestType({ db: admin.firestore(initializeFirebase()), admin, actor, body: await readJsonBody(req) })) });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, code: 'save_request_type_failed', error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (url.pathname === '/operations/custom-requests' && req.method === 'GET') {
+    const actor = await authorizeWorkspaceRequest(req);
+    if (!actor) return sendJson(res, 401, { ok: false, code: 'session_expired' });
+    try {
+      const queue = url.searchParams.get('queue') === 'true';
+      sendJson(res, 200, { ok: true, requests: await listCustomRequests({ db: admin.firestore(initializeFirebase()), actor, queue }) });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, code: 'list_custom_requests_failed', error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (url.pathname === '/operations/custom-requests' && req.method === 'POST') {
+    const actor = await authorizeWorkspaceRequest(req);
+    if (!actor) return sendJson(res, 401, { ok: false, code: 'session_expired' });
+    try {
+      sendJson(res, 201, { ok: true, ...(await createCustomRequest({ db: admin.firestore(initializeFirebase()), admin, actor, body: await readJsonBody(req) })) });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, code: 'create_custom_request_failed', error: String(error.message || error) });
+    }
+    return;
+  }
+
+  const customDecision = url.pathname.match(/^\/operations\/custom-requests\/([A-Za-z0-9_-]{8,160})\/decision$/);
+  if (customDecision && req.method === 'POST') {
+    const actor = await authorizeWorkspaceRequest(req);
+    if (!actor) return sendJson(res, 401, { ok: false, code: 'session_expired' });
+    try {
+      sendJson(res, 200, { ok: true, ...(await decideCustomRequest({ db: admin.firestore(initializeFirebase()), admin, actor, requestId: customDecision[1], body: await readJsonBody(req) })) });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, code: 'custom_decision_failed', error: String(error.message || error) });
+    }
     return;
   }
 

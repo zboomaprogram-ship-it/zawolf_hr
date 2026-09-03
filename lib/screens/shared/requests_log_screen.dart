@@ -8,7 +8,9 @@ import 'package:share_plus/share_plus.dart';
 
 import '../../components/wolf_card.dart';
 import '../../components/request_approval_timeline.dart';
+import '../../models/employee_role.dart';
 import '../../services/auth_service.dart';
+import '../../services/leave_service.dart';
 import '../../services/request_log_service.dart';
 import '../../theme/theme.dart';
 import '../../utils/csv_file_download.dart';
@@ -712,9 +714,138 @@ class _RequestLogCard extends StatelessWidget {
             const SizedBox(height: 8),
             RequestApprovalTimeline(data: item.rawMap, compact: true),
           ],
+          if (_canHrEditCasualLeave(context)) ...[
+            const SizedBox(height: 10),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: ZaWolfColors.primaryCyan,
+                  side: const BorderSide(color: ZaWolfColors.primaryCyan),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  minimumSize: Size.zero,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+                onPressed: () => _promptEditCasualLeaveDates(context),
+                icon: const Icon(Icons.edit_calendar, size: 14),
+                label: const Text(
+                  'تعديل تاريخ الإجازة العارضة',
+                  style: TextStyle(fontSize: 11),
+                ),
+              ),
+            ),
+          ],
         ],
       ),
     );
+  }
+
+  bool _canHrEditCasualLeave(BuildContext context) {
+    final user = context.watch<AuthService>().currentUser;
+    if (user == null) return false;
+    final isHrOrAdmin = EmployeeRole.isHr(user.role) ||
+        user.role == 'admin' ||
+        user.role == 'super_admin' ||
+        user.role == 'hr_admin' ||
+        user.role == 'hr_manager' ||
+        user.role == 'hr_staff' ||
+        user.role == 'hr';
+    final reqType = item.requestType.toLowerCase();
+    final isStrictlyCasual = item.type == 'leave' &&
+        (reqType.contains('عارض') || reqType.contains('casual'));
+    return isHrOrAdmin && isStrictlyCasual;
+  }
+
+  Future<void> _promptEditCasualLeaveDates(BuildContext context) async {
+    final initialStart = item.occursAt ?? DateTime.now();
+    final initialEnd = item.occursEndAt ?? item.occursAt ?? DateTime.now();
+
+    final pickedRange = await showDateRangePicker(
+      context: context,
+      initialDateRange: DateTimeRange(start: initialStart, end: initialEnd),
+      firstDate: DateTime.now().subtract(const Duration(days: 180)),
+      lastDate: DateTime.now().add(const Duration(days: 365)),
+      locale: const Locale('ar'),
+      builder: (context, child) => Theme(
+        data: Theme.of(context).copyWith(
+          colorScheme: const ColorScheme.dark(
+            primary: ZaWolfColors.primaryCyan,
+            surface: ZaWolfColors.surface01,
+          ),
+        ),
+        child: child!,
+      ),
+    );
+    if (pickedRange == null) return;
+
+    final controller = TextEditingController();
+    final reason = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          backgroundColor: ZaWolfColors.surface01,
+          title: const Text('تعديل تاريخ الإجازة العارضة', style: TextStyle(color: Colors.white)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'سيتم تعديل تاريخ الإجازة إلى:\n${intl.DateFormat('yyyy-MM-dd').format(pickedRange.start)} إلى ${intl.DateFormat('yyyy-MM-dd').format(pickedRange.end)}',
+                style: const TextStyle(color: ZaWolfColors.primaryCyan),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: controller,
+                maxLines: 2,
+                style: const TextStyle(color: Colors.white),
+                decoration: const InputDecoration(
+                  labelText: 'سبب التعديل الإداري (اختياري)',
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('إلغاء'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, controller.text.trim()),
+              child: const Text('تأكيد وحفظ التعديل'),
+            ),
+          ],
+        ),
+      ),
+    );
+    controller.dispose();
+    if (reason == null) return;
+
+    try {
+      await LeaveService().editCasualLeaveDates(
+        leaveId: item.id,
+        startDate: pickedRange.start,
+        endDate: pickedRange.end,
+        reason: reason,
+      );
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('تم تعديل تاريخ الإجازة العارضة بنجاح وتحديث النظام.'),
+            backgroundColor: ZaWolfColors.success,
+          ),
+        );
+      }
+    } catch (error) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('تعذر تعديل التاريخ: $error'),
+            backgroundColor: ZaWolfColors.error,
+          ),
+        );
+      }
+    }
   }
 
   IconData _typeIcon(String type) => switch (type) {

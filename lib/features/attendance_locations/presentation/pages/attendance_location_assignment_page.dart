@@ -6,6 +6,11 @@ import '../../domain/entities/attendance_assignment_option.dart';
 import '../../domain/repositories/attendance_location_assignment_repository.dart';
 import '../cubit/attendance_location_assignment_cubit.dart';
 
+String _dateText(DateTime? value) =>
+    value == null
+        ? 'غير محدد'
+        : '${value.year}/${value.month.toString().padLeft(2, '0')}/${value.day.toString().padLeft(2, '0')}';
+
 class AttendanceLocationAssignmentPage extends StatefulWidget {
   const AttendanceLocationAssignmentPage({
     super.key,
@@ -41,7 +46,10 @@ class _AttendanceLocationAssignmentPageState
   @override
   Widget build(BuildContext context) {
     return BlocProvider(
-      create: (_) => AttendanceLocationAssignmentCubit(widget.repository),
+      create:
+          (_) =>
+              AttendanceLocationAssignmentCubit(widget.repository)
+                ..loadActiveAssignments(),
       child: Builder(builder: _buildBody),
     );
   }
@@ -51,159 +59,210 @@ class _AttendanceLocationAssignmentPageState
       textDirection: TextDirection.rtl,
       child: Scaffold(
         appBar: AppBar(title: const Text('إسناد مواقع الحضور')),
-        body:
-            BlocConsumer<
-              AttendanceLocationAssignmentCubit,
-              AttendanceLocationAssignmentState
-            >(
-              listener: (context, state) {
-                final message = state.message;
-                if (message != null) {
-                  ScaffoldMessenger.of(context)
-                    ..hideCurrentSnackBar()
-                    ..showSnackBar(SnackBar(content: Text(message)));
-                }
-              },
-              builder: (context, state) {
-                final query = _searchController.text.trim().toLowerCase();
-                final employees = widget.employees
-                    .where((employee) {
-                      if (query.isEmpty) return true;
-                      return '${employee.name} ${employee.employeeCode} ${employee.department}'
-                          .toLowerCase()
-                          .contains(query);
-                    })
-                    .toList(growable: false);
-                return ListView(
-                  padding: const EdgeInsets.all(16),
-                  children: [
-                    TextField(
-                      controller: _searchController,
-                      onChanged: (_) => setState(() {}),
-                      decoration: const InputDecoration(
-                        labelText: 'بحث باسم الموظف أو الكود أو القسم',
-                        prefixIcon: Icon(Icons.search),
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    _Section(
-                      title: 'الموظفون (${_employeeUids.length})',
-                      child: ConstrainedBox(
-                        constraints: const BoxConstraints(maxHeight: 260),
-                        child: ListView.builder(
-                          shrinkWrap: true,
-                          itemCount: employees.length,
-                          itemBuilder: (_, index) {
-                            final employee = employees[index];
-                            return CheckboxListTile(
-                              value: _employeeUids.contains(employee.uid),
-                              title: Text(employee.name),
-                              subtitle: Text(
-                                '${employee.employeeCode} · ${employee.department}',
-                              ),
-                              onChanged: state.busy
+        body: BlocConsumer<
+          AttendanceLocationAssignmentCubit,
+          AttendanceLocationAssignmentState
+        >(
+          listener: (context, state) {
+            final message = state.message;
+            if (message != null) {
+              ScaffoldMessenger.of(context)
+                ..hideCurrentSnackBar()
+                ..showSnackBar(SnackBar(content: Text(message)));
+            }
+          },
+          builder: (context, state) {
+            final query = _searchController.text.trim().toLowerCase();
+            final employees = widget.employees
+                .where((employee) {
+                  if (query.isEmpty) return true;
+                  return '${employee.name} ${employee.employeeCode} ${employee.department}'
+                      .toLowerCase()
+                      .contains(query);
+                })
+                .toList(growable: false);
+            return ListView(
+              padding: const EdgeInsets.all(16),
+              children: [
+                TextField(
+                  controller: _searchController,
+                  onChanged: (_) => setState(() {}),
+                  decoration: const InputDecoration(
+                    labelText: 'بحث باسم الموظف أو الكود أو القسم',
+                    prefixIcon: Icon(Icons.search),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                _Section(
+                  title: 'الموظفون (${_employeeUids.length})',
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxHeight: 260),
+                    child: ListView.builder(
+                      shrinkWrap: true,
+                      itemCount: employees.length,
+                      itemBuilder: (_, index) {
+                        final employee = employees[index];
+                        return CheckboxListTile(
+                          value: _employeeUids.contains(employee.uid),
+                          title: Text(employee.name),
+                          subtitle: Text(
+                            '${employee.employeeCode} · ${employee.department}',
+                          ),
+                          onChanged:
+                              state.busy
                                   ? null
                                   : (selected) => setState(() {
-                                      selected == true
-                                          ? _employeeUids.add(employee.uid)
-                                          : _employeeUids.remove(employee.uid);
+                                    selected == true
+                                        ? _employeeUids.add(employee.uid)
+                                        : _employeeUids.remove(employee.uid);
+                                    context
+                                        .read<
+                                          AttendanceLocationAssignmentCubit
+                                        >()
+                                        .edit();
+                                  }),
+                        );
+                      },
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                _Section(
+                  title: 'المواقع المسموحة (${_locationIds.length})',
+                  child: Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: widget.locations
+                        .map((location) {
+                          return FilterChip(
+                            label: Text(location.name),
+                            selected: _locationIds.contains(location.id),
+                            onSelected:
+                                state.busy
+                                    ? null
+                                    : (selected) => setState(() {
+                                      selected
+                                          ? _locationIds.add(location.id)
+                                          : _locationIds.remove(location.id);
+                                      if (!_locationIds.contains(
+                                        _defaultLocationId,
+                                      )) {
+                                        _defaultLocationId = null;
+                                      }
                                       context
                                           .read<
                                             AttendanceLocationAssignmentCubit
                                           >()
                                           .edit();
                                     }),
-                            );
-                          },
+                          );
+                        })
+                        .toList(growable: false),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                DropdownButtonFormField<String>(
+                  initialValue: _defaultLocationId,
+                  decoration: const InputDecoration(
+                    labelText: 'الموقع الافتراضي (اختياري)',
+                  ),
+                  items: widget.locations
+                      .where((location) => _locationIds.contains(location.id))
+                      .map(
+                        (location) => DropdownMenuItem(
+                          value: location.id,
+                          child: Text(location.name),
                         ),
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    _Section(
-                      title: 'المواقع المسموحة (${_locationIds.length})',
-                      child: Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: widget.locations
-                            .map((location) {
-                              return FilterChip(
-                                label: Text(location.name),
-                                selected: _locationIds.contains(location.id),
-                                onSelected: state.busy
-                                    ? null
-                                    : (selected) => setState(() {
-                                        selected
-                                            ? _locationIds.add(location.id)
-                                            : _locationIds.remove(location.id);
-                                        if (!_locationIds.contains(
-                                          _defaultLocationId,
-                                        )) {
-                                          _defaultLocationId = null;
-                                        }
-                                        context
-                                            .read<
-                                              AttendanceLocationAssignmentCubit
-                                            >()
-                                            .edit();
-                                      }),
-                              );
-                            })
-                            .toList(growable: false),
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    DropdownButtonFormField<String>(
-                      initialValue: _defaultLocationId,
-                      decoration: const InputDecoration(
-                        labelText: 'الموقع الافتراضي (اختياري)',
-                      ),
-                      items: widget.locations
-                          .where(
-                            (location) => _locationIds.contains(location.id),
-                          )
-                          .map(
-                            (location) => DropdownMenuItem(
-                              value: location.id,
-                              child: Text(location.name),
-                            ),
-                          )
-                          .toList(growable: false),
-                      onChanged: state.busy
+                      )
+                      .toList(growable: false),
+                  onChanged:
+                      state.busy
                           ? null
                           : (value) =>
-                                setState(() => _defaultLocationId = value),
+                              setState(() => _defaultLocationId = value),
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _DateButton(
+                        label: 'يبدأ من',
+                        date: _effectiveFrom,
+                        onPressed: () => _pickDate(context, start: true),
+                      ),
                     ),
-                    const SizedBox(height: 16),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: _DateButton(
-                            label: 'يبدأ من',
-                            date: _effectiveFrom,
-                            onPressed: () => _pickDate(context, start: true),
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: _DateButton(
-                            label: 'ينتهي في (اختياري)',
-                            date: _effectiveTo,
-                            onPressed: () => _pickDate(context, start: false),
-                          ),
-                        ),
-                      ],
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: _DateButton(
+                        label: 'ينتهي في (اختياري)',
+                        date: _effectiveTo,
+                        onPressed: () => _pickDate(context, start: false),
+                      ),
                     ),
-                    if (state.preview.isNotEmpty) ...[
-                      const SizedBox(height: 16),
-                      _PreviewCard(data: state.preview),
-                    ],
-                    const SizedBox(height: 24),
-                    if (state.busy)
-                      const Center(child: CircularProgressIndicator())
-                    else if (state.phase ==
-                        AttendanceLocationAssignmentPhase.previewed)
-                      FilledButton.icon(
-                        onPressed: () => context
+                  ],
+                ),
+                if (state.preview.isNotEmpty) ...[
+                  const SizedBox(height: 16),
+                  _PreviewCard(data: state.preview),
+                ],
+                const SizedBox(height: 16),
+                _Section(
+                  title:
+                      'الإسنادات الحالية (${state.activeAssignments.length})',
+                  child:
+                      state.activeAssignments.isEmpty
+                          ? const Text('لا توجد إسنادات مواقع نشطة حالياً.')
+                          : Column(
+                            children: state.activeAssignments
+                                .map(
+                                  (assignment) => ListTile(
+                                    leading: const Icon(
+                                      Icons.location_on_outlined,
+                                    ),
+                                    title: Text(
+                                      '${assignment.employeeName.isEmpty ? assignment.employeeUid : assignment.employeeName} — ${assignment.locationName}',
+                                    ),
+                                    subtitle: Text(
+                                      'من: ${_dateText(assignment.effectiveFrom)} • إلى: ${_dateText(assignment.effectiveTo)}${assignment.isDefault ? ' • افتراضي' : ''}',
+                                    ),
+                                    trailing: IconButton(
+                                      tooltip: 'تعطيل الإسناد',
+                                      icon: const Icon(Icons.block_outlined),
+                                      onPressed:
+                                          state.busy
+                                              ? null
+                                              : () {
+                                                setState(() {
+                                                  _employeeUids
+                                                    ..clear()
+                                                    ..add(
+                                                      assignment.employeeUid,
+                                                    );
+                                                  _locationIds
+                                                    ..clear()
+                                                    ..add(
+                                                      assignment.locationId,
+                                                    );
+                                                  _effectiveFrom =
+                                                      DateTime.now();
+                                                  _effectiveTo = DateTime.now();
+                                                });
+                                                _previewRemoval(context);
+                                              },
+                                    ),
+                                  ),
+                                )
+                                .toList(growable: false),
+                          ),
+                ),
+                const SizedBox(height: 24),
+                if (state.busy)
+                  const Center(child: CircularProgressIndicator())
+                else if (state.phase ==
+                    AttendanceLocationAssignmentPhase.previewed)
+                  FilledButton.icon(
+                    onPressed:
+                        () => context
                             .read<AttendanceLocationAssignmentCubit>()
                             .apply(
                               employeeUids: _employeeUids.toList(),
@@ -212,51 +271,51 @@ class _AttendanceLocationAssignmentPageState
                               effectiveTo: _effectiveTo,
                               defaultLocationId: _defaultLocationId,
                             ),
-                        icon: const Icon(Icons.verified_outlined),
-                        label: Text(
-                          state.preview['mode'] == 'remove'
-                              ? 'تأكيد إزالة الإسنادات'
-                              : 'تأكيد وحفظ الإسنادات',
-                        ),
-                      )
-                    else
-                      Row(
-                        children: [
-                          Expanded(
-                            child: FilledButton.icon(
-                              onPressed: _canPreview
+                    icon: const Icon(Icons.verified_outlined),
+                    label: Text(
+                      state.preview['mode'] == 'remove'
+                          ? 'تأكيد إزالة الإسنادات'
+                          : 'تأكيد وحفظ الإسنادات',
+                    ),
+                  )
+                else
+                  Row(
+                    children: [
+                      Expanded(
+                        child: FilledButton.icon(
+                          onPressed:
+                              _canPreview
                                   ? () => context
-                                        .read<
-                                          AttendanceLocationAssignmentCubit
-                                        >()
-                                        .preview(
-                                          employeeUids: _employeeUids.toList(),
-                                          locationIds: _locationIds.toList(),
-                                          effectiveFrom: _effectiveFrom,
-                                          effectiveTo: _effectiveTo,
-                                          defaultLocationId: _defaultLocationId,
-                                        )
+                                      .read<AttendanceLocationAssignmentCubit>()
+                                      .preview(
+                                        employeeUids: _employeeUids.toList(),
+                                        locationIds: _locationIds.toList(),
+                                        effectiveFrom: _effectiveFrom,
+                                        effectiveTo: _effectiveTo,
+                                        defaultLocationId: _defaultLocationId,
+                                      )
                                   : null,
-                              icon: const Icon(Icons.preview_outlined),
-                              label: const Text('معاينة الإسناد'),
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: OutlinedButton.icon(
-                              onPressed: _canPreview
+                          icon: const Icon(Icons.preview_outlined),
+                          label: const Text('معاينة الإسناد'),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed:
+                              _canPreview
                                   ? () => _previewRemoval(context)
                                   : null,
-                              icon: const Icon(Icons.remove_circle_outline),
-                              label: const Text('معاينة الإزالة'),
-                            ),
-                          ),
-                        ],
+                          icon: const Icon(Icons.remove_circle_outline),
+                          label: const Text('معاينة الإزالة'),
+                        ),
                       ),
-                  ],
-                );
-              },
-            ),
+                    ],
+                  ),
+              ],
+            );
+          },
+        ),
       ),
     );
   }
@@ -267,22 +326,23 @@ class _AttendanceLocationAssignmentPageState
     final confirmed =
         await showDialog<bool>(
           context: context,
-          builder: (dialogContext) => AlertDialog(
-            title: const Text('معاينة إزالة المواقع'),
-            content: Text(
-              'سيتم إعداد إزالة ${_locationIds.length} موقع من ${_employeeUids.length} موظف. لن يتغير سجل الحضور السابق.',
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(dialogContext, false),
-                child: const Text('إلغاء'),
+          builder:
+              (dialogContext) => AlertDialog(
+                title: const Text('معاينة إزالة المواقع'),
+                content: Text(
+                  'سيتم إعداد إزالة ${_locationIds.length} موقع من ${_employeeUids.length} موظف. لن يتغير سجل الحضور السابق.',
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(dialogContext, false),
+                    child: const Text('إلغاء'),
+                  ),
+                  FilledButton(
+                    onPressed: () => Navigator.pop(dialogContext, true),
+                    child: const Text('متابعة للمعاينة'),
+                  ),
+                ],
               ),
-              FilledButton(
-                onPressed: () => Navigator.pop(dialogContext, true),
-                child: const Text('متابعة للمعاينة'),
-              ),
-            ],
-          ),
         ) ??
         false;
     if (!confirmed || !context.mounted) return;

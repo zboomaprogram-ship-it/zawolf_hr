@@ -8,6 +8,8 @@ class AttendanceLocationAssignment {
     required this.longitude,
     required this.radiusMeters,
     required this.version,
+    this.employeeName = '',
+    this.employeeCode = '',
     this.priority = 0,
     this.isDefault = false,
     this.isActive = true,
@@ -24,6 +26,8 @@ class AttendanceLocationAssignment {
   final double longitude;
   final double radiusMeters;
   final int version;
+  final String employeeName;
+  final String employeeCode;
   final int priority;
   final bool isDefault;
   final bool isActive;

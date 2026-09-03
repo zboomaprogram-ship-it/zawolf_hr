@@ -3015,6 +3015,7 @@ class _EditEmployeeDialogState extends State<EditEmployeeDialog> {
   DateTime? _hiringDate;
   late bool _salesAnalyticsEnabled;
   late String _salesAnalyticsRole;
+  late bool _excludeFromAttendanceReports;
 
   bool _isLoading = false;
   List<LocationModel> _locations = [];
@@ -3046,6 +3047,7 @@ class _EditEmployeeDialogState extends State<EditEmployeeDialog> {
     _salesAnalyticsEnabled = emp.salesAnalyticsEnabled;
     _salesAnalyticsRole =
         emp.salesAnalyticsRole.isEmpty ? 'sales' : emp.salesAnalyticsRole;
+    _excludeFromAttendanceReports = emp.excludeFromAttendanceReports;
     _selectedDepartment = emp.department;
     _selectedOrganizationLevel =
         emp.organizationLevel == 'employee'
@@ -3376,6 +3378,7 @@ class _EditEmployeeDialogState extends State<EditEmployeeDialog> {
             _salesAnalyticsEnabled ? _salesAgentKeyController.text.trim() : '',
         'salesAnalyticsCompany':
             _salesAnalyticsEnabled ? _salesCompanyController.text.trim() : '',
+        'excludeFromAttendanceReports': _excludeFromAttendanceReports,
       };
 
       await _db.collection('users').doc(widget.employee.uid).update(updateData);
@@ -4073,6 +4076,46 @@ class _EditEmployeeDialogState extends State<EditEmployeeDialog> {
                         ),
                       ),
                     ],
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: ZaWolfColors.surface02,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: _excludeFromAttendanceReports
+                          ? ZaWolfColors.warning.withValues(alpha: 0.6)
+                          : ZaWolfColors.surface03,
+                    ),
+                  ),
+                  child: SwitchListTile(
+                    activeColor: ZaWolfColors.warning,
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text(
+                      'استبعاد من تقرير حالة حضور الشركة اليوم',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14,
+                      ),
+                      textDirection: TextDirection.rtl,
+                    ),
+                    subtitle: const Text(
+                      'عند التفعيل، لن يظهر الموظف في إحصائيات وتقارير الحضور اليومية، وسيتم إيقاف زر تسجيل الحضور/الانصراف لحسابه مع استمرار تفعيل باقي خدمات التطبيق.',
+                      style: TextStyle(
+                        color: ZaWolfColors.textSecondary,
+                        fontSize: 12,
+                      ),
+                      textDirection: TextDirection.rtl,
+                    ),
+                    value: _excludeFromAttendanceReports,
+                    onChanged: (val) {
+                      setState(() {
+                        _excludeFromAttendanceReports = val;
+                      });
+                    },
                   ),
                 ),
                 const SizedBox(height: 24),

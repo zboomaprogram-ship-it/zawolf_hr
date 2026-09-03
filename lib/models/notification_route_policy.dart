@@ -3,6 +3,8 @@ class NotificationRoutePolicy {
 
   static String routeForType(String type) {
     final value = type.trim();
+    if (value == 'meeting_request') return '/meeting/approvals';
+    if (value == 'custom_request') return '/approver/custom-requests';
     if (value == 'advance_pending_hr' ||
         value == 'advance_pending_ceo' ||
         value == 'advance_pending_accounting' ||

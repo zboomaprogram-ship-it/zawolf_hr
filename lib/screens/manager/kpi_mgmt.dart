@@ -375,19 +375,16 @@ class _ProviderDashboardTabState extends State<_ProviderDashboardTab> {
               padding: const EdgeInsets.only(bottom: 12),
               child: InkWell(
                 borderRadius: BorderRadius.circular(8),
-                onTap: () => showModalBottomSheet<void>(
+                onTap: () => showDialog<void>(
                   context: context,
-                  isScrollControlled: true,
-                  backgroundColor: ZaWolfColors.background,
-                  builder: (context) => DraggableScrollableSheet(
-                    expand: false,
-                    initialChildSize: 0.85,
-                    minChildSize: 0.5,
-                    maxChildSize: 0.95,
-                    builder: (context, controller) => ListView(
-                      controller: controller,
-                      padding: const EdgeInsets.all(16),
-                      children: [SalesKpiDetailsPanel(kpi: record)],
+                  builder: (context) => Dialog(
+                    backgroundColor: Colors.transparent,
+                    insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 580),
+                      child: SingleChildScrollView(
+                        child: SalesKpiDetailsPanel(kpi: record),
+                      ),
                     ),
                   ),
                 ),
@@ -462,57 +459,91 @@ class _ExternalAgentCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final ratio = agent.target <= 0 ? 0.0 : agent.actual / agent.target;
     final color = agent.isMapped ? ZaWolfColors.success : ZaWolfColors.warning;
-    return WolfCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            children: [
-              Text(
-                '${agent.finalKpi.toStringAsFixed(1)}%',
-                style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                  color: ZaWolfColors.perfGold,
-                  fontWeight: FontWeight.bold,
+    return InkWell(
+      borderRadius: BorderRadius.circular(8),
+      onTap: () => showDialog<void>(
+        context: context,
+        builder: (context) => Dialog(
+          backgroundColor: Colors.transparent,
+          insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 580),
+            child: SingleChildScrollView(
+              child: SalesKpiAgentDetailsPanel(agent: agent),
+            ),
+          ),
+        ),
+      ),
+      child: WolfCard(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Text(
+                  '${agent.finalKpi.toStringAsFixed(1)}%',
+                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                    color: ZaWolfColors.perfGold,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
-              ),
-              const Spacer(),
-              Expanded(
-                flex: 3,
-                child: Text(
-                  agent.mappedEmployeeName.isNotEmpty
-                      ? agent.mappedEmployeeName
-                      : agent.name,
+                const Spacer(),
+                Expanded(
+                  flex: 3,
+                  child: Text(
+                    agent.mappedEmployeeName.isNotEmpty
+                        ? agent.mappedEmployeeName
+                        : agent.name,
+                    textAlign: TextAlign.right,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Icon(
+                  agent.kind == 'sales'
+                      ? Icons.payments_outlined
+                      : Icons.support_agent,
+                  color: ZaWolfColors.primaryCyan,
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            LinearProgressIndicator(
+              value: ratio.clamp(0, 1),
+              minHeight: 8,
+              color: color,
+              backgroundColor: ZaWolfColors.surface03,
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                const Icon(
+                  Icons.touch_app_outlined,
+                  size: 14,
+                  color: ZaWolfColors.primaryCyan,
+                ),
+                const SizedBox(width: 4),
+                const Text(
+                  'انقر لعرض تفاصيل المؤشرات الكاملة',
+                  style: TextStyle(
+                    color: ZaWolfColors.primaryCyan,
+                    fontSize: 11,
+                  ),
+                ),
+                const Spacer(),
+                Text(
+                  '${agent.actual.toStringAsFixed(0)} / ${agent.target.toStringAsFixed(0)} · '
+                  '${agent.isMapped ? 'مرتبط: ${agent.mappedEmployeeId}' : 'غير مرتبط بحساب موظف'}',
                   textAlign: TextAlign.right,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.titleMedium,
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodySmall?.copyWith(color: color),
                 ),
-              ),
-              const SizedBox(width: 8),
-              Icon(
-                agent.kind == 'sales'
-                    ? Icons.payments_outlined
-                    : Icons.support_agent,
-                color: ZaWolfColors.primaryCyan,
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          LinearProgressIndicator(
-            value: ratio.clamp(0, 1),
-            minHeight: 8,
-            color: color,
-            backgroundColor: ZaWolfColors.surface03,
-          ),
-          const SizedBox(height: 8),
-          Text(
-            '${agent.actual.toStringAsFixed(0)} / ${agent.target.toStringAsFixed(0)} · '
-            '${agent.isMapped ? 'مرتبط: ${agent.mappedEmployeeId}' : 'غير مرتبط بحساب موظف'} · ${agent.key}',
-            textAlign: TextAlign.right,
-            style: Theme.of(
-              context,
-            ).textTheme.bodySmall?.copyWith(color: color),
-          ),
-        ],
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }

@@ -162,6 +162,7 @@ class UserModel {
   final String avatarAccent;
   final String preferredViewMode;
   final List<String> seenCelebrationBadgeIds;
+  final bool excludeFromAttendanceReports;
 
   UserModel({
     required this.uid,
@@ -213,6 +214,7 @@ class UserModel {
     this.avatarAccent = 'cyan',
     this.preferredViewMode = 'virtual_office',
     this.seenCelebrationBadgeIds = const [],
+    this.excludeFromAttendanceReports = false,
   });
 
   UserModel copyWith({
@@ -410,6 +412,8 @@ class UserModel {
               ?.map((e) => e as String)
               .toList() ??
           const [],
+      excludeFromAttendanceReports:
+          data['excludeFromAttendanceReports'] as bool? ?? false,
     );
   }
 
@@ -475,6 +479,7 @@ class UserModel {
       'avatarAccent': avatarAccent,
       'preferredViewMode': preferredViewMode,
       'seenCelebrationBadgeIds': seenCelebrationBadgeIds,
+      if (excludeFromAttendanceReports) 'excludeFromAttendanceReports': true,
     };
   }
 

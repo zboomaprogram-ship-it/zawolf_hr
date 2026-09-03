@@ -142,12 +142,16 @@ extension AppDelegate: CLLocationManagerDelegate {
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> Bool {
+    if FirebaseApp.app() == nil {
+      FirebaseApp.configure()
+    }
     GMSServices.provideAPIKey("AIzaSyDl5bO63kW9ukQkEEyqdg40oSFh1R8mOSM")
+    let result = super.application(application, didFinishLaunchingWithOptions: launchOptions)
     GeneratedPluginRegistrant.register(with: self)
     configurePersonalAlarmChannel()
     configureAutomaticAttendanceChannel()
     restoreAutomaticAttendanceMonitor()
-    return super.application(application, didFinishLaunchingWithOptions: launchOptions)
+    return result
   }
 
   private func configureAutomaticAttendanceChannel() {
@@ -240,17 +244,15 @@ extension AppDelegate: CLLocationManagerDelegate {
     radius: CLLocationDistance
   ) {
     guard CLLocationManager.isMonitoringAvailable(for: CLCircularRegion.self) else { return }
+    guard attendanceLocationManager.authorizationStatus == .authorizedAlways else { return }
     let region = CLCircularRegion(
       center: CLLocationCoordinate2D(latitude: latitude, longitude: longitude),
-      radius: radius,
+      radius: min(max(radius, 100), attendanceLocationManager.maximumRegionMonitoringDistance),
       identifier: "zawolf_\(locationId)"
     )
     region.notifyOnEntry = true
-    // An exit is sent to the backend as evidence only. The backend applies the
-    // HR-owned policy rather than allowing the device to alter payroll state.
     region.notifyOnExit = true
     attendanceLocationManager.startMonitoring(for: region)
-    attendanceLocationManager.requestState(for: region)
   }
 
   fileprivate func startAttendanceMonitors(_ locations: [[String: Any]]) {
@@ -286,6 +288,7 @@ extension AppDelegate: CLLocationManagerDelegate {
 
   private func restoreAutomaticAttendanceMonitor() {
     attendanceLocationManager.delegate = self
+    guard attendanceLocationManager.authorizationStatus == .authorizedAlways else { return }
     let defaults = UserDefaults.standard
     guard defaults.bool(forKey: "auto_attendance_enabled") else { return }
     let locations = automaticAttendanceLocations()
@@ -312,7 +315,7 @@ extension AppDelegate: CLLocationManagerDelegate {
     channel.setMethodCallHandler { call, result in
       switch call.method {
       case "iosAlarmAvailability":
-        if #available(iOS 26.0, *) {
+        if #available(iOS 18.0, *) {
           #if canImport(AlarmKit)
           result(true)
           #else
@@ -328,7 +331,7 @@ extension AppDelegate: CLLocationManagerDelegate {
           "available": false,
           "authorization": "unavailable",
         ]
-        if #available(iOS 26.0, *) {
+        if #available(iOS 18.0, *) {
           #if canImport(AlarmKit)
           status["alarmKitCompiled"] = true
           status["available"] = true
@@ -352,7 +355,7 @@ extension AppDelegate: CLLocationManagerDelegate {
           result(FlutterError(code: "invalid_alarm", message: "وقت المنبه غير صالح.", details: nil))
           return
         }
-        if #available(iOS 26.0, *) {
+        if #available(iOS 18.0, *) {
           #if canImport(AlarmKit)
           Task { @MainActor in
             do {
@@ -373,7 +376,7 @@ extension AppDelegate: CLLocationManagerDelegate {
           result(FlutterError(code: "alarmkit_unavailable", message: "سيتم استخدام تذكير iPhone المحلي بدلاً من منبه النظام.", details: nil))
         }
       case "cancelIosWorkAlarm":
-        if #available(iOS 26.0, *) {
+        if #available(iOS 18.0, *) {
           #if canImport(AlarmKit)
           if let arguments = call.arguments as? [String: Any],
              let rawID = arguments["alarmId"] as? String,
@@ -394,7 +397,7 @@ extension AppDelegate: CLLocationManagerDelegate {
           result(FlutterError(code: "invalid_alarm", message: "بيانات منبهات الحضور غير مكتملة.", details: nil))
           return
         }
-        if #available(iOS 26.0, *) {
+        if #available(iOS 18.0, *) {
           #if canImport(AlarmKit)
           Task { @MainActor in
             do {
@@ -411,10 +414,10 @@ extension AppDelegate: CLLocationManagerDelegate {
           result(FlutterError(code: "alarmkit_unavailable", message: "AlarmKit غير متاح في هذا البناء.", details: nil))
           #endif
         } else {
-          result(FlutterError(code: "alarmkit_unavailable", message: "AlarmKit يتطلب iOS 26 أو أحدث.", details: nil))
+          result(FlutterError(code: "alarmkit_unavailable", message: "AlarmKit يتطلب iOS 18 أو أحدث.", details: nil))
         }
       case "cancelIosDatedAlarms":
-        if #available(iOS 26.0, *) {
+        if #available(iOS 18.0, *) {
           #if canImport(AlarmKit)
           if let arguments = call.arguments as? [String: Any],
              let rawIDs = arguments["alarmIds"] as? [String] {
@@ -434,7 +437,7 @@ extension AppDelegate: CLLocationManagerDelegate {
   }
 
   #if canImport(AlarmKit)
-  @available(iOS 26.0, *)
+  @available(iOS 18.0, *)
   @MainActor
   private func scheduleWorkAlarm(existingID: String?, hour: Int, minute: Int) async throws -> UUID {
     let manager = AlarmManager.shared
@@ -486,7 +489,7 @@ extension AppDelegate: CLLocationManagerDelegate {
     return alarmID
   }
 
-  @available(iOS 26.0, *)
+  @available(iOS 18.0, *)
   @MainActor
   private func scheduleDatedWorkAlarms(
     existingIDs: [String],
@@ -551,7 +554,7 @@ extension AppDelegate: CLLocationManagerDelegate {
 }
 
 #if canImport(AlarmKit)
-@available(iOS 26.0, *)
+@available(iOS 18.0, *)
 private struct WorkAlarmMetadata: AlarmMetadata {}
 
 private enum WorkAlarmError: LocalizedError {

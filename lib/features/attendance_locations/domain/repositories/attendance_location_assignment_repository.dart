@@ -19,6 +19,11 @@ class AttendanceLocationAssignmentsSnapshot {
 }
 
 abstract interface class AttendanceLocationAdministrationRepository {
+  Future<List<AttendanceLocationAssignment>> listAssignments(
+    String employeeUid,
+  );
+  Future<List<AttendanceLocationAssignment>> listAllAssignments();
+
   Future<Map<String, dynamic>> previewAssignments({
     required List<String> employeeUids,
     required List<String> locationIds,

@@ -587,7 +587,7 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                 subtitle: const Text(
                   'عرض الطلبات السابقة ومسار الموافقات وحالة كل طلب',
                 ),
-                trailing: Icon(RtlNavigation.chevronStart(context)),
+                trailing: Icon(RtlNavigation.chevronEnd(context)),
               ),
             ),
             const SizedBox(height: 20),
@@ -603,7 +603,7 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                 subtitle: const Text(
                   'عرض الخصومات بالأيام وحالة مراجعة HR بدون مبالغ مالية',
                 ),
-                trailing: Icon(RtlNavigation.chevronStart(context)),
+                trailing: Icon(RtlNavigation.chevronEnd(context)),
               ),
             ),
             StreamBuilder<Set<String>>(
@@ -635,7 +635,7 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                   ),
                   title: const Text('شارات فريق العمل'),
                   subtitle: const Text('عرض الموظفين الذين حصلوا على شارات التميز'),
-                  trailing: Icon(RtlNavigation.chevronStart(context), size: 18),
+                  trailing: Icon(RtlNavigation.chevronEnd(context), size: 18),
                 ),
               ),
               const SizedBox(height: 8),
@@ -771,7 +771,7 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                     ),
                     title: const Text('مركز الإشعارات'),
                     subtitle: const Text('عرض التنبيهات والإعلانات السابقة'),
-                    trailing: Icon(RtlNavigation.chevronStart(context)),
+                    trailing: Icon(RtlNavigation.chevronEnd(context)),
                     onTap: () => context.push('/notifications'),
                   ),
                   const Divider(color: ZaWolfColors.surface02, height: 1),
@@ -831,7 +831,7 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                     ),
                     title: const Text('سياسة الخصوصية'),
                     subtitle: const Text('اعرف كيف نستخدم بياناتك ونحميها'),
-                    trailing: Icon(RtlNavigation.chevronStart(context)),
+                    trailing: Icon(RtlNavigation.chevronEnd(context)),
                     onTap: () => context.push('/privacy'),
                   ),
                   const Divider(color: ZaWolfColors.surface02, height: 1),
@@ -844,7 +844,7 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                     subtitle: const Text(
                       'قواعد استخدام النظام ومسؤوليات الحساب',
                     ),
-                    trailing: Icon(RtlNavigation.chevronStart(context)),
+                    trailing: Icon(RtlNavigation.chevronEnd(context)),
                     onTap: () => context.push('/terms'),
                   ),
                   FutureBuilder<bool>(
@@ -866,7 +866,7 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                             subtitle: const Text(
                               'أدوات فحص داخل التطبيق بصلاحية مؤقتة',
                             ),
-                            trailing: Icon(RtlNavigation.chevronStart(context)),
+                            trailing: Icon(RtlNavigation.chevronEnd(context)),
                             onTap: () => context.push('/developer-tools'),
                           ),
                         ],

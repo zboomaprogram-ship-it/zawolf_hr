@@ -42,6 +42,30 @@ class _FieldAssignmentsScreenState extends State<FieldAssignmentsScreen> {
     super.dispose();
   }
 
+  String _searchable(UserModel user) {
+    final raw =
+        '${user.displayName} ${user.employeeId} '
+        '${user.department} ${user.email}';
+    return raw
+        .toLowerCase()
+        .replaceAll(RegExp(r'[\u064B-\u065F\u0670]'), '')
+        .replaceAll('أ', 'ا')
+        .replaceAll('إ', 'ا')
+        .replaceAll('آ', 'ا')
+        .replaceAll('ى', 'ي')
+        .replaceAll('ة', 'ه');
+  }
+
+  String _normaliseQuery(String query) => query
+      .trim()
+      .toLowerCase()
+      .replaceAll(RegExp(r'[\u064B-\u065F\u0670]'), '')
+      .replaceAll('أ', 'ا')
+      .replaceAll('إ', 'ا')
+      .replaceAll('آ', 'ا')
+      .replaceAll('ى', 'ي')
+      .replaceAll('ة', 'ه');
+
   String _time(TimeOfDay value) =>
       '${value.hour.toString().padLeft(2, '0')}:${value.minute.toString().padLeft(2, '0')}';
 
@@ -207,6 +231,7 @@ class _FieldAssignmentsScreenState extends State<FieldAssignmentsScreen> {
 
   Future<void> _chooseEmployees(List<UserModel> candidates) async {
     var selected = List<UserModel>.from(_employees);
+    var query = '';
     await showDialog<void>(
       context: context,
       builder:
@@ -216,31 +241,72 @@ class _FieldAssignmentsScreenState extends State<FieldAssignmentsScreen> {
                   title: const Text('الموظفون المشمولون بالمأمورية'),
                   content: SizedBox(
                     width: 520,
-                    child: ListView(
-                      shrinkWrap: true,
-                      children: candidates
-                          .map((user) {
-                            final selectedNow = selected.any(
-                              (item) => item.uid == user.uid,
-                            );
-                            return CheckboxListTile(
-                              value: selectedNow,
-                              title: Text(
-                                '${user.displayName} — ${user.employeeId}',
+                    height: 480,
+                    child: Column(
+                      children: [
+                        TextField(
+                          autofocus: true,
+                          textDirection: TextDirection.rtl,
+                          decoration: const InputDecoration(
+                            prefixIcon: Icon(Icons.search),
+                            hintText:
+                                'ابحث بالاسم أو الكود أو القسم أو البريد الإلكتروني',
+                          ),
+                          onChanged:
+                              (value) => setDialogState(
+                                () => query = _normaliseQuery(value),
                               ),
-                              onChanged:
-                                  (checked) => setDialogState(() {
-                                    if (checked == true && !selectedNow) {
-                                      selected.add(user);
-                                    } else if (checked != true) {
-                                      selected.removeWhere(
+                        ),
+                        const SizedBox(height: 8),
+                        Expanded(
+                          child: Builder(
+                            builder: (context) {
+                              final filtered = candidates
+                                  .where((user) {
+                                    return query.isEmpty ||
+                                        _searchable(user).contains(query);
+                                  })
+                                  .toList(growable: false);
+                              if (filtered.isEmpty) {
+                                return const Center(
+                                  child: Text('لا توجد نتائج مطابقة.'),
+                                );
+                              }
+                              return ListView(
+                                children: filtered
+                                    .map((user) {
+                                      final selectedNow = selected.any(
                                         (item) => item.uid == user.uid,
                                       );
-                                    }
-                                  }),
-                            );
-                          })
-                          .toList(growable: false),
+                                      return CheckboxListTile(
+                                        value: selectedNow,
+                                        title: Text(
+                                          '${user.displayName} — ${user.employeeId}',
+                                        ),
+                                        subtitle: Text(
+                                          '${user.department}${user.email.isEmpty ? '' : ' • ${user.email}'}',
+                                          textDirection: TextDirection.rtl,
+                                        ),
+                                        onChanged:
+                                            (checked) => setDialogState(() {
+                                              if (checked == true &&
+                                                  !selectedNow) {
+                                                selected.add(user);
+                                              } else if (checked != true) {
+                                                selected.removeWhere(
+                                                  (item) =>
+                                                      item.uid == user.uid,
+                                                );
+                                              }
+                                            }),
+                                      );
+                                    })
+                                    .toList(growable: false),
+                              );
+                            },
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                   actions: [

@@ -1,7 +1,10 @@
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
+import 'package:http/http.dart' as http;
 import 'package:zawolf_hr/models/employee_role.dart';
 import '../models/user_model.dart';
 import '../models/leave_model.dart';
@@ -602,6 +605,108 @@ class LeaveService {
         'cancelledBy': userId,
       });
     });
+  }
+
+  Future<void> overrideCasualLeave({
+    required String leaveId,
+    required String reason,
+  }) async {
+    final auth = FirebaseAuth.instance;
+    final token = await auth.currentUser?.getIdToken();
+    if (token == null || token.isEmpty) {
+      throw StateError('انتهت الجلسة، سجل الدخول مرة أخرى.');
+    }
+    final operationId = List.generate(
+      32,
+      (_) => 'abcdefghijklmnopqrstuvwxyz0123456789'[
+          DateTime.now().microsecondsSinceEpoch % 36],
+    ).join();
+
+    final client = http.Client();
+    try {
+      final response = await client.post(
+        Uri.parse(
+          'https://notification.zawolf.ai/operations/leaves/$leaveId/override-casual',
+        ),
+        headers: {
+          'content-type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: jsonEncode({'operationId': operationId, 'reason': reason}),
+      );
+      final decoded =
+          response.body.isEmpty
+              ? <String, dynamic>{}
+              : jsonDecode(response.body);
+      final data =
+          decoded is Map<String, dynamic> ? decoded : <String, dynamic>{};
+      if (response.statusCode < 200 ||
+          response.statusCode >= 300 ||
+          data['ok'] != true) {
+        throw StateError(
+          '${data['error'] ?? 'تعذر تحويل الإجازة العارضة للمراجعة.'}',
+        );
+      }
+    } finally {
+      client.close();
+    }
+  }
+
+  Future<void> editCasualLeaveDates({
+    required String leaveId,
+    required DateTime startDate,
+    required DateTime endDate,
+    required String reason,
+  }) async {
+    final auth = FirebaseAuth.instance;
+    final token = await auth.currentUser?.getIdToken();
+    if (token == null || token.isEmpty) {
+      throw StateError('انتهت الجلسة، سجل الدخول مرة أخرى.');
+    }
+    final operationId = List.generate(
+      32,
+      (_) => 'abcdefghijklmnopqrstuvwxyz0123456789'[
+          DateTime.now().microsecondsSinceEpoch % 36],
+    ).join();
+
+    final startDateStr =
+        '${startDate.year.toString().padLeft(4, '0')}-${startDate.month.toString().padLeft(2, '0')}-${startDate.day.toString().padLeft(2, '0')}';
+    final endDateStr =
+        '${endDate.year.toString().padLeft(4, '0')}-${endDate.month.toString().padLeft(2, '0')}-${endDate.day.toString().padLeft(2, '0')}';
+
+    final client = http.Client();
+    try {
+      final response = await client.post(
+        Uri.parse(
+          'https://notification.zawolf.ai/operations/leaves/$leaveId/edit-casual-dates',
+        ),
+        headers: {
+          'content-type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: jsonEncode({
+          'operationId': operationId,
+          'startDate': startDateStr,
+          'endDate': endDateStr,
+          'reason': reason,
+        }),
+      );
+      final decoded =
+          response.body.isEmpty
+              ? <String, dynamic>{}
+              : jsonDecode(response.body);
+      final data =
+          decoded is Map<String, dynamic> ? decoded : <String, dynamic>{};
+      if (response.statusCode < 200 ||
+          response.statusCode >= 300 ||
+          data['ok'] != true) {
+        throw StateError(
+          '${data['error'] ?? 'تعذر تعديل تاريخ الإجازة العارضة.'}',
+        );
+      }
+    } finally {
+      client.close();
+    }
   }
 
   // Approve Leave

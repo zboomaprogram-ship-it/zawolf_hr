@@ -22,6 +22,9 @@ class LeaveModel {
   final String? reviewerComment;
   final String? reviewerName;
   final bool isRead;
+  final bool autoApproved;
+  final bool autoApprovedOverridden;
+  final String? autoApprovalOverrideReason;
 
   LeaveModel({
     required this.leaveId,
@@ -45,10 +48,14 @@ class LeaveModel {
     this.reviewerComment,
     this.reviewerName,
     this.isRead = false,
+    this.autoApproved = false,
+    this.autoApprovedOverridden = false,
+    this.autoApprovalOverrideReason,
   });
 
   factory LeaveModel.fromFirestore(DocumentSnapshot doc) {
     final data = doc.data() as Map<String, dynamic>;
+    final overrideMap = data['autoApprovalOverride'] as Map<String, dynamic>?;
     return LeaveModel(
       leaveId: doc.id,
       userId: data['userId'] as String? ?? '',
@@ -71,6 +78,9 @@ class LeaveModel {
       reviewerComment: data['reviewerComment'] as String?,
       reviewerName: data['reviewerName'] as String?,
       isRead: data['isRead'] as bool? ?? false,
+      autoApproved: data['autoApproved'] as bool? ?? false,
+      autoApprovedOverridden: data['autoApprovedOverridden'] as bool? ?? false,
+      autoApprovalOverrideReason: overrideMap?['reason'] as String?,
     );
   }
 
@@ -90,14 +100,17 @@ class LeaveModel {
       if (attachmentUrl != null) 'attachmentUrl': attachmentUrl,
       'workHandoverTo': workHandoverTo,
       'status': status,
-      'submittedAt': submittedAt != null
-          ? Timestamp.fromDate(submittedAt!)
-          : FieldValue.serverTimestamp(),
+      'submittedAt':
+          submittedAt != null
+              ? Timestamp.fromDate(submittedAt!)
+              : FieldValue.serverTimestamp(),
       if (reviewedAt != null) 'reviewedAt': Timestamp.fromDate(reviewedAt!),
       if (reviewedBy != null) 'reviewedBy': reviewedBy,
       if (reviewerComment != null) 'reviewerComment': reviewerComment,
       if (reviewerName != null) 'reviewerName': reviewerName,
       'isRead': isRead,
+      if (autoApproved) 'autoApproved': true,
+      if (autoApprovedOverridden) 'autoApprovedOverridden': true,
     };
   }
 }

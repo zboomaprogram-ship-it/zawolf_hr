@@ -773,19 +773,46 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
                       const SizedBox(height: 16),
                     ],
 
-                    // Circular Pulsing Action Button
-                    CheckInRadarButton(
-                      title: gate.title,
-                      subtitle: gate.subtitle,
-                      icon: gate.icon,
-                      disabled: gate.disabled,
-                      loading: _actionLoading,
-                      active: hasCheckedIn,
-                      onTap:
-                          () =>
-                              _handleCheckInCheckOut(user, gate.expectedAction),
-                    ),
-                    const SizedBox(height: 24),
+                    if (user.excludeFromAttendanceReports) ...[
+                      WolfCard(
+                        child: Row(
+                          children: [
+                            const Icon(
+                              Icons.info_outline,
+                              color: ZaWolfColors.warning,
+                              size: 28,
+                            ),
+                            const SizedBox(width: 12),
+                            const Expanded(
+                              child: Text(
+                                'غير مطبق عليك تسجيل الحضور/الانصراف (مستثنى من التقرير اليومي بقرار إداري). يمكنك استخدام جميع خدمات التطبيق والطلبات والمحادثات بشكل طبيعي.',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 13,
+                                ),
+                                textDirection: TextDirection.rtl,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+                    ] else ...[
+                      // Circular Pulsing Action Button
+                      CheckInRadarButton(
+                        title: gate.title,
+                        subtitle: gate.subtitle,
+                        icon: gate.icon,
+                        disabled: gate.disabled,
+                        loading: _actionLoading,
+                        active: hasCheckedIn,
+                        onTap:
+                            () =>
+                                _handleCheckInCheckOut(user, gate.expectedAction),
+                      ),
+                      const SizedBox(height: 24),
+                    ],
 
                     if (pilotAwaitingConfirmation) ...[
                       CheckInStatusFeedback(

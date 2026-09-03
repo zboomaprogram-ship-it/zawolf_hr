@@ -54,6 +54,10 @@ class NotificationService {
     '/employee/payroll',
     '/employee/deductions',
     '/manager/requests',
+    '/meeting/history',
+    '/meeting/approvals',
+    '/approver/custom-requests',
+    '/employee/custom-requests',
     '/company-os',
   };
 

@@ -21,8 +21,8 @@ final class AttendanceLocationAssignmentRepositoryImpl
            client ??
            AuthenticatedOperationClient(
              client: http.Client(),
-             tokenProvider: () async =>
-                 FirebaseAuth.instance.currentUser?.getIdToken(),
+             tokenProvider:
+                 () async => FirebaseAuth.instance.currentUser?.getIdToken(),
            ),
        _preferences = preferences ?? SharedPreferences.getInstance;
 
@@ -84,34 +84,36 @@ final class AttendanceLocationAssignmentRepositoryImpl
     bool isStale = false,
   }) {
     final rawAssignments = data['assignments'];
-    final assignments = rawAssignments is List
-        ? rawAssignments
-              .whereType<Map>()
-              .map((raw) {
-                final item = Map<String, dynamic>.from(raw);
-                return AttendanceLocationAssignment(
-                  id: '${item['id'] ?? ''}',
-                  employeeUid: '${item['employeeUid'] ?? ''}',
-                  locationId: '${item['locationId'] ?? ''}',
-                  locationName: '${item['locationName'] ?? ''}',
-                  latitude: (item['latitude'] as num?)?.toDouble() ?? 0,
-                  longitude: (item['longitude'] as num?)?.toDouble() ?? 0,
-                  radiusMeters: (item['radiusMeters'] as num?)?.toDouble() ?? 0,
-                  version: (item['version'] as num?)?.toInt() ?? 1,
-                  priority: (item['priority'] as num?)?.toInt() ?? 0,
-                  isDefault: item['isDefault'] == true,
-                  isActive: item['isActive'] == true,
-                  locationIsActive: item['locationIsActive'] != false,
-                  effectiveFrom: DateTime.tryParse(
-                    '${item['effectiveFrom'] ?? ''}',
-                  ),
-                  effectiveTo: DateTime.tryParse(
-                    '${item['effectiveTo'] ?? ''}',
-                  ),
-                );
-              })
-              .toList(growable: false)
-        : const <AttendanceLocationAssignment>[];
+    final assignments =
+        rawAssignments is List
+            ? rawAssignments
+                .whereType<Map>()
+                .map((raw) {
+                  final item = Map<String, dynamic>.from(raw);
+                  return AttendanceLocationAssignment(
+                    id: '${item['id'] ?? ''}',
+                    employeeUid: '${item['employeeUid'] ?? ''}',
+                    locationId: '${item['locationId'] ?? ''}',
+                    locationName: '${item['locationName'] ?? ''}',
+                    latitude: (item['latitude'] as num?)?.toDouble() ?? 0,
+                    longitude: (item['longitude'] as num?)?.toDouble() ?? 0,
+                    radiusMeters:
+                        (item['radiusMeters'] as num?)?.toDouble() ?? 0,
+                    version: (item['version'] as num?)?.toInt() ?? 1,
+                    priority: (item['priority'] as num?)?.toInt() ?? 0,
+                    isDefault: item['isDefault'] == true,
+                    isActive: item['isActive'] == true,
+                    locationIsActive: item['locationIsActive'] != false,
+                    effectiveFrom: DateTime.tryParse(
+                      '${item['effectiveFrom'] ?? ''}',
+                    ),
+                    effectiveTo: DateTime.tryParse(
+                      '${item['effectiveTo'] ?? ''}',
+                    ),
+                  );
+                })
+                .toList(growable: false)
+            : const <AttendanceLocationAssignment>[];
     return AttendanceLocationAssignmentsSnapshot(
       enabled: data['enabled'] == true,
       assignments: assignments,

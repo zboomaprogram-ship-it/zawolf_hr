@@ -226,6 +226,25 @@ class ZaWolfTheme {
         surfaceTintColor: Colors.transparent,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
       ),
+      datePickerTheme: DatePickerThemeData(
+        backgroundColor: ZaWolfColors.surface01,
+        surfaceTintColor: Colors.transparent,
+        headerBackgroundColor: ZaWolfColors.surface02,
+        headerForegroundColor: Colors.white,
+        dayForegroundColor: WidgetStateProperty.all(Colors.white),
+        yearForegroundColor: WidgetStateProperty.all(Colors.white),
+        todayForegroundColor: WidgetStateProperty.all(ZaWolfColors.primaryCyan),
+      ),
+      timePickerTheme: const TimePickerThemeData(
+        backgroundColor: ZaWolfColors.surface01,
+        hourMinuteTextColor: Colors.white,
+        hourMinuteColor: ZaWolfColors.surface02,
+        dayPeriodTextColor: Colors.white,
+        dayPeriodColor: ZaWolfColors.surface02,
+        dialHandColor: ZaWolfColors.primaryCyan,
+        dialBackgroundColor: ZaWolfColors.surface02,
+        dialTextColor: Colors.white,
+      ),
     );
   }
 }

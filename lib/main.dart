@@ -26,6 +26,8 @@ import 'core/feature_flags/remote_company_os_feature_flags.dart';
 import 'features/company_workspace/data/datasources/firebase_workspace_session.dart';
 import 'features/company_workspace/data/feature_flags/remote_company_workspace_feature_flag.dart';
 
+import 'package:flutter_localizations/flutter_localizations.dart';
+
 void main() async {
   Provider.debugCheckInvalidValueType = null;
   WidgetsFlutterBinding.ensureInitialized();
@@ -242,6 +244,16 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
                 debugShowCheckedModeBanner: false,
                 theme: ZaWolfTheme.darkTheme,
                 routerConfig: router,
+                localizationsDelegates: const [
+                  GlobalMaterialLocalizations.delegate,
+                  GlobalWidgetsLocalizations.delegate,
+                  GlobalCupertinoLocalizations.delegate,
+                ],
+                supportedLocales: const [
+                  Locale('ar'),
+                  Locale('en'),
+                ],
+                locale: const Locale('ar'),
                 builder: (context, child) => kIsWeb
                     ? SelectionArea(child: child ?? const SizedBox.shrink())
                     : child ?? const SizedBox.shrink(),
