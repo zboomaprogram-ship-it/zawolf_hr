@@ -8,7 +8,6 @@ import '../../components/wolf_button.dart';
 import '../../components/wolf_input_field.dart';
 import '../../components/performance_badges_widget.dart';
 import '../../design_system/components/app_logo.dart';
-import '../../design_system/components/rtl_navigation.dart';
 import '../../services/auth_service.dart';
 import '../../models/employee_role.dart';
 import '../../models/user_model.dart';
@@ -52,6 +51,15 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
   bool _automaticAttendanceEnabled = false;
   bool _loadingAutomaticAttendance = false;
   Future<bool>? _developerToolsAvailable;
+
+  // The application is Arabic-first. These rows always open a deeper page,
+  // so their affordance belongs on the left and must point left. Do not use a
+  // direction-sensitive icon here: this screen can be embedded by an LTR
+  // route on web/native and that used to mirror the chevron incorrectly.
+  static const _detailsChevron = Icon(
+    Icons.chevron_left,
+    textDirection: TextDirection.ltr,
+  );
 
   @override
   void didChangeDependencies() {
@@ -598,7 +606,7 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                   subtitle: const Text(
                     'عرض الطلبات السابقة ومسار الموافقات وحالة كل طلب',
                   ),
-                  trailing: Icon(RtlNavigation.chevronEnd(context)),
+                  trailing: _detailsChevron,
                 ),
               ),
               const SizedBox(height: 20),
@@ -614,7 +622,7 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                   subtitle: const Text(
                     'عرض الخصومات بالأيام وحالة مراجعة HR بدون مبالغ مالية',
                   ),
-                  trailing: Icon(RtlNavigation.chevronEnd(context)),
+                  trailing: _detailsChevron,
                 ),
               ),
               StreamBuilder<Set<String>>(
@@ -648,7 +656,11 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                     subtitle: const Text(
                       'عرض الموظفين الذين حصلوا على شارات التميز',
                     ),
-                    trailing: Icon(RtlNavigation.chevronEnd(context), size: 18),
+                    trailing: const Icon(
+                      Icons.chevron_left,
+                      size: 18,
+                      textDirection: TextDirection.ltr,
+                    ),
                   ),
                 ),
                 const SizedBox(height: 8),
@@ -786,7 +798,7 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                       ),
                       title: const Text('مركز الإشعارات'),
                       subtitle: const Text('عرض التنبيهات والإعلانات السابقة'),
-                      trailing: Icon(RtlNavigation.chevronEnd(context)),
+                      trailing: _detailsChevron,
                       onTap: () => context.push('/notifications'),
                     ),
                     const Divider(color: ZaWolfColors.surface02, height: 1),
@@ -850,7 +862,7 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                       ),
                       title: const Text('سياسة الخصوصية'),
                       subtitle: const Text('اعرف كيف نستخدم بياناتك ونحميها'),
-                      trailing: Icon(RtlNavigation.chevronEnd(context)),
+                      trailing: _detailsChevron,
                       onTap: () => context.push('/privacy'),
                     ),
                     const Divider(color: ZaWolfColors.surface02, height: 1),
@@ -863,7 +875,7 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                       subtitle: const Text(
                         'قواعد استخدام النظام ومسؤوليات الحساب',
                       ),
-                      trailing: Icon(RtlNavigation.chevronEnd(context)),
+                      trailing: _detailsChevron,
                       onTap: () => context.push('/terms'),
                     ),
                     FutureBuilder<bool>(
@@ -887,7 +899,7 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                               subtitle: const Text(
                                 'أدوات فحص داخل التطبيق بصلاحية مؤقتة',
                               ),
-                              trailing: Icon(RtlNavigation.chevronEnd(context)),
+                              trailing: _detailsChevron,
                               onTap: () => context.push('/developer-tools'),
                             ),
                           ],
