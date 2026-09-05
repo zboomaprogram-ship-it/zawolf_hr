@@ -45,16 +45,29 @@ class _ManualAttendanceViewState extends State<_ManualAttendanceView> {
       initialTime: TimeOfDay.fromDateTime(_effectiveAt),
     );
     if (picked == null) return;
-    setState(
-      () =>
-          _effectiveAt = DateTime(
-            _effectiveAt.year,
-            _effectiveAt.month,
-            _effectiveAt.day,
-            picked.hour,
-            picked.minute,
-          ),
+    final now = DateTime.now();
+    final candidate = DateTime(
+      _effectiveAt.year,
+      _effectiveAt.month,
+      _effectiveAt.day,
+      picked.hour,
+      picked.minute,
     );
+    // Manual attendance is intentionally limited to today and a current (or
+    // earlier) time.  Catching this here avoids sending an invalid operation
+    // to the server and, more importantly, makes the rule clear to HR.
+    if (candidate.isAfter(now.add(const Duration(minutes: 1)))) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'يمكن تسجيل حضور اليوم في الوقت الحالي أو وقت سابق فقط.',
+          ),
+        ),
+      );
+      return;
+    }
+    setState(() => _effectiveAt = candidate);
   }
 
   @override
@@ -134,34 +147,35 @@ class _ManualAttendanceViewState extends State<_ManualAttendanceView> {
                         return true;
                       })
                       .map(
-                    (employee) => Card(
-                      child: ListTile(
-                        selected: _employee?.id == employee.id,
-                        leading: Icon(
-                          _employee?.id == employee.id
-                              ? Icons.check_circle
-                              : Icons.person_outline,
+                        (employee) => Card(
+                          child: ListTile(
+                            selected: _employee?.id == employee.id,
+                            leading: Icon(
+                              _employee?.id == employee.id
+                                  ? Icons.check_circle
+                                  : Icons.person_outline,
+                            ),
+                            title: Text(employee.name),
+                            subtitle: Text(
+                              '${employee.employeeCode} • ${employee.department}\n${_attendanceLabel(employee)}',
+                            ),
+                            trailing: Icon(
+                              employee.isCheckedOut
+                                  ? Icons.logout_rounded
+                                  : employee.isCheckedIn
+                                  ? Icons.login_rounded
+                                  : Icons.person_off_outlined,
+                              color:
+                                  employee.isCheckedOut
+                                      ? Colors.blue
+                                      : employee.isCheckedIn
+                                      ? Colors.green
+                                      : Colors.redAccent,
+                            ),
+                            onTap: () => setState(() => _employee = employee),
+                          ),
                         ),
-                        title: Text(employee.name),
-                        subtitle: Text(
-                          '${employee.employeeCode} • ${employee.department}\n${_attendanceLabel(employee)}',
-                        ),
-                        trailing: Icon(
-                          employee.isCheckedOut
-                              ? Icons.logout_rounded
-                              : employee.isCheckedIn
-                              ? Icons.login_rounded
-                              : Icons.person_off_outlined,
-                          color: employee.isCheckedOut
-                              ? Colors.blue
-                              : employee.isCheckedIn
-                              ? Colors.green
-                              : Colors.redAccent,
-                        ),
-                        onTap: () => setState(() => _employee = employee),
                       ),
-                    ),
-                  ),
                   const SizedBox(height: 12),
                   SegmentedButton<String>(
                     segments: const [
@@ -216,6 +230,18 @@ class _ManualAttendanceViewState extends State<_ManualAttendanceView> {
                                   const SnackBar(
                                     content: Text(
                                       'اختر الموظف واكتب سبب التسجيل.',
+                                    ),
+                                  ),
+                                );
+                                return;
+                              }
+                              if (_effectiveAt.isAfter(
+                                DateTime.now().add(const Duration(minutes: 1)),
+                              )) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text(
+                                      'يمكن تسجيل حضور اليوم في الوقت الحالي أو وقت سابق فقط.',
                                     ),
                                   ),
                                 );

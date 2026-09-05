@@ -71,7 +71,23 @@ extension AppDelegate: CLLocationManagerDelegate {
 
   func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
     pendingAttendanceEvent = nil
+    pendingAttendanceLocationId = nil
     finishAttendanceBackgroundTask()
+  }
+
+  func locationManager(
+    _ manager: CLLocationManager,
+    monitoringDidFailFor region: CLRegion?,
+    withError error: Error
+  ) {
+    // Monitoring failures are recoverable (for example, a system region
+    // limit). Do not retain a pending event or let a failed monitor affect app
+    // startup; the employee can still use the normal attendance button.
+    if region?.identifier.hasPrefix("zawolf_") == true {
+      pendingAttendanceEvent = nil
+      pendingAttendanceLocationId = nil
+      finishAttendanceBackgroundTask()
+    }
   }
 
   fileprivate func writeAutomaticAttendanceSignal(event: String, location: CLLocation) {
@@ -195,12 +211,19 @@ extension AppDelegate: CLLocationManagerDelegate {
                 let latitude = (raw["latitude"] as? NSNumber)?.doubleValue,
                 let longitude = (raw["longitude"] as? NSNumber)?.doubleValue,
                 let requestedRadius = (raw["radiusMeters"] as? NSNumber)?.doubleValue,
-                requestedRadius > 0 else { return nil }
+                self.isValidAttendanceRegion(
+                  latitude: latitude,
+                  longitude: longitude,
+                  radius: requestedRadius
+                ) else { return nil }
           var normalized = raw
           normalized["locationId"] = locationId
           normalized["latitude"] = latitude
           normalized["longitude"] = longitude
-          normalized["radiusMeters"] = min(max(requestedRadius, 100), self.attendanceLocationManager.maximumRegionMonitoringDistance)
+          normalized["radiusMeters"] = min(
+            max(requestedRadius, 1),
+            self.attendanceLocationManager.maximumRegionMonitoringDistance
+          )
           return normalized
         }
         guard !locations.isEmpty else {
@@ -245,14 +268,41 @@ extension AppDelegate: CLLocationManagerDelegate {
   ) {
     guard CLLocationManager.isMonitoringAvailable(for: CLCircularRegion.self) else { return }
     guard attendanceLocationManager.authorizationStatus == .authorizedAlways else { return }
+    // Core Location throws an Objective-C exception (and terminates the app)
+    // for an invalid circular region. Persisted settings can outlive a changed
+    // HR assignment, an older build, or a partial native write, so validate
+    // every value before constructing the region.
+    guard isValidAttendanceRegion(
+      latitude: latitude,
+      longitude: longitude,
+      radius: radius
+    ) else { return }
+    let maximumRadius = attendanceLocationManager.maximumRegionMonitoringDistance
+    let safeRadius = min(max(radius, 1), maximumRadius)
     let region = CLCircularRegion(
       center: CLLocationCoordinate2D(latitude: latitude, longitude: longitude),
-      radius: min(max(radius, 100), attendanceLocationManager.maximumRegionMonitoringDistance),
+      radius: safeRadius,
       identifier: "zawolf_\(locationId)"
     )
     region.notifyOnEntry = true
     region.notifyOnExit = true
     attendanceLocationManager.startMonitoring(for: region)
+  }
+
+  fileprivate func isValidAttendanceRegion(
+    latitude: CLLocationDegrees,
+    longitude: CLLocationDegrees,
+    radius: CLLocationDistance
+  ) -> Bool {
+    let maximumRadius = attendanceLocationManager.maximumRegionMonitoringDistance
+    return latitude.isFinite &&
+      longitude.isFinite &&
+      radius.isFinite &&
+      maximumRadius.isFinite &&
+      (-90.0...90.0).contains(latitude) &&
+      (-180.0...180.0).contains(longitude) &&
+      radius > 0 &&
+      maximumRadius > 0
   }
 
   fileprivate func startAttendanceMonitors(_ locations: [[String: Any]]) {
@@ -294,7 +344,10 @@ extension AppDelegate: CLLocationManagerDelegate {
     let locations = automaticAttendanceLocations()
     if !locations.isEmpty {
       startAttendanceMonitors(locations)
-    } else if let locationId = defaults.string(forKey: "auto_attendance_locationId") {
+    } else if let locationId = defaults.string(forKey: "auto_attendance_locationId"),
+              defaults.object(forKey: "auto_attendance_latitude") != nil,
+              defaults.object(forKey: "auto_attendance_longitude") != nil,
+              defaults.object(forKey: "auto_attendance_radiusMeters") != nil {
       startAttendanceMonitor(
         locationId: locationId,
         latitude: defaults.double(forKey: "auto_attendance_latitude"),
@@ -315,7 +368,7 @@ extension AppDelegate: CLLocationManagerDelegate {
     channel.setMethodCallHandler { call, result in
       switch call.method {
       case "iosAlarmAvailability":
-        if #available(iOS 18.0, *) {
+        if #available(iOS 26.0, *) {
           #if canImport(AlarmKit)
           result(true)
           #else
@@ -331,7 +384,7 @@ extension AppDelegate: CLLocationManagerDelegate {
           "available": false,
           "authorization": "unavailable",
         ]
-        if #available(iOS 18.0, *) {
+        if #available(iOS 26.0, *) {
           #if canImport(AlarmKit)
           status["alarmKitCompiled"] = true
           status["available"] = true
@@ -355,7 +408,7 @@ extension AppDelegate: CLLocationManagerDelegate {
           result(FlutterError(code: "invalid_alarm", message: "وقت المنبه غير صالح.", details: nil))
           return
         }
-        if #available(iOS 18.0, *) {
+        if #available(iOS 26.0, *) {
           #if canImport(AlarmKit)
           Task { @MainActor in
             do {
@@ -376,7 +429,7 @@ extension AppDelegate: CLLocationManagerDelegate {
           result(FlutterError(code: "alarmkit_unavailable", message: "سيتم استخدام تذكير iPhone المحلي بدلاً من منبه النظام.", details: nil))
         }
       case "cancelIosWorkAlarm":
-        if #available(iOS 18.0, *) {
+        if #available(iOS 26.0, *) {
           #if canImport(AlarmKit)
           if let arguments = call.arguments as? [String: Any],
              let rawID = arguments["alarmId"] as? String,
@@ -397,7 +450,7 @@ extension AppDelegate: CLLocationManagerDelegate {
           result(FlutterError(code: "invalid_alarm", message: "بيانات منبهات الحضور غير مكتملة.", details: nil))
           return
         }
-        if #available(iOS 18.0, *) {
+        if #available(iOS 26.0, *) {
           #if canImport(AlarmKit)
           Task { @MainActor in
             do {
@@ -414,10 +467,10 @@ extension AppDelegate: CLLocationManagerDelegate {
           result(FlutterError(code: "alarmkit_unavailable", message: "AlarmKit غير متاح في هذا البناء.", details: nil))
           #endif
         } else {
-          result(FlutterError(code: "alarmkit_unavailable", message: "AlarmKit يتطلب iOS 18 أو أحدث.", details: nil))
+          result(FlutterError(code: "alarmkit_unavailable", message: "منبه iPhone النظامي يتطلب iOS 26 أو أحدث.", details: nil))
         }
       case "cancelIosDatedAlarms":
-        if #available(iOS 18.0, *) {
+        if #available(iOS 26.0, *) {
           #if canImport(AlarmKit)
           if let arguments = call.arguments as? [String: Any],
              let rawIDs = arguments["alarmIds"] as? [String] {
@@ -437,7 +490,7 @@ extension AppDelegate: CLLocationManagerDelegate {
   }
 
   #if canImport(AlarmKit)
-  @available(iOS 18.0, *)
+  @available(iOS 26.0, *)
   @MainActor
   private func scheduleWorkAlarm(existingID: String?, hour: Int, minute: Int) async throws -> UUID {
     let manager = AlarmManager.shared
@@ -489,7 +542,7 @@ extension AppDelegate: CLLocationManagerDelegate {
     return alarmID
   }
 
-  @available(iOS 18.0, *)
+  @available(iOS 26.0, *)
   @MainActor
   private func scheduleDatedWorkAlarms(
     existingIDs: [String],
@@ -554,7 +607,7 @@ extension AppDelegate: CLLocationManagerDelegate {
 }
 
 #if canImport(AlarmKit)
-@available(iOS 18.0, *)
+@available(iOS 26.0, *)
 private struct WorkAlarmMetadata: AlarmMetadata {}
 
 private enum WorkAlarmError: LocalizedError {

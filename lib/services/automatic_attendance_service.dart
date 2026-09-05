@@ -72,6 +72,13 @@ class AutomaticAttendanceService {
     String? deviceLabel,
   }) async {
     if (!isSupported) return;
+    // iOS restores an already-approved region monitor natively on launch.
+    // Give the first Flutter frame time to settle before refreshing its
+    // assignment list through the MethodChannel. This preserves HR assignment
+    // updates while keeping a native location refresh out of the launch path.
+    if (defaultTargetPlatform == TargetPlatform.iOS && !force) {
+      await Future<void>.delayed(const Duration(seconds: 1));
+    }
     if (!force && !await isEnabledFor(user.uid)) return;
     final permission = await Geolocator.checkPermission();
     if (permission != LocationPermission.always) return;
@@ -84,9 +91,10 @@ class AutomaticAttendanceService {
     }
     final boundDeviceId = deviceId ?? user.registeredAttendanceDeviceId;
     if (boundDeviceId == null || boundDeviceId.trim().isEmpty) return;
-    final method = defaultTargetPlatform == TargetPlatform.iOS
-        ? 'configureIosGeofence'
-        : 'configureAndroidGeofence';
+    final method =
+        defaultTargetPlatform == TargetPlatform.iOS
+            ? 'configureIosGeofence'
+            : 'configureAndroidGeofence';
     await _channel.invokeMethod<void>(method, {
       'userId': user.uid,
       'employeeId': user.employeeId,
@@ -101,8 +109,8 @@ class AutomaticAttendanceService {
 
   Future<List<Map<String, Object?>>> _monitorLocations(UserModel user) async {
     try {
-      final snapshot = await AttendanceLocationAssignmentRepositoryImpl()
-          .getMine();
+      final snapshot =
+          await AttendanceLocationAssignmentRepositoryImpl().getMine();
       if (snapshot.enabled) {
         final now = DateTime.now();
         final assignments = AttendanceRegionPlan.build(
@@ -143,9 +151,10 @@ class AutomaticAttendanceService {
 
   Future<void> disable(String userId) async {
     if (isSupported) {
-      final method = defaultTargetPlatform == TargetPlatform.iOS
-          ? 'disableIosGeofence'
-          : 'disableAndroidGeofence';
+      final method =
+          defaultTargetPlatform == TargetPlatform.iOS
+              ? 'disableIosGeofence'
+              : 'disableAndroidGeofence';
       await _channel.invokeMethod<void>(method);
     }
     final preferences = await SharedPreferences.getInstance();

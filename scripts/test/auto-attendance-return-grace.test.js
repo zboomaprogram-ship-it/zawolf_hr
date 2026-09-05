@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
   activeReturnException,
+  activeWorkingPeriod,
   returnGraceDeadline,
 } = require('../auto-attendance');
 
@@ -49,4 +50,34 @@ test('ordinary exit receives only the configured return grace', () => {
     policy: { autoCheckoutReturnGraceMinutes: 15 },
   });
   assert.equal(deadline.toISOString(), '2026-08-25T08:15:00.000Z');
+});
+
+test('location exit alert is limited to an active working period', () => {
+  assert.deepEqual(activeWorkingPeriod({
+    nowMinutes: 10 * 60,
+    permissions: [],
+    workTimes,
+    policy: {},
+  }), { start: 9 * 60, end: 17 * 60, key: '540-1020' });
+
+  assert.equal(activeWorkingPeriod({
+    nowMinutes: 13 * 60 + 30,
+    permissions: [],
+    workTimes,
+    policy: {},
+  }), null, 'the configured company break must not alert HR');
+
+  assert.equal(activeWorkingPeriod({
+    nowMinutes: 10 * 60 + 15,
+    permissions: [{ permissionType: 'mid_shift_exit', expectedTime: '10:00', durationMinutes: 60 }],
+    workTimes,
+    policy: {},
+  }), null, 'an approved mid-shift permission must not alert HR');
+
+  assert.equal(activeWorkingPeriod({
+    nowMinutes: 18 * 60,
+    permissions: [],
+    workTimes,
+    policy: {},
+  }), null, 'outside working hours must not alert HR');
 });

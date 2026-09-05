@@ -55,9 +55,6 @@
 	<true/>
 	<key>UIBackgroundModes</key>
 	<array>
-		<!-- Region monitoring is enabled only after the employee explicitly opts
-		     into automatic attendance and grants the iOS "Always" permission. -->
-		<string>location</string>
 		<string>remote-notification</string>
 	</array>
 	<key>UILaunchStoryboardName</key>

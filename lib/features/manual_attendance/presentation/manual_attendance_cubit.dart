@@ -1,6 +1,7 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../domain/manual_attendance_repository.dart';
+import '../../../utils/user_facing_error.dart';
 
 class ManualAttendanceState {
   const ManualAttendanceState({
@@ -90,7 +91,15 @@ class ManualAttendanceCubit extends Cubit<ManualAttendanceState> {
         ),
       );
     } catch (error) {
-      emit(state.copyWith(submitting: false, error: '$error'));
+      emit(
+        state.copyWith(
+          submitting: false,
+          error: userFacingError(
+            error,
+            fallback: 'تعذر تسجيل العملية اليدوية. أعد المحاولة.',
+          ),
+        ),
+      );
     }
   }
 }

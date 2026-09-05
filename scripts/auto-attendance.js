@@ -138,7 +138,7 @@ function deductionFor(nowMinutes, startMinutes, policy, salary, currency) {
   };
 }
 
-async function writeHrNotification(db, title, body, data) {
+async function writeHrNotification(db, title, body, data, type = 'salary_deduction_pending') {
   const hrUsers = await db.collection('users').where('isActive', '==', true).get();
   const batch = db.batch();
   let count = 0;
@@ -148,7 +148,7 @@ async function writeHrNotification(db, title, body, data) {
     const notification = db.collection('notifications').doc(userDoc.id).collection('items').doc();
     batch.set(notification, {
       notificationId: notification.id,
-      type: 'salary_deduction_pending', title, body, data,
+      type, title, body, data,
       isRead: false, pushSent: false,
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
     });
@@ -156,6 +156,72 @@ async function writeHrNotification(db, title, body, data) {
     count++;
   }
   if (count) await batch.commit();
+}
+
+function activeWorkingPeriod({ nowMinutes, workTimes, permissions, policy }) {
+  if (nowMinutes < workTimes.start || nowMinutes >= workTimes.end) return null;
+  const exception = activeReturnException({
+    nowMinutes,
+    permissions,
+    workTimes,
+    policy,
+  });
+  if (exception) return null;
+  return {
+    start: workTimes.start,
+    end: workTimes.end,
+    key: `${workTimes.start}-${workTimes.end}`,
+  };
+}
+
+// An EXIT is an OS region-boundary event, not payroll evidence.  We record one
+// reviewable alert per employee/location/working period and notify HR.  The
+// document ID is the idempotency boundary when Android or iOS re-delivers an
+// event, or the worker retries after a failure.
+async function createLocationExitAlert({
+  db, userDoc, user, signal, signalTime, capturedAt, location, period,
+}) {
+  const alertId = [
+    signalTime.dateKey,
+    userDoc.id,
+    String(signal.locationId || 'assigned'),
+    period.key,
+  ].join('_').replace(/[^a-zA-Z0-9_-]/g, '-');
+  const alertRef = db.collection('attendanceLocationExitAlerts').doc(alertId);
+  const created = await db.runTransaction(async (transaction) => {
+    const existing = await transaction.get(alertRef);
+    if (existing.exists) return false;
+    transaction.create(alertRef, {
+      alertId,
+      userId: userDoc.id,
+      employeeId: user.employeeId || '',
+      employeeName: user.displayName || user.employeeId || 'موظف',
+      managerId: user.managerId || null,
+      date: signalTime.dateKey,
+      locationId: signal.locationId || null,
+      locationName: location.name || signal.locationName || '',
+      eventAt: admin.firestore.Timestamp.fromDate(capturedAt),
+      workingPeriodStartMinutes: period.start,
+      workingPeriodEndMinutes: period.end,
+      source: signal.source,
+      status: 'open',
+      resolution: null,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+    return true;
+  });
+  if (!created) return { created: false, alertId };
+  const employeeName = user.displayName || user.employeeId || 'موظف';
+  const locationName = location.name || signal.locationName || 'موقع الحضور';
+  await writeHrNotification(
+    db,
+    'تنبيه مغادرة موقع العمل',
+    `غادر ${employeeName} نطاق ${locationName} أثناء وقت الدوام بدون إذن أو مأمورية معتمدة. يرجى المراجعة.`,
+    { alertId, userId: userDoc.id, date: signalTime.dateKey, locationId: signal.locationId || null },
+    'attendance_location_exit',
+  );
+  return { created: true, alertId };
 }
 
 async function resolveSignal(db, signalDoc, outcome, extra = {}) {
@@ -305,11 +371,38 @@ async function processSignal(db, signalDoc, company, now, checkoutPolicy, multiL
     return;
   }
   if (signal.event !== 'exit') return resolveSignal(db, signalDoc, 'rejected_event');
+  // Field missions and approved permissions have already been loaded above.
+  // Neither an expected absence nor the configured company break should create
+  // a location-leaving alert.  An alert is informational and never changes
+  // attendance, pay, or an employee's approval status.
+  const hasActiveAttendance = attendance.exists &&
+    Boolean(attendance.data()?.checkInTime) &&
+    !attendance.data()?.checkOutTime;
+  const period = hasActiveAttendance && !fieldAssignment && activeWorkingPeriod({
+    nowMinutes: signalTime.minutes,
+    workTimes: times,
+    permissions: todaysPermissions,
+    policy,
+  });
+  let exitAlert = null;
+  if (period) {
+    exitAlert = await createLocationExitAlert({
+      db,
+      userDoc,
+      user,
+      signal,
+      signalTime,
+      capturedAt,
+      location,
+      period,
+    });
+  }
   // Check-out is deliberately fail-closed. This decision happens before an
   // attendance read/write so an off policy cannot create a hidden checkout.
   if (checkoutPolicy?.enabled !== true) {
     return resolveSignal(db, signalDoc, 'ignored_checkout_policy_disabled', {
       checkoutPolicyRevision: Number(checkoutPolicy?.revision || 0),
+      locationExitAlertId: exitAlert?.alertId || null,
     });
   }
   if (!attendance.exists || !attendance.data()?.checkInTime) return resolveSignal(db, signalDoc, 'ignored_without_check_in');
@@ -347,6 +440,7 @@ async function processSignal(db, signalDoc, company, now, checkoutPolicy, multiL
   await resolveSignal(db, signalDoc, exception ? 'pending_return_after_exception' : 'pending_return_grace', {
     attendanceId: attendanceRef.id,
     returnGraceDueAt: admin.firestore.Timestamp.fromDate(dueAt),
+    locationExitAlertId: exitAlert?.alertId || null,
   });
 }
 
@@ -484,6 +578,8 @@ module.exports = {
   deductionFor,
   effectiveTimes,
   activeReturnException,
+  activeWorkingPeriod,
+  createLocationExitAlert,
   returnGraceDeadline,
   haversineMeters,
   isWorkDay,
