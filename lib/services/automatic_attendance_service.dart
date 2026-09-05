@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -82,6 +83,13 @@ class AutomaticAttendanceService {
     if (!force && !await isEnabledFor(user.uid)) return;
     final permission = await Geolocator.checkPermission();
     if (permission != LocationPermission.always) return;
+    try {
+      await _flushPendingIosSignals(user.uid);
+    } catch (_) {
+      // Keep queued evidence for the next launch/retry. A temporary network
+      // failure must not prevent the operating-system region monitor from
+      // being refreshed.
+    }
     final monitorLocations = await _monitorLocations(user);
     if (monitorLocations.isEmpty) {
       if (force) {
@@ -105,6 +113,44 @@ class AutomaticAttendanceService {
       ...monitorLocations.first,
       'locations': monitorLocations,
     });
+  }
+
+  /// iOS region callbacks can occur while Flutter is not running. Native code
+  /// stores those events in UserDefaults and must never initialise Firestore,
+  /// because that races the plugin's one-time Firestore setup on app launch.
+  /// Drain and acknowledge each event only after its idempotent Firestore write
+  /// succeeds, so a temporary offline failure cannot lose attendance evidence.
+  Future<void> _flushPendingIosSignals(String userId) async {
+    if (defaultTargetPlatform != TargetPlatform.iOS) return;
+    final rawSignals =
+        await _channel.invokeMethod<List<dynamic>>(
+          'getIosPendingAttendanceSignals',
+        ) ??
+        const <dynamic>[];
+    final acknowledged = <String>[];
+    for (final rawSignal in rawSignals) {
+      if (rawSignal is! Map) continue;
+      final signal = Map<String, dynamic>.from(rawSignal);
+      final eventId = signal['eventId'] as String?;
+      if (eventId == null || eventId.isEmpty || signal['userId'] != userId) {
+        continue;
+      }
+      await FirebaseFirestore.instance
+          .collection('autoAttendanceSignals')
+          .doc(eventId)
+          .set(<String, dynamic>{
+            ...signal,
+            'status': 'pending',
+            'createdAt': FieldValue.serverTimestamp(),
+          });
+      acknowledged.add(eventId);
+    }
+    if (acknowledged.isNotEmpty) {
+      await _channel.invokeMethod<void>(
+        'ackIosPendingAttendanceSignals',
+        acknowledged,
+      );
+    }
   }
 
   Future<List<Map<String, Object?>>> _monitorLocations(UserModel user) async {

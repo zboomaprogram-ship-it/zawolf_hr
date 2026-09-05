@@ -3,12 +3,10 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  final automatic = File(
-    'lib/services/automatic_attendance_service.dart',
-  ).readAsStringSync();
-  final profile = File(
-    'lib/screens/employee/profile_settings.dart',
-  ).readAsStringSync();
+  final automatic =
+      File('lib/services/automatic_attendance_service.dart').readAsStringSync();
+  final profile =
+      File('lib/screens/employee/profile_settings.dart').readAsStringSync();
 
   test(
     'automatic attendance is explicit opt-in and requires always location',
@@ -32,4 +30,18 @@ void main() {
     expect(automatic, contains('registeredAttendanceDeviceId'));
     expect(automatic, contains("'userId': user.uid"));
   });
+
+  test(
+    'iOS geofence events are queued natively before Flutter drains them',
+    () {
+      final appDelegate =
+          File('ios/Runner/AppDelegate.swift').readAsStringSync();
+
+      expect(appDelegate, isNot(contains('import FirebaseFirestore')));
+      expect(appDelegate, contains('enqueuePendingAttendanceSignal(values)'));
+      expect(appDelegate, contains('getIosPendingAttendanceSignals'));
+      expect(automatic, contains('_flushPendingIosSignals(user.uid)'));
+      expect(automatic, contains('ackIosPendingAttendanceSignals'));
+    },
+  );
 }

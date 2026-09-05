@@ -426,274 +426,390 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
     final mustChangeDefaultPassword = user.passwordChangedAt == null;
     final pushState = OneSignalService.instance.registrationState();
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text(
-          'حسابي',
-          style: TextStyle(fontWeight: FontWeight.bold),
-        ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.logout, color: ZaWolfColors.error),
-            tooltip: 'تسجيل الخروج',
-            onPressed: () async {
-              await authService.signOut();
-              if (context.mounted) {
-                context.go('/login');
-              }
-            },
+    // Keep every list-row affordance in Arabic RTL, even when this screen is
+    // reached from a route whose inherited direction is temporarily LTR.
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text(
+            'حسابي',
+            style: TextStyle(fontWeight: FontWeight.bold),
           ),
-        ],
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            // User Avatar Card with glow ring
-            Center(
-              child: Column(
-                children: [
-                  Container(
-                    width: 100,
-                    height: 100,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      border: Border.all(
-                        color: ZaWolfColors.primaryCyan,
-                        width: 3,
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.logout, color: ZaWolfColors.error),
+              tooltip: 'تسجيل الخروج',
+              onPressed: () async {
+                await authService.signOut();
+                if (context.mounted) {
+                  context.go('/login');
+                }
+              },
+            ),
+          ],
+        ),
+        body: SingleChildScrollView(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // User Avatar Card with glow ring
+              Center(
+                child: Column(
+                  children: [
+                    Container(
+                      width: 100,
+                      height: 100,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: ZaWolfColors.primaryCyan,
+                          width: 3,
+                        ),
+                        boxShadow: const [ZaWolfColors.wolfGlow],
                       ),
-                      boxShadow: const [ZaWolfColors.wolfGlow],
+                      child: ClipOval(
+                        child:
+                            user.photoURL != null && user.photoURL!.isNotEmpty
+                                ? Image.network(
+                                  user.photoURL!,
+                                  fit: BoxFit.cover,
+                                )
+                                : const AppLogo(size: 94),
+                      ),
                     ),
-                    child: ClipOval(
-                      child:
-                          user.photoURL != null && user.photoURL!.isNotEmpty
-                              ? Image.network(user.photoURL!, fit: BoxFit.cover)
-                              : const AppLogo(size: 94),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    user.displayName,
-                    style: theme.textTheme.headlineMedium!.copyWith(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 4,
-                    ),
-                    decoration: BoxDecoration(
-                      gradient: ZaWolfColors.primaryGradient,
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    child: Text(
-                      _getRoleLabel(user.role),
-                      style: const TextStyle(
+                    const SizedBox(height: 16),
+                    Text(
+                      user.displayName,
+                      style: theme.textTheme.headlineMedium!.copyWith(
                         color: Colors.white,
-                        fontSize: 11,
                         fontWeight: FontWeight.bold,
                       ),
                     ),
-                  ),
-                ],
+                    const SizedBox(height: 4),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        gradient: ZaWolfColors.primaryGradient,
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: Text(
+                        _getRoleLabel(user.role),
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
-            ),
-            const SizedBox(height: 24),
+              const SizedBox(height: 24),
 
-            if (mustChangeDefaultPassword) ...[
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: ZaWolfColors.warning.withValues(alpha: 0.14),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                    color: ZaWolfColors.warning.withValues(alpha: 0.45),
+              if (mustChangeDefaultPassword) ...[
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: ZaWolfColors.warning.withValues(alpha: 0.14),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: ZaWolfColors.warning.withValues(alpha: 0.45),
+                    ),
+                  ),
+                  child: const Text(
+                    'تنبيه أمان: كلمة المرور الافتراضية للحسابات الجديدة هي ZW@0000. يرجى تغييرها من هنا في أقرب وقت.',
+                    textDirection: TextDirection.rtl,
+                    style: TextStyle(
+                      color: ZaWolfColors.warning,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                 ),
-                child: const Text(
-                  'تنبيه أمان: كلمة المرور الافتراضية للحسابات الجديدة هي ZW@0000. يرجى تغييرها من هنا في أقرب وقت.',
-                  textDirection: TextDirection.rtl,
-                  style: TextStyle(
-                    color: ZaWolfColors.warning,
-                    fontWeight: FontWeight.bold,
-                  ),
+                const SizedBox(height: 20),
+              ],
+
+              // Profile info details card
+              WolfCard(
+                hasBorderGlow: true,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'البيانات الشخصية / Personal Info',
+                      style: theme.textTheme.titleMedium!.copyWith(
+                        color: Colors.white,
+                      ),
+                    ),
+                    const Divider(color: ZaWolfColors.surface02, height: 20),
+                    _buildProfileRow(
+                      'الرقم الوظيفي (ID)',
+                      user.employeeId,
+                      theme,
+                    ),
+                    _buildProfileRow('البريد الإلكتروني', user.email, theme),
+                    _buildProfileRow(
+                      'الفرع / الموقع',
+                      user.locationName,
+                      theme,
+                    ),
+                    _buildProfileRow('القسم / الإدارة', user.department, theme),
+                    _buildProfileRow('المسمى الوظيفي', user.position, theme),
+                    _buildProfileRow(
+                      'الراتب الأساسي',
+                      '${user.baseMonthlySalary.toStringAsFixed(2)} ${user.salaryCurrency}',
+                      theme,
+                    ),
+                    _buildProfileRow(
+                      'المدير المباشر',
+                      user.managerNames.isNotEmpty
+                          ? user.managerNames.join('، ')
+                          : (user.managerName ?? 'لا يوجد مدير مباشر مسند'),
+                      theme,
+                    ),
+                    if (user.teamLeaderName != null &&
+                        user.teamLeaderName!.isNotEmpty)
+                      _buildProfileRow(
+                        'قائد الفريق',
+                        user.teamLeaderName!,
+                        theme,
+                      ),
+                    _buildProfileRow('تاريخ التعيين', joinDateStr, theme),
+                  ],
                 ),
               ),
               const SizedBox(height: 20),
-            ],
 
-            // Profile info details card
-            WolfCard(
-              hasBorderGlow: true,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'البيانات الشخصية / Personal Info',
-                    style: theme.textTheme.titleMedium!.copyWith(
-                      color: Colors.white,
-                    ),
-                  ),
-                  const Divider(color: ZaWolfColors.surface02, height: 20),
-                  _buildProfileRow(
-                    'الرقم الوظيفي (ID)',
-                    user.employeeId,
-                    theme,
-                  ),
-                  _buildProfileRow('البريد الإلكتروني', user.email, theme),
-                  _buildProfileRow('الفرع / الموقع', user.locationName, theme),
-                  _buildProfileRow('القسم / الإدارة', user.department, theme),
-                  _buildProfileRow('المسمى الوظيفي', user.position, theme),
-                  _buildProfileRow(
-                    'الراتب الأساسي',
-                    '${user.baseMonthlySalary.toStringAsFixed(2)} ${user.salaryCurrency}',
-                    theme,
-                  ),
-                  _buildProfileRow(
-                    'المدير المباشر',
-                    user.managerNames.isNotEmpty
-                        ? user.managerNames.join('، ')
-                        : (user.managerName ?? 'لا يوجد مدير مباشر مسند'),
-                    theme,
-                  ),
-                  if (user.teamLeaderName != null &&
-                      user.teamLeaderName!.isNotEmpty)
-                    _buildProfileRow(
-                      'قائد الفريق',
-                      user.teamLeaderName!,
-                      theme,
-                    ),
-                  _buildProfileRow('تاريخ التعيين', joinDateStr, theme),
-                ],
-              ),
-            ),
-            const SizedBox(height: 20),
-
-            _buildLeaveBalanceCard(user, theme),
-            const SizedBox(height: 20),
-            WolfCard(
-              padding: EdgeInsets.zero,
-              onTap: () => context.push('/employee/requests?view=history'),
-              child: ListTile(
-                leading: const Icon(
-                  Icons.history_outlined,
-                  color: ZaWolfColors.primaryCyan,
-                ),
-                title: const Text('سجل طلباتي'),
-                subtitle: const Text(
-                  'عرض الطلبات السابقة ومسار الموافقات وحالة كل طلب',
-                ),
-                trailing: Icon(RtlNavigation.chevronEnd(context)),
-              ),
-            ),
-            const SizedBox(height: 20),
-            WolfCard(
-              padding: EdgeInsets.zero,
-              onTap: () => context.go('/employee/deductions'),
-              child: ListTile(
-                leading: const Icon(
-                  Icons.receipt_long_outlined,
-                  color: ZaWolfColors.primaryCyan,
-                ),
-                title: const Text('خصوماتي'),
-                subtitle: const Text(
-                  'عرض الخصومات بالأيام وحالة مراجعة HR بدون مبالغ مالية',
-                ),
-                trailing: Icon(RtlNavigation.chevronEnd(context)),
-              ),
-            ),
-            StreamBuilder<Set<String>>(
-              stream: PerformanceBadgeService.instance.watchAwardedBadgeIds(
-                user.uid,
-              ),
-              builder: (context, snapshot) {
-                final ids = snapshot.data ?? const <String>{};
-                return PerformanceBadgesWidget(awardedBadgeIds: ids);
-              },
-            ),
-            if (EmployeeRole.hasTeamScope(user.role)) ...[
+              _buildLeaveBalanceCard(user, theme),
+              const SizedBox(height: 20),
               WolfCard(
                 padding: EdgeInsets.zero,
-                onTap:
-                    () => Navigator.of(context).push(
-                      MaterialPageRoute<void>(
-                        builder:
-                            (_) => PerformanceBadgesOverviewScreen(
-                              viewerId: user.uid,
-                              canViewAll: EmployeeRole.isHr(user.role),
-                            ),
-                      ),
-                    ),
+                onTap: () => context.push('/employee/requests?view=history'),
                 child: ListTile(
                   leading: const Icon(
-                    Icons.emoji_events_outlined,
+                    Icons.history_outlined,
                     color: ZaWolfColors.primaryCyan,
                   ),
-                  title: const Text('شارات فريق العمل'),
-                  subtitle: const Text('عرض الموظفين الذين حصلوا على شارات التميز'),
-                  trailing: Icon(RtlNavigation.chevronEnd(context), size: 18),
+                  title: const Text('سجل طلباتي'),
+                  subtitle: const Text(
+                    'عرض الطلبات السابقة ومسار الموافقات وحالة كل طلب',
+                  ),
+                  trailing: Icon(RtlNavigation.chevronEnd(context)),
                 ),
               ),
-              const SizedBox(height: 8),
-            ],
-            const SizedBox(height: 14),
-
-            const SizedBox(height: 20),
-
-            // Settings Panels
-            Text(
-              'الإعدادات العامة / Preferences',
-              style: theme.textTheme.titleMedium!.copyWith(
-                color: Colors.white,
-                fontWeight: FontWeight.bold,
+              const SizedBox(height: 20),
+              WolfCard(
+                padding: EdgeInsets.zero,
+                onTap: () => context.go('/employee/deductions'),
+                child: ListTile(
+                  leading: const Icon(
+                    Icons.receipt_long_outlined,
+                    color: ZaWolfColors.primaryCyan,
+                  ),
+                  title: const Text('خصوماتي'),
+                  subtitle: const Text(
+                    'عرض الخصومات بالأيام وحالة مراجعة HR بدون مبالغ مالية',
+                  ),
+                  trailing: Icon(RtlNavigation.chevronEnd(context)),
+                ),
               ),
-            ),
-            const SizedBox(height: 12),
-            Container(
-              decoration: BoxDecoration(
-                color: ZaWolfColors.surface01,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: ZaWolfColors.surface02),
+              StreamBuilder<Set<String>>(
+                stream: PerformanceBadgeService.instance.watchAwardedBadgeIds(
+                  user.uid,
+                ),
+                builder: (context, snapshot) {
+                  final ids = snapshot.data ?? const <String>{};
+                  return PerformanceBadgesWidget(awardedBadgeIds: ids);
+                },
               ),
-              child: Column(
-                children: [
-                  // Language Toggle Switch
-                  ListTile(
+              if (EmployeeRole.hasTeamScope(user.role)) ...[
+                WolfCard(
+                  padding: EdgeInsets.zero,
+                  onTap:
+                      () => Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          builder:
+                              (_) => PerformanceBadgesOverviewScreen(
+                                viewerId: user.uid,
+                                canViewAll: EmployeeRole.isHr(user.role),
+                              ),
+                        ),
+                      ),
+                  child: ListTile(
                     leading: const Icon(
-                      Icons.language,
+                      Icons.emoji_events_outlined,
                       color: ZaWolfColors.primaryCyan,
                     ),
-                    title: const Text('لغة التطبيق / Language'),
-                    subtitle: Text(
-                      _appLanguage == 'ar' ? 'العربية' : 'English',
+                    title: const Text('شارات فريق العمل'),
+                    subtitle: const Text(
+                      'عرض الموظفين الذين حصلوا على شارات التميز',
                     ),
-                    trailing: Switch(
-                      value: _appLanguage == 'ar',
-                      activeThumbColor: ZaWolfColors.primaryCyan,
-                      onChanged: (val) {
-                        setState(() {
-                          _appLanguage = val ? 'ar' : 'en';
-                        });
-                      },
-                    ),
+                    trailing: Icon(RtlNavigation.chevronEnd(context), size: 18),
                   ),
-                  if (AutomaticAttendanceService.instance.isSupported) ...[
+                ),
+                const SizedBox(height: 8),
+              ],
+              const SizedBox(height: 14),
+
+              const SizedBox(height: 20),
+
+              // Settings Panels
+              Text(
+                'الإعدادات العامة / Preferences',
+                style: theme.textTheme.titleMedium!.copyWith(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 12),
+              Container(
+                decoration: BoxDecoration(
+                  color: ZaWolfColors.surface01,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: ZaWolfColors.surface02),
+                ),
+                child: Column(
+                  children: [
+                    // Language Toggle Switch
+                    ListTile(
+                      leading: const Icon(
+                        Icons.language,
+                        color: ZaWolfColors.primaryCyan,
+                      ),
+                      title: const Text('لغة التطبيق / Language'),
+                      subtitle: Text(
+                        _appLanguage == 'ar' ? 'العربية' : 'English',
+                      ),
+                      trailing: Switch(
+                        value: _appLanguage == 'ar',
+                        activeThumbColor: ZaWolfColors.primaryCyan,
+                        onChanged: (val) {
+                          setState(() {
+                            _appLanguage = val ? 'ar' : 'en';
+                          });
+                        },
+                      ),
+                    ),
+                    if (AutomaticAttendanceService.instance.isSupported) ...[
+                      const Divider(color: ZaWolfColors.surface02, height: 1),
+                      ListTile(
+                        leading: const Icon(
+                          Icons.location_searching,
+                          color: ZaWolfColors.primaryCyan,
+                        ),
+                        title: const Text('الحضور التلقائي بالموقع'),
+                        subtitle: const Text(
+                          'اختياري: يستخدم نطاق فرعك فقط لتسجيل الدخول والخروج، ولا يتتبع مسارك المستمر. يتطلب إذن الموقع دائماً ويمكن إيقافه في أي وقت.',
+                        ),
+                        trailing:
+                            _loadingAutomaticAttendance
+                                ? const SizedBox(
+                                  width: 22,
+                                  height: 22,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                                : Switch(
+                                  value: _automaticAttendanceEnabled,
+                                  activeThumbColor: ZaWolfColors.primaryCyan,
+                                  onChanged: _setAutomaticAttendanceEnabled,
+                                ),
+                      ),
+                    ],
+                    const Divider(color: ZaWolfColors.surface02, height: 1),
+
+                    // Notifications Toggle Switch
+                    ListTile(
+                      leading: const Icon(
+                        Icons.notifications_active,
+                        color: ZaWolfColors.primaryCyan,
+                      ),
+                      title: const Text('إشعارات فورية (Foreground)'),
+                      subtitle: const Text(
+                        'عرض إشعارات تفاعلية أثناء فتح التطبيق',
+                      ),
+                      trailing: Switch(
+                        value: _notificationBanners,
+                        activeThumbColor: ZaWolfColors.primaryCyan,
+                        onChanged: (val) {
+                          setState(() {
+                            _notificationBanners = val;
+                          });
+                        },
+                      ),
+                    ),
+                    const Divider(color: ZaWolfColors.surface02, height: 1),
+                    ListTile(
+                      leading: Icon(
+                        pushState.isReady
+                            ? Icons.notifications_active
+                            : Icons.notifications_off_outlined,
+                        color:
+                            pushState.isReady
+                                ? ZaWolfColors.success
+                                : ZaWolfColors.warning,
+                      ),
+                      title: const Text('إشعارات الهاتف'),
+                      subtitle: Text(
+                        !pushState.configured
+                            ? 'غير مفعلة في نسخة التطبيق الحالية'
+                            : pushState.isReady
+                            ? 'مفعلة ومرتبطة بهذا الحساب'
+                            : 'تحتاج إلى تفعيل أو إعادة ربط',
+                      ),
+                      trailing:
+                          _registeringNotifications
+                              ? const SizedBox(
+                                width: 22,
+                                height: 22,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                              : IconButton(
+                                tooltip: 'تفعيل الإشعارات',
+                                onPressed:
+                                    () => _enablePushNotifications(user.uid),
+                                icon: const Icon(Icons.refresh),
+                              ),
+                    ),
                     const Divider(color: ZaWolfColors.surface02, height: 1),
                     ListTile(
                       leading: const Icon(
-                        Icons.location_searching,
+                        Icons.notifications_none,
                         color: ZaWolfColors.primaryCyan,
                       ),
-                      title: const Text('الحضور التلقائي بالموقع'),
-                      subtitle: const Text(
-                        'اختياري: يستخدم نطاق فرعك فقط لتسجيل الدخول والخروج، ولا يتتبع مسارك المستمر. يتطلب إذن الموقع دائماً ويمكن إيقافه في أي وقت.',
+                      title: const Text('مركز الإشعارات'),
+                      subtitle: const Text('عرض التنبيهات والإعلانات السابقة'),
+                      trailing: Icon(RtlNavigation.chevronEnd(context)),
+                      onTap: () => context.push('/notifications'),
+                    ),
+                    const Divider(color: ZaWolfColors.surface02, height: 1),
+                    ListTile(
+                      leading: const Icon(
+                        Icons.alarm,
+                        color: ZaWolfColors.primaryCyan,
+                      ),
+                      title: const Text('منبه دوام يدوي'),
+                      subtitle: Text(
+                        _loadingPersonalAlarm
+                            ? 'جارٍ التحميل'
+                            : _personalAlarm.enabled
+                            ? PersonalAlarmService.instance.usesAndroidClock
+                                ? 'مفعّل في ${_personalAlarm.formattedTime}'
+                                : _personalAlarmCapability?.nativeSystemAlarm ==
+                                    true
+                                ? 'منبه iPhone مفعّل في ${_personalAlarm.formattedTime}'
+                                : 'تذكير iPhone بالصوت مفعّل في ${_personalAlarm.formattedTime}'
+                            : 'غير مفعّل — يستخدم منبه الحضور الذكي إن كان مفعّلاً',
                       ),
                       trailing:
-                          _loadingAutomaticAttendance
+                          _savingPersonalAlarm || _loadingPersonalAlarm
                               ? const SizedBox(
                                 width: 22,
                                 height: 22,
@@ -702,338 +818,246 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                                 ),
                               )
                               : Switch(
-                                value: _automaticAttendanceEnabled,
+                                value: _personalAlarm.enabled,
                                 activeThumbColor: ZaWolfColors.primaryCyan,
-                                onChanged: _setAutomaticAttendanceEnabled,
+                                onChanged:
+                                    (value) => _setPersonalAlarmEnabled(
+                                      user.uid,
+                                      value,
+                                    ),
                               ),
                     ),
-                  ],
-                  const Divider(color: ZaWolfColors.surface02, height: 1),
-
-                  // Notifications Toggle Switch
-                  ListTile(
-                    leading: const Icon(
-                      Icons.notifications_active,
-                      color: ZaWolfColors.primaryCyan,
+                    ListTile(
+                      enabled: !_savingPersonalAlarm && !_loadingPersonalAlarm,
+                      leading: const Icon(
+                        Icons.schedule,
+                        color: ZaWolfColors.primaryCyan,
+                      ),
+                      title: const Text('وقت منبه الدوام'),
+                      trailing: TextButton(
+                        onPressed:
+                            _savingPersonalAlarm || _loadingPersonalAlarm
+                                ? null
+                                : () => _choosePersonalAlarmTime(user.uid),
+                        child: Text(_personalAlarm.formattedTime),
+                      ),
                     ),
-                    title: const Text('إشعارات فورية (Foreground)'),
-                    subtitle: const Text(
-                      'عرض إشعارات تفاعلية أثناء فتح التطبيق',
+                    const Divider(color: ZaWolfColors.surface02, height: 1),
+                    ListTile(
+                      leading: const Icon(
+                        Icons.privacy_tip_outlined,
+                        color: ZaWolfColors.primaryCyan,
+                      ),
+                      title: const Text('سياسة الخصوصية'),
+                      subtitle: const Text('اعرف كيف نستخدم بياناتك ونحميها'),
+                      trailing: Icon(RtlNavigation.chevronEnd(context)),
+                      onTap: () => context.push('/privacy'),
                     ),
-                    trailing: Switch(
-                      value: _notificationBanners,
-                      activeThumbColor: ZaWolfColors.primaryCyan,
-                      onChanged: (val) {
-                        setState(() {
-                          _notificationBanners = val;
-                        });
+                    const Divider(color: ZaWolfColors.surface02, height: 1),
+                    ListTile(
+                      leading: const Icon(
+                        Icons.gavel_outlined,
+                        color: ZaWolfColors.primaryCyan,
+                      ),
+                      title: const Text('الشروط والأحكام'),
+                      subtitle: const Text(
+                        'قواعد استخدام النظام ومسؤوليات الحساب',
+                      ),
+                      trailing: Icon(RtlNavigation.chevronEnd(context)),
+                      onTap: () => context.push('/terms'),
+                    ),
+                    FutureBuilder<bool>(
+                      future: _developerToolsAvailable,
+                      builder: (context, snapshot) {
+                        if (snapshot.data != true) {
+                          return const SizedBox.shrink();
+                        }
+                        return Column(
+                          children: [
+                            const Divider(
+                              color: ZaWolfColors.surface02,
+                              height: 1,
+                            ),
+                            ListTile(
+                              leading: const Icon(
+                                Icons.developer_mode_outlined,
+                                color: ZaWolfColors.primaryCyan,
+                              ),
+                              title: const Text('أدوات المطوّر'),
+                              subtitle: const Text(
+                                'أدوات فحص داخل التطبيق بصلاحية مؤقتة',
+                              ),
+                              trailing: Icon(RtlNavigation.chevronEnd(context)),
+                              onTap: () => context.push('/developer-tools'),
+                            ),
+                          ],
+                        );
                       },
                     ),
-                  ),
-                  const Divider(color: ZaWolfColors.surface02, height: 1),
-                  ListTile(
-                    leading: Icon(
-                      pushState.isReady
-                          ? Icons.notifications_active
-                          : Icons.notifications_off_outlined,
-                      color:
-                          pushState.isReady
-                              ? ZaWolfColors.success
-                              : ZaWolfColors.warning,
-                    ),
-                    title: const Text('إشعارات الهاتف'),
-                    subtitle: Text(
-                      !pushState.configured
-                          ? 'غير مفعلة في نسخة التطبيق الحالية'
-                          : pushState.isReady
-                          ? 'مفعلة ومرتبطة بهذا الحساب'
-                          : 'تحتاج إلى تفعيل أو إعادة ربط',
-                    ),
-                    trailing:
-                        _registeringNotifications
-                            ? const SizedBox(
-                              width: 22,
-                              height: 22,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                            : IconButton(
-                              tooltip: 'تفعيل الإشعارات',
-                              onPressed:
-                                  () => _enablePushNotifications(user.uid),
-                              icon: const Icon(Icons.refresh),
-                            ),
-                  ),
-                  const Divider(color: ZaWolfColors.surface02, height: 1),
-                  ListTile(
-                    leading: const Icon(
-                      Icons.notifications_none,
-                      color: ZaWolfColors.primaryCyan,
-                    ),
-                    title: const Text('مركز الإشعارات'),
-                    subtitle: const Text('عرض التنبيهات والإعلانات السابقة'),
-                    trailing: Icon(RtlNavigation.chevronEnd(context)),
-                    onTap: () => context.push('/notifications'),
-                  ),
-                  const Divider(color: ZaWolfColors.surface02, height: 1),
-                  ListTile(
-                    leading: const Icon(
-                      Icons.alarm,
-                      color: ZaWolfColors.primaryCyan,
-                    ),
-                    title: const Text('منبه دوام يدوي'),
-                    subtitle: Text(
-                      _loadingPersonalAlarm
-                          ? 'جارٍ التحميل'
-                          : _personalAlarm.enabled
-                          ? PersonalAlarmService.instance.usesAndroidClock
-                              ? 'مفعّل في ${_personalAlarm.formattedTime}'
-                              : _personalAlarmCapability?.nativeSystemAlarm ==
-                                  true
-                              ? 'منبه iPhone مفعّل في ${_personalAlarm.formattedTime}'
-                              : 'تذكير iPhone بالصوت مفعّل في ${_personalAlarm.formattedTime}'
-                          : 'غير مفعّل — يستخدم منبه الحضور الذكي إن كان مفعّلاً',
-                    ),
-                    trailing:
-                        _savingPersonalAlarm || _loadingPersonalAlarm
-                            ? const SizedBox(
-                              width: 22,
-                              height: 22,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                            : Switch(
-                              value: _personalAlarm.enabled,
-                              activeThumbColor: ZaWolfColors.primaryCyan,
-                              onChanged:
-                                  (value) =>
-                                      _setPersonalAlarmEnabled(user.uid, value),
-                            ),
-                  ),
-                  ListTile(
-                    enabled: !_savingPersonalAlarm && !_loadingPersonalAlarm,
-                    leading: const Icon(
-                      Icons.schedule,
-                      color: ZaWolfColors.primaryCyan,
-                    ),
-                    title: const Text('وقت منبه الدوام'),
-                    trailing: TextButton(
-                      onPressed:
-                          _savingPersonalAlarm || _loadingPersonalAlarm
-                              ? null
-                              : () => _choosePersonalAlarmTime(user.uid),
-                      child: Text(_personalAlarm.formattedTime),
-                    ),
-                  ),
-                  const Divider(color: ZaWolfColors.surface02, height: 1),
-                  ListTile(
-                    leading: const Icon(
-                      Icons.privacy_tip_outlined,
-                      color: ZaWolfColors.primaryCyan,
-                    ),
-                    title: const Text('سياسة الخصوصية'),
-                    subtitle: const Text('اعرف كيف نستخدم بياناتك ونحميها'),
-                    trailing: Icon(RtlNavigation.chevronEnd(context)),
-                    onTap: () => context.push('/privacy'),
-                  ),
-                  const Divider(color: ZaWolfColors.surface02, height: 1),
-                  ListTile(
-                    leading: const Icon(
-                      Icons.gavel_outlined,
-                      color: ZaWolfColors.primaryCyan,
-                    ),
-                    title: const Text('الشروط والأحكام'),
-                    subtitle: const Text(
-                      'قواعد استخدام النظام ومسؤوليات الحساب',
-                    ),
-                    trailing: Icon(RtlNavigation.chevronEnd(context)),
-                    onTap: () => context.push('/terms'),
-                  ),
-                  FutureBuilder<bool>(
-                    future: _developerToolsAvailable,
-                    builder: (context, snapshot) {
-                      if (snapshot.data != true) return const SizedBox.shrink();
-                      return Column(
-                        children: [
-                          const Divider(
-                            color: ZaWolfColors.surface02,
-                            height: 1,
-                          ),
-                          ListTile(
-                            leading: const Icon(
-                              Icons.developer_mode_outlined,
-                              color: ZaWolfColors.primaryCyan,
-                            ),
-                            title: const Text('أدوات المطوّر'),
-                            subtitle: const Text(
-                              'أدوات فحص داخل التطبيق بصلاحية مؤقتة',
-                            ),
-                            trailing: Icon(RtlNavigation.chevronEnd(context)),
-                            onTap: () => context.push('/developer-tools'),
-                          ),
-                        ],
-                      );
-                    },
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 20),
-
-            // Change Password Collapsible Card
-            InkWell(
-              onTap: () {
-                setState(() {
-                  _showPasswordForm = !_showPasswordForm;
-                });
-              },
-              borderRadius: BorderRadius.circular(16),
-              child: Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: ZaWolfColors.surface01,
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(
-                    color:
-                        _showPasswordForm
-                            ? ZaWolfColors.primaryCyan.withValues(alpha: 0.3)
-                            : ZaWolfColors.surface02,
-                  ),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Row(
-                      children: const [
-                        Icon(
-                          Icons.lock_outline,
-                          color: ZaWolfColors.primaryCyan,
-                        ),
-                        SizedBox(width: 12),
-                        Text(
-                          'تغيير كلمة المرور',
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white,
-                          ),
-                        ),
-                      ],
-                    ),
-                    Icon(
-                      _showPasswordForm ? Icons.expand_less : Icons.expand_more,
-                      color: ZaWolfColors.textSecondary,
-                    ),
                   ],
                 ),
               ),
-            ),
+              const SizedBox(height: 20),
 
-            // Password change form inside
-            if (_showPasswordForm) ...[
-              const SizedBox(height: 12),
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: ZaWolfColors.surface01,
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: ZaWolfColors.surface02),
-                ),
-                child: Form(
-                  key: _formKeyPassword,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
+              // Change Password Collapsible Card
+              InkWell(
+                onTap: () {
+                  setState(() {
+                    _showPasswordForm = !_showPasswordForm;
+                  });
+                },
+                borderRadius: BorderRadius.circular(16),
+                child: Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: ZaWolfColors.surface01,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                      color:
+                          _showPasswordForm
+                              ? ZaWolfColors.primaryCyan.withValues(alpha: 0.3)
+                              : ZaWolfColors.surface02,
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      WolfInputField(
-                        controller: _currentPasswordController,
-                        labelText: 'كلمة المرور الحالية',
-                        englishLabel: 'Current Password',
-                        isPassword: true,
-                        validator:
-                            (val) =>
-                                val == null || val.isEmpty
-                                    ? 'يرجى إدخال كلمة المرور الحالية'
-                                    : null,
-                      ),
-                      const SizedBox(height: 16),
-
-                      WolfInputField(
-                        controller: _newPasswordController,
-                        labelText: 'كلمة المرور الجديدة',
-                        englishLabel: 'New Password',
-                        isPassword: true,
-                        onChanged: _checkPasswordStrength,
-                        validator: (val) {
-                          if (val == null || val.isEmpty) {
-                            return 'يرجى إدخال كلمة المرور الجديدة';
-                          }
-                          if (val.length < 6) {
-                            return 'يجب ألا تقل عن 6 أحرف أو أرقام';
-                          }
-                          return null;
-                        },
-                      ),
-
-                      // Password Strength Indicator Row
-                      const SizedBox(height: 8),
                       Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          const Text(
-                            'قوة كلمة المرور:',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: ZaWolfColors.textSecondary,
-                            ),
+                        children: const [
+                          Icon(
+                            Icons.lock_outline,
+                            color: ZaWolfColors.primaryCyan,
                           ),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 2,
-                            ),
-                            decoration: BoxDecoration(
-                              color: _passwordStrengthColor.withValues(
-                                alpha: 0.12,
-                              ),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Text(
-                              _passwordStrength,
-                              style: TextStyle(
-                                color: _passwordStrengthColor,
-                                fontSize: 11,
-                                fontWeight: FontWeight.bold,
-                              ),
+                          SizedBox(width: 12),
+                          Text(
+                            'تغيير كلمة المرور',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
                             ),
                           ),
                         ],
                       ),
-                      const SizedBox(height: 16),
-
-                      WolfInputField(
-                        controller: _confirmPasswordController,
-                        labelText: 'تأكيد كلمة المرور الجديدة',
-                        englishLabel: 'Confirm Password',
-                        isPassword: true,
-                        validator: (val) {
-                          if (val != _newPasswordController.text) {
-                            return 'كلمتا المرور غير متطابقتين';
-                          }
-                          return null;
-                        },
-                      ),
-                      const SizedBox(height: 24),
-
-                      WolfButton(
-                        onPressed: _changePassword,
-                        text: 'حفظ التحديث',
-                        secondaryText: 'UPDATE PASSWORD',
-                        loading: _loading,
+                      Icon(
+                        _showPasswordForm
+                            ? Icons.expand_less
+                            : Icons.expand_more,
+                        color: ZaWolfColors.textSecondary,
                       ),
                     ],
                   ),
                 ),
               ),
+
+              // Password change form inside
+              if (_showPasswordForm) ...[
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: ZaWolfColors.surface01,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: ZaWolfColors.surface02),
+                  ),
+                  child: Form(
+                    key: _formKeyPassword,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        WolfInputField(
+                          controller: _currentPasswordController,
+                          labelText: 'كلمة المرور الحالية',
+                          englishLabel: 'Current Password',
+                          isPassword: true,
+                          validator:
+                              (val) =>
+                                  val == null || val.isEmpty
+                                      ? 'يرجى إدخال كلمة المرور الحالية'
+                                      : null,
+                        ),
+                        const SizedBox(height: 16),
+
+                        WolfInputField(
+                          controller: _newPasswordController,
+                          labelText: 'كلمة المرور الجديدة',
+                          englishLabel: 'New Password',
+                          isPassword: true,
+                          onChanged: _checkPasswordStrength,
+                          validator: (val) {
+                            if (val == null || val.isEmpty) {
+                              return 'يرجى إدخال كلمة المرور الجديدة';
+                            }
+                            if (val.length < 6) {
+                              return 'يجب ألا تقل عن 6 أحرف أو أرقام';
+                            }
+                            return null;
+                          },
+                        ),
+
+                        // Password Strength Indicator Row
+                        const SizedBox(height: 8),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text(
+                              'قوة كلمة المرور:',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: ZaWolfColors.textSecondary,
+                              ),
+                            ),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 2,
+                              ),
+                              decoration: BoxDecoration(
+                                color: _passwordStrengthColor.withValues(
+                                  alpha: 0.12,
+                                ),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Text(
+                                _passwordStrength,
+                                style: TextStyle(
+                                  color: _passwordStrengthColor,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 16),
+
+                        WolfInputField(
+                          controller: _confirmPasswordController,
+                          labelText: 'تأكيد كلمة المرور الجديدة',
+                          englishLabel: 'Confirm Password',
+                          isPassword: true,
+                          validator: (val) {
+                            if (val != _newPasswordController.text) {
+                              return 'كلمتا المرور غير متطابقتين';
+                            }
+                            return null;
+                          },
+                        ),
+                        const SizedBox(height: 24),
+
+                        WolfButton(
+                          onPressed: _changePassword,
+                          text: 'حفظ التحديث',
+                          secondaryText: 'UPDATE PASSWORD',
+                          loading: _loading,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+              const SizedBox(height: 32),
             ],
-            const SizedBox(height: 32),
-          ],
+          ),
         ),
       ),
     );

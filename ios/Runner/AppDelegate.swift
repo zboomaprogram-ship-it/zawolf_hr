@@ -4,7 +4,6 @@ import GoogleMaps
 import CoreLocation
 import FirebaseCore
 import FirebaseAuth
-import FirebaseFirestore
 #if canImport(AlarmKit)
 import AlarmKit
 import SwiftUI
@@ -110,7 +109,13 @@ extension AppDelegate: CLLocationManagerDelegate {
     let metadata = automaticAttendanceLocations().first {
       ($0["locationId"] as? String) == locationId
     } ?? [:]
+    // Do not access Firestore from this native geofence callback. Flutter's
+    // Firestore plugin configures the same native instance during startup; if
+    // a region event opens the app first, iOS aborts when the plugin tries to
+    // change settings on an already-used instance. Persist a bounded signal
+    // locally instead. Dart drains it after Flutter and Firebase are ready.
     var values: [String: Any] = [
+      "eventId": UUID().uuidString,
       "userId": configuredUserId,
       "employeeId": defaults.string(forKey: "auto_attendance_employeeId") ?? "",
       "deviceId": defaults.string(forKey: "auto_attendance_deviceId") ?? "",
@@ -125,7 +130,6 @@ extension AppDelegate: CLLocationManagerDelegate {
       "source": "ios_region",
       "status": "pending",
       "locationMocked": false,
-      "createdAt": FieldValue.serverTimestamp(),
     ]
     if let assignmentId = metadata["assignmentId"] as? String, !assignmentId.isEmpty {
       values["assignmentId"] = assignmentId
@@ -134,9 +138,8 @@ extension AppDelegate: CLLocationManagerDelegate {
        assignmentVersion.intValue > 0 {
       values["assignmentVersion"] = assignmentVersion.intValue
     }
-    Firestore.firestore().collection("autoAttendanceSignals").addDocument(data: values) { _ in
-      self.finishAttendanceBackgroundTask()
-    }
+    enqueuePendingAttendanceSignal(values)
+    finishAttendanceBackgroundTask()
   }
 
   fileprivate func finishAttendanceBackgroundTask() {
@@ -254,6 +257,12 @@ extension AppDelegate: CLLocationManagerDelegate {
           defaults.removeObject(forKey: key)
         }
         result(true)
+      case "getIosPendingAttendanceSignals":
+        result(self.pendingAttendanceSignals())
+      case "ackIosPendingAttendanceSignals":
+        let eventIds = (call.arguments as? [String]) ?? []
+        self.acknowledgePendingAttendanceSignals(eventIds)
+        result(true)
       default:
         result(FlutterMethodNotImplemented)
       }
@@ -328,6 +337,31 @@ extension AppDelegate: CLLocationManagerDelegate {
       return []
     }
     return decoded
+  }
+
+  private func pendingAttendanceSignals() -> [[String: Any]] {
+    guard let raw = UserDefaults.standard.array(forKey: "auto_attendance_pending_signals") else {
+      return []
+    }
+    return raw.compactMap { $0 as? [String: Any] }
+  }
+
+  private func enqueuePendingAttendanceSignal(_ signal: [String: Any]) {
+    var signals = pendingAttendanceSignals()
+    // Region callbacks may be repeated by iOS. A deterministic event ID lets
+    // Dart write idempotently, while a small local queue protects disk usage.
+    signals.append(signal)
+    UserDefaults.standard.set(Array(signals.suffix(50)), forKey: "auto_attendance_pending_signals")
+  }
+
+  private func acknowledgePendingAttendanceSignals(_ eventIds: [String]) {
+    guard !eventIds.isEmpty else { return }
+    let acknowledged = Set(eventIds)
+    let remaining = pendingAttendanceSignals().filter { signal in
+      guard let eventId = signal["eventId"] as? String else { return true }
+      return !acknowledged.contains(eventId)
+    }
+    UserDefaults.standard.set(remaining, forKey: "auto_attendance_pending_signals")
   }
 
   fileprivate func stopAttendanceMonitors() {
