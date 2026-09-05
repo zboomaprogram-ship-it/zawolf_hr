@@ -54,7 +54,8 @@ class ManualAttendanceCubit extends Cubit<ManualAttendanceState> {
       emit(
         state.copyWith(
           loadingEmployees: false,
-          error: 'تعذر تحميل الموظفين. أعد المحاولة.',
+          error:
+              'تعذر تحميل الموظفين. تحقق من اتصال الإنترنت وصلاحية حساب HR ثم أعد المحاولة.',
         ),
       );
     }

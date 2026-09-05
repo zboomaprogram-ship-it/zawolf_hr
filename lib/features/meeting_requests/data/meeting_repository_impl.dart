@@ -27,7 +27,10 @@ class MeetingRepositoryImpl implements MeetingRepository {
     Map<String, dynamic>? body,
     String method = 'POST',
   }) async {
-    final token = await _auth.currentUser?.getIdToken();
+    // Meeting routes are protected by the Hostinger service. Refresh after a
+    // role/session change so the first request does not fail with a stale web
+    // Firebase ID token.
+    final token = await _auth.currentUser?.getIdToken(true);
     if (token == null || token.isEmpty) {
       throw StateError('انتهت الجلسة، سجل الدخول مرة أخرى.');
     }
@@ -115,7 +118,7 @@ class MeetingRepositoryImpl implements MeetingRepository {
     required DateTime end,
   }) async {
     final data = await _request(
-      '/operations/meeting-availability?roomId=$roomId&startAt=${Uri.encodeComponent(start.toIso8601String())}&endAt=${Uri.encodeComponent(end.toIso8601String())}',
+      '/operations/meeting-availability?roomId=$roomId&startAt=${Uri.encodeComponent(start.toUtc().toIso8601String())}&endAt=${Uri.encodeComponent(end.toUtc().toIso8601String())}',
     );
     return data['available'] == true;
   }
@@ -133,8 +136,8 @@ class MeetingRepositoryImpl implements MeetingRepository {
       'operationId': _operationId(),
       'managerId': managerId,
       'roomId': roomId,
-      'startAt': start.toIso8601String(),
-      'endAt': end.toIso8601String(),
+      'startAt': start.toUtc().toIso8601String(),
+      'endAt': end.toUtc().toIso8601String(),
       'purpose': purpose,
     },
   );

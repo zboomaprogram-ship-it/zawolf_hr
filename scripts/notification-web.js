@@ -3947,7 +3947,7 @@ async function runBackgroundDispatch() {
       schedulePushDispatch('scheduled_work');
     }
     return { managerLeaveBypasses, automaticAttendance, reminders };
-  })();
+  });
 
   try {
     const result = await runningDispatch;
@@ -4189,7 +4189,12 @@ const server = http.createServer(async (req, res) => {
   if (url.pathname === '/operations/meeting-approvers' && req.method === 'GET') {
     const actor = await authorizeWorkspaceRequest(req);
     if (!actor) return sendJson(res, 401, { ok: false, code: 'session_expired' });
-    sendJson(res, 200, { ok: true, approvers: await listMeetingApprovers({ db: admin.firestore(initializeFirebase()) }) });
+    try {
+      sendJson(res, 200, { ok: true, approvers: await listMeetingApprovers({ db: admin.firestore(initializeFirebase()) }) });
+    } catch (error) {
+      console.error('Meeting approvers request failed:', error);
+      sendJson(res, 500, { ok: false, code: 'meeting_approvers_failed', error: 'تعذر تحميل مسؤولي الاجتماع. أعد المحاولة.' });
+    }
     return;
   }
 
@@ -4202,8 +4207,13 @@ const server = http.createServer(async (req, res) => {
     if (!/^[A-Za-z0-9_-]{8,160}$/.test(roomId) || Number.isNaN(startAt.getTime()) || Number.isNaN(endAt.getTime()) || startAt >= endAt) {
       return sendJson(res, 400, { ok: false, code: 'invalid_meeting_time', error: 'اختر قاعة ووقت بداية ونهاية صحيحين.' });
     }
-    const available = await checkAvailability({ db: admin.firestore(initializeFirebase()), roomId, startAt, endAt });
-    sendJson(res, 200, { ok: true, available, message: available ? 'القاعة متاحة في هذا الوقت.' : 'القاعة مشغولة في هذا الوقت. اختر موعداً أو قاعة أخرى.' });
+    try {
+      const available = await checkAvailability({ db: admin.firestore(initializeFirebase()), roomId, startAt, endAt });
+      sendJson(res, 200, { ok: true, available, message: available ? 'القاعة متاحة في هذا الوقت.' : 'القاعة مشغولة في هذا الوقت. اختر موعداً أو قاعة أخرى.' });
+    } catch (error) {
+      console.error('Meeting availability request failed:', error);
+      sendJson(res, 500, { ok: false, code: 'meeting_availability_failed', error: 'تعذر التحقق من توفر القاعة. أعد المحاولة.' });
+    }
     return;
   }
 
@@ -4211,7 +4221,12 @@ const server = http.createServer(async (req, res) => {
     const actor = await authorizeWorkspaceRequest(req);
     if (!actor) return sendJson(res, 401, { ok: false, code: 'session_expired' });
     const queue = url.searchParams.get('queue') === 'true';
-    sendJson(res, 200, { ok: true, requests: await listMeetingRequests({ db: admin.firestore(initializeFirebase()), actor, queue }) });
+    try {
+      sendJson(res, 200, { ok: true, requests: await listMeetingRequests({ db: admin.firestore(initializeFirebase()), actor, queue }) });
+    } catch (error) {
+      console.error('Meeting requests listing failed:', error);
+      sendJson(res, 500, { ok: false, code: 'meeting_requests_failed', error: 'تعذر تحميل طلبات الاجتماعات. أعد المحاولة.' });
+    }
     return;
   }
 

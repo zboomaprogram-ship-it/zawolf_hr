@@ -15,6 +15,24 @@ const normalizeSearch = (value) => clean(value, 500)
   .replace(/ى/g, 'ي')
   .replace(/ة/g, 'ه');
 
+// Some established HR accounts predate the unified role migration and retain
+// an employee role while their department/title identifies them as HR.  The
+// gateway already accepts that legacy HR identity; keep manual attendance
+// consistent with it without granting access to non-HR employees.
+function canManageManualAttendance(actor) {
+  if (isHrOrAdmin({ ...actor, active: true })) return true;
+  const scope = [
+    actor?.department,
+    actor?.position,
+    actor?.jobTitle,
+  ].map((value) => String(value || '').toLowerCase()).join(' ');
+  return /(^|\s)hr([_\s-]|$)/.test(scope) ||
+    scope.includes('human resource') ||
+    scope.includes('الموارد البشرية') ||
+    scope.includes('موارد بشرية') ||
+    scope.includes('شؤون العاملين');
+}
+
 function cairoParts(date = new Date()) {
   const parts = new Intl.DateTimeFormat('en-GB', {
     timeZone: CAIRO_TIME_ZONE,
@@ -67,7 +85,7 @@ async function queueNotification(db, admin, { employeeId, operationId, eventType
 }
 
 async function recordManualAttendance({ db, admin, actor, body }) {
-  if (!isHrOrAdmin({ ...actor, active: true })) {
+  if (!canManageManualAttendance(actor)) {
     throw new Error('لا تملك صلاحية تسجيل الحضور اليدوي.');
   }
   const operationId = clean(body?.operationId, 160);
@@ -138,7 +156,7 @@ async function recordManualAttendance({ db, admin, actor, body }) {
 }
 
 async function listManualAttendanceEmployees({ db, actor, query }) {
-  if (!isHrOrAdmin({ ...actor, active: true })) {
+  if (!canManageManualAttendance(actor)) {
     throw new Error('لا تملك صلاحية عرض حالة الحضور اليدوي.');
   }
   const queryText = normalizeSearch(query);
@@ -177,4 +195,9 @@ async function listManualAttendanceEmployees({ db, actor, query }) {
   return statuses;
 }
 
-module.exports = { recordManualAttendance, listManualAttendanceEmployees, cairoParts };
+module.exports = {
+  canManageManualAttendance,
+  recordManualAttendance,
+  listManualAttendanceEmployees,
+  cairoParts,
+};

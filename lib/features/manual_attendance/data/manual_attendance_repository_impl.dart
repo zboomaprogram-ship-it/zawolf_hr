@@ -7,11 +7,9 @@ import 'package:http/http.dart' as http;
 import '../domain/manual_attendance_repository.dart';
 
 class ManualAttendanceRepositoryImpl implements ManualAttendanceRepository {
-  ManualAttendanceRepositoryImpl({
-    FirebaseAuth? auth,
-    http.Client? client,
-  }) : _auth = auth ?? FirebaseAuth.instance,
-       _client = client ?? http.Client();
+  ManualAttendanceRepositoryImpl({FirebaseAuth? auth, http.Client? client})
+    : _auth = auth ?? FirebaseAuth.instance,
+      _client = client ?? http.Client();
 
   static const _baseUrl = 'https://notification.zawolf.ai';
   final FirebaseAuth _auth;
@@ -26,33 +24,44 @@ class ManualAttendanceRepositoryImpl implements ManualAttendanceRepository {
 
   @override
   Future<List<ManualAttendanceEmployee>> findEmployees(String query) async {
-    final token = await _auth.currentUser?.getIdToken();
+    // Refresh before this privileged read. A recently changed HR role or an
+    // expired browser token otherwise appears as a generic loading failure.
+    final token = await _auth.currentUser?.getIdToken(true);
     if (token == null || token.isEmpty) {
       throw StateError('انتهت الجلسة، سجل الدخول مرة أخرى.');
     }
     final response = await _client.get(
-      Uri.parse('$_baseUrl/operations/manual-attendance/employees?query=${Uri.encodeQueryComponent(query)}'),
+      Uri.parse(
+        '$_baseUrl/operations/manual-attendance/employees?query=${Uri.encodeQueryComponent(query)}',
+      ),
       headers: {'Authorization': 'Bearer $token'},
     );
-    final decoded = response.body.isEmpty ? <String, dynamic>{} : jsonDecode(response.body);
-    final data = decoded is Map<String, dynamic> ? decoded : <String, dynamic>{};
-    if (response.statusCode < 200 || response.statusCode >= 300 || data['ok'] != true) {
+    final decoded =
+        response.body.isEmpty ? <String, dynamic>{} : jsonDecode(response.body);
+    final data =
+        decoded is Map<String, dynamic> ? decoded : <String, dynamic>{};
+    if (response.statusCode < 200 ||
+        response.statusCode >= 300 ||
+        data['ok'] != true) {
       throw StateError('${data['error'] ?? 'تعذر تحميل الموظفين.'}');
     }
-    return (data['employees'] as List? ?? const []).whereType<Map>().map((item) {
-      final raw = Map<String, dynamic>.from(item);
-      return ManualAttendanceEmployee(
-        id: '${raw['id'] ?? ''}',
-        name: '${raw['name'] ?? 'موظف'}',
-        employeeCode: '${raw['employeeCode'] ?? ''}',
-        department: '${raw['department'] ?? ''}',
-        email: '${raw['email'] ?? ''}',
-        isCheckedIn: raw['isCheckedIn'] == true,
-        isCheckedOut: raw['isCheckedOut'] == true,
-        checkInAt: DateTime.tryParse('${raw['checkInAt'] ?? ''}'),
-        checkOutAt: DateTime.tryParse('${raw['checkOutAt'] ?? ''}'),
-      );
-    }).toList(growable: false);
+    return (data['employees'] as List? ?? const [])
+        .whereType<Map>()
+        .map((item) {
+          final raw = Map<String, dynamic>.from(item);
+          return ManualAttendanceEmployee(
+            id: '${raw['id'] ?? ''}',
+            name: '${raw['name'] ?? 'موظف'}',
+            employeeCode: '${raw['employeeCode'] ?? ''}',
+            department: '${raw['department'] ?? ''}',
+            email: '${raw['email'] ?? ''}',
+            isCheckedIn: raw['isCheckedIn'] == true,
+            isCheckedOut: raw['isCheckedOut'] == true,
+            checkInAt: DateTime.tryParse('${raw['checkInAt'] ?? ''}'),
+            checkOutAt: DateTime.tryParse('${raw['checkOutAt'] ?? ''}'),
+          );
+        })
+        .toList(growable: false);
   }
 
   @override
@@ -62,7 +71,7 @@ class ManualAttendanceRepositoryImpl implements ManualAttendanceRepository {
     required DateTime effectiveAt,
     required String reason,
   }) async {
-    final token = await _auth.currentUser?.getIdToken();
+    final token = await _auth.currentUser?.getIdToken(true);
     if (token == null || token.isEmpty) {
       throw StateError('انتهت الجلسة، سجل الدخول مرة أخرى.');
     }
@@ -76,7 +85,10 @@ class ManualAttendanceRepositoryImpl implements ManualAttendanceRepository {
         'operationId': _operationId(),
         'employeeId': employeeId,
         'eventType': eventType,
-        'effectiveAt': effectiveAt.toIso8601String(),
+        // The backend validates attendance dates in Africa/Cairo.  A local
+        // ISO string has no offset, so Node interprets it as UTC and can
+        // incorrectly reject the current Cairo time as being in the future.
+        'effectiveAt': effectiveAt.toUtc().toIso8601String(),
         'reason': reason,
       }),
     );
