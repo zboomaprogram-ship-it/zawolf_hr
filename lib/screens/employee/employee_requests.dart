@@ -1721,19 +1721,30 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
                                   : ZaWolfColors.textSecondary,
                         ),
                         const SizedBox(width: 9),
-                        Text(
-                          type.label,
-                          style: theme.textTheme.titleMedium?.copyWith(
-                            color:
-                                selected
-                                    ? Colors.white
-                                    : ZaWolfColors.textSecondary,
-                            fontWeight: FontWeight.bold,
+                        Expanded(
+                          child: Text(
+                            type.label,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            textAlign: TextAlign.end,
+                            style: theme.textTheme.titleMedium?.copyWith(
+                              color:
+                                  selected
+                                      ? Colors.white
+                                      : ZaWolfColors.textSecondary,
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
                         ),
-                        const Spacer(),
                         if (selected)
-                          Icon(Icons.check_circle, color: type.color, size: 18),
+                          Padding(
+                            padding: const EdgeInsetsDirectional.only(start: 8),
+                            child: Icon(
+                              Icons.check_circle,
+                              color: type.color,
+                              size: 18,
+                            ),
+                          ),
                       ],
                     ),
                   ),

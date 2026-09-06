@@ -4821,6 +4821,99 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (url.pathname === '/operations/employee-password-reset' && req.method === 'POST') {
+    const actor = await authorizeWorkspaceRequest(req);
+    if (!actor) {
+      sendJson(res, 401, { ok: false, code: 'session_expired' });
+      return;
+    }
+    if (!isHrOrAdmin(actor)) {
+      sendJson(res, 403, { ok: false, code: 'access_denied' });
+      return;
+    }
+    try {
+      const payload = await readJsonBody(req, 4 * 1024);
+      const employeeUserId = String(payload.employeeUserId || '').trim();
+      const operationId = String(payload.operationId || '').trim();
+      if (!/^[A-Za-z0-9_-]{1,128}$/.test(employeeUserId) ||
+          !/^[A-Za-z0-9_-]{1,256}$/.test(operationId)) {
+        sendJson(res, 400, { ok: false, code: 'validation_failed' });
+        return;
+      }
+      const firebaseApp = initializeFirebase();
+      const db = admin.firestore(firebaseApp);
+      const employeeRef = db.collection('users').doc(employeeUserId);
+      const employee = await employeeRef.get();
+      if (!employee.exists || employee.data()?.isActive === false) {
+        sendJson(res, 404, { ok: false, code: 'target_not_found' });
+        return;
+      }
+      // The password is server-owned and deliberately never accepted from the
+      // browser or mobile client. Revoke sessions so this takes effect now.
+      await getAuth(firebaseApp).updateUser(employeeUserId, { password: 'ZW@0000' });
+      await getAuth(firebaseApp).revokeRefreshTokens(employeeUserId);
+      await db.runTransaction(async (transaction) => {
+        transaction.set(employeeRef, {
+          passwordChangedAt: admin.firestore.FieldValue.delete(),
+          passwordResetAt: admin.firestore.FieldValue.serverTimestamp(),
+          passwordResetByUserId: actor.uid,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        }, { merge: true });
+        transaction.set(db.collection('operationalAudit').doc(
+          `password_reset_default:${employeeUserId}:${operationId}`,
+        ), {
+          action: 'password_reset_to_company_default',
+          actorId: actor.uid,
+          targetUserId: employeeUserId,
+          operationId,
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+      });
+      sendJson(res, 200, { ok: true, code: 'password_reset' });
+    } catch (error) {
+      recordWorkspaceDiagnostic('employee_password_reset', error);
+      sendJson(res, 503, { ok: false, code: 'temporarily_unavailable' });
+    }
+    return;
+  }
+
+  if (url.pathname === '/operations/developer-tools/entitlements' && req.method === 'GET') {
+    const actor = await authorizeWorkspaceRequest(req);
+    if (!actor) {
+      sendJson(res, 401, { ok: false, code: 'session_expired' });
+      return;
+    }
+    if (!canManageDeveloperTools(actor)) {
+      sendJson(res, 403, { ok: false, code: 'access_denied' });
+      return;
+    }
+    try {
+      const snapshot = await admin.firestore()
+        .collection('developerToolEntitlements')
+        .limit(500)
+        .get();
+      const entitlements = snapshot.docs
+        .map((document) => {
+          const data = document.data() || {};
+          const expiresAt = data.expiresAt?.toDate?.();
+          return {
+            employeeUserId: String(data.employeeUserId || document.id),
+            scopes: normalizeDeveloperToolScopes(data.scopes),
+            permanent: data.permanent === true,
+            expiresAt: expiresAt instanceof Date ? expiresAt.toISOString() : null,
+            grantedByUserId: String(data.grantedByUserId || ''),
+            active: isDeveloperToolsEntitlementActive(data),
+          };
+        })
+        .filter((entitlement) => entitlement.active);
+      sendJson(res, 200, { ok: true, entitlements });
+    } catch (error) {
+      recordWorkspaceDiagnostic('developer_tools_list', error);
+      sendJson(res, 503, { ok: false, code: 'temporarily_unavailable' });
+    }
+    return;
+  }
+
   if (url.pathname === '/operations/developer-tools/entitlements' && req.method === 'POST') {
     const actor = await authorizeWorkspaceRequest(req);
     if (!actor) {

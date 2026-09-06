@@ -33,6 +33,33 @@ final class DeveloperToolsRepositoryImpl implements DeveloperToolsRepository {
   }
 
   @override
+  Future<List<DeveloperToolsEntitlement>> loadActiveEntitlements() async {
+    final response = await _operationClient.get(
+      _operationsBaseUri.resolve('/operations/developer-tools/entitlements'),
+    );
+    if (!response.ok) {
+      throw DeveloperToolsOperationException(response.safeCode);
+    }
+    final rawEntitlements = response.data['entitlements'];
+    if (rawEntitlements is! List) return const [];
+    return rawEntitlements
+        .whereType<Map>()
+        .map((raw) {
+          final permanent = raw['permanent'] == true;
+          return DeveloperToolsEntitlement(
+            employeeUserId: (raw['employeeUserId'] ?? '').toString(),
+            scopes: _scopes(raw['scopes']),
+            expiresAt: DateTime.tryParse((raw['expiresAt'] ?? '').toString()),
+            permanent: permanent,
+            grantedByUserId: (raw['grantedByUserId'] ?? '').toString(),
+          );
+        })
+        .where((entitlement) => entitlement.employeeUserId.isNotEmpty)
+        .where((entitlement) => entitlement.isActive)
+        .toList(growable: false);
+  }
+
+  @override
   Future<void> grant({
     required String employeeUserId,
     required Set<DeveloperToolScope> scopes,

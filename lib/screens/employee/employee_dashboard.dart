@@ -672,11 +672,9 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
             );
 
             final workedDays = periodSummary.presentDays;
-            final lates = periodSummary.lateDays;
-            final absents = periodSummary.absentDays;
-
-            double disciplineScore = 100.0 - (lates * 5.0) - (absents * 10.0);
-            if (disciplineScore < 0.0) disciplineScore = 0.0;
+            // Keep this percentage consistent with خصوماتي: a late label
+            // alone is not a payroll deduction until HR has approved it.
+            final disciplineScore = periodSummary.disciplinePercentage;
 
             // Check for unseen celebration badges
             _checkUnseenCelebrationBadges(user);
@@ -808,8 +806,10 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
                         loading: _actionLoading,
                         active: hasCheckedIn,
                         onTap:
-                            () =>
-                                _handleCheckInCheckOut(user, gate.expectedAction),
+                            () => _handleCheckInCheckOut(
+                              user,
+                              gate.expectedAction,
+                            ),
                       ),
                       const SizedBox(height: 24),
                     ],
@@ -905,76 +905,78 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
                     ],
                     const SizedBox(height: 24),
 
-                    // Quick Action Buttons Row (max four per spec: the radar
-                    // check-in control above + three navigation actions)
-                    Row(
-                      children: [
-                        EmployeeQuickAction(
-                          icon: Icons.add_circle_outline,
-                          label: 'طلب جديد',
-                          subtitle: 'New Request',
-                          color: ZaWolfColors.permissionTeal,
-                          onTap: () => context.go('/employee/requests'),
-                        ),
-                        const SizedBox(width: DsSpacing.md),
-                        EmployeeQuickAction(
-                          icon: Icons.task_alt_outlined,
-                          label: 'مهامي',
-                          subtitle: 'My Tasks',
-                          color: ZaWolfColors.wolfGreen,
-                          onTap: () => context.go('/employee/tasks'),
-                        ),
-                        const SizedBox(width: DsSpacing.md),
-                        EmployeeQuickAction(
-                          icon: Icons.payments_outlined,
-                          label: 'راتبي',
-                          subtitle: 'Payroll',
-                          color: ZaWolfColors.warning,
-                          onTap: () => context.go('/employee/payroll'),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: DsSpacing.md),
-                    Row(
-                      children: [
-                        EmployeeQuickAction(
-                          icon: Icons.business_center_outlined,
-                          label: 'الطلبات والدعم',
-                          subtitle: 'Requests & Support',
-                          color: ZaWolfColors.primaryCyan,
-                          onTap: () => context.go('/employee/requests'),
-                        ),
-                        const SizedBox(width: DsSpacing.md),
-                        EmployeeQuickAction(
-                          icon: Icons.chat_bubble_outline_rounded,
-                          label: 'شات القسم',
-                          subtitle: 'Department Chat',
-                          color: Colors.purpleAccent,
-                          onTap: () {
-                            final dept =
-                                user.department.isNotEmpty
-                                    ? user.department
-                                    : 'general';
-                            context.go('/conversations/department/$dept');
-                          },
-                        ),
-                      ],
+                    // A real grid keeps the same usable tile size on narrow
+                    // iPhones and Android phones instead of squeezing three
+                    // fixed Row children into every screen width.
+                    LayoutBuilder(
+                      builder: (context, constraints) {
+                        final columns = constraints.maxWidth >= 640 ? 3 : 2;
+                        final compact = constraints.maxWidth < 380;
+                        return GridView.count(
+                          crossAxisCount: columns,
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
+                          crossAxisSpacing: DsSpacing.md,
+                          mainAxisSpacing: DsSpacing.md,
+                          childAspectRatio: compact ? 1.08 : 1.3,
+                          children: [
+                            EmployeeQuickAction(
+                              icon: Icons.add_circle_outline,
+                              label: 'طلب جديد',
+                              subtitle: 'New Request',
+                              color: ZaWolfColors.permissionTeal,
+                              onTap: () => context.go('/employee/requests'),
+                            ),
+                            EmployeeQuickAction(
+                              icon: Icons.task_alt_outlined,
+                              label: 'مهامي',
+                              subtitle: 'My Tasks',
+                              color: ZaWolfColors.wolfGreen,
+                              onTap: () => context.go('/employee/tasks'),
+                            ),
+                            EmployeeQuickAction(
+                              icon: Icons.payments_outlined,
+                              label: 'راتبي',
+                              subtitle: 'Payroll',
+                              color: ZaWolfColors.warning,
+                              onTap: () => context.go('/employee/payroll'),
+                            ),
+                            EmployeeQuickAction(
+                              icon: Icons.business_center_outlined,
+                              label: 'الطلبات والدعم',
+                              subtitle: 'Requests & Support',
+                              color: ZaWolfColors.primaryCyan,
+                              onTap: () => context.go('/employee/requests'),
+                            ),
+                            EmployeeQuickAction(
+                              icon: Icons.chat_bubble_outline_rounded,
+                              label: 'شات القسم',
+                              subtitle: 'Department Chat',
+                              color: Colors.purpleAccent,
+                              onTap: () {
+                                final dept =
+                                    user.department.isNotEmpty
+                                        ? user.department
+                                        : 'general';
+                                context.go('/conversations/department/$dept');
+                              },
+                            ),
+                          ],
+                        );
+                      },
                     ),
                     const SizedBox(height: DsSpacing.xl),
 
                     // Quick Stats Row
-                    Row(
-                      children: [
-                        Expanded(
-                          child: StatCard(
+                    LayoutBuilder(
+                      builder: (context, constraints) {
+                        final cards = [
+                          StatCard(
                             icon: Icons.how_to_reg_outlined,
                             value: '$workedDays',
                             label: 'أيام الحضور هذا الشهر',
                           ),
-                        ),
-                        const SizedBox(width: DsSpacing.md),
-                        Expanded(
-                          child: StatCard(
+                          StatCard(
                             icon: Icons.workspace_premium_outlined,
                             value: '${disciplineScore.toInt()}%',
                             label: 'الانضباط',
@@ -982,8 +984,24 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
                             trendUp: disciplineScore >= 85,
                             onTap: () => context.go('/employee/deductions'),
                           ),
-                        ),
-                      ],
+                        ];
+                        if (constraints.maxWidth < 340) {
+                          return Column(
+                            children: [
+                              cards.first,
+                              const SizedBox(height: DsSpacing.md),
+                              cards.last,
+                            ],
+                          );
+                        }
+                        return Row(
+                          children: [
+                            Expanded(child: cards.first),
+                            const SizedBox(width: DsSpacing.md),
+                            Expanded(child: cards.last),
+                          ],
+                        );
+                      },
                     ),
                     const SizedBox(height: DsSpacing.xl),
 

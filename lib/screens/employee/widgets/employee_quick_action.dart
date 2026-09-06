@@ -25,33 +25,37 @@ class EmployeeQuickAction extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Expanded(
-      child: WolfCard(
-        onTap: onTap,
-        padding: const EdgeInsets.symmetric(vertical: DsSpacing.lg),
-        child: Column(
-            children: [
-              Icon(icon, color: color, size: 28),
-              const SizedBox(height: DsSpacing.sm),
-              Text(
-                label,
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  color: Colors.white,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 13,
-                ),
-              ),
-              Text(
-                subtitle.toUpperCase(),
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: ZaWolfColors.textMuted,
-                  fontSize: 8,
-                  fontWeight: FontWeight.bold,
-                  letterSpacing: 0.5,
-                ),
-              ),
-            ],
+    return WolfCard(
+      onTap: onTap,
+      padding: const EdgeInsets.symmetric(vertical: DsSpacing.lg),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(icon, color: color, size: 28),
+          const SizedBox(height: DsSpacing.sm),
+          Text(
+            label,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: Colors.white,
+              fontWeight: FontWeight.bold,
+              fontSize: 13,
+            ),
           ),
+          Text(
+            subtitle.toUpperCase(),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: ZaWolfColors.textMuted,
+              fontSize: 8,
+              fontWeight: FontWeight.bold,
+              letterSpacing: 0.5,
+            ),
+          ),
+        ],
       ),
     );
   }

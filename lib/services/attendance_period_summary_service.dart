@@ -47,6 +47,32 @@ class AttendancePeriodSummary {
   int get presentDays => days.where((day) => day.isPresent).length;
   int get lateDays => days.where((day) => day.isLate).length;
   int get absentDays => days.where((day) => day.isAbsent).length;
+
+  /// The portion of work days that HR has actually confirmed as a payroll
+  /// deduction. A raw `late` status is deliberately not enough here: it may
+  /// be inside the grace period, be a legacy flag, or still be waiting for HR
+  /// review. This keeps the employee dashboard score aligned with خصوماتي.
+  double get approvedDeductionDayFractions =>
+      days.fold<double>(0, (total, day) {
+        final attendance = day.attendance;
+        if (attendance == null ||
+            attendance.salaryDeductionApprovalStatus != 'approved' ||
+            attendance.salaryDeductionFraction <= 0) {
+          return total;
+        }
+        return total + attendance.salaryDeductionFraction;
+      });
+
+  /// Employee dashboard discipline percentage for the selected period.
+  ///
+  /// It is based on confirmed payroll deductions rather than a fixed penalty
+  /// per late/absence label, so a punctual employee with no approved
+  /// deduction remains at 100%.
+  double get disciplinePercentage {
+    if (expectedDays == 0) return 100;
+    final score = 100 * (1 - (approvedDeductionDayFractions / expectedDays));
+    return score.clamp(0, 100).toDouble();
+  }
 }
 
 class AttendancePeriodSummaryService {
@@ -105,18 +131,21 @@ class AttendancePeriodSummaryService {
       final item = AttendanceModel.fromFirestore(doc);
       attendanceByDate[item.date] = item;
     }
-    final approvedLeaves = snapshots[1].docs
-        .map(LeaveModel.fromFirestore)
-        .where((leave) => !leave.endDate.isBefore(startDay))
-        .toList();
-    final approvedPermissionDates = snapshots[2].docs
-        .map((doc) => doc.data()['requestDate'] as String? ?? '')
-        .where((date) => date.isNotEmpty)
-        .toSet();
-    final companyDaysOff = snapshots[3].docs
-        .where((doc) => doc.data()['isActive'] == true)
-        .map((doc) => doc.data()['date'] as String? ?? doc.id)
-        .toSet();
+    final approvedLeaves =
+        snapshots[1].docs
+            .map(LeaveModel.fromFirestore)
+            .where((leave) => !leave.endDate.isBefore(startDay))
+            .toList();
+    final approvedPermissionDates =
+        snapshots[2].docs
+            .map((doc) => doc.data()['requestDate'] as String? ?? '')
+            .where((date) => date.isNotEmpty)
+            .toSet();
+    final companyDaysOff =
+        snapshots[3].docs
+            .where((doc) => doc.data()['isActive'] == true)
+            .map((doc) => doc.data()['date'] as String? ?? doc.id)
+            .toSet();
 
     return buildSummary(
       user: user,
@@ -141,22 +170,23 @@ class AttendancePeriodSummaryService {
     required Set<String> companyDaysOff,
   }) {
     const defaultWorkDays = [6, 7, 1, 2, 3, 4];
-    final workDays = user.workSchedule.workDays?.isNotEmpty == true
-        ? user.workSchedule.workDays!
-        : defaultWorkDays;
-    final joinDay = user.joinDate == null
-        ? null
-        : DateTime(
-            user.joinDate!.year,
-            user.joinDate!.month,
-            user.joinDate!.day,
-          );
+    final workDays =
+        user.workSchedule.workDays?.isNotEmpty == true
+            ? user.workSchedule.workDays!
+            : defaultWorkDays;
+    final joinDay =
+        user.joinDate == null
+            ? null
+            : DateTime(
+              user.joinDate!.year,
+              user.joinDate!.month,
+              user.joinDate!.day,
+            );
     final today = DateTime(now.year, now.month, now.day);
     final endParts = (user.workSchedule.endTime ?? '17:00').split(':');
     final shiftEndHour = int.tryParse(endParts.first) ?? 17;
-    final shiftEndMinute = endParts.length > 1
-        ? int.tryParse(endParts[1]) ?? 0
-        : 0;
+    final shiftEndMinute =
+        endParts.length > 1 ? int.tryParse(endParts[1]) ?? 0 : 0;
     final result = <AttendancePeriodDay>[];
 
     for (
@@ -175,17 +205,18 @@ class AttendancePeriodSummaryService {
       final scheduled = workDays.contains(day.weekday);
       final joined = joinDay == null || !day.isBefore(joinDay);
       final companyDayOff = companyDaysOff.contains(key);
-      final shiftFinishedToday = day == today
-          ? now.isAfter(
-              DateTime(
-                day.year,
-                day.month,
-                day.day,
-                shiftEndHour,
-                shiftEndMinute,
-              ),
-            )
-          : day.isBefore(today);
+      final shiftFinishedToday =
+          day == today
+              ? now.isAfter(
+                DateTime(
+                  day.year,
+                  day.month,
+                  day.day,
+                  shiftEndHour,
+                  shiftEndMinute,
+                ),
+              )
+              : day.isBefore(today);
       final expected =
           scheduled &&
           joined &&

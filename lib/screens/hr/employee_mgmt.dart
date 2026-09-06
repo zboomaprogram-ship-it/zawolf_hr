@@ -11,6 +11,7 @@ import 'package:intl/intl.dart' hide TextDirection;
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import '../../services/auth_service.dart';
+import '../../services/hr_password_reset_service.dart';
 import '../../services/attendance_gateway_service.dart';
 import '../../utils/user_facing_error.dart';
 import '../../services/sheets_export_service.dart';
@@ -1397,6 +1398,18 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
                                       () => _managePerformanceBadges(emp),
                                 ),
                                 const SizedBox(width: 16),
+                                IconButton(
+                                  padding: EdgeInsets.zero,
+                                  constraints: const BoxConstraints(),
+                                  tooltip: 'إعادة تعيين كلمة المرور الافتراضية',
+                                  icon: const Icon(
+                                    Icons.lock_reset_outlined,
+                                    color: ZaWolfColors.warning,
+                                    size: 20,
+                                  ),
+                                  onPressed: () => _resetPasswordToDefault(emp),
+                                ),
+                                const SizedBox(width: 16),
                                 // Edit button
                                 IconButton(
                                   padding: EdgeInsets.zero,
@@ -1480,6 +1493,58 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
         Icon(icon, color: ZaWolfColors.primaryCyan, size: 16),
       ],
     );
+  }
+
+  Future<void> _resetPasswordToDefault(UserModel employee) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder:
+          (dialogContext) => AlertDialog(
+            backgroundColor: ZaWolfColors.surface01,
+            title: const Text('إعادة تعيين كلمة المرور إلى الافتراضية'),
+            content: Text(
+              'سيتم تعيين كلمة مرور ${employee.displayName} إلى ZW@0000 وتسجيل خروجه من الأجهزة الحالية.\n\nاستخدم هذا الإجراء فقط بعد التحقق من هوية الموظف.',
+              textDirection: TextDirection.rtl,
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext, false),
+                child: const Text('إلغاء'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(dialogContext, true),
+                child: const Text('إعادة التعيين'),
+              ),
+            ],
+          ),
+    );
+    if (confirmed != true) return;
+
+    try {
+      await HrPasswordResetService.instance.resetToCompanyDefault(
+        employeeUserId: employee.uid,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'تمت إعادة تعيين كلمة مرور ${employee.displayName} إلى ZW@0000.',
+          ),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            userFacingError(
+              error,
+              fallback: 'تعذر إعادة تعيين كلمة المرور. أعد المحاولة.',
+            ),
+          ),
+        ),
+      );
+    }
   }
 
   Future<void> _toggleActiveStatus(UserModel emp) async {
@@ -4085,9 +4150,10 @@ class _EditEmployeeDialogState extends State<EditEmployeeDialog> {
                     color: ZaWolfColors.surface02,
                     borderRadius: BorderRadius.circular(8),
                     border: Border.all(
-                      color: _excludeFromAttendanceReports
-                          ? ZaWolfColors.warning.withValues(alpha: 0.6)
-                          : ZaWolfColors.surface03,
+                      color:
+                          _excludeFromAttendanceReports
+                              ? ZaWolfColors.warning.withValues(alpha: 0.6)
+                              : ZaWolfColors.surface03,
                     ),
                   ),
                   child: SwitchListTile(

@@ -38,6 +38,32 @@ void main() {
     expect(cubit.state.status, DeveloperToolsAdminStatus.failure);
     await cubit.close();
   });
+
+  test(
+    'saved active grants remain visible after the admin page reloads',
+    () async {
+      final repository =
+          _FakeRepository()
+            ..activeEntitlements = const [
+              DeveloperToolsEntitlement(
+                employeeUserId: 'employee-1',
+                scopes: {DeveloperToolScope.appDiagnostics},
+                permanent: true,
+                grantedByUserId: 'hr-1',
+              ),
+            ];
+      final cubit = DeveloperToolsAdminCubit(
+        repository,
+        _FakeDirectoryRepository(),
+      );
+
+      await cubit.load();
+
+      expect(cubit.state.entitlements, hasLength(1));
+      expect(cubit.state.entitlements.single.employeeUserId, 'employee-1');
+      await cubit.close();
+    },
+  );
 }
 
 final class _FakeDirectoryRepository
@@ -55,6 +81,7 @@ final class _FakeDirectoryRepository
 
 final class _FakeRepository implements DeveloperToolsRepository {
   String? grantedEmployeeId;
+  List<DeveloperToolsEntitlement> activeEntitlements = const [];
 
   @override
   Future<void> grant({
@@ -68,6 +95,10 @@ final class _FakeRepository implements DeveloperToolsRepository {
 
   @override
   Future<DeveloperToolsEntitlement?> loadMyEntitlement() async => null;
+
+  @override
+  Future<List<DeveloperToolsEntitlement>> loadActiveEntitlements() async =>
+      activeEntitlements;
 
   @override
   Future<void> revoke(String employeeUserId) async {}
