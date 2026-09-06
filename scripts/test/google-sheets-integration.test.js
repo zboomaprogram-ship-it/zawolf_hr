@@ -124,9 +124,9 @@ test('uses the Drive OAuth account only for governed attachment uploads', async 
   const serviceRequests = [];
   const driveOAuthRequests = [];
   const integration = createGoogleSheetsIntegration({
-    env: {
-      GOOGLE_SHEETS_TEST_SPREADSHEET_ID: '1h3eNfVdY5wTHszPN0w0gPNI-BGGauoGWSSal4fLnwIM',
-    },
+    // Chat attachments must be usable even when the optional test Sheet has
+    // not been configured on the production Hostinger runtime.
+    env: {},
     authClient: {
       async request(options) {
         serviceRequests.push(options);
@@ -152,8 +152,11 @@ test('uses the Drive OAuth account only for governed attachment uploads', async 
   assert.equal(driveOAuthRequests.length, 1);
   assert.equal(serviceRequests.length, 0);
 
-  await integration.readRows();
-  assert.equal(serviceRequests.length, 1);
+  await assert.rejects(
+    integration.readRows(),
+    /GOOGLE_SHEETS_TEST_SPREADSHEET_ID is missing/,
+  );
+  assert.equal(serviceRequests.length, 0);
   assert.equal(driveOAuthRequests.length, 1);
 });
 

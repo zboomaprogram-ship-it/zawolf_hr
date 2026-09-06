@@ -35,7 +35,7 @@ class EmployeeQuickAction extends StatelessWidget {
           const SizedBox(height: DsSpacing.sm),
           Text(
             label,
-            maxLines: 2,
+            maxLines: 1,
             overflow: TextOverflow.ellipsis,
             textAlign: TextAlign.center,
             style: theme.textTheme.bodyMedium?.copyWith(

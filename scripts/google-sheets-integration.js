@@ -46,10 +46,10 @@ function parseServiceAccount(rawValue) {
 function integrationConfig(env = process.env) {
   const spreadsheetId = String(env.GOOGLE_SHEETS_TEST_SPREADSHEET_ID || '').trim();
   const tabName = String(env.GOOGLE_SHEETS_TEST_TAB || 'Employee_Test_Data').trim();
-  if (!spreadsheetId) {
-    throw new Error('GOOGLE_SHEETS_TEST_SPREADSHEET_ID is missing.');
-  }
-  if (!/^[A-Za-z0-9_-]{20,}$/.test(spreadsheetId)) {
+  // The test Sheet is optional. Chat and request attachments only need a
+  // governed Drive folder, so do not make their upload path depend on a
+  // separate test spreadsheet configuration.
+  if (spreadsheetId && !/^[A-Za-z0-9_-]{20,}$/.test(spreadsheetId)) {
     throw new Error('GOOGLE_SHEETS_TEST_SPREADSHEET_ID is invalid.');
   }
   if (!tabName || /[\r\n!]/.test(tabName)) {
@@ -189,6 +189,9 @@ function createGoogleSheetsIntegration({
   }
 
   async function readRows({ force = false } = {}) {
+    if (!config.spreadsheetId) {
+      throw new Error('GOOGLE_SHEETS_TEST_SPREADSHEET_ID is missing.');
+    }
     if (!force && cachedRows && Date.now() < cacheExpiresAt) return cachedRows;
     const range = `${quotedTab(config.tabName)}!A1:I`;
     const response = await request({

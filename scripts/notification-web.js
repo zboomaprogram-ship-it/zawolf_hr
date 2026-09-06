@@ -4049,6 +4049,16 @@ const server = http.createServer(async (req, res) => {
           process.env.GOOGLE_SHEETS_SERVICE_ACCOUNT &&
           process.env.GOOGLE_DRIVE_TEST_FOLDER_ID
         ),
+        conversationUploads: {
+          workspaceRootConfigured: Boolean(
+            process.env.GOOGLE_WORKSPACE_ROOT_FOLDER_ID,
+          ),
+          oauthConfigured: Boolean(
+            process.env.GOOGLE_DRIVE_OAUTH_CLIENT_ID &&
+            process.env.GOOGLE_DRIVE_OAUTH_CLIENT_SECRET &&
+            process.env.GOOGLE_DRIVE_OAUTH_REFRESH_TOKEN,
+          ),
+        },
       },
       salesAnalytics: salesAnalyticsHealth(),
       googleWorkspace: {

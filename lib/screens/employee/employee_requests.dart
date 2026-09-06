@@ -1683,69 +1683,71 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
             final selected = _requestTypeIndex == index;
             return SizedBox(
               width: itemWidth,
-              child: Material(
-                color: Colors.transparent,
-                child: InkWell(
-                  onTap: () {
-                    if (type.route case final route?) {
-                      context.push(route);
-                      return;
-                    }
-                    setState(() => _requestTypeIndex = index);
-                  },
-                  borderRadius: BorderRadius.circular(8),
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 160),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 13,
-                    ),
-                    decoration: BoxDecoration(
-                      color:
-                          selected
-                              ? type.color.withValues(alpha: 0.14)
-                              : ZaWolfColors.surface01,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(
-                        color: selected ? type.color : ZaWolfColors.surface03,
-                        width: selected ? 1.4 : 1,
+              child: SizedBox(
+                height: 76,
+                child: Material(
+                  color: Colors.transparent,
+                  child: InkWell(
+                    onTap: () {
+                      if (type.route case final route?) {
+                        context.push(route);
+                        return;
+                      }
+                      setState(() => _requestTypeIndex = index);
+                    },
+                    borderRadius: BorderRadius.circular(8),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 160),
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      decoration: BoxDecoration(
+                        color:
+                            selected
+                                ? type.color.withValues(alpha: 0.14)
+                                : ZaWolfColors.surface01,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: selected ? type.color : ZaWolfColors.surface03,
+                          width: selected ? 1.4 : 1,
+                        ),
                       ),
-                    ),
-                    child: Row(
-                      children: [
-                        Icon(
-                          type.icon,
-                          color:
-                              selected
-                                  ? type.color
-                                  : ZaWolfColors.textSecondary,
-                        ),
-                        const SizedBox(width: 9),
-                        Expanded(
-                          child: Text(
-                            type.label,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            textAlign: TextAlign.end,
-                            style: theme.textTheme.titleMedium?.copyWith(
-                              color:
-                                  selected
-                                      ? Colors.white
-                                      : ZaWolfColors.textSecondary,
-                              fontWeight: FontWeight.bold,
+                      child: Row(
+                        children: [
+                          Icon(
+                            type.icon,
+                            color:
+                                selected
+                                    ? type.color
+                                    : ZaWolfColors.textSecondary,
+                          ),
+                          const SizedBox(width: 9),
+                          Expanded(
+                            child: Text(
+                              type.label,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              textAlign: TextAlign.end,
+                              style: theme.textTheme.titleMedium?.copyWith(
+                                color:
+                                    selected
+                                        ? Colors.white
+                                        : ZaWolfColors.textSecondary,
+                                fontWeight: FontWeight.bold,
+                              ),
                             ),
                           ),
-                        ),
-                        if (selected)
-                          Padding(
-                            padding: const EdgeInsetsDirectional.only(start: 8),
-                            child: Icon(
-                              Icons.check_circle,
-                              color: type.color,
-                              size: 18,
+                          if (selected)
+                            Padding(
+                              padding: const EdgeInsetsDirectional.only(
+                                start: 8,
+                              ),
+                              child: Icon(
+                                Icons.check_circle,
+                                color: type.color,
+                                size: 18,
+                              ),
                             ),
-                          ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
                 ),

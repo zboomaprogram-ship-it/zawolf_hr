@@ -905,20 +905,20 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
                     ],
                     const SizedBox(height: 24),
 
-                    // A real grid keeps the same usable tile size on narrow
-                    // iPhones and Android phones instead of squeezing three
-                    // fixed Row children into every screen width.
+                    // Keep the original compact dashboard rhythm: three
+                    // actions per row on normal phones. The previous
+                    // two-column layout made the navigation cards needlessly
+                    // tall and inconsistent with the established design.
                     LayoutBuilder(
                       builder: (context, constraints) {
-                        final columns = constraints.maxWidth >= 640 ? 3 : 2;
-                        final compact = constraints.maxWidth < 380;
+                        final columns = constraints.maxWidth < 320 ? 2 : 3;
                         return GridView.count(
                           crossAxisCount: columns,
                           shrinkWrap: true,
                           physics: const NeverScrollableScrollPhysics(),
                           crossAxisSpacing: DsSpacing.md,
                           mainAxisSpacing: DsSpacing.md,
-                          childAspectRatio: compact ? 1.08 : 1.3,
+                          childAspectRatio: 1.05,
                           children: [
                             EmployeeQuickAction(
                               icon: Icons.add_circle_outline,
