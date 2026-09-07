@@ -1,7 +1,6 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:pdfrx/pdfrx.dart';
 import '../../domain/entities/rich_chat.dart';
 import '../../domain/repositories/chat_media_gateway.dart';
 import '../cubit/chat_media_cubit.dart';
@@ -60,7 +59,31 @@ class _RichAttachmentViewState extends State<RichAttachmentView> {
       return ChatLocalPlayer(file: file, gateway: widget.gateway, video: file.mimeType.startsWith('video/'));
     }
     if (file.mimeType == 'application/pdf') {
-      return SizedBox(height: 320, child: PdfViewer.data(file.bytes, sourceName: file.fileName));
+      return Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.red.withAlpha(20),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: Colors.red.withAlpha(60)),
+        ),
+        child: Row(
+          children: [
+            const Icon(Icons.picture_as_pdf, color: Colors.red, size: 36),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(file.fileName, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                  const SizedBox(height: 2),
+                  Text('${(file.bytes.length / 1024).toStringAsFixed(1)} KB', style: Theme.of(context).textTheme.bodySmall),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
     }
     if (file.mimeType == 'text/plain') {
       return SizedBox(height: 180, child: SingleChildScrollView(child: SelectableText(utf8.decode(file.bytes.take(100000).toList(), allowMalformed: true))));
