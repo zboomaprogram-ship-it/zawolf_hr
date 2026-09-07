@@ -20,15 +20,16 @@ class AttendanceCorrectionRequestService {
         .limit(120)
         .snapshots()
         .map((snapshot) {
-          final items = snapshot.docs
-              .map(AttendanceModel.fromFirestore)
-              .where(
-                (item) =>
-                    item.checkInTime != null &&
-                    (item.isLate || item.lateMinutes > 0) &&
-                    item.salaryDeductionFraction > 0,
-              )
-              .toList();
+          final items =
+              snapshot.docs
+                  .map(AttendanceModel.fromFirestore)
+                  .where(
+                    (item) =>
+                        item.checkInTime != null &&
+                        (item.isLate || item.lateMinutes > 0) &&
+                        item.salaryDeductionFraction > 0,
+                  )
+                  .toList();
           items.sort((a, b) => b.date.compareTo(a.date));
           return items.take(60).toList();
         });
@@ -84,10 +85,11 @@ class AttendanceCorrectionRequestService {
       throw Exception('وقت الوصول المقترح يجب ألا يكون بعد الوقت المسجل.');
     }
 
-    final duplicate = await _db
-        .collection('attendanceCorrectionRequests')
-        .where('attendanceId', isEqualTo: attendance.attendanceId)
-        .get();
+    final duplicate =
+        await _db
+            .collection('attendanceCorrectionRequests')
+            .where('attendanceId', isEqualTo: attendance.attendanceId)
+            .get();
     if (duplicate.docs.any((doc) => doc.data()['status'] == 'pending_hr')) {
       throw Exception('يوجد طلب تصحيح معلق لهذا اليوم بالفعل.');
     }
@@ -115,7 +117,8 @@ class AttendanceCorrectionRequestService {
       title: 'طلب تصحيح وقت حضور',
       body: '${employee.displayName} أرسل طلب تصحيح وقت حضور لمراجعة HR.',
       data: {
-        'route': '/manager/requests',
+        'route':
+            '/manager/requests?category=attendance_corrections&requestId=${ref.id}',
         'requestId': ref.id,
         'attendanceId': attendance.attendanceId,
       },
@@ -181,15 +184,17 @@ class AttendanceCorrectionRequestService {
     if (employeeId.isNotEmpty) {
       await RoleNotificationService.instance.createNotification(
         recipientId: employeeId,
-        type: approve
-            ? 'attendance_correction_approved'
-            : 'attendance_correction_rejected',
+        type:
+            approve
+                ? 'attendance_correction_approved'
+                : 'attendance_correction_rejected',
         title: approve ? 'تم قبول تصحيح وقت الحضور' : 'تم رفض تصحيح وقت الحضور',
-        body: comment.trim().isEmpty
-            ? (approve
-                  ? 'تم تعديل وقت الحضور وإعادة حساب الخصم.'
-                  : 'راجع سجل طلباتك لمعرفة حالة الطلب.')
-            : comment.trim(),
+        body:
+            comment.trim().isEmpty
+                ? (approve
+                    ? 'تم تعديل وقت الحضور وإعادة حساب الخصم.'
+                    : 'راجع سجل طلباتك لمعرفة حالة الطلب.')
+                : comment.trim(),
         data: {'route': '/employee/requests', 'requestId': requestId},
         eventId: 'attendance_correction_reviewed:$requestId',
       );

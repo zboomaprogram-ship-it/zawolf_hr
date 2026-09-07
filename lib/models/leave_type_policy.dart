@@ -4,6 +4,7 @@ class LeaveTypePolicy {
   static const String casual = 'casual';
   static const String unpaid = 'unpaid';
   static const String exam = 'exam';
+  static const String paternity = 'paternity';
   static const String remote = 'remote';
 
   static const Set<String> supportedTypes = {
@@ -12,6 +13,7 @@ class LeaveTypePolicy {
     casual,
     unpaid,
     exam,
+    paternity,
     remote,
   };
 
@@ -27,6 +29,8 @@ class LeaveTypePolicy {
         return 'إجازة بدون راتب';
       case exam:
         return 'إجازة امتحان';
+      case paternity:
+        return 'إجازة مولود';
       case remote:
         return 'يوم عمل عن بعد';
       default:
@@ -45,7 +49,9 @@ class LeaveTypePolicy {
       case unpaid:
         return 'لا تُخصم من رصيد الإجازات، ويُقترح خصم راتب يوم كامل عن كل يوم بعد موافقة HR.';
       case exam:
-        return 'لا تُخصم من رصيد الإجازات ولا من الراتب، ويجب كتابة سبب الامتحان.';
+        return 'لا تُخصم من الرصيد؛ تتطلب إخطاراً قبل 10 أيام وإرفاق ما يثبت الامتحان.';
+      case paternity:
+        return 'إجازة مدفوعة يوم الولادة، لا تُخصم من الرصيد، وبحد أقصى 3 مرات طوال الخدمة.';
       case remote:
         return 'يوم عمل عن بعد لا يُخصم من رصيد الإجازات ولا من الراتب.';
       default:

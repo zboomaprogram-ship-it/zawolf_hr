@@ -125,67 +125,14 @@ class AdministrativeRequestService {
     if (startTime.compareTo(endTime) >= 0) {
       throw Exception('وقت نهاية المهمة يجب أن يكون بعد وقت البداية.');
     }
-    final managerIds = ManagerApprovalChain.orderedIds(
-      employee.managerIds,
-      fallbackId: employee.managerId,
-      teamLeaderId: employee.teamLeaderId,
-    );
-    if (managerIds.isEmpty) {
-      throw Exception('يجب تعيين مدير للموظف قبل إرسال مهمة ميدانية.');
-    }
-    final managerNames = ManagerApprovalChain.orderedNames(
-      orderedIds: managerIds,
-      managerIds: employee.managerIds,
-      managerNames: employee.managerNames,
-      teamLeaderId: employee.teamLeaderId,
-      teamLeaderName: employee.teamLeaderName,
-      fallbackManagerId: employee.managerId,
-      fallbackManagerName: employee.managerName,
-    );
-    final ref = _db.collection('administrativeRequests').doc();
-    await ref.set({
-      'userId': employee.uid,
-      'employeeId': employee.employeeId,
-      'employeeName': employee.displayName,
-      'department': employee.department,
-      'locationId': employee.locationId,
-      'category': AdministrativeRequestCategory.fieldMission,
-      'categoryLabel': AdministrativeRequestCategory.arabicLabel(
-        AdministrativeRequestCategory.fieldMission,
-      ),
-      'notes': reason.trim(),
-      'attachmentUrl': null,
-      'missionDate': DateFormat('yyyy-MM-dd').format(date),
-      'startTime': startTime,
-      'endTime': endTime,
-      'siteName': siteName.trim(),
-      'requiresReturnToOffice': requiresReturnToOffice,
-      'requiresCheckout': requiresCheckout,
-      'requiresCeoApproval': true,
-      'status': 'pending_manager',
-      'managerId': managerIds.first,
-      'managerIds': managerIds,
-      'managerNames': managerNames,
-      'managerApprovalIndex': 0,
-      'managerApprovalTotal': managerIds.length,
-      'managerApprovalTrail': <Map<String, dynamic>>[],
-      'approvalHistory': [
-        _event(
-          stage: 'submitted',
-          status: 'completed',
-          actorId: employee.uid,
-          actorName: employee.displayName,
-        ),
-      ],
-      'submittedAt': FieldValue.serverTimestamp(),
-      'isRead': false,
-    });
-    await RoleNotificationService.instance.createNotification(
-      recipientId: managerIds.first,
-      type: 'administrative_request_submitted',
-      title: 'مهمة ميدانية بانتظار موافقتك',
-      body: '${employee.displayName} يطلب مهمة ميدانية في ${siteName.trim()}.',
-      data: {'administrativeRequestId': ref.id},
+    await _routingGateway.createEmployeeFieldMission(
+      missionDate: DateFormat('yyyy-MM-dd').format(date),
+      startTime: startTime,
+      endTime: endTime,
+      siteName: siteName.trim(),
+      reason: reason.trim(),
+      requiresReturnToOffice: requiresReturnToOffice,
+      requiresCheckout: requiresCheckout,
     );
   }
 
@@ -199,13 +146,14 @@ class AdministrativeRequestService {
   }
 
   Stream<QuerySnapshot<Map<String, dynamic>>> watchPending(UserModel reviewer) {
-    if (reviewer.employeeId.trim().toUpperCase() == 'CEO-100') {
+    final isCeo = reviewer.canReviewCeoStage;
+    if (isCeo) {
       return _db
           .collection('administrativeRequests')
-          // The screen scopes this two-stage result to the CEO's UID. Both
-          // stages are needed: direct-manager approval and field-mission CEO
-          // approval. Firestore cannot express that OR across two fields.
-          .where('status', whereIn: ['pending_manager', 'pending_ceo'])
+          .where(
+            'status',
+            whereIn: ['pending_manager', 'pending_ceo', 'pending_hr'],
+          )
           .limit(100)
           .snapshots();
     }
@@ -240,8 +188,10 @@ class AdministrativeRequestService {
     final isFieldMission =
         data['category'] == AdministrativeRequestCategory.fieldMission;
     if (status == 'pending_ceo') {
-      if (reviewer.employeeId.trim().toUpperCase() != 'CEO-100' ||
-          data['ceoId'] != reviewer.uid) {
+      final isCeo = reviewer.canReviewCeoStage;
+      final ceoId = (data['ceoId'] ?? '').toString();
+      if (!isCeo ||
+          (ceoId.isNotEmpty && ceoId != reviewer.uid && ceoId != 'CEO-100')) {
         throw Exception('هذه المرحلة متاحة لحساب CEO-100 فقط.');
       }
       await ref.update({
@@ -319,7 +269,9 @@ class AdministrativeRequestService {
       );
       return;
     }
-    if (status != 'pending_manager' || data['managerId'] != reviewer.uid) {
+    final isCeo = reviewer.canReviewCeoStage;
+    if (status != 'pending_manager' ||
+        (data['managerId'] != reviewer.uid && !isCeo)) {
       throw Exception('هذا الطلب ينتظر مراجعاً آخر.');
     }
     final ids =
@@ -336,13 +288,24 @@ class AdministrativeRequestService {
     String? ceoId;
     String? ceoName;
     if (isFieldMission && next >= ids.length) {
-      final ceo =
+      // Older CEO profiles stored the code in employeeCode rather than
+      // employeeId. Resolve both shapes so CEO-100 is never skipped.
+      final byEmployeeId =
           await _db
               .collection('users')
               .where('employeeId', isEqualTo: 'CEO-100')
               .where('isActive', isEqualTo: true)
               .limit(1)
               .get();
+      final ceo =
+          byEmployeeId.docs.isNotEmpty
+              ? byEmployeeId
+              : await _db
+                  .collection('users')
+                  .where('employeeCode', isEqualTo: 'CEO-100')
+                  .where('isActive', isEqualTo: true)
+                  .limit(1)
+                  .get();
       if (ceo.docs.isEmpty) {
         throw Exception('لا يوجد حساب نشط بكود CEO-100.');
       }
@@ -425,11 +388,16 @@ class AdministrativeRequestService {
       );
       return;
     }
+    final isCeo = reviewer.canReviewCeoStage;
+    final ceoId = (data['ceoId'] ?? '').toString();
     final allowed =
-        (status == 'pending_manager' && data['managerId'] == reviewer.uid) ||
+        (status == 'pending_manager' &&
+            (data['managerId'] == reviewer.uid ||
+                data['currentApproverId'] == reviewer.uid ||
+                isCeo)) ||
         (status == 'pending_ceo' &&
-            reviewer.employeeId.trim().toUpperCase() == 'CEO-100' &&
-            data['ceoId'] == reviewer.uid) ||
+            isCeo &&
+            (ceoId.isEmpty || ceoId == reviewer.uid || ceoId == 'CEO-100')) ||
         (status == 'pending_hr' && EmployeeRole.isHr(reviewer.role));
     if (!allowed) throw Exception('غير مسموح بمراجعة هذا الطلب.');
     await ref.update({

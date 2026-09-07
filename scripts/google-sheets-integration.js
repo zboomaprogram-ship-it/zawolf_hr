@@ -1545,6 +1545,9 @@ function createGoogleSheetsIntegration({
     downloadWorkspaceDriveFile,
     createWorkspaceDriveFolder,
     uploadWorkspaceDriveFile,
+    createConversationMediaProvider: () => require('./conversations/drive-media-provider').createDriveMediaProvider({
+      request: (options) => request(options, { useDriveUploadOAuth: true }),
+    }),
     renameWorkspaceDriveFile,
     trashWorkspaceDriveFile,
     moveWorkspaceDriveFile,

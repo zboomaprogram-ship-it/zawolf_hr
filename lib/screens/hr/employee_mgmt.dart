@@ -3536,22 +3536,14 @@ class _EditEmployeeDialogState extends State<EditEmployeeDialog> {
     });
 
     try {
-      try {
-        await AttendanceGatewayService().resetDevice(
-          employeeId: widget.employee.uid,
-          reason: reason,
-        );
-      } catch (_) {}
-
-      // Direct Firestore update to reset registered device ID immediately
-      await FirebaseFirestore.instance
-          .collection('users')
-          .doc(widget.employee.uid)
-          .update({
-            'registeredAttendanceDeviceId': FieldValue.delete(),
-            'registeredAttendanceDeviceLabel': FieldValue.delete(),
-            'registeredAttendanceDeviceAt': FieldValue.delete(),
-          });
+      // The gateway performs the profile and device-record update atomically
+      // with the HR authorization and audit log. A follow-up client write can
+      // be denied by rules even after a successful reset, leaving HR with a
+      // false failure and a still-bound employee in the UI.
+      await AttendanceGatewayService().resetDevice(
+        employeeId: widget.employee.uid,
+        reason: reason,
+      );
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -4157,7 +4149,7 @@ class _EditEmployeeDialogState extends State<EditEmployeeDialog> {
                     ),
                   ),
                   child: SwitchListTile(
-                    activeColor: ZaWolfColors.warning,
+                    activeThumbColor: ZaWolfColors.warning,
                     contentPadding: EdgeInsets.zero,
                     title: const Text(
                       'استبعاد من تقرير حالة حضور الشركة اليوم',

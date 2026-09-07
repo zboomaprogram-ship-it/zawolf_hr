@@ -227,7 +227,7 @@ class _MeetingRequestScreenState extends State<MeetingRequestScreen> {
                 padding: const EdgeInsets.all(16),
                 children: [
                   DropdownButtonFormField<String>(
-                    value:
+                    initialValue:
                         _approvers.any((a) => a.id == _approver?.id)
                             ? _approver?.id
                             : null,
@@ -261,7 +261,7 @@ class _MeetingRequestScreenState extends State<MeetingRequestScreen> {
                   ),
                   const SizedBox(height: 12),
                   DropdownButtonFormField<String>(
-                    value:
+                    initialValue:
                         _rooms.any((r) => r.id == _room?.id) ? _room?.id : null,
                     isExpanded: true,
                     decoration: const InputDecoration(

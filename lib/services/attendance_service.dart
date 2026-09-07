@@ -1128,6 +1128,14 @@ class AttendanceService {
     String monthKey,
   ) {
     final cycle = PayrollCycle.forKey(monthKey);
+    // The dashboard action must not depend solely on the range query below.
+    // A cache/index delay on that query used to make a checked-in employee see
+    // "تسجيل حضور" again, even though their canonical daily record was already
+    // present. New attendance writes always use this deterministic document ID.
+    final todayDateKey = DateFormat('yyyy-MM-dd').format(DateTime.now());
+    final includesToday =
+        todayDateKey.compareTo(cycle.startDateKey) >= 0 &&
+        todayDateKey.compareTo(cycle.endDateKey) <= 0;
 
     final remoteStream = _db
         .collection('attendance')
@@ -1138,6 +1146,7 @@ class AttendanceService {
 
     return Stream.multi((controller) {
       var remoteLogs = <AttendanceModel>[];
+      AttendanceModel? canonicalTodayLog;
 
       Future<void> emitMerged() async {
         final pendingLogs = await _offlineQueue.pendingLogsForRange(
@@ -1150,6 +1159,13 @@ class AttendanceService {
         };
         for (final pending in pendingLogs) {
           merged[pending.attendanceId] = pending;
+        }
+        // Prefer the deterministic daily record over a delayed range result
+        // or a legacy duplicate for the same day. This preserves the server's
+        // check-in/check-out state as the source of truth for the action.
+        if (canonicalTodayLog != null) {
+          merged.removeWhere((_, log) => log.date == todayDateKey);
+          merged[canonicalTodayLog!.attendanceId] = canonicalTodayLog!;
         }
         final logs = merged.values.toList()
           ..sort((a, b) => b.date.compareTo(a.date));
@@ -1168,11 +1184,30 @@ class AttendanceService {
           emitMerged();
         },
       );
+      final canonicalTodaySub = includesToday
+          ? _db
+              .collection('attendance')
+              .doc('${userId}_$todayDateKey')
+              .snapshots()
+              .listen(
+                (snapshot) {
+                  canonicalTodayLog = snapshot.exists
+                      ? AttendanceModel.fromFirestore(snapshot)
+                      : null;
+                  emitMerged();
+                },
+                // The range listener and offline queue can still render the
+                // current cycle when this focused read is temporarily denied
+                // or unavailable. Never erase a known state on that error.
+                onError: (_, __) {},
+              )
+          : null;
       final pendingSub = _offlineQueue.changes.listen((_) => emitMerged());
       emitMerged();
 
       controller.onCancel = () async {
         await remoteSub.cancel();
+        await canonicalTodaySub?.cancel();
         await pendingSub.cancel();
       };
     });

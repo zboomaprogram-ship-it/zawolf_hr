@@ -13,6 +13,7 @@ test('authenticated operation preflight allows the idempotency header', () => {
     'Authorization',
     'Content-Type',
     'X-Operation-Id',
+    'X-Upload-Offset',
   ]);
   assert.match(operationCorsHeaderValue(), /X-Operation-Id/);
 });

@@ -6,6 +6,7 @@ const operationCorsHeaders = Object.freeze([
   'Authorization',
   'Content-Type',
   'X-Operation-Id',
+  'X-Upload-Offset',
 ]);
 
 function operationCorsHeaderValue() {

@@ -23,6 +23,7 @@ class LeaveModel {
   final String? reviewerName;
   final bool isRead;
   final bool autoApproved;
+  final bool convertToAnnual;
   final bool autoApprovedOverridden;
   final String? autoApprovalOverrideReason;
 
@@ -49,6 +50,7 @@ class LeaveModel {
     this.reviewerName,
     this.isRead = false,
     this.autoApproved = false,
+    this.convertToAnnual = false,
     this.autoApprovedOverridden = false,
     this.autoApprovalOverrideReason,
   });
@@ -79,6 +81,7 @@ class LeaveModel {
       reviewerName: data['reviewerName'] as String?,
       isRead: data['isRead'] as bool? ?? false,
       autoApproved: data['autoApproved'] as bool? ?? false,
+      convertToAnnual: data['convertToAnnual'] as bool? ?? false,
       autoApprovedOverridden: data['autoApprovedOverridden'] as bool? ?? false,
       autoApprovalOverrideReason: overrideMap?['reason'] as String?,
     );
@@ -110,6 +113,7 @@ class LeaveModel {
       if (reviewerName != null) 'reviewerName': reviewerName,
       'isRead': isRead,
       if (autoApproved) 'autoApproved': true,
+      if (convertToAnnual) 'convertToAnnual': true,
       if (autoApprovedOverridden) 'autoApprovedOverridden': true,
     };
   }

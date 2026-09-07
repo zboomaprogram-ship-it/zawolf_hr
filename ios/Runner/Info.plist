@@ -49,6 +49,8 @@
 	<string>يستخدم ZaWolf HR موقعك أثناء استخدام التطبيق للتحقق من وجودك داخل نطاق فرع العمل عند تسجيل الحضور أو الانصراف.</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
 	<string>عند تفعيل الحضور التلقائي باختيارك، يستخدم ZaWolf HR نطاق موقع فرعك في الخلفية لتسجيل الدخول أو الخروج عند عبور حدود الفرع. لا يتتبع التطبيق مسارك المستمر، ويمكنك إيقاف الميزة من الملف الشخصي في أي وقت.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>تسجيل رسائل صوتية في محادثات العمل.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>يستخدم التطبيق مكتبة الصور لرفع المستندات والصور المطلوبة.</string>
 	<key>UIApplicationSupportsIndirectInputEvents</key>

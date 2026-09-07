@@ -125,10 +125,21 @@ class AttendanceSecurityService {
   Future<void> _assertTrustedDevice() async {
     if (kDebugMode) return;
     try {
-      final isNotTrusted = await JailbreakRootDetection.instance.isNotTrust;
-      final isJailBroken = await JailbreakRootDetection.instance.isJailBroken;
-      final isRealDevice = await JailbreakRootDetection.instance.isRealDevice;
-      if (isNotTrusted || isJailBroken || !isRealDevice) {
+      // `isJailBroken` in this package also treats a detected proxy as a
+      // jailbreak on iOS. Corporate VPN/proxy users are legitimate users, so
+      // evaluate the individual signals and block only compromise/emulator
+      // evidence. This keeps the actual jailbreak and Frida protections
+      // without rejecting normal App Store devices on managed networks.
+      final issues = await JailbreakRootDetection.instance.checkForIssues;
+      final blockingIssues = issues.where(
+        (issue) => const <String>{
+          'jailbreak',
+          'notRealDevice',
+          'fridaFound',
+          'reverseEngineered',
+        }.contains(issue.name),
+      );
+      if (blockingIssues.isNotEmpty) {
         throw Exception(
           'لا يمكن تسجيل الحضور من جهاز مكسور الحماية أو غير موثوق. استخدم جهازاً آمناً أو تواصل مع HR.',
         );

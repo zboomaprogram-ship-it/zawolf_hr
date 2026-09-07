@@ -12,6 +12,7 @@ import '../../components/wolf_card.dart';
 import '../../components/employee_request_history_section.dart';
 import '../../services/auth_service.dart';
 import '../../services/attendance_service.dart';
+import '../../services/attendance_gateway_service.dart';
 import '../../services/offline_attendance_queue_service.dart';
 import '../../services/automatic_attendance_service.dart';
 import '../../services/company_day_off_service.dart';
@@ -26,6 +27,7 @@ import '../../models/user_model.dart';
 import '../../utils/payroll_cycle.dart';
 import '../../features/attendance_checkin/attendance_checkin.dart';
 import '../../features/attendance_checkin/presentation/attendance_outcome_mapper.dart';
+import '../../navigation/developer_tools_entry.dart';
 import '../../design_system/components/app_logo.dart';
 import '../../design_system/components/stat_card.dart';
 import '../../design_system/tokens.dart';
@@ -66,6 +68,8 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
   DateTime _now = DateTime.now();
   AttendanceCheckInPilot? _checkInPilot;
   int _pendingRequestsCount = 0;
+  bool _developerAttendanceAccess = false;
+  String? _developerAttendanceAccessUserId;
 
   @override
   void initState() {
@@ -98,6 +102,8 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
         _attendanceStreamUserId = null;
         _attendanceStreamMonthKey = null;
         _preparedUserId = null;
+        _developerAttendanceAccess = false;
+        _developerAttendanceAccessUserId = null;
       }
       return;
     }
@@ -132,6 +138,17 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
         }
       });
     }
+
+    if (_developerAttendanceAccessUserId != user.uid) {
+      _developerAttendanceAccessUserId = user.uid;
+      unawaited(_loadDeveloperAttendanceAccess(user.uid));
+    }
+  }
+
+  Future<void> _loadDeveloperAttendanceAccess(String userId) async {
+    final enabled = await DeveloperToolsAccess.isAvailableForCurrentUser();
+    if (!mounted || _developerAttendanceAccessUserId != userId) return;
+    setState(() => _developerAttendanceAccess = enabled);
   }
 
   Future<void> _checkCurrentGeofence() async {
@@ -243,52 +260,14 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
         if (mounted) _showReliableCheckInFeedback();
         return;
       }
-      await Future.wait([
-        _checkCurrentGeofence(),
-        _checkCompanyDayOff(),
-        _refreshAttendanceGate(employee),
-      ]);
-
-      final log = await attendanceService.loadTodayAttendanceForDisplay(
-        employee.uid,
-      );
-
-      if (log != null && mounted) {
-        final isCheckOut = log.checkOutTime != null;
-        final confirmationTime =
-            isCheckOut ? log.checkOutTime : log.checkInTime;
-        if (confirmationTime == null) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text(
-                'تم حفظ الحركة محلياً وستتم مزامنتها عند توفر الإنترنت.',
-              ),
-            ),
-          );
-          return;
-        }
-
-        showDialog(
-          context: context,
-          barrierDismissible: false,
-          builder:
-              (context) => CheckInConfirmModal(
-                isCheckOut: isCheckOut,
-                time: confirmationTime,
-                locationName: log.locationName,
-                status: log.status,
-                lateMinutes: log.lateMinutes,
-              ),
-        );
-      } else if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'تم حفظ الحركة محلياً وستتم مزامنتها عند توفر الإنترنت.',
-            ),
-          ),
-        );
-      }
+      // The gateway has accepted the action (or the durable offline queue has
+      // retained it) at this point. Location, day-off, and gate probes are
+      // dashboard decoration: waiting for them kept the checkout button in a
+      // loading state after a successful checkout, especially on slow GPS.
+      // The attendance stream remains the source of the dashboard state.
+      if (mounted) setState(() => _now = DateTime.now());
+      unawaited(_refreshAttendanceAfterAction(employee));
+      unawaited(_showAttendanceConfirmation(attendanceService, employee.uid));
     } catch (e) {
       if (mounted) {
         final message = _friendlyAttendanceError(e);
@@ -346,6 +325,78 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
     }
   }
 
+  Future<void> _refreshAttendanceAfterAction(UserModel employee) async {
+    // None of these probes affect whether the completed action is shown.
+    // Isolate failures so a temporary geolocation or policy outage cannot
+    // reintroduce a stuck action button.
+    await Future.wait([
+      _refreshAttendanceGate(employee),
+      _checkCurrentGeofence(),
+      _checkCompanyDayOff(),
+    ]);
+  }
+
+  Future<void> _showAttendanceConfirmation(
+    AttendanceService attendanceService,
+    String employeeId,
+  ) async {
+    AttendanceModel? log;
+    try {
+      log = await attendanceService.loadTodayAttendanceForDisplay(employeeId);
+    } catch (_) {
+      // The action is already durable (server receipt or local queue). A
+      // delayed display read must not surface as an unhandled async error.
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'تم حفظ الحركة وستظهر حالة اليوم تلقائياً عند اكتمال المزامنة.',
+            ),
+          ),
+        );
+      }
+      return;
+    }
+
+    final confirmedLog = log;
+    if (confirmedLog != null && mounted) {
+      final isCheckOut = confirmedLog.checkOutTime != null;
+      final confirmationTime =
+          isCheckOut ? confirmedLog.checkOutTime : confirmedLog.checkInTime;
+      if (confirmationTime == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'تم حفظ الحركة محلياً وستتم مزامنتها عند توفر الإنترنت.',
+            ),
+          ),
+        );
+        return;
+      }
+
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder:
+            (context) => CheckInConfirmModal(
+              isCheckOut: isCheckOut,
+              time: confirmationTime,
+              locationName: confirmedLog.locationName,
+              status: confirmedLog.status,
+              lateMinutes: confirmedLog.lateMinutes,
+            ),
+      );
+    } else if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'تم حفظ الحركة محلياً وستتم مزامنتها عند توفر الإنترنت.',
+          ),
+        ),
+      );
+    }
+  }
+
   Future<bool> _submitReliableCheckIn(
     OfflineAttendanceAction verifiedAction,
   ) async {
@@ -399,6 +450,11 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
   }
 
   String _friendlyAttendanceError(Object error) {
+    // The authenticated gateway exposes a fixed, safe business outcome. Keep
+    // that outcome intact so HR and the employee can distinguish an inactive
+    // account from a device conflict instead of seeing a generic denial.
+    if (error is AttendanceGatewayException) return error.userMessage;
+
     final raw = error.toString().replaceAll('Exception: ', '').trim();
     if (kDebugMode) debugPrint('Attendance action failure detail: $error');
 
@@ -476,7 +532,7 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
     }
     if (raw.contains('مزامنة')) return outcomes.messageFor('pending_sync');
 
-    return 'لم يتم حفظ تسجيل الحضور لهذه المحاولة، ولم يُسجَّل حضور مكرر. '
+    return 'لم يتم حفظ تسجيل الحضور لهذه المحاولة، ولن يُسجَّل حضور مكرر. '
         'تأكد من تشغيل الإنترنت والموقع الدقيق، ثم أغلق التطبيق وافتحه وأعد المحاولة. '
         'إذا تكرر الأمر، يراجع HR حالة الحساب وموقع الحضور والجهاز المسجل من شاشة الموظف.';
   }
@@ -771,7 +827,7 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
                       const SizedBox(height: 16),
                     ],
 
-                    if (user.excludeFromAttendanceReports) ...[
+                    if (user.excludeFromAttendanceReports && !_developerAttendanceAccess) ...[
                       WolfCard(
                         child: Row(
                           children: [
@@ -953,13 +1009,7 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
                               label: 'شات القسم',
                               subtitle: 'Department Chat',
                               color: Colors.purpleAccent,
-                              onTap: () {
-                                final dept =
-                                    user.department.isNotEmpty
-                                        ? user.department
-                                        : 'general';
-                                context.go('/conversations/department/$dept');
-                              },
+                              onTap: () => context.go('/conversations'),
                             ),
                           ],
                         );

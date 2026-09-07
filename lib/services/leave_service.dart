@@ -58,6 +58,22 @@ class LeaveService {
         'الإجازة العادية يجب تقديمها قبل موعدها بيومين على الأقل.',
       );
     }
+    if (request.leaveType == LeaveTypePolicy.exam) {
+      if (start.difference(today).inDays < 10) {
+        throw Exception(
+          'يجب تقديم طلب إجازة الامتحان قبل موعد الامتحان بعشرة أيام على الأقل.',
+        );
+      }
+      if ((request.attachmentUrl ?? '').trim().isEmpty) {
+        throw Exception(
+          'يجب إرفاق جدول الامتحان أو ما يفيد دخول الامتحان فعلياً.',
+        );
+      }
+    }
+    if (request.leaveType == LeaveTypePolicy.paternity &&
+        request.numberOfDays != 1) {
+      throw Exception('إجازة المولود تكون ليوم واحد فقط.');
+    }
   }
 
   static void validateBalance(LeaveModel request, LeaveBalance balance) {
@@ -66,6 +82,11 @@ class LeaveService {
       throw Exception('رصيد الإجازات الكلي غير كافٍ.');
     }
     if (request.leaveType == LeaveTypePolicy.casual) {
+      if (request.numberOfDays > 2) {
+        throw Exception(
+          'الحد الأقصى للإجازة العارضة يومان متتاليان في المرة الواحدة.',
+        );
+      }
       if (request.numberOfDays > balance.casual) {
         throw Exception('رصيد الإجازات العارضة غير كافٍ.');
       }
@@ -347,8 +368,33 @@ class LeaveService {
       workHandoverTo: req.workHandoverTo,
       status: req.status,
       submittedAt: req.submittedAt,
+      convertToAnnual: req.convertToAnnual,
     );
     req = normalizedRequest;
+    if (req.leaveType == LeaveTypePolicy.paternity) {
+      final prior =
+          await _db
+              .collection('leaves')
+              .where('userId', isEqualTo: req.userId)
+              .where('leaveType', isEqualTo: LeaveTypePolicy.paternity)
+              .where(
+                'status',
+                whereIn: const [
+                  'approved',
+                  'pending',
+                  'pending_manager',
+                  'pending_hr',
+                  'pending_ceo',
+                ],
+              )
+              .limit(3)
+              .get();
+      if (prior.docs.length >= 3) {
+        throw Exception(
+          'تم استنفاد الحد الأقصى لإجازة المولود (3 مرات طوال مدة الخدمة).',
+        );
+      }
+    }
     final approvalPolicy = await _approvalPolicyService.getPolicy();
     if (req.leaveType != LeaveTypePolicy.unpaid &&
         employee.hiringDate == null) {
@@ -381,6 +427,7 @@ class LeaveService {
       workHandoverTo: req.workHandoverTo,
       status: req.status,
       submittedAt: req.submittedAt,
+      convertToAnnual: req.convertToAnnual,
     );
     validateBalance(effectiveRequest, employee.leaveBalance);
 
@@ -464,6 +511,8 @@ class LeaveService {
                   ? (requiresCeoApproval ? 'pending_ceo' : 'pending_hr')
                   : 'pending_manager'),
       submittedAt: DateTime.now(),
+      convertToAnnual:
+          req.convertToAnnual && effectiveType == LeaveTypePolicy.sick,
     );
 
     final leaveData = {
@@ -616,11 +665,14 @@ class LeaveService {
     if (token == null || token.isEmpty) {
       throw StateError('انتهت الجلسة، سجل الدخول مرة أخرى.');
     }
-    final operationId = List.generate(
-      32,
-      (_) => 'abcdefghijklmnopqrstuvwxyz0123456789'[
-          DateTime.now().microsecondsSinceEpoch % 36],
-    ).join();
+    final operationId =
+        List.generate(
+          32,
+          (_) =>
+              'abcdefghijklmnopqrstuvwxyz0123456789'[DateTime.now()
+                      .microsecondsSinceEpoch %
+                  36],
+        ).join();
 
     final client = http.Client();
     try {
@@ -663,11 +715,14 @@ class LeaveService {
     if (token == null || token.isEmpty) {
       throw StateError('انتهت الجلسة، سجل الدخول مرة أخرى.');
     }
-    final operationId = List.generate(
-      32,
-      (_) => 'abcdefghijklmnopqrstuvwxyz0123456789'[
-          DateTime.now().microsecondsSinceEpoch % 36],
-    ).join();
+    final operationId =
+        List.generate(
+          32,
+          (_) =>
+              'abcdefghijklmnopqrstuvwxyz0123456789'[DateTime.now()
+                      .microsecondsSinceEpoch %
+                  36],
+        ).join();
 
     final startDateStr =
         '${startDate.year.toString().padLeft(4, '0')}-${startDate.month.toString().padLeft(2, '0')}-${startDate.day.toString().padLeft(2, '0')}';
@@ -874,13 +929,23 @@ class LeaveService {
 
     if (isFinalApproval) {
       // Deduct leave balance
-      final balanceKeys = LeaveTypePolicy.balanceKeys(leave.leaveType);
+      final balanceKeys =
+          leave.leaveType == LeaveTypePolicy.sick && leave.convertToAnnual
+              ? const <String>['annual', 'daysOff']
+              : LeaveTypePolicy.balanceKeys(leave.leaveType);
 
       final userRef = _db.collection('users').doc(leave.userId);
       if (balanceKeys.isNotEmpty) {
         final userSnapshot = await userRef.get();
         if (!userSnapshot.exists) throw Exception('حساب الموظف غير موجود.');
         final balance = UserModel.fromFirestore(userSnapshot).leaveBalance;
+        if (leave.leaveType == LeaveTypePolicy.sick &&
+            leave.convertToAnnual &&
+            leave.numberOfDays > balance.daysOff) {
+          throw Exception(
+            'رصيد الإجازات الكلي غير كافٍ لتحويل الإجازة المرضية.',
+          );
+        }
         validateBalance(leave, balance);
         batch.update(userRef, {
           for (final key in balanceKeys)

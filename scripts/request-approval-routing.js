@@ -52,8 +52,8 @@ function validateRoute(approvers) {
   return ids;
 }
 
-async function createFieldMission({ db, admin, actor, body }) {
-  if (!isHr(actor)) throw new Error('لا تتوفر لك صلاحية إنشاء مأمورية.');
+async function createFieldMission({ db, admin, actor, body, employeeInitiated = false }) {
+  if (!employeeInitiated && !isHr(actor)) throw new Error('لا تتوفر لك صلاحية إنشاء مأمورية.');
   const operationId = clean(body.operationId, 160);
   // One group operation deliberately creates one approval record per employee.
   // This keeps approval history, notifications, rejection and attendance
@@ -118,10 +118,45 @@ async function createFieldMission({ db, admin, actor, body }) {
     tx.set(operationRef, { operationId, requestIds: missions.map((mission) => mission.ref.id), missionGroupId, kind: 'field_mission_create', createdAt: admin.firestore.FieldValue.serverTimestamp() });
   });
   await Promise.allSettled(missions.flatMap((mission) => [
-    queueNotification(db, admin, { recipientId: mission.employeeUid, type: 'field_mission_under_review', title: 'مأموريتك قيد المراجعة', body: 'أنشأت الموارد البشرية مأمورية لك وهي الآن بانتظار الموافقات.', data: { administrativeRequestId: mission.ref.id, route: '/employee/requests' }, key: `${mission.ref.id}:submitted` }),
-    queueNotification(db, admin, { recipientId: mission.route[0].approverId, type: 'field_mission_approval_turn', title: 'مأمورية بانتظار موافقتك', body: `${userName(mission.employee)} لديه مأمورية تحتاج قرارك.`, data: { administrativeRequestId: mission.ref.id, route: '/manager/requests' }, key: `${mission.ref.id}:turn:0` }),
+    queueNotification(db, admin, { recipientId: mission.employeeUid, type: 'field_mission_under_review', title: 'مأموريتك قيد المراجعة', body: 'المأمورية الآن بانتظار الموافقات.', data: { administrativeRequestId: mission.ref.id, route: `/employee/requests?requestId=${mission.ref.id}` }, key: `${mission.ref.id}:submitted` }),
+    queueNotification(db, admin, { recipientId: mission.route[0].approverId, type: 'field_mission_approval_turn', title: 'مأمورية بانتظار موافقتك', body: `${userName(mission.employee)} لديه مأمورية تحتاج قرارك.`, data: { administrativeRequestId: mission.ref.id, route: `/manager/requests?category=administrative&requestId=${mission.ref.id}` }, key: `${mission.ref.id}:turn:0` }),
   ]));
   return { requestIds: missions.map((mission) => mission.ref.id), missionGroupId, currentApproverId: missions[0].route[0].approverId };
+}
+
+// Employee-created missions use the same server-owned, idempotent route as
+// HR-created missions. The server resolves every reviewer so a client cannot
+// choose, skip, or replace the manager, CEO, or Accounting approver.
+async function createEmployeeFieldMission({ db, admin, actor, body }) {
+  const employeeSnap = await db.collection('users').doc(actor.uid).get();
+  const employee = employeeSnap.data() || {};
+  if (!employeeSnap.exists || !isActiveUser(employee)) throw new Error('حساب الموظف غير نشط.');
+  const managerId = clean((Array.isArray(employee.managerIds) && employee.managerIds[0]) || employee.managerId, 128);
+  if (!safeId(managerId)) throw new Error('يجب تعيين مدير مباشر نشط قبل إرسال المأمورية.');
+  const [managerSnap, ceoById, ceoByCode, activeUsers] = await Promise.all([
+    db.collection('users').doc(managerId).get(),
+    db.collection('users').where('employeeId', '==', 'CEO-100').limit(1).get(),
+    db.collection('users').where('employeeCode', '==', 'CEO-100').limit(1).get(),
+    db.collection('users').where('isActive', '==', true).limit(500).get(),
+  ]);
+  const ceoSnap = ceoById.docs[0] || ceoByCode.docs[0];
+  const accountantSnap = activeUsers.docs
+    .filter((doc) => doc.data().isAdvanceAccountsApprover === true)
+    .sort((a, b) => clean(a.data().employeeId, 80).localeCompare(clean(b.data().employeeId, 80)))[0];
+  if (!managerSnap.exists || !isActiveUser(managerSnap.data()) || !ceoSnap || !isActiveUser(ceoSnap.data())) {
+    throw new Error('تعذر تحديد المدير أو حساب CEO-100 النشط لمسار المأمورية.');
+  }
+  if (!accountantSnap) throw new Error('لا يوجد مسؤول حسابات مفعّل لمسار المأمورية. فعّل isAdvanceAccountsApprover لحساب المحاسب.');
+  const approver = (snap, labelAr) => ({ id: snap.id, labelAr });
+  return createFieldMission({ db, admin, actor, employeeInitiated: true, body: {
+    ...body,
+    employeeUids: [actor.uid],
+    approvers: [
+      approver(managerSnap, 'المدير المباشر'),
+      approver(ceoSnap, 'CEO-100'),
+      approver(accountantSnap, 'الحسابات'),
+    ],
+  }});
 }
 
 async function decideFieldMission({ db, admin, actor, requestId, body }) {
@@ -138,10 +173,12 @@ async function decideFieldMission({ db, admin, actor, requestId, body }) {
     const snap = await tx.get(ref);
     if (!snap.exists) throw new Error('المأمورية غير موجودة.');
     const data = snap.data();
-    if (data.status !== 'pending_manager' || data.currentApproverId !== actor.uid) throw new Error('ليست هذه المرحلة بانتظار قرارك.');
+    const actorAliases = [actor.uid, actor.employeeId, actor.role === 'super_admin' ? 'CEO-100' : null].filter(Boolean);
+    const isCurrentApprover = actorAliases.includes(data.currentApproverId) || (actor.role === 'super_admin' && (data.currentApproverId === 'CEO-100' || data.currentApproverId === actor.uid));
+    if (data.status !== 'pending_manager' || !isCurrentApprover) throw new Error('ليست هذه المرحلة بانتظار قرارك.');
     const index = Number(data.currentApprovalIndex || 0);
     const route = Array.isArray(data.approvalRoute) ? data.approvalRoute.map((item) => ({ ...item })) : [];
-    if (!route[index] || route[index].approverId !== actor.uid || route[index].state !== 'pending') throw new Error('مسار الموافقة غير متسق.');
+    if (!route[index] || (!actorAliases.includes(route[index].approverId) && actor.role !== 'super_admin') || route[index].state !== 'pending') throw new Error('مسار الموافقة غير متسق.');
     route[index] = { ...route[index], state: decision, actedAt: stamp(), comment: comment || null };
     const history = Array.isArray(data.approvalHistory) ? data.approvalHistory : [];
     history.push({ action: decision, actorId: actor.uid, actorName: actor.displayName || actor.name || 'مسؤول موافقة', comment: comment || null, at: stamp(), stage: index + 1 });
@@ -164,7 +201,7 @@ async function decideFieldMission({ db, admin, actor, requestId, body }) {
   });
   if (!outcome || outcome.duplicate) return { requestId, duplicate: true };
   const notifications = outcome.status === 'next'
-    ? [queueNotification(db, admin, { recipientId: outcome.next.approverId, type: 'field_mission_approval_turn', title: 'مأمورية بانتظار موافقتك', body: `${outcome.employeeName} لديه مأمورية تحتاج قرارك.`, data: { administrativeRequestId: requestId, route: '/manager/requests' }, key: `${requestId}:turn:${outcome.next.order}` })]
+    ? [queueNotification(db, admin, { recipientId: outcome.next.approverId, type: 'field_mission_approval_turn', title: 'مأمورية بانتظار موافقتك', body: `${outcome.employeeName} لديه مأمورية تحتاج قرارك.`, data: { administrativeRequestId: requestId, route: `/manager/requests?category=administrative&requestId=${requestId}` }, key: `${requestId}:turn:${outcome.next.order}` })]
     : [queueNotification(db, admin, { recipientId: outcome.employeeId, type: outcome.status === 'approved' ? 'field_mission_approved' : 'field_mission_rejected', title: outcome.status === 'approved' ? 'تمت الموافقة على مأموريتك' : 'تم رفض المأمورية', body: outcome.status === 'approved' ? 'أصبحت المأمورية معتمدة ويمكنك تنفيذها في الموعد المحدد.' : `تم رفض المأمورية${comment ? `: ${comment}` : '.'}`, data: { administrativeRequestId: requestId, route: '/employee/requests' }, key: `${requestId}:${outcome.status}` })];
   await Promise.allSettled(notifications);
   return { requestId, status: outcome.status };
@@ -172,6 +209,7 @@ async function decideFieldMission({ db, admin, actor, requestId, body }) {
 
 module.exports = {
   createFieldMission,
+  createEmployeeFieldMission,
   decideFieldMission,
   // Exported as pure seams for the small Node contract suite.  All mutations
   // remain private to the transaction functions above.

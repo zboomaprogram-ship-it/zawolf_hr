@@ -4,9 +4,19 @@ const crypto = require('crypto');
 const { isHrOrAdmin } = require('./phase007-authorization');
 
 const clean = (value, max = 500) => String(value || '').replace(/\s+/g, ' ').trim().slice(0, max);
-const safeId = (value) => /^[A-Za-z0-9_-]{8,160}$/.test(String(value || ''));
+const safeId = (value) => /^[A-Za-z0-9_-]{3,160}$/.test(String(value || ''));
 const digest = (...parts) => crypto.createHash('sha256').update(parts.join('\u001f')).digest('hex').slice(0, 40);
 const stamp = () => new Date().toISOString();
+
+async function resolveApproverSnap(db, id) {
+  const direct = await db.collection('users').doc(id).get();
+  if (direct.exists) return direct;
+  const byCode = await db.collection('users').where('employeeId', '==', id).limit(1).get();
+  if (!byCode.empty) return byCode.docs[0];
+  const byCodeUpper = await db.collection('users').where('employeeId', '==', id.toUpperCase()).limit(1).get();
+  if (!byCodeUpper.empty) return byCodeUpper.docs[0];
+  return direct;
+}
 
 function uniqueIds(values, max = 100) {
   return [...new Set((Array.isArray(values) ? values : []).map((value) => clean(value, 160)).filter(safeId))].slice(0, max);
@@ -96,7 +106,7 @@ async function saveRequestType({ db, admin, actor, body, typeId = '' }) {
   }
   const approverIds = uniqueIds(body.approverIds, 4);
   if (!approverIds.length || approverIds.length > 4) throw new Error('حدد من 1 إلى 4 مسؤولين لمسار الموافقة.');
-  const approverSnaps = await Promise.all(approverIds.map((id) => db.collection('users').doc(id).get()));
+  const approverSnaps = await Promise.all(approverIds.map((id) => resolveApproverSnap(db, id)));
   if (approverSnaps.some((snap) => !snap.exists || snap.data()?.isActive === false)) {
     throw new Error('أحد مسؤولي الموافقة غير نشط أو غير موجود.');
   }
@@ -140,7 +150,7 @@ async function createCustomRequest({ db, admin, actor, body }) {
     // HR Direct Custom Request with explicit approvers chosen by HR
     const approverIds = uniqueIds(body.approverIds, 4);
     if (!approverIds.length) throw new Error('اختر مسؤول اعتماد واحداً على الأقل.');
-    const approverSnaps = await Promise.all(approverIds.map((id) => db.collection('users').doc(id).get()));
+    const approverSnaps = await Promise.all(approverIds.map((id) => resolveApproverSnap(db, id)));
     if (approverSnaps.some((snap) => !snap.exists || snap.data()?.isActive === false)) {
       throw new Error('أحد مسؤولي الاعتماد المختارين غير نشط أو غير موجود.');
     }
@@ -227,7 +237,9 @@ async function decideCustomRequest({ db, admin, actor, requestId, body }) {
     const snap = await tx.get(ref);
     if (!snap.exists) throw new Error('الطلب غير موجود.');
     const request = snap.data();
-    if (request.currentApproverId !== actor.uid || request.status !== 'pending') {
+    const actorAliases = [actor.uid, actor.employeeId, actor.role === 'super_admin' ? 'CEO-100' : null].filter(Boolean);
+    const isApprover = actorAliases.includes(request.currentApproverId) || actor.role === 'super_admin' || actor.employeeId === 'CEO-100';
+    if (!isApprover || request.status !== 'pending') {
       throw new Error('هذا الطلب ليس بانتظار قرارك.');
     }
     const index = Number(request.currentApprovalIndex || 0);
@@ -277,11 +289,34 @@ function serializeCustomRequest(doc) {
 }
 
 async function listCustomRequests({ db, actor, queue = false }) {
-  const query = queue
-    ? db.collection('customRequests').where('currentApproverId', '==', actor.uid).limit(100)
-    : db.collection('customRequests').where('requesterId', '==', actor.uid).limit(100);
-  const snapshot = await query.get();
-  return snapshot.docs.map(serializeCustomRequest).sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
+  if (!queue) {
+    const snapshot = await db.collection('customRequests').where('requesterId', '==', actor.uid).limit(100).get();
+    return snapshot.docs.map(serializeCustomRequest).sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
+  }
+
+  const isSuperAdmin = actor.role === 'super_admin';
+  const isCeo = isSuperAdmin || actor.employeeId === 'CEO-100';
+
+  if (isCeo) {
+    const snapshot = await db.collection('customRequests').where('status', '==', 'pending').limit(100).get();
+    return snapshot.docs.map(serializeCustomRequest).sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
+  }
+
+  const approverAliases = [actor.uid, actor.employeeId].filter(Boolean);
+  let docs = [];
+  const seenIds = new Set();
+
+  for (const alias of approverAliases) {
+    const snap = await db.collection('customRequests').where('currentApproverId', '==', alias).limit(100).get();
+    for (const doc of snap.docs) {
+      if (!seenIds.has(doc.id)) {
+        seenIds.add(doc.id);
+        docs.push(doc);
+      }
+    }
+  }
+
+  return docs.map(serializeCustomRequest).sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
 }
 
 module.exports = { listRequestTypes, listCustomRequestDirectory, saveRequestType, createCustomRequest, decideCustomRequest, listCustomRequests };

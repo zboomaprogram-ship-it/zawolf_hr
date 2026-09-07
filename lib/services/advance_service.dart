@@ -8,6 +8,30 @@ import 'role_notification_service.dart';
 class AdvanceService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
 
+  /// Validates the rules before allocating an id or writing a request.  Keeping
+  /// this deterministic makes the same policy available to every client.
+  static void validateSubmissionEligibility({
+    required UserModel employee,
+    required double amount,
+    required DateTime now,
+  }) {
+    if (employee.hiringDate == null ||
+        now.difference(employee.hiringDate!).inDays < 90) {
+      throw Exception('لا يمكن طلب سلفة قبل قضاء 3 أشهر على الأقل في الخدمة.');
+    }
+    if (now.day < 15) {
+      throw Exception(
+        'يُتاح تقديم طلب السلفة فقط بدءاً من يوم 15 في الشهر الميلادي.',
+      );
+    }
+    final maximum = employee.baseMonthlySalary * .5;
+    if (maximum <= 0 || amount > maximum) {
+      throw Exception(
+        'قيمة السلفة لا يمكن أن تتجاوز 50% من الراتب الشهري (الحد الأقصى المتاح لك: ${maximum.toStringAsFixed(0)} ${employee.salaryCurrency}).',
+      );
+    }
+  }
+
   List<String> _approvalManagerIds(UserModel employee, String fallbackId) {
     final ids =
         employee.managerIds.where((id) => id.trim().isNotEmpty).toList();
@@ -79,6 +103,12 @@ class AdvanceService {
     AdvanceModel req,
     UserModel employee,
   ) async {
+    final now = DateTime.now();
+    validateSubmissionEligibility(
+      employee: employee,
+      amount: req.amount,
+      now: now,
+    );
     final ref = _db.collection('advances').doc();
     final managerIds = _approvalManagerIds(employee, req.managerId);
     final managerNames = _approvalManagerNames(employee, employee.managerName);

@@ -31,4 +31,39 @@ void main() {
       DateTime(2027, 2, 28),
     );
   });
+
+  test(
+    'annual quota follows first year, completed year, service and age tiers',
+    () {
+      expect(
+        LeaveEntitlementPolicy.calculateAnnualQuota(
+          hiringDate: DateTime(2026, 1, 1),
+          asOfDate: DateTime(2026, 12, 31),
+        ),
+        15,
+      );
+      expect(
+        LeaveEntitlementPolicy.calculateAnnualQuota(
+          hiringDate: DateTime(2025, 1, 1),
+          asOfDate: DateTime(2026, 1, 1),
+        ),
+        21,
+      );
+      expect(
+        LeaveEntitlementPolicy.calculateAnnualQuota(
+          hiringDate: DateTime(2016, 1, 1),
+          asOfDate: DateTime(2026, 1, 1),
+        ),
+        30,
+      );
+      expect(
+        LeaveEntitlementPolicy.calculateAnnualQuota(
+          hiringDate: DateTime(2026, 1, 1),
+          birthDate: DateTime(1976, 1, 1),
+          asOfDate: DateTime(2026, 1, 1),
+        ),
+        30,
+      );
+    },
+  );
 }

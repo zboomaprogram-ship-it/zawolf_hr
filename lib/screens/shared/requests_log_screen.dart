@@ -777,6 +777,7 @@ class _RequestLogCard extends StatelessWidget {
       ),
     );
     if (pickedRange == null) return;
+    if (!context.mounted) return;
 
     final controller = TextEditingController();
     final reason = await showDialog<String>(

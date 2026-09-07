@@ -49,7 +49,7 @@ void main() {
   });
 
   test('sick and casual leave can be requested the same morning', () {
-    for (final type in ['sick', 'casual', 'unpaid', 'exam', 'remote']) {
+    for (final type in ['sick', 'casual', 'unpaid', 'remote']) {
       expect(
         () => LeaveService.validateRequest(
           request(type: type, start: DateTime(2026, 7, 20)),
@@ -60,10 +60,80 @@ void main() {
     }
   });
 
+  test('casual, birth, and exam leave enforce their approved limits', () {
+    final casual = request(type: 'casual', start: DateTime(2026, 7, 20));
+    final threeDays = LeaveModel(
+      leaveId: casual.leaveId,
+      userId: casual.userId,
+      employeeId: casual.employeeId,
+      employeeName: casual.employeeName,
+      department: casual.department,
+      locationId: casual.locationId,
+      managerId: casual.managerId,
+      leaveType: 'casual',
+      startDate: casual.startDate,
+      endDate: DateTime(2026, 7, 22),
+      numberOfDays: 3,
+      reason: casual.reason,
+      workHandoverTo: casual.workHandoverTo,
+      status: 'pending',
+    );
+    expect(
+      () => LeaveService.validateBalance(
+        threeDays,
+        LeaveBalance(annual: 15, sick: 14, casual: 7, daysOff: 15),
+      ),
+      throwsException,
+    );
+    expect(LeaveTypePolicy.supportedTypes, contains(LeaveTypePolicy.paternity));
+    expect(LeaveTypePolicy.balanceKey(LeaveTypePolicy.paternity), isNull);
+    expect(
+      () => LeaveService.validateRequest(
+        request(type: LeaveTypePolicy.paternity, start: DateTime(2026, 7, 20)),
+        now: now,
+      ),
+      returnsNormally,
+    );
+    expect(
+      () => LeaveService.validateRequest(
+        request(type: 'exam', start: DateTime(2026, 7, 29)),
+        now: now,
+      ),
+      throwsException,
+    );
+  });
+
   test('sick leave does not require an attachment', () {
     final sick = request(type: 'sick', start: DateTime(2026, 7, 20));
     expect(sick.attachmentUrl, isNull);
     expect(() => LeaveService.validateRequest(sick, now: now), returnsNormally);
+  });
+
+  test('sick-to-annual conversion is persisted only when chosen', () {
+    final converted = LeaveModel(
+      leaveId: 'leave-1',
+      userId: 'user',
+      employeeId: 'EMP-1',
+      employeeName: 'Employee',
+      department: 'IT',
+      locationId: 'SEG',
+      managerId: 'manager',
+      leaveType: LeaveTypePolicy.sick,
+      startDate: DateTime(2026, 7, 20),
+      endDate: DateTime(2026, 7, 20),
+      numberOfDays: 1,
+      workHandoverTo: 'زميل العمل',
+      status: 'pending',
+      convertToAnnual: true,
+    );
+    expect(converted.toFirestore()['convertToAnnual'], true);
+    expect(
+      request(
+        type: LeaveTypePolicy.sick,
+        start: DateTime(2026, 7, 20),
+      ).toFirestore().containsKey('convertToAnnual'),
+      isFalse,
+    );
   });
 
   test('casual leave consumes its own quota and the total leave balance', () {

@@ -54,7 +54,8 @@ function normalizeMessageInput(input) {
   const attachmentResourceIds = Array.isArray(input?.attachmentResourceIds)
     ? [...new Set(input.attachmentResourceIds.map(safeId).filter(Boolean))]
     : [];
-  if (!operationId || !body || body.length > 4000 ||
+  if ((input?.attachmentResourceIds !== undefined && (!Array.isArray(input.attachmentResourceIds) || input.attachmentResourceIds.some((id) => !safeId(id)))) ||
+      !operationId || (!body && !attachmentResourceIds.length) || body.length > 4000 ||
       attachmentResourceIds.length > 10 || containsExternalDriveLink(body)) {
     return null;
   }

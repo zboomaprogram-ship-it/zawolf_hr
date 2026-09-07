@@ -24,3 +24,9 @@ test('HR can generate the governed Workspace audit report but not manage access'
     /req\.method !== 'PUT' \|\| !isWorkspaceController\(actor\)/,
   );
 });
+
+test('request-management notification audit actions are accepted', () => {
+  const { ALLOWED_ACTIONS } = require('../workspace/audit');
+  assert.equal(ALLOWED_ACTIONS.has('request_manager_reminder_sent'), true);
+  assert.equal(ALLOWED_ACTIONS.has('request_employee_edit_notice_sent'), true);
+});

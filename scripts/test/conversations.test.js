@@ -121,3 +121,16 @@ test('governed attachments cross the Drive provider boundary without public link
   assert.equal(calls.length, 2);
   assert.equal(JSON.stringify(calls).includes('drive.google.com'), false);
 });
+
+test('attachment-only messages do not require synthetic caption text', () => {
+  assert.deepEqual(normalizeMessageInput({
+    operationId: 'message-photo', body: '', attachmentResourceIds: ['photo-1'],
+  }), { operationId: 'message-photo', body: '', attachmentResourceIds: ['photo-1'] });
+  assert.equal(normalizeMessageInput({ operationId: 'empty', body: '', attachmentResourceIds: [] }), null);
+});
+
+test('malformed attachment references are rejected rather than silently dropped', () => {
+  assert.equal(normalizeMessageInput({
+    operationId: 'message-broken', body: 'caption', attachmentResourceIds: ['https://bad.example/file'],
+  }), null);
+});

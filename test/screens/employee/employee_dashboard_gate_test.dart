@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zawolf_hr/models/attendance_policy.dart';
@@ -38,6 +40,15 @@ CheckInGateInputs _inputs({
 }
 
 void main() {
+  test('active Developer Tools access can expose the attendance action for an excluded test account', () {
+    final source = File(
+      'lib/screens/employee/employee_dashboard.dart',
+    ).readAsStringSync();
+
+    expect(source, contains('DeveloperToolsAccess.isAvailableForCurrentUser'));
+    expect(source, contains('user.excludeFromAttendanceReports && !_developerAttendanceAccess'));
+  });
+
   test('before check-in window the action is disabled with open time', () {
     // Policy opens at 07:00; at 06:00 check-in is not open yet.
     final state = computeCheckInAction(

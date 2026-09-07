@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../../theme/theme.dart';
 
 import '../domain/configurable_requests_repository.dart';
@@ -31,25 +30,6 @@ class _CustomRequestTypesScreenState extends State<CustomRequestTypesScreen> {
       }
     } catch (_) {}
 
-    if (_users.isEmpty) {
-      try {
-        final snap = await FirebaseFirestore.instance.collection('users').get();
-        final fetched = snap.docs
-            .map((doc) {
-              final data = doc.data();
-              return CustomRequestDirectoryUser(
-                id: doc.id,
-                name: '${data['displayName'] ?? data['name'] ?? data['email'] ?? 'موظف'}',
-                department: '${data['departmentName'] ?? data['department'] ?? 'العامة'}',
-                role: '${data['role'] ?? 'موظف'}',
-              );
-            })
-            .where((u) => u.name.isNotEmpty)
-            .toList();
-        fetched.sort((a, b) => a.name.compareTo(b.name));
-        if (mounted) setState(() => _users = fetched);
-      } catch (_) {}
-    }
 
     try {
       final reqs = await widget.repository.requests(queue: false);
@@ -457,11 +437,12 @@ class _CustomRequestSubmissionScreenState
   Future<void> _load() async {
     try {
       final types = await widget.repository.types();
-      if (mounted)
+      if (mounted) {
         setState(() {
           _types = types;
           _loading = false;
         });
+      }
     } catch (error) {
       if (mounted) _notice('$error', error: true);
     }
@@ -469,8 +450,9 @@ class _CustomRequestSubmissionScreenState
 
   Future<void> _submit() async {
     try {
-      if (_type == null || _description.text.trim().isEmpty)
+      if (_type == null || _description.text.trim().isEmpty) {
         throw StateError('اختر النوع واكتب شرح الطلب.');
+      }
       await widget.repository.submit(
         typeId: _type!.id,
         description: _description.text.trim(),
@@ -507,7 +489,7 @@ class _CustomRequestSubmissionScreenState
                 padding: const EdgeInsets.all(16),
                 children: [
                   DropdownButtonFormField<String>(
-                    value: _types.any((t) => t.id == _type?.id) ? _type?.id : null,
+                    initialValue: _types.any((t) => t.id == _type?.id) ? _type?.id : null,
                     isExpanded: true,
                     decoration: const InputDecoration(
                       labelText: 'نوع الطلب',
@@ -591,11 +573,12 @@ class _CustomRequestQueueScreenState extends State<CustomRequestQueueScreen> {
   Future<void> _load() async {
     try {
       final items = await widget.repository.requests(queue: true);
-      if (mounted)
+      if (mounted) {
         setState(() {
           _items = items;
           _loading = false;
         });
+      }
     } catch (error) {
       if (mounted) _notice('$error', error: true);
     }

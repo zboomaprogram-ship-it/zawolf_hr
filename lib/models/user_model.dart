@@ -13,9 +13,8 @@ class WorkSchedule {
     return WorkSchedule(
       startTime: map['startTime'] as String?,
       endTime: map['endTime'] as String?,
-      workDays: (map['workDays'] as List<dynamic>?)
-          ?.map((e) => e as int)
-          .toList(),
+      workDays:
+          (map['workDays'] as List<dynamic>?)?.map((e) => e as int).toList(),
     );
   }
 
@@ -163,6 +162,13 @@ class UserModel {
   final String preferredViewMode;
   final List<String> seenCelebrationBadgeIds;
   final bool excludeFromAttendanceReports;
+
+  /// Legacy account imports used `employeeCode`.  All approval and
+  /// notification routing must use this canonical model value so a valid
+  /// CEO-100 account is never skipped because of that field-name difference.
+  bool get isCompanyCeo => employeeId.trim().toUpperCase() == 'CEO-100';
+
+  bool get canReviewCeoStage => isCompanyCeo || role == EmployeeRole.superAdmin;
 
   UserModel({
     required this.uid,
@@ -335,7 +341,10 @@ class UserModel {
       displayName: data['displayName'] as String? ?? '',
       photoURL: data['photoURL'] as String?,
       role: EmployeeRole.normalize(data['role'] as String?),
-      employeeId: data['employeeId'] as String? ?? '',
+      employeeId:
+          data['employeeId'] as String? ??
+          data['employeeCode'] as String? ??
+          '',
       department: data['department'] as String? ?? '',
       position: data['position'] as String? ?? '',
       organizationLevel: data['organizationLevel'] as String? ?? 'employee',
@@ -453,9 +462,10 @@ class UserModel {
       'permissionBalance': permissionBalance.toMap(),
       'notificationTokens': notificationTokens,
       'unreadNotifications': unreadNotifications,
-      'createdAt': createdAt != null
-          ? Timestamp.fromDate(createdAt!)
-          : FieldValue.serverTimestamp(),
+      'createdAt':
+          createdAt != null
+              ? Timestamp.fromDate(createdAt!)
+              : FieldValue.serverTimestamp(),
       'updatedAt': FieldValue.serverTimestamp(),
       if (passwordChangedAt != null)
         'passwordChangedAt': Timestamp.fromDate(passwordChangedAt!),
@@ -556,7 +566,10 @@ class UserModel {
       displayName: data['displayName'] as String? ?? '',
       photoURL: data['photoURL'] as String?,
       role: EmployeeRole.normalize(data['role'] as String?),
-      employeeId: data['employeeId'] as String? ?? '',
+      employeeId:
+          data['employeeId'] as String? ??
+          data['employeeCode'] as String? ??
+          '',
       department: data['department'] as String? ?? '',
       position: data['position'] as String? ?? '',
       organizationLevel: data['organizationLevel'] as String? ?? 'employee',

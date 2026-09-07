@@ -4,8 +4,9 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../domain/entities/developer_tools_entitlement.dart';
 import '../cubit/developer_tools_cubit.dart';
 
-/// In-app troubleshooting only. This page never changes Android/iOS settings
-/// and never exposes attendance/device/location controls.
+/// In-app troubleshooting access. It can reveal attendance for an account
+/// excluded from attendance reports, but never changes device, location, or
+/// biometric controls.
 final class DeveloperToolsPage extends StatelessWidget {
   const DeveloperToolsPage({super.key});
 
@@ -68,7 +69,7 @@ final class DeveloperToolsPage extends StatelessWidget {
                 ),
               const Divider(),
               const Text(
-                'لا تسمح هذه الأدوات بتشغيل USB debugging أو mock location أو تجاوز ربط الجهاز أو تسجيل الحضور.',
+                'تسمح الصلاحية بإظهار زر الحضور للحسابات المستثناة من التقرير فقط. لا تسمح بتشغيل USB debugging أو mock location أو تجاوز ربط الجهاز أو الموقع أو البصمة.',
               ),
             ],
           ),

@@ -45,6 +45,22 @@
       }
     ],
     "rewrites": [
+      {
+        "source": "**/record.worklet.js",
+        "destination": "/assets/packages/record_web/assets/js/record.worklet.js"
+      },
+      {
+        "source": "**/record.fixwebmduration.js",
+        "destination": "/assets/packages/record_web/assets/js/record.fixwebmduration.js"
+      },
+      {
+        "source": "**/assets/packages/record_web/assets/js/record.worklet.js",
+        "destination": "/assets/packages/record_web/assets/js/record.worklet.js"
+      },
+      {
+        "source": "**/assets/packages/record_web/assets/js/record.fixwebmduration.js",
+        "destination": "/assets/packages/record_web/assets/js/record.fixwebmduration.js"
+      },
       { "source": "**", "destination": "/index.html" }
     ]
   },

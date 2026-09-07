@@ -21,4 +21,22 @@ class LeaveEntitlementPolicy {
     if (eligibilityDate == null) return true;
     return (onDate ?? DateTime.now()).isBefore(eligibilityDate);
   }
+
+  static int calculateAnnualQuota({
+    required DateTime hiringDate,
+    DateTime? birthDate,
+    DateTime? asOfDate,
+  }) {
+    final on = asOfDate ?? DateTime.now();
+    int fullYears(DateTime date) {
+      var years = on.year - date.year;
+      if (DateTime(on.year, date.month, date.day).isAfter(on)) years--;
+      return years;
+    }
+
+    final serviceYears = fullYears(hiringDate);
+    final age = birthDate == null ? -1 : fullYears(birthDate);
+    if (serviceYears >= 10 || age >= 50) return 30;
+    return serviceYears >= 1 ? 21 : 15;
+  }
 }

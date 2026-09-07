@@ -6,6 +6,9 @@ const ALLOWED_ACTIONS = new Set([
   'file_restore', 'sheet_read', 'sheet_edit', 'sheet_paste', 'sheet_format',
   'sheet_structure', 'sheet_tab', 'access_change', 'report_generate',
   'external_activity', 'workspace_pilot_changed',
+  // Request-management reminders are written by the Hostinger operations
+  // service. They are governed events, not Workspace file operations.
+  'request_manager_reminder_sent', 'request_employee_edit_notice_sent',
 ]);
 
 function safeAuditDetails(details = {}) {
@@ -19,6 +22,10 @@ function safeAuditDetails(details = {}) {
     'mode',
     'audienceCount',
     'reason',
+    'collection',
+    'requestId',
+    'recipientCount',
+    'target',
   ];
   return Object.fromEntries(
     Object.entries(details).filter(([key, value]) => allowed.includes(key) &&

@@ -35,11 +35,18 @@ function employeeUserIdFromRequest(request = {}) {
     request.employeeUserId,
     request.requestedBy,
     request.createdBy,
+    // Custom requests use requesterId. Without this alias the notification
+    // endpoint treats a valid custom request as an unlinked employee.
+    request.requesterId,
   ])[0] || '';
 }
 
 function managerUserIds({ request = {}, employee = {} } = {}) {
   return orderedUnique([
+    // Route-based requests (including custom and CEO stages) name the person
+    // who must act now. Prefer that recipient before legacy manager fields.
+    request.currentApproverId,
+    request.ceoId,
     ...(Array.isArray(request.managerIds) ? request.managerIds : []),
     request.managerId,
     request.directManagerId,
@@ -59,11 +66,34 @@ function requestEmployeeName(request = {}, employee = {}) {
   ) || 'الموظف';
 }
 
+function recipientUserIds({ input, request = {}, employee = {} } = {}) {
+  if (input?.target === 'employee') {
+    return orderedUnique([employeeUserIdFromRequest(request)]);
+  }
+  return managerUserIds({ request, employee });
+}
+
 function notificationDocumentId({ operationId, recipientUserId }) {
   const digest = crypto.createHash('sha256')
     .update(`${operationId}\u001f${recipientUserId}`)
     .digest('hex');
   return `request-action-${digest.slice(0, 40)}`;
+}
+
+function managerCategoryForCollection(collection) {
+  const value = cleanString(collection, 64).toLowerCase();
+  return {
+    leaves: 'leaves',
+    permissions: 'permissions',
+    advances: 'advances',
+    administrativerequests: 'administrative',
+    meetingrequests: 'meetings',
+    attendancecorrectionrequests: 'attendance_corrections',
+    manual_deductions: 'manual_deductions',
+    complaints: 'complaints',
+    resignations: 'resignations',
+    customrequests: 'custom',
+  }[value] || 'all';
 }
 
 function buildRequestNotification({ input, recipientUserId, employeeName }) {
@@ -81,7 +111,9 @@ function buildRequestNotification({ input, recipientUserId, employeeName }) {
       ? `${employeeName}: ${input.description}`
       : input.description,
     data: {
-      route: toManager ? '/manager/requests' : '/employee/requests',
+      route: toManager
+        ? `/manager/requests?category=${managerCategoryForCollection(input.collection)}&requestId=${encodeURIComponent(input.requestId)}`
+        : `/employee/requests?requestId=${encodeURIComponent(input.requestId)}`,
       requestCollection: input.collection,
       requestId: input.requestId,
       actionRequired: toManager ? 'review_request' : 'edit_request',
@@ -95,6 +127,8 @@ module.exports = {
   buildRequestNotification,
   employeeUserIdFromRequest,
   managerUserIds,
+  managerCategoryForCollection,
+  recipientUserIds,
   normalizeRequestNotificationInput,
   notificationDocumentId,
   requestEmployeeName,

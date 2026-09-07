@@ -317,9 +317,9 @@ NavigationItem _teamAnnouncement() => NavigationItem(
 NavigationItem _departmentChat() => NavigationItem(
   icon: Icons.chat_bubble_outline_rounded,
   activeIcon: Icons.chat_rounded,
-  label: 'محادثات القسم',
-  englishLabel: 'Department Chat',
-  path: '/conversations/department/general',
+  label: 'المحادثات',
+  englishLabel: 'Conversations',
+  path: '/conversations',
   domain: NavDomain.people,
 );
 

@@ -67,11 +67,12 @@ class ManualDeductionService {
       status = 'pending_hr';
     }
 
-    final managerIds = <String>{
-      ...targetEmployee.managerIds,
-      if (targetEmployee.managerId?.isNotEmpty == true)
-        targetEmployee.managerId!,
-    }.toList();
+    final managerIds =
+        <String>{
+          ...targetEmployee.managerIds,
+          if (targetEmployee.managerId?.isNotEmpty == true)
+            targetEmployee.managerId!,
+        }.toList();
 
     final model = ManualDeductionModel(
       id: ref.id,
@@ -121,15 +122,17 @@ class ManualDeductionService {
           title: 'طلب خصم إداري بانتظار موافقتك',
           body:
               'أنشأ HR طلب خصم إداري لـ (${targetEmployee.displayName}) قدره $fractionLabel - السبب: $reason',
-          route: '/manager/requests',
-          data: {'deductionId': ref.id},
+          route:
+              '/manager/requests?category=manual_deductions&requestId=${ref.id}',
+          data: {'deductionId': ref.id, 'requestId': ref.id},
         );
       }
     } else if (status == 'pending_hr') {
-      final hrDocs = await _db
-          .collection('users')
-          .where('role', whereIn: ['hr_admin', 'hr_manager', 'super_admin'])
-          .get();
+      final hrDocs =
+          await _db
+              .collection('users')
+              .where('role', whereIn: ['hr_admin', 'hr_manager', 'super_admin'])
+              .get();
       for (final doc in hrDocs.docs) {
         await _sendNotification(
           recipientId: doc.id,
@@ -137,8 +140,9 @@ class ManualDeductionService {
           title: 'طلب خصم إداري بانتظار الاعتماد',
           body:
               'أنشأ المدير ${creator.displayName} طلب خصم إداري لـ (${targetEmployee.displayName}) قدره $fractionLabel - السبب: $reason',
-          route: '/manager/requests',
-          data: {'deductionId': ref.id},
+          route:
+              '/manager/requests?category=manual_deductions&requestId=${ref.id}',
+          data: {'deductionId': ref.id, 'requestId': ref.id},
         );
       }
     } else if (status == 'approved') {
@@ -226,11 +230,12 @@ class ManualDeductionService {
     required String route,
     Map<String, dynamic>? data,
   }) async {
-    final notifRef = _db
-        .collection('notifications')
-        .doc(recipientId)
-        .collection('items')
-        .doc();
+    final notifRef =
+        _db
+            .collection('notifications')
+            .doc(recipientId)
+            .collection('items')
+            .doc();
 
     final payload = NotificationRoutePolicy.dataWithRoute(type, {
       ...?data,

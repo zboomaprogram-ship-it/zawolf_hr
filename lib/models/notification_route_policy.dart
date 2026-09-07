@@ -69,7 +69,54 @@ class NotificationRoutePolicy {
   ) {
     final payload = <String, dynamic>{...?data};
     final route = payload['route']?.toString().trim() ?? '';
-    if (route.isEmpty) payload['route'] = routeForType(type);
+    if (route.isEmpty) {
+      final administrativeId =
+          payload['administrativeRequestId']?.toString().trim() ?? '';
+      final requestId = payload['requestId']?.toString().trim() ?? '';
+      if (administrativeId.isNotEmpty &&
+          (type.contains('administrative') || type.contains('field_mission'))) {
+        // Preserve the request identifier for the next navigation increment;
+        // the category parameter already prevents the old first-tab fallback.
+        payload['route'] =
+            '/manager/requests?category=administrative&requestId=${Uri.encodeComponent(administrativeId)}';
+      } else {
+        final category = _managerCategoryForType(type);
+        payload['route'] =
+            category != null && requestId.isNotEmpty
+                ? '/manager/requests?category=$category&requestId=${Uri.encodeComponent(requestId)}'
+                : routeForType(type);
+      }
+    }
     return payload;
+  }
+
+  static String? _managerCategoryForType(String type) {
+    final value = type.trim().toLowerCase();
+    if (value.contains('leave')) return 'leaves';
+    if (value.contains('permission')) return 'permissions';
+    if (value.contains('advance')) return 'advances';
+    if (value.contains('meeting')) return 'meetings';
+    if (value.contains('company_os') || value.contains('expense')) {
+      return 'company_os';
+    }
+    if (value.contains('custom')) {
+      return 'custom';
+    }
+    if (value.contains('deduction')) {
+      return 'salary_deductions';
+    }
+    if (value.contains('attendance_correction')) {
+      return 'attendance_corrections';
+    }
+    if (value.contains('security')) {
+      return 'security';
+    }
+    if (value.contains('complaint')) {
+      return 'complaints';
+    }
+    if (value.contains('resignation')) {
+      return 'resignations';
+    }
+    return null;
   }
 }

@@ -45,4 +45,13 @@ void main() {
       expect(source, contains('لن يُسجَّل حضور مكرر'));
     },
   );
+
+  test('employee dashboard keeps the gateway device-binding outcome', () {
+    final source = File(
+      'lib/screens/employee/employee_dashboard.dart',
+    ).readAsStringSync();
+
+    expect(source, contains('if (error is AttendanceGatewayException)'));
+    expect(source, contains('return error.userMessage;'));
+  });
 }

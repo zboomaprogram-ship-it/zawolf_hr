@@ -11,7 +11,7 @@ import '../models/employee_role.dart';
 import '../navigation/nav_config.dart';
 import '../services/auth_service.dart';
 import '../screens/splash_screen.dart';
-import 'conversation_entry.dart';
+import 'rich_conversation_entry.dart';
 import '../screens/login_screen.dart';
 import '../screens/privacy_policy_screen.dart';
 import 'navigation_wrapper.dart';
@@ -211,18 +211,31 @@ class ZaWolfRouter {
               builder: (context, state) => const NotificationsScreen(),
             ),
             GoRoute(
+              path: '/conversations',
+              builder:
+                  (context, state) => const RichConversationEntry(),
+            ),
+            GoRoute(
+              path: '/conversations/channel/:channelId',
+              builder:
+                  (context, state) => RichConversationEntry(
+                    channelId: state.pathParameters['channelId']!,
+                    channelName: state.uri.queryParameters['name'],
+                  ),
+            ),
+            GoRoute(
               path: '/conversations/department/:channelId',
               builder:
-                  (context, state) => ConversationEntry(
-                    channelId: state.pathParameters['channelId']!,
+                  (context, state) => RichConversationEntry(
+                    department: state.pathParameters['channelId']!,
                     channelName: state.uri.queryParameters['name'],
                   ),
             ),
             GoRoute(
               path: '/conversations/managers',
               builder:
-                  (context, state) => const ConversationEntry(
-                    channelId: 'manager-channel',
+                  (context, state) => const RichConversationEntry(
+                    department: 'manager-channel',
                     channelName: 'قناة المديرين',
                   ),
             ),
@@ -507,6 +520,7 @@ class ZaWolfRouter {
                     initialCategory:
                         state.uri.queryParameters['category'] ??
                         state.uri.queryParameters['tab'],
+                    initialRequestId: state.uri.queryParameters['requestId'],
                     smartTabSelect:
                         state.uri.queryParameters['smart'] == 'true' ||
                         state.uri.queryParameters.isEmpty,
@@ -538,6 +552,7 @@ class ZaWolfRouter {
                     initialCategory:
                         state.uri.queryParameters['category'] ??
                         state.uri.queryParameters['tab'],
+                    initialRequestId: state.uri.queryParameters['requestId'],
                     smartTabSelect:
                         state.uri.queryParameters['smart'] == 'true' ||
                         state.uri.queryParameters.isEmpty,
@@ -677,6 +692,7 @@ class ZaWolfRouter {
                     initialCategory:
                         state.uri.queryParameters['category'] ??
                         state.uri.queryParameters['tab'],
+                    initialRequestId: state.uri.queryParameters['requestId'],
                     smartTabSelect:
                         state.uri.queryParameters['smart'] == 'true' ||
                         state.uri.queryParameters.isEmpty,

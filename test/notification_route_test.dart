@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zawolf_hr/models/notification_route_policy.dart';
 import 'package:zawolf_hr/services/notification_service.dart';
 
 void main() {
@@ -68,6 +69,22 @@ void main() {
     expect(
       service.safeRoute('/notifications?notificationId=123'),
       '/notifications?notificationId=123',
+    );
+  });
+
+  test('manager approval notifications preserve the exact request target', () {
+    expect(
+      NotificationRoutePolicy.dataWithRoute('leave_pending_manager', {
+        'requestId': 'leave-42',
+      })['route'],
+      '/manager/requests?category=leaves&requestId=leave-42',
+    );
+    expect(
+      NotificationRoutePolicy.dataWithRoute(
+        'attendance_correction_pending_hr',
+        {'requestId': 'correction-42'},
+      )['route'],
+      '/manager/requests?category=attendance_corrections&requestId=correction-42',
     );
   });
 }

@@ -45,6 +45,25 @@ class RequestApprovalRoutingGateway {
     'requiresCheckout': requiresCheckout,
   });
 
+  Future<Map<String, dynamic>> createEmployeeFieldMission({
+    required String missionDate,
+    required String startTime,
+    required String endTime,
+    required String reason,
+    required String siteName,
+    bool requiresReturnToOffice = false,
+    bool requiresCheckout = false,
+  }) => _post('/operations/request-approval-routing/employee-field-missions', {
+    'operationId': _operationId(),
+    'missionDate': missionDate,
+    'startTime': startTime,
+    'endTime': endTime,
+    'reason': reason,
+    'siteName': siteName,
+    'requiresReturnToOffice': requiresReturnToOffice,
+    'requiresCheckout': requiresCheckout,
+  });
+
   Future<Map<String, dynamic>> decideFieldMission({
     required String requestId,
     required bool approved,

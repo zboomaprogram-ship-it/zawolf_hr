@@ -27,4 +27,16 @@ void main() {
       expect(attendanceSource, isNot(contains('developer_tools_v2')));
     },
   );
+
+  test('iOS trust check does not reject a normal device solely for a proxy signal', () {
+    final securitySource = File(
+      'lib/services/attendance_security_service.dart',
+    ).readAsStringSync();
+
+    expect(securitySource, contains('checkForIssues'));
+    expect(securitySource, isNot(contains('instance.isNotTrust')));
+    expect(securitySource, contains("'jailbreak'"));
+    expect(securitySource, contains("'notRealDevice'"));
+    expect(securitySource, contains("'fridaFound'"));
+  });
 }

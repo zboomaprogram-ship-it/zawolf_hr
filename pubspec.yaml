@@ -83,6 +83,12 @@ dependencies:
   web: ^1.1.1
   drift: ^2.30.1
   drift_flutter: ^0.2.6
+  record: ^6.1.2
+  audioplayers: ^6.7.1
+  video_player: ^2.11.1
+  super_clipboard: ^0.1.7+6
+  pdfrx: ^2.2.24
+  mime: ^2.1.0
 
 dev_dependencies:
   flutter_test:

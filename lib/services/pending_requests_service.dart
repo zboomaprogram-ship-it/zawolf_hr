@@ -77,6 +77,42 @@ class PendingRequestsService {
     return null;
   }
 
+  /// A stable request destination for dashboard shortcuts. The listener sets
+  /// are deliberately de-duplicated because the same request can be visible
+  /// through both a legacy status query and a routed-approval query.
+  String? firstPendingRequestId(String category) {
+    final ids =
+        switch (category) {
+            'leaves' => <String>{
+              ..._leavesLegacyIds,
+              ..._leavesRouteIds,
+              ..._leavesCeoIds,
+            },
+            'permissions' => <String>{
+              ..._permissionsLegacyIds,
+              ..._permissionsRouteIds,
+              ..._permissionsCeoIds,
+            },
+            'advances' => <String>{
+              ..._advancesLegacyIds,
+              ..._advancesRouteIds,
+              ..._advancesCeoIds,
+            },
+            'administrative' => <String>{
+              ..._administrativeLegacyIds,
+              ..._administrativeRouteIds,
+              ..._administrativeCeoIds,
+            },
+            'resignations' => <String>{
+              ..._resignationLegacyIds,
+              ..._resignationRouteIds,
+            },
+            _ => <String>{},
+          }.toList()
+          ..sort();
+    return ids.isEmpty ? null : ids.first;
+  }
+
   void startListening(UserModel reviewer) {
     stopListening();
 
@@ -85,7 +121,7 @@ class PendingRequestsService {
 
     // An HR account may also be CEO-100. Its default work queue must remain
     // the HR stage; CEO-specific requests are added separately below.
-    final isCompanyCeo = reviewer.employeeId.trim().toUpperCase() == 'CEO-100';
+    final isCompanyCeo = reviewer.canReviewCeoStage;
     final isHrStaff = EmployeeRole.isHrStaff(reviewer.role);
     final reviewsManagerStage =
         !isHrStaff &&
@@ -117,7 +153,7 @@ class PendingRequestsService {
         _clearIdsAndUpdate(_leavesLegacyIds);
       },
     );
-    if (isHrStaff) {
+    if (isHrStaff || isCompanyCeo) {
       _leavesRouteSub = _watchCurrentApprover(
         collection: 'leaves',
         reviewerId: reviewer.uid,
@@ -155,7 +191,7 @@ class PendingRequestsService {
         _clearIdsAndUpdate(_permissionsLegacyIds);
       },
     );
-    if (isHrStaff) {
+    if (isHrStaff || isCompanyCeo) {
       _permissionsRouteSub = _watchCurrentApprover(
         collection: 'permissions',
         reviewerId: reviewer.uid,
@@ -198,7 +234,7 @@ class PendingRequestsService {
         _clearIdsAndUpdate(_advancesLegacyIds);
       },
     );
-    if (isHrStaff) {
+    if (isHrStaff || isCompanyCeo) {
       _advancesRouteSub = _watchCurrentApprover(
         collection: 'advances',
         reviewerId: reviewer.uid,
@@ -233,7 +269,7 @@ class PendingRequestsService {
         _clearIdsAndUpdate(_administrativeLegacyIds);
       },
     );
-    if (isHrStaff) {
+    if (isHrStaff || isCompanyCeo) {
       _administrativeRouteSub = _watchCurrentApprover(
         collection: 'administrativeRequests',
         reviewerId: reviewer.uid,
@@ -271,7 +307,7 @@ class PendingRequestsService {
         _clearIdsAndUpdate(_resignationLegacyIds);
       },
     );
-    if (isHrStaff) {
+    if (isHrStaff || isCompanyCeo) {
       _resignationRouteSub = _watchCurrentApprover(
         collection: 'resignations',
         reviewerId: reviewer.uid,
@@ -307,7 +343,12 @@ class PendingRequestsService {
           ..clear()
           ..addAll(
             snap.docs
-                .where((doc) => doc.data()['ceoId'] == reviewerId)
+                .where((doc) {
+                  final ceoId = (doc.data()['ceoId'] ?? '').toString();
+                  return ceoId.isEmpty ||
+                      ceoId == reviewerId ||
+                      ceoId == 'CEO-100';
+                })
                 .map((doc) => doc.id),
           );
         _updateCount();

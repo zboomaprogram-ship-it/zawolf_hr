@@ -26,8 +26,9 @@ class ConfigurableRequestsRepositoryImpl
     Map<String, Object?>? body,
   }) async {
     final token = await _auth.currentUser?.getIdToken();
-    if (token == null || token.isEmpty)
+    if (token == null || token.isEmpty) {
       throw StateError('انتهت الجلسة، سجل الدخول مرة أخرى.');
+    }
     final response =
         body == null
             ? await _client.get(
@@ -48,8 +49,9 @@ class ConfigurableRequestsRepositoryImpl
         decoded is Map<String, dynamic> ? decoded : <String, dynamic>{};
     if (response.statusCode < 200 ||
         response.statusCode >= 300 ||
-        data['ok'] != true)
+        data['ok'] != true) {
       throw StateError('${data['error'] ?? 'تعذر تنفيذ الطلب الآن.'}');
+    }
     return data;
   }
 

@@ -82,6 +82,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
   DateTime _leaveStart = DateTime.now().add(const Duration(days: 2));
   DateTime _leaveEnd = DateTime.now().add(const Duration(days: 2));
   bool _leaveMultipleDays = false;
+  bool _convertSickToAnnual = false;
   int? _leaveWorkingDays;
   final _leaveReasonController = TextEditingController();
   final _workHandoverController = TextEditingController();
@@ -480,8 +481,10 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
       _leaveType = type;
       if (_leaveStart.isBefore(firstAllowed)) {
         _leaveStart = firstAllowed;
-        _leaveEnd = firstAllowed;
       }
+      // A type change returns to a single-day request. This prevents a birth
+      // leave from inheriting a previously selected multi-day range.
+      _leaveEnd = _leaveStart;
       _leaveMultipleDays = false;
       _leaveWorkingDays = null;
     });
@@ -709,6 +712,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
         numberOfDays: days,
         reason: _leaveReasonController.text.trim(),
         attachmentUrl: _attachmentUrl,
+        convertToAnnual: _convertSickToAnnual,
         workHandoverTo: _workHandoverController.text.trim(),
         status: 'pending',
       );
@@ -734,6 +738,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
         ).add(Duration(days: leaveType == LeaveTypePolicy.normal ? 2 : 0));
         setState(() {
           _attachmentUrl = null;
+          _convertSickToAnnual = false;
           _leaveStart = nextStart;
           _leaveEnd = nextStart;
         });
@@ -2054,7 +2059,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        'يمكن تقديم الطلب ليوم آخر أو بعد بداية الدوام. عند الموافقة النهائية يُعاد حساب أي خصم تلقائياً.',
+                        'يجب تقديم إذن التأخير قبل بداية الدوام الرسمية وقبل تسجيل الحضور الفعلي.',
                         style: theme.textTheme.bodySmall!.copyWith(
                           color: ZaWolfColors.warning,
                           fontSize: 10,
@@ -2294,6 +2299,13 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
                     },
                   ),
                   ChoiceChip(
+                    label: const Center(child: Text('إجازة مولود')),
+                    selected: selectedLeaveType == LeaveTypePolicy.paternity,
+                    onSelected: (val) {
+                      if (val) _setLeaveType(LeaveTypePolicy.paternity);
+                    },
+                  ),
+                  ChoiceChip(
                     label: const Center(child: Text('إجازة عادية')),
                     selected: selectedLeaveType == 'day_off',
                     onSelected: (val) {
@@ -2333,6 +2345,19 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
               ],
             ),
             const SizedBox(height: 8),
+            if (selectedLeaveType == LeaveTypePolicy.sick &&
+                user.leaveBalance.daysOff >= requestedDays)
+              CheckboxListTile(
+                contentPadding: EdgeInsets.zero,
+                value: _convertSickToAnnual,
+                onChanged:
+                    (value) =>
+                        setState(() => _convertSickToAnnual = value ?? false),
+                title: const Text(
+                  'تحويل الإجازة المرضية إلى إجازة سنوية مخصومة من الرصيد',
+                ),
+                subtitle: const Text('سيُخصم الرصيد فقط بعد اعتماد الطلب.'),
+              ),
             Text(
               isOnProbation
                   ? 'خلال أول 6 أشهر تكون الإجازة بدون راتب. تظل أذونات الوقت متاحة بصورة طبيعية.'
@@ -2481,7 +2506,9 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
               icon: const Icon(Icons.attach_file_outlined),
               label: Text(
                 _attachmentUrl == null
-                    ? 'إرفاق مستند للإجازة (اختياري)'
+                    ? (selectedLeaveType == LeaveTypePolicy.exam
+                        ? 'إرفاق جدول الامتحان أو إثبات الدخول (مطلوب)'
+                        : 'إرفاق مستند للإجازة (اختياري)')
                     : 'تم إرفاق مستند في ملفات الشركة',
               ),
               onPressed:
@@ -2507,6 +2534,12 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
   }
 
   Widget _buildAdvanceForm(UserModel user, ThemeData theme) {
+    final now = DateTime.now();
+    final maximum = user.baseMonthlySalary * .5;
+    final tenureEligible =
+        user.hiringDate != null &&
+        now.difference(user.hiringDate!).inDays >= 90;
+    final dateEligible = now.day >= 15;
     return Form(
       key: _formKeyAdvance,
       child: SingleChildScrollView(
@@ -2532,6 +2565,17 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
               ),
             ),
             const SizedBox(height: 16),
+            Text(
+              'الحد الأقصى: ${maximum.toStringAsFixed(0)} ${user.salaryCurrency} · ${tenureEligible ? 'مدة الخدمة مكتملة' : 'لم تكتمل 3 أشهر خدمة'} · ${dateEligible ? 'متاح هذا الشهر' : 'متاح بدءاً من يوم 15'}',
+              textDirection: TextDirection.rtl,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color:
+                    tenureEligible && dateEligible
+                        ? ZaWolfColors.success
+                        : ZaWolfColors.warning,
+              ),
+            ),
+            const SizedBox(height: 10),
             WolfInputField(
               controller: _advanceAmountController,
               labelText: 'المبلغ المطلوب (${user.salaryCurrency})',
@@ -2542,6 +2586,9 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
                 if (val == null || val.isEmpty) return 'المبلغ مطلوب';
                 final amt = double.tryParse(val);
                 if (amt == null || amt <= 0) return 'مبلغ غير صحيح';
+                if (amt > maximum) {
+                  return 'الحد الأقصى المتاح ${maximum.toStringAsFixed(0)} ${user.salaryCurrency}.';
+                }
                 return null;
               },
             ),

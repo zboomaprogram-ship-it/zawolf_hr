@@ -3,20 +3,21 @@ const { installFirestoreCompatibility } = require('./firebase-service-account');
 const { resolveCheckoutPolicyAt } = require('./checkout-policy');
 installFirestoreCompatibility(admin);
 
-// 1. Initialize Firebase Admin
-let serviceAccount;
-try {
-  serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
-} catch (e) {
-  console.error('Error parsing FIREBASE_SERVICE_ACCOUNT secret. Please ensure it is set correctly in GitHub Secrets.');
-  process.exit(1);
+// The task is also imported by its boundary tests. Initialization remains an
+// executable-only concern so importing quota helpers never contacts Firebase.
+let db;
+function initializeFirestore() {
+  let serviceAccount;
+  try {
+    serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+  } catch (e) {
+    throw new Error('Error parsing FIREBASE_SERVICE_ACCOUNT secret. Please ensure it is set correctly in GitHub Secrets.');
+  }
+  if (!admin.apps.length) {
+    admin.initializeApp({ credential: admin.cert(serviceAccount) });
+  }
+  db = admin.firestore();
 }
-
-admin.initializeApp({
-  credential: admin.cert(serviceAccount)
-});
-
-const db = admin.firestore();
 
 // Helper: convert Firestore Timestamp to YYYY-MM-DD string in Cairo time
 function timestampToDateStr(ts) {
@@ -130,6 +131,24 @@ function entitlementPeriodStart(hiringDate, now, policy) {
   return { eligibleFrom, start, probation: false };
 }
 
+function fullYearsBetween(date, on) {
+  let years = on.getUTCFullYear() - date.getUTCFullYear();
+  const anniversary = new Date(Date.UTC(on.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+  if (anniversary > on) years--;
+  return years;
+}
+
+function calculateAnnualQuota({ hiringDate, birthDate, asOfDate }) {
+  const serviceYears = fullYearsBetween(hiringDate, asOfDate);
+  const age = birthDate ? fullYearsBetween(birthDate, asOfDate) : -1;
+  if (serviceYears >= 10 || age >= 50) return 30;
+  return serviceYears >= 1 ? 21 : 15;
+}
+
+function shouldRenewEntitlement({ currentPeriodKey, nextPeriodKey, probation }) {
+  return !probation && Boolean(currentPeriodKey) && currentPeriodKey !== nextPeriodKey;
+}
+
 async function reconcileLeaveEntitlements(now) {
   const policy = {
     annualQuota: 15,
@@ -158,13 +177,18 @@ async function reconcileLeaveEntitlements(now) {
       : new Date(hiringTimestamp);
     if (Number.isNaN(hiringDate.getTime())) continue;
     const period = entitlementPeriodStart(hiringDate, now, policy);
+    const rawBirthDate = user.birthDate;
+    const birthDate = rawBirthDate
+      ? (rawBirthDate.toDate ? rawBirthDate.toDate() : new Date(rawBirthDate))
+      : null;
+    const annualQuota = calculateAnnualQuota({ hiringDate, birthDate, asOfDate: now });
     const periodKey = cairoDateStr(period.start);
     const currentKey = user.leaveEntitlementPeriodKey || '';
     const balance = user.leaveBalance || {};
     const update = {
       leaveEligibleFrom: admin.firestore.Timestamp.fromDate(period.eligibleFrom),
       leaveEntitlementPeriodKey: periodKey,
-      leaveEntitlementQuota: policy.annualQuota,
+      leaveEntitlementQuota: annualQuota,
       leaveEntitlementStatus: period.probation ? 'probation' : 'eligible',
       leaveEntitlementUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
     };
@@ -172,22 +196,26 @@ async function reconcileLeaveEntitlements(now) {
       update['leaveBalance.annual'] = 0;
       update['leaveBalance.daysOff'] = 0;
       update['leaveBalance.casual'] = 0;
-    } else if (currentKey && currentKey !== periodKey) {
+    } else if (shouldRenewEntitlement({
+      currentPeriodKey: currentKey,
+      nextPeriodKey: periodKey,
+      probation: period.probation,
+    })) {
       const carry = policy.carryOverEnabled
         ? Math.min(
           Math.max(0, Number(balance.daysOff || 0)),
           Math.max(0, Number(policy.maximumCarryOverDays || 0)),
         )
         : 0;
-      update['leaveBalance.annual'] = policy.annualQuota + carry;
-      update['leaveBalance.daysOff'] = policy.annualQuota + carry;
+      update['leaveBalance.annual'] = annualQuota + carry;
+      update['leaveBalance.daysOff'] = annualQuota + carry;
       update['leaveBalance.casual'] = policy.casualQuota;
       update.leaveCarryOverDays = carry;
       update.leaveRenewedAt = admin.firestore.FieldValue.serverTimestamp();
     }
     const needsMetadata = currentKey !== periodKey
       || user.leaveEntitlementStatus !== update.leaveEntitlementStatus
-      || Number(user.leaveEntitlementQuota || 0) !== Number(policy.annualQuota);
+      || Number(user.leaveEntitlementQuota || 0) !== Number(annualQuota);
     const needsProbationReset = period.probation
       && (Number(balance.daysOff || 0) !== 0 || Number(balance.casual || 0) !== 0);
     if (!needsMetadata && !needsProbationReset) continue;
@@ -679,9 +707,25 @@ async function runDailyTasks() {
   console.log(`Done! Created ${absentsCreated} absences, ${leavesCreated} on-leave records, updated ${updatesApplied} shifts.`);
 }
 
-runDailyTasks()
-  .then(() => process.exit(0))
-  .catch(error => {
-    console.error('Error running daily tasks:', error);
+module.exports = {
+  addUtcMonths,
+  entitlementPeriodStart,
+  fullYearsBetween,
+  calculateAnnualQuota,
+  shouldRenewEntitlement,
+};
+
+if (require.main === module) {
+  try {
+    initializeFirestore();
+  } catch (error) {
+    console.error(error.message);
     process.exit(1);
-  });
+  }
+  runDailyTasks()
+    .then(() => process.exit(0))
+    .catch(error => {
+      console.error('Error running daily tasks:', error);
+      process.exit(1);
+    });
+}

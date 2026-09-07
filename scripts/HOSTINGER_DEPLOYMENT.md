@@ -22,7 +22,9 @@ dependencies with `npm install`.
 The field-mission approval gateway is included in the backend package. Upload
 the current release ZIP, run `npm install`, and use **Restart** for the Node.js
 application. The web client calls
-`/operations/request-approval-routing/field-missions` for HR-created missions.
+`/operations/request-approval-routing/field-missions` for HR-created missions
+and `/operations/request-approval-routing/employee-field-missions` for an
+employee's manager → CEO-100 → Accounts route.
 
 For advance approvals, set these boolean fields on the active `users` documents
 before the first request reaches that stage:

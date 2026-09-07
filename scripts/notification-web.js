@@ -115,6 +115,7 @@ const {
   buildRequestNotification,
   employeeUserIdFromRequest,
   managerUserIds,
+  recipientUserIds,
   normalizeRequestNotificationInput,
   requestEmployeeName,
 } = require('./request-management-notifications');
@@ -160,6 +161,7 @@ const {
 const { operationCorsHeaderValue } = require('./http-cors');
 const {
   createFieldMission,
+  createEmployeeFieldMission,
   decideFieldMission,
 } = require('./request-approval-routing');
 
@@ -176,15 +178,18 @@ const googleWorkspaceAllowedOrigins = new Set(
     .filter(Boolean)
     .concat(defaultGoogleWorkspaceOrigins),
 );
-let phase007FlagConfig = {};
+const defaultPhase007FlagConfig = {
+  conversations_rich_chat_v1: { enabled: true, everyone: true },
+};
+let phase007FlagConfig = { ...defaultPhase007FlagConfig };
 try {
   const configuredFlags = JSON.parse(process.env.PHASE007_FEATURE_FLAGS_JSON || '{}');
   phase007FlagConfig = configuredFlags && typeof configuredFlags === 'object'
-    ? configuredFlags
-    : {};
+    ? { ...defaultPhase007FlagConfig, ...configuredFlags }
+    : { ...defaultPhase007FlagConfig };
 } catch (_) {
-  // Invalid remote configuration fails closed by preserving the empty object.
-  phase007FlagConfig = {};
+  // Invalid remote configuration preserves the default production flags.
+  phase007FlagConfig = { ...defaultPhase007FlagConfig };
 }
 // Company OS has completed owner approval for production availability. These
 // switches only expose the product surfaces: every route still enforces the
@@ -448,7 +453,7 @@ function applyGoogleWorkspaceCors(req, res) {
     }
   }
   res.setHeader('access-control-allow-origin', origin || '*');
-  res.setHeader('access-control-allow-methods', 'GET, POST, PATCH, DELETE, OPTIONS');
+  res.setHeader('access-control-allow-methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
   res.setHeader('access-control-allow-headers', operationCorsHeaderValue());
   res.setHeader(
     'access-control-expose-headers',
@@ -2879,6 +2884,16 @@ async function uploadOperationalRequestAttachment({ db, actor, resourceId, paylo
 }
 
 async function handleConversationRequest(req, res, url) {
+  if (url.pathname.startsWith('/conversations/v2/')) {
+    const actor = await authorizeWorkspaceRequest(req);
+    const db = admin.firestore();
+    return require('./conversations/router').handleRichConversationRequest({
+      req, res, url, actor, db, admin, readJsonBody, sendJson,
+      enabled: Boolean(actor && isPhase007FlagEnabled('conversations_rich_chat_v1', phase007FlagConfig, actor.uid)),
+      getMediaProvider: () => getGoogleSheetsIntegration().createConversationMediaProvider(),
+      ensureFolder: () => ensureConversationAttachmentsFolder(db),
+    });
+  }
   const actor = await authorizeWorkspaceRequest(req);
   if (!actor) {
     sendJson(res, 401, { ok: false, code: 'session_expired' });
@@ -3133,36 +3148,9 @@ async function handleConversationRequest(req, res, url) {
         sendJson(res, 400, { ok: false, code: 'validation_failed' });
         return;
       }
-      if (payload.attachmentResourceIds.length) {
-        const attachments = await db.getAll(...payload.attachmentResourceIds.map((id) =>
-          db.collection('conversationAttachments').doc(id)));
-        if (attachments.some((doc) => !doc.exists ||
-            doc.data()?.conversationId !== conversation.id ||
-            doc.data()?.status !== 'uploaded')) {
-          sendJson(res, 403, { ok: false, code: 'access_denied' });
-          return;
-        }
-      }
-      const messageRef = conversation.ref.collection('messages').doc(payload.operationId);
-      const existing = await messageRef.get();
-      if (!existing.exists) {
-        await messageRef.create({
-          conversationId: conversation.id,
-          senderUserId: actor.uid,
-          senderDisplayName: actor.displayName || actor.name || actor.employeeId || '',
-          body: payload.body,
-          attachmentResourceIds: payload.attachmentResourceIds,
-          state: 'sent',
-          sentAt: admin.firestore.FieldValue.serverTimestamp(),
-        });
-        await conversation.ref.set({
-          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-        }, { merge: true });
-        await recordConversationAudit(db, {
-          actorId: actor.uid, conversationId: conversation.id,
-          operationId: payload.operationId, action: 'message_send',
-        });
-      }
+      await require('./conversations/messages').sendMessage({
+        db, admin, actor, channelId: conversation.id, payload, legacy: true,
+      });
       sendJson(res, 200, {
         ok: true, code: 'sent', messageId: payload.operationId,
       });
@@ -3285,6 +3273,13 @@ const REQUEST_ARCHIVE_COLLECTIONS = new Set([
   'advances',
   'attendanceCorrectionRequests',
 ]);
+// The notification action also supports approval-chain custom requests. They
+// are not archivable through this legacy management endpoint.
+const REQUEST_NOTIFICATION_COLLECTIONS = new Set([
+  ...REQUEST_ARCHIVE_COLLECTIONS,
+  'administrativeRequests',
+  'customRequests',
+]);
 
 // Management removal is deliberately an archive, not a destructive delete:
 // request, payroll and approval evidence remain recoverable for audit.
@@ -3383,10 +3378,12 @@ async function handleRequestManagementNotification(req, res) {
       sendJson(res, 403, { ok: false, code: 'access_denied' });
       return;
     }
-    const input = normalizeRequestNotificationInput(
-      await readJsonBody(req, 12 * 1024),
-    );
-    if (!input || !REQUEST_ARCHIVE_COLLECTIONS.has(input.collection)) {
+    const rawBody = await readJsonBody(req, 12 * 1024);
+    if (rawBody && !rawBody.operationId && req.headers['x-operation-id']) {
+      rawBody.operationId = req.headers['x-operation-id'];
+    }
+    const input = normalizeRequestNotificationInput(rawBody);
+    if (!input || !REQUEST_NOTIFICATION_COLLECTIONS.has(input.collection)) {
       sendJson(res, 400, { ok: false, code: 'validation_failed' });
       return;
     }
@@ -3404,15 +3401,41 @@ async function handleRequestManagementNotification(req, res) {
       return;
     }
     const employee = employeeDoc.data() || {};
-    const requestedRecipientIds = input.target === 'employee'
-      ? [employeeDoc.id]
-      : managerUserIds({ request: requestData, employee });
+    const requestedRecipientIds = recipientUserIds({
+      input,
+      request: requestData,
+      employee: { ...employee, uid: employeeDoc.id },
+    });
     if (!requestedRecipientIds.length) {
       sendJson(res, 409, { ok: false, code: 'manager_not_assigned' });
       return;
     }
+    const resolvedRecipientUserIds = [];
+    for (const id of requestedRecipientIds) {
+      if (!id) continue;
+      const normalizedId = String(id).trim();
+      const docDirect = await db.collection('users').doc(normalizedId).get();
+      if (docDirect.exists) {
+        resolvedRecipientUserIds.push(docDirect.id);
+        continue;
+      }
+      let empDoc = await db.collection('users').where('employeeId', '==', normalizedId).limit(1).get();
+      if (empDoc.empty) {
+        empDoc = await db.collection('users').where('employeeCode', '==', normalizedId).limit(1).get();
+      }
+      if (!empDoc.empty) {
+        resolvedRecipientUserIds.push(empDoc.docs[0].id);
+        continue;
+      }
+      resolvedRecipientUserIds.push(normalizedId);
+    }
+    const uniqueRecipientIds = [...new Set(resolvedRecipientUserIds)];
+    if (!uniqueRecipientIds.length) {
+      sendJson(res, 409, { ok: false, code: 'manager_not_assigned' });
+      return;
+    }
     const recipientDocs = await db.getAll(
-      ...requestedRecipientIds.map((id) => db.collection('users').doc(id)),
+      ...uniqueRecipientIds.map((id) => db.collection('users').doc(id)),
     );
     const recipients = recipientDocs.filter((doc) => doc.exists);
     if (!recipients.length) {
@@ -3448,19 +3471,30 @@ async function handleRequestManagementNotification(req, res) {
       if (created) createdCount += 1;
     }
 
-    await appendWorkspaceAudit({
-      db,
-      actorId: actor.uid,
-      resourceId: `request:${input.collection}/${input.requestId}`,
-      action: input.target === 'manager'
-        ? 'request_manager_reminder_sent'
-        : 'request_employee_edit_notice_sent',
-      details: {
-        collection: input.collection,
-        requestId: input.requestId,
-        recipientCount: recipients.length,
-      },
-    });
+    try {
+      await appendWorkspaceAudit({
+        db,
+        actorId: actor.uid,
+        resourceId: `request:${input.collection}/${input.requestId}`,
+        action: input.target === 'manager'
+          ? 'request_manager_reminder_sent'
+          : 'request_employee_edit_notice_sent',
+        details: {
+          collection: input.collection,
+          requestId: input.requestId,
+          recipientCount: recipients.length,
+          target: input.target,
+        },
+      });
+    } catch (auditError) {
+      recordWorkspaceDiagnostic('request_management_notification_audit', auditError);
+    }
+    // A Firestore listener normally wakes the dispatcher. Hostinger can run
+    // more than one worker, though, and this worker may be in listener
+    // standby. Wake the durable OneSignal queue directly after the transaction
+    // commits so a manager receives an OS notification while the app is
+    // backgrounded or terminated instead of relying on its in-app listener.
+    schedulePushDispatch('request_management_notification', 0);
     sendJson(res, 200, {
       ok: true,
       code: createdCount ? 'notification_sent' : 'already_sent',
@@ -3997,6 +4031,7 @@ const server = http.createServer(async (req, res) => {
     url.pathname === '/attendance/security-review' ||
     url.pathname.startsWith('/attendance/locations/');
   const isConversationRoute =
+    url.pathname.startsWith('/conversations/v2/') ||
     url.pathname === '/conversations' ||
     url.pathname === '/conversations/departments' ||
     url.pathname === '/conversations/channels' ||
@@ -4398,6 +4433,21 @@ const server = http.createServer(async (req, res) => {
       sendJson(res, /صلاحية/.test(String(error.message || error)) ? 403 : 400, {
         ok: false, code: 'field_mission_route_failed', error: String(error.message || error),
       });
+    }
+    return;
+  }
+
+  if (url.pathname === '/operations/request-approval-routing/employee-field-missions' && req.method === 'POST') {
+    const actor = await authorizeWorkspaceRequest(req);
+    if (!actor) { sendJson(res, 401, { ok: false, code: 'session_expired' }); return; }
+    try {
+      const result = await createEmployeeFieldMission({
+        db: admin.firestore(initializeFirebase()), admin, actor,
+        body: await readJsonBody(req),
+      });
+      sendJson(res, 201, { ok: true, ...result });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, code: 'employee_field_mission_route_failed', error: String(error.message || error) });
     }
     return;
   }

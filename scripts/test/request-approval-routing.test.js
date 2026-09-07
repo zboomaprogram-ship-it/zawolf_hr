@@ -30,3 +30,16 @@ test('route notification IDs are deterministic and recipient specific', () => {
     notificationEventId('mission-1:turn:1', 'user-2'),
   );
 });
+
+test('employee mission route resolves manager, CEO-100, and accounting on the server', () => {
+  const source = require('node:fs').readFileSync(
+    require('node:path').join(__dirname, '..', 'request-approval-routing.js'),
+    'utf8',
+  );
+  assert.match(source, /createEmployeeFieldMission/);
+  assert.match(source, /employeeId', '==', 'CEO-100/);
+  assert.match(source, /isAdvanceAccountsApprover === true/);
+  assert.match(source, /'المدير المباشر'/);
+  assert.match(source, /'CEO-100'/);
+  assert.match(source, /'الحسابات'/);
+});

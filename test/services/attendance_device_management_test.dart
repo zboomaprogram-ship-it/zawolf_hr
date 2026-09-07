@@ -33,4 +33,19 @@ void main() {
     expect(employeeManagement, contains('سبب إعادة الضبط'));
     expect(employeeManagement, isNot(contains('AttendanceSecurityService().reset')));
   });
+
+  test('HR reset has no second client-side Firestore mutation after the gateway', () {
+    final resetStart = employeeManagement.indexOf(
+      'Future<void> _resetAttendanceDevice()',
+    );
+    final resetEnd = employeeManagement.indexOf(
+      '\n  @override',
+      resetStart,
+    );
+    final resetBody = employeeManagement.substring(resetStart, resetEnd);
+
+    expect(resetBody, contains('await AttendanceGatewayService().resetDevice'));
+    expect(resetBody, isNot(contains(".collection('users')")));
+    expect(resetBody, isNot(contains('catch (_) {}')));
+  });
 }

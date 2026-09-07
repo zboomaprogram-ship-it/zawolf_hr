@@ -35,6 +35,46 @@ class PermissionService {
     'approved',
   };
 
+  static void validateLateArrivalEligibility({
+    required DateTime now,
+    required DateTime requestDay,
+    required String scheduledStartTime,
+    required bool hasCheckedIn,
+  }) {
+    if (lateArrivalSubmittedAfterStart(
+      now: now,
+      requestDay: requestDay,
+      scheduledStartTime: scheduledStartTime,
+    )) {
+      throw Exception(
+        'يجب تقديم إذن تأخير الحضور قبل بداية مواعيد العمل الرسمية.',
+      );
+    }
+    if (hasCheckedIn) {
+      throw Exception('لا يمكن تقديم إذن تأخير حضور بعد تسجيل الحضور الفعلي.');
+    }
+  }
+
+  static bool lateArrivalSubmittedAfterStart({
+    required DateTime now,
+    required DateTime requestDay,
+    required String scheduledStartTime,
+  }) {
+    final startParts = scheduledStartTime.split(':');
+    final workStart = DateTime(
+      requestDay.year,
+      requestDay.month,
+      requestDay.day,
+      int.parse(startParts[0]),
+      int.parse(startParts[1]),
+    );
+    final isRequestToday =
+        now.year == requestDay.year &&
+        now.month == requestDay.month &&
+        now.day == requestDay.day;
+    return isRequestToday && !now.isBefore(workStart);
+  }
+
   PermissionCycleUsage _usageFromDocs(
     Iterable<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
   ) {
@@ -283,21 +323,28 @@ class PermissionService {
       );
     }
 
-    // Submission after shift start remains visible for audit, but it no longer
-    // rejects the request. Final approval reconciles any attendance deduction.
+    // A late-arrival request must be approved before the scheduled start and
+    // cannot amend a day that already has an actual check-in.
     var isLateSubmission = false;
     if (req.permissionType == 'late_arrival') {
       final workStartStr =
           employee.workSchedule.startTime ?? policyConfig.defaultStartTime;
-      final startParts = workStartStr.split(':');
-      final workStart = DateTime(
-        requestDay.year,
-        requestDay.month,
-        requestDay.day,
-        int.parse(startParts[0]),
-        int.parse(startParts[1]),
+      final attendance =
+          await _db
+              .collection('attendance')
+              .doc('${employee.uid}_${req.requestDate}')
+              .get();
+      isLateSubmission = lateArrivalSubmittedAfterStart(
+        now: now,
+        requestDay: requestDay,
+        scheduledStartTime: workStartStr,
       );
-      isLateSubmission = now.isAfter(workStart);
+      validateLateArrivalEligibility(
+        now: now,
+        requestDay: requestDay,
+        scheduledStartTime: workStartStr,
+        hasCheckedIn: attendance.data()?['checkInTime'] != null,
+      );
     }
 
     final deduction =

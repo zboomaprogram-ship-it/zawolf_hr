@@ -59,11 +59,12 @@ class _ManagerDashboardScreenState extends State<ManagerDashboardScreen> {
     final key = '$managerId|$date';
     if (_todayAttendanceStream == null || _todayAttendanceStreamKey != key) {
       _todayAttendanceStreamKey = key;
-      _todayAttendanceStream = _db
-          .collection('attendance')
-          .where('managerId', isEqualTo: managerId)
-          .where('date', isEqualTo: date)
-          .snapshots();
+      _todayAttendanceStream =
+          _db
+              .collection('attendance')
+              .where('managerId', isEqualTo: managerId)
+              .where('date', isEqualTo: date)
+              .snapshots();
     }
     return _todayAttendanceStream!;
   }
@@ -194,47 +195,60 @@ class _ManagerDashboardScreenState extends State<ManagerDashboardScreen> {
                 // Priority strip + key metrics (from existing sources)
                 ValueListenableBuilder<int>(
                   valueListenable: PendingRequestsService.instance.pendingCount,
-                  builder: (context, pendingCount, _) => Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      PriorityStrip(
-                        items: [
-                          PriorityItem(
-                            label: 'بصمتي الشخصية (تسجيل الحضور)',
-                            count: 0,
-                            icon: Icons.fingerprint,
-                            accent: ZaWolfColors.primaryCyan,
-                            onTap: () => context.go('/employee/dashboard'),
+                  builder:
+                      (context, pendingCount, _) => Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          PriorityStrip(
+                            items: [
+                              PriorityItem(
+                                label: 'بصمتي الشخصية (تسجيل الحضور)',
+                                count: 0,
+                                icon: Icons.fingerprint,
+                                accent: ZaWolfColors.primaryCyan,
+                                onTap: () => context.go('/employee/dashboard'),
+                              ),
+                              PriorityItem(
+                                label: 'كشوف وتأخير فريقي',
+                                count: 0,
+                                icon: Icons.co_present_outlined,
+                                accent: ZaWolfColors.primaryBlue,
+                                onTap: () => context.go('/manager/team'),
+                              ),
+                              PriorityItem(
+                                label: 'طلب معلق بانتظار موافقتك',
+                                count: pendingCount,
+                                icon: Icons.pending_actions,
+                                accent: ZaWolfColors.warning,
+                                onTap: () {
+                                  final firstPending =
+                                      PendingRequestsService
+                                          .instance
+                                          .firstPendingCategory;
+                                  if (firstPending != null) {
+                                    final requestId = PendingRequestsService
+                                        .instance
+                                        .firstPendingRequestId(firstPending);
+                                    final target =
+                                        requestId == null
+                                            ? '/manager/requests?category=$firstPending'
+                                            : '/manager/requests?category=$firstPending&requestId=${Uri.encodeComponent(requestId)}';
+                                    context.go(target);
+                                  } else {
+                                    context.go('/manager/requests?smart=true');
+                                  }
+                                },
+                              ),
+                            ],
                           ),
-                          PriorityItem(
-                            label: 'كشوف وتأخير فريقي',
-                            count: 0,
-                            icon: Icons.co_present_outlined,
-                            accent: ZaWolfColors.primaryBlue,
-                            onTap: () => context.go('/manager/team'),
+                          EndOfDayBriefingCard(
+                            isHr: false,
+                            managerUid: manager.uid,
                           ),
-                          PriorityItem(
-                            label: 'طلب معلق بانتظار موافقتك',
-                            count: pendingCount,
-                            icon: Icons.pending_actions,
-                            accent: ZaWolfColors.warning,
-                            onTap: () {
-                              final firstPending =
-                                  PendingRequestsService.instance.firstPendingCategory;
-                              if (firstPending != null) {
-                                context.go('/manager/requests?category=$firstPending');
-                              } else {
-                                context.go('/manager/requests?smart=true');
-                              }
-                            },
-                          ),
+                          const TeamLeaderboardCard(),
+                          const SizedBox(height: DsSpacing.md),
                         ],
                       ),
-                      EndOfDayBriefingCard(isHr: false, managerUid: manager.uid),
-                      const TeamLeaderboardCard(),
-                      const SizedBox(height: DsSpacing.md),
-                    ],
-                  ),
                 ),
                 _ManagerMetricsRow(
                   summaryFuture: _attendanceSummaryFuture!,
@@ -299,9 +313,10 @@ class _ManagerDashboardScreenState extends State<ManagerDashboardScreen> {
                       summary: summarySnapshot.data!,
                       onRefresh: _loadAttendanceSummary,
                       onTap: () => context.go('/manager/attendance-summary'),
-                      onCategoryTap: (status) => context.go(
-                        '/manager/attendance-summary?status=$status',
-                      ),
+                      onCategoryTap:
+                          (status) => context.go(
+                            '/manager/attendance-summary?status=$status',
+                          ),
                     );
                   },
                 ),
@@ -316,14 +331,12 @@ class _ManagerDashboardScreenState extends State<ManagerDashboardScreen> {
                 GridView.count(
                   shrinkWrap: true,
                   physics: const NeverScrollableScrollPhysics(),
-                  crossAxisCount: MediaQuery.sizeOf(context).width >= 1200
-                      ? 4
-                      : 2,
+                  crossAxisCount:
+                      MediaQuery.sizeOf(context).width >= 1200 ? 4 : 2,
                   crossAxisSpacing: 16,
                   mainAxisSpacing: 16,
-                  childAspectRatio: MediaQuery.sizeOf(context).width >= 1200
-                      ? 1.65
-                      : 1.5,
+                  childAspectRatio:
+                      MediaQuery.sizeOf(context).width >= 1200 ? 1.65 : 1.5,
                   children: [
                     _buildQuickActionCard(
                       'بصمتي الشخصية',
@@ -582,8 +595,8 @@ class _ManagerMetricsRow extends StatelessWidget {
   Widget build(BuildContext context) {
     return ValueListenableBuilder<int>(
       valueListenable: PendingRequestsService.instance.pendingCount,
-      builder: (context, pendingCount, _) =>
-          StreamBuilder<List<EmployeeTaskModel>>(
+      builder:
+          (context, pendingCount, _) => StreamBuilder<List<EmployeeTaskModel>>(
             stream: taskStream,
             builder: (context, taskSnapshot) {
               final loadingTasks =
@@ -610,9 +623,10 @@ class _ManagerMetricsRow extends StatelessWidget {
                       Expanded(
                         child: StatCard(
                           icon: Icons.how_to_reg_outlined,
-                          value: loading || summary == null
-                              ? '—'
-                              : '${summary.attended}/${summary.totalEmployees}',
+                          value:
+                              loading || summary == null
+                                  ? '—'
+                                  : '${summary.attended}/${summary.totalEmployees}',
                           label: 'الفريق الآن',
                           onTap: () => context.go('/manager/team'),
                         ),
@@ -625,9 +639,17 @@ class _ManagerMetricsRow extends StatelessWidget {
                           label: 'طلبات معلقة',
                           onTap: () {
                             final firstPending =
-                                PendingRequestsService.instance.firstPendingCategory;
+                                PendingRequestsService
+                                    .instance
+                                    .firstPendingCategory;
                             if (firstPending != null) {
-                              context.go('/manager/requests?category=$firstPending');
+                              final requestId = PendingRequestsService.instance
+                                  .firstPendingRequestId(firstPending);
+                              final target =
+                                  requestId == null
+                                      ? '/manager/requests?category=$firstPending'
+                                      : '/manager/requests?category=$firstPending&requestId=${Uri.encodeComponent(requestId)}';
+                              context.go(target);
                             } else {
                               context.go('/manager/requests?smart=true');
                             }
