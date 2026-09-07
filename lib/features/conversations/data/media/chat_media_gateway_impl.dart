@@ -3,7 +3,6 @@ import 'package:file_picker/file_picker.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:mime/mime.dart';
 import 'package:share_plus/share_plus.dart';
-import 'package:super_clipboard/super_clipboard.dart';
 import '../../domain/entities/rich_chat.dart';
 import '../../domain/repositories/chat_media_gateway.dart';
 import 'local_media.dart';
@@ -48,22 +47,10 @@ class ChatMediaGatewayImpl implements ChatMediaGateway {
   }
   @override
   Future<bool> copyImage(ChatDraftFile file) async {
-    try {
-      final codec = await ui.instantiateImageCodec(file.bytes);
-      final frame = await codec.getNextFrame();
-      try {
-        final png = await frame.image.toByteData(format: ui.ImageByteFormat.png);
-        if (png == null) return false;
-        final item = DataWriterItem()..add(Formats.png(png.buffer.asUint8List()));
-        await ClipboardWriter.instance.write([item]);
-        return true;
-      } finally {
-        frame.image.dispose();
-        codec.dispose();
-      }
-    } catch (_) {
-      return false;
-    }
+    // The prior native image clipboard plug-in required Rust in the iOS
+    // release environment and an obsolete Android Gradle configuration. The
+    // attachment UI already presents save/share when this returns false.
+    return false;
   }
   @override
   Future<String> localMediaUrl(ChatDraftFile file) => createLocalMedia(file.bytes, file.fileName, file.mimeType);

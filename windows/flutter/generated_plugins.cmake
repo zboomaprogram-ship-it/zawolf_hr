@@ -11,12 +11,10 @@ list(APPEND FLUTTER_PLUGIN_LIST
   firebase_core
   firebase_storage
   geolocator_windows
-  irondash_engine_context
   local_auth_windows
   record_windows
   share_plus
   sqlite3_flutter_libs
-  super_native_extensions
   url_launcher_windows
 )
 

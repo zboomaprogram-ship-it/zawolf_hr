@@ -1681,7 +1681,14 @@ service cloud.firestore {
           )
         )
         && request.resource.data.managerApprovalIndex == 0
-        && request.resource.data.leaveType in ['sick', 'casual', 'day_off', 'unpaid', 'exam', 'remote']
+        && request.resource.data.leaveType in ['sick', 'casual', 'day_off', 'unpaid', 'exam', 'paternity', 'remote']
+        && (
+          !request.resource.data.keys().hasAny(['convertToAnnual'])
+          || (
+            request.resource.data.leaveType == 'sick'
+            && request.resource.data.convertToAnnual == true
+          )
+        )
         && request.resource.data.get(
           'deductsLeaveBalance',
           request.resource.data.leaveType in ['casual', 'day_off']
@@ -1762,6 +1769,7 @@ service cloud.firestore {
           'approvalHistory', 'requiresCeoApproval', 'ceoId', 'ceoName',
           'ceoApprovalViaManagerChain',
           'originalLeaveType', 'probationConverted', 'requiresHrApproval',
+          'convertToAnnual',
           'reviewedAt', 'reviewedBy', 'reviewerName', 'reviewerComment'
         ]);
       allow create: if isAuth() && isActive() && isHR()
@@ -1770,7 +1778,7 @@ service cloud.firestore {
         && request.resource.data.userId != uid()
         && request.resource.data.status == 'approved'
         && request.resource.data.leaveType in [
-          'sick', 'casual', 'day_off', 'unpaid', 'exam', 'remote'
+          'sick', 'casual', 'day_off', 'unpaid', 'exam', 'paternity', 'remote'
         ]
         && request.resource.data.numberOfDays > 0
         && request.resource.data.startDate is timestamp
@@ -1786,7 +1794,7 @@ service cloud.firestore {
           'deductsLeaveBalance', 'leaveBalanceKey', 'leaveBalanceKeys',
           'requiresFullDaySalaryDeduction', 'requiresCeoApproval',
           'requiresHrApproval', 'directHrGrant', 'grantedBy',
-          'grantedByName', 'approvalHistory'
+          'grantedByName', 'approvalHistory', 'convertToAnnual'
         ]);
       allow update: if isAuth() && isActive() && (
         (
