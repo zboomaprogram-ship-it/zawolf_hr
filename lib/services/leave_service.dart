@@ -283,27 +283,23 @@ class LeaveService {
     };
   }
 
-  Future<UserModel> _findAssignedCeo(String employeeUid) async {
-    final pending = <String>[employeeUid];
-    final visited = <String>{};
-    while (pending.isNotEmpty && visited.length < 12) {
-      final currentId = pending.removeAt(0);
-      if (!visited.add(currentId)) continue;
-      final doc = await _db.collection('users').doc(currentId).get();
-      if (!doc.exists) continue;
-      final candidate = UserModel.fromFirestore(doc);
-      final code = candidate.employeeId.trim().toUpperCase();
-      if (currentId != employeeUid &&
-          code.startsWith('CEO-') &&
-          candidate.isActive) {
-        return candidate;
-      }
-      pending.addAll(candidate.managerIds.where((id) => id.trim().isNotEmpty));
-      final directManager = candidate.managerId?.trim() ?? '';
-      if (directManager.isNotEmpty) pending.add(directManager);
+  /// The employee profile already carries the HR-maintained approval chain.
+  /// Do not traverse `/users` here: employees are intentionally not allowed to
+  /// read manager profiles, which previously made multi-day leave fail before
+  /// its document could be written.
+  ({String id, String name}) _assignedCeoFromApprovalChain(
+    List<String> managerIds,
+    List<String> managerNames,
+  ) {
+    if (managerIds.isEmpty) {
+      throw StateError(
+        'لا يمكن تحديد CEO المعيّن للموظف. اربط الموظف بسلسلة مديرين تنتهي بحساب CEO نشط.',
+      );
     }
-    throw StateError(
-      'لا يمكن تحديد CEO المعيّن للموظف. اربط الموظف بسلسلة مديرين تنتهي بحساب CEO نشط.',
+    final index = managerIds.length - 1;
+    return (
+      id: managerIds[index],
+      name: index < managerNames.length ? managerNames[index] : '',
     );
   }
 
@@ -486,9 +482,14 @@ class LeaveService {
         !isAutoApprovedCasual &&
         LeaveTypePolicy.requiresCeoApproval(req.leaveType, req.numberOfDays);
     final assignedCeo =
-        requiresCeoApproval ? await _findAssignedCeo(employee.uid) : null;
+        requiresCeoApproval
+            ? _assignedCeoFromApprovalChain(
+              approvalManagerIds,
+              approvalManagerNames,
+            )
+            : null;
     final ceoApprovalViaManagerChain =
-        assignedCeo != null && approvalManagerIds.contains(assignedCeo.uid);
+        assignedCeo != null && approvalManagerIds.contains(assignedCeo.id);
     final finalModel = LeaveModel(
       leaveId: reqRef.id,
       userId: req.userId,
@@ -552,8 +553,8 @@ class LeaveService {
       ],
       'requiresCeoApproval': requiresCeoApproval,
       if (assignedCeo != null) ...{
-        'ceoId': assignedCeo.uid,
-        'ceoName': assignedCeo.displayName,
+        'ceoId': assignedCeo.id,
+        'ceoName': assignedCeo.name,
         'ceoApprovalViaManagerChain': ceoApprovalViaManagerChain,
       },
       if (probationConversion) ...{
@@ -607,34 +608,42 @@ class LeaveService {
 
     await reqRef.set(leaveData);
 
-    if (requiresCeoApproval && usesHrFallback && assignedCeo != null) {
-      await _createNotification(
-        recipientId: assignedCeo.uid,
-        type: 'leave_request_submitted',
-        title: 'إجازة طويلة بانتظار موافقتك',
-        body:
-            'طلب ${req.employeeName} لمدة ${req.numberOfDays} أيام ينتظر اعتمادك قبل مراجعة HR.',
-        data: {'leaveId': reqRef.id},
-      );
-    } else if (usesHrFallback) {
-      await RoleNotificationService.instance.notifyRole(
-        role: EmployeeRole.hrManager,
-        includeSuperAdmins: false,
-        type: 'leave_request_submitted',
-        title: 'طلب إجازة بدون مدير معيّن',
-        body:
-            '${req.employeeName} أرسل ${LeaveTypePolicy.arabicLabel(req.leaveType)} وينتظر قرار HR.',
-        data: {'leaveId': reqRef.id},
-      );
-    } else {
-      await _createNotification(
-        recipientId: firstManagerId,
-        type: 'leave_request_submitted',
-        title: 'طلب إجازة بانتظار موافقتك',
-        body:
-            'يطلب ${req.employeeName} ${LeaveTypePolicy.arabicLabel(req.leaveType)} لمدّة ${req.numberOfDays} يوم. تسليم العمل إلى: ${req.workHandoverTo}.',
-        data: {'leaveId': reqRef.id},
-      );
+    // The leave is authoritative once its document is committed. A
+    // notification permission or transient delivery error must never make the
+    // employee see a failed submission and retry an already saved request.
+    try {
+      if (requiresCeoApproval && usesHrFallback && assignedCeo != null) {
+        await _createNotification(
+          recipientId: assignedCeo.id,
+          type: 'leave_request_submitted',
+          title: 'إجازة طويلة بانتظار موافقتك',
+          body:
+              'طلب ${req.employeeName} لمدة ${req.numberOfDays} أيام ينتظر اعتمادك قبل مراجعة HR.',
+          data: {'leaveId': reqRef.id},
+        );
+      } else if (usesHrFallback) {
+        await RoleNotificationService.instance.notifyRole(
+          role: EmployeeRole.hrManager,
+          includeSuperAdmins: false,
+          type: 'leave_request_submitted',
+          title: 'طلب إجازة بدون مدير معيّن',
+          body:
+              '${req.employeeName} أرسل ${LeaveTypePolicy.arabicLabel(req.leaveType)} وينتظر قرار HR.',
+          data: {'leaveId': reqRef.id},
+        );
+      } else {
+        await _createNotification(
+          recipientId: firstManagerId,
+          type: 'leave_request_submitted',
+          title: 'طلب إجازة بانتظار موافقتك',
+          body:
+              'يطلب ${req.employeeName} ${LeaveTypePolicy.arabicLabel(req.leaveType)} لمدّة ${req.numberOfDays} يوم. تسليم العمل إلى: ${req.workHandoverTo}.',
+          data: {'leaveId': reqRef.id},
+        );
+      }
+    } catch (_) {
+      // The dispatcher can recover notification delivery from the committed
+      // request without changing the employee-visible submission result.
     }
   }
 
