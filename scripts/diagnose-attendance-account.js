@@ -14,6 +14,7 @@ admin.initializeApp({ credential: admin.cert(serviceAccount) });
 
 const db = admin.firestore();
 const email = (process.env.ACCOUNT_EMAIL || '').trim().toLowerCase();
+const employeeId = (process.env.EMPLOYEE_ID || '').trim();
 
 function safeUser(data) {
   return {
@@ -31,30 +32,37 @@ function safeUser(data) {
 }
 
 async function main() {
-  if (!email) throw new Error('ACCOUNT_EMAIL is required.');
-
-  let authUser = null;
-  try {
-    authUser = await getAuth().getUserByEmail(email);
-  } catch (error) {
-    if (error.code !== 'auth/user-not-found') throw error;
+  if (!email && !employeeId) {
+    throw new Error('Set ACCOUNT_EMAIL or EMPLOYEE_ID.');
   }
 
-  const emailMatches = await db
-    .collection('users')
-    .where('email', '==', email)
-    .get();
-  const employeeMatches = await db
-    .collection('users')
-    .where('employeeId', '==', 'MKT-604')
-    .get();
+  let authUser = null;
+  if (email) {
+    try {
+      authUser = await getAuth().getUserByEmail(email);
+    } catch (error) {
+      if (error.code !== 'auth/user-not-found') throw error;
+    }
+  }
+
+  const emailMatches = email
+    ? await db.collection('users').where('email', '==', email).get()
+    : { docs: [] };
+  const employeeMatches = employeeId
+    ? await db.collection('users').where('employeeId', '==', employeeId).get()
+    : { docs: [] };
   const docs = new Map();
   for (const doc of [...emailMatches.docs, ...employeeMatches.docs]) {
     docs.set(doc.id, doc);
   }
+  if (authUser) {
+    const authUidDocument = await db.collection('users').doc(authUser.uid).get();
+    if (authUidDocument.exists) docs.set(authUidDocument.id, authUidDocument);
+  }
 
   console.log(`Firebase project: ${serviceAccount.project_id}`);
   console.log(`Requested email: ${email}`);
+  if (employeeId) console.log(`Requested employee ID: ${employeeId}`);
   console.log(
     `Auth user: ${authUser ? `${authUser.uid} | disabled=${authUser.disabled}` : 'NOT_FOUND'}`,
   );

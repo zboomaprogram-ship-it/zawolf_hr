@@ -1496,15 +1496,13 @@ service cloud.firestore {
     match /attendance/{attendanceId} {
       // The dashboards probe the deterministic daily attendance id before an
       // employee checks in. A missing document has no resource.data, so the
-      // normal ownership checks below cannot succeed. Permit reviewers to get
-      // only that non-existent slot; existing attendance records remain
-      // protected by assignment/role checks.
+      // normal ownership checks below cannot succeed. An empty path has no
+      // record to disclose, so every active signed-in employee may probe it
+      // before the authenticated gateway creates today's record. Existing
+      // attendance records remain protected by assignment/role checks.
       allow get: if isAuth() && isActive() && (
-        (
-          !exists(
-            /databases/$(database)/documents/attendance/$(attendanceId)
-          )
-          && canActAsApprovalManager()
+        !exists(
+          /databases/$(database)/documents/attendance/$(attendanceId)
         )
         || isOwner(resource.data.userId)
         || isMyManager(resource.data.managerId)

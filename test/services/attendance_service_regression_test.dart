@@ -50,6 +50,30 @@ void main() {
   );
 
   test(
+    'an active employee can probe an empty daily attendance slot before check-in',
+    () {
+      final rules = File('firestore.rules').readAsStringSync();
+      final attendanceRules = rules.substring(
+        rules.indexOf('match /attendance/{attendanceId}'),
+        rules.indexOf('match /attendanceCorrectionRequests/{requestId}'),
+      );
+
+      // A missing document contains no employee data. Allowing its get does
+      // not disclose a record, but is required before the client can decide
+      // whether to create today's attendance through the gateway.
+      expect(
+        attendanceRules,
+        contains(
+          '!exists(\n'
+          '          /databases/\$(database)/documents/attendance/\$(attendanceId)\n'
+          '        )\n'
+          '        || isOwner(resource.data.userId)',
+        ),
+      );
+    },
+  );
+
+  test(
     'security plug-in outages do not lock out a valid attendance account',
     () {
       final source =
