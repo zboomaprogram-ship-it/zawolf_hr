@@ -9,6 +9,7 @@ import 'package:zawolf_hr/features/company_workspace/data/datasources/company_wo
 import 'package:zawolf_hr/features/company_workspace/data/models/workspace_operation_dto.dart';
 import 'package:zawolf_hr/features/company_workspace/data/repositories/company_workspace_repository_impl.dart';
 import 'package:zawolf_hr/features/company_workspace/data/datasources/workspace_resource_remote_data_source.dart';
+import 'package:zawolf_hr/features/company_workspace/data/datasources/workspace_access_admin_remote_data_source.dart';
 import 'package:zawolf_hr/features/company_workspace/domain/entities/workspace_access_grant.dart';
 import 'package:zawolf_hr/features/company_workspace/domain/entities/workspace_capability.dart';
 import 'package:zawolf_hr/features/company_workspace/domain/entities/workspace_operation.dart';
@@ -116,6 +117,29 @@ void main() {
     expect(page.resources.single.name, 'ملف المبيعات');
     expect(page.resources.single.can(WorkspaceCapability.edit), isTrue);
   });
+
+  test(
+    'workspace configuration refreshes and retries once after an expired token',
+    () async {
+      var calls = 0;
+      final remote = HttpWorkspaceAccessAdminRemoteDataSource(
+        client: MockClient((request) async {
+          calls++;
+          if (calls == 1) return http.Response('{"error":"Unauthorized"}', 401);
+          expect(request.headers['authorization'], 'Bearer renewed-token');
+          return http.Response('{"ok":true,"enabled":false}', 200);
+        }),
+        session: _RefreshingSession(),
+        baseUri: Uri.parse('https://workspace.example/'),
+      );
+
+      await expectLater(
+        remote.loadPilotConfiguration(),
+        completion(isNotEmpty),
+      );
+      expect(calls, 2);
+    },
+  );
 }
 
 final class _Session implements WorkspaceSession {
@@ -126,15 +150,24 @@ final class _Session implements WorkspaceSession {
   Future<String?> refreshedBearerToken() async => token;
 }
 
+final class _RefreshingSession implements WorkspaceSession {
+  var _calls = 0;
+
+  @override
+  Future<String?> refreshedBearerToken() async =>
+      ++_calls == 1 ? 'expired-token' : 'renewed-token';
+}
+
 final class _UnavailableRemote implements CompanyWorkspaceRemoteDataSource {
   const _UnavailableRemote();
 
   @override
   Future<WorkspaceOperationReceiptDto> submitOperation(
     WorkspaceOperationDto operation,
-  ) => throw WorkspaceRemoteFailure(
-    WorkspaceUserFacingError.connectivity(writeMayHaveStarted: true),
-  );
+  ) =>
+      throw WorkspaceRemoteFailure(
+        WorkspaceUserFacingError.connectivity(writeMayHaveStarted: true),
+      );
 }
 
 final class _MemoryOutbox implements WorkspaceOperationOutbox {

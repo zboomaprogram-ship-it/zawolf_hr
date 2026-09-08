@@ -46,27 +46,36 @@ final class HttpWorkspaceAccessAdminRemoteDataSource
     String path, {
     Map<String, Object?>? body,
   }) async {
-    final headers = await _headers();
-    final request = http.Request(method, _baseUri.resolve(path))
-      ..headers.addAll({
-        ...headers,
-        if (body != null) 'content-type': 'application/json',
-      })
-      ..body = body == null ? '' : jsonEncode(body);
     try {
-      final streamed = await _client
-          .send(request)
-          .timeout(const Duration(seconds: 20));
-      final response = await http.Response.fromStream(streamed);
-      if (response.statusCode < 200 || response.statusCode >= 300) {
+      http.Response? response;
+      // Firebase tokens can expire after the request starts. A 401 is safe to
+      // retry because Hostinger rejects it before a workspace mutation runs;
+      // the write endpoint also has an operation ID for idempotency.
+      for (var attempt = 0; attempt < 2; attempt++) {
+        final headers = await _headers();
+        final request =
+            http.Request(method, _baseUri.resolve(path))
+              ..headers.addAll({
+                ...headers,
+                if (body != null) 'content-type': 'application/json',
+              })
+              ..body = body == null ? '' : jsonEncode(body);
+        final streamed = await _client
+            .send(request)
+            .timeout(const Duration(seconds: 20));
+        response = await http.Response.fromStream(streamed);
+        if (response.statusCode != 401 || attempt == 1) break;
+      }
+      final resolved = response!;
+      if (resolved.statusCode < 200 || resolved.statusCode >= 300) {
         throw WorkspaceRemoteFailure(
           WorkspaceUserFacingError.fromHttpStatus(
-            response.statusCode,
+            resolved.statusCode,
             writeMayHaveStarted: method != 'GET',
           ),
         );
       }
-      final decoded = jsonDecode(response.body);
+      final decoded = jsonDecode(resolved.body);
       if (decoded is! Map) throw const FormatException();
       return Map<String, Object?>.from(decoded);
     } on WorkspaceRemoteFailure {
