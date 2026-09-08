@@ -118,6 +118,16 @@ void main() {
     },
   );
 
+  test('a saved mobile decision leaves the pending list immediately', () {
+    expect(
+      screenSource,
+      contains('final Set<String> _resolvedRequestIds = {};'),
+    );
+    expect(screenSource, contains('_resolvedRequestIds.add(requestId)'));
+    expect(screenSource, contains('!_resolvedRequestIds.contains(doc.id)'));
+    expect(screenSource, contains('تم حفظ القرار وتحديث القائمة.'));
+  });
+
   test('latest HR salary deductions are not hidden by the bounded query', () {
     expect(screenSource, contains("isEqualTo: 'pending_hr'"));
     expect(screenSource, contains('reversal:\$reversalOnly'));

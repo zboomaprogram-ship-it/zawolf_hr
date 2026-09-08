@@ -725,15 +725,19 @@ class PermissionService {
     }
 
     if (nextUpdate['status'] == 'pending_hr') {
-      await RoleNotificationService.instance.notifyRole(
-        role: EmployeeRole.hrAdmin,
-        includeSuperAdmins: false,
-        type: 'permission_pending_hr',
-        title: 'طلب إذن بانتظار مراجعة HR',
-        body:
-            'اكتملت موافقات المديرين على طلب ${perm.employeeName} وينتظر القرار النهائي من HR.',
-        data: {'permissionId': permissionId},
-      );
+      try {
+        await RoleNotificationService.instance.notifyRole(
+          role: EmployeeRole.hrAdmin,
+          includeSuperAdmins: false,
+          type: 'permission_pending_hr',
+          title: 'طلب إذن بانتظار مراجعة HR',
+          body:
+              'اكتملت موافقات المديرين على طلب ${perm.employeeName} وينتظر القرار النهائي من HR.',
+          data: {'permissionId': permissionId},
+        );
+      } catch (_) {
+        // The decision was committed above; notification retry is independent.
+      }
       return;
     }
 

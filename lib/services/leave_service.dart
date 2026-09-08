@@ -972,15 +972,19 @@ class LeaveService {
     }
 
     if (update['status'] == 'pending_hr') {
-      await RoleNotificationService.instance.notifyRole(
-        role: EmployeeRole.hrAdmin,
-        includeSuperAdmins: false,
-        type: 'leave_request_submitted',
-        title: 'طلب إجازة بانتظار مراجعة HR',
-        body:
-            'اكتملت موافقات المديرين على طلب ${leave.employeeName} وينتظر القرار النهائي من HR.',
-        data: {'leaveId': leaveId},
-      );
+      try {
+        await RoleNotificationService.instance.notifyRole(
+          role: EmployeeRole.hrAdmin,
+          includeSuperAdmins: false,
+          type: 'leave_request_submitted',
+          title: 'طلب إجازة بانتظار مراجعة HR',
+          body:
+              'اكتملت موافقات المديرين على طلب ${leave.employeeName} وينتظر القرار النهائي من HR.',
+          data: {'leaveId': leaveId},
+        );
+      } catch (_) {
+        // The decision was committed above; notification retry is independent.
+      }
       return;
     }
 
@@ -989,14 +993,18 @@ class LeaveService {
       if (ceoId == null || ceoId.isEmpty) {
         throw Exception('تعذر تحديد CEO المعيّن للموظف.');
       }
-      await _createNotification(
-        recipientId: ceoId,
-        type: 'leave_request_submitted',
-        title: 'إجازة طويلة بانتظار اعتماد CEO',
-        body:
-            'راجع HR طلب ${leave.employeeName} لمدة ${leave.numberOfDays} أيام وينتظر اعتمادك النهائي.',
-        data: {'leaveId': leaveId},
-      );
+      try {
+        await _createNotification(
+          recipientId: ceoId,
+          type: 'leave_request_submitted',
+          title: 'إجازة طويلة بانتظار اعتماد CEO',
+          body:
+              'راجع HR طلب ${leave.employeeName} لمدة ${leave.numberOfDays} أيام وينتظر اعتمادك النهائي.',
+          data: {'leaveId': leaveId},
+        );
+      } catch (_) {
+        // Never make HR repeat a saved decision because a push is delayed.
+      }
       return;
     }
 

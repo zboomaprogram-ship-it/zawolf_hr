@@ -90,6 +90,10 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
   String _salaryDeductionFilter = 'all';
   String _searchQuery = '';
   final Set<String> _busyRequestIds = {};
+  // Firestore streams can take a moment to emit after a mobile decision.
+  // Hide a committed decision immediately so the reviewer never needs to tap
+  // twice while the stream reconciles the rest of the queue.
+  final Set<String> _resolvedRequestIds = {};
   final Map<String, Stream<QuerySnapshot<Map<String, dynamic>>>> _streamCache =
       {};
   final Map<String, Stream<dynamic>> _derivedStreamCache = {};
@@ -139,7 +143,21 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
       destructive: destructive,
     );
     if (!ok || !mounted) return;
-    await _withRequestGuard(requestId, run);
+    try {
+      await _withRequestGuard(requestId, run);
+      if (mounted) {
+        setState(() => _resolvedRequestIds.add(requestId));
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('تم حفظ القرار وتحديث القائمة.')),
+        );
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('فشل الإجراء: ${userFacingError(error)}')),
+        );
+      }
+    }
   }
 
   bool _canArchiveManagedRequest(UserModel reviewer) {
@@ -803,6 +821,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
         }
 
         if (mounted) {
+          setState(() => _resolvedRequestIds.add(requestId));
           ScaffoldMessenger.of(
             context,
           ).showSnackBar(const SnackBar(content: Text('تم رفض الطلب بنجاح.')));
@@ -2826,7 +2845,11 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
     UserModel reviewer,
   ) {
     List<QueryDocumentSnapshot<Map<String, dynamic>>> filtered = docs
-        .where((doc) => doc.data()['managementArchived'] != true)
+        .where(
+          (doc) =>
+              doc.data()['managementArchived'] != true &&
+              !_resolvedRequestIds.contains(doc.id),
+        )
         .toList(growable: false);
     // HR is allowed to monitor every pending stage.  The old filter fetched
     // pending_manager records and then silently removed them unless HR was
