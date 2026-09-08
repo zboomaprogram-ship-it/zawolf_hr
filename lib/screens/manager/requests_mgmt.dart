@@ -1425,13 +1425,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                     ),
               ),
             ),
-            _buildRequestCategoryPicker(
-              tabs,
-              initiallySelectedGroup:
-                  initialCategory == null || initialCategory.isEmpty
-                      ? null
-                      : _requestGroupForLabel(tabs[initialTabIndex].text ?? ''),
-            ),
+            _buildRequestCategoryPicker(tabs),
             Expanded(
               child: TabBarView(
                 children: tabViews
@@ -1447,10 +1441,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
 
   /// Shows concise main categories first. Selecting one reveals only its
   /// request-type containers, while the original tab views remain unchanged.
-  Widget _buildRequestCategoryPicker(
-    List<Tab> tabs, {
-    required String? initiallySelectedGroup,
-  }) => SizedBox(
+  Widget _buildRequestCategoryPicker(List<Tab> tabs) => SizedBox(
     height: 82,
     child: Builder(
       builder: (context) {
@@ -1460,7 +1451,9 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
           final group = _requestGroupForLabel(tabs[index].text ?? '');
           groups.putIfAbsent(group, () => <int>[]).add(index);
         }
-        final selectedGroup = _selectedRequestGroup ?? initiallySelectedGroup;
+        // Always show main categories first. A route can still select the
+        // request's tab below, but it never forces this navigator open.
+        final selectedGroup = _selectedRequestGroup;
         final visibleIndexes =
             selectedGroup == null
                 ? const <int>[]
@@ -1476,8 +1469,10 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                       children: [
                         IconButton(
                           tooltip: 'إظهار المزيد',
-                          onPressed: () => _scrollRequestCategories(-260),
-                          icon: const Icon(Icons.chevron_right),
+                          // This is the visual left side in RTL and moves the row
+                          // towards its earlier (right-hand) containers.
+                          onPressed: () => _scrollRequestCategories(260),
+                          icon: const Icon(Icons.chevron_left),
                         ),
                         Expanded(
                           child: Scrollbar(
@@ -1554,8 +1549,10 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                         ),
                         IconButton(
                           tooltip: 'إظهار المزيد',
-                          onPressed: () => _scrollRequestCategories(260),
-                          icon: const Icon(Icons.chevron_left),
+                          // This is the visual right side in RTL and reveals the
+                          // containers further left in the row.
+                          onPressed: () => _scrollRequestCategories(-260),
+                          icon: const Icon(Icons.chevron_right),
                         ),
                       ],
                     ),

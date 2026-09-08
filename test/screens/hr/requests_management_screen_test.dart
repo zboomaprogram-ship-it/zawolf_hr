@@ -34,13 +34,15 @@ void main() {
     expect(source, contains("group: 'فئة رئيسية'"));
     expect(source, contains("label: 'كل الفئات'"));
     expect(source, contains('_selectedRequestGroup = group'));
+    expect(source, contains('final selectedGroup = _selectedRequestGroup;'));
+    expect(source, isNot(contains('initiallySelectedGroup')));
   });
 
   test('request navigator always provides horizontal navigation controls', () {
     expect(source, contains('_categoryScrollController'));
     expect(source, contains('AlwaysScrollableScrollPhysics'));
-    expect(source, contains('_scrollRequestCategories(-260)'));
     expect(source, contains('_scrollRequestCategories(260)'));
+    expect(source, contains('_scrollRequestCategories(-260)'));
     expect(source, contains('thumbVisibility: true'));
   });
 }
