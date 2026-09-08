@@ -93,6 +93,8 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
   final Map<String, Stream<QuerySnapshot<Map<String, dynamic>>>> _streamCache =
       {};
   final Map<String, Stream<dynamic>> _derivedStreamCache = {};
+  final ScrollController _categoryScrollController = ScrollController();
+  String? _selectedRequestGroup;
   final http.Client _requestOperationsHttp = http.Client();
   late final AuthenticatedOperationClient _requestOperations =
       AuthenticatedOperationClient(
@@ -371,6 +373,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
 
   @override
   void dispose() {
+    _categoryScrollController.dispose();
     _requestOperationsHttp.close();
     super.dispose();
   }
@@ -1183,6 +1186,20 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
         .catchError((_) {});
   }
 
+  void _scrollRequestCategories(double delta) {
+    if (!_categoryScrollController.hasClients) return;
+    final position = _categoryScrollController.position;
+    final target = (position.pixels + delta).clamp(
+      position.minScrollExtent,
+      position.maxScrollExtent,
+    );
+    _categoryScrollController.animateTo(
+      target,
+      duration: const Duration(milliseconds: 220),
+      curve: Curves.easeOutCubic,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final authService = Provider.of<AuthService>(context);
@@ -1408,7 +1425,13 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                     ),
               ),
             ),
-            _buildRequestCategoryPicker(tabs),
+            _buildRequestCategoryPicker(
+              tabs,
+              initiallySelectedGroup:
+                  initialCategory == null || initialCategory.isEmpty
+                      ? null
+                      : _requestGroupForLabel(tabs[initialTabIndex].text ?? ''),
+            ),
             Expanded(
               child: TabBarView(
                 children: tabViews
@@ -1422,123 +1445,238 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
     );
   }
 
-  /// Replaces the hard-to-scan label strip with touch-friendly request
-  /// containers. Each container keeps the original tab as its destination,
-  /// so existing request views and reviewer authorization remain unchanged.
-  Widget _buildRequestCategoryPicker(List<Tab> tabs) => SizedBox(
-    height: 78,
+  /// Shows concise main categories first. Selecting one reveals only its
+  /// request-type containers, while the original tab views remain unchanged.
+  Widget _buildRequestCategoryPicker(
+    List<Tab> tabs, {
+    required String? initiallySelectedGroup,
+  }) => SizedBox(
+    height: 82,
     child: Builder(
       builder: (context) {
-        final controller = DefaultTabController.of(context);
+        final tabController = DefaultTabController.of(context);
+        final groups = <String, List<int>>{};
+        for (var index = 0; index < tabs.length; index++) {
+          final group = _requestGroupForLabel(tabs[index].text ?? '');
+          groups.putIfAbsent(group, () => <int>[]).add(index);
+        }
+        final selectedGroup = _selectedRequestGroup ?? initiallySelectedGroup;
+        final visibleIndexes =
+            selectedGroup == null
+                ? const <int>[]
+                : groups[selectedGroup] ?? const <int>[];
+
         return ValueListenableBuilder<int>(
           valueListenable: PendingRequestsService.instance.pendingCount,
           builder:
               (_, __, ___) => AnimatedBuilder(
-                animation: controller,
+                animation: tabController,
                 builder:
-                    (_, __) => ListView.separated(
-                      padding: const EdgeInsetsDirectional.fromSTEB(
-                        16,
-                        4,
-                        16,
-                        10,
-                      ),
-                      scrollDirection: Axis.horizontal,
-                      itemCount: tabs.length,
-                      separatorBuilder: (_, __) => const SizedBox(width: 8),
-                      itemBuilder: (_, index) {
-                        final label = tabs[index].text ?? '';
-                        final group = _requestGroupForLabel(label);
-                        final pending = switch (label) {
-                          'الإجازات' =>
-                            PendingRequestsService.instance.leavesCount,
-                          'الأذونات' =>
-                            PendingRequestsService.instance.permissionsCount,
-                          'السلف' =>
-                            PendingRequestsService.instance.advancesCount,
-                          'إدارية' =>
-                            PendingRequestsService.instance.administrativeCount,
-                          'الاستقالات' =>
-                            PendingRequestsService.instance.resignationCount,
-                          _ => 0,
-                        };
-                        final selected = controller.index == index;
-                        return InkWell(
-                          borderRadius: BorderRadius.circular(14),
-                          onTap: () => controller.animateTo(index),
-                          child: Container(
-                            constraints: const BoxConstraints(minWidth: 110),
-                            padding: const EdgeInsets.symmetric(horizontal: 14),
-                            decoration: BoxDecoration(
-                              color:
-                                  selected
-                                      ? ZaWolfColors.primaryCyan.withValues(
-                                        alpha: .16,
-                                      )
-                                      : ZaWolfColors.surface01,
-                              borderRadius: BorderRadius.circular(14),
-                              border: Border.all(
-                                color:
-                                    selected
-                                        ? ZaWolfColors.primaryCyan
-                                        : Colors.white.withValues(alpha: .12),
+                    (_, __) => Row(
+                      children: [
+                        IconButton(
+                          tooltip: 'إظهار المزيد',
+                          onPressed: () => _scrollRequestCategories(-260),
+                          icon: const Icon(Icons.chevron_right),
+                        ),
+                        Expanded(
+                          child: Scrollbar(
+                            controller: _categoryScrollController,
+                            thumbVisibility: true,
+                            child: ListView.separated(
+                              controller: _categoryScrollController,
+                              padding: const EdgeInsetsDirectional.fromSTEB(
+                                8,
+                                4,
+                                8,
+                                10,
                               ),
-                            ),
-                            child: Stack(
-                              clipBehavior: Clip.none,
-                              alignment: Alignment.center,
-                              children: [
-                                Column(
-                                  mainAxisSize: MainAxisSize.min,
-                                  crossAxisAlignment: CrossAxisAlignment.center,
-                                  children: [
-                                    Text(
-                                      group,
-                                      style: TextStyle(
-                                        color:
-                                            selected
-                                                ? ZaWolfColors.primaryCyan
-                                                    .withValues(alpha: .78)
-                                                : ZaWolfColors.textSecondary,
-                                        fontSize: 10,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 2),
-                                    Text(
-                                      label,
-                                      style: TextStyle(
-                                        color:
-                                            selected
-                                                ? ZaWolfColors.primaryCyan
-                                                : Colors.white,
-                                        fontWeight: FontWeight.w700,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                if (pending > 0)
-                                  PositionedDirectional(
-                                    top: 10,
-                                    end: -8,
-                                    child: Container(
-                                      width: 9,
-                                      height: 9,
-                                      decoration: const BoxDecoration(
-                                        color: ZaWolfColors.error,
-                                        shape: BoxShape.circle,
-                                      ),
-                                    ),
-                                  ),
-                              ],
+                              scrollDirection: Axis.horizontal,
+                              physics: const AlwaysScrollableScrollPhysics(),
+                              itemCount:
+                                  selectedGroup == null
+                                      ? groups.length
+                                      : visibleIndexes.length + 1,
+                              separatorBuilder:
+                                  (_, __) => const SizedBox(width: 8),
+                              itemBuilder: (_, itemIndex) {
+                                if (selectedGroup != null && itemIndex == 0) {
+                                  return _requestCategoryContainer(
+                                    label: 'كل الفئات',
+                                    group: selectedGroup,
+                                    icon: Icons.arrow_forward_rounded,
+                                    selected: false,
+                                    pending: 0,
+                                    onTap:
+                                        () => setState(
+                                          () => _selectedRequestGroup = null,
+                                        ),
+                                  );
+                                }
+                                if (selectedGroup == null) {
+                                  final group = groups.keys.elementAt(
+                                    itemIndex,
+                                  );
+                                  final pending = groups[group]!
+                                      .map(
+                                        (index) => _pendingCountForLabel(
+                                          tabs[index].text ?? '',
+                                        ),
+                                      )
+                                      .fold<int>(
+                                        0,
+                                        (total, value) => total + value,
+                                      );
+                                  return _requestCategoryContainer(
+                                    label: group,
+                                    group: 'فئة رئيسية',
+                                    icon: _iconForRequestGroup(group),
+                                    selected: false,
+                                    pending: pending,
+                                    onTap:
+                                        () => setState(
+                                          () => _selectedRequestGroup = group,
+                                        ),
+                                  );
+                                }
+                                final index = visibleIndexes[itemIndex - 1];
+                                final label = tabs[index].text ?? '';
+                                return _requestCategoryContainer(
+                                  label: label,
+                                  group: selectedGroup,
+                                  selected: tabController.index == index,
+                                  pending: _pendingCountForLabel(label),
+                                  onTap: () => tabController.animateTo(index),
+                                );
+                              },
                             ),
                           ),
-                        );
-                      },
+                        ),
+                        IconButton(
+                          tooltip: 'إظهار المزيد',
+                          onPressed: () => _scrollRequestCategories(260),
+                          icon: const Icon(Icons.chevron_left),
+                        ),
+                      ],
                     ),
               ),
         );
       },
+    ),
+  );
+
+  int _pendingCountForLabel(String label) => switch (label) {
+    'الإجازات' => PendingRequestsService.instance.leavesCount,
+    'الأذونات' => PendingRequestsService.instance.permissionsCount,
+    'السلف' => PendingRequestsService.instance.advancesCount,
+    'إدارية' => PendingRequestsService.instance.administrativeCount,
+    'الاستقالات' => PendingRequestsService.instance.resignationCount,
+    _ => 0,
+  };
+
+  IconData _iconForRequestGroup(String group) => switch (group) {
+    'الحضور' => Icons.fact_check_outlined,
+    'المالية' => Icons.account_balance_wallet_outlined,
+    'التشغيل' => Icons.settings_suggest_outlined,
+    'شؤون الموظفين' => Icons.groups_outlined,
+    'الإدارة' => Icons.meeting_room_outlined,
+    'الطلبات' => Icons.inbox_outlined,
+    'الأمان' => Icons.security_outlined,
+    _ => Icons.history_outlined,
+  };
+
+  Widget _requestCategoryContainer({
+    required String label,
+    required String group,
+    required bool selected,
+    required int pending,
+    required VoidCallback onTap,
+    IconData? icon,
+  }) => Semantics(
+    button: true,
+    label: '$group: $label',
+    child: InkWell(
+      borderRadius: BorderRadius.circular(14),
+      onTap: onTap,
+      child: Container(
+        constraints: const BoxConstraints(minWidth: 128),
+        padding: const EdgeInsets.symmetric(horizontal: 14),
+        decoration: BoxDecoration(
+          color:
+              selected
+                  ? ZaWolfColors.primaryCyan.withValues(alpha: .16)
+                  : ZaWolfColors.surface01,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color:
+                selected
+                    ? ZaWolfColors.primaryCyan
+                    : Colors.white.withValues(alpha: .12),
+          ),
+        ),
+        child: Stack(
+          clipBehavior: Clip.none,
+          alignment: Alignment.center,
+          children: [
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (icon != null) ...[
+                  Icon(
+                    icon,
+                    size: 18,
+                    color:
+                        selected
+                            ? ZaWolfColors.primaryCyan
+                            : ZaWolfColors.textSecondary,
+                  ),
+                  const SizedBox(width: 7),
+                ],
+                Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      group,
+                      style: TextStyle(
+                        color:
+                            selected
+                                ? ZaWolfColors.primaryCyan.withValues(
+                                  alpha: .78,
+                                )
+                                : ZaWolfColors.textSecondary,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      label,
+                      style: TextStyle(
+                        color:
+                            selected ? ZaWolfColors.primaryCyan : Colors.white,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+            if (pending > 0)
+              PositionedDirectional(
+                top: 10,
+                end: -8,
+                child: Container(
+                  width: 9,
+                  height: 9,
+                  decoration: const BoxDecoration(
+                    color: ZaWolfColors.error,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
     ),
   );
 

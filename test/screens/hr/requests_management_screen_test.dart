@@ -3,7 +3,8 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  final source = File('lib/screens/manager/requests_mgmt.dart').readAsStringSync();
+  final source =
+      File('lib/screens/manager/requests_mgmt.dart').readAsStringSync();
 
   test('request tabs reuse stable bounded streams across fast tab changes', () {
     expect(source, contains('_streamCache.putIfAbsent'));
@@ -21,7 +22,25 @@ void main() {
 
   test('HR can monitor manager-stage requests and CEO gets the CEO stage', () {
     expect(source, contains("'pending_ceo'"));
-    expect(source, contains("reviewer.employeeId.trim().toUpperCase() == 'CEO-100'"));
+    expect(
+      source,
+      contains("reviewer.employeeId.trim().toUpperCase() == 'CEO-100'"),
+    );
     expect(source, contains('EmployeeRole.isHr(reviewer.role)'));
+  });
+
+  test('request navigator shows main categories before request types', () {
+    expect(source, contains('final groups = <String, List<int>>{};'));
+    expect(source, contains("group: 'فئة رئيسية'"));
+    expect(source, contains("label: 'كل الفئات'"));
+    expect(source, contains('_selectedRequestGroup = group'));
+  });
+
+  test('request navigator always provides horizontal navigation controls', () {
+    expect(source, contains('_categoryScrollController'));
+    expect(source, contains('AlwaysScrollableScrollPhysics'));
+    expect(source, contains('_scrollRequestCategories(-260)'));
+    expect(source, contains('_scrollRequestCategories(260)'));
+    expect(source, contains('thumbVisibility: true'));
   });
 }
