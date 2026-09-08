@@ -17,11 +17,13 @@ class EmployeePriorityStrip extends StatelessWidget {
   const EmployeePriorityStrip({
     required this.userId,
     required this.pendingRequestsCount,
+    this.pendingRequestCategory,
     super.key,
   });
 
   final String userId;
   final int pendingRequestsCount;
+  final String? pendingRequestCategory;
 
   @override
   Widget build(BuildContext context) {
@@ -33,15 +35,17 @@ class EmployeePriorityStrip extends StatelessWidget {
         }
         final now = DateTime.now();
         final endOfToday = DateTime(now.year, now.month, now.day, 23, 59, 59);
-        final dueToday = snapshot.data!.where((task) {
-          final isFutureKpiTask = task.dueDate.isAfter(endOfToday) &&
-              (task.source == 'sales_analytics_api' ||
-                  task.progressMode == 'cumulative_daily');
-          return !isFutureKpiTask &&
-              task.status != TaskStatus.done &&
-              task.status != TaskStatus.cancelled &&
-              !task.dueDate.isAfter(endOfToday);
-        }).length;
+        final dueToday =
+            snapshot.data!.where((task) {
+              final isFutureKpiTask =
+                  task.dueDate.isAfter(endOfToday) &&
+                  (task.source == 'sales_analytics_api' ||
+                      task.progressMode == 'cumulative_daily');
+              return !isFutureKpiTask &&
+                  task.status != TaskStatus.done &&
+                  task.status != TaskStatus.cancelled &&
+                  !task.dueDate.isAfter(endOfToday);
+            }).length;
 
         return PriorityStrip(
           items: [
@@ -50,7 +54,24 @@ class EmployeePriorityStrip extends StatelessWidget {
               count: pendingRequestsCount,
               icon: Icons.pending_actions_outlined,
               accent: ZaWolfColors.warning,
-              onTap: () => context.go('/employee/requests'),
+              onTap: () {
+                final category = switch (pendingRequestCategory) {
+                  'إجازة' => 'leave',
+                  'إذن' => 'permission',
+                  'طلب إداري' => 'administrative',
+                  _ => null,
+                };
+                context.go(
+                  Uri(
+                    path: '/employee/requests',
+                    queryParameters: <String, String>{
+                      'view': 'history',
+                      'filter': 'pending',
+                      if (category != null) 'category': category,
+                    },
+                  ).toString(),
+                );
+              },
             ),
             PriorityItem(
               label: 'مهمة مستحقة اليوم',

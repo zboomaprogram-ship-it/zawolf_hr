@@ -52,10 +52,17 @@ import 'widgets/virtual_office_game_widget.dart';
 enum _RequestAttachmentSource { gallery, files }
 
 class EmployeeRequestsScreen extends StatefulWidget {
-  const EmployeeRequestsScreen({super.key, this.initialView = 1});
+  const EmployeeRequestsScreen({
+    super.key,
+    this.initialView = 1,
+    this.initialHistoryFilter = 'all',
+    this.initialHistoryTab = 0,
+  });
 
   /// 1 is the request form and 2 is the employee-owned request history.
   final int initialView;
+  final String initialHistoryFilter;
+  final int initialHistoryTab;
 
   @override
   State<EmployeeRequestsScreen> createState() => _EmployeeRequestsScreenState();
@@ -132,6 +139,20 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
   void initState() {
     super.initState();
     _requestCentreView = widget.initialView == 2 ? 2 : 1;
+    _historyStatusFilter = widget.initialHistoryFilter;
+  }
+
+  @override
+  void didUpdateWidget(covariant EmployeeRequestsScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.initialView == 2 &&
+        (oldWidget.initialHistoryFilter != widget.initialHistoryFilter ||
+            oldWidget.initialHistoryTab != widget.initialHistoryTab)) {
+      setState(() {
+        _requestCentreView = 2;
+        _historyStatusFilter = widget.initialHistoryFilter;
+      });
+    }
   }
 
   Stream<T> _cachedStream<T>(String key, Stream<T> Function() create) {
@@ -2870,7 +2891,9 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
   // ignore: unused_element
   Widget _buildHistoryConsole(UserModel user, ThemeData theme) {
     return DefaultTabController(
+      key: ValueKey('history-${widget.initialHistoryTab}'),
       length: 8,
+      initialIndex: widget.initialHistoryTab.clamp(0, 7),
       child: Column(
         children: [
           Padding(

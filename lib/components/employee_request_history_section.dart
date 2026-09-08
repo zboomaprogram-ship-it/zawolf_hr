@@ -15,6 +15,7 @@ class EmployeeRequestHistorySection extends StatefulWidget {
     super.key,
     required this.userId,
     this.onPendingCount,
+    this.onPendingCategory,
   });
 
   final String userId;
@@ -22,6 +23,10 @@ class EmployeeRequestHistorySection extends StatefulWidget {
   /// Reports how many loaded requests are still awaiting approval so the
   /// dashboard priority strip can reuse this load without extra queries.
   final ValueChanged<int>? onPendingCount;
+
+  /// The newest pending type lets the dashboard open the matching history tab
+  /// without starting another request query.
+  final ValueChanged<String?>? onPendingCategory;
 
   @override
   State<EmployeeRequestHistorySection> createState() =>
@@ -78,9 +83,9 @@ class _EmployeeRequestHistorySectionState
       ),
     ]..sort((a, b) => b.submittedAt.compareTo(a.submittedAt));
 
-    widget.onPendingCount?.call(
-      requests.where((request) => _isPending(request.status)).length,
-    );
+    final pending = requests.where((request) => _isPending(request.status));
+    widget.onPendingCount?.call(pending.length);
+    widget.onPendingCategory?.call(pending.isEmpty ? null : pending.first.type);
     return requests;
   }
 
@@ -127,7 +132,8 @@ class _EmployeeRequestHistorySectionState
             if (requests.isEmpty) {
               return const EmptyState(
                 title: 'لا توجد طلبات حتى الآن.',
-                subtitle: 'الطلبات التي ترسلها تظهر هنا، وتنتقل إلى السجل بعد مراجعتها.',
+                subtitle:
+                    'الطلبات التي ترسلها تظهر هنا، وتنتقل إلى السجل بعد مراجعتها.',
               );
             }
 

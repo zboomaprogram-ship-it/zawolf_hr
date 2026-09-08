@@ -68,6 +68,7 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
   DateTime _now = DateTime.now();
   AttendanceCheckInPilot? _checkInPilot;
   int _pendingRequestsCount = 0;
+  String? _pendingRequestCategory;
   bool _developerAttendanceAccess = false;
   String? _developerAttendanceAccessUserId;
 
@@ -790,6 +791,7 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
                     EmployeePriorityStrip(
                       userId: user.uid,
                       pendingRequestsCount: _pendingRequestsCount,
+                      pendingRequestCategory: _pendingRequestCategory,
                     ),
                     const SizedBox(height: 16),
 
@@ -827,7 +829,8 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
                       const SizedBox(height: 16),
                     ],
 
-                    if (user.excludeFromAttendanceReports && !_developerAttendanceAccess) ...[
+                    if (user.excludeFromAttendanceReports &&
+                        !_developerAttendanceAccess) ...[
                       WolfCard(
                         child: Row(
                           children: [
@@ -1060,6 +1063,11 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
                       onPendingCount: (pendingCount) {
                         if (mounted && pendingCount != _pendingRequestsCount) {
                           setState(() => _pendingRequestsCount = pendingCount);
+                        }
+                      },
+                      onPendingCategory: (category) {
+                        if (mounted && category != _pendingRequestCategory) {
+                          setState(() => _pendingRequestCategory = category);
                         }
                       },
                     ),

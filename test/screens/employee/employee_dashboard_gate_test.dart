@@ -40,20 +40,26 @@ CheckInGateInputs _inputs({
 }
 
 void main() {
-  test('active Developer Tools access can expose the attendance action for an excluded test account', () {
-    final source = File(
-      'lib/screens/employee/employee_dashboard.dart',
-    ).readAsStringSync();
+  test(
+    'active Developer Tools access can expose the attendance action for an excluded test account',
+    () {
+      final source =
+          File(
+            'lib/screens/employee/employee_dashboard.dart',
+          ).readAsStringSync();
 
-    expect(source, contains('DeveloperToolsAccess.isAvailableForCurrentUser'));
-    expect(source, contains('user.excludeFromAttendanceReports && !_developerAttendanceAccess'));
-  });
+      expect(
+        source,
+        contains('DeveloperToolsAccess.isAvailableForCurrentUser'),
+      );
+      expect(source, contains('user.excludeFromAttendanceReports'));
+      expect(source, contains('!_developerAttendanceAccess'));
+    },
+  );
 
   test('before check-in window the action is disabled with open time', () {
     // Policy opens at 07:00; at 06:00 check-in is not open yet.
-    final state = computeCheckInAction(
-      _inputs(now: DateTime(2026, 8, 23, 6)),
-    );
+    final state = computeCheckInAction(_inputs(now: DateTime(2026, 8, 23, 6)));
     expect(state.disabled, isTrue);
     expect(state.title, 'يفتح 07:00');
     expect(state.subtitle, 'CHECK IN LATER');
@@ -61,9 +67,7 @@ void main() {
   });
 
   test('inside the window without a record offers check-in', () {
-    final state = computeCheckInAction(
-      _inputs(now: DateTime(2026, 8, 23, 9)),
-    );
+    final state = computeCheckInAction(_inputs(now: DateTime(2026, 8, 23, 9)));
     expect(state.disabled, isFalse);
     expect(state.title, 'تسجيل حضور');
     expect(state.subtitle, 'CHECK IN');
@@ -122,10 +126,7 @@ void main() {
     final blocked = computeCheckInAction(
       _inputs(
         hasTodayRecord: false,
-        dayOffStatus: const CompanyDayOffStatus(
-          isDayOff: true,
-          reason: 'عطلة',
-        ),
+        dayOffStatus: const CompanyDayOffStatus(isDayOff: true, reason: 'عطلة'),
       ),
     );
     expect(blocked.disabled, isTrue);
@@ -136,10 +137,7 @@ void main() {
         now: DateTime(2026, 8, 23, 18),
         hasTodayRecord: true,
         hasCheckedIn: true,
-        dayOffStatus: const CompanyDayOffStatus(
-          isDayOff: true,
-          reason: 'عطلة',
-        ),
+        dayOffStatus: const CompanyDayOffStatus(isDayOff: true, reason: 'عطلة'),
       ),
     );
     expect(checkedInOnDayOff.disabled, isFalse);
@@ -159,8 +157,9 @@ void main() {
     final loading = computeCheckInAction(_inputs(actionLoading: true));
     expect(loading.disabled, isTrue);
 
-    final pilotPending =
-        computeCheckInAction(_inputs(pilotAwaitingConfirmation: true));
+    final pilotPending = computeCheckInAction(
+      _inputs(pilotAwaitingConfirmation: true),
+    );
     expect(pilotPending.disabled, isTrue);
   });
 }

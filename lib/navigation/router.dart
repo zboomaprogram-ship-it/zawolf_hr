@@ -212,8 +212,7 @@ class ZaWolfRouter {
             ),
             GoRoute(
               path: '/conversations',
-              builder:
-                  (context, state) => const RichConversationEntry(),
+              builder: (context, state) => const RichConversationEntry(),
             ),
             GoRoute(
               path: '/conversations/channel/:channelId',
@@ -341,6 +340,22 @@ class ZaWolfRouter {
                   (context, state) => EmployeeRequestsScreen(
                     initialView:
                         state.uri.queryParameters['view'] == 'history' ? 2 : 1,
+                    initialHistoryFilter:
+                        state.uri.queryParameters['filter'] == 'pending'
+                            ? 'pending'
+                            : 'all',
+                    initialHistoryTab: switch (state
+                        .uri
+                        .queryParameters['category']) {
+                      'permission' => 1,
+                      'advance' => 2,
+                      'complaint' => 3,
+                      'resignation' => 4,
+                      'administrative' => 5,
+                      'attendance_correction' => 6,
+                      'meeting' => 7,
+                      _ => 0,
+                    },
                   ),
             ),
             GoRoute(
