@@ -1499,7 +1499,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                                   return _requestCategoryContainer(
                                     label: 'كل الفئات',
                                     group: selectedGroup,
-                                    icon: Icons.arrow_forward_rounded,
+                                    icon: Icons.clear_all,
                                     selected: false,
                                     pending: 0,
                                     onTap:
