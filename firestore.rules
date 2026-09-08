@@ -1349,7 +1349,13 @@ service cloud.firestore {
         isOwner(userId) || (
           isActive() && (
             isHR() || isAssignedManagerFor(resource.data) ||
-            isAssignedTeamLeaderFor(resource.data)
+            isAssignedTeamLeaderFor(resource.data) ||
+            // Legacy multi-day leave clients resolve the CEO by following the
+            // employee's already-assigned approval chain. Permit only those
+            // exact manager profiles; this never grants employee-directory
+            // browsing or access to unrelated accounts.
+            userId == userDoc().get('managerId', '') ||
+            userId in userDoc().get('managerIds', [])
           )
         )
       );
