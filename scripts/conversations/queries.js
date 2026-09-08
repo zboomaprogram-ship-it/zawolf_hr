@@ -3,6 +3,7 @@ const { safeId } = require('../conversation-operations');
 const C = require('./common');
 const { channelDto } = require('./requests');
 const pageSize = (value, max) => Math.min(max, Math.max(1, Number.parseInt(value, 10) || max));
+const inboxUnreadConcurrency = 8;
 function presenceDto(channel, now = new Date()) {
   return { readers: channel.data.readers || {}, typing: Object.values(channel.data.typing || {}).filter(v => Date.parse(v.expiresAt) > now.getTime()), canPost: channel.canPost };
 }
@@ -12,34 +13,70 @@ function pageById(query, value, limit) {
   if (value) query = query.startAfter(value);
   return query.limit(limit);
 }
+async function unreadCount(channel, actor) {
+  const read = channel.data.readers?.[actor.uid];
+  try {
+    const snaps = await channel.ref.collection('messages').orderBy('sentAt', 'desc').limit(100).get();
+    if (read?.sentAt) {
+      const at = new Date(read.sentAt).getTime();
+      return snaps.docs.filter(doc => {
+        const message = doc.data();
+        if (message.senderUserId === actor.uid) return false;
+        const messageAt = (message.sentAt?.toDate ? message.sentAt.toDate() : new Date(message.sentAt || 0)).getTime();
+        return messageAt > at || (messageAt === at && doc.id > (read.messageId || ''));
+      }).length;
+    }
+    return snaps.docs.filter(doc => doc.data().senderUserId !== actor.uid).length;
+  } catch (_) {
+    return 0;
+  }
+}
+async function boundedMap(items, concurrency, callback) {
+  const results = new Array(items.length);
+  let next = 0;
+  const worker = async () => {
+    while (next < items.length) {
+      const index = next++;
+      results[index] = await callback(items[index]);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, worker));
+  return results;
+}
 async function channels({db, actor, params}) {
   // One bounded page across legacy and custom channels avoids an unbounded merge
   // and gives stable pagination even when authorization filters a whole page.
   const docs = await pageById(db.collection('conversations'), params.get('cursor'), 50).get();
-  const result = [];
-  for (const doc of docs.docs) {
-    const data = doc.data(); if (!C.access(actor, data).canRead) continue;
-    const read = data.readers?.[actor.uid];
-    let unreadCount = 0;
-    try {
-      const snaps = await doc.ref.collection('messages').orderBy('sentAt', 'desc').limit(100).get();
-      if (read?.sentAt) {
-        const at = new Date(read.sentAt).getTime();
-        unreadCount = snaps.docs.filter(d => {
-          const m = d.data();
-          if (m.senderUserId === actor.uid) return false;
-          const msgTime = (m.sentAt?.toDate ? m.sentAt.toDate() : new Date(m.sentAt || 0)).getTime();
-          return msgTime > at || (msgTime === at && d.id > (read.messageId || ''));
-        }).length;
-      } else {
-        unreadCount = snaps.docs.filter(d => d.data().senderUserId !== actor.uid).length;
-      }
-    } catch (_) {
-      unreadCount = 0;
-    }
-    result.push(channelDto({ id: doc.id, data }, actor, unreadCount));
-  }
+  const accessible = docs.docs
+    .map(doc => ({ id: doc.id, ref: doc.ref, data: doc.data() }))
+    .filter(channel => C.access(actor, channel.data).canRead);
+  // Firestore child queries used to run one-by-one, making each inbox open wait
+  // for every channel. Eight workers retain a fixed read/concurrency budget.
+  const result = await boundedMap(accessible, inboxUnreadConcurrency, async channel =>
+    channelDto(channel, actor, await unreadCount(channel, actor)));
   return { channels: result, nextCursor: docs.size === 50 ? docs.docs.at(-1).id : null };
+}
+async function members({db, channel}) {
+  const data = channel.data;
+  let docs;
+  if (data.kind === 'department') {
+    const department = data.departmentName || data.department || data.departmentKey;
+    docs = department
+      ? (await db.collection('users').where('department', '==', department).limit(100).get()).docs
+      : [];
+  } else {
+    const ids = [...new Set(Array.isArray(data.memberUserIds) ? data.memberUserIds : [])].slice(0, 100);
+    docs = ids.length ? await db.getAll(...ids.map(id => db.collection('users').doc(id))) : [];
+  }
+  return {
+    members: docs
+      .filter(doc => doc.exists && doc.data().isActive !== false)
+      .map(doc => ({
+        id: doc.id,
+        name: doc.data().displayName || doc.data().name || doc.data().employeeName || doc.id,
+        department: doc.data().department || doc.data().departmentName || '',
+      })),
+  };
 }
 async function users({db, params}) {
   const q = (params.get('q') || '').trim().toLocaleLowerCase();
@@ -86,4 +123,4 @@ async function audit({db, actor, channel, messageId}) {
   const docs = await db.collection('conversationAudit').where('conversationId', '==', channel.id).where('messageId', '==', messageId).orderBy('createdAt', 'desc').limit(100).get();
   return { revisions: docs.docs.map(d => ({ ...d.data(), createdAt: C.iso(d.data().createdAt) })) };
 }
-module.exports = { channels, users, requests, history, changes, search, audit, pageSize, presenceDto };
+module.exports = { channels, users, members, requests, history, changes, search, audit, pageSize, presenceDto, boundedMap };

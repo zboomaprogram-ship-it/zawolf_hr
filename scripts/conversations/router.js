@@ -27,7 +27,8 @@ async function handleRichConversationRequest({ req, res, url, actor, db, admin, 
         const handled = await handleMedia({ req, res, db, actor, channel, parts: suffix, payload, sendJson, provider: getMediaProvider(), ensureFolder });
         if (handled) return;
       } else if (req.method === 'GET') {
-        if (suffix.length === 1 && ['messages','changes','search'].includes(suffix[0])) result = await queries[suffix[0] === 'messages' ? 'history' : suffix[0]]({ ...context, channel });
+        if (suffix.length === 1 && suffix[0] === 'members') result = await queries.members({ ...context, channel });
+        else if (suffix.length === 1 && ['messages','changes','search'].includes(suffix[0])) result = await queries[suffix[0] === 'messages' ? 'history' : suffix[0]]({ ...context, channel });
         else if (suffix.length === 3 && suffix[0] === 'messages' && suffix[2] === 'audit') result = await queries.audit({ ...context, channel, messageId: suffix[1] });
       } else if (req.method === 'POST') {
         const payload = await readJsonBody(req, 32 * 1024), args = { ...context, channelId, payload };

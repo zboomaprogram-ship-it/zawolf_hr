@@ -44,6 +44,7 @@ abstract interface class RichChatRepository {
   });
   Future<ChatLinkPreview?> preview(String channelId, String url);
   Future<ChatPage<ChatUser>> users({String query = '', String? cursor});
+  Future<ChatPage<ChatUser>> members(String channelId);
   Future<ChatPage<ChannelRequest>> requests({String? cursor});
   Future<ChannelRequest> createRequest({
     required String name,

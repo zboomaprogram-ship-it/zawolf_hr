@@ -566,6 +566,12 @@ class RichChatRepositoryImpl implements RichChatRepository {
   }
 
   @override
+  Future<ChatPage<ChatUser>> members(String channelId) async {
+    final d = await _get('${_channel(channelId)}/members');
+    return ChatPage(objectList(d['members']).map(decodeUser).toList());
+  }
+
+  @override
   Future<ChatPage<ChannelRequest>> requests({String? cursor}) async {
     final d = await _get('/requests${_query({'cursor': cursor})}');
     return ChatPage(

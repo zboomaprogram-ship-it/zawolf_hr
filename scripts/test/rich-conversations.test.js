@@ -118,6 +118,17 @@ test('inbox unread aggregate excludes own messages and respects equal-time read 
   assert.equal(inbox.channels[0].unreadCount,1);
   assert.ok(db.reads.filter(r=>typeof r==='object').every(r=>r.limit<=100));
 });
+test('authorized channel members return names without exposing unrelated users', async()=>{
+  const db=seed({
+    'users/alice':{isActive:true,displayName:'أليس',department:'Data Analytics'},
+    'users/bob':{isActive:true,name:'بوب',department:'Data Analytics'},
+    'users/hidden':{isActive:true,name:'غير عضو'},
+  });
+  const channel=await C.channelFor(db,actor,'room');
+  const page=await Q.members({db,channel});
+  assert.deepEqual(page.members.map(member=>member.id).sort(),['alice','bob']);
+  assert.equal(page.members.find(member=>member.id==='alice').name,'أليس');
+});
 test('rich-chat capability requires explicit actor rollout and authenticated router',async()=>{
   const {isPhase007FlagEnabled}=require('../feature-flags');
   assert.equal(isPhase007FlagEnabled('conversations_rich_chat_v1',{},'alice'),false);

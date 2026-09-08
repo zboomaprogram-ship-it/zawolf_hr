@@ -81,6 +81,11 @@ RichChannel decodeChannel(Map<String, Object?> v) => RichChannel(
   hrReadable: v['hrReadable'] == true,
   revision: (v['revision'] as num?)?.toInt() ?? 0,
 );
+ChatUser decodeUser(Map<String, Object?> v) => ChatUser(
+  id: '${v['id'] ?? ''}',
+  name: '${v['name'] ?? ''}',
+  department: '${v['department'] ?? ''}',
+);
 ChannelRequest decodeRequest(Map<String, Object?> v) => ChannelRequest(
   id: '${v['id']}',
   name: '${v['name'] ?? ''}',
