@@ -200,8 +200,6 @@ class LeaveService {
     required String reviewerId,
     required String reviewerRole,
     required String reviewerName,
-    required String finalStatus,
-    required bool requiresCeoApproval,
   }) {
     final managerIds =
         (data['managerIds'] as List<dynamic>?)
@@ -247,15 +245,11 @@ class LeaveService {
     }
 
     return {
-      // For a long leave the CEO stage is deliberately before HR.  If the
-      // assigned CEO is already one of the employee's managers, that manager
-      // stage is the CEO approval and the request goes straight to HR.
-      'status':
-          requiresCeoApproval
-              ? (data['ceoApprovalViaManagerChain'] == true
-                  ? 'pending_hr'
-                  : 'pending_ceo')
-              : finalStatus,
+      // Every submitted leave goes to HR after its manager stages. Long
+      // leave is then escalated by HR to the assigned CEO as the final stage.
+      // A manager must never be inferred to be the CEO merely because they
+      // are last in the employee's reporting list.
+      'status': 'pending_hr',
       'managerApprovalIndex': managerIds.isEmpty ? 0 : managerIds.length - 1,
       'managerApprovalTrail': FieldValue.arrayUnion([trail]),
       'reviewedBy': reviewerId,
@@ -283,23 +277,26 @@ class LeaveService {
     };
   }
 
-  /// The employee profile already carries the HR-maintained approval chain.
-  /// Do not traverse `/users` here: employees are intentionally not allowed to
-  /// read manager profiles, which previously made multi-day leave fail before
-  /// its document could be written.
-  ({String id, String name}) _assignedCeoFromApprovalChain(
-    List<String> managerIds,
-    List<String> managerNames,
-  ) {
-    if (managerIds.isEmpty) {
-      throw StateError(
-        'لا يمكن تحديد CEO المعيّن للموظف. اربط الموظف بسلسلة مديرين تنتهي بحساب CEO نشط.',
-      );
+  /// Long leave is reviewed by the canonical active CEO account, never by an
+  /// arbitrary manager in the employee's reporting chain. CEO-100 is the
+  /// organisation's explicit assignment for this workflow.
+  Future<({String id, String name})> _assignedCeo() async {
+    final results =
+        await _db
+            .collection('users')
+            .where('employeeId', isEqualTo: 'CEO-100')
+            .limit(1)
+            .get();
+    if (results.docs.isEmpty) {
+      throw StateError('تعذر تحديد حساب CEO-100 النشط لمسار الإجازة.');
     }
-    final index = managerIds.length - 1;
+    final data = results.docs.first.data();
+    if (data['isActive'] == false) {
+      throw StateError('حساب CEO-100 غير نشط لمسار الإجازة.');
+    }
     return (
-      id: managerIds[index],
-      name: index < managerNames.length ? managerNames[index] : '',
+      id: results.docs.first.id,
+      name: (data['displayName'] as String? ?? '').trim(),
     );
   }
 
@@ -481,15 +478,7 @@ class LeaveService {
     final requiresCeoApproval =
         !isAutoApprovedCasual &&
         LeaveTypePolicy.requiresCeoApproval(req.leaveType, req.numberOfDays);
-    final assignedCeo =
-        requiresCeoApproval
-            ? _assignedCeoFromApprovalChain(
-              approvalManagerIds,
-              approvalManagerNames,
-            )
-            : null;
-    final ceoApprovalViaManagerChain =
-        assignedCeo != null && approvalManagerIds.contains(assignedCeo.id);
+    final assignedCeo = requiresCeoApproval ? await _assignedCeo() : null;
     final finalModel = LeaveModel(
       leaveId: reqRef.id,
       userId: req.userId,
@@ -508,9 +497,7 @@ class LeaveService {
       status:
           isAutoApprovedCasual
               ? 'approved'
-              : (usesHrFallback
-                  ? (requiresCeoApproval ? 'pending_ceo' : 'pending_hr')
-                  : 'pending_manager'),
+              : (usesHrFallback ? 'pending_hr' : 'pending_manager'),
       submittedAt: DateTime.now(),
       convertToAnnual:
           req.convertToAnnual && effectiveType == LeaveTypePolicy.sick,
@@ -555,7 +542,7 @@ class LeaveService {
       if (assignedCeo != null) ...{
         'ceoId': assignedCeo.id,
         'ceoName': assignedCeo.name,
-        'ceoApprovalViaManagerChain': ceoApprovalViaManagerChain,
+        'ceoApprovalViaManagerChain': false,
       },
       if (probationConversion) ...{
         'originalLeaveType': req.leaveType,
@@ -612,16 +599,7 @@ class LeaveService {
     // notification permission or transient delivery error must never make the
     // employee see a failed submission and retry an already saved request.
     try {
-      if (requiresCeoApproval && usesHrFallback && assignedCeo != null) {
-        await _createNotification(
-          recipientId: assignedCeo.id,
-          type: 'leave_request_submitted',
-          title: 'إجازة طويلة بانتظار موافقتك',
-          body:
-              'طلب ${req.employeeName} لمدة ${req.numberOfDays} أيام ينتظر اعتمادك قبل مراجعة HR.',
-          data: {'leaveId': reqRef.id},
-        );
-      } else if (usesHrFallback) {
+      if (usesHrFallback) {
         await RoleNotificationService.instance.notifyRole(
           role: EmployeeRole.hrManager,
           includeSuperAdmins: false,
@@ -878,7 +856,7 @@ class LeaveService {
         final firstManagerId = managerIds.isNotEmpty ? managerIds.first : '';
         final nextStatus =
             requiresCeoApproval
-                ? 'approved'
+                ? 'pending_ceo'
                 : (managersCompleted ? 'approved' : 'pending_manager');
         update = {
           'status': nextStatus,
@@ -904,14 +882,11 @@ class LeaveService {
         if (leave.managerId != reviewerId && role != EmployeeRole.superAdmin) {
           throw Exception('هذا الطلب ينتظر قرار مدير آخر.');
         }
-        final approvalPolicy = await _approvalPolicyService.getPolicy();
         update = _nextManagerApprovalUpdate(
           data: data,
           reviewerId: reviewerId,
           reviewerRole: role,
           reviewerName: reviewerName,
-          finalStatus: approvalPolicy.finalManagerApprovalStatus,
-          requiresCeoApproval: requiresCeoApproval,
         );
         isFinalApproval = update['status'] == 'approved';
       }
@@ -920,14 +895,11 @@ class LeaveService {
       if (leave.managerId != reviewerId) {
         throw Exception('هذا الطلب ينتظر قرار مدير آخر.');
       }
-      final approvalPolicy = await _approvalPolicyService.getPolicy();
       update = _nextManagerApprovalUpdate(
         data: data,
         reviewerId: reviewerId,
         reviewerRole: role,
         reviewerName: reviewerName,
-        finalStatus: approvalPolicy.finalManagerApprovalStatus,
-        requiresCeoApproval: requiresCeoApproval,
       );
       isFinalApproval = update['status'] == 'approved';
     }
@@ -1013,7 +985,7 @@ class LeaveService {
     }
 
     if (update['status'] == 'pending_ceo') {
-      final ceoId = update['ceoId'] as String?;
+      final ceoId = data['ceoId'] as String?;
       if (ceoId == null || ceoId.isEmpty) {
         throw Exception('تعذر تحديد CEO المعيّن للموظف.');
       }
@@ -1022,7 +994,7 @@ class LeaveService {
         type: 'leave_request_submitted',
         title: 'إجازة طويلة بانتظار اعتماد CEO',
         body:
-            'طلب ${leave.employeeName} لمدة ${leave.numberOfDays} أيام أكمل موافقات المديرين وينتظر اعتمادك قبل HR.',
+            'راجع HR طلب ${leave.employeeName} لمدة ${leave.numberOfDays} أيام وينتظر اعتمادك النهائي.',
         data: {'leaveId': leaveId},
       );
       return;

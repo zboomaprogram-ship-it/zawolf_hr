@@ -1350,12 +1350,13 @@ service cloud.firestore {
           isActive() && (
             isHR() || isAssignedManagerFor(resource.data) ||
             isAssignedTeamLeaderFor(resource.data) ||
-            // Legacy multi-day leave clients resolve the CEO by following the
-            // employee's already-assigned approval chain. Permit only those
-            // exact manager profiles; this never grants employee-directory
-            // browsing or access to unrelated accounts.
+            // Legacy clients may read the direct manager while resolving an
+            // approval route. The public, canonical CEO-100 account is also
+            // readable for that route; no employee-directory browsing is
+            // permitted.
             userId == userDoc().get('managerId', '') ||
-            userId in userDoc().get('managerIds', [])
+            userId in userDoc().get('managerIds', []) ||
+            resource.data.get('employeeId', '') == 'CEO-100'
           )
         )
       );

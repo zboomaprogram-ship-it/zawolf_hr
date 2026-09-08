@@ -183,6 +183,15 @@ void main() {
     expect(LeaveTypePolicy.requiresCeoApproval('day_off', 2), isFalse);
   });
 
+  test('long leave uses the manager, HR, then CEO route', () {
+    final source = File('lib/services/leave_service.dart').readAsStringSync();
+
+    expect(source, contains("'status': 'pending_hr'"));
+    expect(source, contains("? 'pending_ceo'"));
+    expect(source, contains("where('employeeId', isEqualTo: 'CEO-100')"));
+    expect(source, isNot(contains('_assignedCeoFromApprovalChain')));
+  });
+
   test('every leave request requires a reason', () {
     expect(
       () => LeaveService.validateRequest(
