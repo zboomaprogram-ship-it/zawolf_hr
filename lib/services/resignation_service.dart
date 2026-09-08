@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart';
 
 import '../models/employee_role.dart';
 import '../models/manager_approval_chain.dart';
@@ -99,23 +100,27 @@ class ResignationService {
       'isRead': false,
     });
 
-    if (managerIds.isEmpty) {
-      await RoleNotificationService.instance.notifyRole(
-        role: EmployeeRole.hrManager,
-        includeSuperAdmins: false,
-        type: 'resignation_pending_hr',
-        title: 'طلب استقالة جديد',
-        body: '${employee.displayName} قدّم طلب استقالة.',
-        data: {'resignationId': ref.id},
-      );
-    } else {
-      await RoleNotificationService.instance.createNotification(
-        recipientId: firstManagerId,
-        type: 'resignation_pending_manager',
-        title: 'طلب استقالة بانتظار موافقتك',
-        body: '${employee.displayName} قدّم طلب استقالة.',
-        data: {'resignationId': ref.id},
-      );
+    try {
+      if (managerIds.isEmpty) {
+        await RoleNotificationService.instance.notifyRole(
+          role: EmployeeRole.hrManager,
+          includeSuperAdmins: false,
+          type: 'resignation_pending_hr',
+          title: 'طلب استقالة جديد',
+          body: '${employee.displayName} قدّم طلب استقالة.',
+          data: {'resignationId': ref.id},
+        );
+      } else {
+        await RoleNotificationService.instance.createNotification(
+          recipientId: firstManagerId,
+          type: 'resignation_pending_manager',
+          title: 'طلب استقالة بانتظار موافقتك',
+          body: '${employee.displayName} قدّم طلب استقالة.',
+          data: {'resignationId': ref.id},
+        );
+      }
+    } catch (e) {
+      debugPrint('Resignation submission notification failed: $e');
     }
   }
 
@@ -171,41 +176,53 @@ class ResignationService {
         'reviewerComment': comment.trim(),
         'reviewedAt': FieldValue.serverTimestamp(),
       });
-      if (hasNext) {
-        await RoleNotificationService.instance.createNotification(
-          recipientId: request.managerIds[nextIndex],
-          type: 'resignation_pending_manager',
-          title: 'طلب استقالة بانتظار موافقتك',
-          body: '${request.employeeName} قدّم طلب استقالة.',
-          data: {'resignationId': resignationId},
-        );
-      } else if (approve) {
-        await RoleNotificationService.instance.notifyRole(
-          role: EmployeeRole.hrManager,
-          includeSuperAdmins: false,
-          type: 'resignation_pending_hr',
-          title: 'طلب استقالة بانتظار القرار النهائي',
-          body: 'اكتملت موافقات المديرين على طلب ${request.employeeName}.',
-          data: {'resignationId': resignationId},
-        );
+      try {
+        if (hasNext) {
+          await RoleNotificationService.instance.createNotification(
+            recipientId: request.managerIds[nextIndex],
+            type: 'resignation_pending_manager',
+            title: 'طلب استقالة بانتظار موافقتك',
+            body: '${request.employeeName} قدّم طلب استقالة.',
+            data: {'resignationId': resignationId},
+          );
+        } else if (approve) {
+          await RoleNotificationService.instance.notifyRole(
+            role: EmployeeRole.hrManager,
+            includeSuperAdmins: false,
+            type: 'resignation_pending_hr',
+            title: 'طلب استقالة بانتظار القرار النهائي',
+            body: 'اكتملت موافقات المديرين على طلب ${request.employeeName}.',
+            data: {'resignationId': resignationId},
+          );
+        }
+      } catch (e) {
+        debugPrint('Resignation review chain notification failed: $e');
       }
     }
 
-    await RoleNotificationService.instance.createNotification(
-      recipientId: request.userId,
-      type: approve ? 'resignation_reviewed' : 'resignation_rejected',
-      title: approve ? 'تم تحديث طلب الاستقالة' : 'تم رفض طلب الاستقالة',
-      body: approve
-          ? 'تمت الموافقة على المرحلة الحالية من طلب الاستقالة.'
-          : 'سبب الرفض: ${comment.trim()}',
-      data: {'resignationId': resignationId},
-    );
-    await AuditLogService.instance.record(
-      actorId: reviewer.uid,
-      action: approve ? 'resignation_approved' : 'resignation_rejected',
-      targetCollection: 'resignations',
-      targetId: resignationId,
-      metadata: {'userId': request.userId, 'comment': comment.trim()},
-    );
+    try {
+      await RoleNotificationService.instance.createNotification(
+        recipientId: request.userId,
+        type: approve ? 'resignation_reviewed' : 'resignation_rejected',
+        title: approve ? 'تم تحديث طلب الاستقالة' : 'تم رفض طلب الاستقالة',
+        body: approve
+            ? 'تمت الموافقة على المرحلة الحالية من طلب الاستقالة.'
+            : 'سبب الرفض: ${comment.trim()}',
+        data: {'resignationId': resignationId},
+      );
+    } catch (e) {
+      debugPrint('Resignation employee update notification failed: $e');
+    }
+    try {
+      await AuditLogService.instance.record(
+        actorId: reviewer.uid,
+        action: approve ? 'resignation_approved' : 'resignation_rejected',
+        targetCollection: 'resignations',
+        targetId: resignationId,
+        metadata: {'userId': request.userId, 'comment': comment.trim()},
+      );
+    } catch (e) {
+      debugPrint('Resignation audit record failed: $e');
+    }
   }
 }

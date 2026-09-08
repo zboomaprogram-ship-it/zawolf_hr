@@ -6,6 +6,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import '../models/user_model.dart';
 import '../models/location_model.dart';
+import '../models/employee_role.dart';
 import '../features/attendance_locations/data/attendance_location_assignment_repository_impl.dart';
 import '../features/attendance_locations/domain/entities/attendance_location_assignment.dart';
 import '../features/attendance_locations/domain/repositories/attendance_location_assignment_repository.dart';
@@ -161,7 +162,7 @@ class GeofenceService {
       throw Exception('لم يتم العثور على الفرع المسند للموظف.');
     }
 
-    final location = LocationModel.fromFirestore(locationDoc);
+    var location = LocationModel.fromFirestore(locationDoc);
 
     // 3. Get device GPS position (high accuracy with Web Desktop fallback)
     var position = await _getReliablePosition(
@@ -194,6 +195,35 @@ class GeofenceService {
         position = retry;
         distanceMeters = retryDistance;
       }
+    }
+
+    // Super Admin oversees all branches and may record attendance at any active location
+    if (distanceMeters > location.geofenceRadiusMeters &&
+        employee.role == EmployeeRole.superAdmin) {
+      try {
+        final activeLocationsSnap = await _db
+            .collection('locations')
+            .where('isActive', isEqualTo: true)
+            .get();
+        for (final doc in activeLocationsSnap.docs) {
+          if (doc.id == location.locationId) continue;
+          final altLocation = LocationModel.fromFirestore(doc);
+          final altDistance = Geolocator.distanceBetween(
+            position.latitude,
+            position.longitude,
+            altLocation.latitude,
+            altLocation.longitude,
+          );
+          final altTolerance = strictLocationOnly
+              ? position.accuracy.clamp(0, 12).toDouble()
+              : position.accuracy.clamp(0, 25).toDouble();
+          if (altDistance <= altLocation.geofenceRadiusMeters + altTolerance) {
+            location = altLocation;
+            distanceMeters = altDistance;
+            break;
+          }
+        }
+      } catch (_) {}
     }
 
     // 5. Check if spoofing app is used

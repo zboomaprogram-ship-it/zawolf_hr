@@ -11,6 +11,18 @@ function stableIdempotencyKey(value) {
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-4${hex.slice(13, 16)}-a${hex.slice(17, 20)}-${hex.slice(20, 32)}`;
 }
 
+function formatOneSignalAuthHeader(apiKey) {
+  if (!apiKey) return '';
+  const trimmed = apiKey.trim();
+  if (/^(basic|key)\s+/i.test(trimmed)) {
+    return trimmed;
+  }
+  if (trimmed.startsWith('os_v2_org_')) {
+    return `Key ${trimmed}`;
+  }
+  return `Basic ${trimmed}`;
+}
+
 async function sendPushToUsers(userIds, title, body, data = {}, options = {}) {
   const ids = [...new Set(userIds.filter(Boolean))];
   if (!ids.length || !isOneSignalConfigured()) {
@@ -21,7 +33,7 @@ async function sendPushToUsers(userIds, title, body, data = {}, options = {}) {
     method: 'POST',
     headers: {
       accept: 'application/json',
-      authorization: `Key ${ONESIGNAL_REST_API_KEY}`,
+      authorization: formatOneSignalAuthHeader(ONESIGNAL_REST_API_KEY),
       'content-type': 'application/json',
     },
     body: JSON.stringify({
@@ -48,6 +60,7 @@ async function sendPushToUsers(userIds, title, body, data = {}, options = {}) {
 }
 
 module.exports = {
+  formatOneSignalAuthHeader,
   isOneSignalConfigured,
   sendPushToUsers,
   stableIdempotencyKey,

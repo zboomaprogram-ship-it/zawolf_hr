@@ -118,14 +118,43 @@ void main() {
     },
   );
 
-  test('a saved mobile decision leaves the pending list immediately', () {
+  test('a saved mobile decision leaves the pending list immediately across all tabs', () {
     expect(
       screenSource,
       contains('final Set<String> _resolvedRequestIds = {};'),
     );
     expect(screenSource, contains('_resolvedRequestIds.add(requestId)'));
     expect(screenSource, contains('!_resolvedRequestIds.contains(doc.id)'));
+    expect(screenSource, contains('!_resolvedRequestIds.contains(r.resignationId)'));
+    expect(screenSource, contains('!_resolvedRequestIds.contains(d.id)'));
+    expect(screenSource, contains('_resolvedRequestIds.contains(item.id)'));
     expect(screenSource, contains('تم حفظ القرار وتحديث القائمة.'));
+  });
+
+  test('management web shell keeps attendance and request shortcuts', () {
+    final navWrapperSource =
+        File('lib/navigation/navigation_wrapper.dart').readAsStringSync();
+    expect(
+      navWrapperSource,
+      contains("item.path == '/employee/dashboard'"),
+    );
+    expect(
+      navWrapperSource,
+      contains("item.path == '/employee/requests'"),
+    );
+  });
+
+  test('geofence allows super admin to record attendance at any active location', () {
+    final geofenceSource =
+        File('lib/services/geofence_service.dart').readAsStringSync();
+    expect(
+      geofenceSource,
+      contains('employee.role == EmployeeRole.superAdmin'),
+    );
+    expect(
+      geofenceSource,
+      contains("where('isActive', isEqualTo: true)"),
+    );
   });
 
   test('latest HR salary deductions are not hidden by the bounded query', () {

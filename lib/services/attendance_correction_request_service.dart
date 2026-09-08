@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart';
 
 import '../models/attendance_model.dart';
 import '../models/employee_role.dart';
@@ -111,19 +112,23 @@ class AttendanceCorrectionRequestService {
       'isRead': false,
     });
 
-    await RoleNotificationService.instance.notifyRole(
-      role: EmployeeRole.hrAdmin,
-      type: 'attendance_correction_pending_hr',
-      title: 'طلب تصحيح وقت حضور',
-      body: '${employee.displayName} أرسل طلب تصحيح وقت حضور لمراجعة HR.',
-      data: {
-        'route':
-            '/manager/requests?category=attendance_corrections&requestId=${ref.id}',
-        'requestId': ref.id,
-        'attendanceId': attendance.attendanceId,
-      },
-      includeSuperAdmins: false,
-    );
+    try {
+      await RoleNotificationService.instance.notifyRole(
+        role: EmployeeRole.hrAdmin,
+        type: 'attendance_correction_pending_hr',
+        title: 'طلب تصحيح وقت حضور',
+        body: '${employee.displayName} أرسل طلب تصحيح وقت حضور لمراجعة HR.',
+        data: {
+          'route':
+              '/manager/requests?category=attendance_corrections&requestId=${ref.id}',
+          'requestId': ref.id,
+          'attendanceId': attendance.attendanceId,
+        },
+        includeSuperAdmins: false,
+      );
+    } catch (e) {
+      debugPrint('Attendance correction submission notification failed: $e');
+    }
   }
 
   Future<void> review({
@@ -182,22 +187,26 @@ class AttendanceCorrectionRequestService {
     }
 
     if (employeeId.isNotEmpty) {
-      await RoleNotificationService.instance.createNotification(
-        recipientId: employeeId,
-        type:
-            approve
-                ? 'attendance_correction_approved'
-                : 'attendance_correction_rejected',
-        title: approve ? 'تم قبول تصحيح وقت الحضور' : 'تم رفض تصحيح وقت الحضور',
-        body:
-            comment.trim().isEmpty
-                ? (approve
-                    ? 'تم تعديل وقت الحضور وإعادة حساب الخصم.'
-                    : 'راجع سجل طلباتك لمعرفة حالة الطلب.')
-                : comment.trim(),
-        data: {'route': '/employee/requests', 'requestId': requestId},
-        eventId: 'attendance_correction_reviewed:$requestId',
-      );
+      try {
+        await RoleNotificationService.instance.createNotification(
+          recipientId: employeeId,
+          type:
+              approve
+                  ? 'attendance_correction_approved'
+                  : 'attendance_correction_rejected',
+          title: approve ? 'تم قبول تصحيح وقت الحضور' : 'تم رفض تصحيح وقت الحضور',
+          body:
+              comment.trim().isEmpty
+                  ? (approve
+                      ? 'تم تعديل وقت الحضور وإعادة حساب الخصم.'
+                      : 'راجع سجل طلباتك لمعرفة حالة الطلب.')
+                  : comment.trim(),
+          data: {'route': '/employee/requests', 'requestId': requestId},
+          eventId: 'attendance_correction_reviewed:$requestId',
+        );
+      } catch (e) {
+        debugPrint('Attendance correction review notification failed: $e');
+      }
     }
   }
 }

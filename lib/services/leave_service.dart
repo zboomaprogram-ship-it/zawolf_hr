@@ -793,15 +793,19 @@ class LeaveService {
         'reviewedAt': FieldValue.serverTimestamp(),
         'approvalHistory': FieldValue.arrayUnion([event]),
       });
-      await RoleNotificationService.instance.notifyRole(
-        role: EmployeeRole.hrAdmin,
-        includeSuperAdmins: false,
-        type: 'leave_request_submitted',
-        title: 'إجازة طويلة بانتظار مراجعة HR',
-        body:
-            'اعتمد CEO المعيّن طلب ${leave.employeeName} وهو الآن بانتظار القرار النهائي من HR.',
-        data: {'leaveId': leaveId},
-      );
+      try {
+        await RoleNotificationService.instance.notifyRole(
+          role: EmployeeRole.hrAdmin,
+          includeSuperAdmins: false,
+          type: 'leave_request_submitted',
+          title: 'إجازة طويلة بانتظار مراجعة HR',
+          body:
+              'اعتمد CEO المعيّن طلب ${leave.employeeName} وهو الآن بانتظار القرار النهائي من HR.',
+          data: {'leaveId': leaveId},
+        );
+      } catch (_) {
+        // Notification retry is independent of committed decision
+      }
       return;
     }
 

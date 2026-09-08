@@ -1736,6 +1736,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
         final allItems = snapshot.data ?? [];
         final items =
             allItems.where((item) {
+              if (_resolvedRequestIds.contains(item.id)) return false;
               if (_searchQuery.isEmpty) return true;
               return item.employeeName.toLowerCase().contains(_searchQuery) ||
                   item.employeeId.toLowerCase().contains(_searchQuery) ||
@@ -1893,8 +1894,9 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                           reason: 'تم الرفض بواسطة ${reviewer.displayName}',
                         );
                         if (mounted) {
+                          setState(() => _resolvedRequestIds.add(item.id));
                           messenger.showSnackBar(
-                            const SnackBar(content: Text('تم رفض طلب الخصم.')),
+                            const SnackBar(content: Text('تم رفض طلب الخصم وتحديث القائمة.')),
                           );
                         }
                       } catch (e) {
@@ -1921,6 +1923,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                           reviewer: reviewer,
                         );
                         if (mounted) {
+                          setState(() => _resolvedRequestIds.add(item.id));
                           messenger.showSnackBar(
                             const SnackBar(
                               content: Text(
@@ -2366,7 +2369,9 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return _buildLoadingState('تحميل طلبات الاجتماعات...');
         }
-        final docs = _newestFirst(snapshot.data?.docs ?? []);
+        final docs = _newestFirst(snapshot.data?.docs ?? [])
+            .where((d) => !_resolvedRequestIds.contains(d.id))
+            .toList(growable: false);
         if (docs.isEmpty) {
           return _buildEmptyState('لا توجد طلبات اجتماعات معلقة');
         }
@@ -2638,7 +2643,11 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
         if (!snapshot.hasData) {
           return _buildLoadingState('تحميل طلبات الاستقالة...');
         }
-        var requests = [...snapshot.data!];
+        var requests = [
+          ...snapshot.data!.where(
+            (r) => !_resolvedRequestIds.contains(r.resignationId),
+          ),
+        ];
         requests.sort(
           (a, b) => (b.submittedAt?.millisecondsSinceEpoch ?? 0).compareTo(
             a.submittedAt?.millisecondsSinceEpoch ?? 0,
@@ -2762,14 +2771,28 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
     final reason = controller.text.trim();
     controller.dispose();
     if (!confirmed || reason.isEmpty) return;
-    await _withRequestGuard(request.resignationId, () {
-      return _resignationService.review(
-        resignationId: request.resignationId,
-        reviewer: reviewer,
-        approve: false,
-        comment: reason,
-      );
-    });
+    try {
+      await _withRequestGuard(request.resignationId, () {
+        return _resignationService.review(
+          resignationId: request.resignationId,
+          reviewer: reviewer,
+          approve: false,
+          comment: reason,
+        );
+      });
+      if (mounted) {
+        setState(() => _resolvedRequestIds.add(request.resignationId));
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('تم رفض طلب الاستقالة وتحديث القائمة.')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('فشل الإجراء: ${userFacingError(e)}')),
+        );
+      }
+    }
   }
 
   Widget _buildApprovalPolicyControl(UserModel superAdmin) {
@@ -3936,6 +3959,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
 
         final docs = _newestFirst(
           (snapshot.data?.docs ?? []).where((doc) {
+            if (_resolvedRequestIds.contains(doc.id)) return false;
             if (_searchQuery.isEmpty) return true;
             final data = doc.data();
             return _matchesSearch([
@@ -4070,20 +4094,34 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                     const SizedBox(height: 16),
                     WolfButton(
                       onPressed: () async {
+                        final messenger = ScaffoldMessenger.of(context);
                         try {
                           await _complaintService.markReviewed(
                             complaint.complaintId,
                             reviewer.uid,
                           );
-                        } catch (e) {
-                          if (!context.mounted) return;
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text(
-                                'فشل تحديث الشكوى: ${userFacingError(e)}',
+                          if (mounted) {
+                            setState(
+                              () => _resolvedRequestIds.add(
+                                complaint.complaintId,
                               ),
-                            ),
-                          );
+                            );
+                            messenger.showSnackBar(
+                              const SnackBar(
+                                content: Text('تمت مراجعة الشكوى بنجاح.'),
+                              ),
+                            );
+                          }
+                        } catch (e) {
+                          if (mounted) {
+                            messenger.showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                  'فشل تحديث الشكوى: ${userFacingError(e)}',
+                                ),
+                              ),
+                            );
+                          }
                         }
                       },
                       text: 'تمت المراجعة',
@@ -4399,6 +4437,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
 
         final loadedItems =
             snapshot.data?.docs
+                .where((doc) => !_resolvedRequestIds.contains(doc.id))
                 .map((doc) => AttendanceModel.fromFirestore(doc))
                 .toList() ??
             [];
@@ -4659,7 +4698,11 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return _buildLoadingState('تحميل طلبات تصحيح الحضور...');
         }
-        final docs = [...?snapshot.data?.docs];
+        final docs = [
+          ...?snapshot.data?.docs.where(
+            (doc) => !_resolvedRequestIds.contains(doc.id),
+          ),
+        ];
         if (_searchQuery.isNotEmpty) {
           docs.removeWhere((doc) {
             final data = doc.data();
@@ -4846,6 +4889,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
           comment: commentController.text,
         );
         if (mounted) {
+          setState(() => _resolvedRequestIds.add(requestId));
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(
@@ -5212,6 +5256,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
         reason: reason,
       );
       if (!mounted) return;
+      setState(() => _resolvedRequestIds.add(attendance.attendanceId));
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('تم إلغاء الخصم المعتمد وتسجيل السبب.')),
       );
@@ -5254,20 +5299,24 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
             }
 
             final items = <_SecurityReviewItem>[
-              ...((checkInSnapshot.data?.docs ?? []).map(
-                (doc) => _SecurityReviewItem(
-                  attendance: AttendanceModel.fromFirestore(doc),
-                  checkout: false,
-                  docId: doc.id,
-                ),
-              )),
-              ...((checkoutSnapshot.data?.docs ?? []).map(
-                (doc) => _SecurityReviewItem(
-                  attendance: AttendanceModel.fromFirestore(doc),
-                  checkout: true,
-                  docId: doc.id,
-                ),
-              )),
+              ...((checkInSnapshot.data?.docs ?? [])
+                  .where((doc) => !_resolvedRequestIds.contains(doc.id))
+                  .map(
+                    (doc) => _SecurityReviewItem(
+                      attendance: AttendanceModel.fromFirestore(doc),
+                      checkout: false,
+                      docId: doc.id,
+                    ),
+                  )),
+              ...((checkoutSnapshot.data?.docs ?? [])
+                  .where((doc) => !_resolvedRequestIds.contains(doc.id))
+                  .map(
+                    (doc) => _SecurityReviewItem(
+                      attendance: AttendanceModel.fromFirestore(doc),
+                      checkout: true,
+                      docId: doc.id,
+                    ),
+                  )),
             ];
 
             items.sort((a, b) {

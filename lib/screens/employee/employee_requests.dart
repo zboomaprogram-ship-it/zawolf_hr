@@ -113,6 +113,8 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
   final _administrativeAttachmentController = TextEditingController();
   String? _administrativeAttachmentUrl;
   final _fieldMissionSiteController = TextEditingController();
+  final _fieldMissionReasonController = TextEditingController();
+  final _formKeyFieldMission = GlobalKey<FormState>();
   DateTime _fieldMissionDate = DateTime.now();
   TimeOfDay _fieldMissionStart = const TimeOfDay(hour: 9, minute: 0);
   TimeOfDay _fieldMissionEnd = const TimeOfDay(hour: 17, minute: 0);
@@ -174,6 +176,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
     _administrativeNotesController.dispose();
     _administrativeAttachmentController.dispose();
     _fieldMissionSiteController.dispose();
+    _fieldMissionReasonController.dispose();
     _attendanceCorrectionReasonController.dispose();
     super.dispose();
   }
@@ -625,11 +628,54 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
       _administrativeAttachmentController.clear();
       _administrativeAttachmentUrl = null;
       _fieldMissionSiteController.clear();
+      _fieldMissionReasonController.clear();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             backgroundColor: ZaWolfColors.success,
             content: Text('تم إرسال الطلب الإداري بنجاح'),
+          ),
+        );
+        setState(() => _requestCentreView = 1);
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: ZaWolfColors.error,
+            content: Text('تعذر الإرسال: ${userFacingError(error)}'),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _submitFieldMissionDirect(UserModel employee) async {
+    if (!_formKeyFieldMission.currentState!.validate()) return;
+    setState(() => _loading = true);
+    try {
+      final service = AdministrativeRequestService();
+      String time(TimeOfDay value) =>
+          '${value.hour.toString().padLeft(2, '0')}:${value.minute.toString().padLeft(2, '0')}';
+      await service.submitFieldMission(
+        employee: employee,
+        date: _fieldMissionDate,
+        startTime: time(_fieldMissionStart),
+        endTime: time(_fieldMissionEnd),
+        siteName: _fieldMissionSiteController.text,
+        reason: _fieldMissionReasonController.text,
+        requiresReturnToOffice: _fieldMissionRequiresReturn,
+        requiresCheckout: _fieldMissionRequiresCheckout,
+      );
+      _fieldMissionReasonController.clear();
+      _fieldMissionSiteController.clear();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            backgroundColor: ZaWolfColors.success,
+            content: Text('تم إرسال طلب المهمة الميدانية بنجاح'),
           ),
         );
         setState(() => _requestCentreView = 1);
@@ -1327,7 +1373,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
                         ),
                         onTap: () {
                           Navigator.pop(context);
-                          _openDirectRequest(6);
+                          _openDirectRequest(7);
                         },
                       ),
                       ListTile(
@@ -1533,11 +1579,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
                   ),
                   onTap: () {
                     Navigator.pop(context);
-                    setState(() {
-                      _administrativeCategory =
-                          AdministrativeRequestCategory.fieldMission;
-                    });
-                    _openDirectRequest(5);
+                    _openDirectRequest(6);
                   },
                 ),
                 if ([
@@ -1620,6 +1662,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
                 3 => _buildComplaintForm(user, theme),
                 4 => _buildResignationForm(user, theme),
                 5 => _buildAdministrativeRequestForm(user, theme),
+                6 => _buildFieldMissionForm(user, theme),
                 _ => _buildAttendanceCorrectionForm(user, theme),
               },
             ),
@@ -1669,6 +1712,12 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
         label: 'خدمات الموظف والشؤون الإدارية',
         icon: Icons.assignment_outlined,
         color: ZaWolfColors.primaryBlue,
+        route: null,
+      ),
+      (
+        label: 'مهمة ميدانية',
+        icon: Icons.explore_outlined,
+        color: ZaWolfColors.primaryCyan,
         route: null,
       ),
       (
@@ -3257,6 +3306,169 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
                         AdministrativeRequestCategory.fieldMission
                     ? 'SUBMIT FIELD MISSION'
                     : 'SUBMIT ADMIN REQUEST',
+            loading: _loading,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFieldMissionForm(UserModel user, ThemeData theme) {
+    return Form(
+      key: _formKeyFieldMission,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            decoration: BoxDecoration(
+              color: ZaWolfColors.primaryCyan.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: ZaWolfColors.primaryCyan.withValues(alpha: 0.3),
+              ),
+            ),
+            child: Row(
+              children: [
+                const Icon(
+                  Icons.explore_outlined,
+                  color: ZaWolfColors.primaryCyan,
+                  size: 24,
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'طلب مهمة ميدانية',
+                        style: theme.textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        'مأمورية عمل خارج مقر الشركة لمتابعة المهام والمشاريع',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: ZaWolfColors.textSecondary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 14),
+          TextFormField(
+            controller: _fieldMissionSiteController,
+            textDirection: TextDirection.rtl,
+            decoration: const InputDecoration(
+              labelText: 'مكان المهمة الميدانية',
+              hintText: 'مثال: موقع العميل، فرع الشركة، جهة حكومية...',
+              prefixIcon: Icon(Icons.place_outlined),
+            ),
+            validator:
+                (value) =>
+                    (value?.trim().isEmpty ?? true)
+                        ? 'مكان المهمة مطلوب'
+                        : null,
+          ),
+          const SizedBox(height: 14),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.calendar_month_outlined),
+            title: const Text('تاريخ المهمة'),
+            subtitle: Text(
+              DateFormat('yyyy/MM/dd').format(_fieldMissionDate),
+            ),
+            onTap: () async {
+              final now = DateTime.now();
+              final picked = await showDatePicker(
+                context: context,
+                initialDate: _fieldMissionDate,
+                firstDate: DateTime(now.year, now.month, now.day),
+                lastDate: now.add(const Duration(days: 365)),
+              );
+              if (picked != null && mounted) {
+                setState(() => _fieldMissionDate = picked);
+              }
+            },
+          ),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  icon: const Icon(Icons.schedule),
+                  label: Text(
+                    'البداية: ${_fieldMissionStart.format(context)}',
+                  ),
+                  onPressed: () async {
+                    final picked = await showTimePicker(
+                      context: context,
+                      initialTime: _fieldMissionStart,
+                    );
+                    if (picked != null && mounted) {
+                      setState(() => _fieldMissionStart = picked);
+                    }
+                  },
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: OutlinedButton.icon(
+                  icon: const Icon(Icons.timer_off_outlined),
+                  label: Text('النهاية: ${_fieldMissionEnd.format(context)}'),
+                  onPressed: () async {
+                    final picked = await showTimePicker(
+                      context: context,
+                      initialTime: _fieldMissionEnd,
+                    );
+                    if (picked != null && mounted) {
+                      setState(() => _fieldMissionEnd = picked);
+                    }
+                  },
+                ),
+              ),
+            ],
+          ),
+          SwitchListTile.adaptive(
+            contentPadding: EdgeInsets.zero,
+            value: _fieldMissionRequiresReturn,
+            title: const Text('العودة إلى المكتب بعد المهمة'),
+            onChanged:
+                (value) =>
+                    setState(() => _fieldMissionRequiresReturn = value),
+          ),
+          SwitchListTile.adaptive(
+            contentPadding: EdgeInsets.zero,
+            value: _fieldMissionRequiresCheckout,
+            title: const Text('يتطلب تسجيل الانصراف'),
+            onChanged:
+                (value) =>
+                    setState(() => _fieldMissionRequiresCheckout = value),
+          ),
+          TextFormField(
+            controller: _fieldMissionReasonController,
+            minLines: 3,
+            maxLines: 5,
+            textDirection: TextDirection.rtl,
+            decoration: const InputDecoration(
+              labelText: 'تفاصيل وسبب المهمة الميدانية',
+              hintText: 'اكتب الغرض من المأمورية والمهام المطلوب إنجازها...',
+            ),
+            validator:
+                (value) =>
+                    (value?.trim().isEmpty ?? true)
+                        ? 'تفاصيل وسبب المهمة مطلوبة'
+                        : null,
+          ),
+          const SizedBox(height: 20),
+          WolfButton(
+            onPressed: () => _submitFieldMissionDirect(user),
+            text: 'إرسال طلب المهمة الميدانية',
+            secondaryText: 'SUBMIT FIELD MISSION',
             loading: _loading,
           ),
         ],

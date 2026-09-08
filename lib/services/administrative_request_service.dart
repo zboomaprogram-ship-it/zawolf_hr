@@ -1,4 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart';
+import 'package:intl/intl.dart';
 
 import '../models/administrative_request_model.dart';
 import '../models/employee_role.dart';
@@ -6,7 +8,6 @@ import '../models/manager_approval_chain.dart';
 import '../models/user_model.dart';
 import '../features/request_approval_routing/data/request_approval_routing_gateway.dart';
 import 'role_notification_service.dart';
-import 'package:intl/intl.dart';
 
 class AdministrativeRequestService {
   AdministrativeRequestService({FirebaseFirestore? firestore})
@@ -125,15 +126,83 @@ class AdministrativeRequestService {
     if (startTime.compareTo(endTime) >= 0) {
       throw Exception('وقت نهاية المهمة يجب أن يكون بعد وقت البداية.');
     }
-    await _routingGateway.createEmployeeFieldMission(
-      missionDate: DateFormat('yyyy-MM-dd').format(date),
-      startTime: startTime,
-      endTime: endTime,
-      siteName: siteName.trim(),
-      reason: reason.trim(),
-      requiresReturnToOffice: requiresReturnToOffice,
-      requiresCheckout: requiresCheckout,
+    final managerIds = ManagerApprovalChain.orderedIds(
+      employee.managerIds,
+      fallbackId: employee.managerId,
+      teamLeaderId: employee.teamLeaderId,
     );
+    final managerNames = ManagerApprovalChain.orderedNames(
+      orderedIds: managerIds,
+      managerIds: employee.managerIds,
+      managerNames: employee.managerNames,
+      teamLeaderId: employee.teamLeaderId,
+      teamLeaderName: employee.teamLeaderName,
+      fallbackManagerId: employee.managerId,
+      fallbackManagerName: employee.managerName,
+    );
+    final usesHrFallback = ManagerApprovalChain.usesHrFallback(
+      isSuperAdmin: employee.role == EmployeeRole.superAdmin,
+      managerIds: managerIds,
+    );
+    if (managerIds.isEmpty && !usesHrFallback) {
+      throw Exception('يجب تعيين مدير قبل إرسال المأمورية.');
+    }
+    final ref = _db.collection('administrativeRequests').doc();
+    await ref.set({
+      'userId': employee.uid,
+      'employeeId': employee.employeeId,
+      'employeeName': employee.displayName,
+      'department': employee.department,
+      'category': AdministrativeRequestCategory.fieldMission,
+      'categoryLabel': AdministrativeRequestCategory.arabicLabel(
+        AdministrativeRequestCategory.fieldMission,
+      ),
+      'notes': reason.trim(),
+      'missionDate': DateFormat('yyyy-MM-dd').format(date),
+      'startTime': startTime,
+      'endTime': endTime,
+      'siteName': siteName.trim(),
+      'requiresReturnToOffice': requiresReturnToOffice,
+      'requiresCheckout': requiresCheckout,
+      'status': usesHrFallback ? 'pending_hr' : 'pending_manager',
+      'managerId': managerIds.isEmpty ? '' : managerIds.first,
+      'managerIds': managerIds,
+      'managerNames': managerNames,
+      'managerApprovalIndex': 0,
+      'managerApprovalTotal': managerIds.length,
+      'managerApprovalTrail': <Map<String, dynamic>>[],
+      'approvalHistory': [
+        _event(
+          stage: 'submitted',
+          status: 'completed',
+          actorId: employee.uid,
+          actorName: employee.displayName,
+        ),
+      ],
+      'submittedAt': FieldValue.serverTimestamp(),
+      'isRead': false,
+    });
+    try {
+      if (usesHrFallback) {
+        await RoleNotificationService.instance.notifyRole(
+          role: EmployeeRole.hrManager,
+          includeSuperAdmins: false,
+          type: 'administrative_request_submitted',
+          title: 'مهمة ميدانية جديدة',
+          body: '${employee.displayName} أرسل طلب مهمة ميدانية.',
+          data: {'administrativeRequestId': ref.id},
+        );
+      } else {
+        await _notify(
+          managerIds.first,
+          'مهمة ميدانية بانتظار موافقتك',
+          '${employee.displayName}: مهمة ميدانية في ${siteName.trim()}',
+          ref.id,
+        );
+      }
+    } catch (e) {
+      debugPrint('Failed to dispatch field mission notification: $e');
+    }
   }
 
   Stream<QuerySnapshot<Map<String, dynamic>>> watchMine(String userId) {
@@ -208,14 +277,18 @@ class AdministrativeRequestService {
           ),
         ]),
       });
-      await RoleNotificationService.instance.notifyRole(
-        role: EmployeeRole.hrAdmin,
-        includeSuperAdmins: false,
-        type: 'administrative_request_submitted',
-        title: 'مهمة ميدانية بانتظار اعتماد HR',
-        body: 'اعتمد CEO-100 مهمة ${data['employeeName']}.',
-        data: {'administrativeRequestId': requestId},
-      );
+      try {
+        await RoleNotificationService.instance.notifyRole(
+          role: EmployeeRole.hrAdmin,
+          includeSuperAdmins: false,
+          type: 'administrative_request_submitted',
+          title: 'مهمة ميدانية بانتظار اعتماد HR',
+          body: 'اعتمد CEO-100 مهمة ${data['employeeName']}.',
+          data: {'administrativeRequestId': requestId},
+        );
+      } catch (e) {
+        debugPrint('Failed to send CEO approval notification: $e');
+      }
       return;
     }
     if (status == 'pending_hr') {
@@ -343,30 +416,34 @@ class AdministrativeRequestService {
       if (ceoId != null) 'ceoId': ceoId,
       if (ceoName != null) 'ceoName': ceoName,
     });
-    if (next < ids.length) {
-      await _notify(
-        ids[next],
-        'طلب إداري بانتظار موافقتك',
-        '${data['employeeName']} حصل على موافقة سابقة.',
-        requestId,
-      );
-    } else if (nextStatus == 'pending_ceo') {
-      await RoleNotificationService.instance.createNotification(
-        recipientId: ceoId!,
-        type: 'field_mission_pending_ceo',
-        title: 'مهمة ميدانية بانتظار اعتماد CEO',
-        body: 'اكتملت موافقات المديرين على مهمة ${data['employeeName']}.',
-        data: {'administrativeRequestId': requestId},
-      );
-    } else {
-      await RoleNotificationService.instance.notifyRole(
-        role: EmployeeRole.hrAdmin,
-        includeSuperAdmins: false,
-        type: 'administrative_request_submitted',
-        title: 'طلب إداري بانتظار HR',
-        body: 'اكتملت موافقات المديرين على طلب ${data['employeeName']}.',
-        data: {'administrativeRequestId': requestId},
-      );
+    try {
+      if (next < ids.length) {
+        await _notify(
+          ids[next],
+          'طلب إداري بانتظار موافقتك',
+          '${data['employeeName']} حصل على موافقة سابقة.',
+          requestId,
+        );
+      } else if (nextStatus == 'pending_ceo') {
+        await RoleNotificationService.instance.createNotification(
+          recipientId: ceoId!,
+          type: 'field_mission_pending_ceo',
+          title: 'مهمة ميدانية بانتظار اعتماد CEO',
+          body: 'اكتملت موافقات المديرين على مهمة ${data['employeeName']}.',
+          data: {'administrativeRequestId': requestId},
+        );
+      } else {
+        await RoleNotificationService.instance.notifyRole(
+          role: EmployeeRole.hrAdmin,
+          includeSuperAdmins: false,
+          type: 'administrative_request_submitted',
+          title: 'طلب إداري بانتظار HR',
+          body: 'اكتملت موافقات المديرين على طلب ${data['employeeName']}.',
+          data: {'administrativeRequestId': requestId},
+        );
+      }
+    } catch (e) {
+      debugPrint('Failed to send manager chain notification: $e');
     }
   }
 
@@ -436,15 +513,19 @@ class AdministrativeRequestService {
     String body,
     String requestId,
   ) async {
-    await RoleNotificationService.instance.createNotification(
-      recipientId: userId,
-      type: 'administrative_request_update',
-      title: title,
-      body: body,
-      data: {
-        'administrativeRequestId': requestId,
-        'route': '/employee/requests',
-      },
-    );
+    try {
+      await RoleNotificationService.instance.createNotification(
+        recipientId: userId,
+        type: 'administrative_request_update',
+        title: title,
+        body: body,
+        data: {
+          'administrativeRequestId': requestId,
+          'route': '/employee/requests',
+        },
+      );
+    } catch (e) {
+      debugPrint('Failed to send administrative notification to user: $e');
+    }
   }
 }

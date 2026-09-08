@@ -334,7 +334,9 @@ class _NavigationWrapperState extends State<NavigationWrapper>
           .where(
             (item) =>
                 !item.path.startsWith('/employee/') ||
-                item.path == '/employee/profile',
+                item.path == '/employee/profile' ||
+                item.path == '/employee/dashboard' ||
+                item.path == '/employee/requests',
           )
           .toList();
       return _withNotificationOperations(
