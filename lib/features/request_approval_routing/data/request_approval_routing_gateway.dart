@@ -81,18 +81,27 @@ class RequestApprovalRoutingGateway {
     String path,
     Map<String, dynamic> body,
   ) async {
-    final token = await FirebaseAuth.instance.currentUser?.getIdToken();
-    if (token == null || token.isEmpty) {
-      throw StateError('انتهت الجلسة، سجل الدخول مرة أخرى.');
+    Future<http.Response> send(bool forceRefresh) async {
+      final token = await FirebaseAuth.instance.currentUser?.getIdToken(
+        forceRefresh,
+      );
+      if (token == null || token.isEmpty) {
+        throw StateError('انتهت الجلسة، سجل الدخول مرة أخرى.');
+      }
+      return _client.post(
+        Uri.parse('$_base$path'),
+        headers: {
+          'content-type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: jsonEncode(body),
+      );
     }
-    final response = await _client.post(
-      Uri.parse('$_base$path'),
-      headers: {
-        'content-type': 'application/json',
-        'Authorization': 'Bearer $token',
-      },
-      body: jsonEncode(body),
-    );
+
+    // An installed client can hold an expired Firebase token while the app is
+    // foregrounded. Refresh once before reporting a route failure.
+    var response = await send(false);
+    if (response.statusCode == 401) response = await send(true);
     final decoded =
         response.body.isEmpty ? <String, dynamic>{} : jsonDecode(response.body);
     final data =

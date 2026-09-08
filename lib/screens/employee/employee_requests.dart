@@ -3150,6 +3150,10 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
             dropdownColor: ZaWolfColors.surface01,
             items:
                 AdministrativeRequestCategory.values
+                    .where(
+                      (value) =>
+                          value != AdministrativeRequestCategory.fieldMission,
+                    )
                     .map(
                       (value) => DropdownMenuItem(
                         value: value,
@@ -3380,9 +3384,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
             contentPadding: EdgeInsets.zero,
             leading: const Icon(Icons.calendar_month_outlined),
             title: const Text('تاريخ المهمة'),
-            subtitle: Text(
-              DateFormat('yyyy/MM/dd').format(_fieldMissionDate),
-            ),
+            subtitle: Text(DateFormat('yyyy/MM/dd').format(_fieldMissionDate)),
             onTap: () async {
               final now = DateTime.now();
               final picked = await showDatePicker(
@@ -3401,9 +3403,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
               Expanded(
                 child: OutlinedButton.icon(
                   icon: const Icon(Icons.schedule),
-                  label: Text(
-                    'البداية: ${_fieldMissionStart.format(context)}',
-                  ),
+                  label: Text('البداية: ${_fieldMissionStart.format(context)}'),
                   onPressed: () async {
                     final picked = await showTimePicker(
                       context: context,
@@ -3438,8 +3438,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
             value: _fieldMissionRequiresReturn,
             title: const Text('العودة إلى المكتب بعد المهمة'),
             onChanged:
-                (value) =>
-                    setState(() => _fieldMissionRequiresReturn = value),
+                (value) => setState(() => _fieldMissionRequiresReturn = value),
           ),
           SwitchListTile.adaptive(
             contentPadding: EdgeInsets.zero,

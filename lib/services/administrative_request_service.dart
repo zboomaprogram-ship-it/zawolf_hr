@@ -126,83 +126,18 @@ class AdministrativeRequestService {
     if (startTime.compareTo(endTime) >= 0) {
       throw Exception('وقت نهاية المهمة يجب أن يكون بعد وقت البداية.');
     }
-    final managerIds = ManagerApprovalChain.orderedIds(
-      employee.managerIds,
-      fallbackId: employee.managerId,
-      teamLeaderId: employee.teamLeaderId,
+    // Field missions have a protected, server-owned manager → CEO → accounts
+    // route. A direct Firestore write is rejected for profiles whose cached
+    // manager chain is stale and can also bypass that route.
+    await _routingGateway.createEmployeeFieldMission(
+      missionDate: DateFormat('yyyy-MM-dd').format(date),
+      startTime: startTime,
+      endTime: endTime,
+      siteName: siteName.trim(),
+      reason: reason.trim(),
+      requiresReturnToOffice: requiresReturnToOffice,
+      requiresCheckout: requiresCheckout,
     );
-    final managerNames = ManagerApprovalChain.orderedNames(
-      orderedIds: managerIds,
-      managerIds: employee.managerIds,
-      managerNames: employee.managerNames,
-      teamLeaderId: employee.teamLeaderId,
-      teamLeaderName: employee.teamLeaderName,
-      fallbackManagerId: employee.managerId,
-      fallbackManagerName: employee.managerName,
-    );
-    final usesHrFallback = ManagerApprovalChain.usesHrFallback(
-      isSuperAdmin: employee.role == EmployeeRole.superAdmin,
-      managerIds: managerIds,
-    );
-    if (managerIds.isEmpty && !usesHrFallback) {
-      throw Exception('يجب تعيين مدير قبل إرسال المأمورية.');
-    }
-    final ref = _db.collection('administrativeRequests').doc();
-    await ref.set({
-      'userId': employee.uid,
-      'employeeId': employee.employeeId,
-      'employeeName': employee.displayName,
-      'department': employee.department,
-      'category': AdministrativeRequestCategory.fieldMission,
-      'categoryLabel': AdministrativeRequestCategory.arabicLabel(
-        AdministrativeRequestCategory.fieldMission,
-      ),
-      'notes': reason.trim(),
-      'missionDate': DateFormat('yyyy-MM-dd').format(date),
-      'startTime': startTime,
-      'endTime': endTime,
-      'siteName': siteName.trim(),
-      'requiresReturnToOffice': requiresReturnToOffice,
-      'requiresCheckout': requiresCheckout,
-      'status': usesHrFallback ? 'pending_hr' : 'pending_manager',
-      'managerId': managerIds.isEmpty ? '' : managerIds.first,
-      'managerIds': managerIds,
-      'managerNames': managerNames,
-      'managerApprovalIndex': 0,
-      'managerApprovalTotal': managerIds.length,
-      'managerApprovalTrail': <Map<String, dynamic>>[],
-      'approvalHistory': [
-        _event(
-          stage: 'submitted',
-          status: 'completed',
-          actorId: employee.uid,
-          actorName: employee.displayName,
-        ),
-      ],
-      'submittedAt': FieldValue.serverTimestamp(),
-      'isRead': false,
-    });
-    try {
-      if (usesHrFallback) {
-        await RoleNotificationService.instance.notifyRole(
-          role: EmployeeRole.hrManager,
-          includeSuperAdmins: false,
-          type: 'administrative_request_submitted',
-          title: 'مهمة ميدانية جديدة',
-          body: '${employee.displayName} أرسل طلب مهمة ميدانية.',
-          data: {'administrativeRequestId': ref.id},
-        );
-      } else {
-        await _notify(
-          managerIds.first,
-          'مهمة ميدانية بانتظار موافقتك',
-          '${employee.displayName}: مهمة ميدانية في ${siteName.trim()}',
-          ref.id,
-        );
-      }
-    } catch (e) {
-      debugPrint('Failed to dispatch field mission notification: $e');
-    }
   }
 
   Stream<QuerySnapshot<Map<String, dynamic>>> watchMine(String userId) {
