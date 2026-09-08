@@ -4,7 +4,14 @@ const {
   calculateAnnualQuota,
   entitlementPeriodStart,
   shouldRenewEntitlement,
+  isActiveUser,
 } = require('../daily-tasks');
+
+test('attendance processing treats a missing active flag as active', () => {
+  assert.equal(isActiveUser({}), true);
+  assert.equal(isActiveUser({ isActive: true }), true);
+  assert.equal(isActiveUser({ isActive: false }), false);
+});
 
 test('annual entitlement uses completed service and age boundaries', () => {
   const on = new Date(Date.UTC(2026, 8, 15));

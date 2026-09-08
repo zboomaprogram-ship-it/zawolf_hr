@@ -139,11 +139,13 @@ function deductionFor(nowMinutes, startMinutes, policy, salary, currency) {
 }
 
 async function writeHrNotification(db, title, body, data, type = 'salary_deduction_pending') {
-  const hrUsers = await db.collection('users').where('isActive', '==', true).get();
+  const hrUsers = await db.collection('users').get();
   const batch = db.batch();
   let count = 0;
   for (const userDoc of hrUsers.docs) {
-    const role = userDoc.data().role;
+    const user = userDoc.data();
+    if (user?.isActive === false) continue;
+    const role = user.role;
     if (role !== 'hr_admin' && role !== 'hr_manager' && role !== 'super_admin') continue;
     const notification = db.collection('notifications').doc(userDoc.id).collection('items').doc();
     batch.set(notification, {

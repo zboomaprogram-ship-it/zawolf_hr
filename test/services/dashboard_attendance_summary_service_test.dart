@@ -97,20 +97,23 @@ void main() {
     },
   );
 
-  test('discipline ignores unapproved or zero attendance deductions', () {
-    final summary = AttendancePeriodSummary([
-      _periodDay(
-        dateKey: '2026-08-16',
-        isLate: true,
-        deductionFraction: 0.25,
-        approvalStatus: 'pending_hr',
-      ),
-      _periodDay(dateKey: '2026-08-17'),
-    ]);
+  test(
+    'discipline reflects pending attendance deductions before payroll approval',
+    () {
+      final summary = AttendancePeriodSummary([
+        _periodDay(
+          dateKey: '2026-08-16',
+          isLate: true,
+          deductionFraction: 0.25,
+          approvalStatus: 'pending_hr',
+        ),
+        _periodDay(dateKey: '2026-08-17'),
+      ]);
 
-    expect(summary.lateDays, 1);
-    expect(summary.disciplinePercentage, 100);
-  });
+      expect(summary.lateDays, 1);
+      expect(summary.disciplinePercentage, 87.5);
+    },
+  );
 
   test('discipline reflects only HR-approved payroll deduction fractions', () {
     final summary = AttendancePeriodSummary([

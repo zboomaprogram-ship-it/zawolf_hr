@@ -41,6 +41,13 @@ function cairoDateStr(date) {
   return new Intl.DateTimeFormat('en-CA', options).format(date);
 }
 
+// Employee profiles created by older app versions can omit `isActive`. The
+// app and Firestore rules treat that as active, so background attendance work
+// must use the same rule. Only an explicit false value disables a profile.
+function isActiveUser(user) {
+  return user?.isActive !== false;
+}
+
 function addDays(date, days) {
   const copy = new Date(date);
   copy.setUTCDate(copy.getUTCDate() + days);
@@ -164,12 +171,13 @@ async function reconcileLeaveEntitlements(now) {
   if (company.exists) {
     Object.assign(policy, company.data().leavePolicy || {});
   }
-  const users = await db.collection('users').where('isActive', '==', true).get();
+  const users = await db.collection('users').get();
   let batch = db.batch();
   let operations = 0;
   let updated = 0;
   for (const userDoc of users.docs) {
     const user = userDoc.data();
+    if (!isActiveUser(user)) continue;
     const hiringTimestamp = user.joinDate || user.hiringDate;
     if (!hiringTimestamp) continue;
     const hiringDate = hiringTimestamp.toDate
@@ -319,29 +327,27 @@ async function runDailyTasks() {
   });
 
   // Fetch all active employees
-  const usersSnap = await db.collection('users').where('isActive', '==', true).get();
-  console.log(`Found ${usersSnap.size} active users.`);
+  const usersSnapshot = await db.collection('users').get();
+  const activeUsers = usersSnapshot.docs.filter((doc) => isActiveUser(doc.data()));
+  console.log(`Found ${activeUsers.length} active users.`);
 
   // Review notifications should go to HR/super admins, not the employee who was deducted.
   const reviewerIds = new Set();
   const hrSnap = await db
     .collection('users')
     .where('role', '==', 'hr_admin')
-    .where('isActive', '==', true)
     .get();
-  hrSnap.docs.forEach(doc => reviewerIds.add(doc.id));
+  hrSnap.docs.filter(doc => isActiveUser(doc.data())).forEach(doc => reviewerIds.add(doc.id));
   const hrManagerSnap = await db
     .collection('users')
     .where('role', '==', 'hr_manager')
-    .where('isActive', '==', true)
     .get();
-  hrManagerSnap.docs.forEach(doc => reviewerIds.add(doc.id));
+  hrManagerSnap.docs.filter(doc => isActiveUser(doc.data())).forEach(doc => reviewerIds.add(doc.id));
   const superSnap = await db
     .collection('users')
     .where('role', '==', 'super_admin')
-    .where('isActive', '==', true)
     .get();
-  superSnap.docs.forEach(doc => reviewerIds.add(doc.id));
+  superSnap.docs.filter(doc => isActiveUser(doc.data())).forEach(doc => reviewerIds.add(doc.id));
   console.log(`Found ${reviewerIds.size} HR/HR-manager/super-admin reviewers for deduction notifications.`);
 
   // Load attendance policy
@@ -452,7 +458,7 @@ async function runDailyTasks() {
     console.log(`Marked ${overdueTasks} overdue tasks.`);
   }
 
-  for (const userDoc of usersSnap.docs) {
+  for (const userDoc of activeUsers) {
     const user = userDoc.data();
     const userId = userDoc.id;
 
@@ -713,6 +719,7 @@ module.exports = {
   fullYearsBetween,
   calculateAnnualQuota,
   shouldRenewEntitlement,
+  isActiveUser,
 };
 
 if (require.main === module) {

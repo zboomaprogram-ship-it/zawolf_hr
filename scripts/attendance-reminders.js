@@ -121,10 +121,10 @@ async function loadActiveUsers(db) {
   if (Date.now() < activeUsersCache.expiresAt) {
     return activeUsersCache.users;
   }
-  const snapshot = await db.collection('users').where('isActive', '==', true).get();
+  const snapshot = await db.collection('users').get();
   activeUsersCache = {
     expiresAt: Date.now() + ACTIVE_USERS_CACHE_MS,
-    users: snapshot.docs,
+    users: snapshot.docs.filter((doc) => doc.data()?.isActive !== false),
   };
   return activeUsersCache.users;
 }

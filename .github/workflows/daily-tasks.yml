@@ -5,7 +5,12 @@ on:
     # Run at both possible UTC offsets, then let the script keep only 08:00
     # Cairo. This remains correct across Egypt daylight-saving changes.
     - cron: '0 5,6 * * *'
-  workflow_dispatch: # Allows manual trigger from UI
+  workflow_dispatch:
+    inputs:
+      process_date:
+        description: Completed Cairo workday to reconcile (YYYY-MM-DD)
+        required: false
+        type: string
 
 jobs:
   run-daily-tasks:
@@ -30,4 +35,5 @@ jobs:
           ONESIGNAL_APP_ID: ${{ secrets.ONESIGNAL_APP_ID }}
           ONESIGNAL_REST_API_KEY: ${{ secrets.ONESIGNAL_REST_API_KEY }}
           REQUIRE_CAIRO_HOUR: ${{ github.event_name == 'schedule' && '8' || '' }}
+          PROCESS_DATE: ${{ inputs.process_date || '' }}
         run: node daily-tasks.js

@@ -48,29 +48,30 @@ class AttendancePeriodSummary {
   int get lateDays => days.where((day) => day.isLate).length;
   int get absentDays => days.where((day) => day.isAbsent).length;
 
-  /// The portion of work days that HR has actually confirmed as a payroll
-  /// deduction. A raw `late` status is deliberately not enough here: it may
-  /// be inside the grace period, be a legacy flag, or still be waiting for HR
-  /// review. This keeps the employee dashboard score aligned with خصوماتي.
-  double get approvedDeductionDayFractions =>
-      days.fold<double>(0, (total, day) {
-        final attendance = day.attendance;
-        if (attendance == null ||
-            attendance.salaryDeductionApprovalStatus != 'approved' ||
-            attendance.salaryDeductionFraction <= 0) {
-          return total;
-        }
-        return total + attendance.salaryDeductionFraction;
-      });
+  /// A discipline score must expose an absence or lateness that HR is still
+  /// reviewing. It is not a payroll calculation: payroll continues to use
+  /// only `approved` deductions. Rejected and zero-value records have no
+  /// discipline impact.
+  double get disciplineImpactDayFractions => days.fold<double>(0, (total, day) {
+    final attendance = day.attendance;
+    if (attendance == null ||
+        !const {
+          'pending_hr',
+          'approved',
+        }.contains(attendance.salaryDeductionApprovalStatus) ||
+        attendance.salaryDeductionFraction <= 0) {
+      return total;
+    }
+    return total + attendance.salaryDeductionFraction;
+  });
 
   /// Employee dashboard discipline percentage for the selected period.
   ///
-  /// It is based on confirmed payroll deductions rather than a fixed penalty
-  /// per late/absence label, so a punctual employee with no approved
-  /// deduction remains at 100%.
+  /// Pending items are visible immediately, while payroll still waits for HR
+  /// approval before deducting salary.
   double get disciplinePercentage {
     if (expectedDays == 0) return 100;
-    final score = 100 * (1 - (approvedDeductionDayFractions / expectedDays));
+    final score = 100 * (1 - (disciplineImpactDayFractions / expectedDays));
     return score.clamp(0, 100).toDouble();
   }
 }
