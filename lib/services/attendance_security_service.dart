@@ -73,9 +73,10 @@ class AttendanceSecurityService {
     bool verified = false;
     try {
       verified = await _localAuth.authenticate(
-        localizedReason: hasBiometric
-            ? 'استخدم البصمة أو الوجه فقط لتسجيل الحضور أو الانصراف'
-            : 'هذا الجهاز لا يدعم بصمة/وجه. استخدم قفل الجهاز وسيتم إرسال الحركة لمراجعة HR.',
+        localizedReason:
+            hasBiometric
+                ? 'استخدم البصمة أو الوجه فقط لتسجيل الحضور أو الانصراف'
+                : 'هذا الجهاز لا يدعم بصمة/وجه. استخدم قفل الجهاز وسيتم إرسال الحركة لمراجعة HR.',
         biometricOnly: hasBiometric,
         persistAcrossBackgrounding: true,
       );
@@ -148,37 +149,55 @@ class AttendanceSecurityService {
       if (e is Exception && e.toString().contains('غير موثوق')) {
         rethrow;
       }
-      throw Exception(
-        'تعذر التحقق من أمان الجهاز. أعد المحاولة أو تواصل مع HR.',
-      );
+      // A plug-in availability error is not evidence that the phone is
+      // compromised. Blocking here locked out valid iOS accounts before the
+      // authenticated attendance gateway could validate the account and bind
+      // its stable installation ID. Confirmed jailbreak/emulator/Frida
+      // signals above still fail closed.
+      return;
     }
   }
 
   Future<({String id, String label, String? legacyId})> _readDevice() async {
-    if (Platform.isAndroid) {
-      final info = await _deviceInfo.androidInfo;
+    final installId = await _attendanceInstallDeviceId();
+    try {
+      if (Platform.isAndroid) {
+        final info = await _deviceInfo.androidInfo;
+        return (
+          id: 'android-install-$installId',
+          label: '${info.manufacturer} ${info.model}'.trim(),
+          legacyId: info.id.trim().isEmpty ? null : info.id.trim(),
+        );
+      }
+      if (Platform.isIOS) {
+        final info = await _deviceInfo.iosInfo;
+        return (
+          id: info.identifierForVendor ?? 'ios-install-$installId',
+          label: '${info.name} ${info.model}'.trim(),
+          legacyId: null,
+        );
+      }
+      final info = await _deviceInfo.deviceInfo;
       return (
-        id: 'android-install-${await _attendanceInstallDeviceId()}',
-        label: '${info.manufacturer} ${info.model}'.trim(),
-        legacyId: info.id.trim().isEmpty ? null : info.id.trim(),
+        id: '${Platform.operatingSystem}-install-$installId',
+        label: Platform.operatingSystem,
+        legacyId: info.data.toString().hashCode.toString(),
       );
-    }
-    if (Platform.isIOS) {
-      final info = await _deviceInfo.iosInfo;
+    } catch (_) {
+      // DeviceInfo is display metadata only. The generated installation ID is
+      // persistent and is the device identity enforced by the server.
+      final platform =
+          Platform.isIOS
+              ? 'ios'
+              : Platform.isAndroid
+              ? 'android'
+              : Platform.operatingSystem;
       return (
-        id:
-            info.identifierForVendor ??
-            'ios-install-${await _attendanceInstallDeviceId()}',
-        label: '${info.name} ${info.model}'.trim(),
+        id: '$platform-install-$installId',
+        label: 'Unknown $platform device',
         legacyId: null,
       );
     }
-    final info = await _deviceInfo.deviceInfo;
-    return (
-      id: '${Platform.operatingSystem}-install-${await _attendanceInstallDeviceId()}',
-      label: Platform.operatingSystem,
-      legacyId: info.data.toString().hashCode.toString(),
-    );
   }
 
   Future<String> _attendanceInstallDeviceId() async {

@@ -17,9 +17,8 @@ void main() {
   test(
     'attendance device binding retains a deterministic user/device record',
     () {
-      final source = File(
-        'lib/services/attendance_service.dart',
-      ).readAsStringSync();
+      final source =
+          File('lib/services/attendance_service.dart').readAsStringSync();
 
       expect(source, contains("collection('attendanceDevices')"));
       expect(source, contains("registeredAttendanceDeviceId"));
@@ -30,9 +29,8 @@ void main() {
   test(
     'web location picker keeps coordinates when Google Maps is unavailable',
     () {
-      final source = File(
-        'lib/screens/hr/location_mgmt.dart',
-      ).readAsStringSync();
+      final source =
+          File('lib/screens/hr/location_mgmt.dart').readAsStringSync();
 
       expect(source, contains('GoogleMapsLoader.ensureLoaded()'));
       expect(source, contains('onKeepCoordinates'));
@@ -43,12 +41,31 @@ void main() {
   test(
     'attendance identity continues to use a Cairo-day compatible date key',
     () {
-      final source = File(
-        'lib/services/attendance_service.dart',
-      ).readAsStringSync();
+      final source =
+          File('lib/services/attendance_service.dart').readAsStringSync();
 
       expect(source, contains("DateFormat('yyyy-MM-dd')"));
       expect(source, contains("'\${employee.uid}_\${day.dateKey}'"));
+    },
+  );
+
+  test(
+    'security plug-in outages do not lock out a valid attendance account',
+    () {
+      final source =
+          File(
+            'lib/services/attendance_security_service.dart',
+          ).readAsStringSync();
+
+      expect(source, contains('Confirmed jailbreak/emulator/Frida'));
+      expect(source, contains("id: '\$platform-install-\$installId'"));
+      final trustCheck = source.substring(
+        source.indexOf('Future<void> _assertTrustedDevice()'),
+        source.indexOf(
+          'Future<({String id, String label, String? legacyId})> _readDevice()',
+        ),
+      );
+      expect(trustCheck, isNot(contains('تعذر التحقق من أمان الجهاز.')));
     },
   );
 }
