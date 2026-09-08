@@ -901,7 +901,7 @@ class LeaveService {
         };
         isFinalApproval = nextStatus == 'approved';
       } else {
-        if (leave.managerId != reviewerId) {
+        if (leave.managerId != reviewerId && role != EmployeeRole.superAdmin) {
           throw Exception('هذا الطلب ينتظر قرار مدير آخر.');
         }
         final approvalPolicy = await _approvalPolicyService.getPolicy();
@@ -1097,7 +1097,9 @@ class LeaveService {
         throw Exception('طلبات مالك النظام يراجعها HR فقط.');
       }
     }
-    if (leave.status == 'pending_manager' && leave.managerId != reviewerId) {
+    if (leave.status == 'pending_manager' &&
+        leave.managerId != reviewerId &&
+        reviewerRole != EmployeeRole.superAdmin) {
       throw Exception('هذا الطلب ينتظر قرار مدير آخر.');
     }
 

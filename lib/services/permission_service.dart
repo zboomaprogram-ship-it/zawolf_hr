@@ -654,7 +654,8 @@ class PermissionService {
     if (!isCompanyCeo && !EmployeeRole.canActAsApprovalManager(reviewerRole)) {
       throw Exception('هذا الطلب ينتظر موافقة المدير.');
     }
-    if (perm.managerId != reviewerId) {
+    if (perm.managerId != reviewerId &&
+        reviewerRole != EmployeeRole.superAdmin) {
       throw Exception(
         'هذا الطلب ينتظر موافقة المدير المحدد في المرحلة الحالية.',
       );
@@ -796,7 +797,9 @@ class PermissionService {
         reviewerRole != EmployeeRole.hrManager) {
       throw Exception('طلبات مالك النظام يراجعها HR فقط.');
     }
-    if (!isHrStage && perm.managerId != reviewerId) {
+    if (!isHrStage &&
+        perm.managerId != reviewerId &&
+        reviewerRole != EmployeeRole.superAdmin) {
       throw Exception('هذا الطلب ينتظر قرار مدير آخر.');
     }
 

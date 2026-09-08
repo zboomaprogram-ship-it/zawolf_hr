@@ -2775,7 +2775,21 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
 
   bool _canActOnApproval(Map<String, dynamic> data, UserModel reviewer) {
     final status = '${data['status'] ?? ''}';
+    final isSystemOwner = reviewer.role == EmployeeRole.superAdmin;
     final isCompanyCeo = reviewer.canReviewCeoStage;
+
+    // The system owner can resolve any pending request except their own. This
+    // is an explicit audited override for unavailable managers, not a shortcut
+    // for ordinary manager accounts.
+    if (isSystemOwner &&
+        data['userId'] != reviewer.uid &&
+        const {
+          'pending_manager',
+          'pending_ceo',
+          'pending_hr',
+        }.contains(status)) {
+      return true;
+    }
 
     if (data['approvalRouteVersion'] == 1) {
       final currentApproverId = (data['currentApproverId'] ?? '').toString();

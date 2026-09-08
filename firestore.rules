@@ -165,7 +165,7 @@ service cloud.firestore {
         || (
           currentIndex >= 0
           && currentIndex < managerIds.size()
-          && managerIds[currentIndex] == uid()
+          && (managerIds[currentIndex] == uid() || isSuperAdmin())
           && (
             request.resource.data.status == 'rejected'
             || (
@@ -920,7 +920,7 @@ service cloud.firestore {
     }
     function leaveManagerReview() {
       return canActAsApprovalManager()
-        && isMyManager(resource.data.managerId)
+        && (isMyManager(resource.data.managerId) || isSuperAdmin())
         && sequentialManagerDecision()
         && resource.data.status == 'pending_manager'
         && request.resource.data.diff(resource.data).affectedKeys()
@@ -1009,7 +1009,7 @@ service cloud.firestore {
     }
     function permissionManagerReview() {
       return canActAsApprovalManager()
-        && isMyManager(resource.data.managerId)
+        && (isMyManager(resource.data.managerId) || isSuperAdmin())
         && sequentialManagerDecision()
         && resource.data.status == 'pending_manager'
         && request.resource.data.diff(resource.data).affectedKeys()

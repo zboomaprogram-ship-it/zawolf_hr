@@ -4,12 +4,12 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:zawolf_hr/models/employee_role.dart';
 
 void main() {
-  final screenSource = File(
-    'lib/screens/manager/requests_mgmt.dart',
-  ).readAsStringSync();
-  final administrativeServiceSource = File(
-    'lib/services/administrative_request_service.dart',
-  ).readAsStringSync();
+  final screenSource =
+      File('lib/screens/manager/requests_mgmt.dart').readAsStringSync();
+  final administrativeServiceSource =
+      File(
+        'lib/services/administrative_request_service.dart',
+      ).readAsStringSync();
   final firestoreRules = File('firestore.rules').readAsStringSync();
 
   test('manager request search covers deduction and request fields', () {
@@ -64,6 +64,25 @@ void main() {
         contains('استغرق تحميل الطلبات وقتاً أطول من المتوقع.'),
       );
       expect(screenSource, contains('إعادة المحاولة'));
+    },
+  );
+
+  test(
+    'system owner sees an audited override for another employee pending request',
+    () {
+      expect(
+        screenSource,
+        contains(
+          'final isSystemOwner = reviewer.role == EmployeeRole.superAdmin',
+        ),
+      );
+      expect(screenSource, contains("'pending_manager',"));
+      expect(screenSource, contains("'pending_ceo',"));
+      expect(screenSource, contains("'pending_hr',"));
+      expect(
+        firestoreRules,
+        contains('managerIds[currentIndex] == uid() || isSuperAdmin()'),
+      );
     },
   );
 

@@ -174,7 +174,10 @@ async function decideFieldMission({ db, admin, actor, requestId, body }) {
     if (!snap.exists) throw new Error('المأمورية غير موجودة.');
     const data = snap.data();
     const actorAliases = [actor.uid, actor.employeeId, actor.role === 'super_admin' ? 'CEO-100' : null].filter(Boolean);
-    const isCurrentApprover = actorAliases.includes(data.currentApproverId) || (actor.role === 'super_admin' && (data.currentApproverId === 'CEO-100' || data.currentApproverId === actor.uid));
+    // A system owner may resolve a blocked approval stage. The transition remains
+    // sequential and is recorded under the owner identity, so it cannot skip the
+    // audit trail or grant the override to ordinary managers.
+    const isCurrentApprover = actor.role === 'super_admin' || actorAliases.includes(data.currentApproverId);
     if (data.status !== 'pending_manager' || !isCurrentApprover) throw new Error('ليست هذه المرحلة بانتظار قرارك.');
     const index = Number(data.currentApprovalIndex || 0);
     const route = Array.isArray(data.approvalRoute) ? data.approvalRoute.map((item) => ({ ...item })) : [];
