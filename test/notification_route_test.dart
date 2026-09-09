@@ -72,6 +72,13 @@ void main() {
     );
   });
 
+  test('chat notification route opens its exact channel', () {
+    expect(
+      service.safeRoute('/conversations/channel/custom%3Ateam-1'),
+      '/conversations/channel/custom%3Ateam-1',
+    );
+  });
+
   test('manager approval notifications preserve the exact request target', () {
     expect(
       NotificationRoutePolicy.dataWithRoute('leave_pending_manager', {

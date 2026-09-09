@@ -33,7 +33,7 @@ async function sendMessage({ db, admin, actor, channelId, payload, legacy = fals
     tx.create(ref, message);
     C.change(tx, channel, 'message', { messageId }, now);
     C.audit(tx, db, channelId, input.operationId, actor, 'send', { messageId, revision: 1, message: C.messageDto(messageId, message) }, now);
-    C.notify(tx, db, (channel.data.memberUserIds || []).filter(id => id !== actor.uid), `send:${channelId}:${messageId}`, 'رسالة جديدة', input.body || 'مرفق جديد', { conversationId: channelId, messageId, route: `/conversations/${encodeURIComponent(channelId)}` }, now, admin);
+    C.notify(tx, db, (channel.data.memberUserIds || []).filter(id => id !== actor.uid), `send:${channelId}:${messageId}`, 'رسالة جديدة', input.body || 'مرفق جديد', { conversationId: channelId, messageId, route: `/conversations/channel/${encodeURIComponent(channelId)}` }, now, admin);
     return C.receipt(tx, op, { message: C.messageDto(messageId, message) }, now);
   });
 }
@@ -89,7 +89,7 @@ async function messageAction({ db, admin, actor, channelId, messageId, payload, 
     tx.set(target, next);
     C.change(tx, channel, 'message', { messageId: id }, now);
     C.audit(tx, db, channel.id, payload.operationId, actor, payload.action, { messageId: id, revision: next.revision, previous: C.messageDto(messageId, old), message: C.messageDto(id, next) }, now);
-    if (payload.action === 'forward') C.notify(tx, db, (channel.data.memberUserIds || []).filter(uid => uid !== actor.uid), `forward:${id}`, 'رسالة جديدة', next.body || 'مرفق جديد', { conversationId: channel.id, messageId: id, route: `/conversations/${encodeURIComponent(channel.id)}` }, now, admin);
+    if (payload.action === 'forward') C.notify(tx, db, (channel.data.memberUserIds || []).filter(uid => uid !== actor.uid), `forward:${id}`, 'رسالة جديدة', next.body || 'مرفق جديد', { conversationId: channel.id, messageId: id, route: `/conversations/channel/${encodeURIComponent(channel.id)}` }, now, admin);
     return C.receipt(tx, op, { message: C.messageDto(id, next) }, now);
   });
 }

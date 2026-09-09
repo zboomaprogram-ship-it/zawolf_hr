@@ -64,7 +64,7 @@ class NotificationService {
   bool _isSupportedNotificationPath(String path) {
     if (_supportedNotificationPaths.contains(path)) return true;
     return RegExp(
-      r'^/(?:employee/requests|manager/requests|hr/requests|requests)/operational/[A-Za-z0-9_.:-]{1,128}$',
+      r'^/(?:employee/requests|manager/requests|hr/requests|requests)/operational/[A-Za-z0-9_.:-]{1,128}$|^/conversations/channel/[A-Za-z0-9_.:%-]{1,180}$',
     ).hasMatch(path);
   }
 

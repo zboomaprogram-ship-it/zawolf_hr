@@ -20,6 +20,8 @@ test('concurrent send and lost-response replay create one message/change/audit/n
   assert.deepEqual(results[0],results[1]);
   const keys=Object.keys(db.dump());
   for (const prefix of ['conversations/room/messages/','conversations/room/changes/','conversationAudit/','notifications/bob/items/']) assert.equal(keys.filter(k=>k.startsWith(prefix)).length,1);
+  const notification = Object.entries(db.dump()).find(([key]) => key.startsWith('notifications/bob/items/'))?.[1];
+  assert.equal(notification.data.route, `/conversations/channel/${encodeURIComponent('room')}`);
   await assert.rejects(send(db,{operationId:'send',body:'changed'}),code('operation_conflict'));
 });
 test('attachment-only legacy send enters v2 change feed without synthetic text', async () => {
