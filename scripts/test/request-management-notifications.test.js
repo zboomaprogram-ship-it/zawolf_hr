@@ -93,3 +93,12 @@ test('request reminders wake push delivery when the Firestore listener is standb
     /schedulePushDispatch\('request_management_notification', 0\)/,
   );
 });
+
+test('chat push routes retain the exact protected channel destination', () => {
+  const { safeNotificationRoute } = require('../dispatch-notifications');
+  assert.equal(
+    safeNotificationRoute('/conversations/channel/company%3Ageneral'),
+    '/conversations/channel/company%3Ageneral',
+  );
+  assert.equal(safeNotificationRoute('/conversations/channel/../../admin'), null);
+});
