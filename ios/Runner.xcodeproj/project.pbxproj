@@ -17,6 +17,7 @@
 		97C147011CF9000F007C117D /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FF1CF9000F007C117D /* LaunchScreen.storyboard */; };
 		985752AA045C2F6AC02BAA3C /* GoogleService-Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = 94F881793E55EE92EE482561 /* GoogleService-Info.plist */; };
 		A10F00012F10000100000001 /* wolf_alarm.wav in Resources */ = {isa = PBXBuildFile; fileRef = A10F00022F10000100000001 /* wolf_alarm.wav */; };
+		A10F00032F10000100000001 /* notification_chime.wav in Resources */ = {isa = PBXBuildFile; fileRef = A10F00042F10000100000001 /* notification_chime.wav */; };
 		F1A000012026090100000001 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = F1A000022026090100000001 /* PrivacyInfo.xcprivacy */; };
 		A2CD7460A2182F9F497E71CB /* Pods_RunnerTests.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 45058E13C9681B9CEFD3791E /* Pods_RunnerTests.framework */; };
 /* End PBXBuildFile section */
@@ -67,6 +68,7 @@
 		97C147001CF9000F007C117D /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/LaunchScreen.storyboard; sourceTree = "<group>"; };
 		97C147021CF9000F007C117D /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		A10F00022F10000100000001 /* wolf_alarm.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = wolf_alarm.wav; sourceTree = "<group>"; };
+		A10F00042F10000100000001 /* notification_chime.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = notification_chime.wav; sourceTree = "<group>"; };
 		F1A000022026090100000001 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		CE10A8A333F859F9BF6923F3 /* Pods-RunnerTests.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-RunnerTests.release.xcconfig"; path = "Target Support Files/Pods-RunnerTests/Pods-RunnerTests.release.xcconfig"; sourceTree = "<group>"; };
 		F5C314E51F1D751462F7673B /* Pods-Runner.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Runner.debug.xcconfig"; path = "Target Support Files/Pods-Runner/Pods-Runner.debug.xcconfig"; sourceTree = "<group>"; };
@@ -169,6 +171,7 @@
 				74858FAE1ED2DC5600515810 /* AppDelegate.swift */,
 				74858FAD1ED2DC5600515810 /* Runner-Bridging-Header.h */,
 				A10F00022F10000100000001 /* wolf_alarm.wav */,
+				A10F00042F10000100000001 /* notification_chime.wav */,
 				F1A000022026090100000001 /* PrivacyInfo.xcprivacy */,
 			);
 			path = Runner;
@@ -276,6 +279,7 @@
 				97C146FC1CF9000F007C117D /* Main.storyboard in Resources */,
 				985752AA045C2F6AC02BAA3C /* GoogleService-Info.plist in Resources */,
 				A10F00012F10000100000001 /* wolf_alarm.wav in Resources */,
+				A10F00032F10000100000001 /* notification_chime.wav in Resources */,
 				F1A000012026090100000001 /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

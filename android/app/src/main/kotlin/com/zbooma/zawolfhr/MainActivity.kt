@@ -3,6 +3,9 @@ package com.zbooma.zawolfhr
 import android.content.Intent
 import android.app.PendingIntent
 import android.app.AlarmManager
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.media.AudioAttributes
 import android.content.Context
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -24,6 +27,28 @@ class MainActivity : FlutterFragmentActivity() {
     private val autoAttendanceChannel = "zawolf_hr/automatic_attendance"
     private val deviceSecurityChannel = "zawolf_hr/device_security"
     private lateinit var geofencingClient: GeofencingClient
+
+    override fun onCreate(savedInstanceState: android.os.Bundle?) {
+        super.onCreate(savedInstanceState)
+        createChatNotificationChannel()
+    }
+
+    private fun createChatNotificationChannel() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+        val sound = Uri.parse("android.resource://$packageName/${R.raw.notification_chime}")
+        val attributes = AudioAttributes.Builder()
+            .setUsage(AudioAttributes.USAGE_NOTIFICATION)
+            .build()
+        val channel = NotificationChannel(
+            "zawolf_chat_messages",
+            "رسائل ZaWolf HR",
+            NotificationManager.IMPORTANCE_HIGH,
+        ).apply {
+            description = "رسائل ومتابعات ZaWolf HR"
+            setSound(sound, attributes)
+        }
+        getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
+    }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)

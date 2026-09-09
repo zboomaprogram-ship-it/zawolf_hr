@@ -30,3 +30,12 @@ flutter test test/architecture_guard_test.dart test/firestore_query_guard_test.d
 flutter test
 (cd scripts && npm test)
 ```
+
+## Native notification-sound release check
+
+`notification_chime.wav` is a two-second derivative of the licensed ZaWolf
+alarm. It is packaged in both Android and iOS native resources and selected by
+the push payload. It requires an Android/iOS store update; do not attempt to
+ship it through a Dart or Shorebird patch. Verify one foreground, background,
+and terminated chat notification on each platform after the store build is
+installed. Older clients fall back to their platform default sound.

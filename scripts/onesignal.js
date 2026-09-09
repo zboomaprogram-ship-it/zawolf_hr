@@ -43,6 +43,10 @@ async function sendPushToUsers(userIds, title, body, data = {}, options = {}) {
       headings: { en: title, ar: title },
       contents: { en: body, ar: body },
       data,
+      // This resource is packaged only in the next native store update. Older
+      // clients safely fall back to their platform default notification sound.
+      ios_sound: 'notification_chime.wav',
+      android_channel_id: 'zawolf_chat_messages',
       ...(options.idempotencyKey
         ? { idempotency_key: stableIdempotencyKey(options.idempotencyKey) }
         : {}),
