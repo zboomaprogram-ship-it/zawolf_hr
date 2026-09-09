@@ -82,8 +82,11 @@ async function updateMembers({ db, admin, actor, channelId, payload, now = new D
     return C.receipt(tx, op, { channel: channelDto({ ...channel, data }, actor) }, now);
   });
 }
-function channelDto(channel, actor, unreadCount = 0) {
+function channelDto(channel, actor, unreadCount = 0, directName) {
   const permissions = C.access(actor, channel.data);
-  return { id: channel.id, name: channel.data.name || channel.data.purposeAr || channel.data.departmentName || '', kind: channel.data.kind || 'conversation', canPost: permissions.canPost, memberUserIds: channel.data.memberUserIds || [], participantUserIds: channel.data.participantUserIds || [], unreadCount, hrReadable: channel.data.kind === 'custom' && channel.data.approved === true, revision: channel.data.revision || 1, latestActivityAt: C.iso(channel.data.latestActivityAt || channel.data.updatedAt || channel.data.createdAt) || null, latestActivityId: channel.data.latestActivityId || channel.id };
+  const name = channel.data.kind === 'direct'
+    ? (directName || channel.data.name || '')
+    : (channel.data.name || channel.data.purposeAr || channel.data.departmentName || '');
+  return { id: channel.id, name, kind: channel.data.kind || 'conversation', canPost: permissions.canPost, memberUserIds: channel.data.memberUserIds || [], participantUserIds: channel.data.participantUserIds || [], unreadCount, hrReadable: channel.data.kind === 'custom' && channel.data.approved === true, revision: channel.data.revision || 1, latestActivityAt: C.iso(channel.data.latestActivityAt || channel.data.updatedAt || channel.data.createdAt) || null, latestActivityId: channel.data.latestActivityId || channel.id };
 }
 module.exports = { members, reviewState, createRequest, reviewRequest, updateMembers, channelDto };

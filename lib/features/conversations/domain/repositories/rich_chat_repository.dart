@@ -4,6 +4,7 @@ abstract interface class RichChatRepository {
   String get actorId;
   Future<ChatCapabilities> capabilities();
   Future<ChatPage<RichChannel>> channels({String? cursor, String? section});
+  Future<RichChannel> channel(String channelId);
   Stream<ChatPage<RichChannel>> watchInbox({String? section});
   Stream<RichChatSnapshot> watchChannel(String channelId);
   void setForeground(bool foreground);

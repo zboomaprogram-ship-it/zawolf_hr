@@ -45,6 +45,23 @@ async function boundedMap(items, concurrency, callback) {
   await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, worker));
   return results;
 }
+async function directDisplayNames(db, actor, channels) {
+  const otherIds = [...new Set(channels
+    .filter(channel => channel.data.kind === 'direct')
+    .map(channel => (channel.data.participantUserIds || []).find(id => id !== actor.uid))
+    .filter(Boolean))];
+  const docs = otherIds.length
+    ? await db.getAll(...otherIds.map(id => db.collection('users').doc(id)))
+    : [];
+  return new Map(docs.filter(doc => doc.exists).map(doc => {
+    const data = doc.data();
+    return [doc.id, data.displayName || data.name || data.employeeName || doc.id];
+  }));
+}
+function directName(channel, actor, names) {
+  const otherId = (channel.data.participantUserIds || []).find(id => id !== actor.uid);
+  return otherId ? names.get(otherId) : undefined;
+}
 async function channels({db, actor, params}) {
   await ensureGeneral(db);
   const section = params.get('section');
@@ -59,8 +76,9 @@ async function channels({db, actor, params}) {
     .filter(channel => !section || (section === 'direct' ? channel.data.kind === 'direct' : channel.data.kind !== 'direct'));
   // Firestore child queries used to run one-by-one, making each inbox open wait
   // for every channel. Eight workers retain a fixed read/concurrency budget.
+  const names = await directDisplayNames(db, actor, accessible);
   const result = await boundedMap(accessible, inboxUnreadConcurrency, async channel =>
-    channelDto(channel, actor, await unreadCount(channel, actor)));
+    channelDto(channel, actor, await unreadCount(channel, actor), directName(channel, actor, names)));
   result.sort((a, b) => `${b.latestActivityAt || ''}`.localeCompare(`${a.latestActivityAt || ''}`) || `${b.latestActivityId || b.id}`.localeCompare(`${a.latestActivityId || a.id}`));
   return { channels: result, nextCursor: docs.size === 50 ? docs.docs.at(-1).id : null };
 }
@@ -85,8 +103,13 @@ async function sectionChannels({db, actor, params, section}) {
   const allowed = docs.docs.map(doc => ({ id: doc.id, ref: doc.ref, data: doc.data() }))
     .filter(channel => C.access(actor, channel.data).canRead)
     .filter(channel => section === 'direct' ? channel.data.kind === 'direct' : channel.data.kind !== 'direct');
-  const result = await boundedMap(allowed, inboxUnreadConcurrency, async channel => channelDto(channel, actor, await unreadCount(channel, actor)));
+  const names = await directDisplayNames(db, actor, allowed);
+  const result = await boundedMap(allowed, inboxUnreadConcurrency, async channel => channelDto(channel, actor, await unreadCount(channel, actor), directName(channel, actor, names)));
   return { channels: result, nextCursor: docs.size === 50 ? activityCursor(docs.docs.at(-1)) : null };
+}
+async function channelSummary({db, actor, channel}) {
+  const names = await directDisplayNames(db, actor, [channel]);
+  return { channel: channelDto(channel, actor, 0, directName(channel, actor, names)) };
 }
 function userDto(doc, eligibilityReason) {
   const data = doc.data();
@@ -200,4 +223,4 @@ async function setNotificationPreference({db, actor, channelId, payload, now = n
     return C.receipt(tx, op, {enabled: payload.enabled}, now);
   });
 }
-module.exports = { channels, users, members, requests, history, changes, search, audit, notificationPreference, setNotificationPreference, contactDepartments, eligibleUsers, pageSize, presenceDto, boundedMap };
+module.exports = { channels, channelSummary, users, members, requests, history, changes, search, audit, notificationPreference, setNotificationPreference, contactDepartments, eligibleUsers, pageSize, presenceDto, boundedMap };

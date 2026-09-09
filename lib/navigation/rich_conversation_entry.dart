@@ -20,60 +20,133 @@ import 'conversation_entry.dart';
 
 /// Composition root alone chooses concrete storage, networking and platform adapters.
 class RichConversationEntry extends StatefulWidget {
-  const RichConversationEntry({super.key, this.department, this.channelId, this.channelName});
+  const RichConversationEntry({
+    super.key,
+    this.department,
+    this.channelId,
+    this.channelName,
+  });
   final String? department, channelId, channelName;
   @override
   State<RichConversationEntry> createState() => _RichConversationEntryState();
 }
+
 class _RichConversationEntryState extends State<RichConversationEntry> {
   final _client = http.Client();
   final _media = ChatMediaGatewayImpl();
   RichChatRepositoryImpl? _repository;
   StreamSubscription<User?>? _auth;
-  late Future<({ChatCapabilities capabilities, RichChannel? channel})> _bootstrap;
+  late Future<({ChatCapabilities capabilities, RichChannel? channel})>
+  _bootstrap;
   @override
   void initState() {
     super.initState();
     _bootstrap = _load();
     final actor = FirebaseAuth.instance.currentUser?.uid;
     _auth = FirebaseAuth.instance.authStateChanges().listen((user) {
-      if (user?.uid != actor) { _repository?.setForeground(false); _repository?.dispose(); if (mounted) setState(() { _repository = null; _bootstrap = _load(); }); }
+      if (user?.uid != actor) {
+        _repository?.setForeground(false);
+        _repository?.dispose();
+        if (mounted) {
+          setState(() {
+            _repository = null;
+            _bootstrap = _load();
+          });
+        }
+      }
     });
   }
-  Future<({ChatCapabilities capabilities, RichChannel? channel})> _load() async {
+
+  Future<({ChatCapabilities capabilities, RichChannel? channel})>
+  _load() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) throw StateError('session_expired');
-    Future<String?> token() => FirebaseAuth.instance.currentUser?.uid == uid ? FirebaseAuth.instance.currentUser!.getIdToken() : Future.value(null);
+    Future<String?> token() =>
+        FirebaseAuth.instance.currentUser?.uid == uid
+            ? FirebaseAuth.instance.currentUser!.getIdToken()
+            : Future.value(null);
     final base = Uri.parse('https://notification.zawolf.ai');
-    final transport = ChatTransport(client: _client, tokenProvider: token, baseUri: base);
+    final transport = ChatTransport(
+      client: _client,
+      tokenProvider: token,
+      baseUri: base,
+    );
     // Check capability before opening local database or loading the replacement.
     ChatCapabilities caps;
-    try { final result = await transport.json('GET', '/capabilities'); caps = ChatCapabilities(enabled: result['enabled'] == true, canReview: result['canReview'] == true); }
-    catch (_) { caps = const ChatCapabilities(enabled: false, canReview: false); }
+    try {
+      final result = await transport.json('GET', '/capabilities');
+      caps = ChatCapabilities(
+        enabled: result['enabled'] == true,
+        canReview: result['canReview'] == true,
+      );
+    } catch (_) {
+      caps = const ChatCapabilities(enabled: false, canReview: false);
+    }
     if (!caps.enabled) return (capabilities: caps, channel: null);
-    final repository = RichChatRepositoryImpl(actorId: uid, transport: transport, store: ChatStore(ChatDatabase(), uid));
+    final repository = RichChatRepositoryImpl(
+      actorId: uid,
+      transport: transport,
+      store: ChatStore(ChatDatabase(), uid),
+    );
     _repository = repository;
     RichChannel? channel;
     if (widget.department != null) {
-      final legacy = ConversationRepositoryImpl(operationClient: AuthenticatedOperationClient(client: _client, tokenProvider: token), operationsBaseUri: base);
-      final conversation = widget.department == 'manager-channel'
-          ? await legacy.openManagerChannel()
-          : await () async {
-              try {
-                final depts = await legacy.listAvailableDepartments();
-                final match = depts.where((d) => d.trim().toLowerCase() == widget.department!.trim().toLowerCase());
-                final target = match.isNotEmpty ? match.first : (depts.isNotEmpty ? depts.first : widget.department!);
-                return await legacy.openDepartmentChannel(target);
-              } catch (_) {
-                return await legacy.openDepartmentChannel(widget.department!);
-              }
-            }();
-      channel = RichChannel(id: conversation.id, name: widget.channelName ?? conversation.purposeAr, kind: widget.department == 'manager-channel' ? 'manager' : 'department', canPost: true);
+      final legacy = ConversationRepositoryImpl(
+        operationClient: AuthenticatedOperationClient(
+          client: _client,
+          tokenProvider: token,
+        ),
+        operationsBaseUri: base,
+      );
+      final conversation =
+          widget.department == 'manager-channel'
+              ? await legacy.openManagerChannel()
+              : await () async {
+                try {
+                  final depts = await legacy.listAvailableDepartments();
+                  final match = depts.where(
+                    (d) =>
+                        d.trim().toLowerCase() ==
+                        widget.department!.trim().toLowerCase(),
+                  );
+                  final target =
+                      match.isNotEmpty
+                          ? match.first
+                          : (depts.isNotEmpty
+                              ? depts.first
+                              : widget.department!);
+                  return await legacy.openDepartmentChannel(target);
+                } catch (_) {
+                  return await legacy.openDepartmentChannel(widget.department!);
+                }
+              }();
+      channel = RichChannel(
+        id: conversation.id,
+        name: widget.channelName ?? conversation.purposeAr,
+        kind: widget.department == 'manager-channel' ? 'manager' : 'department',
+        canPost: true,
+      );
     } else if (widget.channelId != null) {
-      final history = await repository.history(widget.channelId!);
-      channel = RichChannel(id: widget.channelId!, name: widget.channelName ?? 'المحادثة', canPost: history.canPost, hrReadable: true);
+      final authorized = await repository.channel(widget.channelId!);
+      channel = RichChannel(
+        id: authorized.id,
+        name: widget.channelName ?? authorized.name,
+        kind: authorized.kind,
+        canPost: authorized.canPost,
+        memberUserIds: authorized.memberUserIds,
+        participantUserIds: authorized.participantUserIds,
+        hrReadable: authorized.hrReadable,
+        revision: authorized.revision,
+        latestActivityAt: authorized.latestActivityAt,
+      );
     } else {
-      final legacy = ConversationRepositoryImpl(operationClient: AuthenticatedOperationClient(client: _client, tokenProvider: token), operationsBaseUri: base);
+      final legacy = ConversationRepositoryImpl(
+        operationClient: AuthenticatedOperationClient(
+          client: _client,
+          tokenProvider: token,
+        ),
+        operationsBaseUri: base,
+      );
       unawaited(() async {
         try {
           final depts = await legacy.listAvailableDepartments();
@@ -84,7 +157,9 @@ class _RichConversationEntryState extends State<RichConversationEntry> {
             await legacy.openManagerChannel();
           } else {
             for (final dept in depts) {
-              try { await legacy.openDepartmentChannel(dept); } catch (_) {}
+              try {
+                await legacy.openDepartmentChannel(dept);
+              } catch (_) {}
             }
           }
         } catch (_) {}
@@ -92,25 +167,80 @@ class _RichConversationEntryState extends State<RichConversationEntry> {
     }
     return (capabilities: caps, channel: channel);
   }
+
   Widget _page(RichChannel channel, bool canReview) => RichChatPage(
-    repository: _repository!, channel: channel, canReview: canReview,
-    attachmentBuilder: (_, attachment) => RichAttachmentView(key: ValueKey('${channel.id}:${attachment.resourceId}'), attachment: attachment, gateway: _media, download: () => _repository!.download(channel.id, attachment.resourceId)),
+    repository: _repository!,
+    channel: channel,
+    canReview: canReview,
+    attachmentBuilder:
+        (_, attachment) => RichAttachmentView(
+          key: ValueKey('${channel.id}:${attachment.resourceId}'),
+          attachment: attachment,
+          gateway: _media,
+          download:
+              () => _repository!.download(channel.id, attachment.resourceId),
+        ),
     pickAttachments: (_) => _media.pickFiles(),
-    voiceBuilder: _voiceRecordingEnabled
-        ? (_, attach) => VoiceNoteButton(recorder: ChatRecorderImpl(), gateway: _media, onAttach: attach)
-        : (_, __) => const SizedBox.shrink(),
+    voiceBuilder:
+        _voiceRecordingEnabled
+            ? (_, attach) => VoiceNoteButton(
+              recorder: ChatRecorderImpl(),
+              gateway: _media,
+              onAttach: attach,
+            )
+            : (_, __) => const SizedBox.shrink(),
     linkPreviewBuilder: (_, preview) => ChatLinkPreviewView(preview: preview),
   );
   static const bool _voiceRecordingEnabled = false;
   @override
-  void dispose() { _auth?.cancel(); _repository?.dispose(); _client.close(); super.dispose(); }
+  void dispose() {
+    _auth?.cancel();
+    _repository?.dispose();
+    _client.close();
+    super.dispose();
+  }
+
   @override
-  Widget build(BuildContext context) => FutureBuilder<({ChatCapabilities capabilities, RichChannel? channel})>(future: _bootstrap, builder: (_, snapshot) {
-    if (snapshot.hasError) return Scaffold(appBar: AppBar(title: const Text('المحادثات')), body: Center(child: FilledButton(onPressed: () => setState(() => _bootstrap = _load()), child: const Text('تعذر فتح المحادثات • إعادة المحاولة'))));
-    if (!snapshot.hasData) return const Scaffold(body: Center(child: CircularProgressIndicator()));
-    final data = snapshot.data!;
-    if (!data.capabilities.enabled) return ConversationEntry(channelId: widget.department ?? 'general', channelName: widget.channelName);
-    if (data.channel != null) return _page(data.channel!, data.capabilities.canReview);
-    return RichChatInboxPage(repository: _repository!, canReview: data.capabilities.canReview, openChannel: (context, channel) => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => _page(channel, data.capabilities.canReview))));
-  });
+  Widget build(BuildContext context) =>
+      FutureBuilder<({ChatCapabilities capabilities, RichChannel? channel})>(
+        future: _bootstrap,
+        builder: (_, snapshot) {
+          if (snapshot.hasError) {
+            return Scaffold(
+              appBar: AppBar(title: const Text('المحادثات')),
+              body: Center(
+                child: FilledButton(
+                  onPressed: () => setState(() => _bootstrap = _load()),
+                  child: const Text('تعذر فتح المحادثات • إعادة المحاولة'),
+                ),
+              ),
+            );
+          }
+          if (!snapshot.hasData) {
+            return const Scaffold(
+              body: Center(child: CircularProgressIndicator()),
+            );
+          }
+          final data = snapshot.data!;
+          if (!data.capabilities.enabled) {
+            return ConversationEntry(
+              channelId: widget.department ?? 'general',
+              channelName: widget.channelName,
+            );
+          }
+          if (data.channel != null) {
+            return _page(data.channel!, data.capabilities.canReview);
+          }
+          return RichChatInboxPage(
+            repository: _repository!,
+            canReview: data.capabilities.canReview,
+            openChannel:
+                (context, channel) => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => _page(channel, data.capabilities.canReview),
+                  ),
+                ),
+          );
+        },
+      );
 }

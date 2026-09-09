@@ -160,6 +160,20 @@ test('direct creation is deterministic, participant-only, and rejects forged tar
   assert.equal(channel.kind, 'direct');
   assert.deepEqual(channel.participantUserIds, ['alice', 'bob']);
   assert.equal((await C.channelFor(db, { uid: 'bob' }, channel.id)).canPost, true);
+  const aliceChannel = await C.channelFor(db, actor, channel.id);
+  const bobChannel = await C.channelFor(db, { uid: 'bob' }, channel.id);
+  assert.equal((await Q.channelSummary({ db, actor, channel: aliceChannel })).channel.name, 'بوب');
+  assert.equal((await Q.channelSummary({ db, actor: { uid: 'bob' }, channel: bobChannel })).channel.name, 'alice');
+  const { handleRichConversationRequest } = require('../conversations/router');
+  let response;
+  await handleRichConversationRequest({
+    req: { method: 'GET' }, res: {},
+    url: new URL(`https://example.org/conversations/v2/channels/${encodeURIComponent(channel.id)}`),
+    db, actor, enabled: true,
+    sendJson: (_res, status, data) => { response = { status, data }; },
+  });
+  assert.equal(response.status, 200);
+  assert.equal(response.data.channel.name, 'بوب');
   await assert.rejects(C.channelFor(db, { uid: 'hr', role: 'hr_manager' }, channel.id), code('access_denied'));
   await assert.rejects(createDirect({ ...request, payload: { operationId: 'direct-foreign', targetUserId: 'foreign' } }), code('access_denied'));
 });

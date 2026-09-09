@@ -84,6 +84,10 @@ class RichChatRepositoryImpl implements RichChatRepository {
     }
   }
 
+  @override
+  Future<RichChannel> channel(String channelId) async =>
+      decodeChannel(objectMap((await _get(_channel(channelId)))['channel']));
+
   bool _offlineError(ChatFailure e) =>
       e.code == 'connection_interrupted' || e.code.startsWith('http_5');
   @override

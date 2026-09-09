@@ -22,6 +22,9 @@ async function handleRichConversationRequest({ req, res, url, actor, db, admin, 
       const payload = await readJsonBody(req, 32 * 1024);
       if (parts.length === 1) result = await requests.createRequest({ ...context, payload });
       else if (parts.length === 3 && parts[2] === 'review') result = await requests.reviewRequest({ ...context, requestId: parts[1], payload });
+    } else if (parts[0] === 'channels' && parts.length === 2 && req.method === 'GET') {
+      const channel = await C.channelFor(db, actor, parts[1]);
+      result = await queries.channelSummary({ ...context, channel });
     } else if (parts[0] === 'channels' && parts.length >= 3) {
       const channelId = parts[1], channel = await C.channelFor(db, actor, channelId);
       const suffix = parts.slice(2);
