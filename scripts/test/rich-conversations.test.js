@@ -195,6 +195,32 @@ test('only bundled sticker identifiers can be sent and forwarded', async () => {
   assert.equal(sent.message.stickerId, 'party');
   await assert.rejects(sendMessage({db, actor, channelId:'room', payload:{operationId:'untrusted-sticker', body:'', stickerId:'https://example.org/sticker.gif'}, now}), code('validation_failed'));
 });
+test('conversation notification preferences are actor-owned and idempotent', async () => {
+  const db = seed();
+  const payload = {operationId:'mute-room', enabled:false};
+  const result = await Q.setNotificationPreference({db, actor, channelId:'room', payload, now});
+  assert.deepEqual(result, {enabled:false});
+  assert.deepEqual(await Q.setNotificationPreference({db, actor, channelId:'room', payload, now}), result);
+  const channel = await C.channelFor(db, actor, 'room');
+  assert.deepEqual(await Q.notificationPreference({db, actor, channel}), {enabled:false});
+  await assert.rejects(Q.setNotificationPreference({db, actor:{uid:'outsider'}, channelId:'room', payload:{operationId:'forged-mute',enabled:false}, now}), code('access_denied'));
+});
+test('a muted conversation suppresses only its device push', async () => {
+  const { shouldSkipMutedConversation } = require('../dispatch-notifications');
+  const db = {
+    collection: () => ({
+      doc: () => ({
+        get: async () => ({ exists: true, data: () => ({ enabled: false }) }),
+      }),
+    }),
+  };
+  const item = {
+    userId: 'bob',
+    data: { type: 'conversation', data: { conversationId: 'room' } },
+  };
+  assert.equal(await shouldSkipMutedConversation(db, item), true);
+  assert.equal(await shouldSkipMutedConversation(db, {...item, data: {type: 'leave'}}), false);
+});
 test('rich-chat capability requires explicit actor rollout and authenticated router',async()=>{
   const {isPhase007FlagEnabled}=require('../feature-flags');
   assert.equal(isPhase007FlagEnabled('conversations_rich_chat_v1',{},'alice'),false);

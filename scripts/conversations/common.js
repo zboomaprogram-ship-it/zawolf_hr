@@ -3,6 +3,7 @@ const crypto = require('node:crypto');
 const { safeId, canAccessDepartment, isConversationMember } = require('../conversation-operations');
 const { isHrOrAdmin } = require('../phase007-authorization');
 const hash = (...parts) => crypto.createHash('sha256').update(JSON.stringify(parts)).digest('hex');
+const notificationPreferenceId = (channelId, userId) => `chat_pref_${hash(channelId, userId).slice(0, 40)}`;
 const iso = value => value?.toDate?.().toISOString() || (value instanceof Date ? value.toISOString() : typeof value === 'string' ? value : '');
 function fail(code, status = 400) { throw Object.assign(new Error(code), { code, status }); }
 function access(actor, data) {
@@ -100,4 +101,4 @@ function notifyChannel(tx, db, channel, senderId, key, title, body, data, now, a
     createdAt: now,
   }, { merge: true });
 }
-module.exports = { hash, iso, fail, access, channelFor, attachmentDto, messageDto, hydrate, cursor, encodeCursor, change, audit, operation, replay, receipt, notify, notifyChannel, isHrOrAdmin };
+module.exports = { hash, notificationPreferenceId, iso, fail, access, channelFor, attachmentDto, messageDto, hydrate, cursor, encodeCursor, change, audit, operation, replay, receipt, notify, notifyChannel, isHrOrAdmin };

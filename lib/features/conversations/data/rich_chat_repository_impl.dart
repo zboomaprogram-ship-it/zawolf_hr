@@ -631,6 +631,23 @@ class RichChatRepositoryImpl implements RichChatRepository {
   }
 
   @override
+  Future<bool> channelNotificationsEnabled(String channelId) async =>
+      (await _get(
+        '${_channel(channelId)}/notification-preference',
+      ))['enabled'] !=
+      false;
+
+  @override
+  Future<void> setChannelNotificationsEnabled(
+    String channelId,
+    bool enabled,
+  ) async {
+    await _post('${_channel(channelId)}/notification-preference', {
+      'enabled': enabled,
+    });
+  }
+
+  @override
   Future<ChatPage<ChannelRequest>> requests({String? cursor}) async {
     final d = await _get('/requests${_query({'cursor': cursor})}');
     return ChatPage(

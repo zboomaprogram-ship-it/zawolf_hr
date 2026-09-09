@@ -11,6 +11,7 @@ class FakeRichChatRepository implements RichChatRepository {
   final seen = <String>[];
   String draft = '';
   bool failSend = false;
+  bool notificationsEnabled = true;
   int sends = 0;
   final channelMembers = const [
     ChatUser(id: 'me', name: 'أنا', department: 'Data Analytics'),
@@ -66,6 +67,17 @@ class FakeRichChatRepository implements RichChatRepository {
   @override
   Future<RichChatSnapshot> history(String channelId, {String? before}) async =>
       const RichChatSnapshot();
+  @override
+  Future<bool> channelNotificationsEnabled(String channelId) async =>
+      notificationsEnabled;
+  @override
+  Future<void> setChannelNotificationsEnabled(
+    String channelId,
+    bool enabled,
+  ) async {
+    notificationsEnabled = enabled;
+  }
+
   @override
   void setForeground(bool foreground) {}
   @override
@@ -241,6 +253,35 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
     await repository.snapshots.close();
   });
+
+  testWidgets(
+    'chat information can mute only this conversation notifications',
+    (tester) async {
+      final repository = FakeRichChatRepository();
+      await tester.pumpWidget(
+        MaterialApp(
+          home: RichChatPage(
+            repository: repository,
+            channel: const RichChannel(id: 'c', name: 'الجروب', canPost: true),
+            canReview: false,
+            attachmentBuilder: (_, attachment) => Text(attachment.fileName),
+            pickAttachments: (_) async => [],
+            voiceBuilder: (_, callback) => const SizedBox.shrink(),
+          ),
+        ),
+      );
+      repository.snapshots.add(const RichChatSnapshot(canPost: true));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('معلومات الجروب'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byType(SwitchListTile));
+      await tester.pumpAndSettle();
+      expect(repository.notificationsEnabled, isFalse);
+      expect(find.text('تم كتم تنبيهات هذه المحادثة.'), findsOneWidget);
+      await tester.pumpWidget(const SizedBox.shrink());
+      await repository.snapshots.close();
+    },
+  );
 
   testWidgets(
     'composer has attachment and voice options without camera video record button',

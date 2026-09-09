@@ -32,6 +32,7 @@ async function handleRichConversationRequest({ req, res, url, actor, db, admin, 
         if (handled) return;
       } else if (req.method === 'GET') {
         if (suffix.length === 1 && suffix[0] === 'members') result = await queries.members({ ...context, channel });
+        else if (suffix.length === 1 && suffix[0] === 'notification-preference') result = await queries.notificationPreference({ ...context, channel });
         else if (suffix.length === 1 && ['messages','changes','search'].includes(suffix[0])) result = await queries[suffix[0] === 'messages' ? 'history' : suffix[0]]({ ...context, channel });
         else if (suffix.length === 3 && suffix[0] === 'messages' && suffix[2] === 'audit') result = await queries.audit({ ...context, channel, messageId: suffix[1] });
       } else if (req.method === 'POST') {
@@ -40,6 +41,7 @@ async function handleRichConversationRequest({ req, res, url, actor, db, admin, 
         else if (suffix.length === 3 && suffix[0] === 'messages' && suffix[2] === 'actions') result = await messages.messageAction({ ...args, messageId: suffix[1] });
         else if (suffix.length === 1 && ['read','typing'].includes(suffix[0])) result = await messages.presence({ ...args, typing: suffix[0] === 'typing' });
         else if (suffix.length === 1 && suffix[0] === 'members') result = await requests.updateMembers(args);
+        else if (suffix.length === 1 && suffix[0] === 'notification-preference') result = await queries.setNotificationPreference(args);
         else if (suffix.length === 1 && suffix[0] === 'preview') { C.operation(db, actor, `preview:${channelId}`, payload); result = { preview: await fetchPreview(payload.url) }; }
       }
     }

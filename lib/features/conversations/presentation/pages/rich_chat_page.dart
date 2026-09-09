@@ -330,6 +330,22 @@ class _RichChatPageState extends State<RichChatPage>
                                     'يمكن للموارد البشرية والإدارة مراجعة وإدارة هذا الجروب.',
                                   ),
                                 ),
+                              SwitchListTile(
+                                secondary: const Icon(
+                                  Icons.notifications_outlined,
+                                ),
+                                title: const Text('إشعارات هذه المحادثة'),
+                                subtitle: Text(
+                                  state.notificationsEnabled
+                                      ? 'سيصلك تنبيه للرسائل الجديدة.'
+                                      : 'تم كتم تنبيهات هذه المحادثة.',
+                                ),
+                                value: state.notificationsEnabled,
+                                onChanged:
+                                    context
+                                        .read<ChatInfoCubit>()
+                                        .setNotificationsEnabled,
+                              ),
                             ],
                           ),
                         ),

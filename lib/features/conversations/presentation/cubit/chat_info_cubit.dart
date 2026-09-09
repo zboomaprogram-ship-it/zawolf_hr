@@ -9,12 +9,14 @@ class ChatInfoState {
     this.members = const [],
     this.attachments = const [],
     this.memberCount = 0,
+    this.notificationsEnabled = true,
     this.error,
   });
   final bool loading;
   final List<ChatUser> members;
   final List<RichAttachment> attachments;
   final int memberCount;
+  final bool notificationsEnabled;
   final String? error;
 }
 
@@ -34,10 +36,12 @@ class ChatInfoCubit extends Cubit<ChatInfoState> {
       final result = await Future.wait([
         _repository.members(_channelId),
         _repository.history(_channelId),
+        _repository.channelNotificationsEnabled(_channelId),
       ]);
       final members = result[0] as ChatPage<ChatUser>;
       _allMembers = members.items;
       final history = result[1] as RichChatSnapshot;
+      final notificationsEnabled = result[2] as bool;
       final attachments =
           <String, RichAttachment>{
             for (final message in history.messages)
@@ -51,6 +55,7 @@ class ChatInfoCubit extends Cubit<ChatInfoState> {
             members: members.items,
             attachments: attachments,
             memberCount: members.items.length,
+            notificationsEnabled: notificationsEnabled,
           ),
         );
       }
@@ -80,7 +85,37 @@ class ChatInfoCubit extends Cubit<ChatInfoState> {
         members: visible,
         attachments: state.attachments,
         memberCount: _allMembers.length,
+        notificationsEnabled: state.notificationsEnabled,
       ),
     );
+  }
+
+  Future<void> setNotificationsEnabled(bool enabled) async {
+    final prior = state;
+    emit(
+      ChatInfoState(
+        loading: false,
+        members: prior.members,
+        attachments: prior.attachments,
+        memberCount: prior.memberCount,
+        notificationsEnabled: enabled,
+      ),
+    );
+    try {
+      await _repository.setChannelNotificationsEnabled(_channelId, enabled);
+    } catch (error) {
+      if (!isClosed) {
+        emit(
+          ChatInfoState(
+            loading: false,
+            members: prior.members,
+            attachments: prior.attachments,
+            memberCount: prior.memberCount,
+            notificationsEnabled: prior.notificationsEnabled,
+            error: error.toString(),
+          ),
+        );
+      }
+    }
   }
 }

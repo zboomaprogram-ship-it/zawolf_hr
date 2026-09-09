@@ -53,6 +53,8 @@ abstract interface class RichChatRepository {
   });
   Future<RichChannel> startDirect(String targetUserId, {String? operationId});
   Future<ChatPage<ChatUser>> members(String channelId);
+  Future<bool> channelNotificationsEnabled(String channelId);
+  Future<void> setChannelNotificationsEnabled(String channelId, bool enabled);
   Future<ChatPage<ChannelRequest>> requests({String? cursor});
   Future<ChannelRequest> createRequest({
     required String name,

@@ -8,6 +8,7 @@ const {
 } = require('./firebase-service-account');
 const { loadCheckoutPolicy } = require('./checkout-policy');
 const { requestStageNotification } = require('./company-os/notifications');
+const { notificationPreferenceId } = require('./conversations/common');
 installFirestoreCompatibility(admin);
 
 function dispatchConfig() {
@@ -369,11 +370,33 @@ async function shouldSkipAttendanceReminder(db, item, checkoutPolicy) {
   return attendanceCompletesReminder(attendance, action);
 }
 
+async function shouldSkipMutedConversation(db, item) {
+  if (item.data?.type !== 'conversation') return false;
+  const channelId = String(item.data?.data?.conversationId || '').trim();
+  if (!channelId) return false;
+  const preference = await db.collection('conversationNotificationPreferences')
+    .doc(notificationPreferenceId(channelId, item.userId)).get();
+  return preference.exists && preference.data()?.enabled === false;
+}
+
 async function markSkipped(db, item, reason) {
   await item.ref.update({
     pushSent: true,
     isRead: true,
     pushDeliveryStatus: 'skipped',
+    pushSkippedReason: reason,
+    pushFinishedAt: admin.firestore.FieldValue.serverTimestamp(),
+    pushClaimUntil: admin.firestore.FieldValue.delete(),
+  });
+}
+
+// Muting a conversation only suppresses the device alert. Keep the in-app
+// notification unread so the notification centre remains a reliable record of
+// messages received while a chat was muted.
+async function markPushSuppressed(db, item, reason) {
+  await item.ref.update({
+    pushSent: true,
+    pushDeliveryStatus: 'suppressed',
     pushSkippedReason: reason,
     pushFinishedAt: admin.firestore.FieldValue.serverTimestamp(),
     pushClaimUntil: admin.firestore.FieldValue.delete(),
@@ -621,6 +644,10 @@ async function dispatchNotifications() {
         );
         continue;
       }
+      if (await shouldSkipMutedConversation(db, item)) {
+        await markPushSuppressed(db, item, 'conversation_muted');
+        continue;
+      }
       const result = await sendPushToUsers(
         [item.userId],
         title,
@@ -675,6 +702,8 @@ module.exports = {
   reminderDate,
   attendanceCompletesReminder,
   shouldSkipAttendanceReminder,
+  shouldSkipMutedConversation,
+  markPushSuppressed,
   watchPendingNotifications,
   watchPendingConversationOutboxes,
   companyOsOutboxRecipients,

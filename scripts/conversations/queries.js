@@ -180,4 +180,24 @@ async function audit({db, actor, channel, messageId}) {
   const docs = await db.collection('conversationAudit').where('conversationId', '==', channel.id).where('messageId', '==', messageId).orderBy('createdAt', 'desc').limit(100).get();
   return { revisions: docs.docs.map(d => ({ ...d.data(), createdAt: C.iso(d.data().createdAt) })) };
 }
-module.exports = { channels, users, members, requests, history, changes, search, audit, contactDepartments, eligibleUsers, pageSize, presenceDto, boundedMap };
+async function notificationPreference({db, actor, channel}) {
+  const doc = await db.collection('conversationNotificationPreferences')
+    .doc(C.notificationPreferenceId(channel.id, actor.uid)).get();
+  return { enabled: !doc.exists || doc.data().enabled !== false };
+}
+async function setNotificationPreference({db, actor, channelId, payload, now = new Date()}) {
+  if (typeof payload.enabled !== 'boolean') C.fail('validation_failed');
+  const op = C.operation(db, actor, `notification-preference:${channelId}`, payload);
+  return db.runTransaction(async tx => {
+    const channel = await C.channelFor(db, actor, channelId, tx);
+    const prior = C.replay(await tx.get(op.ref), op);
+    if (prior) return prior;
+    tx.set(db.collection('conversationNotificationPreferences')
+      .doc(C.notificationPreferenceId(channel.id, actor.uid)), {
+        channelId: channel.id, userId: actor.uid, enabled: payload.enabled, updatedAt: now,
+      });
+    C.audit(tx, db, channel.id, payload.operationId, actor, 'notification_preference', {enabled: payload.enabled}, now);
+    return C.receipt(tx, op, {enabled: payload.enabled}, now);
+  });
+}
+module.exports = { channels, users, members, requests, history, changes, search, audit, notificationPreference, setNotificationPreference, contactDepartments, eligibleUsers, pageSize, presenceDto, boundedMap };
