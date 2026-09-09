@@ -302,8 +302,8 @@ class _RichChatPageState extends State<RichChatPage>
                           direct
                               ? 'محادثة خاصة'
                               : widget.channel.kind == 'department'
-                              ? 'جميع موظفي القسم · ${members.length} عضو'
-                              : '${members.length} عضو',
+                              ? 'جميع موظفي القسم · ${state.memberCount} عضو'
+                              : '${state.memberCount} عضو',
                           textAlign: TextAlign.center,
                           style: Theme.of(context).textTheme.bodyMedium,
                         ),
@@ -362,6 +362,17 @@ class _RichChatPageState extends State<RichChatPage>
                           style: Theme.of(context).textTheme.titleMedium,
                         ),
                         const SizedBox(height: 8),
+                        if (!direct)
+                          TextField(
+                            onChanged:
+                                context.read<ChatInfoCubit>().searchMembers,
+                            decoration: const InputDecoration(
+                              prefixIcon: Icon(Icons.search),
+                              hintText: 'ابحث في الأعضاء',
+                              border: OutlineInputBorder(),
+                            ),
+                          ),
+                        if (!direct) const SizedBox(height: 8),
                         if (members.isEmpty)
                           const ListTile(
                             title: Text('لا توجد أسماء أعضاء متاحة حالياً.'),

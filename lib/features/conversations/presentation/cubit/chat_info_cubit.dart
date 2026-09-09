@@ -8,11 +8,13 @@ class ChatInfoState {
     this.loading = true,
     this.members = const [],
     this.attachments = const [],
+    this.memberCount = 0,
     this.error,
   });
   final bool loading;
   final List<ChatUser> members;
   final List<RichAttachment> attachments;
+  final int memberCount;
   final String? error;
 }
 
@@ -24,6 +26,7 @@ class ChatInfoCubit extends Cubit<ChatInfoState> {
 
   final RichChatRepository _repository;
   final String _channelId;
+  List<ChatUser> _allMembers = const [];
 
   Future<void> load() async {
     emit(const ChatInfoState());
@@ -33,6 +36,7 @@ class ChatInfoCubit extends Cubit<ChatInfoState> {
         _repository.history(_channelId),
       ]);
       final members = result[0] as ChatPage<ChatUser>;
+      _allMembers = members.items;
       final history = result[1] as RichChatSnapshot;
       final attachments =
           <String, RichAttachment>{
@@ -46,6 +50,7 @@ class ChatInfoCubit extends Cubit<ChatInfoState> {
             loading: false,
             members: members.items,
             attachments: attachments,
+            memberCount: members.items.length,
           ),
         );
       }
@@ -54,5 +59,28 @@ class ChatInfoCubit extends Cubit<ChatInfoState> {
         emit(ChatInfoState(loading: false, error: error.toString()));
       }
     }
+  }
+
+  void searchMembers(String query) {
+    if (isClosed) return;
+    final normalized = query.trim().toLowerCase();
+    final visible =
+        normalized.isEmpty
+            ? _allMembers
+            : _allMembers
+                .where(
+                  (member) => '${member.name} ${member.department}'
+                      .toLowerCase()
+                      .contains(normalized),
+                )
+                .toList();
+    emit(
+      ChatInfoState(
+        loading: false,
+        members: visible,
+        attachments: state.attachments,
+        memberCount: _allMembers.length,
+      ),
+    );
   }
 }
