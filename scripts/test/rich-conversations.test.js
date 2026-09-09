@@ -120,7 +120,7 @@ test('inbox unread aggregate excludes own messages and respects equal-time read 
   });
   await presence({db,actor,channelId:'room',payload:{operationId:'read-first',messageId:'a'},now});
   const inbox=await Q.channels({db,actor,params:new URLSearchParams()});
-  assert.equal(inbox.channels[0].unreadCount,1);
+  assert.equal(inbox.channels.find(channel => channel.id === 'room').unreadCount,1);
   assert.ok(db.reads.filter(r=>typeof r==='object').every(r=>r.limit<=100));
 });
 test('authorized channel members return names without exposing unrelated users', async()=>{
@@ -172,7 +172,13 @@ test('section inboxes do not mix direct and groups and newest activity is first'
   const direct = await Q.channels({ db, actor, params: new URLSearchParams('section=direct') });
   const groups = await Q.channels({ db, actor, params: new URLSearchParams('section=group') });
   assert.deepEqual(direct.channels.map(c => c.id), ['direct:a']);
-  assert.deepEqual(groups.channels.map(c => c.id), ['new', 'room', 'old']);
+  assert.deepEqual(groups.channels.map(c => c.id), ['company:general', 'new', 'room', 'old']);
+});
+test('company group is created once and permits every active employee', async () => {
+  const db = seed({'users/charlie': { isActive: true }});
+  await Promise.all([Q.channels({db, actor, params: new URLSearchParams('section=group')}), Q.channels({db, actor: {uid:'charlie'}, params: new URLSearchParams('section=group')})]);
+  assert.equal(Object.keys(db.dump()).filter(key => key === 'conversations/company:general').length, 1);
+  assert.equal((await C.channelFor(db, {uid:'charlie'}, 'company:general')).canPost, true);
 });
 test('rich-chat capability requires explicit actor rollout and authenticated router',async()=>{
   const {isPhase007FlagEnabled}=require('../feature-flags');

@@ -2,6 +2,7 @@
 const { safeId } = require('../conversation-operations');
 const C = require('./common');
 const P = require('./direct-policy');
+const { ensureGeneral } = require('./company');
 const { channelDto } = require('./requests');
 const pageSize = (value, max) => Math.min(max, Math.max(1, Number.parseInt(value, 10) || max));
 const inboxUnreadConcurrency = 8;
@@ -45,6 +46,7 @@ async function boundedMap(items, concurrency, callback) {
   return results;
 }
 async function channels({db, actor, params}) {
+  await ensureGeneral(db);
   const section = params.get('section');
   if (section && !['direct', 'group'].includes(section)) C.fail('validation_failed');
   if (section) return sectionChannels({ db, actor, params, section });
@@ -117,6 +119,8 @@ async function members({db, channel}) {
     docs = department
       ? (await db.collection('users').where('department', '==', department).limit(100).get()).docs
       : [];
+  } else if (data.kind === 'company') {
+    docs = (await db.collection('users').where('isActive', '==', true).limit(100).get()).docs;
   } else {
     const ids = [...new Set(Array.isArray(data.memberUserIds) ? data.memberUserIds : [])].slice(0, 100);
     docs = ids.length ? await db.getAll(...ids.map(id => db.collection('users').doc(id))) : [];

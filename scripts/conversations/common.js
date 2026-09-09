@@ -9,6 +9,7 @@ function access(actor, data) {
   if (!actor?.uid || actor.active === false || !data || data.state === 'closed') return { canRead: false, canPost: false };
   const deptName = data.departmentName || data.department || data.departmentKey;
   const direct = data.kind === 'direct';
+  if (data.kind === 'company') return { canRead: true, canPost: true };
   const participantIds = Array.isArray(data.participantUserIds) ? data.participantUserIds : data.memberUserIds;
   const member = direct
     ? participantIds.length === 2 && participantIds.includes(actor.uid)
