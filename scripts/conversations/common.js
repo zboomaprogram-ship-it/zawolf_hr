@@ -34,7 +34,7 @@ function attachmentDto(id, data) {
   return dto;
 }
 function messageDto(id, data) {
-  return { id, conversationId: data.conversationId, senderUserId: data.senderUserId || '', senderDisplayName: data.senderDisplayName || '', body: data.state === 'deleted' ? '' : data.body || '', sentAt: iso(data.sentAt), state: data.state || 'sent', attachmentResourceIds: data.state === 'deleted' ? [] : data.attachmentResourceIds || [], attachments: data.state === 'deleted' ? [] : data.attachments || [], replyToMessageId: data.replyToMessageId || null, forwarded: data.forwarded || false, revision: data.revision || 1, editedAt: iso(data.editedAt) || null, deletedAt: iso(data.deletedAt) || null, reactions: data.state === 'deleted' ? {} : data.reactions || {} };
+  return { id, conversationId: data.conversationId, senderUserId: data.senderUserId || '', senderDisplayName: data.senderDisplayName || '', body: data.state === 'deleted' ? '' : data.body || '', stickerId: data.state === 'deleted' ? null : data.stickerId || null, sentAt: iso(data.sentAt), state: data.state || 'sent', attachmentResourceIds: data.state === 'deleted' ? [] : data.attachmentResourceIds || [], attachments: data.state === 'deleted' ? [] : data.attachments || [], replyToMessageId: data.replyToMessageId || null, forwarded: data.forwarded || false, revision: data.revision || 1, editedAt: iso(data.editedAt) || null, deletedAt: iso(data.deletedAt) || null, reactions: data.state === 'deleted' ? {} : data.reactions || {} };
 }
 async function hydrate(db, messages) {
   const missing = [...new Set(messages.flatMap(m => m.attachmentResourceIds.filter(id => !m.attachments.some(a => a.resourceId === id))))];
@@ -78,4 +78,26 @@ function notify(tx, db, ids, key, title, body, data, now, admin) {
     if (admin) tx.set(db.collection('users').doc(id), { unreadNotifications: admin.firestore.FieldValue.increment(1) }, { merge: true });
   }
 }
-module.exports = { hash, iso, fail, access, channelFor, attachmentDto, messageDto, hydrate, cursor, encodeCursor, change, audit, operation, replay, receipt, notify, isHrOrAdmin };
+// Company conversations deliberately do not duplicate every employee id onto
+// the channel document. Fan-out is therefore deferred to the notification
+// runtime, which pages active users and retains a durable cursor/retry state.
+function notifyChannel(tx, db, channel, senderId, key, title, body, data, now, admin) {
+  if (channel.data.kind !== 'company') {
+    notify(tx, db, (channel.data.memberUserIds || []).filter(id => id !== senderId), key, title, body, data, now, admin);
+    return;
+  }
+  const id = `chat_${hash(key).slice(0, 40)}`;
+  tx.set(db.collection('conversationNotificationOutbox').doc(id), {
+    id,
+    type: 'conversation',
+    conversationId: channel.id,
+    senderUserId: senderId,
+    title,
+    body,
+    data,
+    dispatchStatus: 'pending',
+    cursor: null,
+    createdAt: now,
+  }, { merge: true });
+}
+module.exports = { hash, iso, fail, access, channelFor, attachmentDto, messageDto, hydrate, cursor, encodeCursor, change, audit, operation, replay, receipt, notify, notifyChannel, isHrOrAdmin };

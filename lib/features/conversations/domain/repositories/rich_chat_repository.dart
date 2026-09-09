@@ -13,6 +13,7 @@ abstract interface class RichChatRepository {
     required String body,
     List<ChatDraftFile> files = const [],
     String? replyToMessageId,
+    String? stickerId,
   });
   Future<void> retry(String channelId, String operationId);
   Future<List<RichMessage>> pending(String channelId);

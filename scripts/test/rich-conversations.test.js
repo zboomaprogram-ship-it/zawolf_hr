@@ -180,6 +180,21 @@ test('company group is created once and permits every active employee', async ()
   assert.equal(Object.keys(db.dump()).filter(key => key === 'conversations/company:general').length, 1);
   assert.equal((await C.channelFor(db, {uid:'charlie'}, 'company:general')).canPost, true);
 });
+test('company messages queue a durable fan-out instead of relying on an open client', async () => {
+  const db = seed({'users/charlie': { isActive: true }});
+  await Q.channels({db, actor, params: new URLSearchParams('section=group')});
+  await sendMessage({db, actor, channelId:'company:general', payload:{operationId:'company-message',body:'إعلان'}, now});
+  const outboxes = Object.entries(db.dump()).filter(([key]) => key.startsWith('conversationNotificationOutbox/'));
+  assert.equal(outboxes.length, 1);
+  assert.equal(outboxes[0][1].dispatchStatus, 'pending');
+  assert.equal(Object.keys(db.dump()).some(key => key.startsWith('notifications/bob/items/')), false);
+});
+test('only bundled sticker identifiers can be sent and forwarded', async () => {
+  const db = seed();
+  const sent = await sendMessage({db, actor, channelId:'room', payload:{operationId:'sticker', body:'', stickerId:'party'}, now});
+  assert.equal(sent.message.stickerId, 'party');
+  await assert.rejects(sendMessage({db, actor, channelId:'room', payload:{operationId:'untrusted-sticker', body:'', stickerId:'https://example.org/sticker.gif'}, now}), code('validation_failed'));
+});
 test('rich-chat capability requires explicit actor rollout and authenticated router',async()=>{
   const {isPhase007FlagEnabled}=require('../feature-flags');
   assert.equal(isPhase007FlagEnabled('conversations_rich_chat_v1',{},'alice'),false);

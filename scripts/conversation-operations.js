@@ -7,6 +7,7 @@ const MANAGEMENT_ROLES = new Set([
 const CROSS_DEPARTMENT_ROLES = new Set([
   'hr', 'hr_admin', 'hr_manager', 'admin', 'administrator', 'owner', 'super_admin',
 ]);
+const STICKER_IDS = new Set(['wave', 'thumbs_up', 'party', 'heart', 'thanks', 'celebrate']);
 
 function safeId(value) {
   const id = String(value || '').trim();
@@ -54,12 +55,14 @@ function normalizeMessageInput(input) {
   const attachmentResourceIds = Array.isArray(input?.attachmentResourceIds)
     ? [...new Set(input.attachmentResourceIds.map(safeId).filter(Boolean))]
     : [];
+  const stickerId = input?.stickerId == null ? null : String(input.stickerId).trim();
   if ((input?.attachmentResourceIds !== undefined && (!Array.isArray(input.attachmentResourceIds) || input.attachmentResourceIds.some((id) => !safeId(id)))) ||
-      !operationId || (!body && !attachmentResourceIds.length) || body.length > 4000 ||
+      !operationId || (!body && !attachmentResourceIds.length && !stickerId) || body.length > 4000 ||
+      (stickerId != null && !STICKER_IDS.has(stickerId)) ||
       attachmentResourceIds.length > 10 || containsExternalDriveLink(body)) {
     return null;
   }
-  return { operationId, body, attachmentResourceIds };
+  return { operationId, body, attachmentResourceIds, ...(stickerId ? { stickerId } : {}) };
 }
 
 function normalizeAttachmentInput(input) {
@@ -115,4 +118,5 @@ module.exports = {
   normalizeMessageInput,
   normalizeAttachmentInput,
   canStartConversation,
+  STICKER_IDS,
 };

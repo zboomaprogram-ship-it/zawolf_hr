@@ -113,6 +113,7 @@ const HR_NOTIFICATION_ROLES = new Set(['hr_admin', 'hr_manager']);
 function safeNotificationRoute(value) {
   const route = String(value || '').trim();
   if (SAFE_NOTIFICATION_ROUTES.has(route)) return route;
+  if (/^\/conversations\/channel\/[A-Za-z0-9_.:%-]{1,256}$/.test(route)) return route;
   return /^\/(?:employee\/requests|requests)\/operational\/[A-Za-z0-9_.:-]{1,128}$/.test(route)
     ? route
     : null;
@@ -234,6 +235,65 @@ async function promoteCompanyOsNotificationOutbox(db) {
     promoted += recipients.length;
   }
   return { outboxes: snapshot.size, promoted };
+}
+
+async function promoteConversationNotificationOutbox(db) {
+  const snapshot = await db.collection('conversationNotificationOutbox')
+    .where('dispatchStatus', '==', 'pending')
+    .limit(10)
+    .get();
+  let promoted = 0;
+  for (const doc of snapshot.docs) {
+    const outbox = doc.data();
+    const cursor = String(outbox.cursor || '').trim();
+    let query = db.collection('users').where('isActive', '==', true).orderBy('__name__');
+    if (cursor) query = query.startAfter(cursor);
+    const users = await query.limit(100).get();
+    const recipients = users.docs.map(user => user.id).filter(uid => uid !== outbox.senderUserId);
+    await db.runTransaction(async (transaction) => {
+      const current = await transaction.get(doc.ref);
+      if (!current.exists || current.data()?.dispatchStatus !== 'pending' || String(current.data()?.cursor || '') !== cursor) return;
+      for (const recipientUid of recipients) {
+        const notificationId = `chat_${require('node:crypto').createHash('sha256').update(JSON.stringify([doc.id, recipientUid])).digest('hex').slice(0, 40)}`;
+        transaction.set(db.collection('notifications').doc(recipientUid).collection('items').doc(notificationId), {
+          notificationId,
+          type: 'conversation',
+          title: outbox.title || 'رسالة جديدة',
+          body: outbox.body || 'رسالة جديدة',
+          data: outbox.data || {},
+          isRead: false,
+          pushSent: false,
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        }, { merge: true });
+        transaction.set(db.collection('users').doc(recipientUid), {
+          unreadNotifications: admin.firestore.FieldValue.increment(1),
+        }, { merge: true });
+      }
+      const complete = users.size < 100;
+      transaction.update(doc.ref, {
+        dispatchStatus: complete ? 'dispatched' : 'pending',
+        cursor: complete ? admin.firestore.FieldValue.delete() : users.docs.at(-1).id,
+        recipientCount: admin.firestore.FieldValue.increment(recipients.length),
+        ...(complete ? { dispatchedAt: admin.firestore.FieldValue.serverTimestamp() } : {}),
+      });
+    });
+    promoted += recipients.length;
+  }
+  return { outboxes: snapshot.size, promoted };
+}
+
+function watchPendingConversationOutboxes({ onPending, onError } = {}) {
+  initializeFirebase();
+  return admin.firestore().collection('conversationNotificationOutbox')
+    .where('dispatchStatus', '==', 'pending')
+    .limit(10)
+    .onSnapshot(
+      (snapshot) => {
+        const added = snapshot.docChanges().filter(change => change.type === 'added');
+        if (added.length && typeof onPending === 'function') onPending(added.length);
+      },
+      (error) => { if (typeof onError === 'function') onError(error); },
+    );
 }
 
 function notificationPayload(doc, data, recipientRole) {
@@ -532,6 +592,7 @@ async function dispatchNotifications() {
 
   const db = admin.firestore();
   await promoteCompanyOsNotificationOutbox(db);
+  await promoteConversationNotificationOutbox(db);
   const pending = await loadPendingNotifications(db);
   console.log(`Found ${pending.length} pending push notification(s).`);
   if (!pending.length) return { found: 0, sent: 0, failed: 0 };
@@ -615,6 +676,8 @@ module.exports = {
   attendanceCompletesReminder,
   shouldSkipAttendanceReminder,
   watchPendingNotifications,
+  watchPendingConversationOutboxes,
   companyOsOutboxRecipients,
   promoteCompanyOsNotificationOutbox,
+  promoteConversationNotificationOutbox,
 };

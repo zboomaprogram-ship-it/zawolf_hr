@@ -15,7 +15,7 @@ async function sendMessage({ db, admin, actor, channelId, payload, legacy = fals
     const existing = await tx.get(ref);
     if (existing.exists) {
       const old = existing.data();
-      if (old.senderUserId !== actor.uid || old.body !== input.body || JSON.stringify(old.attachmentResourceIds || []) !== JSON.stringify(input.attachmentResourceIds)) C.fail('operation_conflict', 409);
+      if (old.senderUserId !== actor.uid || old.body !== input.body || old.stickerId !== input.stickerId || JSON.stringify(old.attachmentResourceIds || []) !== JSON.stringify(input.attachmentResourceIds)) C.fail('operation_conflict', 409);
       return C.receipt(tx, op, { message: C.messageDto(ref.id, old) }, now);
     }
     const attachments = [];
@@ -29,11 +29,11 @@ async function sendMessage({ db, admin, actor, channelId, payload, legacy = fals
       const reply = await tx.get(channel.ref.collection('messages').doc(payload.replyToMessageId));
       if (!reply.exists || reply.data().state === 'deleted') C.fail('reply_unavailable', 409);
     }
-    const message = { conversationId: channelId, senderUserId: actor.uid, senderDisplayName: displayName(actor), body: input.body, attachmentResourceIds: input.attachmentResourceIds, attachments, replyToMessageId: payload.replyToMessageId || null, sentAt: now, state: 'sent', revision: 1, reactions: {}, forwarded: false };
+    const message = { conversationId: channelId, senderUserId: actor.uid, senderDisplayName: displayName(actor), body: input.body, stickerId: input.stickerId, attachmentResourceIds: input.attachmentResourceIds, attachments, replyToMessageId: payload.replyToMessageId || null, sentAt: now, state: 'sent', revision: 1, reactions: {}, forwarded: false };
     tx.create(ref, message);
     C.change(tx, channel, 'message', { messageId }, now);
     C.audit(tx, db, channelId, input.operationId, actor, 'send', { messageId, revision: 1, message: C.messageDto(messageId, message) }, now);
-    C.notify(tx, db, (channel.data.memberUserIds || []).filter(id => id !== actor.uid), `send:${channelId}:${messageId}`, 'رسالة جديدة', input.body || 'مرفق جديد', { conversationId: channelId, messageId, route: `/conversations/channel/${encodeURIComponent(channelId)}` }, now, admin);
+    C.notifyChannel(tx, db, channel, actor.uid, `send:${channelId}:${messageId}`, 'رسالة جديدة', input.body || 'مرفق جديد', { conversationId: channelId, messageId, route: `/conversations/channel/${encodeURIComponent(channelId)}` }, now, admin);
     return C.receipt(tx, op, { message: C.messageDto(messageId, message) }, now);
   });
 }
@@ -64,7 +64,7 @@ async function messageAction({ db, admin, actor, channelId, messageId, payload, 
         const normalized = normalizeMessageInput({ operationId: payload.operationId, body: payload.body, attachmentResourceIds: old.attachmentResourceIds || [] });
         if (!normalized) C.fail('validation_failed');
         next = { ...next, body: normalized.body, editedAt: now };
-      } else next = { ...next, body: '', state: 'deleted', attachmentResourceIds: [], attachments: [], reactions: {}, deletedAt: now };
+      } else next = { ...next, body: '', stickerId: null, state: 'deleted', attachmentResourceIds: [], attachments: [], reactions: {}, deletedAt: now };
     } else if (payload.action === 'react') {
       if (typeof payload.emoji !== 'string' || !payload.emoji.trim() || [...payload.emoji].length > 16 || /[\p{L}\p{N}\s]/u.test(payload.emoji)) C.fail('validation_failed');
       const reactions = { ...(old.reactions || {}) };
@@ -84,12 +84,12 @@ async function messageAction({ db, admin, actor, channelId, messageId, payload, 
       }
       // Complete all transactional reads before allocating destination-bound resources.
       for (const resource of resources) tx.set(db.collection('conversationAttachments').doc(resource.id), resource.data);
-      next = { conversationId: channel.id, senderUserId: actor.uid, senderDisplayName: displayName(actor), body: old.body || '', attachmentResourceIds: resources.map(r => r.id), attachments: resources.map(r => C.attachmentDto(r.id, r.data)), replyToMessageId: null, sentAt: now, state: 'sent', revision: 1, reactions: {}, forwarded: true };
+      next = { conversationId: channel.id, senderUserId: actor.uid, senderDisplayName: displayName(actor), body: old.body || '', stickerId: old.stickerId || null, attachmentResourceIds: resources.map(r => r.id), attachments: resources.map(r => C.attachmentDto(r.id, r.data)), replyToMessageId: null, sentAt: now, state: 'sent', revision: 1, reactions: {}, forwarded: true };
     }
     tx.set(target, next);
     C.change(tx, channel, 'message', { messageId: id }, now);
     C.audit(tx, db, channel.id, payload.operationId, actor, payload.action, { messageId: id, revision: next.revision, previous: C.messageDto(messageId, old), message: C.messageDto(id, next) }, now);
-    if (payload.action === 'forward') C.notify(tx, db, (channel.data.memberUserIds || []).filter(uid => uid !== actor.uid), `forward:${id}`, 'رسالة جديدة', next.body || 'مرفق جديد', { conversationId: channel.id, messageId: id, route: `/conversations/channel/${encodeURIComponent(channel.id)}` }, now, admin);
+    if (payload.action === 'forward') C.notifyChannel(tx, db, channel, actor.uid, `forward:${id}`, 'رسالة جديدة', next.body || 'مرفق جديد', { conversationId: channel.id, messageId: id, route: `/conversations/channel/${encodeURIComponent(channel.id)}` }, now, admin);
     return C.receipt(tx, op, { message: C.messageDto(id, next) }, now);
   });
 }

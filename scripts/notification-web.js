@@ -6,6 +6,7 @@ const { getAuth } = require('firebase-admin/auth');
 const {
   dispatchNotifications,
   watchPendingNotifications,
+  watchPendingConversationOutboxes,
   initializeFirebase,
 } = require('./dispatch-notifications');
 const { createRuntimeLease } = require('./runtime-lease');
@@ -239,6 +240,7 @@ let firestoreQuotaBlockedUntil = 0;
 let pendingDispatchTimer = null;
 let notificationUnsubscribe = null;
 let notificationListenerOwner = false;
+let conversationOutboxUnsubscribe = null;
 let runtimeLease = null;
 let googleSheetsIntegration = null;
 const googleSheetsRoleCache = new Map();
@@ -379,12 +381,14 @@ async function ensureNotificationListenerLeader() {
   try {
     if (!(await getRuntimeLease().acquire('notification_listener'))) {
       if (notificationUnsubscribe) notificationUnsubscribe();
+      if (conversationOutboxUnsubscribe) conversationOutboxUnsubscribe();
       notificationUnsubscribe = null;
+      conversationOutboxUnsubscribe = null;
       notificationListenerOwner = false;
       return;
     }
     notificationListenerOwner = true;
-    if (notificationUnsubscribe) return;
+    if (notificationUnsubscribe && conversationOutboxUnsubscribe) return;
     notificationUnsubscribe = watchPendingNotifications({
       onPending: (count) => {
         diagnostics.listenerError = null;
@@ -400,6 +404,17 @@ async function ensureNotificationListenerLeader() {
           () => void ensureNotificationListenerLeader(),
           quotaError ? quotaBackoffMs : 60 * 1000,
         );
+      },
+    });
+    conversationOutboxUnsubscribe = watchPendingConversationOutboxes({
+      onPending: (count) => {
+        diagnostics.listenerError = null;
+        console.log(`Firestore conversation notification trigger received ${count} new outbox item(s).`);
+        schedulePushDispatch('conversation_outbox_trigger', 0);
+      },
+      onError: (error) => {
+        diagnostics.listenerError = String(error.message || error);
+        console.error('Conversation notification outbox listener failed:', error);
       },
     });
   } catch (error) {

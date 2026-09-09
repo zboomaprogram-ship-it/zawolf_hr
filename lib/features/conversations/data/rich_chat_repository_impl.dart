@@ -283,6 +283,7 @@ class RichChatRepositoryImpl implements RichChatRepository {
     required String body,
     List<ChatDraftFile> files = const [],
     String? replyToMessageId,
+    String? stickerId,
   }) async {
     _validate(body, files);
     final id = newChatOperationId();
@@ -296,6 +297,7 @@ class RichChatRepositoryImpl implements RichChatRepository {
         'sentAt': DateTime.now().toUtc().toIso8601String(),
         'syncState': 'pending',
         'replyToMessageId': replyToMessageId,
+        'stickerId': stickerId,
         'files': saved,
         'attachments':
             saved
@@ -337,6 +339,7 @@ class RichChatRepositoryImpl implements RichChatRepository {
         'attachmentResourceIds':
             attachments.map((a) => a['resourceId']).toList(),
         'replyToMessageId': row['replyToMessageId'],
+        'stickerId': row['stickerId'],
       }, id);
       final message = objectMap(d['message']);
       if (message['id'] == null) throw const ChatFailure('invalid_response');

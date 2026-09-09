@@ -47,6 +47,7 @@ class RichMessage {
     required this.body,
     required this.sentAt,
     this.senderDisplayName = '',
+    this.stickerId,
     this.attachments = const [],
     this.attachmentResourceIds = const [],
     this.replyToMessageId,
@@ -60,6 +61,7 @@ class RichMessage {
     this.uploadProgress,
   });
   final String id, conversationId, senderUserId, senderDisplayName, body;
+  final String? stickerId;
   final DateTime sentAt;
   final List<RichAttachment> attachments;
   final List<String> attachmentResourceIds;

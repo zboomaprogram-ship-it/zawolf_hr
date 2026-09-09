@@ -46,6 +46,7 @@ class FakeRichChatRepository implements RichChatRepository {
     required String body,
     List<ChatDraftFile> files = const [],
     String? replyToMessageId,
+    String? stickerId,
   }) async {
     sends++;
     if (failSend) throw const ChatFailure('storage_full');
