@@ -173,8 +173,63 @@ class _RichAttachmentViewState extends State<RichAttachmentView> {
         ),
       );
     }
-    return const Text(
-      'استخدم الحفظ أو المشاركة لفتح الملف في التطبيق المناسب.',
+    final mime = file.mimeType;
+    final spreadsheet =
+        mime.contains('spreadsheet') ||
+        mime.contains('excel') ||
+        file.fileName.toLowerCase().endsWith('.xlsx');
+    final document =
+        mime.contains('wordprocessingml') ||
+        mime.contains('msword') ||
+        file.fileName.toLowerCase().endsWith('.docx');
+    final archive =
+        mime.contains('zip') || file.fileName.toLowerCase().endsWith('.zip');
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            spreadsheet
+                ? Icons.table_chart_outlined
+                : document
+                ? Icons.description_outlined
+                : archive
+                ? Icons.folder_zip_outlined
+                : Icons.insert_drive_file_outlined,
+            size: 36,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  file.fileName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+                Text(
+                  spreadsheet
+                      ? 'جدول بيانات'
+                      : document
+                      ? 'مستند'
+                      : archive
+                      ? 'ملف مضغوط'
+                      : 'ملف',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+                const Text('احفظ أو شارك لفتحه في التطبيق المناسب.'),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 
