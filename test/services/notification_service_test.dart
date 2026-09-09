@@ -3,9 +3,8 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  final source = File(
-    'lib/services/notification_service.dart',
-  ).readAsStringSync();
+  final source =
+      File('lib/services/notification_service.dart').readAsStringSync();
 
   test(
     'unread notification listener is bounded and replaces the old listener',
@@ -25,5 +24,12 @@ void main() {
   test('cold-start local notifications preserve their safe deep link', () {
     expect(source, contains("payload.startsWith('notification|')"));
     expect(source, contains('initialRoute = safeRoute'));
+  });
+
+  test('foreground chat alerts use the packaged chat sound channel', () {
+    expect(source, contains("'zawolf_chat_messages'"));
+    expect(source, contains("RawResourceAndroidNotificationSound("));
+    expect(source, contains("'notification_chime'"));
+    expect(source, contains("'notification_chime.wav'"));
   });
 }

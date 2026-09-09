@@ -194,23 +194,33 @@ class NotificationService {
     String? payload,
   }) async {
     if (kIsWeb) return;
-    const androidDetails = AndroidNotificationDetails(
-      'zawolf_hr_notifications',
-      'إشعارات ZaWolf',
-      channelDescription: 'قناة إشعارات نظام الموارد البشرية ZaWolf',
+    final isChatMessage =
+        payload?.split('|').last.startsWith('/conversations/channel/') ?? false;
+    final androidDetails = AndroidNotificationDetails(
+      isChatMessage ? 'zawolf_chat_messages' : 'zawolf_hr_notifications',
+      isChatMessage ? 'رسائل ZaWolf HR' : 'إشعارات ZaWolf',
+      channelDescription:
+          isChatMessage
+              ? 'رسائل ومتابعات ZaWolf HR'
+              : 'قناة إشعارات نظام الموارد البشرية ZaWolf',
       icon: 'ic_stat_onesignal_default',
       importance: Importance.max,
       priority: Priority.high,
       playSound: true,
+      sound:
+          isChatMessage
+              ? const RawResourceAndroidNotificationSound('notification_chime')
+              : null,
     );
 
-    const iosDetails = DarwinNotificationDetails(
+    final iosDetails = DarwinNotificationDetails(
       presentAlert: true,
       presentBadge: true,
       presentSound: true,
+      sound: isChatMessage ? 'notification_chime.wav' : null,
     );
 
-    const details = NotificationDetails(
+    final details = NotificationDetails(
       android: androidDetails,
       iOS: iosDetails,
     );
