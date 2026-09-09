@@ -3,7 +3,7 @@ import '../entities/rich_chat.dart';
 abstract interface class RichChatRepository {
   String get actorId;
   Future<ChatCapabilities> capabilities();
-  Future<ChatPage<RichChannel>> channels({String? cursor});
+  Future<ChatPage<RichChannel>> channels({String? cursor, String? section});
   Stream<ChatPage<RichChannel>> watchInbox();
   Stream<RichChatSnapshot> watchChannel(String channelId);
   void setForeground(bool foreground);
@@ -44,6 +44,13 @@ abstract interface class RichChatRepository {
   });
   Future<ChatLinkPreview?> preview(String channelId, String url);
   Future<ChatPage<ChatUser>> users({String query = '', String? cursor});
+  Future<ChatPage<ChatDepartment>> contactDepartments({String? cursor});
+  Future<ChatPage<ChatUser>> eligibleContacts({
+    String? department,
+    String? section,
+    String? cursor,
+  });
+  Future<RichChannel> startDirect(String targetUserId, {String? operationId});
   Future<ChatPage<ChatUser>> members(String channelId);
   Future<ChatPage<ChannelRequest>> requests({String? cursor});
   Future<ChannelRequest> createRequest({

@@ -1,6 +1,7 @@
 'use strict';
 const { safeId } = require('../conversation-operations');
 const C = require('./common');
+const P = require('./direct-policy');
 const { channelDto } = require('./requests');
 const pageSize = (value, max) => Math.min(max, Math.max(1, Number.parseInt(value, 10) || max));
 const inboxUnreadConcurrency = 8;
@@ -44,17 +45,69 @@ async function boundedMap(items, concurrency, callback) {
   return results;
 }
 async function channels({db, actor, params}) {
+  const section = params.get('section');
+  if (section && !['direct', 'group'].includes(section)) C.fail('validation_failed');
+  if (section) return sectionChannels({ db, actor, params, section });
   // One bounded page across legacy and custom channels avoids an unbounded merge
   // and gives stable pagination even when authorization filters a whole page.
   const docs = await pageById(db.collection('conversations'), params.get('cursor'), 50).get();
   const accessible = docs.docs
     .map(doc => ({ id: doc.id, ref: doc.ref, data: doc.data() }))
-    .filter(channel => C.access(actor, channel.data).canRead);
+    .filter(channel => C.access(actor, channel.data).canRead)
+    .filter(channel => !section || (section === 'direct' ? channel.data.kind === 'direct' : channel.data.kind !== 'direct'));
   // Firestore child queries used to run one-by-one, making each inbox open wait
   // for every channel. Eight workers retain a fixed read/concurrency budget.
   const result = await boundedMap(accessible, inboxUnreadConcurrency, async channel =>
     channelDto(channel, actor, await unreadCount(channel, actor)));
+  result.sort((a, b) => `${b.latestActivityAt || ''}`.localeCompare(`${a.latestActivityAt || ''}`) || `${b.latestActivityId || b.id}`.localeCompare(`${a.latestActivityId || a.id}`));
   return { channels: result, nextCursor: docs.size === 50 ? docs.docs.at(-1).id : null };
+}
+function activityPosition(value) {
+  if (!value) return null;
+  try {
+    const decoded = JSON.parse(Buffer.from(value, 'base64url').toString());
+    if (typeof decoded.id === 'string' && safeId(decoded.id) && typeof decoded.at === 'string' && Number.isFinite(Date.parse(decoded.at))) return decoded;
+  } catch (_) { /* invalid cursor */ }
+  C.fail('invalid_cursor');
+}
+function activityCursor(doc) {
+  return Buffer.from(JSON.stringify({ id: doc.id, at: C.iso(doc.data().updatedAt || doc.data().latestActivityAt) })).toString('base64url');
+}
+async function sectionChannels({db, actor, params, section}) {
+  const position = activityPosition(params.get('cursor'));
+  // updatedAt already exists on historical conversation records and is updated
+  // with each visible activity; latestActivityAt is the explicit companion field.
+  let query = db.collection('conversations').orderBy('updatedAt', 'desc').orderBy('__name__', 'desc');
+  if (position) query = query.startAfter(new Date(position.at), position.id);
+  const docs = await query.limit(50).get();
+  const allowed = docs.docs.map(doc => ({ id: doc.id, ref: doc.ref, data: doc.data() }))
+    .filter(channel => C.access(actor, channel.data).canRead)
+    .filter(channel => section === 'direct' ? channel.data.kind === 'direct' : channel.data.kind !== 'direct');
+  const result = await boundedMap(allowed, inboxUnreadConcurrency, async channel => channelDto(channel, actor, await unreadCount(channel, actor)));
+  return { channels: result, nextCursor: docs.size === 50 ? activityCursor(docs.docs.at(-1)) : null };
+}
+function userDto(doc, eligibilityReason) {
+  const data = doc.data();
+  return { id: doc.id, name: data.displayName || data.name || data.employeeName || doc.id, department: P.department(data), eligibilityReason };
+}
+async function eligibleUsers(db, actor, params) {
+  const docs = await pageById(db.collection('users').where('isActive', '==', true), params.get('cursor'), 100).get();
+  const actorDoc = await db.collection('users').doc(actor.uid).get();
+  const fullActor = actorDoc.exists ? { ...actorDoc.data(), ...actor } : actor;
+  const department = params.get('department'), section = params.get('section');
+  if (department && department.length > 120) C.fail('validation_failed');
+  if (section && !['manager', 'hr', 'admin', 'it'].includes(section)) C.fail('validation_failed');
+  const all = docs.docs.map(doc => ({ doc, data: { id: doc.id, ...doc.data() } })).filter(({data}) => P.canDirect(fullActor, data));
+  const filtered = all.filter(({data}) => !department || P.department(data) === department).filter(({data}) => !section || (section === 'manager' ? P.isManager(data) : section === 'hr' ? P.isHr(data) && !P.isAdmin(data) : section === 'admin' ? P.isAdmin(data) : P.isIt(data)));
+  return { contacts: filtered.map(({doc}) => userDto(doc, section || 'department')), nextCursor: docs.size === 100 ? docs.docs.at(-1).id : null };
+}
+async function contactDepartments({db, actor, params}) {
+  const actorDoc = await db.collection('users').doc(actor.uid).get();
+  const fullActor = actorDoc.exists ? { ...actorDoc.data(), ...actor } : actor;
+  const docs = await pageById(db.collection('users').where('isActive', '==', true), params.get('cursor'), 100).get();
+  const counts = new Map();
+  for (const doc of docs.docs) { const target = { id: doc.id, ...doc.data() }; if (P.canDirect(fullActor, target) && P.department(target)) counts.set(P.department(target), (counts.get(P.department(target)) || 0) + 1); }
+  return { departments: [...counts].sort(([a],[b]) => a.localeCompare(b, 'ar')).map(([name, eligibleCount]) => ({ id: name, name, eligibleCount })), nextCursor: docs.size === 100 ? docs.docs.at(-1).id : null };
 }
 async function members({db, channel}) {
   const data = channel.data;
@@ -123,4 +176,4 @@ async function audit({db, actor, channel, messageId}) {
   const docs = await db.collection('conversationAudit').where('conversationId', '==', channel.id).where('messageId', '==', messageId).orderBy('createdAt', 'desc').limit(100).get();
   return { revisions: docs.docs.map(d => ({ ...d.data(), createdAt: C.iso(d.data().createdAt) })) };
 }
-module.exports = { channels, users, members, requests, history, changes, search, audit, pageSize, presenceDto, boundedMap };
+module.exports = { channels, users, members, requests, history, changes, search, audit, contactDepartments, eligibleUsers, pageSize, presenceDto, boundedMap };

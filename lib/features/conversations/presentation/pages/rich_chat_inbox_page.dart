@@ -5,6 +5,7 @@ import '../../domain/repositories/rich_chat_repository.dart';
 import '../cubit/chat_inbox_cubit.dart';
 import '../widgets/chat_feedback.dart';
 import 'chat_requests_page.dart';
+import 'direct_chat_picker_page.dart';
 
 class RichChatInboxPage extends StatefulWidget {
   const RichChatInboxPage({
@@ -22,11 +23,10 @@ class RichChatInboxPage extends StatefulWidget {
 
 class _RichChatInboxPageState extends State<RichChatInboxPage>
     with WidgetsBindingObserver {
-  late final ChatInboxCubit _cubit;
+  int _refreshEpoch = 0;
   @override
   void initState() {
     super.initState();
-    _cubit = ChatInboxCubit(widget.repository);
     WidgetsBinding.instance.addObserver(this);
     widget.repository.setForeground(true);
   }
@@ -43,6 +43,23 @@ class _RichChatInboxPageState extends State<RichChatInboxPage>
       appBar: AppBar(
         title: const Text('المحادثات'),
         actions: [
+          IconButton(
+            tooltip: 'محادثة خاصة',
+            icon: const Icon(Icons.person_add_alt_1_outlined),
+            onPressed: () async {
+              final channel = await Navigator.push<RichChannel>(
+                context,
+                MaterialPageRoute(
+                  builder:
+                      (_) =>
+                          DirectChatPickerPage(repository: widget.repository),
+                ),
+              );
+              if (channel != null && context.mounted) {
+                widget.openChannel(context, channel);
+              }
+            },
+          ),
           IconButton(
             tooltip:
                 widget.canReview ? 'مراجعة طلبات الجروبات' : 'طلبات الجروبات',
@@ -62,7 +79,7 @@ class _RichChatInboxPageState extends State<RichChatInboxPage>
           ),
           IconButton(
             tooltip: 'تحديث',
-            onPressed: _cubit.load,
+            onPressed: () => setState(() => _refreshEpoch++),
             icon: const Icon(Icons.refresh),
           ),
         ],
@@ -83,123 +100,136 @@ class _RichChatInboxPageState extends State<RichChatInboxPage>
         icon: const Icon(Icons.add_comment_outlined),
         label: Text(widget.canReview ? 'إنشاء / طلب جروب' : 'طلب جروب جديدة'),
       ),
-      body: BlocBuilder<ChatInboxCubit, ChatInboxState>(
-        bloc: _cubit,
-        builder:
-            (context, state) => Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 900),
-                child: Column(
-                  children: [
-                    if (state.loading) const LinearProgressIndicator(),
-                    if (state.offline)
-                      const ChatFeedback(
-                        text: 'غير متصل — الجروبات المحفوظة على هذا الجهاز',
-                        icon: Icons.cloud_off,
-                      ),
-                    if (state.error != null)
-                      ChatFeedback(
-                        text: chatErrorText(state.error!),
-                        onRetry: _cubit.load,
-                      ),
-                    Expanded(
-                      child: RefreshIndicator(
-                        onRefresh: _cubit.load,
-                        child: ListView(
-                          physics: const AlwaysScrollableScrollPhysics(),
-                          padding: const EdgeInsets.only(bottom: 88),
-                          children: [
-                            if (state.channels.isEmpty && !state.loading)
-                              Padding(
-                                padding: const EdgeInsets.all(32),
-                                child: Column(
-                                  children: [
-                                    const Text(
-                                      'لا توجد جروبات متاحة حتى الآن.',
-                                      textAlign: TextAlign.center,
-                                    ),
-                                    const SizedBox(height: 12),
-                                    FilledButton.icon(
-                                      onPressed:
-                                          () => Navigator.push<void>(
-                                            context,
-                                            MaterialPageRoute(
-                                              builder:
-                                                  (_) => ChatRequestsPage(
-                                                    repository:
-                                                        widget.repository,
-                                                    canReview: widget.canReview,
-                                                    openChannel:
-                                                        widget.openChannel,
-                                                  ),
-                                            ),
-                                          ),
-                                      icon: const Icon(
-                                        Icons.group_add_outlined,
-                                      ),
-                                      label: Text(
-                                        widget.canReview
-                                            ? 'إنشاء جروب جديدة'
-                                            : 'طلب جروب جديدة',
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            for (final channel in state.channels)
-                              ListTile(
-                                leading: CircleAvatar(
-                                  child: Icon(
-                                    channel.kind == 'custom'
-                                        ? Icons.group_outlined
-                                        : Icons.business_outlined,
-                                  ),
-                                ),
-                                title: Text(channel.name),
-                                subtitle: Text(
-                                  channel.canPost
-                                      ? 'جروب العمل'
-                                      : 'للقراءة فقط',
-                                ),
-                                trailing:
-                                    channel.unreadCount > 0
-                                        ? Badge(
-                                          label: Text(
-                                            channel.unreadCount > 99
-                                                ? '99+'
-                                                : '${channel.unreadCount}',
-                                          ),
-                                        )
-                                        : const Icon(
-                                          Icons.chevron_left,
-                                          textDirection: TextDirection.ltr,
-                                        ),
-                                onTap:
-                                    () => widget.openChannel(context, channel),
-                              ),
-                            if (state.cursor != null)
-                              TextButton(
-                                onPressed:
-                                    state.loading
-                                        ? null
-                                        : () => _cubit.load(more: true),
-                                child: const Text('تحميل المزيد'),
-                              ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
+      body: DefaultTabController(
+        key: ValueKey(_refreshEpoch),
+        length: 2,
+        child: Column(
+          children: [
+            const TabBar(
+              tabs: [Tab(text: 'المحادثات الخاصة'), Tab(text: 'الجروبات')],
+            ),
+            Expanded(
+              child: TabBarView(
+                children: [
+                  _InboxSection(
+                    repository: widget.repository,
+                    section: 'direct',
+                    emptyText: 'لا توجد محادثات خاصة.',
+                    openChannel: widget.openChannel,
+                  ),
+                  _InboxSection(
+                    repository: widget.repository,
+                    section: 'group',
+                    emptyText: 'لا توجد جروبات متاحة حتى الآن.',
+                    openChannel: widget.openChannel,
+                  ),
+                ],
               ),
             ),
+          ],
+        ),
       ),
     ),
   );
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    _cubit.close();
     super.dispose();
   }
+}
+
+class _InboxSection extends StatelessWidget {
+  const _InboxSection({
+    required this.repository,
+    required this.section,
+    required this.emptyText,
+    required this.openChannel,
+  });
+  final RichChatRepository repository;
+  final String section, emptyText;
+  final void Function(BuildContext, RichChannel) openChannel;
+  @override
+  Widget build(BuildContext context) => BlocProvider(
+    create: (_) => ChatInboxCubit(repository, section: section),
+    child: BlocBuilder<ChatInboxCubit, ChatInboxState>(
+      builder: (context, state) {
+        final cubit = context.read<ChatInboxCubit>();
+        return Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 900),
+            child: Column(
+              children: [
+                if (state.loading) const LinearProgressIndicator(),
+                if (state.offline)
+                  const ChatFeedback(
+                    text: 'غير متصل — تظهر المحادثات المحفوظة على هذا الجهاز',
+                    icon: Icons.cloud_off,
+                  ),
+                if (state.error != null)
+                  ChatFeedback(
+                    text: chatErrorText(state.error!),
+                    onRetry: cubit.load,
+                  ),
+                Expanded(
+                  child: RefreshIndicator(
+                    onRefresh: cubit.load,
+                    child: ListView(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      children: [
+                        if (state.channels.isEmpty && !state.loading)
+                          Padding(
+                            padding: const EdgeInsets.all(32),
+                            child: Text(emptyText, textAlign: TextAlign.center),
+                          ),
+                        for (final channel in state.channels)
+                          ListTile(
+                            leading: CircleAvatar(
+                              child: Icon(
+                                section == 'direct'
+                                    ? Icons.person_outline
+                                    : Icons.group_outlined,
+                              ),
+                            ),
+                            title: Text(channel.name),
+                            subtitle: Text(
+                              channel.canPost
+                                  ? (section == 'direct'
+                                      ? 'محادثة خاصة'
+                                      : 'جروب العمل')
+                                  : 'للقراءة فقط',
+                            ),
+                            trailing:
+                                channel.unreadCount > 0
+                                    ? Badge(
+                                      label: Text(
+                                        channel.unreadCount > 99
+                                            ? '99+'
+                                            : '${channel.unreadCount}',
+                                      ),
+                                    )
+                                    : const Icon(
+                                      Icons.chevron_left,
+                                      textDirection: TextDirection.ltr,
+                                    ),
+                            onTap: () => openChannel(context, channel),
+                          ),
+                        if (state.cursor != null)
+                          TextButton(
+                            onPressed:
+                                state.loading
+                                    ? null
+                                    : () => cubit.load(more: true),
+                            child: const Text('تحميل المزيد'),
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    ),
+  );
 }

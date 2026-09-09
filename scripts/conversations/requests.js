@@ -54,7 +54,7 @@ async function reviewRequest({ db, admin, actor, requestId, payload, now = new D
       request.memberUserIds = members(payload.memberUserIds === undefined ? old.memberUserIds : payload.memberUserIds, old.requesterId);
       await activeMembers(tx, db, request.memberUserIds);
       request.conversationId = `custom:${C.hash(requestId).slice(0, 48)}`;
-      tx.create(db.collection('conversations').doc(request.conversationId), { name: request.name, purposeAr: request.name, kind: 'custom', approved: true, state: 'active', memberUserIds: request.memberUserIds, revision: 1, requestId, createdBy: old.requesterId, createdAt: now, updatedAt: now, changeSequence: 0 });
+      tx.create(db.collection('conversations').doc(request.conversationId), { name: request.name, purposeAr: request.name, kind: 'custom', approved: true, state: 'active', memberUserIds: request.memberUserIds, revision: 1, requestId, createdBy: old.requesterId, createdAt: now, updatedAt: now, latestActivityAt: now, latestActivityId: request.conversationId, changeSequence: 0 });
     } else request.rejectionReason = reason(payload.reason);
     tx.set(ref, request);
     C.audit(tx, db, request.conversationId || requestId, payload.operationId, actor, 'review', { request }, now);
@@ -84,6 +84,6 @@ async function updateMembers({ db, admin, actor, channelId, payload, now = new D
 }
 function channelDto(channel, actor, unreadCount = 0) {
   const permissions = C.access(actor, channel.data);
-  return { id: channel.id, name: channel.data.name || channel.data.purposeAr || channel.data.departmentName || '', kind: channel.data.kind || 'conversation', canPost: permissions.canPost, memberUserIds: channel.data.memberUserIds || [], unreadCount, hrReadable: channel.data.kind === 'custom' && channel.data.approved === true, revision: channel.data.revision || 1 };
+  return { id: channel.id, name: channel.data.name || channel.data.purposeAr || channel.data.departmentName || '', kind: channel.data.kind || 'conversation', canPost: permissions.canPost, memberUserIds: channel.data.memberUserIds || [], participantUserIds: channel.data.participantUserIds || [], unreadCount, hrReadable: channel.data.kind === 'custom' && channel.data.approved === true, revision: channel.data.revision || 1, latestActivityAt: C.iso(channel.data.latestActivityAt || channel.data.updatedAt || channel.data.createdAt) || null, latestActivityId: channel.data.latestActivityId || channel.id };
 }
 module.exports = { members, reviewState, createRequest, reviewRequest, updateMembers, channelDto };

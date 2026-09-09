@@ -85,19 +85,32 @@ class RichChannel {
     this.kind = 'custom',
     this.canPost = false,
     this.memberUserIds = const [],
+    this.participantUserIds = const [],
     this.unreadCount = 0,
     this.hrReadable = false,
     this.revision = 0,
+    this.latestActivityAt,
   });
   final String id, name, kind;
   final bool canPost, hrReadable;
-  final List<String> memberUserIds;
+  final List<String> memberUserIds, participantUserIds;
   final int unreadCount, revision;
+  final DateTime? latestActivityAt;
 }
 
 class ChatUser {
   const ChatUser({required this.id, required this.name, this.department = ''});
   final String id, name, department;
+}
+
+class ChatDepartment {
+  const ChatDepartment({
+    required this.id,
+    required this.name,
+    this.eligibleCount = 0,
+  });
+  final String id, name;
+  final int eligibleCount;
 }
 
 class ChannelRequest {

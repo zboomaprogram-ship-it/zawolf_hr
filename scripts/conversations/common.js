@@ -8,7 +8,11 @@ function fail(code, status = 400) { throw Object.assign(new Error(code), { code,
 function access(actor, data) {
   if (!actor?.uid || actor.active === false || !data || data.state === 'closed') return { canRead: false, canPost: false };
   const deptName = data.departmentName || data.department || data.departmentKey;
-  const member = data.kind === 'department' ? canAccessDepartment(actor, deptName) : isConversationMember(data, actor.uid);
+  const direct = data.kind === 'direct';
+  const participantIds = Array.isArray(data.participantUserIds) ? data.participantUserIds : data.memberUserIds;
+  const member = direct
+    ? participantIds.length === 2 && participantIds.includes(actor.uid)
+    : data.kind === 'department' ? canAccessDepartment(actor, deptName) : isConversationMember(data, actor.uid);
   // HR and admins moderate approved custom groups without being injected into
   // every memberUserIds list, so they retain access as membership changes.
   const moderator = data.kind === 'custom' && data.approved === true && isHrOrAdmin(actor);
@@ -49,7 +53,8 @@ const encodeCursor = (doc) => doc ? Buffer.from(JSON.stringify({ id: doc.id, at:
 function change(tx, channel, type, data, now) {
   const sequence = (channel.data.changeSequence || 0) + 1;
   tx.set(channel.ref.collection('changes').doc(String(sequence).padStart(16, '0')), { sequence, type, ...data, at: now });
-  tx.set(channel.ref, { changeSequence: sequence, updatedAt: now }, { merge: true });
+  const activity = !['read', 'typing', 'members'].includes(type);
+  tx.set(channel.ref, { changeSequence: sequence, updatedAt: now, ...(activity ? { latestActivityAt: now, latestActivityId: data.messageId || `${sequence}` } : {}) }, { merge: true });
   return sequence;
 }
 function audit(tx, db, channelId, operationId, actor, action, data, now) {

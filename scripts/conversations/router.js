@@ -3,6 +3,7 @@ const C = require('./common');
 const queries = require('./queries');
 const messages = require('./messages');
 const requests = require('./requests');
+const direct = require('./direct');
 const { fetchPreview } = require('./previews');
 const { handleMedia } = require('./uploads');
 async function handleRichConversationRequest({ req, res, url, actor, db, admin, enabled, readJsonBody, sendJson, getMediaProvider, ensureFolder }) {
@@ -14,6 +15,9 @@ async function handleRichConversationRequest({ req, res, url, actor, db, admin, 
     const context = { db, admin, actor, params: url.searchParams };
     let result;
     if (parts.length === 1 && ['channels','users','requests'].includes(parts[0]) && req.method === 'GET') result = await queries[parts[0]](context);
+    else if (parts.length === 1 && parts[0] === 'contact-departments' && req.method === 'GET') result = await queries.contactDepartments(context);
+    else if (parts.length === 1 && parts[0] === 'eligible-contacts' && req.method === 'GET') result = await queries.eligibleUsers(context);
+    else if (parts.length === 1 && parts[0] === 'direct' && req.method === 'POST') result = await direct.createDirect({ ...context, payload: await readJsonBody(req, 32 * 1024) });
     else if (parts[0] === 'requests' && req.method === 'POST') {
       const payload = await readJsonBody(req, 32 * 1024);
       if (parts.length === 1) result = await requests.createRequest({ ...context, payload });

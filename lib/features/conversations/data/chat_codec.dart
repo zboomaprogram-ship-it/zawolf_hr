@@ -77,14 +77,22 @@ RichChannel decodeChannel(Map<String, Object?> v) => RichChannel(
   kind: '${v['kind'] ?? 'custom'}',
   canPost: v['canPost'] == true,
   memberUserIds: strings(v['memberUserIds']),
+  participantUserIds: strings(v['participantUserIds']),
   unreadCount: (v['unreadCount'] as num?)?.toInt() ?? 0,
   hrReadable: v['hrReadable'] == true,
   revision: (v['revision'] as num?)?.toInt() ?? 0,
+  latestActivityAt:
+      v['latestActivityAt'] == null ? null : date(v['latestActivityAt']),
 );
 ChatUser decodeUser(Map<String, Object?> v) => ChatUser(
   id: '${v['id'] ?? ''}',
   name: '${v['name'] ?? ''}',
   department: '${v['department'] ?? ''}',
+);
+ChatDepartment decodeDepartment(Map<String, Object?> v) => ChatDepartment(
+  id: '${v['id'] ?? ''}',
+  name: '${v['name'] ?? ''}',
+  eligibleCount: (v['eligibleCount'] as num?)?.toInt() ?? 0,
 );
 ChannelRequest decodeRequest(Map<String, Object?> v) => ChannelRequest(
   id: '${v['id']}',

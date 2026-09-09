@@ -54,17 +54,27 @@ class RichChatRepositoryImpl implements RichChatRepository {
   }
 
   @override
-  Future<ChatPage<RichChannel>> channels({String? cursor}) async {
+  Future<ChatPage<RichChannel>> channels({
+    String? cursor,
+    String? section,
+  }) async {
     try {
-      final d = await _get('/channels${_query({'cursor': cursor})}');
-      await store.put('', 'inbox', cursor ?? '', d);
+      final d = await _get(
+        '/channels${_query({'cursor': cursor, 'section': section})}',
+      );
+      final cacheId = '${section ?? 'all'}:${cursor ?? ''}';
+      await store.put('', 'inbox', cacheId, d);
       return ChatPage(
         objectList(d['channels']).map(decodeChannel).toList(),
         nextCursor: d['nextCursor'] as String?,
       );
     } on ChatFailure catch (e) {
       if (!_offlineError(e)) rethrow;
-      final d = await store.get('', 'inbox', cursor ?? '');
+      final d = await store.get(
+        '',
+        'inbox',
+        '${section ?? 'all'}:${cursor ?? ''}',
+      );
       if (d == null) rethrow;
       return ChatPage(
         objectList(d['channels']).map(decodeChannel).toList(),
@@ -564,6 +574,42 @@ class RichChatRepositoryImpl implements RichChatRepository {
       nextCursor: d['nextCursor'] as String?,
     );
   }
+
+  @override
+  Future<ChatPage<ChatDepartment>> contactDepartments({String? cursor}) async {
+    final d = await _get('/contact-departments${_query({'cursor': cursor})}');
+    return ChatPage(
+      objectList(d['departments']).map(decodeDepartment).toList(),
+      nextCursor: d['nextCursor'] as String?,
+    );
+  }
+
+  @override
+  Future<ChatPage<ChatUser>> eligibleContacts({
+    String? department,
+    String? section,
+    String? cursor,
+  }) async {
+    final d = await _get(
+      '/eligible-contacts${_query({'department': department, 'section': section, 'cursor': cursor})}',
+    );
+    return ChatPage(
+      objectList(d['contacts']).map(decodeUser).toList(),
+      nextCursor: d['nextCursor'] as String?,
+    );
+  }
+
+  @override
+  Future<RichChannel> startDirect(
+    String targetUserId, {
+    String? operationId,
+  }) async => decodeChannel(
+    objectMap(
+      (await _post('/direct', {
+        'targetUserId': targetUserId,
+      }, operationId))['channel'],
+    ),
+  );
 
   @override
   Future<ChatPage<ChatUser>> members(String channelId) async {

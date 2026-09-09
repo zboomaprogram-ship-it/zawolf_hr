@@ -6,11 +6,13 @@ const { sendMessage, messageAction, presence } = require('../conversations/messa
 const { createRequest, reviewRequest, updateMembers } = require('../conversations/requests');
 const Q = require('../conversations/queries');
 const C = require('../conversations/common');
+const P = require('../conversations/direct-policy');
+const { createDirect } = require('../conversations/direct');
 const { publicIPv4, fetchPreview } = require('../conversations/previews');
 const actor = { uid: 'alice', role: 'employee', displayName: 'أليس' };
 const hr = { uid: 'hr', role: 'hr_manager' };
 const now = new Date('2026-09-06T10:00:00Z');
-function seed(extra = {}) { return firestore({ 'conversations/room': { kind: 'custom', approved: true, state: 'active', name: 'الفريق', memberUserIds: ['alice','bob'], revision: 1 }, 'users/alice': { isActive: true }, 'users/bob': { isActive: true }, 'users/hr': { isActive: true, role: 'hr_manager' }, ...extra }); }
+function seed(extra = {}) { return firestore({ 'conversations/room': { kind: 'custom', approved: true, state: 'active', name: 'الفريق', memberUserIds: ['alice','bob'], revision: 1, updatedAt: new Date('2026-09-06T10:00:00Z'), latestActivityAt: new Date('2026-09-06T10:00:00Z'), latestActivityId: 'room' }, 'users/alice': { isActive: true }, 'users/bob': { isActive: true }, 'users/hr': { isActive: true, role: 'hr_manager' }, ...extra }); }
 const send = (db, payload = {operationId:'send',body:'hello'}) => sendMessage({ db, actor, channelId:'room', payload, now });
 const code = expected => error => error.code === expected;
 test('concurrent send and lost-response replay create one message/change/audit/notification', async () => {
@@ -129,6 +131,46 @@ test('authorized channel members return names without exposing unrelated users',
   const page=await Q.members({db,channel});
   assert.deepEqual(page.members.map(member=>member.id).sort(),['alice','bob']);
   assert.equal(page.members.find(member=>member.id==='alice').name,'أليس');
+});
+test('private chat policy enforces employee, manager, HR/admin, and IT boundaries', () => {
+  const employee = { uid: 'employee', role: 'employee', managerId: 'manager', department: 'Sales' };
+  assert.equal(P.canDirect(employee, { id: 'peer', role: 'employee', department: 'Other' }), true);
+  assert.equal(P.canDirect(employee, { id: 'manager', role: 'manager', department: 'Sales' }), true);
+  assert.equal(P.canDirect(employee, { id: 'foreign-manager', role: 'manager', department: 'Other' }), false);
+  assert.equal(P.canDirect(employee, { id: 'hr', role: 'hr_manager' }), true);
+  assert.equal(P.canDirect(employee, { id: 'admin', role: 'super_admin' }), true);
+  assert.equal(P.canDirect(employee, { id: 'it', role: 'manager', department: 'IT' }), true);
+  assert.equal(P.canDirect({ uid: 'manager', role: 'manager' }, { id: 'any', role: 'manager' }), true);
+  assert.equal(P.canDirect({ uid: 'admin', role: 'super_admin' }, { id: 'any', role: 'employee' }), true);
+  assert.equal(P.canDirect(employee, { id: 'gone', isActive: false }), false);
+});
+test('direct creation is deterministic, participant-only, and rejects forged targets', async () => {
+  const db = seed({
+    'users/alice': { isActive: true, role: 'employee', managerId: 'manager' },
+    'users/bob': { isActive: true, role: 'employee', displayName: 'بوب' },
+    'users/manager': { isActive: true, role: 'manager' },
+    'users/foreign': { isActive: true, role: 'manager' },
+  });
+  const request = { db, actor, payload: { operationId: 'direct-bob', targetUserId: 'bob' }, now };
+  const [first, second] = await Promise.all([createDirect(request), createDirect(request)]);
+  assert.deepEqual(first, second);
+  const channel = first.channel;
+  assert.equal(channel.kind, 'direct');
+  assert.deepEqual(channel.participantUserIds, ['alice', 'bob']);
+  assert.equal((await C.channelFor(db, { uid: 'bob' }, channel.id)).canPost, true);
+  await assert.rejects(C.channelFor(db, { uid: 'hr', role: 'hr_manager' }, channel.id), code('access_denied'));
+  await assert.rejects(createDirect({ ...request, payload: { operationId: 'direct-foreign', targetUserId: 'foreign' } }), code('access_denied'));
+});
+test('section inboxes do not mix direct and groups and newest activity is first', async () => {
+  const db = seed({
+    'conversations/direct:a': { kind: 'direct', state: 'active', memberUserIds: ['alice', 'bob'], participantUserIds: ['alice', 'bob'], name: 'بوب', updatedAt: new Date('2026-09-06T11:00:00Z'), latestActivityAt: new Date('2026-09-06T11:00:00Z'), latestActivityId: 'b' },
+    'conversations/old': { kind: 'custom', approved: true, state: 'active', memberUserIds: ['alice', 'bob'], name: 'قديم', updatedAt: new Date('2026-09-06T09:00:00Z'), latestActivityAt: new Date('2026-09-06T09:00:00Z'), latestActivityId: 'a' },
+    'conversations/new': { kind: 'custom', approved: true, state: 'active', memberUserIds: ['alice', 'bob'], name: 'جديد', updatedAt: new Date('2026-09-06T12:00:00Z'), latestActivityAt: new Date('2026-09-06T12:00:00Z'), latestActivityId: 'c' },
+  });
+  const direct = await Q.channels({ db, actor, params: new URLSearchParams('section=direct') });
+  const groups = await Q.channels({ db, actor, params: new URLSearchParams('section=group') });
+  assert.deepEqual(direct.channels.map(c => c.id), ['direct:a']);
+  assert.deepEqual(groups.channels.map(c => c.id), ['new', 'room', 'old']);
 });
 test('rich-chat capability requires explicit actor rollout and authenticated router',async()=>{
   const {isPhase007FlagEnabled}=require('../feature-flags');
