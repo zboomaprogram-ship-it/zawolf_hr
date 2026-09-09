@@ -67,24 +67,19 @@ void main() {
     },
   );
 
-  test(
-    'system owner sees an audited override for another employee pending request',
-    () {
-      expect(
-        screenSource,
-        contains(
-          'final isSystemOwner = reviewer.role == EmployeeRole.superAdmin',
-        ),
-      );
-      expect(screenSource, contains("'pending_manager',"));
-      expect(screenSource, contains("'pending_ceo',"));
-      expect(screenSource, contains("'pending_hr',"));
-      expect(
-        firestoreRules,
-        contains('managerIds[currentIndex] == uid() || isSuperAdmin()'),
-      );
-    },
-  );
+  test('CEO-stage visibility is assigned to CEO-100, not every super admin', () {
+    final userModelSource = File('lib/models/user_model.dart').readAsStringSync();
+    expect(userModelSource, contains('bool get canReviewCeoStage => isCompanyCeo;'));
+    expect(
+      administrativeServiceSource,
+      contains("status != 'pending_manager' || data['managerId'] != reviewer.uid"),
+    );
+    expect(
+      administrativeServiceSource,
+      isNot(contains("data['managerId'] != reviewer.uid && !isCeo")),
+    );
+    expect(screenSource, isNot(contains('final isSystemOwner = reviewer.role')));
+  });
 
   test('super admin can perform HR-stage reviews but cannot self approve', () {
     expect(EmployeeRole.isHr(EmployeeRole.superAdmin), isTrue);

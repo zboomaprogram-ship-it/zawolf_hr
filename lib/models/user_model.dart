@@ -168,7 +168,10 @@ class UserModel {
   /// CEO-100 account is never skipped because of that field-name difference.
   bool get isCompanyCeo => employeeId.trim().toUpperCase() == 'CEO-100';
 
-  bool get canReviewCeoStage => isCompanyCeo || role == EmployeeRole.superAdmin;
+  /// CEO approval is an assigned workflow stage, not a generic administrator
+  /// capability. Treating every super administrator as CEO allowed unrelated
+  /// executive accounts to advance a request after their own manager decision.
+  bool get canReviewCeoStage => isCompanyCeo;
 
   UserModel({
     required this.uid,

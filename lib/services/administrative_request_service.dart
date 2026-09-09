@@ -277,9 +277,7 @@ class AdministrativeRequestService {
       );
       return;
     }
-    final isCeo = reviewer.canReviewCeoStage;
-    if (status != 'pending_manager' ||
-        (data['managerId'] != reviewer.uid && !isCeo)) {
+    if (status != 'pending_manager' || data['managerId'] != reviewer.uid) {
       throw Exception('هذا الطلب ينتظر مراجعاً آخر.');
     }
     final ids =
@@ -405,8 +403,7 @@ class AdministrativeRequestService {
     final allowed =
         (status == 'pending_manager' &&
             (data['managerId'] == reviewer.uid ||
-                data['currentApproverId'] == reviewer.uid ||
-                isCeo)) ||
+                data['currentApproverId'] == reviewer.uid)) ||
         (status == 'pending_ceo' &&
             isCeo &&
             (ceoId.isEmpty || ceoId == reviewer.uid || ceoId == 'CEO-100')) ||

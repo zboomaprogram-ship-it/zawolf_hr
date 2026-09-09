@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:developer' as developer;
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart' hide TextDirection;
@@ -58,19 +59,11 @@ class AttendanceService {
     final requiresLiveConnection = !policyConfig.requiresBiometric;
 
     if (online) {
-      try {
-        await _offlineQueue.syncPendingActions();
-        // A check-in must remain smooth even if the policy endpoint is down.
-        // Missed-checkout work is optional and only runs when the server says
-        // the company has explicitly enabled check-out.
-        if (await _checkoutIsEnabledOrFalse()) {
-          await _flagMissedCheckouts(employee, todayStr);
-        }
-      } catch (error) {
-        // Connectivity can be present while Firestore is temporarily
-        // unavailable. Do not prevent a new verified attendance action.
-        if (!_isTemporaryFirestoreFailure(error)) rethrow;
-      }
+      // Older-record recovery is maintenance only. A legacy record can be
+      // unreadable or no longer satisfy a narrowed update rule; that must not
+      // prevent today's authenticated attendance event from reaching the
+      // gateway.
+      unawaited(_runBackgroundAttendanceMaintenance(employee, todayStr));
     }
 
     final todayLookup = await _loadTodayAttendance(employee.uid, todayStr);
@@ -1083,6 +1076,22 @@ class AttendanceService {
           data: {'attendanceId': doc.id},
         );
       }
+    }
+  }
+
+  Future<void> _runBackgroundAttendanceMaintenance(
+    UserModel employee,
+    String todayStr,
+  ) async {
+    try {
+      await _offlineQueue.syncPendingActions();
+      if (await _checkoutIsEnabledOrFalse()) {
+        await _flagMissedCheckouts(employee, todayStr);
+      }
+    } catch (error) {
+      // Reconciliation retries later. The new check-in/check-out is governed
+      // independently by its server receipt.
+      developer.log('Background attendance maintenance deferred: $error');
     }
   }
 
