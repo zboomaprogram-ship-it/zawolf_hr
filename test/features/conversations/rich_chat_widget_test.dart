@@ -63,6 +63,9 @@ class FakeRichChatRepository implements RichChatRepository {
   Future<ChatPage<ChatUser>> members(String channelId) async =>
       ChatPage(channelMembers);
   @override
+  Future<RichChatSnapshot> history(String channelId, {String? before}) async =>
+      const RichChatSnapshot();
+  @override
   void setForeground(bool foreground) {}
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);

@@ -327,6 +327,29 @@ class _RichChatPageState extends State<RichChatPage>
                         ),
                         const SizedBox(height: 12),
                         Text(
+                          'الوسائط والملفات المشتركة',
+                          style: Theme.of(context).textTheme.titleMedium,
+                        ),
+                        const SizedBox(height: 8),
+                        if (state.attachments.isEmpty)
+                          const ListTile(
+                            leading: Icon(Icons.perm_media_outlined),
+                            title: Text(
+                              'لا توجد ملفات مشتركة في الرسائل المحمّلة.',
+                            ),
+                          )
+                        else
+                          ...state.attachments.map(
+                            (attachment) => Padding(
+                              padding: const EdgeInsets.only(bottom: 8),
+                              child: widget.attachmentBuilder(
+                                context,
+                                attachment,
+                              ),
+                            ),
+                          ),
+                        const SizedBox(height: 12),
+                        Text(
                           direct ? 'المشارك' : 'الأعضاء',
                           style: Theme.of(context).textTheme.titleMedium,
                         ),
