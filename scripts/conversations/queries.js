@@ -55,12 +55,22 @@ async function directDisplayNames(db, actor, channels) {
     : [];
   return new Map(docs.filter(doc => doc.exists).map(doc => {
     const data = doc.data();
-    return [doc.id, data.displayName || data.name || data.employeeName || doc.id];
+    return [doc.id, {
+      name: data.displayName || data.name || data.employeeName || doc.id,
+      active: data.isActive !== false,
+    }];
   }));
 }
 function directName(channel, actor, names) {
   const otherId = (channel.data.participantUserIds || []).find(id => id !== actor.uid);
-  return otherId ? names.get(otherId) : undefined;
+  return otherId ? names.get(otherId)?.name : undefined;
+}
+function directPostPermission(channel, actor, names) {
+  if (channel.data.kind !== 'direct') return channel;
+  const otherId = (channel.data.participantUserIds || []).find(id => id !== actor.uid);
+  return names.get(otherId)?.active === false
+    ? { ...channel, canPost: false }
+    : channel;
 }
 async function channels({db, actor, params}) {
   await ensureGeneral(db);
@@ -77,8 +87,10 @@ async function channels({db, actor, params}) {
   // Firestore child queries used to run one-by-one, making each inbox open wait
   // for every channel. Eight workers retain a fixed read/concurrency budget.
   const names = await directDisplayNames(db, actor, accessible);
-  const result = await boundedMap(accessible, inboxUnreadConcurrency, async channel =>
-    channelDto(channel, actor, await unreadCount(channel, actor), directName(channel, actor, names)));
+  const result = await boundedMap(accessible, inboxUnreadConcurrency, async item => {
+    const channel = directPostPermission(item, actor, names);
+    return channelDto(channel, actor, await unreadCount(channel, actor), directName(channel, actor, names));
+  });
   result.sort((a, b) => `${b.latestActivityAt || ''}`.localeCompare(`${a.latestActivityAt || ''}`) || `${b.latestActivityId || b.id}`.localeCompare(`${a.latestActivityId || a.id}`));
   return { channels: result, nextCursor: docs.size === 50 ? docs.docs.at(-1).id : null };
 }
@@ -104,7 +116,10 @@ async function sectionChannels({db, actor, params, section}) {
     .filter(channel => C.access(actor, channel.data).canRead)
     .filter(channel => section === 'direct' ? channel.data.kind === 'direct' : channel.data.kind !== 'direct');
   const names = await directDisplayNames(db, actor, allowed);
-  const result = await boundedMap(allowed, inboxUnreadConcurrency, async channel => channelDto(channel, actor, await unreadCount(channel, actor), directName(channel, actor, names)));
+  const result = await boundedMap(allowed, inboxUnreadConcurrency, async item => {
+    const channel = directPostPermission(item, actor, names);
+    return channelDto(channel, actor, await unreadCount(channel, actor), directName(channel, actor, names));
+  });
   return { channels: result, nextCursor: docs.size === 50 ? activityCursor(docs.docs.at(-1)) : null };
 }
 async function channelSummary({db, actor, channel}) {

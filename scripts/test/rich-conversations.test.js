@@ -177,6 +177,29 @@ test('direct creation is deterministic, participant-only, and rejects forged tar
   await assert.rejects(C.channelFor(db, { uid: 'hr', role: 'hr_manager' }, channel.id), code('access_denied'));
   await assert.rejects(createDirect({ ...request, payload: { operationId: 'direct-foreign', targetUserId: 'foreign' } }), code('access_denied'));
 });
+test('a deactivated direct participant keeps history but disables posting', async () => {
+  const db = seed({
+    'users/alice': { isActive: true, role: 'employee' },
+    'users/bob': { isActive: true, role: 'employee' },
+  });
+  const created = await createDirect({
+    db, actor, payload: { operationId: 'direct-inactive', targetUserId: 'bob' }, now,
+  });
+  await db.collection('users').doc('bob').set({ isActive: false }, { merge: true });
+  const channel = await C.channelFor(db, actor, created.channel.id);
+  assert.equal(channel.canRead, true);
+  assert.equal(channel.canPost, false);
+  assert.equal((await Q.history({ db, channel, params: new URLSearchParams() })).canPost, false);
+  assert.equal(
+    (await Q.channels({ db, actor, params: new URLSearchParams('section=direct') }))
+      .channels.find(item => item.id === created.channel.id).canPost,
+    false,
+  );
+  await assert.rejects(sendMessage({
+    db, actor, channelId: created.channel.id,
+    payload: { operationId: 'after-deactivation', body: 'لا يجب الإرسال' }, now,
+  }), code('access_denied'));
+});
 test('section inboxes do not mix direct and groups and newest activity is first', async () => {
   const db = seed({
     'conversations/direct:a': { kind: 'direct', state: 'active', memberUserIds: ['alice', 'bob'], participantUserIds: ['alice', 'bob'], name: 'بوب', updatedAt: new Date('2026-09-06T11:00:00Z'), latestActivityAt: new Date('2026-09-06T11:00:00Z'), latestActivityId: 'b' },

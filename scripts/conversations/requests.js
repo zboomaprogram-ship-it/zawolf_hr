@@ -83,7 +83,9 @@ async function updateMembers({ db, admin, actor, channelId, payload, now = new D
   });
 }
 function channelDto(channel, actor, unreadCount = 0, directName) {
-  const permissions = C.access(actor, channel.data);
+  const permissions = typeof channel.canPost === 'boolean'
+    ? channel
+    : C.access(actor, channel.data);
   const name = channel.data.kind === 'direct'
     ? (directName || channel.data.name || '')
     : (channel.data.name || channel.data.purposeAr || channel.data.departmentName || '');

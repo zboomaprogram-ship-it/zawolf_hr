@@ -26,6 +26,22 @@ async function channelFor(db, actor, id, tx, write = false) {
   const snap = await (tx ? tx.get(ref) : ref.get());
   const data = snap.exists ? snap.data() : null;
   const permissions = access(actor, data);
+  // A direct conversation remains readable for its existing participants when
+  // one account is deactivated, but neither participant may create new
+  // messages or actions. Resolve this from current user records rather than a
+  // stale channel member list.
+  if (permissions.canRead && data?.kind === 'direct') {
+    const ids = Array.isArray(data.participantUserIds)
+      ? data.participantUserIds
+      : data.memberUserIds || [];
+    const users = await Promise.all(
+      ids.map(userId => tx
+        ? tx.get(db.collection('users').doc(userId))
+        : db.collection('users').doc(userId).get()),
+    );
+    permissions.canPost = users.length === 2 && users.every(user =>
+      user.exists && user.data().isActive !== false);
+  }
   if (!permissions.canRead || (write && !permissions.canPost)) fail('access_denied', 403);
   return { id, ref, data, ...permissions };
 }
