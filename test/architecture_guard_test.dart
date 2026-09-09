@@ -36,6 +36,27 @@ Iterable<File> _dartFiles(String root) {
 String _repoPath(File file) => file.path.replaceAll('\\', '/');
 
 void main() {
+  test('private chat keeps its feature-owned boundaries', () {
+    const root = 'lib/features/conversations';
+    expect(Directory('$root/domain').existsSync(), isTrue);
+    expect(Directory('$root/data').existsSync(), isTrue);
+    expect(Directory('$root/presentation').existsSync(), isTrue);
+    final violations = <String>[];
+    for (final file in _dartFiles('$root/domain')) {
+      if (RegExp(
+        r'''package:(?:flutter|firebase_|cloud_firestore|http|drift)/''',
+      ).hasMatch(file.readAsStringSync())) {
+        violations.add(_repoPath(file));
+      }
+    }
+    for (final file in _dartFiles('$root/data')) {
+      if (file.readAsStringSync().contains('/presentation/')) {
+        violations.add(_repoPath(file));
+      }
+    }
+    expect(violations, isEmpty);
+  });
+
   test('migrated presentation does not depend on data or infrastructure', () {
     final violations = <String>[];
     final forbidden = <RegExp>[
@@ -237,9 +258,8 @@ void main() {
     final missingSpecs = <String>[];
     for (final entry in featuresRoot.listSync(followLinks: false)) {
       if (entry is! Directory || _dartFiles(entry.path).isEmpty) continue;
-      final featureName = entry.uri.pathSegments
-          .where((segment) => segment.isNotEmpty)
-          .last;
+      final featureName =
+          entry.uri.pathSegments.where((segment) => segment.isNotEmpty).last;
       final specDirectory = Directory('specs/$featureName');
       final hasMarkdown =
           specDirectory.existsSync() &&

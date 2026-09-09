@@ -4,17 +4,17 @@
 
 ## Phase 1: Setup
 
-- [ ] T001 Add direct-chat acceptance fixtures and policy cases to `scripts/test/rich-conversations.test.js`.
-- [ ] T002 Add private-chat domain and presentation boundary expectations to `test/architecture_guard_test.dart`.
+- [x] T001 Add direct-chat acceptance fixtures and policy cases to `scripts/test/rich-conversations.test.js`.
+- [x] T002 Add private-chat domain and presentation boundary expectations to `test/architecture_guard_test.dart`.
 
 ## Phase 2: Foundational authorization and data contracts
 
-- [ ] T003 Implement pure active-user, IT, department, manager-chain, and role eligibility evaluation in `scripts/conversations/direct-policy.js`.
-- [ ] T004 Add server tests for all employee, manager, super-admin, HR, and IT eligibility combinations in `scripts/test/rich-conversations.test.js`.
-- [ ] T005 Extend `scripts/conversations/common.js` so `kind: direct` requires exactly the participant pair for reads, posts, actions, and protected downloads.
-- [ ] T006 Add direct conversation DTO fields to `lib/features/conversations/domain/entities/rich_chat.dart`.
-- [ ] T007 [P] Extend mapping and local persistence for direct kind, activity fields, and participant display data in `lib/features/conversations/data/chat_codec.dart` and `lib/features/conversations/data/local/chat_database.dart`.
-- [ ] T008 Add repository contracts for departments, eligible contacts, and deterministic direct creation in `lib/features/conversations/domain/repositories/rich_chat_repository.dart`.
+- [x] T003 Implement pure active-user, IT, department, manager-chain, and role eligibility evaluation in `scripts/conversations/direct-policy.js`.
+- [x] T004 Add server tests for all employee, manager, super-admin, HR, and IT eligibility combinations in `scripts/test/rich-conversations.test.js`.
+- [x] T005 Extend `scripts/conversations/common.js` so `kind: direct` requires exactly the participant pair for reads, posts, actions, and protected downloads.
+- [x] T006 Add direct conversation DTO fields to `lib/features/conversations/domain/entities/rich_chat.dart`.
+- [x] T007 [P] Extend mapping and local persistence for direct kind, activity fields, and participant display data in `lib/features/conversations/data/chat_codec.dart` and `lib/features/conversations/data/local/chat_database.dart`.
+- [x] T008 Add repository contracts for departments, eligible contacts, and deterministic direct creation in `lib/features/conversations/domain/repositories/rich_chat_repository.dart`.
 
 **Checkpoint**: Authorization is authoritative and direct-channel contracts exist before any user-facing picker is enabled.
 
@@ -24,15 +24,15 @@
 
 **Independent Test**: Run direct-policy and direct-creation tests for ordinary employee, manager, super admin, HR, IT, inactive target, forged target, and simultaneous create.
 
-- [ ] T009 [P] [US1] Implement deterministic pair identity, transactional direct creation, and operation replay in `scripts/conversations/direct.js`.
-- [ ] T010 [US1] Route `POST /conversations/v2/direct` through `scripts/conversations/router.js` with safe error envelopes.
-- [ ] T011 [P] [US1] Implement bounded active department and eligible-contact queries in `scripts/conversations/queries.js`.
-- [ ] T012 [US1] Route department and eligible-contact endpoints in `scripts/conversations/router.js`.
-- [ ] T013 [P] [US1] Implement authenticated transport methods in `lib/features/conversations/data/rich_chat_repository_impl.dart`.
-- [ ] T014 [US1] Add a focused department-first picker Cubit in `lib/features/conversations/presentation/cubit/chat_direct_picker_cubit.dart`.
-- [ ] T015 [US1] Build the Arabic RTL department and contact picker in `lib/features/conversations/presentation/pages/direct_chat_picker_page.dart`.
-- [ ] T016 [US1] Add the private-chat entry action to `lib/features/conversations/presentation/pages/rich_chat_inbox_page.dart`.
-- [ ] T017 [US1] Add Flutter regression tests for picker state, stale target denial, and direct-channel opening in `test/features/conversations/private_chat_picker_test.dart`.
+- [x] T009 [P] [US1] Implement deterministic pair identity, transactional direct creation, and operation replay in `scripts/conversations/direct.js`.
+- [x] T010 [US1] Route `POST /conversations/v2/direct` through `scripts/conversations/router.js` with safe error envelopes.
+- [x] T011 [P] [US1] Implement bounded active department and eligible-contact queries in `scripts/conversations/queries.js`.
+- [x] T012 [US1] Route department and eligible-contact endpoints in `scripts/conversations/router.js`.
+- [x] T013 [P] [US1] Implement authenticated transport methods in `lib/features/conversations/data/rich_chat_repository_impl.dart`.
+- [x] T014 [US1] Add a focused department-first picker Cubit in `lib/features/conversations/presentation/cubit/chat_direct_picker_cubit.dart`.
+- [x] T015 [US1] Build the Arabic RTL department and contact picker in `lib/features/conversations/presentation/pages/direct_chat_picker_page.dart`.
+- [x] T016 [US1] Add the private-chat entry action to `lib/features/conversations/presentation/pages/rich_chat_inbox_page.dart`.
+- [x] T017 [US1] Add Flutter regression tests for picker state, stale target denial, and direct-channel opening in `test/features/conversations/private_chat_picker_test.dart`.
 
 ## Phase 4: User Story 2 — Separate private chats and groups (Priority: P1)
 
@@ -40,12 +40,12 @@
 
 **Independent Test**: Create direct, department, manager, and custom conversations; refresh on web and mobile and verify each appears in exactly one section.
 
-- [ ] T018 [P] [US2] Add section-aware bounded inbox query behavior to `scripts/conversations/queries.js`.
-- [ ] T019 [US2] Preserve unqualified legacy channel responses while routing `section=direct|group` in `scripts/conversations/router.js`.
-- [ ] T020 [P] [US2] Add section-aware page retrieval and local-cache mapping in `lib/features/conversations/data/rich_chat_repository_impl.dart` and `lib/features/conversations/data/local/chat_store.dart`.
-- [ ] T021 [US2] Split focused inbox state by section without exceeding 300 lines in `lib/features/conversations/presentation/cubit/chat_inbox_cubit.dart`.
-- [ ] T022 [US2] Render Arabic RTL Private chats and Groups sections, empty states, unread badges, and offline feedback in `lib/features/conversations/presentation/pages/rich_chat_inbox_page.dart`.
-- [ ] T023 [US2] Add widget tests for section separation and empty/offline states in `test/features/conversations/private_chat_inbox_test.dart`.
+- [x] T018 [P] [US2] Add section-aware bounded inbox query behavior to `scripts/conversations/queries.js`.
+- [x] T019 [US2] Preserve unqualified legacy channel responses while routing `section=direct|group` in `scripts/conversations/router.js`.
+- [x] T020 [P] [US2] Add section-aware page retrieval and local-cache mapping in `lib/features/conversations/data/rich_chat_repository_impl.dart` and `lib/features/conversations/data/local/chat_store.dart`.
+- [x] T021 [US2] Split focused inbox state by section without exceeding 300 lines in `lib/features/conversations/presentation/cubit/chat_inbox_cubit.dart`.
+- [x] T022 [US2] Render Arabic RTL Private chats and Groups sections, empty states, unread badges, and offline feedback in `lib/features/conversations/presentation/pages/rich_chat_inbox_page.dart`.
+- [x] T023 [US2] Add widget tests for section separation and empty/offline states in `test/features/conversations/private_chat_inbox_test.dart`.
 
 ## Phase 5: User Story 3 — Recent conversations appear first (Priority: P1)
 
@@ -53,15 +53,15 @@
 
 **Independent Test**: Send controlled messages across pages, simulate equal timestamps and live updates, then verify stable newest-first order without duplicates.
 
-- [ ] T024 [P] [US3] Update direct and group activity atomically for message, edit, deletion, reaction, and attachment events in `scripts/conversations/messages.js`.
-- [ ] T025 [US3] Implement stable activity cursor pagination and direct/group order in `scripts/conversations/queries.js`.
-- [ ] T026 [P] [US3] Add server tests for activity ordering, equal-time tie-breaking, pagination, and duplicate direct creation in `scripts/test/rich-conversations.test.js`.
-- [ ] T027 [US3] Merge live and paged inbox updates by channel ID and activity order in `lib/features/conversations/presentation/cubit/chat_inbox_cubit.dart`.
-- [ ] T028 [US3] Add Flutter tests for newest-first ordering and live movement in `test/features/conversations/private_chat_inbox_test.dart`.
+- [x] T024 [P] [US3] Update direct and group activity atomically for message, edit, deletion, reaction, and attachment events in `scripts/conversations/messages.js`.
+- [x] T025 [US3] Implement stable activity cursor pagination and direct/group order in `scripts/conversations/queries.js`.
+- [x] T026 [P] [US3] Add server tests for activity ordering, equal-time tie-breaking, pagination, and duplicate direct creation in `scripts/test/rich-conversations.test.js`.
+- [x] T027 [US3] Merge live and paged inbox updates by channel ID and activity order in `lib/features/conversations/presentation/cubit/chat_inbox_cubit.dart`.
+- [x] T028 [US3] Add Flutter tests for newest-first ordering and live movement in `test/features/conversations/private_chat_inbox_test.dart`.
 
 ## Phase 6: Polish and verification
 
-- [ ] T029 Verify every private message, action, attachment upload, and download rechecks direct participant authorization in `scripts/conversations/common.js`, `scripts/conversations/messages.js`, and `scripts/conversations/uploads.js`.
+- [x] T029 Verify every private message, action, attachment upload, and download rechecks direct participant authorization in `scripts/conversations/common.js`, `scripts/conversations/messages.js`, and `scripts/conversations/uploads.js`.
 - [ ] T030 [P] Verify RTL, mobile, desktop web, loading, error, offline, and empty states using `specs/013-private-chat/quickstart.md`.
 - [ ] T031 [P] Run `flutter analyze`, architecture/query guards, full Flutter tests, and `(cd scripts && npm test)`.
 - [ ] T032 Deploy additive Hostinger support before enabling the existing `conversations_rich_chat_v1` rollout and document monitoring/rollback evidence in `specs/013-private-chat/quickstart.md`.
@@ -88,14 +88,14 @@ Complete T001–T017: server-authorized contact eligibility, deterministic direc
 
 ## Phase 7: Extension — information UI, general group, media, and notifications
 
-- [ ] T033 Add information-page, member visibility, and attachment-card acceptance tests.
-- [ ] T034 Add a focused `ChatInfoCubit` and group/direct information page with member, media, and role-aware controls.
-- [ ] T035 Add server-owned, idempotent `company:general` initialization and active-employee access checks.
-- [ ] T036 Add company-group route/inbox coverage and concurrent-initialization tests.
-- [ ] T037 Add MIME-aware dark attachment cards and preview/download/open/share fallback tests for image, PDF, text, Word, spreadsheet, audio, video, archive, and unknown files.
-- [ ] T038 Add a fixed emoji palette and server-validated bundled sticker catalog/message representation.
-- [ ] T039 Add sticker selection/rendering tests and reject arbitrary or unknown sticker IDs server-side.
-- [ ] T040 Add a deterministic chat notification outbox integrated with the existing dispatcher, retry states, and delivery audit metrics.
-- [ ] T041 Add foreground/background/terminated notification route handling to the Flutter notification service and authorization-before-navigation tests.
-- [ ] T042 Prepare short alarm-derived notification sound assets and native Android/iOS configuration for the next store update; do not include this in a Shorebird patch.
+- [x] T033 Add information-page, member visibility, and attachment-card acceptance tests.
+- [x] T034 Add a focused `ChatInfoCubit` and group/direct information page with member, media, and role-aware controls.
+- [x] T035 Add server-owned, idempotent `company:general` initialization and active-employee access checks.
+- [x] T036 Add company-group route/inbox coverage and concurrent-initialization tests.
+- [x] T037 Add MIME-aware dark attachment cards and preview/download/open/share fallback tests for image, PDF, text, Word, spreadsheet, audio, video, archive, and unknown files.
+- [x] T038 Add a fixed emoji palette and server-validated bundled sticker catalog/message representation.
+- [x] T039 Add sticker selection/rendering tests and reject arbitrary or unknown sticker IDs server-side.
+- [x] T040 Add a deterministic chat notification outbox integrated with the existing dispatcher, retry states, and delivery audit metrics.
+- [x] T041 Add foreground/background/terminated notification route handling to the Flutter notification service and authorization-before-navigation tests.
+- [x] T042 Prepare short alarm-derived notification sound assets and native Android/iOS configuration for the next store update; do not include this in a Shorebird patch.
 - [ ] T043 Complete T017, T023, T026–T032 from the original plan, including the required review before any deployment or rollout-flag enablement.
