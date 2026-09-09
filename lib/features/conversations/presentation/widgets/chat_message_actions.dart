@@ -146,12 +146,13 @@ Future<void> showChatMessageActions(
           builder: (_) => _ForwardPicker(repository: repository),
         ),
       );
-      if (destination != null)
+      if (destination != null) {
         await actions.execute(
           message,
           'forward',
           destinationId: destination.id,
         );
+      }
     case 'readers':
       final viewed =
           readers
@@ -205,15 +206,18 @@ Future<void> showChatMessageActions(
                 child: FutureBuilder<List<Map<String, Object?>>>(
                   future: repository.audit(message.conversationId, message.id),
                   builder: (context, snapshot) {
-                    if (snapshot.hasError)
+                    if (snapshot.hasError) {
                       return Text(chatErrorText(snapshot.error.toString()));
-                    if (!snapshot.hasData)
+                    }
+                    if (!snapshot.hasData) {
                       return const SizedBox(
                         height: 64,
                         child: Center(child: CircularProgressIndicator()),
                       );
-                    if (snapshot.data!.isEmpty)
+                    }
+                    if (snapshot.data!.isEmpty) {
                       return const Text('لا توجد تعديلات');
+                    }
                     return ListView(
                       shrinkWrap: true,
                       children:
@@ -292,8 +296,9 @@ Future<String?> _editText(BuildContext context, String initial) async {
               ),
               FilledButton(
                 onPressed: () {
-                  if (form.currentState!.validate())
+                  if (form.currentState!.validate()) {
                     Navigator.pop(context, controller.text);
+                  }
                 },
                 child: const Text('حفظ'),
               ),

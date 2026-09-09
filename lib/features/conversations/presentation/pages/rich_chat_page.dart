@@ -258,12 +258,14 @@ class _RichChatPageState extends State<RichChatPage>
               child: FutureBuilder<ChatPage<ChatUser>>(
                 future: widget.repository.members(widget.channel.id),
                 builder: (context, snapshot) {
-                  if (snapshot.hasError)
+                  if (snapshot.hasError) {
                     return Center(
                       child: Text(chatErrorText(snapshot.error.toString())),
                     );
-                  if (!snapshot.hasData)
+                  }
+                  if (!snapshot.hasData) {
                     return const Center(child: CircularProgressIndicator());
+                  }
                   final members = snapshot.data!.items;
                   final direct = widget.channel.kind == 'direct';
                   return ListView(

@@ -11,11 +11,25 @@ class ChatActionState {
 class ChatActionCubit extends Cubit<ChatActionState> {
   ChatActionCubit(this.repository) : super(const ChatActionState());
   final RichChatRepository repository;
-  Future<bool> execute(RichMessage message, String action, {String? body, String? emoji, String? destinationId}) async {
+  Future<bool> execute(
+    RichMessage message,
+    String action, {
+    String? body,
+    String? emoji,
+    String? destinationId,
+  }) async {
     if (state.busy) return false;
     emit(const ChatActionState(busy: true));
     try {
-      await repository.action(message.conversationId, message.id, action: action, body: body, emoji: emoji, destinationId: destinationId, expectedRevision: message.revision);
+      await repository.action(
+        message.conversationId,
+        message.id,
+        action: action,
+        body: body,
+        emoji: emoji,
+        destinationId: destinationId,
+        expectedRevision: message.revision,
+      );
       if (!isClosed) emit(const ChatActionState());
       return true;
     } catch (error) {

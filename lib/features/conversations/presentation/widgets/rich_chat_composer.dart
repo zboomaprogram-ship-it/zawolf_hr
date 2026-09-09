@@ -114,10 +114,11 @@ class _RichChatComposerState extends State<RichChatComposer> {
                                     final files = await widget.pickAttachments(
                                       context,
                                     );
-                                    if (mounted)
+                                    if (mounted) {
                                       await widget.cubit.addFiles(files);
+                                    }
                                   } catch (error) {
-                                    if (context.mounted)
+                                    if (context.mounted) {
                                       ScaffoldMessenger.of(
                                         context,
                                       ).showSnackBar(
@@ -127,6 +128,7 @@ class _RichChatComposerState extends State<RichChatComposer> {
                                           ),
                                         ),
                                       );
+                                    }
                                   }
                                 },
                         icon: const Icon(Icons.attach_file),
@@ -160,8 +162,9 @@ class _RichChatComposerState extends State<RichChatComposer> {
                                               ),
                                             ),
                                       );
-                                  if (selected != null)
+                                  if (selected != null) {
                                     widget.cubit.chooseSticker(selected);
+                                  }
                                 },
                         icon: const Icon(Icons.emoji_emotions_outlined),
                       ),

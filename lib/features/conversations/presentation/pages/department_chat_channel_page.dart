@@ -65,8 +65,7 @@ class _DepartmentChatChannelPageState extends State<DepartmentChatChannelPage> {
     final text = _messageController.text.trim();
     if (text.isEmpty && _attachmentResourceIds.isEmpty) return;
 
-    final pendingId =
-        'optimistic-${DateTime.now().microsecondsSinceEpoch}';
+    final pendingId = 'optimistic-${DateTime.now().microsecondsSinceEpoch}';
     final pendingMessage = ConversationMessage(
       id: pendingId,
       conversationId: widget.channelId,
@@ -364,8 +363,9 @@ class _DepartmentChatChannelPageState extends State<DepartmentChatChannelPage> {
                         mergedMap[m.id] = m;
                       }
                     }
-                    final messages = mergedMap.values.toList()
-                      ..sort((a, b) => a.sentAt.compareTo(b.sentAt));
+                    final messages =
+                        mergedMap.values.toList()
+                          ..sort((a, b) => a.sentAt.compareTo(b.sentAt));
 
                     if (snapshot.connectionState == ConnectionState.waiting &&
                         remoteMessages.isEmpty &&
@@ -414,11 +414,13 @@ class _DepartmentChatChannelPageState extends State<DepartmentChatChannelPage> {
                       itemBuilder: (context, index) {
                         final message = messages[messages.length - index - 1];
                         return _MessageBubble(
-                          senderName: message.senderDisplayName.isNotEmpty
-                              ? message.senderDisplayName
-                              : (message.senderUserId == widget.currentUserId
-                                  ? 'أنت'
-                                  : 'عضو الفريق'),
+                          senderName:
+                              message.senderDisplayName.isNotEmpty
+                                  ? message.senderDisplayName
+                                  : (message.senderUserId ==
+                                          widget.currentUserId
+                                      ? 'أنت'
+                                      : 'عضو الفريق'),
                           body: message.body,
                           createdAt: message.sentAt.toIso8601String(),
                           isMe: message.senderUserId == widget.currentUserId,

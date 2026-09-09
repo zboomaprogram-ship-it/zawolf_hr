@@ -37,7 +37,7 @@ class ChatComposerCubit extends Cubit<ChatComposerState> {
   Future<void> _restore() async {
     try {
       final draft = await repository.loadDraft(channelId);
-      if (!isClosed)
+      if (!isClosed) {
         emit(
           ChatComposerState(
             body: draft.body,
@@ -46,9 +46,11 @@ class ChatComposerCubit extends Cubit<ChatComposerState> {
             revision: 1,
           ),
         );
+      }
     } catch (error) {
-      if (!isClosed)
+      if (!isClosed) {
         emit(ChatComposerState(loading: false, error: error.toString()));
+      }
     }
   }
 
@@ -163,7 +165,7 @@ class ChatComposerCubit extends Cubit<ChatComposerState> {
     _writes = _writes
         .then((_) => repository.saveDraft(channelId, body, files))
         .catchError((Object error) {
-          if (!isClosed)
+          if (!isClosed) {
             emit(
               ChatComposerState(
                 body: state.body,
@@ -174,6 +176,7 @@ class ChatComposerCubit extends Cubit<ChatComposerState> {
                 revision: state.revision,
               ),
             );
+          }
         });
   }
 
@@ -182,8 +185,9 @@ class ChatComposerCubit extends Cubit<ChatComposerState> {
         state.loading ||
         (state.body.trim().isEmpty &&
             state.files.isEmpty &&
-            state.stickerId == null))
+            state.stickerId == null)) {
       return;
+    }
     final draft = state;
     emit(
       ChatComposerState(
@@ -207,10 +211,11 @@ class ChatComposerCubit extends Cubit<ChatComposerState> {
         stickerId: draft.stickerId,
       );
       // send returns only after the durable outbox owns the complete draft.
-      if (!isClosed)
+      if (!isClosed) {
         emit(ChatComposerState(loading: false, revision: draft.revision + 1));
+      }
     } catch (error) {
-      if (!isClosed)
+      if (!isClosed) {
         emit(
           ChatComposerState(
             body: draft.body,
@@ -222,6 +227,7 @@ class ChatComposerCubit extends Cubit<ChatComposerState> {
             revision: draft.revision,
           ),
         );
+      }
     }
   }
 
