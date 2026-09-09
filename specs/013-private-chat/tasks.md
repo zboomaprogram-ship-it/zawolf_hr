@@ -85,3 +85,17 @@
 ## MVP scope
 
 Complete T001–T017: server-authorized contact eligibility, deterministic direct creation, and the department-first picker. It delivers private chat safely before inbox separation and live ordering refinements.
+
+## Phase 7: Extension — information UI, general group, media, and notifications
+
+- [ ] T033 Add information-page, member visibility, and attachment-card acceptance tests.
+- [ ] T034 Add a focused `ChatInfoCubit` and group/direct information page with member, media, and role-aware controls.
+- [ ] T035 Add server-owned, idempotent `company:general` initialization and active-employee access checks.
+- [ ] T036 Add company-group route/inbox coverage and concurrent-initialization tests.
+- [ ] T037 Add MIME-aware dark attachment cards and preview/download/open/share fallback tests for image, PDF, text, Word, spreadsheet, audio, video, archive, and unknown files.
+- [ ] T038 Add a fixed emoji palette and server-validated bundled sticker catalog/message representation.
+- [ ] T039 Add sticker selection/rendering tests and reject arbitrary or unknown sticker IDs server-side.
+- [ ] T040 Add a deterministic chat notification outbox integrated with the existing dispatcher, retry states, and delivery audit metrics.
+- [ ] T041 Add foreground/background/terminated notification route handling to the Flutter notification service and authorization-before-navigation tests.
+- [ ] T042 Prepare short alarm-derived notification sound assets and native Android/iOS configuration for the next store update; do not include this in a Shorebird patch.
+- [ ] T043 Complete T017, T023, T026–T032 from the original plan, including the required review before any deployment or rollout-flag enablement.

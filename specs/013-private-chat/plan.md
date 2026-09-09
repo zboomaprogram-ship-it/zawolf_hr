@@ -103,3 +103,21 @@ lib/features/conversations/
 ## Rollout and rollback
 
 Deploy the additive Hostinger server modules before client use. Keep direct chat behind `conversations_rich_chat_v1`. Monitor denied creation attempts, duplicate direct-pair attempts, inbox latency, and failures without storing message content. Disable the feature flag to roll back the client route; direct conversation and message records remain intact for later re-enable.
+
+---
+
+## Extension Plan: Group experience, media, and notification delivery
+
+1. Add `ChatInfoCubit` and a feature-owned information page. Reuse member/media repository contracts and enforce the existing server access check.
+2. Add a bundled sticker catalog in the conversations domain. Validate message sticker identifiers in the server message schema; do not accept remote sticker URLs.
+3. Put notification delivery behind a server outbox worker owned by the existing notification dispatcher. The transaction persists the deterministic event; the worker delivers FCM/APNs and records an idempotent outcome. The Flutter notification route parser will recognize `conversationId` and navigate only after authenticated repository authorization succeeds.
+4. Create `company:general` with an idempotent server initializer. `kind: company` authorizes active employees to read/post and remains outside private-chat participant logic.
+5. Expand attachment cards and previews through feature-owned adapters. Preserve the original file and always retain authorized download/open/share fallback.
+6. Treat the requested short alarm sound as a native-release asset: prepare source, licensing record, Android `res/raw`, and iOS bundle configuration in a separately reviewed store-release change. It cannot be delivered in a Dart-only patch.
+
+### Increment order
+
+1. Information UI, company group, and file cards.
+2. Notification outbox, delivery observability, and deep-link tests.
+3. Sticker catalog/reactions and native sound release preparation.
+4. Complete the existing 013 synchronization, pagination, offline, and deployment/rollout verification tasks.

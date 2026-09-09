@@ -111,3 +111,65 @@ Both private chats and groups are ordered like WhatsApp: the conversation with t
 - Ordinary employees may contact ordinary employees across departments; the restriction applies to managers in other departments unless directly assigned.
 - Existing private conversations retain historical visibility for their two participants even if a later reporting-line change would prevent creating a new one.
 - This feature extends the existing rich-chat rollout and remains disabled for users outside `conversations_rich_chat_v1` until deliberately enabled.
+
+---
+
+## Extension: Rich Group Experience, Media, and Notifications
+
+**Status**: Draft — awaiting owner review (2026-09-09)
+
+### User Story 4 — Useful group and member information (Priority: P1)
+
+A user can open a polished group information page with the group image/name, clear purpose and visibility, member count, searchable member list, shared media/documents, notification controls, and the participant actions that their role permits. It follows the practical information layout of WhatsApp while retaining ZaWolf branding and Arabic RTL.
+
+**Acceptance Scenarios**:
+
+1. Group and direct-chat headers show the correct name, avatar, participant count, and information action without unknown/fallback icons.
+2. The information page displays only members the current user is authorized to see; direct chats show exactly the other participant and groups show their authorized member list.
+3. HR/admin group moderation controls are visible only where the existing authorization policy permits them.
+4. Group detail pages provide loading, empty, error, offline, mobile, desktop-web, and Arabic RTL states.
+
+### User Story 5 — Expressive but governed messaging (Priority: P1)
+
+A participant can react with an expanded approved emoji set and use locally bundled sticker packs. Stickers are message attachments with a server-approved pack/item identifier, never arbitrary remote image URLs.
+
+**Acceptance Scenarios**:
+
+1. The reaction picker contains a larger fixed Unicode emoji palette and preserves the existing one-reaction-per-user rule.
+2. A sticker picker lists bundled approved packs, sends a stable sticker identifier, and renders it offline when the pack is installed.
+3. A user cannot submit an unrecognized sticker identifier or arbitrary image as a sticker.
+
+### User Story 6 — Reliable chat notifications and deep links (Priority: P0)
+
+A message notification reaches authorized recipients in foreground, background, and after the app has been closed. Tapping it opens the exact authorized conversation, or a safe notification/error screen if the channel was removed or access changed.
+
+**Acceptance Scenarios**:
+
+1. Sending a message creates one deterministic notification event per eligible recipient and does not notify the sender.
+2. Notification delivery is queued independently from the committed message and retries transient provider failures without duplicating a visible notification.
+3. The app maps a chat notification route to the specified conversation ID after authentication and rechecks access before opening it.
+4. Android/iOS use a short, licensed app notification sound derived from the approved alarm asset; web uses browser-supported notification behavior. A missing sound falls back to the platform default.
+
+### User Story 7 — Company-wide general group (Priority: P1)
+
+Every active employee can read and post in one canonical company group. Deactivated users lose future access. The group has a deterministic ID, is created idempotently by the server, and appears in Groups.
+
+### User Story 8 — Complete, calm file handling (Priority: P1)
+
+Messages with images, documents, spreadsheets, PDFs, audio, video, and unsupported files render without an excessively bright background. Each file has a clear type card and safe open/save/share actions; supported types provide previews and unsupported/corrupt types remain downloadable.
+
+### Extension Requirements
+
+- **FR-016**: Group and direct information screens MUST be feature-owned, role-aware, Arabic RTL, and must not expose unauthorized members or controls.
+- **FR-017**: The app MUST use approved emoji and packaged sticker identifiers; the server validates every sticker before persisting it.
+- **FR-018**: Message notification persistence, delivery retry, and notification tap routing MUST be idempotent and independent from message commit success.
+- **FR-019**: A notification tap MUST authenticate and authorize the target conversation before navigation; stale/removed targets MUST show safe Arabic feedback.
+- **FR-020**: The company group MUST use a stable server-owned ID and active-employee authorization on every read/post/action/download.
+- **FR-021**: File presentation MUST handle image, PDF, plain text, spreadsheet, Word document, audio, video, archive, and unknown MIME types with a readable dark theme and download fallback.
+- **FR-022**: The notification sound asset and native platform configuration MUST be delivered only in a store update, not a Shorebird/Dart patch, because native packaged resources are required.
+
+### Extension Success Criteria
+
+- Every notification-tap test opens the intended authorized conversation and no other channel.
+- Every tested file type remains readable or downloadable after send, including Arabic filenames and corrupt/unsupported previews.
+- The company group is created once under concurrent initialization and is accessible to every active employee.
