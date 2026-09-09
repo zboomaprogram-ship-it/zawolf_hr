@@ -28,14 +28,15 @@ test('attachment-only legacy send enters v2 change feed without synthetic text',
   const changes=await Q.changes({db,channel,params:new URLSearchParams('after=0')});
   assert.equal(changes.messages[0].attachments[0].fileName,'صورة.png'); assert.equal(changes.changeCursor,'1');
 });
-test('HR nonmember may read approved custom history but cannot send/react/read/typing', async () => {
+test('HR/admin can participate in approved custom groups without becoming listed members', async () => {
   const db=seed(); const message=(await send(db)).message;
-  assert.equal((await C.channelFor(db,hr,'room')).canPost,false);
-  await assert.rejects(sendMessage({db,actor:hr,channelId:'room',payload:{operationId:'hr-send',body:'no'},now}),code('access_denied'));
-  await assert.rejects(messageAction({db,actor:hr,channelId:'room',messageId:message.id,payload:{operationId:'hr-react',action:'react',emoji:'👍'},now}),code('access_denied'));
-  await assert.rejects(presence({db,actor:hr,channelId:'room',payload:{operationId:'hr-read',messageId:message.id},now}),code('access_denied'));
-  await assert.rejects(presence({db,actor:hr,channelId:'room',typing:true,payload:{operationId:'hr-type',typing:true},now}),code('access_denied'));
-  assert.equal(C.access(hr,{kind:'custom',memberUserIds:[]}).canRead,false);
+  assert.equal((await C.channelFor(db,hr,'room')).canPost,true);
+  const hrMessage=await sendMessage({db,actor:hr,channelId:'room',payload:{operationId:'hr-send',body:'approved'},now});
+  assert.equal(hrMessage.message.senderUserId,'hr');
+  await messageAction({db,actor:hr,channelId:'room',messageId:message.id,payload:{operationId:'hr-react',action:'react',emoji:'👍'},now});
+  await presence({db,actor:hr,channelId:'room',payload:{operationId:'hr-read',messageId:message.id},now});
+  await presence({db,actor:hr,channelId:'room',typing:true,payload:{operationId:'hr-type',typing:true},now});
+  assert.equal(C.access(hr,{kind:'custom',approved:true,memberUserIds:[]}).canPost,true);
   assert.equal(C.access(hr,{kind:'manager_channel',memberUserIds:[]}).canRead,false);
 });
 test('edit/delete enforce ownership, revision and exact fifteen-minute boundary with audit tombstone', async()=>{

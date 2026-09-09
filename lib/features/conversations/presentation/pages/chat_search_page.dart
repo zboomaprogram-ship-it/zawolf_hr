@@ -11,7 +11,7 @@ class ChatSearchPage extends StatelessWidget {
   final String channelId;
   final Widget Function(BuildContext, RichAttachment) attachmentBuilder;
   @override
-  Widget build(BuildContext context) => BlocProvider(create: (_) => ChatSearchCubit(repository, channelId), child: Directionality(textDirection: TextDirection.rtl, child: Scaffold(appBar: AppBar(title: const Text('البحث في رسائل القناة')), body: BlocBuilder<ChatSearchCubit, ChatSearchState>(builder: (context, state) => Center(child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 900), child: Column(children: [
+  Widget build(BuildContext context) => BlocProvider(create: (_) => ChatSearchCubit(repository, channelId), child: Directionality(textDirection: TextDirection.rtl, child: Scaffold(appBar: AppBar(title: const Text('البحث في رسائل الجروب')), body: BlocBuilder<ChatSearchCubit, ChatSearchState>(builder: (context, state) => Center(child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 900), child: Column(children: [
     Padding(padding: const EdgeInsets.all(12), child: TextField(autofocus: true, decoration: const InputDecoration(labelText: 'كلمة أو عبارة', prefixIcon: Icon(Icons.search), helperText: 'اضغط إدخال للبحث'), onSubmitted: (query) => context.read<ChatSearchCubit>().search(query))),
     if (state.offline) const ChatFeedback(text: 'نتائج من الرسائل المحفوظة على هذا الجهاز فقط — غير متصل'),
     if (state.error != null) ChatFeedback(text: chatErrorText(state.error!), onRetry: () => context.read<ChatSearchCubit>().search(state.query)),

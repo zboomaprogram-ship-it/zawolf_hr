@@ -39,15 +39,14 @@ class _ChatRequestFormPageState extends State<ChatRequestFormPage> {
     if (reason != null) await _submit(decision: 'rejected', rejectionReason: reason);
   }
   @override
-  Widget build(BuildContext context) => Directionality(textDirection: TextDirection.rtl, child: Scaffold(appBar: AppBar(title: Text(widget.request == null ? (widget.canReview ? 'إنشاء قناة جديدة — HR' : 'طلب قناة جديدة') : widget.canReview ? 'مراجعة طلب القناة' : 'تفاصيل طلب القناة')), body: BlocBuilder<ChatRequestFormCubit, ChatRequestFormState>(bloc: _cubit, builder: (context, state) => Center(child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 760), child: ListView(padding: const EdgeInsets.all(20), children: [
-    const ChatFeedback(text: 'بعد موافقة HR، يمكن للأعضاء والموارد البشرية قراءة القناة ومرفقاتها. الأعضاء الجدد يمكنهم قراءة سجل الرسائل.'),
+  Widget build(BuildContext context) => Directionality(textDirection: TextDirection.rtl, child: Scaffold(appBar: AppBar(title: Text(widget.request == null ? (widget.canReview ? 'إنشاء جروب جديد — HR' : 'طلب جروب جديد') : widget.canReview ? 'مراجعة طلب الجروب' : 'تفاصيل طلب الجروب')), body: BlocBuilder<ChatRequestFormCubit, ChatRequestFormState>(bloc: _cubit, builder: (context, state) => Center(child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 760), child: ListView(padding: const EdgeInsets.all(20), children: [
     const SizedBox(height: 20),
     if (widget.request != null) Text('حالة الطلب: ${chatRequestStatus(widget.request!.status)}', style: Theme.of(context).textTheme.titleMedium),
     if (widget.request?.rejectionReason != null) ChatFeedback(text: 'سبب الرفض: ${widget.request!.rejectionReason}'),
     Form(key: _form, child: Column(children: [
-      TextFormField(controller: _name, enabled: _editable && !state.busy, maxLength: 120, decoration: const InputDecoration(labelText: 'اسم القناة'), validator: (value) => (value ?? '').trim().isEmpty ? 'أدخل اسم القناة' : null),
+      TextFormField(controller: _name, enabled: _editable && !state.busy, maxLength: 120, decoration: const InputDecoration(labelText: 'اسم الجروب'), validator: (value) => (value ?? '').trim().isEmpty ? 'أدخل اسم الجروب' : null),
       const SizedBox(height: 12),
-      TextFormField(controller: _reason, enabled: widget.request == null && !state.busy, maxLength: 1000, minLines: 3, maxLines: 6, decoration: InputDecoration(labelText: widget.canReview ? 'غرض القناة' : 'سبب إنشاء القناة'), validator: (value) => (value ?? '').trim().isEmpty ? 'أدخل سبب الطلب' : null),
+      TextFormField(controller: _reason, enabled: widget.request == null && !state.busy, maxLength: 1000, minLines: 3, maxLines: 6, decoration: InputDecoration(labelText: widget.canReview ? 'غرض الجروب' : 'سبب إنشاء الجروب'), validator: (value) => (value ?? '').trim().isEmpty ? 'أدخل سبب الطلب' : null),
     ])),
     const SizedBox(height: 16),
     OutlinedButton.icon(onPressed: !_editable || state.busy ? null : () async {
@@ -60,7 +59,7 @@ class _ChatRequestFormPageState extends State<ChatRequestFormPage> {
     if (state.busy) const LinearProgressIndicator(),
     const SizedBox(height: 20),
     if (_editable) Wrap(spacing: 12, runSpacing: 12, children: [
-      FilledButton.icon(onPressed: state.busy ? null : _submit, icon: Icon(widget.request == null ? (widget.canReview ? Icons.add_circle_outline : Icons.send) : Icons.check), label: Text(widget.request == null ? (widget.canReview ? 'إنشاء القناة مباشرة' : 'إرسال الطلب إلى HR') : 'الموافقة وإنشاء القناة')),
+      FilledButton.icon(onPressed: state.busy ? null : _submit, icon: Icon(widget.request == null ? (widget.canReview ? Icons.add_circle_outline : Icons.send) : Icons.check), label: Text(widget.request == null ? (widget.canReview ? 'إنشاء الجروب مباشرة' : 'إرسال الطلب إلى HR') : 'الموافقة وإنشاء الجروب')),
       if (widget.request != null) OutlinedButton.icon(onPressed: state.busy ? null : _reject, icon: const Icon(Icons.close), label: const Text('رفض مع السبب')),
     ]),
   ]))))));

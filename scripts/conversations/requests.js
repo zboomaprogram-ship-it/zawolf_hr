@@ -35,7 +35,7 @@ async function createRequest({ db, admin, actor, payload, now = new Date() }) {
     const request = { id, name: requestName, reason: requestReason, memberUserIds, requesterId: actor.uid, status: 'pending', revision: 1, rejectionReason: null, conversationId: null, createdAt: now.toISOString() };
     tx.create(db.collection('conversationRequests').doc(id), request);
     C.audit(tx, db, id, payload.operationId, actor, 'request', { request }, now);
-    C.notify(tx, db, reviewers.docs.map(d => d.id), `request:${id}`, 'طلب قناة محادثة', requestName, { requestId: id, route: '/conversations/requests' }, now, admin);
+    C.notify(tx, db, reviewers.docs.map(d => d.id), `request:${id}`, 'طلب جروب محادثة', requestName, { requestId: id, route: '/conversations/requests' }, now, admin);
     return C.receipt(tx, op, { request }, now);
   });
 }
@@ -58,7 +58,7 @@ async function reviewRequest({ db, admin, actor, requestId, payload, now = new D
     } else request.rejectionReason = reason(payload.reason);
     tx.set(ref, request);
     C.audit(tx, db, request.conversationId || requestId, payload.operationId, actor, 'review', { request }, now);
-    C.notify(tx, db, payload.decision === 'approved' ? request.memberUserIds : [old.requesterId], `review:${requestId}`, 'تحديث طلب المحادثة', payload.decision === 'approved' ? 'تمت الموافقة على القناة' : 'تم رفض الطلب', { requestId, conversationId: request.conversationId, route: request.conversationId ? `/conversations/${encodeURIComponent(request.conversationId)}` : '/conversations/requests' }, now, admin);
+    C.notify(tx, db, payload.decision === 'approved' ? request.memberUserIds : [old.requesterId], `review:${requestId}`, 'تحديث طلب المحادثة', payload.decision === 'approved' ? 'تمت الموافقة على الجروب' : 'تم رفض الطلب', { requestId, conversationId: request.conversationId, route: request.conversationId ? `/conversations/${encodeURIComponent(request.conversationId)}` : '/conversations/requests' }, now, admin);
     return C.receipt(tx, op, { request }, now);
   });
 }
@@ -78,7 +78,7 @@ async function updateMembers({ db, admin, actor, channelId, payload, now = new D
     tx.set(channel.ref, data);
     C.change(tx, channel, 'members', {}, now);
     C.audit(tx, db, channelId, payload.operationId, actor, 'members', { memberUserIds: ids, revision: data.revision }, now);
-    C.notify(tx, db, ids.filter(id => !channel.data.memberUserIds.includes(id)), `members:${channelId}:${payload.operationId}`, 'تمت إضافتك إلى قناة', data.name, { conversationId: channelId, route: `/conversations/${encodeURIComponent(channelId)}` }, now, admin);
+    C.notify(tx, db, ids.filter(id => !channel.data.memberUserIds.includes(id)), `members:${channelId}:${payload.operationId}`, 'تمت إضافتك إلى جروب', data.name, { conversationId: channelId, route: `/conversations/${encodeURIComponent(channelId)}` }, now, admin);
     return C.receipt(tx, op, { channel: channelDto({ ...channel, data }, actor) }, now);
   });
 }

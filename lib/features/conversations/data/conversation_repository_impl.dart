@@ -42,7 +42,7 @@ final class ConversationRepositoryImpl
       id: response.data['conversationId']?.toString() ?? '',
       memberUserIds: const <String>{},
       purposeAr:
-          'قناة قسم ${response.data['departmentName'] ?? departmentName}',
+          'جروب قسم ${response.data['departmentName'] ?? departmentName}',
       state: ConversationState.active,
     );
   }
@@ -56,7 +56,7 @@ final class ConversationRepositoryImpl
     return Conversation(
       id: response.data['conversationId']?.toString() ?? '',
       memberUserIds: const <String>{},
-      purposeAr: response.data['name']?.toString() ?? 'قناة المديرين',
+      purposeAr: response.data['name']?.toString() ?? 'جروب المديرين',
       state: ConversationState.active,
     );
   }
@@ -147,7 +147,7 @@ final class ConversationRepositoryImpl
     if (!response.ok) {
       throw StateError(switch (response.safeCode) {
         'session_expired' => 'انتهت جلسة الدخول. سجل الدخول مرة أخرى.',
-        'access_denied' => 'ليس لديك صلاحية رفع مرفق في هذه القناة.',
+        'access_denied' => 'ليس لديك صلاحية رفع مرفق في هذه الجروب.',
         'temporarily_unavailable' =>
           'مجلد مرفقات المحادثات في Google Drive غير جاهز حالياً. أعد المحاولة لاحقاً أو تواصل مع HR.',
         'drive_upload_not_ready' =>

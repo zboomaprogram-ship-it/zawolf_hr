@@ -165,7 +165,7 @@ void main() {
       );
       repository.snapshots.add(const RichChatSnapshot(canPost: true));
       await tester.pumpAndSettle();
-      await tester.tap(find.byTooltip('معلومات القناة'));
+      await tester.tap(find.byTooltip('معلومات الجروب'));
       await tester.pumpAndSettle();
       expect(find.textContaining('جميع موظفي القسم'), findsOneWidget);
       expect(find.textContaining('0 عضو'), findsNothing);
@@ -197,8 +197,8 @@ void main() {
       );
       repository.snapshots.add(const RichChatSnapshot(canPost: true));
       await tester.pumpAndSettle();
-      expect(find.byTooltip('أعضاء القناة'), findsOneWidget);
-      await tester.tap(find.byTooltip('أعضاء القناة'));
+      expect(find.byTooltip('أعضاء الجروب'), findsOneWidget);
+      await tester.tap(find.byTooltip('أعضاء الجروب'));
       await tester.pumpAndSettle();
       expect(find.text('زميلة الاختبار'), findsOneWidget);
       await tester.pumpWidget(const SizedBox.shrink());

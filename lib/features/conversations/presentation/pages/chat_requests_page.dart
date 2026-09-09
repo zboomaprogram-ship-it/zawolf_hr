@@ -20,7 +20,7 @@ class ChatRequestsPage extends StatelessWidget {
         child: Builder(
           builder: (context) => Scaffold(
             appBar: AppBar(
-              title: Text(canReview ? 'طلبات القنوات — HR' : 'طلبات القنوات الخاصة بي'),
+              title: Text(canReview ? 'طلبات الجروبات — HR' : 'طلبات الجروبات الخاصة بي'),
               actions: [
                 IconButton(
                   tooltip: 'تحديث',
@@ -42,7 +42,7 @@ class ChatRequestsPage extends StatelessWidget {
                 }
               },
               icon: const Icon(Icons.add),
-              label: Text(canReview ? 'إنشاء / طلب قناة' : 'طلب قناة'),
+              label: Text(canReview ? 'إنشاء / طلب جروب' : 'طلب جروب'),
             ),
             body: BlocBuilder<ChatRequestsCubit, ChatRequestsState>(
               builder: (context, state) => Center(
@@ -61,7 +61,7 @@ class ChatRequestsPage extends StatelessWidget {
                           padding: const EdgeInsets.only(bottom: 96),
                           children: [
                             if (state.requests.isEmpty && !state.loading)
-                              const ListTile(title: Text('لا توجد طلبات قنوات حتى الآن')),
+                              const ListTile(title: Text('لا توجد طلبات جروبات حتى الآن')),
                             for (final request in state.requests)
                               Card(
                                 child: Column(
@@ -110,7 +110,7 @@ class ChatRequestsPage extends StatelessWidget {
                                           ),
                                         ),
                                         icon: const Icon(Icons.forum_outlined),
-                                        label: const Text('فتح القناة'),
+                                        label: const Text('فتح الجروب'),
                                       ),
                                   ],
                                 ),

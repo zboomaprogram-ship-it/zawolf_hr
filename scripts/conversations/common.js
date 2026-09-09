@@ -9,7 +9,10 @@ function access(actor, data) {
   if (!actor?.uid || actor.active === false || !data || data.state === 'closed') return { canRead: false, canPost: false };
   const deptName = data.departmentName || data.department || data.departmentKey;
   const member = data.kind === 'department' ? canAccessDepartment(actor, deptName) : isConversationMember(data, actor.uid);
-  return { canRead: member || (data.kind === 'custom' && data.approved === true && isHrOrAdmin(actor)), canPost: member };
+  // HR and admins moderate approved custom groups without being injected into
+  // every memberUserIds list, so they retain access as membership changes.
+  const moderator = data.kind === 'custom' && data.approved === true && isHrOrAdmin(actor);
+  return { canRead: member || moderator, canPost: member || moderator };
 }
 async function channelFor(db, actor, id, tx, write = false) {
   if (!safeId(id)) fail('access_denied', 403);

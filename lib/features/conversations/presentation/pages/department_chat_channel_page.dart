@@ -277,7 +277,7 @@ class _DepartmentChatChannelPageState extends State<DepartmentChatChannelPage> {
 
   @override
   Widget build(BuildContext context) {
-    final title = widget.channelName ?? 'قناة المحادثة والتواصل';
+    final title = widget.channelName ?? 'جروب المحادثة والتواصل';
 
     return Directionality(
       textDirection: TextDirection.rtl,
@@ -380,7 +380,7 @@ class _DepartmentChatChannelPageState extends State<DepartmentChatChannelPage> {
                     if (snapshot.hasError && messages.isEmpty) {
                       return const Center(
                         child: Text(
-                          'تعذر تحميل رسائل القسم. أعد فتح القناة.',
+                          'تعذر تحميل رسائل القسم. أعد فتح الجروب.',
                           style: TextStyle(color: Colors.white70),
                         ),
                       );
@@ -399,7 +399,7 @@ class _DepartmentChatChannelPageState extends State<DepartmentChatChannelPage> {
                               ),
                               SizedBox(height: 12),
                               Text(
-                                'لا توجد رسائل في هذه القناة بعد.\nابدأ المحادثة مع فريق العمل.',
+                                'لا توجد رسائل في هذا الجروب بعد.\nابدأ المحادثة مع فريق العمل.',
                                 textAlign: TextAlign.center,
                                 style: TextStyle(color: Colors.white54),
                               ),

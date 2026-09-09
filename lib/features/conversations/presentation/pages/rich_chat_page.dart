@@ -127,10 +127,27 @@ class _RichChatPageState extends State<RichChatPage>
   }
 
   Future<void> _members() async {
+    List<String> selected;
+    try {
+      // A notification can open this page without memberUserIds. Read the
+      // current server membership before editing so it cannot be overwritten.
+      selected =
+          (await widget.repository.members(
+            widget.channel.id,
+          )).items.map((member) => member.id).toList();
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(chatErrorText(error.toString()))),
+        );
+      }
+      return;
+    }
+    if (!mounted) return;
     final members = await pickChatUsers(
       context,
       widget.repository,
-      selected: widget.channel.memberUserIds,
+      selected: selected,
     );
     if (members == null || !mounted) return;
     try {
@@ -143,7 +160,7 @@ class _RichChatPageState extends State<RichChatPage>
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text(
-              'تم تحديث أعضاء القناة. افتح القناة مجددًا لمراجعة العضوية.',
+              'تم تحديث أعضاء الجروب. افتح الجروب مجددًا لمراجعة العضوية.',
             ),
           ),
         );
@@ -197,7 +214,7 @@ class _RichChatPageState extends State<RichChatPage>
                               users.isEmpty
                                   ? const Center(
                                     child: Text(
-                                      'لا توجد أسماء أعضاء متاحة لهذه القناة.',
+                                      'لا توجد أسماء أعضاء متاحة لهذا الجروب.',
                                     ),
                                   )
                                   : ListView.separated(
@@ -304,7 +321,7 @@ class _RichChatPageState extends State<RichChatPage>
                 ),
           ),
           IconButton(
-            tooltip: 'أعضاء القناة',
+            tooltip: 'أعضاء الجروب',
             icon: const Icon(Icons.people),
             onPressed: _showMembers,
           ),
@@ -332,7 +349,7 @@ class _RichChatPageState extends State<RichChatPage>
             },
           ),
           IconButton(
-            tooltip: 'معلومات القناة',
+            tooltip: 'معلومات الجروب',
             icon: const Icon(Icons.info_outline),
             onPressed: () {
               final memberText =
@@ -350,18 +367,16 @@ class _RichChatPageState extends State<RichChatPage>
                 builder:
                     (context) => AlertDialog(
                       title: Text(widget.channel.name),
-                      content: Text(
-                        '$memberText\n\n${widget.channel.hrReadable ? 'يمكن للموارد البشرية قراءة هذه القناة ومرفقاتها. الأعضاء الجدد يمكنهم قراءة السجل.' : 'قناة العمل'}',
-                      ),
+                      content: Text(memberText),
                     ),
               );
             },
           ),
           if (widget.canReview && widget.channel.kind == 'custom')
             IconButton(
-              tooltip: 'إدارة أعضاء القناة',
+              tooltip: 'تعديل أعضاء الجروب',
               onPressed: _members,
-              icon: const Icon(Icons.people),
+              icon: const Icon(Icons.edit),
             ),
         ],
       ),
@@ -405,13 +420,6 @@ class _RichChatPageState extends State<RichChatPage>
                           ChatFeedback(
                             text: chatErrorText(state.error!),
                             onRetry: _timeline.loadOlder,
-                          ),
-                        if (widget.channel.hrReadable &&
-                            !state.snapshot.canPost &&
-                            !state.loading)
-                          const ChatFeedback(
-                            text:
-                                'عرض HR للقراءة فقط — العضوية مطلوبة للإرسال والتفاعل.',
                           ),
                         if (state.loading) const LinearProgressIndicator(),
                         Expanded(
