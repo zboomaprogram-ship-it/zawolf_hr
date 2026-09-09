@@ -246,6 +246,116 @@ class _RichChatPageState extends State<RichChatPage>
     );
   }
 
+  Future<void> _showInfo() => showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    builder:
+        (context) => Directionality(
+          textDirection: TextDirection.rtl,
+          child: SafeArea(
+            child: SizedBox(
+              height: MediaQuery.sizeOf(context).height * .82,
+              child: FutureBuilder<ChatPage<ChatUser>>(
+                future: widget.repository.members(widget.channel.id),
+                builder: (context, snapshot) {
+                  if (snapshot.hasError)
+                    return Center(
+                      child: Text(chatErrorText(snapshot.error.toString())),
+                    );
+                  if (!snapshot.hasData)
+                    return const Center(child: CircularProgressIndicator());
+                  final members = snapshot.data!.items;
+                  final direct = widget.channel.kind == 'direct';
+                  return ListView(
+                    padding: const EdgeInsets.all(20),
+                    children: [
+                      Center(
+                        child: CircleAvatar(
+                          radius: 38,
+                          child: Icon(
+                            direct
+                                ? Icons.person_outline
+                                : Icons.groups_outlined,
+                            size: 42,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        widget.channel.name,
+                        textAlign: TextAlign.center,
+                        style: Theme.of(context).textTheme.headlineSmall,
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        direct
+                            ? 'محادثة خاصة'
+                            : widget.channel.kind == 'department'
+                            ? 'جميع موظفي القسم · ${members.length} عضو'
+                            : '${members.length} عضو',
+                        textAlign: TextAlign.center,
+                        style: Theme.of(context).textTheme.bodyMedium,
+                      ),
+                      const SizedBox(height: 20),
+                      Card(
+                        child: Column(
+                          children: [
+                            ListTile(
+                              leading: const Icon(Icons.lock_outline),
+                              title: const Text('الخصوصية والصلاحيات'),
+                              subtitle: Text(
+                                widget.channel.canPost
+                                    ? 'يمكنك الإرسال والتفاعل في هذه المحادثة.'
+                                    : 'هذه المحادثة متاحة للقراءة فقط.',
+                              ),
+                            ),
+                            if (widget.channel.hrReadable)
+                              const ListTile(
+                                leading: Icon(
+                                  Icons.admin_panel_settings_outlined,
+                                ),
+                                title: Text('وصول الموارد البشرية'),
+                                subtitle: Text(
+                                  'يمكن للموارد البشرية والإدارة مراجعة وإدارة هذا الجروب.',
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        direct ? 'المشارك' : 'الأعضاء',
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                      const SizedBox(height: 8),
+                      if (members.isEmpty)
+                        const ListTile(
+                          title: Text('لا توجد أسماء أعضاء متاحة حالياً.'),
+                        ),
+                      for (final user in members)
+                        ListTile(
+                          leading: CircleAvatar(
+                            child: Text(
+                              user.name.isEmpty
+                                  ? '?'
+                                  : user.name.characters.first,
+                            ),
+                          ),
+                          title: Text(user.name),
+                          subtitle:
+                              user.department.isEmpty
+                                  ? null
+                                  : Text(user.department),
+                        ),
+                    ],
+                  );
+                },
+              ),
+            ),
+          ),
+        ),
+  );
+
   @override
   Widget build(BuildContext context) => Directionality(
     textDirection: TextDirection.rtl,
@@ -351,26 +461,7 @@ class _RichChatPageState extends State<RichChatPage>
           IconButton(
             tooltip: 'معلومات الجروب',
             icon: const Icon(Icons.info_outline),
-            onPressed: () {
-              final memberText =
-                  widget.channel.kind == 'department'
-                      ? (widget.channel.memberUserIds.isNotEmpty
-                          ? '${widget.channel.memberUserIds.length} عضو (أعضاء القسم)'
-                          : 'جميع موظفي القسم')
-                      : widget.channel.kind == 'manager'
-                      ? (widget.channel.memberUserIds.isNotEmpty
-                          ? '${widget.channel.memberUserIds.length} عضو (فريق الإدارة)'
-                          : 'أعضاء الإدارة والمديرين')
-                      : '${widget.channel.memberUserIds.length} عضو';
-              showDialog<void>(
-                context: context,
-                builder:
-                    (context) => AlertDialog(
-                      title: Text(widget.channel.name),
-                      content: Text(memberText),
-                    ),
-              );
-            },
+            onPressed: _showInfo,
           ),
           if (widget.canReview && widget.channel.kind == 'custom')
             IconButton(
