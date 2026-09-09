@@ -3,19 +3,23 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:intl/intl.dart' hide TextDirection;
 
 import '../../../../theme/theme.dart';
+import '../../../../components/wolf_card.dart';
 import '../../domain/entities/request_view_query.dart';
 import '../../domain/entities/request_visibility_record.dart';
 import '../cubit/request_visibility_cubit.dart';
+import '../widgets/request_type_style.dart';
 
 final class RequestVisibilityPanel extends StatefulWidget {
   const RequestVisibilityPanel({
     super.key,
     required this.query,
     this.searchTerm = '',
+    this.onSelectRecord,
   });
 
   final RequestViewQuery query;
   final String searchTerm;
+  final void Function(RequestVisibilityRecord record)? onSelectRecord;
 
   @override
   State<RequestVisibilityPanel> createState() => _RequestVisibilityPanelState();
@@ -23,6 +27,8 @@ final class RequestVisibilityPanel extends StatefulWidget {
 
 final class _RequestVisibilityPanelState extends State<RequestVisibilityPanel>
     with AutomaticKeepAliveClientMixin {
+  RequestLifecycleState? _selectedLifecycle;
+
   @override
   bool get wantKeepAlive => true;
 
@@ -46,6 +52,41 @@ final class _RequestVisibilityPanelState extends State<RequestVisibilityPanel>
 
   void _load() => context.read<RequestVisibilityCubit>().load(widget.query);
 
+  Widget _buildFilterChips() {
+    final filters = <(RequestLifecycleState?, String)>[
+      (null, 'الكل'),
+      (RequestLifecycleState.pending, 'قيد المراجعة'),
+      (RequestLifecycleState.approved, 'معتمد'),
+      (RequestLifecycleState.rejected, 'مرفوض'),
+    ];
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      child: Row(
+        children: [
+          for (final (lifecycle, label) in filters)
+            Padding(
+              padding: const EdgeInsetsDirectional.only(end: 8),
+              child: ChoiceChip(
+                label: Text(label),
+                selected: _selectedLifecycle == lifecycle,
+                onSelected: (_) => setState(() => _selectedLifecycle = lifecycle),
+                selectedColor: ZaWolfColors.primaryCyan.withValues(alpha: 0.2),
+                labelStyle: TextStyle(
+                  color: _selectedLifecycle == lifecycle
+                      ? ZaWolfColors.primaryCyan
+                      : ZaWolfColors.textSecondary,
+                  fontWeight: _selectedLifecycle == lifecycle
+                      ? FontWeight.bold
+                      : FontWeight.normal,
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     super.build(context);
@@ -55,6 +96,14 @@ final class _RequestVisibilityPanelState extends State<RequestVisibilityPanel>
         builder: (context, state) {
           final records = state.records
               .where((record) => _matchesSearch(record, widget.searchTerm))
+              .where((record) {
+                if (_selectedLifecycle == null) return true;
+                if (_selectedLifecycle == RequestLifecycleState.approved) {
+                  return record.lifecycleState == RequestLifecycleState.approved ||
+                      record.lifecycleState == RequestLifecycleState.confirmed;
+                }
+                return record.lifecycleState == _selectedLifecycle;
+              })
               .toList(growable: false);
           if (state.loading && state.records.isEmpty) {
             return const _RequestState(
@@ -76,34 +125,53 @@ final class _RequestVisibilityPanelState extends State<RequestVisibilityPanel>
             );
           }
           if (records.isEmpty) {
-            return const _RequestState(
-              icon: Icons.inbox_outlined,
-              message: 'لا توجد سجلات مطابقة للبحث أو الفترة المحددة.',
+            return Column(
+              children: [
+                _buildFilterChips(),
+                const Expanded(
+                  child: _RequestState(
+                    icon: Icons.inbox_outlined,
+                    message: 'لا توجد سجلات مطابقة للبحث أو التصفية المحددة.',
+                  ),
+                ),
+              ],
             );
           }
-          return ListView.separated(
-            padding: const EdgeInsets.all(16),
-            itemCount: records.length + (state.hasMore ? 1 : 0),
-            separatorBuilder: (_, __) => const SizedBox(height: 10),
-            itemBuilder: (context, index) {
-              if (index == records.length) {
-                return Center(
-                  child: OutlinedButton.icon(
-                    onPressed: state.loading
-                        ? null
-                        : context.read<RequestVisibilityCubit>().loadMore,
-                    icon: state.loading
-                        ? const SizedBox.square(
-                            dimension: 18,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.expand_more),
-                    label: const Text('تحميل المزيد'),
-                  ),
-                );
-              }
-              return _RequestRecordCard(record: records[index]);
-            },
+          return Column(
+            children: [
+              _buildFilterChips(),
+              Expanded(
+                child: ListView.builder(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  itemCount: records.length + (state.hasMore ? 1 : 0),
+                  itemBuilder: (context, index) {
+                    if (index == records.length) {
+                      return Center(
+                        child: OutlinedButton.icon(
+                          onPressed: state.loading
+                              ? null
+                              : context.read<RequestVisibilityCubit>().loadMore,
+                          icon: state.loading
+                              ? const SizedBox.square(
+                                  dimension: 18,
+                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                )
+                              : const Icon(Icons.expand_more),
+                          label: const Text('تحميل المزيد'),
+                        ),
+                      );
+                    }
+                    final record = records[index];
+                    return _RequestRecordCard(
+                      record: record,
+                      onTap: widget.onSelectRecord != null
+                          ? () => widget.onSelectRecord!(record)
+                          : null,
+                    );
+                  },
+                ),
+              ),
+            ],
           );
         },
       ),
@@ -124,76 +192,179 @@ final class _RequestVisibilityPanelState extends State<RequestVisibilityPanel>
 }
 
 final class _RequestRecordCard extends StatelessWidget {
-  const _RequestRecordCard({required this.record});
+  const _RequestRecordCard({
+    required this.record,
+    this.onTap,
+  });
 
   final RequestVisibilityRecord record;
+  final VoidCallback? onTap;
 
   @override
-  Widget build(BuildContext context) => Card(
-    child: ListTile(
-      leading: CircleAvatar(
-        backgroundColor: ZaWolfColors.primaryCyan.withValues(alpha: 0.12),
-        child: Icon(_icon(record.sourceType), color: ZaWolfColors.primaryCyan),
+  Widget build(BuildContext context) {
+    final style = RequestTypeStyle.fromSourceType(record.sourceType);
+    final typeColor = style.borderColor;
+    final shadowColor = style.shadowColor;
+    final stateColor = RequestTypeStyle.stateColor(record.lifecycleState);
+
+    return WolfCard(
+      borderColor: typeColor,
+      borderWidth: 1.5,
+      shadowColor: shadowColor,
+      padding: const EdgeInsets.all(14),
+      margin: const EdgeInsets.only(bottom: 12),
+      onTap: onTap,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  color: typeColor.withValues(alpha: 0.14),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color: typeColor.withValues(alpha: 0.4),
+                    width: 1.2,
+                  ),
+                ),
+                child: Icon(
+                  style.icon,
+                  color: typeColor,
+                  size: 22,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      record.employeeName?.isNotEmpty == true
+                          ? record.employeeName!
+                          : record.employeeCode ?? record.employeeId,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 15,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      DateFormat('yyyy/MM/dd – HH:mm').format(record.occurredAt.toLocal()),
+                      style: const TextStyle(
+                        color: ZaWolfColors.textSecondary,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: typeColor.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: typeColor.withValues(alpha: 0.45),
+                  ),
+                ),
+                child: Text(
+                  style.label,
+                  style: TextStyle(
+                    color: typeColor,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 11,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          if (record.reason?.isNotEmpty == true) ...[
+            const SizedBox(height: 10),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: ZaWolfColors.surface02.withValues(alpha: 0.5),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Text(
+                record.reason!,
+                style: const TextStyle(fontSize: 13),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
+          const SizedBox(height: 10),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: stateColor.withValues(alpha: 0.14),
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: stateColor.withValues(alpha: 0.35)),
+                    ),
+                    child: Text(
+                      RequestTypeStyle.stateLabel(record.lifecycleState),
+                      style: TextStyle(
+                        color: stateColor,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: ZaWolfColors.surface02,
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Text(
+                      'المرحلة: ${RequestTypeStyle.stageLabel(record.approvalStage)}',
+                      style: const TextStyle(
+                        color: ZaWolfColors.textSecondary,
+                        fontSize: 11,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              if (onTap != null)
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      'عرض الإجراء',
+                      style: TextStyle(
+                        color: typeColor,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(width: 2),
+                    Icon(
+                      Icons.chevron_left,
+                      size: 16,
+                      color: typeColor,
+                    ),
+                  ],
+                ),
+            ],
+          ),
+        ],
       ),
-      title: Text(
-        record.employeeName?.isNotEmpty == true
-            ? record.employeeName!
-            : record.employeeCode ?? record.employeeId,
-      ),
-      subtitle: Text(
-        '${_typeLabel(record.sourceType)} · ${_stateLabel(record.lifecycleState)}\n'
-        '${DateFormat('yyyy/MM/dd – HH:mm').format(record.occurredAt.toLocal())}'
-        '${record.reason?.isNotEmpty == true ? '\n${record.reason}' : ''}',
-      ),
-      isThreeLine: true,
-      trailing: Chip(label: Text(_stageLabel(record.approvalStage))),
-    ),
-  );
-
-  IconData _icon(RequestSourceType type) => switch (type) {
-    RequestSourceType.leave => Icons.event_available_outlined,
-    RequestSourceType.permission => Icons.schedule_outlined,
-    RequestSourceType.attendanceCorrection => Icons.edit_calendar_outlined,
-    RequestSourceType.salaryDeduction ||
-    RequestSourceType.lateArrivalDeduction => Icons.money_off_outlined,
-    RequestSourceType.advance => Icons.account_balance_wallet_outlined,
-    RequestSourceType.administrative => Icons.assignment_outlined,
-    RequestSourceType.complaint => Icons.report_problem_outlined,
-    RequestSourceType.resignation => Icons.meeting_room_outlined,
-    RequestSourceType.employeeDeletion => Icons.person_remove_outlined,
-    RequestSourceType.unknown => Icons.description_outlined,
-  };
-
-  String _typeLabel(RequestSourceType type) => switch (type) {
-    RequestSourceType.leave => 'إجازة',
-    RequestSourceType.permission => 'إذن',
-    RequestSourceType.attendanceCorrection => 'تصحيح حضور',
-    RequestSourceType.salaryDeduction => 'خصم راتب',
-    RequestSourceType.lateArrivalDeduction => 'خصم حضور',
-    RequestSourceType.advance => 'سلفة',
-    RequestSourceType.administrative => 'طلب إداري',
-    RequestSourceType.complaint => 'شكوى',
-    RequestSourceType.resignation => 'استقالة',
-    RequestSourceType.employeeDeletion => 'حذف حساب موظف',
-    RequestSourceType.unknown => 'طلب',
-  };
-
-  String _stateLabel(RequestLifecycleState state) => switch (state) {
-    RequestLifecycleState.pending => 'قيد المراجعة',
-    RequestLifecycleState.approved => 'مقبول',
-    RequestLifecycleState.rejected => 'مرفوض',
-    RequestLifecycleState.cancelled => 'ملغي',
-    RequestLifecycleState.confirmed => 'معتمد نهائيًا',
-    RequestLifecycleState.unknown => 'حالة غير محددة',
-  };
-
-  String _stageLabel(RequestApprovalStage stage) => switch (stage) {
-    RequestApprovalStage.manager => 'المدير',
-    RequestApprovalStage.ceo => 'المالك',
-    RequestApprovalStage.hr => 'HR',
-    RequestApprovalStage.finalised => 'مكتمل',
-    RequestApprovalStage.unknown => 'مراجعة',
-  };
+    );
+  }
 }
 
 final class _RequestState extends StatelessWidget {

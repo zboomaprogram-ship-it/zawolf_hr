@@ -156,4 +156,22 @@ void main() {
     expect(screenSource, contains("isEqualTo: 'pending_hr'"));
     expect(screenSource, contains('reversal:\$reversalOnly'));
   });
+
+  test('all requests tab provides unified visibility with distinctive type styling', () {
+    expect(screenSource, contains("const Tab(text: 'الكل')"));
+    expect(screenSource, contains("key: const ValueKey('unified-all-requests')"));
+    expect(screenSource, contains('_navigateToRecordCategory'));
+    expect(screenSource, contains("RequestTypeStyle.leave.borderColor"));
+    expect(screenSource, contains("RequestTypeStyle.leave.shadowColor"));
+    expect(screenSource, contains("RequestTypeStyle.permission.borderColor"));
+    expect(screenSource, contains("RequestTypeStyle.permission.shadowColor"));
+    expect(screenSource, contains("RequestTypeStyle.advance.borderColor"));
+    expect(screenSource, contains("RequestTypeStyle.advance.shadowColor"));
+    expect(screenSource, contains("RequestTypeStyle.administrative.borderColor"));
+    expect(screenSource, contains("RequestTypeStyle.resignation.borderColor"));
+    expect(screenSource, contains("RequestTypeStyle.complaint.borderColor"));
+    expect(screenSource, contains("RequestTypeStyle.attendanceCorrection.borderColor"));
+    expect(screenSource, contains("RequestTypeStyle.salaryDeduction.borderColor"));
+  });
 }
+

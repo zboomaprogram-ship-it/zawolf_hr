@@ -50,6 +50,8 @@ import '../../design_system/bidi.dart';
 import '../../utils/user_facing_error.dart';
 import '../../core/sync/authenticated_operation_client.dart';
 import '../../features/request_visibility/domain/entities/request_view_query.dart';
+import '../../features/request_visibility/domain/entities/request_visibility_record.dart';
+import '../../features/request_visibility/presentation/widgets/request_type_style.dart';
 import '../../navigation/request_visibility_entry.dart';
 import '../shared/requests_log_screen.dart';
 
@@ -1219,6 +1221,42 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
     );
   }
 
+  void _navigateToRecordCategory(
+    BuildContext tabContext,
+    RequestVisibilityRecord record,
+    List<Tab> tabs,
+  ) {
+    final targetKeyword = switch (record.sourceType) {
+      RequestSourceType.leave => 'الإجازات',
+      RequestSourceType.permission => 'الأذونات',
+      RequestSourceType.advance => 'السلف',
+      RequestSourceType.attendanceCorrection => 'تصحيح الحضور',
+      RequestSourceType.administrative => 'إدارية',
+      RequestSourceType.complaint => 'الشكاوى',
+      RequestSourceType.resignation => 'الاستقالات',
+      RequestSourceType.salaryDeduction ||
+      RequestSourceType.lateArrivalDeduction => 'خصومات التأخير',
+      RequestSourceType.employeeDeletion => 'مراجعة أمنية',
+      RequestSourceType.unknown => 'إدارية',
+    };
+
+    final targetIndex = tabs.indexWhere(
+      (tab) => (tab.text ?? '').contains(targetKeyword),
+    );
+
+    if (targetIndex >= 0) {
+      final tabController = DefaultTabController.maybeOf(tabContext);
+      if (tabController != null) {
+        tabController.animateTo(targetIndex);
+        final tabLabel = tabs[targetIndex].text ?? '';
+        final group = _requestGroupForLabel(tabLabel);
+        setState(() {
+          _selectedRequestGroup = group;
+        });
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final authService = Provider.of<AuthService>(context);
@@ -1235,6 +1273,12 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
     final canReviewSalaryDeductions = EmployeeRole.isHr(manager.role);
     final canReviewTimeCorrections = EmployeeRole.isHr(manager.role);
     final canReviewSecurity = EmployeeRole.isHr(manager.role);
+    final allRequestsQuery = RequestViewQuery(
+      actorScope: RequestActorScope(actorId: manager.uid, role: manager.role),
+      tab: RequestViewTab.all,
+      fromDate: DateTime.utc(2020),
+      toDate: DateTime.now().toUtc().add(const Duration(days: 366)),
+    );
     final historyQuery = RequestViewQuery(
       actorScope: RequestActorScope(actorId: manager.uid, role: manager.role),
       tab: RequestViewTab.history,
@@ -1248,6 +1292,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
       toDate: historyQuery.toDate,
     );
     final tabs = <Tab>[
+      const Tab(text: 'الكل'),
       const Tab(text: 'الإجازات'),
       const Tab(text: 'الأذونات'),
       const Tab(text: 'السلف'),
@@ -1267,6 +1312,16 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
       const Tab(text: 'السجل الموحد'),
     ];
     final tabViews = <Widget>[
+      Builder(
+        builder: (tabContext) => RequestVisibilityEntry(
+          key: const ValueKey('unified-all-requests'),
+          query: allRequestsQuery,
+          searchTerm: _searchQuery,
+          onSelectRecord:
+              (record) =>
+                  _navigateToRecordCategory(tabContext, record, tabs),
+        ),
+      ),
       _buildLeavesTab(manager, theme),
       _buildPermissionsTab(manager, theme),
       _buildAdvancesTab(manager, theme),
@@ -1317,14 +1372,23 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
     int initialTabIndex = 0;
     if (initialCategory != null && initialCategory.isNotEmpty) {
       final cat = initialCategory.trim().toLowerCase();
-      if (cat.contains('leave') || cat.contains('إجاز')) {
+      if (cat == 'all' || cat.contains('الكل') || cat.contains('all')) {
         initialTabIndex = 0;
+      } else if (cat.contains('leave') || cat.contains('إجاز')) {
+        final found = tabs.indexWhere(
+          (t) => (t.text ?? '').contains('الإجازات'),
+        );
+        if (found >= 0) initialTabIndex = found;
       } else if (cat.contains('permission') ||
           cat.contains('إذن') ||
           cat.contains('أذون')) {
-        initialTabIndex = 1;
+        final found = tabs.indexWhere(
+          (t) => (t.text ?? '').contains('الأذونات'),
+        );
+        if (found >= 0) initialTabIndex = found;
       } else if (cat.contains('advance') || cat.contains('سلف')) {
-        initialTabIndex = 2;
+        final found = tabs.indexWhere((t) => (t.text ?? '').contains('السلف'));
+        if (found >= 0) initialTabIndex = found;
       } else if (cat.contains('admin') ||
           cat.contains('مهم') ||
           cat.contains('إداري')) {
@@ -1531,6 +1595,8 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                                   final group = groups.keys.elementAt(
                                     itemIndex,
                                   );
+                                  final isSingleTabGroup =
+                                      groups[group]!.length == 1;
                                   final pending = groups[group]!
                                       .map(
                                         (index) => _pendingCountForLabel(
@@ -1543,14 +1609,27 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                                       );
                                   return _requestCategoryContainer(
                                     label: group,
-                                    group: 'فئة رئيسية',
+                                    group:
+                                        isSingleTabGroup
+                                            ? 'عرض مباشر'
+                                            : 'فئة رئيسية',
                                     icon: _iconForRequestGroup(group),
-                                    selected: false,
+                                    selected:
+                                        isSingleTabGroup &&
+                                        tabController.index ==
+                                            groups[group]!.first,
                                     pending: pending,
-                                    onTap:
-                                        () => setState(
+                                    onTap: () {
+                                      if (isSingleTabGroup) {
+                                        tabController.animateTo(
+                                          groups[group]!.first,
+                                        );
+                                      } else {
+                                        setState(
                                           () => _selectedRequestGroup = group,
-                                        ),
+                                        );
+                                      }
+                                    },
                                   );
                                 }
                                 final index = visibleIndexes[itemIndex - 1];
@@ -1582,6 +1661,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
   );
 
   int _pendingCountForLabel(String label) => switch (label) {
+    'الكل' => PendingRequestsService.instance.pendingCount.value,
     'الإجازات' => PendingRequestsService.instance.leavesCount,
     'الأذونات' => PendingRequestsService.instance.permissionsCount,
     'السلف' => PendingRequestsService.instance.advancesCount,
@@ -1591,6 +1671,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
   };
 
   IconData _iconForRequestGroup(String group) => switch (group) {
+    'الكل' => Icons.grid_view_rounded,
     'الحضور' => Icons.fact_check_outlined,
     'المالية' => Icons.account_balance_wallet_outlined,
     'التشغيل' => Icons.settings_suggest_outlined,
@@ -1697,6 +1778,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
   );
 
   String _requestGroupForLabel(String label) {
+    if (label == 'الكل') return 'الكل';
     if (label.contains('إجاز') ||
         label.contains('أذون') ||
         label.contains('تصحيح')) {
@@ -1817,6 +1899,9 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: WolfCard(
+        borderColor: RequestTypeStyle.manualDeduction.borderColor,
+        shadowColor: RequestTypeStyle.manualDeduction.shadowColor,
+        borderWidth: 1.5,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -2246,6 +2331,9 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                         )
                         : null,
                 child: WolfCard(
+                  borderColor: RequestTypeStyle.administrative.borderColor,
+                  shadowColor: RequestTypeStyle.administrative.shadowColor,
+                  borderWidth: 1.5,
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -2388,6 +2476,9 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
             return Padding(
               padding: const EdgeInsets.only(bottom: 12),
               child: WolfCard(
+                borderColor: RequestTypeStyle.fromSourceType(RequestSourceType.unknown).borderColor,
+                shadowColor: RequestTypeStyle.fromSourceType(RequestSourceType.unknown).shadowColor,
+                borderWidth: 1.5,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -2555,6 +2646,9 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
             return Padding(
               padding: const EdgeInsets.only(bottom: 12),
               child: WolfCard(
+                borderColor: RequestTypeStyle.administrative.borderColor,
+                shadowColor: RequestTypeStyle.administrative.shadowColor,
+                borderWidth: 1.5,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -2676,6 +2770,9 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
             final request = requests[index];
             return WolfCard(
               margin: const EdgeInsets.only(bottom: 12),
+              borderColor: RequestTypeStyle.resignation.borderColor,
+              shadowColor: RequestTypeStyle.resignation.shadowColor,
+              borderWidth: 1.5,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -3123,6 +3220,9 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
       padding: const EdgeInsets.only(bottom: 16.0),
       child: WolfCard(
         hasBorderGlow: true,
+        borderColor: RequestTypeStyle.leave.borderColor,
+        shadowColor: RequestTypeStyle.leave.shadowColor,
+        borderWidth: 1.5,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -3616,6 +3716,9 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
       padding: const EdgeInsets.only(bottom: 16.0),
       child: WolfCard(
         hasBorderGlow: true,
+        borderColor: RequestTypeStyle.permission.borderColor,
+        shadowColor: RequestTypeStyle.permission.shadowColor,
+        borderWidth: 1.5,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -3837,6 +3940,9 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
       padding: const EdgeInsets.only(bottom: 16.0),
       child: WolfCard(
         hasBorderGlow: true,
+        borderColor: RequestTypeStyle.advance.borderColor,
+        shadowColor: RequestTypeStyle.advance.shadowColor,
+        borderWidth: 1.5,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -3968,6 +4074,9 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
               padding: const EdgeInsets.only(bottom: 16.0),
               child: WolfCard(
                 hasBorderGlow: true,
+                borderColor: RequestTypeStyle.complaint.borderColor,
+                shadowColor: RequestTypeStyle.complaint.shadowColor,
+                borderWidth: 1.5,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -4337,6 +4446,9 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
   }) {
     return WolfCard(
       hasBorderGlow: true,
+      borderColor: RequestTypeStyle.salaryDeduction.borderColor,
+      shadowColor: RequestTypeStyle.salaryDeduction.shadowColor,
+      borderWidth: 1.5,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -4509,6 +4621,9 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                   padding: const EdgeInsets.only(bottom: 16.0),
                   child: WolfCard(
                     hasBorderGlow: true,
+                    borderColor: RequestTypeStyle.salaryDeduction.borderColor,
+                    shadowColor: RequestTypeStyle.salaryDeduction.shadowColor,
+                    borderWidth: 1.5,
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -4781,6 +4896,9 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
     final requested = data['requestedCheckInTime'] as Timestamp?;
     return WolfCard(
       hasBorderGlow: true,
+      borderColor: RequestTypeStyle.attendanceCorrection.borderColor,
+      shadowColor: RequestTypeStyle.attendanceCorrection.shadowColor,
+      borderWidth: 1.5,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -5428,6 +5546,9 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
       padding: const EdgeInsets.only(bottom: 16.0),
       child: WolfCard(
         hasBorderGlow: true,
+        borderColor: RequestTypeStyle.fromSourceType(RequestSourceType.employeeDeletion).borderColor,
+        shadowColor: RequestTypeStyle.fromSourceType(RequestSourceType.employeeDeletion).shadowColor,
+        borderWidth: 1.5,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
