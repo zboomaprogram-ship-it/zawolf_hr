@@ -3,6 +3,19 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../domain/entities/rich_chat.dart';
 import '../../domain/repositories/rich_chat_repository.dart';
 
+List<RichChannel> _ordered(Iterable<RichChannel> source) {
+  final channels = source.toList();
+  channels.sort((a, b) {
+    final byActivity = (b.latestActivityAt ??
+            DateTime.fromMillisecondsSinceEpoch(0))
+        .compareTo(
+          a.latestActivityAt ?? DateTime.fromMillisecondsSinceEpoch(0),
+        );
+    return byActivity != 0 ? byActivity : b.id.compareTo(a.id);
+  });
+  return channels;
+}
+
 class ChatInboxState {
   const ChatInboxState({
     this.channels = const [],
@@ -19,32 +32,34 @@ class ChatInboxState {
 class ChatInboxCubit extends Cubit<ChatInboxState> {
   ChatInboxCubit(this.repository, {this.section})
     : super(const ChatInboxState()) {
-    if (section == null) {
-      _subscription = repository.watchInbox().listen(
-        (page) {
-          if (!isClosed) {
-            emit(
-              ChatInboxState(
-                channels: page.items,
-                loading: false,
-                offline: page.offline,
-                cursor: page.nextCursor,
-              ),
-            );
-          }
-        },
-        onError: (Object error) {
-          if (!isClosed) {
-            emit(
-              ChatInboxState(
-                channels: state.channels,
-                loading: false,
-                error: error.toString(),
-              ),
-            );
-          }
-        },
-      );
+    {
+      _subscription = repository
+          .watchInbox(section: section)
+          .listen(
+            (page) {
+              if (!isClosed) {
+                emit(
+                  ChatInboxState(
+                    channels: _ordered(page.items),
+                    loading: false,
+                    offline: page.offline,
+                    cursor: page.nextCursor,
+                  ),
+                );
+              }
+            },
+            onError: (Object error) {
+              if (!isClosed) {
+                emit(
+                  ChatInboxState(
+                    channels: state.channels,
+                    loading: false,
+                    error: error.toString(),
+                  ),
+                );
+              }
+            },
+          );
     }
     load();
   }
@@ -57,19 +72,12 @@ class ChatInboxCubit extends Cubit<ChatInboxState> {
     emit(ChatInboxState(channels: state.channels, cursor: state.cursor));
     try {
       final page = await repository.channels(cursor: cursor, section: section);
-      final channels =
-          {
-              ...{for (final channel in previous) channel.id: channel},
-              ...{for (final channel in page.items) channel.id: channel},
-            }.values.toList()
-            ..sort(
-              (a, b) =>
-                  (b.latestActivityAt ?? DateTime.fromMillisecondsSinceEpoch(0))
-                      .compareTo(
-                        a.latestActivityAt ??
-                            DateTime.fromMillisecondsSinceEpoch(0),
-                      ),
-            );
+      final channels = _ordered(
+        {
+          ...{for (final channel in previous) channel.id: channel},
+          ...{for (final channel in page.items) channel.id: channel},
+        }.values,
+      );
       if (!isClosed) {
         emit(
           ChatInboxState(

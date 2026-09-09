@@ -23,7 +23,7 @@ class RichChatRepositoryImpl implements RichChatRepository {
   final Set<String> _polling = {};
   final Map<String, int> _failures = {};
   final Map<String, DateTime> _typed = {};
-  StreamController<ChatPage<RichChannel>>? _inbox;
+  final Map<String, StreamController<ChatPage<RichChannel>>> _inboxes = {};
   bool _foreground = true, _disposed = false;
   String _channel(String id) => '/channels/${Uri.encodeComponent(id)}';
   String _query(Map<String, String?> values) =>
@@ -87,25 +87,31 @@ class RichChatRepositoryImpl implements RichChatRepository {
   bool _offlineError(ChatFailure e) =>
       e.code == 'connection_interrupted' || e.code.startsWith('http_5');
   @override
-  Stream<ChatPage<RichChannel>> watchInbox() {
-    _inbox ??= StreamController<ChatPage<RichChannel>>.broadcast(
-      onListen: () => _pollInbox(),
-      onCancel: () => _timers.remove('inbox')?.cancel(),
+  Stream<ChatPage<RichChannel>> watchInbox({String? section}) {
+    final key = section ?? 'all';
+    _inboxes[key] ??= StreamController<ChatPage<RichChannel>>.broadcast(
+      onListen: () => _pollInbox(section),
+      onCancel: () => _timers.remove('inbox:$key')?.cancel(),
     );
-    return _inbox!.stream;
+    return _inboxes[key]!.stream;
   }
 
-  Future<void> _pollInbox() async {
-    if (!_foreground || _disposed || _polling.contains('inbox')) return;
-    _polling.add('inbox');
+  Future<void> _pollInbox(String? section) async {
+    final key = section ?? 'all';
+    final pollKey = 'inbox:$key';
+    if (!_foreground || _disposed || _polling.contains(pollKey)) return;
+    _polling.add(pollKey);
     try {
-      _inbox?.add(await channels());
+      _inboxes[key]?.add(await channels(section: section));
     } catch (e, st) {
-      _inbox?.addError(e, st);
+      _inboxes[key]?.addError(e, st);
     } finally {
-      _polling.remove('inbox');
-      if (_foreground && !_disposed && (_inbox?.hasListener ?? false)) {
-        _timers['inbox'] = Timer(const Duration(seconds: 15), _pollInbox);
+      _polling.remove(pollKey);
+      if (_foreground && !_disposed && (_inboxes[key]?.hasListener ?? false)) {
+        _timers[pollKey] = Timer(
+          const Duration(seconds: 15),
+          () => _pollInbox(section),
+        );
       }
     }
   }
@@ -131,7 +137,11 @@ class RichChatRepositoryImpl implements RichChatRepository {
     }
     _timers.clear();
     if (foreground) {
-      if (_inbox?.hasListener ?? false) _pollInbox();
+      for (final entry in _inboxes.entries) {
+        if (entry.value.hasListener) {
+          _pollInbox(entry.key == 'all' ? null : entry.key);
+        }
+      }
       for (final e in _channels.entries) {
         if (e.value.hasListener) _poll(e.key);
       }
@@ -706,7 +716,9 @@ class RichChatRepositoryImpl implements RichChatRepository {
     for (final c in _channels.values) {
       await c.close();
     }
-    await _inbox?.close();
+    for (final inbox in _inboxes.values) {
+      await inbox.close();
+    }
     await store.database.close();
   }
 }
