@@ -267,8 +267,16 @@ class _RichChatPageState extends State<RichChatPage>
                     if (state.loading) {
                       return const Center(child: CircularProgressIndicator());
                     }
-                    final members = state.members;
                     final direct = widget.channel.kind == 'direct';
+                    final members =
+                        direct
+                            ? state.members
+                                .where(
+                                  (member) =>
+                                      member.id != widget.repository.actorId,
+                                )
+                                .toList()
+                            : state.members;
                     return ListView(
                       padding: const EdgeInsets.all(20),
                       children: [
@@ -486,7 +494,10 @@ class _RichChatPageState extends State<RichChatPage>
             },
           ),
           IconButton(
-            tooltip: 'معلومات الجروب',
+            tooltip:
+                widget.channel.kind == 'direct'
+                    ? 'معلومات المحادثة'
+                    : 'معلومات الجروب',
             icon: const Icon(Icons.info_outline),
             onPressed: _showInfo,
           ),

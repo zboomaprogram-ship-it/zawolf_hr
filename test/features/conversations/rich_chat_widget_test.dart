@@ -13,6 +13,7 @@ class FakeRichChatRepository implements RichChatRepository {
   bool failSend = false;
   int sends = 0;
   final channelMembers = const [
+    ChatUser(id: 'me', name: 'أنا', department: 'Data Analytics'),
     ChatUser(
       id: 'colleague',
       name: 'زميلة الاختبار',
@@ -209,6 +210,37 @@ void main() {
       await repository.snapshots.close();
     },
   );
+
+  testWidgets('direct chat information displays the other participant only', (
+    tester,
+  ) async {
+    final repository = FakeRichChatRepository();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: RichChatPage(
+          repository: repository,
+          channel: const RichChannel(
+            id: 'direct:me:colleague',
+            name: 'زميلة الاختبار',
+            kind: 'direct',
+            canPost: true,
+          ),
+          canReview: false,
+          attachmentBuilder: (_, attachment) => Text(attachment.fileName),
+          pickAttachments: (_) async => [],
+          voiceBuilder: (_, callback) => const SizedBox.shrink(),
+        ),
+      ),
+    );
+    repository.snapshots.add(const RichChatSnapshot(canPost: true));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('معلومات المحادثة'));
+    await tester.pumpAndSettle();
+    expect(find.text('زميلة الاختبار'), findsWidgets);
+    expect(find.text('أنا'), findsNothing);
+    await tester.pumpWidget(const SizedBox.shrink());
+    await repository.snapshots.close();
+  });
 
   testWidgets(
     'composer has attachment and voice options without camera video record button',
