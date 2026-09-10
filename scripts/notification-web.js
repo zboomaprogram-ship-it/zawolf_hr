@@ -747,7 +747,17 @@ async function handleAttendanceGateway(req, res) {
         : ['not_authorized'].includes(code)
           ? 403
         : 400;
-    console.error('Attendance gateway failed:', code, error.message || error);
+    // Validation rejections are an expected client outcome. In particular, an
+    // expired offline event must not look like a Hostinger runtime failure.
+    // Reserve error logs for unavailable/internal gateway faults.
+    if (['stale_event', 'invalid_request', 'checkin_missing', 'outside_range',
+      'inactive_location', 'assignment_changed', 'device_conflict',
+      'device_mismatch', 'account_inactive', 'unauthenticated',
+      'not_authorized'].includes(code)) {
+      console.info('Attendance gateway rejected:', code);
+    } else {
+      console.error('Attendance gateway failed:', code, error.message || error);
+    }
     const safeMessages = {
       unauthenticated: 'يرجى تسجيل الدخول مرة أخرى.',
       not_authorized: 'لا تملك صلاحية تنفيذ هذه العملية.',

@@ -380,6 +380,14 @@ class OfflineAttendanceQueueService {
   static const _queueKey = 'offline_attendance_queue_v1';
   static const _deviceBindingPrefix = 'attendance_device_owner_';
 
+  /// Only transport failures are safe to replay. A gateway validation result
+  /// is final for the original captured action and retrying it forever cannot
+  /// make its timestamp, device, or location valid.
+  static bool shouldRetryGatewayFailure(Object error) {
+    if (error is! AttendanceGatewayException) return true;
+    return error.isTemporary;
+  }
+
   final AttendanceGatewayService _gateway = AttendanceGatewayService();
   final Connectivity _connectivity = Connectivity();
   final StreamController<void> _changes = StreamController<void>.broadcast();
@@ -473,8 +481,10 @@ class OfflineAttendanceQueueService {
         if (result == _OfflineSyncResult.checkoutDisabled) {
           continue;
         }
-      } catch (_) {
-        remaining.add(action);
+      } catch (error) {
+        if (shouldRetryGatewayFailure(error)) {
+          remaining.add(action);
+        }
       }
     }
     await _saveActions(remaining);

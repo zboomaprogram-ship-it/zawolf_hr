@@ -103,6 +103,20 @@ test('check-in returns recorded then already_recorded for the same deterministic
   });
 });
 
+test('an attendance event older than 24 hours is rejected with a terminal stale_event code', async () => {
+  const admin = fakeAdmin();
+  const actor = { uid: 'employee-expired-event' };
+  const action = {
+    ...actionFor(actor.uid),
+    eventTime: Date.now() - 25 * 60 * 60 * 1000,
+  };
+
+  await assert.rejects(
+    submitAttendanceAction({ admin, actor, rawAction: action }),
+    (error) => error.code === 'stale_event',
+  );
+});
+
 test('HR can reset a bound attendance device only with an audit reason', async () => {
   const admin = fakeAdmin({
     'users/employee-reset': {
