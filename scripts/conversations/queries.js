@@ -130,21 +130,30 @@ function userDto(doc, eligibilityReason) {
   const data = doc.data();
   return { id: doc.id, name: data.displayName || data.name || data.employeeName || doc.id, department: P.department(data), eligibilityReason };
 }
-async function eligibleUsers(db, actor, params) {
-  const docs = await pageById(db.collection('users').where('isActive', '==', true), params.get('cursor'), 100).get();
+async function eligibleUsers(dbOrContext, actorArg, paramsArg) {
+  const db = (dbOrContext && dbOrContext.db) || dbOrContext;
+  const actor = (dbOrContext && dbOrContext.actor) || actorArg;
+  const params = (dbOrContext && dbOrContext.params) || paramsArg || new URLSearchParams();
+  const cursor = params && typeof params.get === 'function' ? params.get('cursor') : null;
+  const docs = await pageById(db.collection('users').where('isActive', '==', true), cursor, 100).get();
   const actorDoc = await db.collection('users').doc(actor.uid).get();
   const fullActor = actorDoc.exists ? { ...actorDoc.data(), ...actor } : actor;
-  const department = params.get('department'), section = params.get('section');
+  const department = params && typeof params.get === 'function' ? params.get('department') : null;
+  const section = params && typeof params.get === 'function' ? params.get('section') : null;
   if (department && department.length > 120) C.fail('validation_failed');
   if (section && !['manager', 'hr', 'admin', 'it'].includes(section)) C.fail('validation_failed');
   const all = docs.docs.map(doc => ({ doc, data: { id: doc.id, ...doc.data() } })).filter(({data}) => P.canDirect(fullActor, data));
   const filtered = all.filter(({data}) => !department || P.department(data) === department).filter(({data}) => !section || (section === 'manager' ? P.isManager(data) : section === 'hr' ? P.isHr(data) && !P.isAdmin(data) : section === 'admin' ? P.isAdmin(data) : P.isIt(data)));
   return { contacts: filtered.map(({doc}) => userDto(doc, section || 'department')), nextCursor: docs.size === 100 ? docs.docs.at(-1).id : null };
 }
-async function contactDepartments({db, actor, params}) {
+async function contactDepartments(dbOrContext, actorArg, paramsArg) {
+  const db = (dbOrContext && dbOrContext.db) || dbOrContext;
+  const actor = (dbOrContext && dbOrContext.actor) || actorArg;
+  const params = (dbOrContext && dbOrContext.params) || paramsArg || new URLSearchParams();
+  const cursor = params && typeof params.get === 'function' ? params.get('cursor') : null;
   const actorDoc = await db.collection('users').doc(actor.uid).get();
   const fullActor = actorDoc.exists ? { ...actorDoc.data(), ...actor } : actor;
-  const docs = await pageById(db.collection('users').where('isActive', '==', true), params.get('cursor'), 100).get();
+  const docs = await pageById(db.collection('users').where('isActive', '==', true), cursor, 100).get();
   const counts = new Map();
   for (const doc of docs.docs) { const target = { id: doc.id, ...doc.data() }; if (P.canDirect(fullActor, target) && P.department(target)) counts.set(P.department(target), (counts.get(P.department(target)) || 0) + 1); }
   return { departments: [...counts].sort(([a],[b]) => a.localeCompare(b, 'ar')).map(([name, eligibleCount]) => ({ id: name, name, eligibleCount })), nextCursor: docs.size === 100 ? docs.docs.at(-1).id : null };

@@ -271,3 +271,39 @@ test('rich-chat capability requires explicit actor rollout and authenticated rou
   await handleRichConversationRequest({...args,actor:null});assert.equal(response.status,401);
   await handleRichConversationRequest({...args,url:new URL('https://example.org/conversations/v2/channels')});assert.equal(response.data.code,'feature_disabled');
 });
+test('eligible-contacts and contact-departments route through router without throwing', async () => {
+  const {handleRichConversationRequest} = require('../conversations/router');
+  let response;
+  const db = seed({
+    'users/alice': { isActive: true, department: 'Data Analytics', displayName: 'أليس' },
+    'users/bob': { isActive: true, department: 'Data Analytics', displayName: 'بوب' },
+  });
+  const sendJson = (_res, status, data) => { response = { status, data }; };
+  await handleRichConversationRequest({
+    req: { method: 'GET' },
+    res: {},
+    url: new URL('https://example.org/conversations/v2/eligible-contacts?department=Data+Analytics'),
+    db,
+    actor: { uid: 'alice', role: 'employee', displayName: 'أليس' },
+    enabled: true,
+    sendJson,
+  });
+  assert.equal(response.status, 200);
+  assert.ok(Array.isArray(response.data.contacts));
+  assert.equal(response.data.contacts.length, 1);
+  assert.equal(response.data.contacts[0].id, 'bob');
+
+  await handleRichConversationRequest({
+    req: { method: 'GET' },
+    res: {},
+    url: new URL('https://example.org/conversations/v2/contact-departments'),
+    db,
+    actor: { uid: 'alice', role: 'employee', displayName: 'أليس' },
+    enabled: true,
+    sendJson,
+  });
+  assert.equal(response.status, 200);
+  assert.ok(Array.isArray(response.data.departments));
+  assert.equal(response.data.departments[0].name, 'Data Analytics');
+});
+

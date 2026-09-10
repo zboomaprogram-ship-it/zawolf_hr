@@ -60,6 +60,8 @@ void main() {
 
       await tester.tap(find.text('المبيعات'));
       await tester.pumpAndSettle();
+      expect(find.text('تغيير القسم'), findsOneWidget);
+      expect(find.byIcon(Icons.arrow_back), findsOneWidget);
       await tester.tap(find.text('زميلة المبيعات'));
       await tester.pumpAndSettle();
       expect(repository.startedTarget, 'peer');
