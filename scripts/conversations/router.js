@@ -6,7 +6,7 @@ const requests = require('./requests');
 const direct = require('./direct');
 const { fetchPreview } = require('./previews');
 const { handleMedia } = require('./uploads');
-async function handleRichConversationRequest({ req, res, url, actor, db, admin, enabled, readJsonBody, sendJson, getMediaProvider, ensureFolder }) {
+async function handleRichConversationRequest({ req, res, url, actor, db, admin, enabled, readJsonBody, sendJson, getMediaProvider, ensureFolder, triggerPushDispatch }) {
   if (!actor) return sendJson(res, 401, { ok: false, code: 'session_expired' });
   try {
     const parts = url.pathname.split('/').filter(Boolean).slice(2).map(decodeURIComponent);
@@ -40,8 +40,14 @@ async function handleRichConversationRequest({ req, res, url, actor, db, admin, 
         else if (suffix.length === 3 && suffix[0] === 'messages' && suffix[2] === 'audit') result = await queries.audit({ ...context, channel, messageId: suffix[1] });
       } else if (req.method === 'POST') {
         const payload = await readJsonBody(req, 32 * 1024), args = { ...context, channelId, payload };
-        if (suffix.length === 1 && suffix[0] === 'messages') result = await messages.sendMessage(args);
-        else if (suffix.length === 3 && suffix[0] === 'messages' && suffix[2] === 'actions') result = await messages.messageAction({ ...args, messageId: suffix[1] });
+        if (suffix.length === 1 && suffix[0] === 'messages') {
+          result = await messages.sendMessage(args);
+          wakePushDispatch(triggerPushDispatch);
+        }
+        else if (suffix.length === 3 && suffix[0] === 'messages' && suffix[2] === 'actions') {
+          result = await messages.messageAction({ ...args, messageId: suffix[1] });
+          if (payload.action === 'forward') wakePushDispatch(triggerPushDispatch);
+        }
         else if (suffix.length === 1 && ['read','typing'].includes(suffix[0])) result = await messages.presence({ ...args, typing: suffix[0] === 'typing' });
         else if (suffix.length === 1 && suffix[0] === 'members') result = await requests.updateMembers(args);
         else if (suffix.length === 1 && suffix[0] === 'notification-preference') result = await queries.setNotificationPreference(args);
@@ -55,4 +61,14 @@ async function handleRichConversationRequest({ req, res, url, actor, db, admin, 
     return sendJson(res, error.status || 500, { ok: false, code: error.status ? error.code : 'operation_failed' });
   }
 }
-module.exports = { handleRichConversationRequest };
+function wakePushDispatch(trigger) {
+  if (typeof trigger !== 'function') return;
+  // The message transaction is already committed. Start device delivery now
+  // rather than waiting for Firestore's collection-group listener (which may
+  // run on another Hostinger worker); never let a provider wake-up delay the
+  // sender's successful message response.
+  Promise.resolve()
+    .then(() => trigger())
+    .catch(error => console.warn('Conversation push wake-up failed:', error?.message || error));
+}
+module.exports = { handleRichConversationRequest, wakePushDispatch };

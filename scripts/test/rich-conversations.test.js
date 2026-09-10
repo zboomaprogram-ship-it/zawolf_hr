@@ -332,6 +332,7 @@ test('posting message to direct channel with encoded colon and admin object succ
     'users/bob': { isActive: true, displayName: 'بوب' },
   });
   const mockAdmin = require('firebase-admin');
+  let pushWakeups = 0;
   await handleRichConversationRequest({
     req: { method: 'POST' },
     res: {},
@@ -345,11 +346,14 @@ test('posting message to direct channel with encoded colon and admin object succ
       body: 'رسالة خاصة',
       attachmentResourceIds: [],
     }),
+    triggerPushDispatch: () => { pushWakeups += 1; },
     sendJson: (_res, status, data) => { response = { status, data }; },
   });
   assert.equal(response.status, 200);
   assert.equal(response.data.ok, true);
   assert.equal(response.data.message.body, 'رسالة خاصة');
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(pushWakeups, 1);
 });
 
 test('legacy direct channels without memberUserIds still send and notify the other participant', async () => {

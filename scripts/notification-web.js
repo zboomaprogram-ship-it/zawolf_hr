@@ -168,7 +168,7 @@ const {
 } = require('./request-approval-routing');
 
 const port = Number(process.env.PORT || 3000);
-const notificationRuntimeRelease = '2026-09-10-chat-text-message-fix-1';
+const notificationRuntimeRelease = '2026-09-10-chat-instant-push-1';
 const dispatchSecret = process.env.NOTIFICATION_DISPATCH_SECRET || '';
 const defaultGoogleWorkspaceOrigins = [
   'https://zawolf-hr-system-60317.web.app',
@@ -2919,6 +2919,7 @@ async function handleConversationRequest(req, res, url) {
       enabled: Boolean(actor && isPhase007FlagEnabled('conversations_rich_chat_v1', phase007FlagConfig, actor.uid)),
       getMediaProvider: () => getGoogleSheetsIntegration().createConversationMediaProvider(),
       ensureFolder: () => ensureConversationAttachmentsFolder(db),
+      triggerPushDispatch: () => schedulePushDispatch('conversation_message', 0),
     });
   }
   const actor = await authorizeWorkspaceRequest(req);
