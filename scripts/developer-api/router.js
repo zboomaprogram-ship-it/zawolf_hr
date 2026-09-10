@@ -63,7 +63,8 @@ async function listUsers({ db, auth, url }) {
   const snapshot = await query.get();
   const docs = snapshot.docs.slice(0, limit);
   const data = docs.map((doc) => C.serializeDirectoryUser(doc.id, doc.data()));
-  const last = docs.at(-1);
+  // Array.prototype.at is unavailable in some Hostinger Node runtimes.
+  const last = docs.length ? docs[docs.length - 1] : null;
   const nextCursor = snapshot.docs.length > limit && last
     ? C.encodeCursor({ v: 1, name: String(last.data().displayName || last.data().name || '').trim() || ' ', id: last.id }, auth.cursorKey)
     : null;
