@@ -31,6 +31,15 @@ flutter test
 (cd scripts && npm test)
 ```
 
+## Recorded verification
+
+On 2026-09-10, `flutter analyze`, the architecture/query guards, the full
+Flutter suite (546 tests), and the Node suite (310 tests) passed. The private
+chat picker, sectioned inbox, and in-app notification overlay also passed on
+the Chrome test platform. This is automated browser evidence only; the
+physical iOS/Android foreground, background, terminated, offline, and RTL
+checks below still need to be performed on representative devices.
+
 ## Native notification-sound release check
 
 `notification_chime.wav` is a two-second derivative of the licensed ZaWolf
