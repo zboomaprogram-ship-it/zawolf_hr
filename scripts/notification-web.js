@@ -168,7 +168,7 @@ const {
 } = require('./request-approval-routing');
 
 const port = Number(process.env.PORT || 3000);
-const notificationRuntimeRelease = '2026-09-10-chat-instant-push-1';
+const notificationRuntimeRelease = '2026-09-10-instant-notifications-1';
 const dispatchSecret = process.env.NOTIFICATION_DISPATCH_SECRET || '';
 const defaultGoogleWorkspaceOrigins = [
   'https://zawolf-hr-system-60317.web.app',
@@ -336,7 +336,10 @@ async function withRuntimeLease(name, task) {
   }
 }
 
-function schedulePushDispatch(reason = 'firestore_trigger', delayMs = 750) {
+function schedulePushDispatch(reason = 'firestore_trigger', delayMs = 0) {
+  // New notifications are time-sensitive. Firestore may take a moment to
+  // invoke its listener, but once it does, begin provider delivery in the
+  // same event turn instead of adding a server-side debounce delay.
   if (Date.now() < firestoreQuotaBlockedUntil) return;
   if (pendingDispatchTimer) clearTimeout(pendingDispatchTimer);
   pendingDispatchTimer = setTimeout(() => {
