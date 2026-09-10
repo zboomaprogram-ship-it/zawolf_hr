@@ -1313,14 +1313,15 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
     ];
     final tabViews = <Widget>[
       Builder(
-        builder: (tabContext) => RequestVisibilityEntry(
-          key: const ValueKey('unified-all-requests'),
-          query: allRequestsQuery,
-          searchTerm: _searchQuery,
-          onSelectRecord:
-              (record) =>
-                  _navigateToRecordCategory(tabContext, record, tabs),
-        ),
+        builder:
+            (tabContext) => RequestVisibilityEntry(
+              key: const ValueKey('unified-all-requests'),
+              query: allRequestsQuery,
+              searchTerm: _searchQuery,
+              onSelectRecord:
+                  (record) =>
+                      _navigateToRecordCategory(tabContext, record, tabs),
+            ),
       ),
       _buildLeavesTab(manager, theme),
       _buildPermissionsTab(manager, theme),
@@ -1609,10 +1610,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                                       );
                                   return _requestCategoryContainer(
                                     label: group,
-                                    group:
-                                        isSingleTabGroup
-                                            ? 'عرض مباشر'
-                                            : 'فئة رئيسية',
+                                    group: 'فئة رئيسية',
                                     icon: _iconForRequestGroup(group),
                                     selected:
                                         isSingleTabGroup &&
@@ -1981,7 +1979,9 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                         if (mounted) {
                           setState(() => _resolvedRequestIds.add(item.id));
                           messenger.showSnackBar(
-                            const SnackBar(content: Text('تم رفض طلب الخصم وتحديث القائمة.')),
+                            const SnackBar(
+                              content: Text('تم رفض طلب الخصم وتحديث القائمة.'),
+                            ),
                           );
                         }
                       } catch (e) {
@@ -2476,8 +2476,14 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
             return Padding(
               padding: const EdgeInsets.only(bottom: 12),
               child: WolfCard(
-                borderColor: RequestTypeStyle.fromSourceType(RequestSourceType.unknown).borderColor,
-                shadowColor: RequestTypeStyle.fromSourceType(RequestSourceType.unknown).shadowColor,
+                borderColor:
+                    RequestTypeStyle.fromSourceType(
+                      RequestSourceType.unknown,
+                    ).borderColor,
+                shadowColor:
+                    RequestTypeStyle.fromSourceType(
+                      RequestSourceType.unknown,
+                    ).shadowColor,
                 borderWidth: 1.5,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -5546,8 +5552,14 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
       padding: const EdgeInsets.only(bottom: 16.0),
       child: WolfCard(
         hasBorderGlow: true,
-        borderColor: RequestTypeStyle.fromSourceType(RequestSourceType.employeeDeletion).borderColor,
-        shadowColor: RequestTypeStyle.fromSourceType(RequestSourceType.employeeDeletion).shadowColor,
+        borderColor:
+            RequestTypeStyle.fromSourceType(
+              RequestSourceType.employeeDeletion,
+            ).borderColor,
+        shadowColor:
+            RequestTypeStyle.fromSourceType(
+              RequestSourceType.employeeDeletion,
+            ).shadowColor,
         borderWidth: 1.5,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
