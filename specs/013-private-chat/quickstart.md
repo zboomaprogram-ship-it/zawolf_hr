@@ -56,6 +56,8 @@ The prepared backend archive is
 runtime source, including `conversations/` and `workspace/`, but excludes
 credentials and `node_modules`. Its SHA-256 is
 `2f61bcd749aa6a785233ab4da326255b65e4ad9750e144913198485ec128f4fb`.
+It was extracted into a clean temporary Node workspace on 2026-09-10; `npm ci`
+completed without vulnerabilities and all 310 packaged Node tests passed.
 
 Before uploading, retain the current Hostinger deployment. Upload the archive
 contents to the `notification.zawolf.ai` Node application root, run `npm
