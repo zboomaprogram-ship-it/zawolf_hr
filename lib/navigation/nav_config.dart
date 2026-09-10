@@ -323,6 +323,18 @@ NavigationItem _departmentChat() => NavigationItem(
   domain: NavDomain.people,
 );
 
+/// Visible entry for the scoped external directory API. The route and server
+/// both enforce HR/admin authorization; this item is only included in the HR
+/// and super-admin navigation sets.
+NavigationItem _developerApiKeys() => NavigationItem(
+  icon: Icons.key_outlined,
+  activeIcon: Icons.key,
+  label: 'مفاتيح API للمطوّرين',
+  englishLabel: 'Developer API Keys',
+  path: '/hr/developer-api',
+  domain: NavDomain.people,
+);
+
 List<NavigationItem> _employeeItems() {
   return [
     NavigationItem(
@@ -547,6 +559,7 @@ List<NavigationItem> _hrItems() {
       path: '/hr/employees',
       domain: NavDomain.people,
     ),
+    _developerApiKeys(),
     NavigationItem(
       icon: Icons.add_location_alt_outlined,
       activeIcon: Icons.add_location_alt,
@@ -699,6 +712,7 @@ List<NavigationItem> _superAdminItems() {
       path: '/hr/employees',
       domain: NavDomain.people,
     ),
+    _developerApiKeys(),
     NavigationItem(
       icon: Icons.assessment_outlined,
       activeIcon: Icons.assessment,
