@@ -2,7 +2,7 @@
 
 const assert = require('node:assert/strict');
 const test = require('node:test');
-const { formatOneSignalAuthHeader } = require('../onesignal');
+const { formatOneSignalAuthHeader, buildPushPayload } = require('../onesignal');
 
 test('formatOneSignalAuthHeader prefixes app key with Basic', () => {
   assert.equal(
@@ -41,4 +41,12 @@ test('formatOneSignalAuthHeader handles empty or null key safely', () => {
   assert.equal(formatOneSignalAuthHeader(''), '');
   assert.equal(formatOneSignalAuthHeader(null), '');
   assert.equal(formatOneSignalAuthHeader(undefined), '');
+});
+
+
+test('push payload lets each installed Android app choose its own valid channel', () => {
+  const payload = buildPushPayload(['employee-1'], 'عنوان', 'نص', { route: '/notifications' });
+  assert.equal('android_channel_id' in payload, false);
+  assert.equal(payload.ios_sound, 'notification_chime.wav');
+  assert.deepEqual(payload.include_aliases, { external_id: ['employee-1'] });
 });

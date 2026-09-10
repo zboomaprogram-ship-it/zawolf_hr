@@ -23,6 +23,26 @@ function formatOneSignalAuthHeader(apiKey) {
   return `Basic ${trimmed}`;
 }
 
+function buildPushPayload(ids, title, body, data = {}, options = {}) {
+  return {
+    app_id: ONESIGNAL_APP_ID,
+    include_aliases: { external_id: ids },
+    target_channel: 'push',
+    headings: { en: title, ar: title },
+    contents: { en: body, ar: body },
+    data,
+    // This resource is packaged only in the next native store update. Older
+    // clients safely fall back to their platform default notification sound.
+    ios_sound: 'notification_chime.wav',
+    // Do not force an Android channel here. OneSignal rejects an ID unless it
+    // exists in its Android configuration, and each installed app already
+    // selects its own local notification channel.
+    ...(options.idempotencyKey
+      ? { idempotency_key: stableIdempotencyKey(options.idempotencyKey) }
+      : {}),
+  };
+}
+
 async function sendPushToUsers(userIds, title, body, data = {}, options = {}) {
   const ids = [...new Set(userIds.filter(Boolean))];
   if (!ids.length || !isOneSignalConfigured()) {
@@ -36,21 +56,7 @@ async function sendPushToUsers(userIds, title, body, data = {}, options = {}) {
       authorization: formatOneSignalAuthHeader(ONESIGNAL_REST_API_KEY),
       'content-type': 'application/json',
     },
-    body: JSON.stringify({
-      app_id: ONESIGNAL_APP_ID,
-      include_aliases: { external_id: ids },
-      target_channel: 'push',
-      headings: { en: title, ar: title },
-      contents: { en: body, ar: body },
-      data,
-      // This resource is packaged only in the next native store update. Older
-      // clients safely fall back to their platform default notification sound.
-      ios_sound: 'notification_chime.wav',
-      android_channel_id: 'zawolf_chat_messages',
-      ...(options.idempotencyKey
-        ? { idempotency_key: stableIdempotencyKey(options.idempotencyKey) }
-        : {}),
-    }),
+    body: JSON.stringify(buildPushPayload(ids, title, body, data, options)),
   });
 
   const json = await response.json().catch(() => ({}));
@@ -64,7 +70,7 @@ async function sendPushToUsers(userIds, title, body, data = {}, options = {}) {
 }
 
 module.exports = {
-  formatOneSignalAuthHeader,
+  formatOneSignalAuthHeader, buildPushPayload,
   isOneSignalConfigured,
   sendPushToUsers,
   stableIdempotencyKey,
