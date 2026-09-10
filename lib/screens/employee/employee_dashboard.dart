@@ -251,7 +251,7 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
       if (useCheckInPilot) {
         _checkInPilot ??= AttendanceCheckInPilot.create();
       }
-      await attendanceService.handleCheckInOrCheckOut(
+      final attendanceResult = await attendanceService.handleCheckInOrCheckOut(
         employee,
         expectedAction: expectedAction,
         reliableCheckInSubmitter:
@@ -271,7 +271,7 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
       // The attendance stream remains the source of the dashboard state.
       if (mounted) setState(() => _now = DateTime.now());
       unawaited(_refreshAttendanceAfterAction(employee));
-      unawaited(_showAttendanceConfirmation(attendanceService, employee.uid));
+      unawaited(_showAttendanceConfirmation(attendanceResult));
     } catch (e) {
       if (mounted) {
         final message = _friendlyAttendanceError(e);
@@ -341,64 +341,37 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
   }
 
   Future<void> _showAttendanceConfirmation(
-    AttendanceService attendanceService,
-    String employeeId,
+    AttendanceActionResult result,
   ) async {
-    AttendanceModel? log;
-    try {
-      log = await attendanceService.loadTodayAttendanceForDisplay(employeeId);
-    } catch (_) {
-      // The action is already durable (server receipt or local queue). A
-      // delayed display read must not surface as an unhandled async error.
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'تم حفظ الحركة وستظهر حالة اليوم تلقائياً عند اكتمال المزامنة.',
-            ),
-          ),
-        );
-      }
-      return;
-    }
+    if (!mounted) return;
 
-    final confirmedLog = log;
-    if (confirmedLog != null && mounted) {
-      final isCheckOut = confirmedLog.checkOutTime != null;
-      final confirmationTime =
-          isCheckOut ? confirmedLog.checkOutTime : confirmedLog.checkInTime;
-      if (confirmationTime == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'تم حفظ الحركة محلياً وستتم مزامنتها عند توفر الإنترنت.',
-            ),
-          ),
-        );
-        return;
-      }
-
-      showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder:
-            (context) => CheckInConfirmModal(
-              isCheckOut: isCheckOut,
-              time: confirmationTime,
-              locationName: confirmedLog.locationName,
-              status: confirmedLog.status,
-              lateMinutes: confirmedLog.lateMinutes,
-            ),
-      );
-    } else if (mounted) {
+    if (!result.confirmedOnline) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
-            'تم حفظ الحركة محلياً وستتم مزامنتها عند توفر الإنترنت.',
+            'تم حفظ الحركة بأمان وبانتظار تأكيد الخادم. ستتم إعادة المحاولة تلقائياً.',
           ),
         ),
       );
+      return;
     }
+
+    // The gateway/pilot receipt is authoritative. Do not wait for Firestore's
+    // eventually-consistent client cache to decide whether this was check-in
+    // or checkout: doing so could label a completed checkout as check-in, or
+    // claim an online submission was offline.
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder:
+          (context) => CheckInConfirmModal(
+            isCheckOut: result.action == AttendanceActionIntent.checkOut,
+            time: result.eventTime,
+            locationName: result.locationName,
+            status: result.status,
+            lateMinutes: result.lateMinutes,
+          ),
+    );
   }
 
   Future<bool> _submitReliableCheckIn(

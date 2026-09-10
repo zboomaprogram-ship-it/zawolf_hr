@@ -31,6 +31,27 @@ enum AttendanceActionIntent { checkIn, checkOut }
 typedef ReliableCheckInSubmitter =
     Future<bool> Function(OfflineAttendanceAction action);
 
+/// The definitive outcome produced by an attendance action. Presentation must
+/// render this result instead of inferring an action from a delayed Firestore
+/// read, which can still contain the previous check-in/checkout state.
+class AttendanceActionResult {
+  const AttendanceActionResult({
+    required this.action,
+    required this.confirmedOnline,
+    required this.eventTime,
+    required this.locationName,
+    required this.status,
+    required this.lateMinutes,
+  });
+
+  final AttendanceActionIntent action;
+  final bool confirmedOnline;
+  final DateTime eventTime;
+  final String locationName;
+  final String status;
+  final int lateMinutes;
+}
+
 class AttendanceService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
   final GeofenceService _geofenceService = GeofenceService();
@@ -46,7 +67,7 @@ class AttendanceService {
       AttendanceGatewayService();
 
   // Handle employee Check-In or Check-Out
-  Future<void> handleCheckInOrCheckOut(
+  Future<AttendanceActionResult> handleCheckInOrCheckOut(
     UserModel employee, {
     AttendanceActionIntent? expectedAction,
     ReliableCheckInSubmitter? reliableCheckInSubmitter,
@@ -370,6 +391,14 @@ class AttendanceService {
             isCheckOut: false,
           );
         }
+        return AttendanceActionResult(
+          action: AttendanceActionIntent.checkIn,
+          confirmedOnline: savedOnline,
+          eventTime: now,
+          locationName: geoResult.locationName,
+          status: deduction.status,
+          lateMinutes: deduction.lateMinutes,
+        );
       } else {
         // ── CHECK-OUT LOGIC ──
         final checkInDoc = todayLookup.doc;
@@ -509,6 +538,14 @@ class AttendanceService {
             isCheckOut: true,
           );
         }
+        return AttendanceActionResult(
+          action: AttendanceActionIntent.checkOut,
+          confirmedOnline: savedOnline,
+          eventTime: now,
+          locationName: geoResult.locationName,
+          status: checkInLog.status,
+          lateMinutes: checkInLog.lateMinutes,
+        );
       }
     } catch (error) {
       unawaited(

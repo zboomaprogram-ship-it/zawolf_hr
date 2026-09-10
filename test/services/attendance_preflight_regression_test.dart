@@ -9,7 +9,9 @@ void main() {
   test(
     'legacy missed-checkout maintenance cannot block a new attendance event',
     () {
-      final start = source.indexOf('Future<void> handleCheckInOrCheckOut(');
+      final start = source.indexOf(
+        'Future<AttendanceActionResult> handleCheckInOrCheckOut(',
+      );
       final end = source.indexOf('final todayLookup =', start);
       final actionPath = source.substring(start, end);
 
