@@ -257,7 +257,8 @@ class AdvanceService {
         isExecutive;
 
     Map<String, dynamic> update;
-    if (EmployeeRole.isHr(reviewer.role) && advance.status == 'pending_hr') {
+    if ((EmployeeRole.isHr(reviewer.role) || isExecutive) &&
+        advance.status == 'pending_hr') {
       final ceo = await _findAssignedCeo(advance.userId);
       update = {
         'status': 'pending_manager',

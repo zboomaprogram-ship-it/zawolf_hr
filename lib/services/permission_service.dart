@@ -539,7 +539,9 @@ class PermissionService {
     if (perm.status == 'pending_hr' && perm.userId == reviewerId) {
       throw Exception('لا يمكن اعتماد طلبك الشخصي. يجب أن يراجعه HR آخر.');
     }
-    if (perm.status == 'pending_hr' && !EmployeeRole.isHr(reviewerRole)) {
+    if (perm.status == 'pending_hr' &&
+        !EmployeeRole.isHr(reviewerRole) &&
+        !isExecutive) {
       throw Exception('هذه المرحلة يراجعها HR فقط.');
     }
     final pendingManagerIds =

@@ -57,4 +57,37 @@ final class RequestVisibilityRecord {
     RequestLifecycleState.confirmed => true,
     _ => false,
   };
+
+  /// Single-segment Firestore collection name corresponding to this record.
+  String get collection {
+    if (sourceReference.contains('/')) {
+      final part = sourceReference.split('/').first.trim();
+      if (part.isNotEmpty) return part;
+    }
+    return switch (sourceType) {
+      RequestSourceType.leave => 'leaves',
+      RequestSourceType.permission => 'permissions',
+      RequestSourceType.advance => 'advances',
+      RequestSourceType.administrative => 'administrativeRequests',
+      RequestSourceType.resignation => 'resignations',
+      RequestSourceType.attendanceCorrection => 'attendanceCorrectionRequests',
+      RequestSourceType.complaint => 'complaints',
+      RequestSourceType.employeeDeletion => 'employeeDeletionRequests',
+      RequestSourceType.salaryDeduction => 'manual_deductions',
+      RequestSourceType.lateArrivalDeduction => 'attendance',
+      _ => sourceReference.isNotEmpty ? sourceReference : 'leaves',
+    };
+  }
+
+  /// Safe document ID within [collection].
+  String get documentId {
+    if (stableId.trim().isNotEmpty) return stableId.trim();
+    if (sourceReference.contains('/')) {
+      final parts = sourceReference.split('/');
+      if (parts.length > 1 && parts[1].trim().isNotEmpty) {
+        return parts[1].trim();
+      }
+    }
+    return stableId;
+  }
 }

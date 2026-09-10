@@ -1341,10 +1341,35 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                       child: StreamBuilder<
                           DocumentSnapshot<Map<String, dynamic>>>(
                         stream: _db
-                            .collection(record.sourceReference)
-                            .doc(record.stableId)
+                            .collection(record.collection)
+                            .doc(record.documentId)
                             .snapshots(),
                         builder: (context, snapshot) {
+                          if (snapshot.hasError) {
+                            return Center(
+                              child: Padding(
+                                padding: const EdgeInsets.all(24),
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const Icon(
+                                      Icons.error_outline,
+                                      color: ZaWolfColors.error,
+                                      size: 32,
+                                    ),
+                                    const SizedBox(height: 12),
+                                    Text(
+                                      'حدث خطأ أثناء تحميل تفاصيل الطلب:\n${snapshot.error}',
+                                      textAlign: TextAlign.center,
+                                      style: const TextStyle(
+                                        color: ZaWolfColors.textSecondary,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          }
                           if (snapshot.connectionState ==
                               ConnectionState.waiting) {
                             return const Center(
@@ -1460,6 +1485,9 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
         .toString();
     final status = (data['status'] ?? '').toString();
 
+    final collection = record.collection;
+    final docId = record.documentId;
+
     return WolfCard(
       borderColor: style.borderColor,
       shadowColor: style.shadowColor,
@@ -1494,22 +1522,22 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
           const SizedBox(height: 12),
           if (_canActOnApproval(data, reviewer))
             _buildApprovalActions(
-              disabled: _isRequestBusy(record.stableId),
+              disabled: _isRequestBusy(docId),
               onDelete:
                   () => _deleteRequestDocument(
-                    collection: record.sourceReference,
-                    docId: record.stableId,
+                    collection: collection,
+                    docId: docId,
                     requestTitle: 'الطلب',
                   ),
               onApprove:
                   () => _confirmAndRun(
-                    requestId: record.stableId,
+                    requestId: docId,
                     title: 'اعتماد الطلب',
                     confirmLabel: 'اعتماد',
                     run: () async {
                       await _db
-                          .collection(record.sourceReference)
-                          .doc(record.stableId)
+                          .collection(collection)
+                          .doc(docId)
                           .update({
                             'status': 'approved',
                             'reviewedBy': reviewer.uid,
@@ -1520,16 +1548,52 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                   ),
               onReject:
                   () => _showRejectionDialog(
-                    requestId: record.stableId,
-                    type: record.sourceReference == 'leaves'
+                    requestId: docId,
+                    type: collection == 'leaves'
                         ? 'leave'
-                        : record.sourceReference == 'permissions'
+                        : collection == 'permissions'
                             ? 'permission'
-                            : record.sourceReference == 'advances'
+                            : collection == 'advances'
                                 ? 'advance'
                                 : 'administrative',
                   ),
+            )
+          else ...[
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: ZaWolfColors.surface02,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: ZaWolfColors.surface03),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    record.isHistorical
+                        ? Icons.check_circle_outline
+                        : Icons.info_outline,
+                    color: record.isHistorical
+                        ? ZaWolfColors.success
+                        : ZaWolfColors.textSecondary,
+                    size: 18,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      record.isHistorical
+                          ? 'هذا الطلب مكتمل ولا يتطلب إجراءً حالياً (${status.isNotEmpty ? status : "مكتمل"}).'
+                          : 'الطلب قيد المراجعة في مرحلة (${status.isNotEmpty ? status : "قيد الانتظار"}) ولا يتطلب إجراءً من حسابك حالياً.',
+                      style: const TextStyle(
+                        color: ZaWolfColors.textSecondary,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
+          ],
         ],
       ),
     );
@@ -2692,6 +2756,85 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                         requestId: request.id,
                         type: 'administrative',
                       ),
+                )
+              else if (request.status.startsWith('pending'))
+                Padding(
+                  padding: const EdgeInsets.only(top: 8.0),
+                  child: Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: ZaWolfColors.surface02,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: ZaWolfColors.surface03),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(
+                          Icons.hourglass_top,
+                          color: ZaWolfColors.textSecondary,
+                          size: 18,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'الطلب قيد المراجعة (${request.status})',
+                            style: const TextStyle(
+                              color: ZaWolfColors.textSecondary,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                )
+              else
+                Padding(
+                  padding: const EdgeInsets.only(top: 8.0),
+                  child: Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: (request.status == 'approved'
+                              ? ZaWolfColors.success
+                              : ZaWolfColors.error)
+                          .withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: (request.status == 'approved'
+                                ? ZaWolfColors.success
+                                : ZaWolfColors.error)
+                            .withValues(alpha: 0.3),
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          request.status == 'approved'
+                              ? Icons.check_circle
+                              : Icons.cancel,
+                          color: request.status == 'approved'
+                              ? ZaWolfColors.success
+                              : ZaWolfColors.error,
+                          size: 18,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          request.status == 'approved'
+                              ? 'تم اعتماد هذا الطلب'
+                              : 'تم رفض هذا الطلب',
+                          style: TextStyle(
+                            color: request.status == 'approved'
+                                ? ZaWolfColors.success
+                                : ZaWolfColors.error,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
               _buildArchiveRequestAction(
                 reviewer: reviewer,
@@ -3093,58 +3236,106 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
           const SizedBox(height: 8),
           Text('السبب: ${request.reason}'),
           const SizedBox(height: 14),
-          Row(
-            children: [
-              Expanded(
-                child: WolfButton(
-                  onPressed:
-                      _isRequestBusy(request.resignationId)
-                          ? null
-                          : () => _confirmAndRun(
-                            requestId: request.resignationId,
-                            title: 'اعتماد طلب الاستقالة',
-                            confirmLabel: 'اعتماد',
-                            run:
-                                () => _resignationService.review(
-                                  resignationId: request.resignationId,
-                                  reviewer: reviewer,
-                                  approve: true,
-                                ),
-                          ),
-                  text: 'موافقة',
-                  variant: WolfButtonVariant.teal,
-                  height: 42,
+          if (request.status == 'approved' || request.status == 'rejected')
+            Padding(
+              padding: const EdgeInsets.only(top: 8.0),
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: (request.status == 'approved'
+                          ? ZaWolfColors.success
+                          : ZaWolfColors.error)
+                      .withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: (request.status == 'approved'
+                            ? ZaWolfColors.success
+                            : ZaWolfColors.error)
+                        .withValues(alpha: 0.3),
+                  ),
                 ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: WolfButton(
-                  onPressed:
-                      () => _showModificationDialog(
-                        requestId: request.resignationId,
-                        collection: 'resignations',
-                        userId: request.userId,
-                        requestTitle: 'طلب الاستقالة',
+                child: Row(
+                  children: [
+                    Icon(
+                      request.status == 'approved'
+                          ? Icons.check_circle
+                          : Icons.cancel,
+                      color: request.status == 'approved'
+                          ? ZaWolfColors.success
+                          : ZaWolfColors.error,
+                      size: 18,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      request.status == 'approved'
+                          ? 'تم اعتماد هذا الطلب'
+                          : 'تم رفض هذا الطلب',
+                      style: TextStyle(
+                        color: request.status == 'approved'
+                            ? ZaWolfColors.success
+                            : ZaWolfColors.error,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
                       ),
-                  text: 'طلب تعديل',
-                  variant: WolfButtonVariant.purple,
-                  height: 42,
+                    ),
+                  ],
                 ),
               ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: WolfButton(
-                  onPressed:
-                      _isRequestBusy(request.resignationId)
-                          ? null
-                          : () => _rejectResignation(request, reviewer),
-                  text: 'رفض',
-                  variant: WolfButtonVariant.danger,
-                  height: 42,
+            )
+          else
+            Row(
+              children: [
+                Expanded(
+                  child: WolfButton(
+                    onPressed:
+                        _isRequestBusy(request.resignationId)
+                            ? null
+                            : () => _confirmAndRun(
+                              requestId: request.resignationId,
+                              title: 'اعتماد طلب الاستقالة',
+                              confirmLabel: 'اعتماد',
+                              run:
+                                  () => _resignationService.review(
+                                    resignationId: request.resignationId,
+                                    reviewer: reviewer,
+                                    approve: true,
+                                  ),
+                            ),
+                    text: 'موافقة',
+                    variant: WolfButtonVariant.teal,
+                    height: 42,
+                  ),
                 ),
-              ),
-            ],
-          ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: WolfButton(
+                    onPressed:
+                        () => _showModificationDialog(
+                          requestId: request.resignationId,
+                          collection: 'resignations',
+                          userId: request.userId,
+                          requestTitle: 'طلب الاستقالة',
+                        ),
+                    text: 'طلب تعديل',
+                    variant: WolfButtonVariant.purple,
+                    height: 42,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: WolfButton(
+                    onPressed:
+                        _isRequestBusy(request.resignationId)
+                            ? null
+                            : () => _rejectResignation(request, reviewer),
+                    text: 'رفض',
+                    variant: WolfButtonVariant.danger,
+                    height: 42,
+                  ),
+                ),
+              ],
+            ),
         ],
       ),
     );
@@ -3326,8 +3517,9 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
         reviewer.canReviewCeoStage || reviewerCode == 'CEO-100';
     final isCompanyCoo =
         reviewer.isCompanyCoo || reviewerCode == 'COO-1300';
+    final isSuperAdmin = reviewer.role == EmployeeRole.superAdmin;
     final isExecutive =
-        reviewer.isExecutiveLeader || isCompanyCeo || isCompanyCoo;
+        reviewer.isExecutiveLeader || isCompanyCeo || isCompanyCoo || isSuperAdmin;
 
     final currentApproverId =
         (data['currentApproverId'] ?? '').toString().trim().toUpperCase();
@@ -3352,14 +3544,22 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
         managerCodes.contains(reviewerCode) ||
         managerIds.contains(reviewer.uid);
 
+    // SuperAdmin can approve any pending request
+    if (isSuperAdmin) {
+      if (status.startsWith('pending')) return true;
+    }
+
     if (data['approvalRouteVersion'] == 1) {
       if (status == 'pending_manager') {
         return isAssignedManager || isExecutive;
       }
       if (status == 'pending_ceo') {
-        return isCompanyCeo;
+        return isCompanyCeo || isSuperAdmin;
       }
-      if (status == 'pending_hr') {
+      if (status == 'pending_coo') {
+        return isCompanyCoo || isSuperAdmin;
+      }
+      if (status == 'pending_hr' || status == 'pending') {
         return EmployeeRole.isHr(reviewer.role) || isExecutive;
       }
       return false;
@@ -3372,10 +3572,9 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
             ceoId == reviewerCode ||
             ceoId == 'CEO-100';
       }
-      if (status == 'pending_manager') {
-        return isAssignedManager || reviewer.role == EmployeeRole.superAdmin;
-      }
-      if (status == 'pending_hr') {
+      if (status == 'pending_manager' ||
+          status == 'pending_hr' ||
+          status == 'pending') {
         return true;
       }
     }
@@ -3387,10 +3586,9 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
             cooId == reviewerCode ||
             cooId == 'COO-1300';
       }
-      if (status == 'pending_manager') {
-        return true;
-      }
-      if (status == 'pending_hr') {
+      if (status == 'pending_manager' ||
+          status == 'pending_hr' ||
+          status == 'pending') {
         return true;
       }
     }
@@ -3663,6 +3861,91 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                       userId: leave.userId,
                       requestTitle: 'طلب الإجازة',
                     ),
+              )
+            else if (leave.status != 'approved' && leave.status != 'rejected')
+              Padding(
+                padding: const EdgeInsets.only(top: 8.0),
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: ZaWolfColors.surface02,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: ZaWolfColors.surface03),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(
+                        Icons.hourglass_top,
+                        color: ZaWolfColors.textSecondary,
+                        size: 18,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          leave.status == 'pending_manager'
+                              ? 'الطلب بانتظار موافقة المدير المباشر'
+                              : leave.status == 'pending_ceo'
+                                  ? 'الطلب بانتظار موافقة الـ CEO'
+                                  : leave.status == 'pending_hr'
+                                      ? 'الطلب بانتظار مراجعة وقرار الموارد البشرية (HR)'
+                                      : 'الطلب قيد المتابعة (${leave.status})',
+                          style: const TextStyle(
+                            color: ZaWolfColors.textSecondary,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              )
+            else
+              Padding(
+                padding: const EdgeInsets.only(top: 8.0),
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: (leave.status == 'approved'
+                            ? ZaWolfColors.success
+                            : ZaWolfColors.error)
+                        .withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: (leave.status == 'approved'
+                              ? ZaWolfColors.success
+                              : ZaWolfColors.error)
+                          .withValues(alpha: 0.3),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        leave.status == 'approved'
+                            ? Icons.check_circle
+                            : Icons.cancel,
+                        color: leave.status == 'approved'
+                            ? ZaWolfColors.success
+                            : ZaWolfColors.error,
+                        size: 18,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        leave.status == 'approved'
+                            ? 'تم اعتماد هذا الطلب'
+                            : 'تم رفض هذا الطلب',
+                        style: TextStyle(
+                          color: leave.status == 'approved'
+                              ? ZaWolfColors.success
+                              : ZaWolfColors.error,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ),
             _buildArchiveRequestAction(
               reviewer: reviewer,
@@ -4180,6 +4463,89 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                       userId: perm.userId,
                       requestTitle: 'طلب الإذن',
                     ),
+              )
+            else if (perm.status != 'approved' && perm.status != 'rejected')
+              Padding(
+                padding: const EdgeInsets.only(top: 8.0),
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: ZaWolfColors.surface02,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: ZaWolfColors.surface03),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(
+                        Icons.hourglass_top,
+                        color: ZaWolfColors.textSecondary,
+                        size: 18,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          perm.status == 'pending_manager'
+                              ? 'الطلب بانتظار موافقة المدير المباشر'
+                              : perm.status == 'pending_hr'
+                                  ? 'الطلب بانتظار مراجعة وقرار الموارد البشرية (HR)'
+                                  : 'الطلب قيد المتابعة (${perm.status})',
+                          style: const TextStyle(
+                            color: ZaWolfColors.textSecondary,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              )
+            else
+              Padding(
+                padding: const EdgeInsets.only(top: 8.0),
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: (perm.status == 'approved'
+                            ? ZaWolfColors.success
+                            : ZaWolfColors.error)
+                        .withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: (perm.status == 'approved'
+                              ? ZaWolfColors.success
+                              : ZaWolfColors.error)
+                          .withValues(alpha: 0.3),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        perm.status == 'approved'
+                            ? Icons.check_circle
+                            : Icons.cancel,
+                        color: perm.status == 'approved'
+                            ? ZaWolfColors.success
+                            : ZaWolfColors.error,
+                        size: 18,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        perm.status == 'approved'
+                            ? 'تم اعتماد هذا الطلب'
+                            : 'تم رفض هذا الطلب',
+                        style: TextStyle(
+                          color: perm.status == 'approved'
+                              ? ZaWolfColors.success
+                              : ZaWolfColors.error,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ),
             _buildArchiveRequestAction(
               reviewer: reviewer,
@@ -4347,6 +4713,85 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                       userId: advance.userId,
                       requestTitle: 'طلب السلفة',
                     ),
+              )
+            else if (advance.status.startsWith('pending'))
+              Padding(
+                padding: const EdgeInsets.only(top: 8.0),
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: ZaWolfColors.surface02,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: ZaWolfColors.surface03),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(
+                        Icons.hourglass_top,
+                        color: ZaWolfColors.textSecondary,
+                        size: 18,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'الطلب قيد المراجعة (${_advanceStageLabel(data)})',
+                          style: const TextStyle(
+                            color: ZaWolfColors.textSecondary,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              )
+            else
+              Padding(
+                padding: const EdgeInsets.only(top: 8.0),
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: (advance.status == 'approved'
+                            ? ZaWolfColors.success
+                            : ZaWolfColors.error)
+                        .withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: (advance.status == 'approved'
+                              ? ZaWolfColors.success
+                              : ZaWolfColors.error)
+                          .withValues(alpha: 0.3),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        advance.status == 'approved'
+                            ? Icons.check_circle
+                            : Icons.cancel,
+                        color: advance.status == 'approved'
+                            ? ZaWolfColors.success
+                            : ZaWolfColors.error,
+                        size: 18,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        advance.status == 'approved'
+                            ? 'تم اعتماد هذا الطلب'
+                            : 'تم رفض هذا الطلب',
+                        style: TextStyle(
+                          color: advance.status == 'approved'
+                              ? ZaWolfColors.success
+                              : ZaWolfColors.error,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ),
             _buildArchiveRequestAction(
               reviewer: reviewer,
@@ -5242,6 +5687,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
     final data = doc.data() ?? <String, dynamic>{};
     final original = data['originalCheckInTime'] as Timestamp?;
     final requested = data['requestedCheckInTime'] as Timestamp?;
+    final status = (data['status'] ?? 'pending').toString();
     return WolfCard(
       hasBorderGlow: true,
       borderColor: RequestTypeStyle.attendanceCorrection.borderColor,
@@ -5275,27 +5721,73 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
           const SizedBox(height: 8),
           Text('السبب: ${data['reason'] ?? ''}'),
           const SizedBox(height: 14),
-          _buildApprovalActions(
-            disabled: _isRequestBusy(doc.id),
-            onDelete:
-                () => _deleteRequestDocument(
-                  collection: 'attendanceCorrectionRequests',
-                  docId: doc.id,
-                  requestTitle: 'طلب تصحيح الحضور',
+          if (status == 'approved' || status == 'rejected')
+            Padding(
+              padding: const EdgeInsets.only(top: 8.0),
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: (status == 'approved'
+                          ? ZaWolfColors.success
+                          : ZaWolfColors.error)
+                      .withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: (status == 'approved'
+                            ? ZaWolfColors.success
+                            : ZaWolfColors.error)
+                        .withValues(alpha: 0.3),
+                  ),
                 ),
-            onApprove:
-                () => _reviewAttendanceCorrection(
-                  requestId: doc.id,
-                  reviewer: reviewer,
-                  approve: true,
+                child: Row(
+                  children: [
+                    Icon(
+                      status == 'approved' ? Icons.check_circle : Icons.cancel,
+                      color: status == 'approved'
+                          ? ZaWolfColors.success
+                          : ZaWolfColors.error,
+                      size: 18,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      status == 'approved'
+                          ? 'تم اعتماد هذا الطلب'
+                          : 'تم رفض هذا الطلب',
+                      style: TextStyle(
+                        color: status == 'approved'
+                            ? ZaWolfColors.success
+                            : ZaWolfColors.error,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ],
                 ),
-            onReject:
-                () => _reviewAttendanceCorrection(
-                  requestId: doc.id,
-                  reviewer: reviewer,
-                  approve: false,
-                ),
-          ),
+              ),
+            )
+          else
+            _buildApprovalActions(
+              disabled: _isRequestBusy(doc.id),
+              onDelete:
+                  () => _deleteRequestDocument(
+                    collection: 'attendanceCorrectionRequests',
+                    docId: doc.id,
+                    requestTitle: 'طلب تصحيح الحضور',
+                  ),
+              onApprove:
+                  () => _reviewAttendanceCorrection(
+                    requestId: doc.id,
+                    reviewer: reviewer,
+                    approve: true,
+                  ),
+              onReject:
+                  () => _reviewAttendanceCorrection(
+                    requestId: doc.id,
+                    reviewer: reviewer,
+                    approve: false,
+                  ),
+            ),
           _buildArchiveRequestAction(
             reviewer: reviewer,
             collection: 'attendanceCorrectionRequests',

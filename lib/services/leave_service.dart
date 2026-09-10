@@ -834,7 +834,7 @@ class LeaveService {
       if (leave.userId == reviewerId) {
         throw Exception('لا يمكن اعتماد طلبك الشخصي. يجب أن يراجعه HR آخر.');
       }
-      if (!EmployeeRole.isHr(role)) {
+      if (!EmployeeRole.isHr(role) && !isExecutive) {
         throw Exception('هذه المرحلة يراجعها HR فقط.');
       }
       final managerIds =

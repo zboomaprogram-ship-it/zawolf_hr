@@ -34,4 +34,33 @@ void main() {
       expect(deductions.matches(record), isTrue);
     },
   );
+
+  test('resolves collection and documentId safely from composite sourceReference', () {
+    expect(record.collection, 'deductions');
+    expect(record.documentId, 'r1');
+
+    final leaveRecord = RequestVisibilityRecord(
+      stableId: 'leave_123',
+      sourceType: RequestSourceType.leave,
+      employeeId: 'emp1',
+      approvalStage: RequestApprovalStage.manager,
+      lifecycleState: RequestLifecycleState.pending,
+      occurredAt: DateTime.utc(2026, 8, 1),
+      sourceReference: 'leaves/leave_123',
+    );
+    expect(leaveRecord.collection, 'leaves');
+    expect(leaveRecord.documentId, 'leave_123');
+
+    final fallbackRecord = RequestVisibilityRecord(
+      stableId: 'doc_abc',
+      sourceType: RequestSourceType.permission,
+      employeeId: 'emp2',
+      approvalStage: RequestApprovalStage.manager,
+      lifecycleState: RequestLifecycleState.pending,
+      occurredAt: DateTime.utc(2026, 8, 1),
+      sourceReference: '',
+    );
+    expect(fallbackRecord.collection, 'permissions');
+    expect(fallbackRecord.documentId, 'doc_abc');
+  });
 }
