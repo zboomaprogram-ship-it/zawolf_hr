@@ -62,18 +62,29 @@ class NotificationService implements InAppNotificationAlerts {
     '/employee/kpi',
     '/employee/payroll',
     '/employee/deductions',
+    '/manager/dashboard',
     '/manager/requests',
+    '/manager/tasks',
+    '/manager/team',
+    '/team-leader/dashboard',
+    '/team-leader/requests',
+    '/team-leader/tasks',
+    '/hr/dashboard',
+    '/hr/employees',
+    '/hr/requests',
+    '/hr/tasks',
     '/meeting/history',
     '/meeting/approvals',
     '/approver/custom-requests',
     '/employee/custom-requests',
     '/company-os',
+    '/conversations',
   };
 
   bool _isSupportedNotificationPath(String path) {
     if (_supportedNotificationPaths.contains(path)) return true;
     return RegExp(
-      r'^/(?:employee/requests|manager/requests|hr/requests|requests)/operational/[A-Za-z0-9_.:-]{1,128}$|^/conversations/channel/[A-Za-z0-9_.:%-]{1,180}$',
+      r'^/(?:employee/requests|manager/requests|hr/requests|team-leader/requests|requests)(?:/operational/[A-Za-z0-9_.:-]{1,128})?$|^/conversations/channel/[A-Za-z0-9_.:%-]{1,180}$',
     ).hasMatch(path);
   }
 
@@ -98,7 +109,9 @@ class NotificationService implements InAppNotificationAlerts {
     if (id.isNotEmpty && _authorizedRouteResolver != null) {
       try {
         final resolved = await _authorizedRouteResolver!(id);
-        if (resolved != null && resolved.isNotEmpty) {
+        if (resolved != null &&
+            resolved.isNotEmpty &&
+            resolved != '/notifications') {
           handleRemoteNotificationRoute(resolved);
           return;
         }
@@ -111,8 +124,6 @@ class NotificationService implements InAppNotificationAlerts {
           surface: 'notification',
         );
       }
-      handleRemoteNotificationRoute('/notifications');
-      return;
     }
     handleRemoteNotificationRoute(safeRoute(route, type: type));
   }
@@ -257,6 +268,69 @@ class NotificationService implements InAppNotificationAlerts {
       details,
       payload: payload,
     );
+  }
+
+  /// Streams recent conversation messages and chat alerts for the given user,
+  /// bounded to [limit] items and ordered by creation timestamp descending.
+  Stream<List<InAppNotificationAlert>> watchRecentConversationMessages(
+    String userId, {
+    int limit = 5,
+  }) {
+    if (userId.trim().isEmpty) return Stream.value(const []);
+    return FirebaseFirestore.instance
+        .collection('notifications')
+        .doc(userId)
+        .collection('items')
+        .orderBy('createdAt', descending: true)
+        .limit(20)
+        .snapshots()
+        .map((snapshot) {
+          return snapshot.docs
+              .map((doc) {
+                final data = doc.data();
+                final type = data['type'] as String? ?? '';
+                final nestedData = data['data'];
+                final route = safeRoute(
+                  nestedData is Map ? nestedData['route'] as String? : null,
+                  type: type,
+                );
+                DateTime timestamp;
+                final createdAt = data['createdAt'];
+                if (createdAt is Timestamp) {
+                  timestamp = createdAt.toDate();
+                } else if (createdAt is String) {
+                  timestamp = DateTime.tryParse(createdAt) ?? DateTime.now();
+                } else {
+                  timestamp = DateTime.now();
+                }
+                final isRead = data['isRead'] == true;
+                return InAppNotificationAlert(
+                  id: doc.id,
+                  title: data['title'] as String? ?? 'رسالة جديدة',
+                  body: data['body'] as String? ?? '',
+                  type: type,
+                  route: route,
+                  timestamp: timestamp,
+                  isRead: isRead,
+                );
+              })
+              .where((alert) => alert.isChatMessage)
+              .take(limit)
+              .toList();
+        });
+  }
+
+  /// Marks a specific notification item as read in Firestore.
+  Future<void> markAsRead(String userId, String notificationId) async {
+    if (userId.trim().isEmpty || notificationId.trim().isEmpty) return;
+    try {
+      await FirebaseFirestore.instance
+          .collection('notifications')
+          .doc(userId)
+          .collection('items')
+          .doc(notificationId)
+          .update({'isRead': true});
+    } catch (_) {}
   }
 
   // Start real-time listener for current user's unread notifications

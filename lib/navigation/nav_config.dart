@@ -166,8 +166,8 @@ List<NavigationItem> mobileTabsForRole(String role) {
       NavigationItem(
         icon: Icons.groups_2_outlined,
         activeIcon: Icons.groups_2,
-        label: 'فريقي',
-        englishLabel: 'My Team',
+        label: 'الرئيسية',
+        englishLabel: 'Home',
         path: '/team-leader/dashboard',
         domain: NavDomain.home,
       ),
@@ -201,8 +201,8 @@ List<NavigationItem> mobileTabsForRole(String role) {
       NavigationItem(
         icon: Icons.dashboard_customize_outlined,
         activeIcon: Icons.dashboard_customize,
-        label: 'لوحتي',
-        englishLabel: 'Dashboard',
+        label: 'الرئيسية',
+        englishLabel: 'Home',
         path: '/manager/dashboard',
         domain: NavDomain.home,
       ),
@@ -270,13 +270,16 @@ List<NavigationItem> mobileTabsForRole(String role) {
 // ---------------------------------------------------------------------------
 // Role item definitions (paths preserved from legacy wrapper)
 
-NavigationItem _myAttendance() => NavigationItem(
+NavigationItem _myAttendance({
+  NavDomain domain = NavDomain.home,
+  String label = 'حضوري',
+}) => NavigationItem(
   icon: Icons.fingerprint,
   activeIcon: Icons.fingerprint,
-  label: 'حضوري',
+  label: label,
   englishLabel: 'Attendance',
   path: '/employee/dashboard',
-  domain: NavDomain.home,
+  domain: domain,
 );
 
 NavigationItem _myRequests() => NavigationItem(
@@ -393,11 +396,12 @@ List<NavigationItem> _teamLeaderItems() {
     NavigationItem(
       icon: Icons.groups_2_outlined,
       activeIcon: Icons.groups_2,
-      label: 'فريقي',
-      englishLabel: 'My Team',
+      label: 'الرئيسية',
+      englishLabel: 'Home',
       path: '/team-leader/dashboard',
       domain: NavDomain.home,
     ),
+    _myAttendance(domain: NavDomain.time, label: 'سجل حضوري'),
     _myRequests(),
     NavigationItem(
       icon: Icons.people_outline,
@@ -432,16 +436,16 @@ List<NavigationItem> _teamLeaderItems() {
 
 List<NavigationItem> _managerItems() {
   return [
-    _myAttendance(),
-    _myRequests(),
     NavigationItem(
       icon: Icons.dashboard_customize_outlined,
       activeIcon: Icons.dashboard_customize,
-      label: 'لوحتي',
-      englishLabel: 'Dashboard',
+      label: 'الرئيسية',
+      englishLabel: 'Home',
       path: '/manager/dashboard',
       domain: NavDomain.home,
     ),
+    _myAttendance(domain: NavDomain.time, label: 'سجل حضوري'),
+    _myRequests(),
     NavigationItem(
       icon: Icons.rule_outlined,
       activeIcon: Icons.rule,
@@ -529,16 +533,16 @@ List<NavigationItem> _managerItems() {
 
 List<NavigationItem> _hrItems() {
   return [
-    _myAttendance(),
-    _myRequests(),
     NavigationItem(
       icon: Icons.admin_panel_settings_outlined,
       activeIcon: Icons.admin_panel_settings,
-      label: 'لوحة التحكم',
-      englishLabel: 'Control Panel',
+      label: 'الرئيسية',
+      englishLabel: 'Home',
       path: '/hr/dashboard',
       domain: NavDomain.home,
     ),
+    _myAttendance(domain: NavDomain.time, label: 'سجل حضوري'),
+    _myRequests(),
     NavigationItem(
       icon: Icons.badge_outlined,
       activeIcon: Icons.badge,
@@ -633,16 +637,16 @@ List<NavigationItem> _hrItems() {
 
 List<NavigationItem> _superAdminItems() {
   return [
-    _myAttendance(),
-    _myRequests(),
     NavigationItem(
       icon: Icons.admin_panel_settings_outlined,
       activeIcon: Icons.admin_panel_settings,
-      label: 'تحكم',
-      englishLabel: 'Control',
+      label: 'الرئيسية',
+      englishLabel: 'Home',
       path: '/hr/dashboard',
       domain: NavDomain.home,
     ),
+    _myAttendance(domain: NavDomain.time, label: 'سجل حضوري'),
+    _myRequests(),
     NavigationItem(
       icon: Icons.rule_outlined,
       activeIcon: Icons.rule,

@@ -451,18 +451,34 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
 
     final operations = _notificationOperations();
     if (operations != null) {
-      final destination = await operations.resolve(notification.id);
-      if (!mounted) return;
-      final uri = destination?.toUri();
-      if (uri != null && uri.path != '/notifications') {
-        context.go(uri.toString());
-      }
-      return;
+      try {
+        final destination = await operations.resolve(notification.id);
+        if (!mounted) return;
+        final uri = destination?.toUri();
+        if (uri != null && uri.path != '/notifications') {
+          context.go(uri.toString());
+          return;
+        }
+      } catch (_) {}
     }
 
     final rawData = notification.data()['data'];
+    final candidateRoute = rawData is Map
+        ? (rawData['route'] as String? ??
+            rawData['url'] as String? ??
+            rawData['link'] as String?)
+        : (notification.data()['route'] as String?);
+
+    String? finalRoute = candidateRoute;
+    if ((finalRoute == null || finalRoute.isEmpty) &&
+        rawData is Map &&
+        rawData['channelId'] != null) {
+      finalRoute =
+          '/conversations/channel/${Uri.encodeComponent(rawData['channelId'].toString())}';
+    }
+
     final route = NotificationService.instance.safeRoute(
-      rawData is Map ? rawData['route'] as String? : null,
+      finalRoute,
       type: type,
     );
     if (route != '/notifications' && mounted) context.go(route);

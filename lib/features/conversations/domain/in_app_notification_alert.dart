@@ -6,6 +6,7 @@ class InAppNotificationAlert {
   final String type;
   final String route;
   final DateTime timestamp;
+  final bool isRead;
 
   const InAppNotificationAlert({
     required this.id,
@@ -14,6 +15,7 @@ class InAppNotificationAlert {
     required this.type,
     required this.route,
     required this.timestamp,
+    this.isRead = false,
   });
 
   bool get isChatMessage =>

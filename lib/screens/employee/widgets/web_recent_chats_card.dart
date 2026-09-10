@@ -15,38 +15,47 @@ import '../../../theme/theme.dart';
 /// and live incoming message alerts.
 class WebRecentChatsCard extends StatefulWidget {
   final UserModel user;
+  final Stream<List<InAppNotificationAlert>>? messagesStream;
 
-  const WebRecentChatsCard({super.key, required this.user});
+  const WebRecentChatsCard({
+    super.key,
+    required this.user,
+    this.messagesStream,
+  });
 
   @override
   State<WebRecentChatsCard> createState() => _WebRecentChatsCardState();
 }
 
 class _WebRecentChatsCardState extends State<WebRecentChatsCard> {
-  final List<InAppNotificationAlert> _recentMessages = [];
-  StreamSubscription<InAppNotificationAlert>? _alertsSubscription;
+  Stream<List<InAppNotificationAlert>>? _messagesStream;
 
   @override
   void initState() {
     super.initState();
-    _alertsSubscription = NotificationService.instance.alerts.listen((alert) {
-      if (!mounted) return;
-      if (alert.isChatMessage) {
-        setState(() {
-          _recentMessages.removeWhere((item) => item.id == alert.id);
-          _recentMessages.insert(0, alert);
-          if (_recentMessages.length > 5) {
-            _recentMessages.removeLast();
-          }
-        });
-      }
-    });
+    _initStream();
   }
 
   @override
-  void dispose() {
-    _alertsSubscription?.cancel();
-    super.dispose();
+  void didUpdateWidget(covariant WebRecentChatsCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.user.uid != widget.user.uid ||
+        oldWidget.messagesStream != widget.messagesStream) {
+      _initStream();
+    }
+  }
+
+  void _initStream() {
+    if (widget.messagesStream != null) {
+      _messagesStream = widget.messagesStream;
+      return;
+    }
+    try {
+      _messagesStream = NotificationService.instance
+          .watchRecentConversationMessages(widget.user.uid, limit: 5);
+    } catch (_) {
+      _messagesStream = const Stream.empty();
+    }
   }
 
   @override
@@ -146,70 +155,115 @@ class _WebRecentChatsCardState extends State<WebRecentChatsCard> {
           const SizedBox(height: DsSpacing.md),
 
           // Live incoming message feed / recent alerts
-          Text(
-            _recentMessages.isNotEmpty
-                ? 'آخر الرسائل والتنبيهات المباشرة'
-                : 'حالة التواصل والنشاط',
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(height: DsSpacing.sm),
+          StreamBuilder<List<InAppNotificationAlert>>(
+            stream: _messagesStream,
+            builder: (context, snapshot) {
+              final messages = snapshot.data ?? const [];
 
-          if (_recentMessages.isNotEmpty)
-            ListView.separated(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              itemCount: _recentMessages.length,
-              separatorBuilder:
-                  (context, index) =>
-                      const Divider(height: 12, color: ZaWolfColors.surface02),
-              itemBuilder: (context, index) {
-                final message = _recentMessages[index];
-                return _buildMessageRow(context, message);
-              },
-            )
-          else
-            Container(
-              padding: const EdgeInsets.symmetric(vertical: 24),
-              alignment: Alignment.center,
-              child: Column(
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: const BoxDecoration(
-                      color: ZaWolfColors.surface02,
-                      shape: BoxShape.circle,
-                    ),
-                    child: const Icon(
-                      Icons.mark_chat_read_outlined,
-                      color: ZaWolfColors.primaryCyan,
-                      size: 28,
-                    ),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        messages.isNotEmpty
+                            ? 'آخر الرسائل والتنبيهات المباشرة'
+                            : 'حالة التواصل والنشاط',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      if (messages.any((m) => !m.isRead))
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 2,
+                          ),
+                          decoration: BoxDecoration(
+                            color: ZaWolfColors.primaryCyan.withValues(
+                              alpha: 0.15,
+                            ),
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(
+                              color: ZaWolfColors.primaryCyan.withValues(
+                                alpha: 0.3,
+                              ),
+                            ),
+                          ),
+                          child: Text(
+                            '${messages.where((m) => !m.isRead).length} جديد',
+                            style: const TextStyle(
+                              color: ZaWolfColors.primaryCyan,
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                    ],
                   ),
-                  const SizedBox(height: 10),
-                  const Text(
-                    'أنت على اطلاع بكل المحادثات',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
+                  const SizedBox(height: DsSpacing.sm),
+
+                  if (messages.isNotEmpty)
+                    ListView.separated(
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      itemCount: messages.length,
+                      separatorBuilder:
+                          (context, index) => const Divider(
+                            height: 12,
+                            color: ZaWolfColors.surface02,
+                          ),
+                      itemBuilder: (context, index) {
+                        final message = messages[index];
+                        return _buildMessageRow(context, message);
+                      },
+                    )
+                  else
+                    Container(
+                      padding: const EdgeInsets.symmetric(vertical: 24),
+                      alignment: Alignment.center,
+                      child: Column(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: const BoxDecoration(
+                              color: ZaWolfColors.surface02,
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(
+                              Icons.mark_chat_read_outlined,
+                              color: ZaWolfColors.primaryCyan,
+                              size: 28,
+                            ),
+                          ),
+                          const SizedBox(height: 10),
+                          const Text(
+                            'أنت على اطلاع بكل المحادثات',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          const Text(
+                            'ستظهر أي رسائل أو تنبيهات واردة إليك هنا وإشعار منبثق فوري أعلى الشاشة.',
+                            style: TextStyle(
+                              color: ZaWolfColors.textMuted,
+                              fontSize: 11,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 4),
-                  const Text(
-                    'ستظهر أي رسائل أو تنبيهات واردة إليك هنا وإشعار منبثق فوري أعلى الشاشة.',
-                    style: TextStyle(
-                      color: ZaWolfColors.textMuted,
-                      fontSize: 11,
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
                 ],
-              ),
-            ),
+              );
+            },
+          ),
         ],
       ),
     );
@@ -279,24 +333,40 @@ class _WebRecentChatsCardState extends State<WebRecentChatsCard> {
     BuildContext context,
     InAppNotificationAlert message,
   ) {
-    final formattedTime = DateFormat('hh:mm a', 'ar').format(message.timestamp);
+    final formattedTime =
+        DateFormat('hh:mm a', 'ar').format(message.timestamp);
 
     return InkWell(
-      onTap:
-          () => unawaited(
-            NotificationService.instance.openInAppNotification(message),
-          ),
+      onTap: () async {
+        if (!message.isRead) {
+          unawaited(NotificationService.instance
+              .markAsRead(widget.user.uid, message.id));
+        }
+        if (context.mounted) {
+          if (message.route.isNotEmpty && message.route != '/') {
+            context.go(message.route);
+          } else {
+            context.go('/conversations');
+          }
+        }
+      },
       borderRadius: BorderRadius.circular(8),
       child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 4),
+        padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 6),
         child: Row(
           children: [
             CircleAvatar(
               radius: 16,
-              backgroundColor: ZaWolfColors.primaryCyan.withValues(alpha: 0.15),
-              child: const Icon(
+              backgroundColor:
+                  message.isRead
+                      ? ZaWolfColors.surface03
+                      : ZaWolfColors.primaryCyan.withValues(alpha: 0.15),
+              child: Icon(
                 Icons.chat_bubble_rounded,
-                color: ZaWolfColors.primaryCyan,
+                color:
+                    message.isRead
+                        ? ZaWolfColors.textSecondary
+                        : ZaWolfColors.primaryCyan,
                 size: 16,
               ),
             ),
@@ -307,13 +377,26 @@ class _WebRecentChatsCardState extends State<WebRecentChatsCard> {
                 children: [
                   Row(
                     children: [
+                      if (!message.isRead)
+                        Container(
+                          width: 7,
+                          height: 7,
+                          margin: const EdgeInsets.only(left: 6),
+                          decoration: const BoxDecoration(
+                            color: ZaWolfColors.primaryCyan,
+                            shape: BoxShape.circle,
+                          ),
+                        ),
                       Expanded(
                         child: Text(
                           message.title,
-                          style: const TextStyle(
+                          style: TextStyle(
                             color: Colors.white,
                             fontSize: 13,
-                            fontWeight: FontWeight.bold,
+                            fontWeight:
+                                message.isRead
+                                    ? FontWeight.normal
+                                    : FontWeight.bold,
                           ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
@@ -331,8 +414,11 @@ class _WebRecentChatsCardState extends State<WebRecentChatsCard> {
                   const SizedBox(height: 2),
                   Text(
                     message.body,
-                    style: const TextStyle(
-                      color: ZaWolfColors.textSecondary,
+                    style: TextStyle(
+                      color:
+                          message.isRead
+                              ? ZaWolfColors.textMuted
+                              : ZaWolfColors.textSecondary,
                       fontSize: 12,
                     ),
                     maxLines: 1,

@@ -697,13 +697,22 @@ async function authorizeCheckoutPolicyRequest(req) {
 }
 
 async function handleAttendanceGateway(req, res) {
+  let actorId = '';
+  let actionType = 'unknown';
   try {
     const actor = await authorizeAttendanceRequest(req);
     if (!actor) {
       sendJson(res, 401, { ok: false, code: 'unauthenticated', error: 'يرجى تسجيل الدخول مرة أخرى.' });
       return;
     }
+    actorId = actor.uid;
     const body = await readJsonBody(req, 16 * 1024);
+    actionType = String(body.action?.type || 'unknown');
+    console.info('Attendance gateway accepted request:', {
+      actorId,
+      action: actionType,
+      date: String(body.action?.date || '').slice(0, 10),
+    });
     if (body.action?.type === 'checkOut') {
       const policy = await loadCheckoutPolicy(admin.firestore());
       if (!policy.enabled) {
@@ -759,7 +768,11 @@ async function handleAttendanceGateway(req, res) {
       'inactive_location', 'assignment_changed', 'device_conflict',
       'device_mismatch', 'account_inactive', 'unauthenticated',
       'not_authorized'].includes(code)) {
-      console.info('Attendance gateway rejected:', code);
+      console.info('Attendance gateway rejected:', {
+        actorId: actorId || 'unauthenticated',
+        code,
+        action: actionType,
+      });
     } else {
       console.error('Attendance gateway failed:', code, error.message || error);
     }
@@ -4680,6 +4693,19 @@ const server = http.createServer(async (req, res) => {
       const result = await recordDiagnosticEvent(admin.firestore(), payload, {
         actorId: actor.uid,
       });
+      const safeEvent = sanitizeDiagnosticEvent(payload);
+      if (safeEvent?.feature === 'attendance_checkin' ||
+          (safeEvent?.feature === 'request_visibility' &&
+            safeEvent.metadata.operation === 'request_decision')) {
+        console.info('Client operation diagnostic:', {
+          actorId: actor.uid,
+          feature: safeEvent.feature,
+          safeCode: safeEvent.safeCode,
+          operation: safeEvent.metadata.operation || '',
+          stage: safeEvent.metadata.state || '',
+          accepted: result.accepted,
+        });
+      }
       // Never echo input, raw errors, actor IDs, or provider failures.
       sendJson(res, result.accepted ? 202 : 400, {
         ok: result.accepted,

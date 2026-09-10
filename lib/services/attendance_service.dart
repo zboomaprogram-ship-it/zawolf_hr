@@ -20,6 +20,7 @@ import 'offline_attendance_queue_service.dart';
 import 'attendance_gateway_service.dart';
 import 'role_notification_service.dart';
 import 'app_security_policy_service.dart';
+import 'safe_diagnostics_service.dart';
 
 enum AttendanceActionIntent { checkIn, checkOut }
 
@@ -50,440 +51,508 @@ class AttendanceService {
     AttendanceActionIntent? expectedAction,
     ReliableCheckInSubmitter? reliableCheckInSubmitter,
   }) async {
-    final securityPolicy = await AppSecurityPolicyService.instance
-        .assertAttendanceClientAllowed();
-    final now = DateTime.now();
-    final todayStr = DateFormat('yyyy-MM-dd').format(now);
-    final online = await _offlineQueue.isOnline();
-    final policyConfig = await _policyService.getPolicyConfig();
-    final requiresLiveConnection = !policyConfig.requiresBiometric;
-
-    if (online) {
-      // Older-record recovery is maintenance only. A legacy record can be
-      // unreadable or no longer satisfy a narrowed update rule; that must not
-      // prevent today's authenticated attendance event from reaching the
-      // gateway.
-      unawaited(_runBackgroundAttendanceMaintenance(employee, todayStr));
-    }
-
-    final todayLookup = await _loadTodayAttendance(employee.uid, todayStr);
-    final isCheckIn = todayLookup.log?.checkInTime == null;
-    final actualAction = isCheckIn
-        ? AttendanceActionIntent.checkIn
-        : AttendanceActionIntent.checkOut;
-
-    if (actualAction == AttendanceActionIntent.checkOut) {
-      await _assertCheckoutEnabled();
-    }
-
-    if (expectedAction != null && expectedAction != actualAction) {
-      if (expectedAction == AttendanceActionIntent.checkIn) {
-        throw Exception(
-          'يوجد تسجيل حضور محفوظ لهذا اليوم. قم بتحديث الصفحة، وسيظهر زر الانصراف في موعده.',
-        );
-      }
-      throw Exception(
-        'لا يوجد تسجيل حضور صالح لهذا اليوم. اضغط تسجيل حضور أولاً.',
-      );
-    }
-
-    if (isCheckIn) {
-      final workDays = employee.workSchedule.workDays;
-      if (workDays != null &&
-          workDays.isNotEmpty &&
-          !workDays.contains(now.weekday)) {
-        throw Exception(
-          'اليوم ليس ضمن أيام عملك المسجلة. لن يتم احتسابه غياباً أو خصماً.',
-        );
-      }
-
-      final policyCheckInOpenAt = AttendancePolicy.parseTimeOnDate(
-        now,
-        policyConfig.checkInOpenTime,
-      );
-      final employeeStartAt = AttendancePolicy.parseTimeOnDate(
-        now,
-        employee.workSchedule.startTime ?? policyConfig.defaultStartTime,
-      );
-      final checkInOpenAt = employeeStartAt.isBefore(policyCheckInOpenAt)
-          ? employeeStartAt
-          : policyCheckInOpenAt;
-      if (now.isBefore(checkInOpenAt)) {
-        throw Exception(
-          'تسجيل الحضور يفتح من الساعة ${_formatArabicTime(checkInOpenAt)}.',
-        );
-      }
-
-      final dayOffStatus = await _dayOffService.getDayOffStatus(now);
-      if (dayOffStatus.isDayOff) {
-        throw Exception('تسجيل الحضور غير متاح اليوم: ${dayOffStatus.reason}.');
-      }
-
-      final approvedLeave = await _approvedLeaveOnDate(employee.uid, now);
-      if (approvedLeave != null) {
-        throw Exception(
-          'لديك إجازة معتمدة اليوم (${approvedLeave['leaveType'] ?? 'إجازة'}). تسجيل الحضور غير مطلوب.',
-        );
-      }
-    } else {
-      final checkInLog = todayLookup.log!;
-      if (checkInLog.checkOutTime != null) {
-        throw Exception('لقد قمت بتسجيل الانصراف بالفعل لهذا اليوم.');
-      }
-
-      final allowedCheckoutFrom = await _effectiveCheckoutAllowedFrom(
-        employee: employee,
-        dateKey: todayStr,
-        policyConfig: policyConfig,
-        now: now,
-      );
-      final latestCheckoutAt = AttendancePolicy.parseTimeOnDate(
-        now,
-        policyConfig.latestCheckoutTime,
-      );
-
-      if (now.isBefore(allowedCheckoutFrom)) {
-        throw Exception(
-          'تسجيل الانصراف يفتح من الساعة ${_formatArabicTime(allowedCheckoutFrom)}.',
-        );
-      }
-      if (now.isAfter(latestCheckoutAt)) {
-        throw Exception(
-          'انتهت مهلة تسجيل الانصراف لهذا اليوم عند الساعة ${_formatArabicTime(latestCheckoutAt)}. سيتم إرسال عدم تسجيل الانصراف إلى HR للمراجعة.',
-        );
-      }
-    }
-
-    // An active HR-created field assignment is a time-bounded, auditable
-    // exception to branch geofence enforcement.
-    final activeFieldAssignment = await _fieldAssignmentService.activeAt(
-      userId: employee.uid,
-      dateKey: todayStr,
-      now: now,
-    );
-
-    // Check if employee has an approved WFH request today
-    final wfhQuery = await _db
-        .collection('leaves')
-        .where('userId', isEqualTo: employee.uid)
-        .where('leaveType', isEqualTo: 'wfh')
-        .where('status', isEqualTo: 'approved')
-        .where('startDate', isLessThanOrEqualTo: Timestamp.fromDate(now))
-        .get();
-
-    final hasWfhToday = wfhQuery.docs.any((doc) {
-      final data = doc.data();
-      final end = (data['endDate'] as Timestamp).toDate();
-      // If now is before end of that day (23:59)
-      return now.isBefore(end.add(const Duration(days: 1)));
-    });
-
-    // 1. Validate employee position against assigned branch's geofence
-    late final GeofenceResult geoResult;
+    var diagnosticStage = 'security_policy';
     try {
-      geoResult = await _geofenceService.validateCheckIn(
-        employee,
-        strictLocationOnly: requiresLiveConnection,
-      );
-    } catch (error) {
-      await _recordLocationDiagnostic(
-        employee: employee,
-        action: isCheckIn ? 'check_in' : 'check_out',
-        result: 'location_unavailable',
-        metadata: {'message': _safeDiagnosticMessage(error)},
-      );
-      rethrow;
-    }
+      final securityPolicy =
+          await AppSecurityPolicyService.instance
+              .assertAttendanceClientAllowed();
+      final now = DateTime.now();
+      final todayStr = DateFormat('yyyy-MM-dd').format(now);
+      final online = await _offlineQueue.isOnline();
+      final policyConfig = await _policyService.getPolicyConfig();
+      final requiresLiveConnection = !policyConfig.requiresBiometric;
 
-    // Check if spoofing app is used
-    // A valid WFH or field assignment changes the allowed place, never the
-    // requirement for a genuine device location.
-    if (geoResult.isMocked) {
-      await _recordLocationDiagnostic(
-        employee: employee,
-        action: isCheckIn ? 'check_in' : 'check_out',
-        result: 'mock_location_blocked',
-        geoResult: geoResult,
-      );
-      throw Exception(
-        'عذراً، تم الكشف عن استخدام تطبيق لتزييف الموقع الجغرافي (Mock GPS).',
-      );
-    }
-    final locationRisk = _assessLocationRisk(
-      geoResult,
-      capturedOffline: !online,
-      bypassedByWfh: false,
-      strictLocationOnly: requiresLiveConnection,
-    );
-    if (locationRisk.blocked) {
-      await _recordLocationDiagnostic(
-        employee: employee,
-        action: isCheckIn ? 'check_in' : 'check_out',
-        result: locationRisk.reasons.join(','),
-        geoResult: geoResult,
-      );
-      throw Exception(locationRisk.message);
-    }
+      if (online) {
+        // Older-record recovery is maintenance only. A legacy record can be
+        // unreadable or no longer satisfy a narrowed update rule; that must not
+        // prevent today's authenticated attendance event from reaching the
+        // gateway.
+        unawaited(_runBackgroundAttendanceMaintenance(employee, todayStr));
+      }
 
-    final allowsExternalWork =
-        hasWfhToday ||
-        activeFieldAssignment != null ||
-        employee.isExecutiveLeader;
-    if (!geoResult.isWithinZone && !allowsExternalWork) {
-      await _recordLocationDiagnostic(
-        employee: employee,
-        action: isCheckIn ? 'check_in' : 'check_out',
-        result: 'outside_geofence',
-        geoResult: geoResult,
-      );
-      throw Exception(
-        'أنت خارج نطاق العمل المسموح به لفرع (${geoResult.locationName}).\n'
-        'المسافة الحالية: ${geoResult.distanceMeters.toInt()} متر.\n'
-        'نطاق الفرع: ${geoResult.configuredRadius.toInt()} متر. '
-        'دقة القراءة: ${geoResult.accuracyMeters.toInt()} متر.',
-      );
-    }
+      diagnosticStage = 'attendance_lookup';
+      final todayLookup = await _loadTodayAttendance(employee.uid, todayStr);
+      final isCheckIn = todayLookup.log?.checkInTime == null;
+      final actualAction =
+          isCheckIn
+              ? AttendanceActionIntent.checkIn
+              : AttendanceActionIntent.checkOut;
 
-    final securityResult = await _securityService.verifyForAttendance(
-      requireBiometric: policyConfig.requiresBiometric,
-      blockAndroidDeveloperOptions: securityPolicy.blockAndroidDeveloperOptions,
-    );
-    final effectiveLocationRisk = locationRisk.withSecurityFallback(
-      securityResult.deviceCredentialFallbackUsed,
-    );
-    // The server binds the device atomically with the attendance event.  A
-    // direct client Firestore transaction here can fail on a valid account
-    // because of a stale rule/session, so it must not block check-in.
+      if (actualAction == AttendanceActionIntent.checkOut) {
+        await _assertCheckoutEnabled();
+      }
 
-    if (isCheckIn) {
-      // ── CHECK-IN LOGIC ──
-      final effectiveStartTime = await _effectiveCheckInStartTime(
-        employee: employee,
-        dateKey: todayStr,
-        policyConfig: policyConfig,
-        now: now,
-      );
-      final deduction = policyConfig.evaluateLateArrival(
-        arrivalTime: now,
-        employeeStartTime: _formatTime(effectiveStartTime),
-      );
-      final salaryDeductionAmount = policyConfig.calculateSalaryDeductionAmount(
-        monthlySalary: employee.baseMonthlySalary,
-        dayFraction: deduction.dayFraction,
-      );
-
-      final logRef = _db
-          .collection('attendance')
-          .doc('${employee.uid}_$todayStr');
-      final offlineAction = OfflineAttendanceAction(
-        id: '${logRef.id}_checkIn',
-        type: OfflineAttendanceActionType.checkIn,
-        attendanceId: logRef.id,
-        userId: employee.uid,
-        employeeId: employee.employeeId,
-        employeeName: employee.displayName,
-        locationId: geoResult.locationId ?? employee.locationId,
-        locationName: geoResult.locationName,
-        assignmentId: geoResult.assignmentId,
-        assignmentVersion: geoResult.assignmentVersion,
-        managerId: employee.managerId,
-        date: todayStr,
-        eventTime: now,
-        latitude: geoResult.position.latitude,
-        longitude: geoResult.position.longitude,
-        distanceMeters: geoResult.distanceMeters,
-        allowedRadius: geoResult.allowedRadius,
-        accuracyMeters: geoResult.accuracyMeters,
-        deviceId: securityResult.deviceId,
-        deviceLabel: securityResult.deviceLabel,
-        biometricVerified: securityResult.biometricVerified,
-        isLate: deduction.isLate,
-        lateMinutes: deduction.lateMinutes,
-        salaryDeductionFraction: deduction.dayFraction,
-        salaryDeductionAmount: salaryDeductionAmount,
-        salaryCurrency: employee.salaryCurrency,
-        salaryDeductionCode: deduction.code,
-        salaryDeductionLabel: deduction.arabicLabel,
-        salaryDeductionApprovalStatus: deduction.dayFraction > 0
-            ? 'pending_hr'
-            : 'none',
-        securityReviewStatus: effectiveLocationRisk.securityReviewStatus,
-        locationRiskLevel: effectiveLocationRisk.level,
-        locationRiskReasons: effectiveLocationRisk.reasons,
-        locationRiskMessage: effectiveLocationRisk.message,
-        status: deduction.status,
-      );
-      var savedOnline = online;
-      if (reliableCheckInSubmitter != null) {
-        savedOnline = await reliableCheckInSubmitter(offlineAction);
-      } else if (online) {
-        try {
-          await _attendanceGateway.submit(offlineAction.toJson());
-          await _offlineQueue.rememberLocalDeviceOwner(
-            deviceId: securityResult.deviceId,
-            userId: employee.uid,
+      if (expectedAction != null && expectedAction != actualAction) {
+        if (expectedAction == AttendanceActionIntent.checkIn) {
+          throw Exception(
+            'يوجد تسجيل حضور محفوظ لهذا اليوم. قم بتحديث الصفحة، وسيظهر زر الانصراف في موعده.',
           );
-        } catch (error) {
-          if (error is AttendanceGatewayException && !error.isTemporary) {
-            rethrow;
-          }
-          savedOnline = false;
-          await _offlineQueue.queue(offlineAction);
         }
-      } else {
-        savedOnline = false;
-        await _offlineQueue.queue(offlineAction);
-      }
-      if (savedOnline && deduction.dayFraction > 0) {
-        await _notifyRole(
-          role: 'hr_admin',
-          type: 'salary_deduction_pending',
-          title: 'خصم تأخير بانتظار مراجعة HR',
-          body:
-              '${employee.displayName}: ${deduction.arabicLabel} (${salaryDeductionAmount.toStringAsFixed(2)} ${employee.salaryCurrency}).',
-          data: {'attendanceId': logRef.id},
-        );
-      }
-      if (savedOnline && effectiveLocationRisk.requiresReview) {
-        await _notifyLocationSecurityReview(
-          employee: employee,
-          attendanceId: logRef.id,
-          risk: effectiveLocationRisk,
-          isCheckOut: false,
-        );
-      }
-    } else {
-      // ── CHECK-OUT LOGIC ──
-      final checkInDoc = todayLookup.doc;
-      final checkInLog = todayLookup.log!;
-
-      if (checkInLog.checkInTime == null) {
         throw Exception(
           'لا يوجد تسجيل حضور صالح لهذا اليوم. اضغط تسجيل حضور أولاً.',
         );
       }
 
-      if (checkInLog.checkOutTime != null) {
-        throw Exception('لقد قمت بتسجيل الانصراف بالفعل لهذا اليوم.');
+      if (isCheckIn) {
+        final workDays = employee.workSchedule.workDays;
+        if (workDays != null &&
+            workDays.isNotEmpty &&
+            !workDays.contains(now.weekday)) {
+          throw Exception(
+            'اليوم ليس ضمن أيام عملك المسجلة. لن يتم احتسابه غياباً أو خصماً.',
+          );
+        }
+
+        final policyCheckInOpenAt = AttendancePolicy.parseTimeOnDate(
+          now,
+          policyConfig.checkInOpenTime,
+        );
+        final employeeStartAt = AttendancePolicy.parseTimeOnDate(
+          now,
+          employee.workSchedule.startTime ?? policyConfig.defaultStartTime,
+        );
+        final checkInOpenAt =
+            employeeStartAt.isBefore(policyCheckInOpenAt)
+                ? employeeStartAt
+                : policyCheckInOpenAt;
+        if (now.isBefore(checkInOpenAt)) {
+          throw Exception(
+            'تسجيل الحضور يفتح من الساعة ${_formatArabicTime(checkInOpenAt)}.',
+          );
+        }
+
+        diagnosticStage = 'day_off_check';
+        final dayOffStatus = await _dayOffService.getDayOffStatus(now);
+        if (dayOffStatus.isDayOff) {
+          throw Exception(
+            'تسجيل الحضور غير متاح اليوم: ${dayOffStatus.reason}.',
+          );
+        }
+
+        diagnosticStage = 'leave_check';
+        final approvedLeave = await _approvedLeaveOnDate(employee.uid, now);
+        if (approvedLeave != null) {
+          throw Exception(
+            'لديك إجازة معتمدة اليوم (${approvedLeave['leaveType'] ?? 'إجازة'}). تسجيل الحضور غير مطلوب.',
+          );
+        }
+      } else {
+        final checkInLog = todayLookup.log!;
+        if (checkInLog.checkOutTime != null) {
+          throw Exception('لقد قمت بتسجيل الانصراف بالفعل لهذا اليوم.');
+        }
+
+        final allowedCheckoutFrom = await _effectiveCheckoutAllowedFrom(
+          employee: employee,
+          dateKey: todayStr,
+          policyConfig: policyConfig,
+          now: now,
+        );
+        final latestCheckoutAt = AttendancePolicy.parseTimeOnDate(
+          now,
+          policyConfig.latestCheckoutTime,
+        );
+
+        if (now.isBefore(allowedCheckoutFrom)) {
+          throw Exception(
+            'تسجيل الانصراف يفتح من الساعة ${_formatArabicTime(allowedCheckoutFrom)}.',
+          );
+        }
+        if (now.isAfter(latestCheckoutAt)) {
+          throw Exception(
+            'انتهت مهلة تسجيل الانصراف لهذا اليوم عند الساعة ${_formatArabicTime(latestCheckoutAt)}. سيتم إرسال عدم تسجيل الانصراف إلى HR للمراجعة.',
+          );
+        }
       }
 
-      final checkInTime = checkInLog.checkInTime ?? now;
-      final totalWorkHours = now.difference(checkInTime).inMinutes / 60.0;
-      final allowedCheckoutFrom = await _effectiveCheckoutAllowedFrom(
-        employee: employee,
-        dateKey: todayStr,
-        policyConfig: policyConfig,
-        now: now,
-      );
-      final latestCheckoutWithoutDeduction = AttendancePolicy.parseTimeOnDate(
-        now,
-        policyConfig.latestCheckoutTime,
-      );
-      final needsCheckoutDeduction =
-          now.isBefore(allowedCheckoutFrom) ||
-          now.isAfter(latestCheckoutWithoutDeduction);
-      final checkoutDeductionLabel = now.isAfter(latestCheckoutWithoutDeduction)
-          ? 'خصم ربع يوم - تسجيل انصراف بعد 11 مساءً'
-          : 'خصم ربع يوم - انصراف مبكر';
-      final checkoutDeductionCode = now.isAfter(latestCheckoutWithoutDeduction)
-          ? 'late_checkout_after_11_quarter_day'
-          : 'early_checkout_quarter_day';
-
-      final earlyCheckoutDeduction = _buildCheckoutDeductionPatch(
-        employee: employee,
-        currentLog: checkInLog,
-        reasonCode: checkoutDeductionCode,
-        reasonLabel: checkoutDeductionLabel,
-        now: now,
-        applies: needsCheckoutDeduction,
-        payrollWorkDaysPerMonth: policyConfig.payrollWorkDaysPerMonth,
-      );
-      final offlineAction = OfflineAttendanceAction(
-        id: '${checkInLog.attendanceId}_checkOut',
-        type: OfflineAttendanceActionType.checkOut,
-        attendanceId: checkInLog.attendanceId,
+      // An active HR-created field assignment is a time-bounded, auditable
+      // exception to branch geofence enforcement.
+      diagnosticStage = 'field_assignment_check';
+      final activeFieldAssignment = await _fieldAssignmentService.activeAt(
         userId: employee.uid,
-        employeeId: employee.employeeId,
-        employeeName: employee.displayName,
-        locationId: geoResult.locationId ?? employee.locationId,
-        locationName: geoResult.locationName,
-        assignmentId: geoResult.assignmentId,
-        assignmentVersion: geoResult.assignmentVersion,
-        managerId: employee.managerId,
-        date: todayStr,
-        eventTime: now,
-        latitude: geoResult.position.latitude,
-        longitude: geoResult.position.longitude,
-        distanceMeters: geoResult.distanceMeters,
-        allowedRadius: geoResult.allowedRadius,
-        accuracyMeters: geoResult.accuracyMeters,
-        deviceId: securityResult.deviceId,
-        deviceLabel: securityResult.deviceLabel,
-        biometricVerified: securityResult.biometricVerified,
-        totalWorkHours: totalWorkHours,
-        isLate: checkInLog.isLate,
-        lateMinutes: checkInLog.lateMinutes,
-        salaryDeductionFraction: earlyCheckoutDeduction.patch.isEmpty
-            ? checkInLog.salaryDeductionFraction
-            : 0.25,
-        salaryDeductionAmount: earlyCheckoutDeduction.patch.isEmpty
-            ? checkInLog.salaryDeductionAmount
-            : earlyCheckoutDeduction.amount,
-        salaryCurrency: employee.salaryCurrency,
-        salaryDeductionCode: earlyCheckoutDeduction.patch.isEmpty
-            ? checkInLog.salaryDeductionCode
-            : checkoutDeductionCode,
-        salaryDeductionLabel: earlyCheckoutDeduction.patch.isEmpty
-            ? checkInLog.salaryDeductionLabel
-            : earlyCheckoutDeduction.label,
-        salaryDeductionApprovalStatus: earlyCheckoutDeduction.patch.isEmpty
-            ? checkInLog.salaryDeductionApprovalStatus
-            : 'pending_hr',
-        securityReviewStatus: effectiveLocationRisk.securityReviewStatus,
-        locationRiskLevel: effectiveLocationRisk.level,
-        locationRiskReasons: effectiveLocationRisk.reasons,
-        locationRiskMessage: effectiveLocationRisk.message,
-        status: checkInLog.status,
+        dateKey: todayStr,
+        now: now,
       );
 
-      var savedOnline = online && checkInDoc != null;
-      if (savedOnline) {
-        try {
-          await _attendanceGateway.submit(offlineAction.toJson());
-          await _offlineQueue.rememberLocalDeviceOwner(
-            deviceId: securityResult.deviceId,
-            userId: employee.uid,
-          );
-        } catch (error) {
-          if (error is AttendanceGatewayException && !error.isTemporary) {
-            rethrow;
+      // Check if employee has an approved WFH request today
+      diagnosticStage = 'remote_work_check';
+      final wfhQuery =
+          await _db
+              .collection('leaves')
+              .where('userId', isEqualTo: employee.uid)
+              .where('leaveType', isEqualTo: 'wfh')
+              .where('status', isEqualTo: 'approved')
+              .where('startDate', isLessThanOrEqualTo: Timestamp.fromDate(now))
+              .get();
+
+      final hasWfhToday = wfhQuery.docs.any((doc) {
+        final data = doc.data();
+        final end = (data['endDate'] as Timestamp).toDate();
+        // If now is before end of that day (23:59)
+        return now.isBefore(end.add(const Duration(days: 1)));
+      });
+
+      // 1. Validate employee position against assigned branch's geofence
+      late final GeofenceResult geoResult;
+      try {
+        diagnosticStage = 'geofence';
+        geoResult = await _geofenceService.validateCheckIn(
+          employee,
+          strictLocationOnly: requiresLiveConnection,
+        );
+      } catch (error) {
+        await _recordLocationDiagnostic(
+          employee: employee,
+          action: isCheckIn ? 'check_in' : 'check_out',
+          result: 'location_unavailable',
+          metadata: {'message': _safeDiagnosticMessage(error)},
+        );
+        rethrow;
+      }
+
+      // Check if spoofing app is used
+      // A valid WFH or field assignment changes the allowed place, never the
+      // requirement for a genuine device location.
+      if (geoResult.isMocked) {
+        await _recordLocationDiagnostic(
+          employee: employee,
+          action: isCheckIn ? 'check_in' : 'check_out',
+          result: 'mock_location_blocked',
+          geoResult: geoResult,
+        );
+        throw Exception(
+          'عذراً، تم الكشف عن استخدام تطبيق لتزييف الموقع الجغرافي (Mock GPS).',
+        );
+      }
+      final locationRisk = _assessLocationRisk(
+        geoResult,
+        capturedOffline: !online,
+        bypassedByWfh: false,
+        strictLocationOnly: requiresLiveConnection,
+      );
+      if (locationRisk.blocked) {
+        await _recordLocationDiagnostic(
+          employee: employee,
+          action: isCheckIn ? 'check_in' : 'check_out',
+          result: locationRisk.reasons.join(','),
+          geoResult: geoResult,
+        );
+        throw Exception(locationRisk.message);
+      }
+
+      final allowsExternalWork =
+          hasWfhToday ||
+          activeFieldAssignment != null ||
+          employee.isExecutiveLeader;
+      if (!geoResult.isWithinZone && !allowsExternalWork) {
+        await _recordLocationDiagnostic(
+          employee: employee,
+          action: isCheckIn ? 'check_in' : 'check_out',
+          result: 'outside_geofence',
+          geoResult: geoResult,
+        );
+        throw Exception(
+          'أنت خارج نطاق العمل المسموح به لفرع (${geoResult.locationName}).\n'
+          'المسافة الحالية: ${geoResult.distanceMeters.toInt()} متر.\n'
+          'نطاق الفرع: ${geoResult.configuredRadius.toInt()} متر. '
+          'دقة القراءة: ${geoResult.accuracyMeters.toInt()} متر.',
+        );
+      }
+
+      diagnosticStage = 'device_security';
+      final securityResult = await _securityService.verifyForAttendance(
+        requireBiometric: policyConfig.requiresBiometric,
+        blockAndroidDeveloperOptions:
+            securityPolicy.blockAndroidDeveloperOptions,
+      );
+      final effectiveLocationRisk = locationRisk.withSecurityFallback(
+        securityResult.deviceCredentialFallbackUsed,
+      );
+      // The server binds the device atomically with the attendance event.  A
+      // direct client Firestore transaction here can fail on a valid account
+      // because of a stale rule/session, so it must not block check-in.
+
+      if (isCheckIn) {
+        // ── CHECK-IN LOGIC ──
+        final effectiveStartTime = await _effectiveCheckInStartTime(
+          employee: employee,
+          dateKey: todayStr,
+          policyConfig: policyConfig,
+          now: now,
+        );
+        final deduction = policyConfig.evaluateLateArrival(
+          arrivalTime: now,
+          employeeStartTime: _formatTime(effectiveStartTime),
+        );
+        final salaryDeductionAmount = policyConfig
+            .calculateSalaryDeductionAmount(
+              monthlySalary: employee.baseMonthlySalary,
+              dayFraction: deduction.dayFraction,
+            );
+
+        final logRef = _db
+            .collection('attendance')
+            .doc('${employee.uid}_$todayStr');
+        final offlineAction = OfflineAttendanceAction(
+          id: '${logRef.id}_checkIn',
+          type: OfflineAttendanceActionType.checkIn,
+          attendanceId: logRef.id,
+          userId: employee.uid,
+          employeeId: employee.employeeId,
+          employeeName: employee.displayName,
+          locationId: geoResult.locationId ?? employee.locationId,
+          locationName: geoResult.locationName,
+          assignmentId: geoResult.assignmentId,
+          assignmentVersion: geoResult.assignmentVersion,
+          managerId: employee.managerId,
+          date: todayStr,
+          eventTime: now,
+          latitude: geoResult.position.latitude,
+          longitude: geoResult.position.longitude,
+          distanceMeters: geoResult.distanceMeters,
+          allowedRadius: geoResult.allowedRadius,
+          accuracyMeters: geoResult.accuracyMeters,
+          deviceId: securityResult.deviceId,
+          deviceLabel: securityResult.deviceLabel,
+          biometricVerified: securityResult.biometricVerified,
+          isLate: deduction.isLate,
+          lateMinutes: deduction.lateMinutes,
+          salaryDeductionFraction: deduction.dayFraction,
+          salaryDeductionAmount: salaryDeductionAmount,
+          salaryCurrency: employee.salaryCurrency,
+          salaryDeductionCode: deduction.code,
+          salaryDeductionLabel: deduction.arabicLabel,
+          salaryDeductionApprovalStatus:
+              deduction.dayFraction > 0 ? 'pending_hr' : 'none',
+          securityReviewStatus: effectiveLocationRisk.securityReviewStatus,
+          locationRiskLevel: effectiveLocationRisk.level,
+          locationRiskReasons: effectiveLocationRisk.reasons,
+          locationRiskMessage: effectiveLocationRisk.message,
+          status: deduction.status,
+        );
+        var savedOnline = online;
+        if (reliableCheckInSubmitter != null) {
+          savedOnline = await reliableCheckInSubmitter(offlineAction);
+        } else if (online) {
+          try {
+            diagnosticStage = 'gateway_submit';
+            await _attendanceGateway.submit(offlineAction.toJson());
+            await _offlineQueue.rememberLocalDeviceOwner(
+              deviceId: securityResult.deviceId,
+              userId: employee.uid,
+            );
+          } catch (error) {
+            if (error is AttendanceGatewayException && !error.isTemporary) {
+              rethrow;
+            }
+            savedOnline = false;
+            await _offlineQueue.queue(offlineAction);
           }
+        } else {
           savedOnline = false;
           await _offlineQueue.queue(offlineAction);
         }
+        if (savedOnline && deduction.dayFraction > 0) {
+          await _notifyRole(
+            role: 'hr_admin',
+            type: 'salary_deduction_pending',
+            title: 'خصم تأخير بانتظار مراجعة HR',
+            body:
+                '${employee.displayName}: ${deduction.arabicLabel} (${salaryDeductionAmount.toStringAsFixed(2)} ${employee.salaryCurrency}).',
+            data: {'attendanceId': logRef.id},
+          );
+        }
+        if (savedOnline && effectiveLocationRisk.requiresReview) {
+          await _notifyLocationSecurityReview(
+            employee: employee,
+            attendanceId: logRef.id,
+            risk: effectiveLocationRisk,
+            isCheckOut: false,
+          );
+        }
       } else {
-        await _offlineQueue.queue(offlineAction);
-      }
+        // ── CHECK-OUT LOGIC ──
+        final checkInDoc = todayLookup.doc;
+        final checkInLog = todayLookup.log!;
 
-      if (savedOnline && earlyCheckoutDeduction.shouldNotify) {
-        await _notifyRole(
-          role: 'hr_admin',
-          type: 'salary_deduction_pending',
-          title: '${earlyCheckoutDeduction.label} بانتظار مراجعة HR',
-          body:
-              '${employee.displayName}: ${earlyCheckoutDeduction.label} (${earlyCheckoutDeduction.amount.toStringAsFixed(2)} ${employee.salaryCurrency}).',
-          data: {'attendanceId': checkInDoc?.id ?? checkInLog.attendanceId},
-        );
-      }
-      if (savedOnline && effectiveLocationRisk.requiresReview) {
-        await _notifyLocationSecurityReview(
+        if (checkInLog.checkInTime == null) {
+          throw Exception(
+            'لا يوجد تسجيل حضور صالح لهذا اليوم. اضغط تسجيل حضور أولاً.',
+          );
+        }
+
+        if (checkInLog.checkOutTime != null) {
+          throw Exception('لقد قمت بتسجيل الانصراف بالفعل لهذا اليوم.');
+        }
+
+        final checkInTime = checkInLog.checkInTime ?? now;
+        final totalWorkHours = now.difference(checkInTime).inMinutes / 60.0;
+        final allowedCheckoutFrom = await _effectiveCheckoutAllowedFrom(
           employee: employee,
-          attendanceId: checkInDoc?.id ?? checkInLog.attendanceId,
-          risk: effectiveLocationRisk,
-          isCheckOut: true,
+          dateKey: todayStr,
+          policyConfig: policyConfig,
+          now: now,
         );
+        final latestCheckoutWithoutDeduction = AttendancePolicy.parseTimeOnDate(
+          now,
+          policyConfig.latestCheckoutTime,
+        );
+        final needsCheckoutDeduction =
+            now.isBefore(allowedCheckoutFrom) ||
+            now.isAfter(latestCheckoutWithoutDeduction);
+        final checkoutDeductionLabel =
+            now.isAfter(latestCheckoutWithoutDeduction)
+                ? 'خصم ربع يوم - تسجيل انصراف بعد 11 مساءً'
+                : 'خصم ربع يوم - انصراف مبكر';
+        final checkoutDeductionCode =
+            now.isAfter(latestCheckoutWithoutDeduction)
+                ? 'late_checkout_after_11_quarter_day'
+                : 'early_checkout_quarter_day';
+
+        final earlyCheckoutDeduction = _buildCheckoutDeductionPatch(
+          employee: employee,
+          currentLog: checkInLog,
+          reasonCode: checkoutDeductionCode,
+          reasonLabel: checkoutDeductionLabel,
+          now: now,
+          applies: needsCheckoutDeduction,
+          payrollWorkDaysPerMonth: policyConfig.payrollWorkDaysPerMonth,
+        );
+        final offlineAction = OfflineAttendanceAction(
+          id: '${checkInLog.attendanceId}_checkOut',
+          type: OfflineAttendanceActionType.checkOut,
+          attendanceId: checkInLog.attendanceId,
+          userId: employee.uid,
+          employeeId: employee.employeeId,
+          employeeName: employee.displayName,
+          locationId: geoResult.locationId ?? employee.locationId,
+          locationName: geoResult.locationName,
+          assignmentId: geoResult.assignmentId,
+          assignmentVersion: geoResult.assignmentVersion,
+          managerId: employee.managerId,
+          date: todayStr,
+          eventTime: now,
+          latitude: geoResult.position.latitude,
+          longitude: geoResult.position.longitude,
+          distanceMeters: geoResult.distanceMeters,
+          allowedRadius: geoResult.allowedRadius,
+          accuracyMeters: geoResult.accuracyMeters,
+          deviceId: securityResult.deviceId,
+          deviceLabel: securityResult.deviceLabel,
+          biometricVerified: securityResult.biometricVerified,
+          totalWorkHours: totalWorkHours,
+          isLate: checkInLog.isLate,
+          lateMinutes: checkInLog.lateMinutes,
+          salaryDeductionFraction:
+              earlyCheckoutDeduction.patch.isEmpty
+                  ? checkInLog.salaryDeductionFraction
+                  : 0.25,
+          salaryDeductionAmount:
+              earlyCheckoutDeduction.patch.isEmpty
+                  ? checkInLog.salaryDeductionAmount
+                  : earlyCheckoutDeduction.amount,
+          salaryCurrency: employee.salaryCurrency,
+          salaryDeductionCode:
+              earlyCheckoutDeduction.patch.isEmpty
+                  ? checkInLog.salaryDeductionCode
+                  : checkoutDeductionCode,
+          salaryDeductionLabel:
+              earlyCheckoutDeduction.patch.isEmpty
+                  ? checkInLog.salaryDeductionLabel
+                  : earlyCheckoutDeduction.label,
+          salaryDeductionApprovalStatus:
+              earlyCheckoutDeduction.patch.isEmpty
+                  ? checkInLog.salaryDeductionApprovalStatus
+                  : 'pending_hr',
+          securityReviewStatus: effectiveLocationRisk.securityReviewStatus,
+          locationRiskLevel: effectiveLocationRisk.level,
+          locationRiskReasons: effectiveLocationRisk.reasons,
+          locationRiskMessage: effectiveLocationRisk.message,
+          status: checkInLog.status,
+        );
+
+        var savedOnline = online && checkInDoc != null;
+        if (savedOnline) {
+          try {
+            diagnosticStage = 'gateway_submit';
+            await _attendanceGateway.submit(offlineAction.toJson());
+            await _offlineQueue.rememberLocalDeviceOwner(
+              deviceId: securityResult.deviceId,
+              userId: employee.uid,
+            );
+          } catch (error) {
+            if (error is AttendanceGatewayException && !error.isTemporary) {
+              rethrow;
+            }
+            savedOnline = false;
+            await _offlineQueue.queue(offlineAction);
+          }
+        } else {
+          await _offlineQueue.queue(offlineAction);
+        }
+
+        if (savedOnline && earlyCheckoutDeduction.shouldNotify) {
+          await _notifyRole(
+            role: 'hr_admin',
+            type: 'salary_deduction_pending',
+            title: '${earlyCheckoutDeduction.label} بانتظار مراجعة HR',
+            body:
+                '${employee.displayName}: ${earlyCheckoutDeduction.label} (${earlyCheckoutDeduction.amount.toStringAsFixed(2)} ${employee.salaryCurrency}).',
+            data: {'attendanceId': checkInDoc?.id ?? checkInLog.attendanceId},
+          );
+        }
+        if (savedOnline && effectiveLocationRisk.requiresReview) {
+          await _notifyLocationSecurityReview(
+            employee: employee,
+            attendanceId: checkInDoc?.id ?? checkInLog.attendanceId,
+            risk: effectiveLocationRisk,
+            isCheckOut: true,
+          );
+        }
       }
+    } catch (error) {
+      unawaited(
+        _recordAttendanceFlowDiagnostic(stage: diagnosticStage, error: error),
+      );
+      rethrow;
     }
+  }
+
+  Future<void> _recordAttendanceFlowDiagnostic({
+    required String stage,
+    required Object error,
+  }) async {
+    final raw = error.toString().toLowerCase();
+    final safeCode =
+        error is AttendanceGatewayException
+            ? switch (error.code) {
+              'unauthenticated' => 'session_expired',
+              'device_conflict' ||
+              'device_mismatch' ||
+              'account_inactive' => 'access_denied',
+              'network' => 'connection_interrupted',
+              'timeout' || 'server_unavailable' => 'temporarily_unavailable',
+              'stale_event' ||
+              'invalid_request' ||
+              'outside_range' => 'validation_failed',
+              _ => 'unexpected',
+            }
+            : (raw.contains('permission-denied') ||
+                raw.contains('securityexception'))
+            ? 'access_denied'
+            : (raw.contains('timeout') || raw.contains('unavailable'))
+            ? 'temporarily_unavailable'
+            : 'validation_failed';
+    developer.log(
+      'Attendance client action failed at $stage ($safeCode)',
+      name: 'zawolf.attendance',
+    );
+    await SafeDiagnosticsService.instance.capture(
+      feature: 'attendance_checkin',
+      safeCode: safeCode,
+      operation: 'attendance_action',
+      state: stage,
+    );
   }
 
   Future<void> _assertCheckoutEnabled() async {
@@ -521,12 +590,16 @@ class AttendanceService {
     DateTime date,
   ) async {
     final dayStart = DateTime(date.year, date.month, date.day);
-    final snapshot = await _db
-        .collection('leaves')
-        .where('userId', isEqualTo: userId)
-        .where('status', isEqualTo: 'approved')
-        .where('startDate', isLessThanOrEqualTo: Timestamp.fromDate(dayStart))
-        .get();
+    final snapshot =
+        await _db
+            .collection('leaves')
+            .where('userId', isEqualTo: userId)
+            .where('status', isEqualTo: 'approved')
+            .where(
+              'startDate',
+              isLessThanOrEqualTo: Timestamp.fromDate(dayStart),
+            )
+            .get();
 
     for (final doc in snapshot.docs) {
       final data = doc.data();
@@ -764,9 +837,8 @@ class AttendanceService {
     return _notifyRole(
       role: 'hr_admin',
       type: 'attendance_security_review',
-      title: isCheckOut
-          ? 'انصراف يحتاج مراجعة أمنية'
-          : 'حضور يحتاج مراجعة أمنية',
+      title:
+          isCheckOut ? 'انصراف يحتاج مراجعة أمنية' : 'حضور يحتاج مراجعة أمنية',
       body: '${employee.displayName}: ${risk.message}',
       data: {'attendanceId': attendanceId},
     );
@@ -888,11 +960,12 @@ class AttendanceService {
             legacyDeviceId.isNotEmpty &&
             registeredDeviceId == legacyDeviceId &&
             registeredDeviceId != deviceId;
-        final boundUserId = deviceSnap.exists
-            ? ((deviceSnap.data() ?? <String, dynamic>{})['userId']
-                      as String? ??
-                  '')
-            : '';
+        final boundUserId =
+            deviceSnap.exists
+                ? ((deviceSnap.data() ?? <String, dynamic>{})['userId']
+                        as String? ??
+                    '')
+                : '';
         final deviceBelongsToEmployee = boundUserId == employee.uid;
 
         if (deviceSnap.exists && !deviceBelongsToEmployee) {
@@ -1016,14 +1089,15 @@ class AttendanceService {
     required String type,
   }) async {
     try {
-      final snap = await _db
-          .collection('permissions')
-          .where('userId', isEqualTo: userId)
-          .where('requestDate', isEqualTo: dateKey)
-          .where('permissionType', isEqualTo: type)
-          .where('status', isEqualTo: 'approved')
-          .limit(1)
-          .get();
+      final snap =
+          await _db
+              .collection('permissions')
+              .where('userId', isEqualTo: userId)
+              .where('requestDate', isEqualTo: dateKey)
+              .where('permissionType', isEqualTo: type)
+              .where('status', isEqualTo: 'approved')
+              .limit(1)
+              .get();
       if (snap.docs.isEmpty) return null;
       return snap.docs.first.data();
     } catch (_) {
@@ -1040,12 +1114,13 @@ class AttendanceService {
   }
 
   Future<void> _flagMissedCheckouts(UserModel employee, String todayStr) async {
-    final snapshot = await _db
-        .collection('attendance')
-        .where('userId', isEqualTo: employee.uid)
-        .where('date', isLessThan: todayStr)
-        .limit(10)
-        .get();
+    final snapshot =
+        await _db
+            .collection('attendance')
+            .where('userId', isEqualTo: employee.uid)
+            .where('date', isLessThan: todayStr)
+            .limit(10)
+            .get();
 
     for (final doc in snapshot.docs) {
       final log = AttendanceModel.fromFirestore(doc);
@@ -1149,12 +1224,13 @@ class AttendanceService {
         todayDateKey.compareTo(cycle.startDateKey) >= 0 &&
         todayDateKey.compareTo(cycle.endDateKey) <= 0;
 
-    final remoteStream = _db
-        .collection('attendance')
-        .where('userId', isEqualTo: userId)
-        .where('date', isGreaterThanOrEqualTo: cycle.startDateKey)
-        .where('date', isLessThan: cycle.nextStartDateKey)
-        .snapshots();
+    final remoteStream =
+        _db
+            .collection('attendance')
+            .where('userId', isEqualTo: userId)
+            .where('date', isGreaterThanOrEqualTo: cycle.startDateKey)
+            .where('date', isLessThan: cycle.nextStartDateKey)
+            .snapshots();
 
     return Stream.multi((controller) {
       var remoteLogs = <AttendanceModel>[];
@@ -1179,16 +1255,17 @@ class AttendanceService {
           merged.removeWhere((_, log) => log.date == todayDateKey);
           merged[canonicalTodayLog!.attendanceId] = canonicalTodayLog!;
         }
-        final logs = merged.values.toList()
-          ..sort((a, b) => b.date.compareTo(a.date));
+        final logs =
+            merged.values.toList()..sort((a, b) => b.date.compareTo(a.date));
         if (!controller.isClosed) controller.add(logs);
       }
 
       final remoteSub = remoteStream.listen(
         (snapshot) {
-          remoteLogs = snapshot.docs
-              .map((doc) => AttendanceModel.fromFirestore(doc))
-              .toList();
+          remoteLogs =
+              snapshot.docs
+                  .map((doc) => AttendanceModel.fromFirestore(doc))
+                  .toList();
           emitMerged();
         },
         onError: (_) {
@@ -1196,24 +1273,26 @@ class AttendanceService {
           emitMerged();
         },
       );
-      final canonicalTodaySub = includesToday
-          ? _db
-              .collection('attendance')
-              .doc('${userId}_$todayDateKey')
-              .snapshots()
-              .listen(
-                (snapshot) {
-                  canonicalTodayLog = snapshot.exists
-                      ? AttendanceModel.fromFirestore(snapshot)
-                      : null;
-                  emitMerged();
-                },
-                // The range listener and offline queue can still render the
-                // current cycle when this focused read is temporarily denied
-                // or unavailable. Never erase a known state on that error.
-                onError: (_, __) {},
-              )
-          : null;
+      final canonicalTodaySub =
+          includesToday
+              ? _db
+                  .collection('attendance')
+                  .doc('${userId}_$todayDateKey')
+                  .snapshots()
+                  .listen(
+                    (snapshot) {
+                      canonicalTodayLog =
+                          snapshot.exists
+                              ? AttendanceModel.fromFirestore(snapshot)
+                              : null;
+                      emitMerged();
+                    },
+                    // The range listener and offline queue can still render the
+                    // current cycle when this focused read is temporarily denied
+                    // or unavailable. Never erase a known state on that error.
+                    onError: (_, __) {},
+                  )
+              : null;
       final pendingSub = _offlineQueue.changes.listen((_) => emitMerged());
       emitMerged();
 
@@ -1427,19 +1506,19 @@ class AttendanceService {
       'salaryCurrency': employee.salaryCurrency,
       'salaryDeductionCode': deduction.code,
       'salaryDeductionLabel': deduction.arabicLabel,
-      'salaryDeductionApprovalStatus': deduction.dayFraction > 0
-          ? 'pending_hr'
-          : 'none',
+      'salaryDeductionApprovalStatus':
+          deduction.dayFraction > 0 ? 'pending_hr' : 'none',
       'checkInTimeCorrectedBy': reviewerId,
       'checkInTimeCorrectedAt': FieldValue.serverTimestamp(),
       'checkInTimeCorrectionReason': reason.trim(),
     };
 
-    final requestRef = correctionRequestId == null
-        ? null
-        : _db
-              .collection('attendanceCorrectionRequests')
-              .doc(correctionRequestId);
+    final requestRef =
+        correctionRequestId == null
+            ? null
+            : _db
+                .collection('attendanceCorrectionRequests')
+                .doc(correctionRequestId);
     await _db.runTransaction((transaction) async {
       final freshAttendance = await transaction.get(ref);
       if (!freshAttendance.exists) throw Exception('سجل الحضور غير موجود.');
@@ -1593,18 +1672,19 @@ class AttendanceService {
       if (doc.exists) {
         final userId = doc.data()?['userId'] as String?;
         if (userId != null) {
-          final notifRef = _db
-              .collection('notifications')
-              .doc(userId)
-              .collection('items')
-              .doc();
+          final notifRef =
+              _db
+                  .collection('notifications')
+                  .doc(userId)
+                  .collection('items')
+                  .doc();
 
-          final title = status == 'approved'
-              ? 'تم اعتماد الخصم'
-              : 'تم إلغاء الخصم';
-          final body = status == 'approved'
-              ? 'تم اعتماد خصم الحضور والانصراف الخاص بك.'
-              : 'تم إلغاء خصم الحضور والانصراف الخاص بك.';
+          final title =
+              status == 'approved' ? 'تم اعتماد الخصم' : 'تم إلغاء الخصم';
+          final body =
+              status == 'approved'
+                  ? 'تم اعتماد خصم الحضور والانصراف الخاص بك.'
+                  : 'تم إلغاء خصم الحضور والانصراف الخاص بك.';
 
           await notifRef.set({
             'notificationId': notifRef.id,
@@ -1740,9 +1820,8 @@ class _LocationRiskAssessment {
     final nextReasons = [...reasons, 'device_credential_fallback'];
     final fallbackMessage =
         'تم استخدام قفل الجهاز بدلاً من البصمة لأن الجهاز لا يدعم بصمة/وجه';
-    final nextMessage = message.isEmpty
-        ? fallbackMessage
-        : '$message، $fallbackMessage';
+    final nextMessage =
+        message.isEmpty ? fallbackMessage : '$message، $fallbackMessage';
     return _LocationRiskAssessment.review(
       level: 'high',
       reasons: nextReasons,

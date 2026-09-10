@@ -17,8 +17,9 @@ import '../../design_system/tokens.dart';
 import '../../design_system/components/priority_strip.dart';
 import '../../design_system/components/section_header.dart';
 import '../../design_system/components/stat_card.dart';
-import '../widgets/end_of_day_briefing_card.dart';
 import '../../components/team_leaderboard_card.dart';
+import '../widgets/end_of_day_briefing_card.dart';
+import 'widgets/unified_management_web_dashboard.dart';
 
 class ManagerDashboardScreen extends StatefulWidget {
   const ManagerDashboardScreen({super.key});
@@ -85,6 +86,25 @@ class _ManagerDashboardScreenState extends State<ManagerDashboardScreen> {
     }
 
     _attendanceSummaryFuture ??= _buildAttendanceSummaryFuture(manager);
+
+    final isDesktopWeb = kIsWeb && MediaQuery.sizeOf(context).width >= 980;
+    if (isDesktopWeb) {
+      return Scaffold(
+        backgroundColor: ZaWolfColors.background,
+        body: FutureBuilder<DashboardAttendanceSummary>(
+          future: _attendanceSummaryFuture,
+          builder: (context, summarySnapshot) {
+            return UnifiedManagementWebDashboard(
+              user: manager,
+              summary: summarySnapshot.data,
+              onRefreshSummary: () async => _loadAttendanceSummary(),
+              taskStream: _taskService.watchManagedTasks(manager),
+              isHr: false,
+            );
+          },
+        ),
+      );
+    }
 
     return Scaffold(
       appBar: AppBar(

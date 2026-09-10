@@ -94,4 +94,44 @@ void main() {
       '/manager/requests?category=attendance_corrections&requestId=correction-42',
     );
   });
+
+  test('employee approval notifications preserve exact request target', () {
+    expect(
+      NotificationRoutePolicy.dataWithRoute('leave_approved', {
+        'requestId': 'leave-99',
+      })['route'],
+      '/employee/requests?requestId=leave-99',
+    );
+    expect(
+      NotificationRoutePolicy.dataWithRoute('permission_rejected', {
+        'requestId': 'perm-101',
+      })['route'],
+      '/employee/requests?requestId=perm-101',
+    );
+  });
+
+  test('conversation notifications route to exact channel or conversations hub', () {
+    expect(
+      NotificationRoutePolicy.dataWithRoute('conversation_message', {
+        'channelId': 'direct:userA_userB',
+      })['route'],
+      '/conversations/channel/direct%3AuserA_userB',
+    );
+    expect(
+      service.routeForType('conversation_message'),
+      '/conversations',
+    );
+    expect(
+      service.safeRoute('/conversations'),
+      '/conversations',
+    );
+    expect(
+      service.safeRoute('/manager/tasks'),
+      '/manager/tasks',
+    );
+    expect(
+      service.safeRoute('/hr/employees'),
+      '/hr/employees',
+    );
+  });
 }

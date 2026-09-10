@@ -48,6 +48,7 @@ import '../../features/configurable_requests/data/configurable_requests_reposito
 import '../../features/configurable_requests/presentation/custom_request_screens.dart';
 import '../../design_system/bidi.dart';
 import '../../utils/user_facing_error.dart';
+import '../../services/safe_diagnostics_service.dart';
 import '../../core/sync/authenticated_operation_client.dart';
 import '../../features/request_visibility/domain/entities/request_view_query.dart';
 import '../../features/request_visibility/domain/entities/request_visibility_record.dart';
@@ -154,6 +155,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
         );
       }
     } catch (error) {
+      _recordRequestDecisionFailure(error);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('فشل الإجراء: ${userFacingError(error)}')),
@@ -836,6 +838,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
           ).showSnackBar(const SnackBar(content: Text('تم رفض الطلب بنجاح.')));
         }
       } catch (e) {
+        _recordRequestDecisionFailure(e);
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text('فشل الإجراء: ${userFacingError(e)}')),
@@ -843,6 +846,26 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
         }
       }
     });
+  }
+
+  void _recordRequestDecisionFailure(Object error) {
+    final raw = error.toString().toLowerCase();
+    final safeCode =
+        raw.contains('permission-denied') ||
+                raw.contains('not allowed') ||
+                raw.contains('غير مسموح')
+            ? 'access_denied'
+            : raw.contains('timeout') || raw.contains('unavailable')
+            ? 'temporarily_unavailable'
+            : 'unexpected';
+    unawaited(
+      SafeDiagnosticsService.instance.capture(
+        feature: 'request_visibility',
+        safeCode: safeCode,
+        operation: 'request_decision',
+        state: 'management',
+      ),
+    );
   }
 
   Future<void> _showModificationDialog({
@@ -1283,11 +1306,12 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
               borderRadius: BorderRadius.circular(16),
               side: const BorderSide(color: ZaWolfColors.surface03, width: 1),
             ),
-            insetPadding:
-                const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+            insetPadding: const EdgeInsets.symmetric(
+              horizontal: 16,
+              vertical: 24,
+            ),
             child: ConstrainedBox(
-              constraints:
-                  const BoxConstraints(maxWidth: 680, maxHeight: 720),
+              constraints: const BoxConstraints(maxWidth: 680, maxHeight: 720),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -1299,9 +1323,10 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                           RequestTypeStyle.fromSourceType(
                             record.sourceType,
                           ).icon,
-                          color: RequestTypeStyle.fromSourceType(
-                            record.sourceType,
-                          ).borderColor,
+                          color:
+                              RequestTypeStyle.fromSourceType(
+                                record.sourceType,
+                              ).borderColor,
                         ),
                         const SizedBox(width: 8),
                         Expanded(
@@ -1339,11 +1364,13 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                     child: SingleChildScrollView(
                       padding: const EdgeInsets.all(16),
                       child: StreamBuilder<
-                          DocumentSnapshot<Map<String, dynamic>>>(
-                        stream: _db
-                            .collection(record.collection)
-                            .doc(record.documentId)
-                            .snapshots(),
+                        DocumentSnapshot<Map<String, dynamic>>
+                      >(
+                        stream:
+                            _db
+                                .collection(record.collection)
+                                .doc(record.documentId)
+                                .snapshots(),
                         builder: (context, snapshot) {
                           if (snapshot.hasError) {
                             return Center(
@@ -1478,11 +1505,9 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
     final title =
         record.employeeName ?? record.employeeCode ?? record.employeeId;
     final dept = (data['department'] ?? '').toString();
-    final notes = (data['notes'] ??
-            data['reason'] ??
-            data['categoryLabel'] ??
-            '')
-        .toString();
+    final notes =
+        (data['notes'] ?? data['reason'] ?? data['categoryLabel'] ?? '')
+            .toString();
     final status = (data['status'] ?? '').toString();
 
     final collection = record.collection;
@@ -1535,27 +1560,25 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                     title: 'اعتماد الطلب',
                     confirmLabel: 'اعتماد',
                     run: () async {
-                      await _db
-                          .collection(collection)
-                          .doc(docId)
-                          .update({
-                            'status': 'approved',
-                            'reviewedBy': reviewer.uid,
-                            'reviewerName': reviewer.displayName,
-                            'reviewedAt': FieldValue.serverTimestamp(),
-                          });
+                      await _db.collection(collection).doc(docId).update({
+                        'status': 'approved',
+                        'reviewedBy': reviewer.uid,
+                        'reviewerName': reviewer.displayName,
+                        'reviewedAt': FieldValue.serverTimestamp(),
+                      });
                     },
                   ),
               onReject:
                   () => _showRejectionDialog(
                     requestId: docId,
-                    type: collection == 'leaves'
-                        ? 'leave'
-                        : collection == 'permissions'
+                    type:
+                        collection == 'leaves'
+                            ? 'leave'
+                            : collection == 'permissions'
                             ? 'permission'
                             : collection == 'advances'
-                                ? 'advance'
-                                : 'administrative',
+                            ? 'advance'
+                            : 'administrative',
                   ),
             )
           else ...[
@@ -1573,9 +1596,10 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                     record.isHistorical
                         ? Icons.check_circle_outline
                         : Icons.info_outline,
-                    color: record.isHistorical
-                        ? ZaWolfColors.success
-                        : ZaWolfColors.textSecondary,
+                    color:
+                        record.isHistorical
+                            ? ZaWolfColors.success
+                            : ZaWolfColors.textSecondary,
                     size: 18,
                   ),
                   const SizedBox(width: 8),
@@ -2665,10 +2689,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
         decoration:
             isTarget
                 ? BoxDecoration(
-                  border: Border.all(
-                    color: ZaWolfColors.primaryCyan,
-                    width: 2,
-                  ),
+                  border: Border.all(color: ZaWolfColors.primaryCyan, width: 2),
                   borderRadius: BorderRadius.circular(16),
                 )
                 : null,
@@ -2715,9 +2736,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
               if ((request.attachmentUrl ?? '').isNotEmpty)
                 Text(
                   request.attachmentUrl!,
-                  style: const TextStyle(
-                    color: ZaWolfColors.primaryCyan,
-                  ),
+                  style: const TextStyle(color: ZaWolfColors.primaryCyan),
                   textDirection: TextDirection.ltr,
                 ),
               RequestApprovalTimeline(data: data, compact: true),
@@ -2814,9 +2833,10 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                           request.status == 'approved'
                               ? Icons.check_circle
                               : Icons.cancel,
-                          color: request.status == 'approved'
-                              ? ZaWolfColors.success
-                              : ZaWolfColors.error,
+                          color:
+                              request.status == 'approved'
+                                  ? ZaWolfColors.success
+                                  : ZaWolfColors.error,
                           size: 18,
                         ),
                         const SizedBox(width: 8),
@@ -2825,9 +2845,10 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                               ? 'تم اعتماد هذا الطلب'
                               : 'تم رفض هذا الطلب',
                           style: TextStyle(
-                            color: request.status == 'approved'
-                                ? ZaWolfColors.success
-                                : ZaWolfColors.error,
+                            color:
+                                request.status == 'approved'
+                                    ? ZaWolfColors.success
+                                    : ZaWolfColors.error,
                             fontWeight: FontWeight.bold,
                             fontSize: 13,
                           ),
@@ -3224,9 +3245,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
         children: [
           Text(
             request.employeeName,
-            style: theme.textTheme.titleLarge?.copyWith(
-              color: Colors.white,
-            ),
+            style: theme.textTheme.titleLarge?.copyWith(color: Colors.white),
           ),
           const SizedBox(height: 8),
           Text('القسم: ${request.department}'),
@@ -3261,9 +3280,10 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                       request.status == 'approved'
                           ? Icons.check_circle
                           : Icons.cancel,
-                      color: request.status == 'approved'
-                          ? ZaWolfColors.success
-                          : ZaWolfColors.error,
+                      color:
+                          request.status == 'approved'
+                              ? ZaWolfColors.success
+                              : ZaWolfColors.error,
                       size: 18,
                     ),
                     const SizedBox(width: 8),
@@ -3272,9 +3292,10 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                           ? 'تم اعتماد هذا الطلب'
                           : 'تم رفض هذا الطلب',
                       style: TextStyle(
-                        color: request.status == 'approved'
-                            ? ZaWolfColors.success
-                            : ZaWolfColors.error,
+                        color:
+                            request.status == 'approved'
+                                ? ZaWolfColors.success
+                                : ZaWolfColors.error,
                         fontWeight: FontWeight.bold,
                         fontSize: 13,
                       ),
@@ -3515,11 +3536,13 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
     final reviewerCode = reviewer.employeeId.trim().toUpperCase();
     final isCompanyCeo =
         reviewer.canReviewCeoStage || reviewerCode == 'CEO-100';
-    final isCompanyCoo =
-        reviewer.isCompanyCoo || reviewerCode == 'COO-1300';
+    final isCompanyCoo = reviewer.isCompanyCoo || reviewerCode == 'COO-1300';
     final isSuperAdmin = reviewer.role == EmployeeRole.superAdmin;
     final isExecutive =
-        reviewer.isExecutiveLeader || isCompanyCeo || isCompanyCoo || isSuperAdmin;
+        reviewer.isExecutiveLeader ||
+        isCompanyCeo ||
+        isCompanyCoo ||
+        isSuperAdmin;
 
     final currentApproverId =
         (data['currentApproverId'] ?? '').toString().trim().toUpperCase();
@@ -3527,11 +3550,13 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
     final ceoId = (data['ceoId'] ?? '').toString().trim().toUpperCase();
     final cooId = (data['cooId'] ?? '').toString().trim().toUpperCase();
 
-    final managerCodes = (data['managerCodes'] as List<dynamic>?)
+    final managerCodes =
+        (data['managerCodes'] as List<dynamic>?)
             ?.map((e) => e.toString().trim().toUpperCase())
             .toList() ??
         const <String>[];
-    final managerIds = (data['managerIds'] as List<dynamic>?)
+    final managerIds =
+        (data['managerIds'] as List<dynamic>?)
             ?.map((e) => e.toString().trim())
             .toList() ??
         const <String>[];
@@ -3551,7 +3576,10 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
 
     if (data['approvalRouteVersion'] == 1) {
       if (status == 'pending_manager') {
-        return isAssignedManager || isExecutive;
+        // A COO/CEO may inspect every request, but only the stage's assigned
+        // reviewer may decide it.  The previous executive shortcut rendered
+        // buttons which Firestore correctly rejected for another manager.
+        return isAssignedManager || isSuperAdmin;
       }
       if (status == 'pending_ceo') {
         return isCompanyCeo || isSuperAdmin;
@@ -3575,7 +3603,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
       if (status == 'pending_manager' ||
           status == 'pending_hr' ||
           status == 'pending') {
-        return true;
+        return isAssignedManager || EmployeeRole.isHr(reviewer.role);
       }
     }
 
@@ -3589,7 +3617,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
       if (status == 'pending_manager' ||
           status == 'pending_hr' ||
           status == 'pending') {
-        return true;
+        return isAssignedManager || EmployeeRole.isHr(reviewer.role);
       }
     }
 
@@ -3621,7 +3649,10 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
     final reviewerIsCeo = empCode == 'CEO-100' || role == 'ceo';
     final isCoo = empCode == 'COO-1300' || role == 'coo';
     final isExecutive =
-        reviewerIsCeo || isCoo || role == 'super_admin' || role == EmployeeRole.superAdmin;
+        reviewerIsCeo ||
+        isCoo ||
+        role == 'super_admin' ||
+        role == EmployeeRole.superAdmin;
     final isHr = EmployeeRole.isHr(role);
     if (usesManagerChain && reviewerIsCeo) {
       query = query.where(
@@ -3886,10 +3917,10 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                           leave.status == 'pending_manager'
                               ? 'الطلب بانتظار موافقة المدير المباشر'
                               : leave.status == 'pending_ceo'
-                                  ? 'الطلب بانتظار موافقة الـ CEO'
-                                  : leave.status == 'pending_hr'
-                                      ? 'الطلب بانتظار مراجعة وقرار الموارد البشرية (HR)'
-                                      : 'الطلب قيد المتابعة (${leave.status})',
+                              ? 'الطلب بانتظار موافقة الـ CEO'
+                              : leave.status == 'pending_hr'
+                              ? 'الطلب بانتظار مراجعة وقرار الموارد البشرية (HR)'
+                              : 'الطلب قيد المتابعة (${leave.status})',
                           style: const TextStyle(
                             color: ZaWolfColors.textSecondary,
                             fontSize: 12,
@@ -3925,9 +3956,10 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                         leave.status == 'approved'
                             ? Icons.check_circle
                             : Icons.cancel,
-                        color: leave.status == 'approved'
-                            ? ZaWolfColors.success
-                            : ZaWolfColors.error,
+                        color:
+                            leave.status == 'approved'
+                                ? ZaWolfColors.success
+                                : ZaWolfColors.error,
                         size: 18,
                       ),
                       const SizedBox(width: 8),
@@ -3936,9 +3968,10 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                             ? 'تم اعتماد هذا الطلب'
                             : 'تم رفض هذا الطلب',
                         style: TextStyle(
-                          color: leave.status == 'approved'
-                              ? ZaWolfColors.success
-                              : ZaWolfColors.error,
+                          color:
+                              leave.status == 'approved'
+                                  ? ZaWolfColors.success
+                                  : ZaWolfColors.error,
                           fontWeight: FontWeight.bold,
                           fontSize: 13,
                         ),
@@ -4220,8 +4253,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
     UserModel reviewer,
   ) {
     var query = _db.collection('permissions') as Query<Map<String, dynamic>>;
-    final isCompanyCeo =
-        reviewer.employeeId.trim().toUpperCase() == 'CEO-100';
+    final isCompanyCeo = reviewer.employeeId.trim().toUpperCase() == 'CEO-100';
     final reviewerCode = reviewer.employeeId.trim().toUpperCase();
     final isExecutive =
         reviewer.isExecutiveLeader ||
@@ -4488,8 +4520,8 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                           perm.status == 'pending_manager'
                               ? 'الطلب بانتظار موافقة المدير المباشر'
                               : perm.status == 'pending_hr'
-                                  ? 'الطلب بانتظار مراجعة وقرار الموارد البشرية (HR)'
-                                  : 'الطلب قيد المتابعة (${perm.status})',
+                              ? 'الطلب بانتظار مراجعة وقرار الموارد البشرية (HR)'
+                              : 'الطلب قيد المتابعة (${perm.status})',
                           style: const TextStyle(
                             color: ZaWolfColors.textSecondary,
                             fontSize: 12,
@@ -4525,9 +4557,10 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                         perm.status == 'approved'
                             ? Icons.check_circle
                             : Icons.cancel,
-                        color: perm.status == 'approved'
-                            ? ZaWolfColors.success
-                            : ZaWolfColors.error,
+                        color:
+                            perm.status == 'approved'
+                                ? ZaWolfColors.success
+                                : ZaWolfColors.error,
                         size: 18,
                       ),
                       const SizedBox(width: 8),
@@ -4536,9 +4569,10 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                             ? 'تم اعتماد هذا الطلب'
                             : 'تم رفض هذا الطلب',
                         style: TextStyle(
-                          color: perm.status == 'approved'
-                              ? ZaWolfColors.success
-                              : ZaWolfColors.error,
+                          color:
+                              perm.status == 'approved'
+                                  ? ZaWolfColors.success
+                                  : ZaWolfColors.error,
                           fontWeight: FontWeight.bold,
                           fontSize: 13,
                         ),
@@ -4771,9 +4805,10 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                         advance.status == 'approved'
                             ? Icons.check_circle
                             : Icons.cancel,
-                        color: advance.status == 'approved'
-                            ? ZaWolfColors.success
-                            : ZaWolfColors.error,
+                        color:
+                            advance.status == 'approved'
+                                ? ZaWolfColors.success
+                                : ZaWolfColors.error,
                         size: 18,
                       ),
                       const SizedBox(width: 8),
@@ -4782,9 +4817,10 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                             ? 'تم اعتماد هذا الطلب'
                             : 'تم رفض هذا الطلب',
                         style: TextStyle(
-                          color: advance.status == 'approved'
-                              ? ZaWolfColors.success
-                              : ZaWolfColors.error,
+                          color:
+                              advance.status == 'approved'
+                                  ? ZaWolfColors.success
+                                  : ZaWolfColors.error,
                           fontWeight: FontWeight.bold,
                           fontSize: 13,
                         ),
@@ -5744,9 +5780,10 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                   children: [
                     Icon(
                       status == 'approved' ? Icons.check_circle : Icons.cancel,
-                      color: status == 'approved'
-                          ? ZaWolfColors.success
-                          : ZaWolfColors.error,
+                      color:
+                          status == 'approved'
+                              ? ZaWolfColors.success
+                              : ZaWolfColors.error,
                       size: 18,
                     ),
                     const SizedBox(width: 8),
@@ -5755,9 +5792,10 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                           ? 'تم اعتماد هذا الطلب'
                           : 'تم رفض هذا الطلب',
                       style: TextStyle(
-                        color: status == 'approved'
-                            ? ZaWolfColors.success
-                            : ZaWolfColors.error,
+                        color:
+                            status == 'approved'
+                                ? ZaWolfColors.success
+                                : ZaWolfColors.error,
                         fontWeight: FontWeight.bold,
                         fontSize: 13,
                       ),

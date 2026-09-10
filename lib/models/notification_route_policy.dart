@@ -3,6 +3,9 @@ class NotificationRoutePolicy {
 
   static String routeForType(String type) {
     final value = type.trim();
+    if (value.contains('conversation') || value.contains('chat')) {
+      return '/conversations';
+    }
     if (value == 'meeting_request') return '/meeting/approvals';
     if (value == 'custom_request') return '/approver/custom-requests';
     if (value == 'advance_pending_hr' ||
@@ -70,6 +73,15 @@ class NotificationRoutePolicy {
     final payload = <String, dynamic>{...?data};
     final route = payload['route']?.toString().trim() ?? '';
     if (route.isEmpty) {
+      final channelId = payload['channelId']?.toString().trim() ?? '';
+      if (channelId.isNotEmpty &&
+          (type.contains('conversation') ||
+              type.contains('chat') ||
+              type == 'message')) {
+        payload['route'] =
+            '/conversations/channel/${Uri.encodeComponent(channelId)}';
+        return payload;
+      }
       final administrativeId =
           payload['administrativeRequestId']?.toString().trim() ?? '';
       final requestId = payload['requestId']?.toString().trim() ?? '';
@@ -79,6 +91,14 @@ class NotificationRoutePolicy {
         // the category parameter already prevents the old first-tab fallback.
         payload['route'] =
             '/manager/requests?category=administrative&requestId=${Uri.encodeComponent(administrativeId)}';
+      } else if (requestId.isNotEmpty &&
+          (type.contains('approved') ||
+              type.contains('rejected') ||
+              type.contains('reviewed') ||
+              type.startsWith('field_mission_') ||
+              type.startsWith('company_os_request_'))) {
+        payload['route'] =
+            '/employee/requests?requestId=${Uri.encodeComponent(requestId)}';
       } else {
         final category = _managerCategoryForType(type);
         payload['route'] =

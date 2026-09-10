@@ -124,14 +124,16 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
       _preparedUserId = user.uid;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted || _preparedUserId != user.uid) return;
-        _checkCurrentGeofence();
+        if (!kIsWeb) {
+          _checkCurrentGeofence();
+          // This only registers Android's branch boundary after the employee
+          // has explicitly granted Always Location. It never prompts here.
+          AutomaticAttendanceService.instance
+              .configureFor(user)
+              .catchError((_) {});
+        }
         _checkCompanyDayOff();
         _refreshAttendanceGate(user);
-        // This only registers Android's branch boundary after the employee
-        // has explicitly granted Always Location. It never prompts here.
-        AutomaticAttendanceService.instance
-            .configureFor(user)
-            .catchError((_) {});
         if (_isCheckInPilotEnabledFor(user)) {
           _checkInPilot ??= AttendanceCheckInPilot.create();
           _checkInPilot!.cubit.synchronizePending(user.uid).whenComplete(() {
@@ -154,7 +156,7 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
   }
 
   Future<void> _checkCurrentGeofence() async {
-    if (!mounted) return;
+    if (kIsWeb || !mounted) return;
     setState(() {
       _checkingLocation = true;
       _locationError = null;

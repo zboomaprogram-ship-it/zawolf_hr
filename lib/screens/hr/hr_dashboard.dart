@@ -21,7 +21,9 @@ import '../../design_system/components/section_header.dart';
 import '../../design_system/components/stat_card.dart';
 import '../widgets/end_of_day_briefing_card.dart';
 import '../../services/sales_kpi_integration_service.dart';
+import '../../services/task_service.dart';
 import '../../utils/user_facing_error.dart';
+import '../manager/widgets/unified_management_web_dashboard.dart';
 
 class HrDashboardScreen extends StatefulWidget {
   const HrDashboardScreen({super.key});
@@ -132,6 +134,25 @@ class _HrDashboardScreenState extends State<HrDashboardScreen> {
     final canAccessReports = EmployeeRole.canAccessReports(hrAdmin.role);
 
     _attendanceSummaryFuture ??= _summaryService.loadForReviewer(hrAdmin);
+
+    final isDesktopWeb = kIsWeb && MediaQuery.sizeOf(context).width >= 980;
+    if (isDesktopWeb) {
+      return Scaffold(
+        backgroundColor: ZaWolfColors.background,
+        body: FutureBuilder<DashboardAttendanceSummary>(
+          future: _attendanceSummaryFuture,
+          builder: (context, summarySnapshot) {
+            return UnifiedManagementWebDashboard(
+              user: hrAdmin,
+              summary: summarySnapshot.data,
+              onRefreshSummary: () async => _loadAttendanceSummary(),
+              taskStream: TaskService().watchManagedTasks(hrAdmin),
+              isHr: true,
+            );
+          },
+        ),
+      );
+    }
 
     return Scaffold(
       appBar: AppBar(

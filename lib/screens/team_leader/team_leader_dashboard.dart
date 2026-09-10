@@ -1,6 +1,9 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+
+import '../manager/widgets/unified_management_web_dashboard.dart';
 
 import '../../components/attendance_insights_card.dart';
 import '../../components/wolf_card.dart';
@@ -51,6 +54,25 @@ class _TeamLeaderDashboardScreenState extends State<TeamLeaderDashboardScreen> {
       );
     }
     _summaryFuture ??= _load(user);
+
+    final isDesktopWeb = kIsWeb && MediaQuery.sizeOf(context).width >= 980;
+    if (isDesktopWeb) {
+      return Scaffold(
+        backgroundColor: ZaWolfColors.background,
+        body: FutureBuilder<DashboardAttendanceSummary>(
+          future: _summaryFuture,
+          builder: (context, summarySnapshot) {
+            return UnifiedManagementWebDashboard(
+              user: user,
+              summary: summarySnapshot.data,
+              onRefreshSummary: () async => _refresh(user),
+              taskStream: _taskService.watchManagedTasks(user),
+              isHr: false,
+            );
+          },
+        ),
+      );
+    }
 
     return Scaffold(
       appBar: AppBar(title: const Text('لوحة قائد الفريق')),
