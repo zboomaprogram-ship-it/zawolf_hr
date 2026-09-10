@@ -1,0 +1,10 @@
+{
+  "openapi": "3.1.0",
+  "info": {"title": "ZaWolf HR External Developer API", "version": "v1", "description": "Read-only, scoped integration API. Firebase credentials are never used by clients."},
+  "servers": [{"url": "https://notification.zawolf.ai"}],
+  "paths": {
+    "/developer-api/v1/users": {"get": {"security": [{"developerBearer": []}], "parameters": [{"name":"limit","in":"query","schema":{"type":"integer","minimum":1,"maximum":100}}, {"name":"department","in":"query","schema":{"type":"string"}}, {"name":"cursor","in":"query","schema":{"type":"string"}}], "responses":{"200":{"description":"Bounded directory page"},"401":{"description":"Invalid, expired, or revoked credential"},"403":{"description":"Scope denied"},"429":{"description":"Rate limited"}}}},
+    "/developer-api/v1/users/{userId}": {"get": {"security": [{"developerBearer": []}], "parameters": [{"name":"userId","in":"path","required":true,"schema":{"type":"string"}}], "responses":{"200":{"description":"Allowlisted directory record"},"401":{"description":"Invalid credential"},"403":{"description":"Scope denied"},"404":{"description":"Not found"}}}}
+  },
+  "components": {"securitySchemes": {"developerBearer": {"type":"http","scheme":"bearer","bearerFormat":"zwh_clientId_secret"}}}
+}

@@ -4066,6 +4066,7 @@ const server = http.createServer(async (req, res) => {
     /^\/conversations\/department\/[^/]{1,256}$/.test(url.pathname) ||
     /^\/conversations\/[A-Za-z0-9_.:%-]{1,256}\/(?:messages|attachments)(?:\/[A-Za-z0-9_.:%-]{1,256}\/download)?$/.test(url.pathname);
   const isCompanyOsRoute = url.pathname.startsWith('/company-os/');
+  const isDeveloperApiRoute = url.pathname.startsWith('/developer-api/v1/');
   // HR operational routes are consumed by the Flutter web application too.
   // Keep them in the same CORS boundary as the established operations routes;
   // otherwise browsers block authenticated preflight requests before the
@@ -5266,6 +5267,18 @@ const server = http.createServer(async (req, res) => {
 
   if (url.pathname.startsWith('/company-workspace/resources/')) {
     await handleCompanyWorkspace(req, res, url);
+    return;
+  }
+
+  if (isDeveloperApiRoute) {
+    // External credentials are verified only by the developer-API module.
+    // Firebase session verification is required solely for its owner routes.
+    const actor = url.pathname.startsWith('/developer-api/v1/admin/')
+      ? await authorizeWorkspaceRequest(req)
+      : null;
+    await require('./developer-api/router').handleDeveloperApiRequest({
+      req, res, url, db: admin.firestore(initializeFirebase()), admin, actor, readJsonBody, sendJson,
+    });
     return;
   }
 
