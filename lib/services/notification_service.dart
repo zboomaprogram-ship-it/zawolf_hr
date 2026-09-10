@@ -3,13 +3,14 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/notification_route_policy.dart';
+import '../features/conversations/domain/in_app_notification_alert.dart';
 import 'daily_reminder_service.dart';
 import 'safe_diagnostics_service.dart';
 
 typedef AuthorizedNotificationRouteResolver =
     Future<String?> Function(String notificationId);
 
-class NotificationService {
+class NotificationService implements InAppNotificationAlerts {
   NotificationService._internal();
   static final NotificationService instance = NotificationService._internal();
 
@@ -22,6 +23,14 @@ class NotificationService {
   final StreamController<String> _onNotificationTap =
       StreamController<String>.broadcast();
   Stream<String> get onNotificationTap => _onNotificationTap.stream;
+
+  // Stream for live in-app notification toasts (Web & Desktop)
+  final StreamController<InAppNotificationAlert> _inAppNotificationController =
+      StreamController<InAppNotificationAlert>.broadcast();
+
+  @override
+  Stream<InAppNotificationAlert> get alerts =>
+      _inAppNotificationController.stream;
   AuthorizedNotificationRouteResolver? _authorizedRouteResolver;
 
   // Initial route if app was launched via notification
@@ -106,6 +115,22 @@ class NotificationService {
       return;
     }
     handleRemoteNotificationRoute(safeRoute(route, type: type));
+  }
+
+  /// Opens an in-app alert through the same authorization path as a push tap.
+  /// This prevents a visible notification route from bypassing the protected
+  /// notification-operation resolver for a conversation.
+  Future<void> openInAppNotification(InAppNotificationAlert notification) {
+    return handleRemoteNotificationData(
+      notificationId: notification.id,
+      route: notification.route,
+      type: notification.type,
+    );
+  }
+
+  @override
+  Future<void> open(InAppNotificationAlert notification) {
+    return openInAppNotification(notification);
   }
 
   /// Expose the raw plugin for advanced use (e.g., DailyReminderService).
@@ -272,6 +297,16 @@ class NotificationService {
                       nestedData is Map ? nestedData['route'] as String? : null,
                       type: type,
                     );
+
+                    final toast = InAppNotificationAlert(
+                      id: docId,
+                      title: title,
+                      body: body,
+                      type: type,
+                      route: route,
+                      timestamp: DateTime.now(),
+                    );
+                    _inAppNotificationController.add(toast);
 
                     showNotification(
                       title,

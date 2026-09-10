@@ -328,21 +328,23 @@ class _NavigationWrapperState extends State<NavigationWrapper>
         role == EmployeeRole.hrManager ||
         role == EmployeeRole.superAdmin;
     final useDesktopWebShell =
-        kIsWeb && MediaQuery.sizeOf(context).width >= 980 && isManagementRole;
+        kIsWeb && MediaQuery.sizeOf(context).width >= 980;
     if (useDesktopWebShell) {
-      final managementItems = items
-          .where(
-            (item) =>
-                !item.path.startsWith('/employee/') ||
-                item.path == '/employee/profile' ||
-                item.path == '/employee/dashboard' ||
-                item.path == '/employee/requests',
-          )
-          .toList();
+      final desktopItems = isManagementRole
+          ? items
+              .where(
+                (item) =>
+                    !item.path.startsWith('/employee/') ||
+                    item.path == '/employee/profile' ||
+                    item.path == '/employee/dashboard' ||
+                    item.path == '/employee/requests',
+              )
+              .toList()
+          : items;
       return _withNotificationOperations(
         WebManagementShell(
           user: effectiveUser,
-          items: managementItems,
+          items: desktopItems,
           matchedLocation: matchedLocation,
           canGoBack:
               _webRouteHistory.isNotEmpty ||

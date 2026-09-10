@@ -104,15 +104,15 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     _phase007FlagClient = http.Client();
     _phase007Flags = RemotePhase007FeatureFlags(
       client: _phase007FlagClient,
-      tokenProvider: () async =>
-          FirebaseAuth.instance.currentUser?.getIdToken(),
+      tokenProvider:
+          () async => FirebaseAuth.instance.currentUser?.getIdToken(),
       baseUri: Uri.parse('https://notification.zawolf.ai'),
     );
     _companyOsFlagClient = http.Client();
     _companyOsFlags = RemoteCompanyOsFeatureFlags(
       client: _companyOsFlagClient,
-      tokenProvider: () async =>
-          FirebaseAuth.instance.currentUser?.getIdToken(),
+      tokenProvider:
+          () async => FirebaseAuth.instance.currentUser?.getIdToken(),
       baseUri: Uri.parse('https://notification.zawolf.ai'),
     );
     _workspaceFlagSubscription = FirebaseAuth.instance.idTokenChanges().listen((
@@ -249,14 +249,15 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
                   GlobalWidgetsLocalizations.delegate,
                   GlobalCupertinoLocalizations.delegate,
                 ],
-                supportedLocales: const [
-                  Locale('ar'),
-                  Locale('en'),
-                ],
+                supportedLocales: const [Locale('ar'), Locale('en')],
                 locale: const Locale('ar'),
-                builder: (context, child) => kIsWeb
-                    ? SelectionArea(child: child ?? const SizedBox.shrink())
-                    : child ?? const SizedBox.shrink(),
+                builder:
+                    (context, child) =>
+                        kIsWeb
+                            ? SelectionArea(
+                              child: child ?? const SizedBox.shrink(),
+                            )
+                            : child ?? const SizedBox.shrink(),
               );
             },
           ),
