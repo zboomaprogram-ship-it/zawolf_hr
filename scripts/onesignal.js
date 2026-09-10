@@ -6,6 +6,16 @@ function isOneSignalConfigured() {
   return Boolean(ONESIGNAL_APP_ID && ONESIGNAL_REST_API_KEY);
 }
 
+// The OneSignal app ID is a public identifier that is already embedded in the
+// mobile application. Exposing only this value in /health lets operators spot
+// a Hostinger/mobile app mismatch without exposing the REST API key.
+function oneSignalConfiguration() {
+  return {
+    configured: isOneSignalConfigured(),
+    appId: ONESIGNAL_APP_ID || null,
+  };
+}
+
 function stableIdempotencyKey(value) {
   const hex = crypto.createHash('sha256').update(String(value)).digest('hex');
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-4${hex.slice(13, 16)}-a${hex.slice(17, 20)}-${hex.slice(20, 32)}`;
@@ -71,7 +81,7 @@ async function sendPushToUsers(userIds, title, body, data = {}, options = {}) {
 
 module.exports = {
   formatOneSignalAuthHeader, buildPushPayload,
-  isOneSignalConfigured,
+  isOneSignalConfigured, oneSignalConfiguration,
   sendPushToUsers,
   stableIdempotencyKey,
 };

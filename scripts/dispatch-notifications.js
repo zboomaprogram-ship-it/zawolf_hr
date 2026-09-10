@@ -20,9 +20,14 @@ function dispatchConfig() {
 }
 
 function isUnsubscribedDeviceError(error) {
-  return String(error?.message || error || '')
-    .toLowerCase()
-    .includes('all included players are not subscribed');
+  const message = String(error?.message || error || '').toLowerCase();
+  return message.includes('all included players are not subscribed') ||
+    // A Firebase UID is assigned as the OneSignal external ID by the mobile
+    // client. Treat a missing alias as a device-registration state, rather
+    // than consuming retry attempts as a server outage. The in-app item stays
+    // available and future notifications deliver after the user opens the app
+    // and OneSignal finishes registering that device.
+    message.includes('invalid_aliases');
 }
 
 function initializeFirebase() {

@@ -2,7 +2,12 @@
 
 const assert = require('node:assert/strict');
 const test = require('node:test');
-const { formatOneSignalAuthHeader, buildPushPayload } = require('../onesignal');
+const {
+  formatOneSignalAuthHeader,
+  buildPushPayload,
+  oneSignalConfiguration,
+} = require('../onesignal');
+const { isUnsubscribedDeviceError } = require('../dispatch-notifications');
 
 test('formatOneSignalAuthHeader prefixes app key with Basic', () => {
   assert.equal(
@@ -41,6 +46,21 @@ test('formatOneSignalAuthHeader handles empty or null key safely', () => {
   assert.equal(formatOneSignalAuthHeader(''), '');
   assert.equal(formatOneSignalAuthHeader(null), '');
   assert.equal(formatOneSignalAuthHeader(undefined), '');
+});
+
+test('health-safe OneSignal configuration never exposes the REST key', () => {
+  const configuration = oneSignalConfiguration();
+  assert.equal(typeof configuration.configured, 'boolean');
+  assert.equal(Object.hasOwn(configuration, 'restApiKey'), false);
+});
+
+test('missing OneSignal external IDs are treated as device-registration failures', () => {
+  assert.equal(
+    isUnsubscribedDeviceError(
+      new Error('OneSignal push returned errors: {"invalid_aliases":{"external_id":["user"]}}'),
+    ),
+    true,
+  );
 });
 
 

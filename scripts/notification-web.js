@@ -9,7 +9,7 @@ const {
   watchPendingConversationOutboxes,
   initializeFirebase,
 } = require('./dispatch-notifications');
-const { isOneSignalConfigured } = require('./onesignal');
+const { oneSignalConfiguration } = require('./onesignal');
 const { createRuntimeLease } = require('./runtime-lease');
 const { queueAttendanceReminders } = require('./attendance-reminders');
 const { processAutomaticAttendance } = require('./auto-attendance');
@@ -4095,8 +4095,11 @@ const server = http.createServer(async (req, res) => {
         ? 'connected'
         : 'standby',
       backgroundScheduler: backgroundSchedulerEnabled ? 'internal' : 'external_cron',
-      // This exposes only readiness, never a OneSignal identifier or key.
-      oneSignal: { configured: isOneSignalConfigured() },
+      // The app ID is public and is embedded in every mobile build. Returning
+      // it lets support verify that Hostinger sends through the same OneSignal
+      // app that the installed iOS and Android clients registered with. The
+      // REST API key is never included.
+      oneSignal: oneSignalConfiguration(),
       workerId: runtimeLease?.owner || null,
       firestoreQuotaBlockedUntil: firestoreQuotaBlockedUntil
         ? new Date(firestoreQuotaBlockedUntil).toISOString()
