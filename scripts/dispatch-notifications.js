@@ -170,7 +170,23 @@ function normalizeNotificationResource(input) {
   return {
     type: type || 'notification',
     focusId: safeNotificationFocusId(
-      data.requestId || data.resourceId || data.targetId || data.attendanceId,
+      data.requestId ||
+      data.leaveId ||
+      data.permissionId ||
+      data.advanceId ||
+      data.meetingId ||
+      data.complaintId ||
+      data.resignationId ||
+      data.administrativeRequestId ||
+      data.fieldMissionId ||
+      data.attendanceCorrectionId ||
+      data.correctionId ||
+      data.salaryDeductionId ||
+      data.deductionId ||
+      data.taskId ||
+      data.resourceId ||
+      data.targetId ||
+      data.attendanceId,
     ),
     storedRoute: safeNotificationRoute(data.route || data.path),
   };

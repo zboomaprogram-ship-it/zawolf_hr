@@ -53,6 +53,15 @@ class AttendancePeriodSummary {
   /// only `approved` deductions. Rejected and zero-value records have no
   /// discipline impact.
   double get disciplineImpactDayFractions => days.fold<double>(0, (total, day) {
+    if (day.isAbsent) {
+      final attendance = day.attendance;
+      if (attendance != null &&
+          attendance.salaryDeductionApprovalStatus == 'rejected') {
+        return total;
+      }
+      final fraction = attendance?.salaryDeductionFraction;
+      return total + (fraction != null && fraction > 0 ? fraction : 1.0);
+    }
     final attendance = day.attendance;
     if (attendance == null ||
         !const {

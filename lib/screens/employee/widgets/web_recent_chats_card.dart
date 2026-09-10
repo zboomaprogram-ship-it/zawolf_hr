@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart' hide TextDirection;
 
 import '../../../components/wolf_card.dart';
+import '../../../design_system/components/rtl_navigation.dart';
 import '../../../design_system/tokens.dart';
 import '../../../models/user_model.dart';
 import '../../../services/notification_service.dart';
@@ -428,10 +429,10 @@ class _WebRecentChatsCardState extends State<WebRecentChatsCard> {
               ),
             ),
             const SizedBox(width: 8),
-            const Icon(
-              Icons.arrow_back_ios_new_rounded,
+            Icon(
+              RtlNavigation.chevronEnd(context),
               color: ZaWolfColors.textMuted,
-              size: 12,
+              size: 16,
             ),
           ],
         ),

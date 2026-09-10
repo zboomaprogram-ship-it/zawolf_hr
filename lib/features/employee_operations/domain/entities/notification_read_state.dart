@@ -60,6 +60,9 @@ final class NotificationRouteDestination {
           destination.path.endsWith('/requests') ||
           destination.path.contains('/requests/operational/');
       query[requestPath ? 'requestId' : 'focusId'] = focusId!;
+      if (destination.path == '/employee/requests') {
+        query.putIfAbsent('view', () => 'history');
+      }
     }
     return destination.replace(queryParameters: query.isEmpty ? null : query);
   }

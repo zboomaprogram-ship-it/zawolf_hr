@@ -108,7 +108,13 @@ class EmployeeDeductionService {
       void emit() {
         final entries = <EmployeeDeductionEntry>[
           ...attendance
-              .where((item) => item.salaryDeductionFraction > 0)
+              .where(
+                (item) =>
+                    item.salaryDeductionFraction > 0 ||
+                    item.status == 'absent' ||
+                    item.salaryDeductionCode == 'ABSENCE' ||
+                    item.salaryDeductionCode == 'full_day',
+              )
               .map(_fromAttendance),
           ...permissions
               .where(
@@ -162,19 +168,33 @@ class EmployeeDeductionService {
 
   EmployeeDeductionEntry _fromAttendance(AttendanceModel item) {
     final isApproved = item.salaryDeductionApprovalStatus == 'approved';
+    final isAbsent =
+        item.status == 'absent' ||
+        item.salaryDeductionCode == 'ABSENCE' ||
+        item.salaryDeductionCode == 'full_day';
+    final fraction =
+        item.salaryDeductionFraction > 0
+            ? item.salaryDeductionFraction
+            : (isAbsent ? 1.0 : 0.0);
+    final fallbackReason = isAbsent ? 'خصم غياب (يوم كامل)' : 'خصم تأخير';
+    final reason = AttendancePolicy.arabicDeductionLabel(
+      item.salaryDeductionCode,
+      fallback:
+          item.salaryDeductionLabel.isNotEmpty
+              ? item.salaryDeductionLabel
+              : fallbackReason,
+    );
     return EmployeeDeductionEntry(
       id: item.attendanceId,
       date: item.date,
-      sourceLabel: 'الحضور والانصراف',
-      reasonLabel: AttendancePolicy.arabicDeductionLabel(
-        item.salaryDeductionCode,
-        fallback: item.salaryDeductionLabel,
-      ),
-      dayFraction: item.salaryDeductionFraction,
+      sourceLabel: isAbsent ? 'سجل الغياب' : 'الحضور والانصراف',
+      reasonLabel: reason,
+      dayFraction: fraction,
       approvalStatus: _normalizedStatus(item.salaryDeductionApprovalStatus),
       amount: item.salaryDeductionAmount,
       currency: item.salaryCurrency,
-      approvedAt: item.salaryDeductionReviewedAt ?? (isApproved ? item.checkInTime : null),
+      approvedAt:
+          item.salaryDeductionReviewedAt ?? (isApproved ? item.checkInTime : null),
       approvedByName: item.salaryDeductionReviewedBy,
     );
   }

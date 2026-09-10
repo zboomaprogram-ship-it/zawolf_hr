@@ -1,9 +1,19 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 
+import '../design_system/components/rtl_navigation.dart';
 import '../services/team_leaderboard_service.dart';
+import '../theme/theme.dart';
 
-final class TeamLeaderboardCard extends StatelessWidget {
+final class TeamLeaderboardCard extends StatefulWidget {
   const TeamLeaderboardCard({super.key});
+
+  @override
+  State<TeamLeaderboardCard> createState() => _TeamLeaderboardCardState();
+}
+
+class _TeamLeaderboardCardState extends State<TeamLeaderboardCard> {
+  bool _showAll = false;
 
   @override
   Widget build(BuildContext context) {
@@ -13,10 +23,10 @@ final class TeamLeaderboardCard extends StatelessWidget {
         margin: const EdgeInsets.symmetric(vertical: 12),
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: const Color(0xFF1E293B),
+          color: ZaWolfColors.surface01,
           borderRadius: BorderRadius.circular(18),
           border: Border.all(
-            color: const Color(0xFFF59E0B).withValues(alpha: 0.3),
+            color: ZaWolfColors.warning.withValues(alpha: 0.3),
           ),
         ),
         child: Column(
@@ -27,23 +37,76 @@ final class TeamLeaderboardCard extends StatelessWidget {
                 Container(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFF59E0B).withValues(alpha: 0.15),
+                    color: ZaWolfColors.warning.withValues(alpha: 0.15),
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: const Icon(
                     Icons.leaderboard_rounded,
-                    color: Color(0xFFF59E0B),
+                    color: ZaWolfColors.warning,
                     size: 20,
                   ),
                 ),
                 const SizedBox(width: 10),
-                const Text(
-                  'لوحة شرف الأداء المتميز لهذا الشهر',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 15,
-                    fontWeight: FontWeight.bold,
+                const Expanded(
+                  child: Text(
+                    'لوحة شرف الأداء المتميز لهذا الشهر',
+                    style: TextStyle(
+                      color: ZaWolfColors.textPrimary,
+                      fontSize: 15,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
+                ),
+                InkWell(
+                  onTap: () {
+                    setState(() {
+                      _showAll = !_showAll;
+                    });
+                  },
+                  borderRadius: BorderRadius.circular(8),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 5,
+                    ),
+                    decoration: BoxDecoration(
+                      color: ZaWolfColors.surface02,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: ZaWolfColors.surface03),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          _showAll ? 'عرض أقل' : 'عرض الكل',
+                          style: const TextStyle(
+                            color: ZaWolfColors.primaryCyan,
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        Icon(
+                          _showAll
+                              ? Icons.keyboard_arrow_up_rounded
+                              : RtlNavigation.chevronEnd(context),
+                          color: ZaWolfColors.primaryCyan,
+                          size: 14,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 6),
+                IconButton(
+                  tooltip: 'فتح شاشة الإنتاجية الكاملة',
+                  onPressed: () => context.go('/manager/productivity'),
+                  icon: const Icon(
+                    Icons.open_in_new_rounded,
+                    color: ZaWolfColors.textMuted,
+                    size: 16,
+                  ),
+                  visualDensity: VisualDensity.compact,
                 ),
               ],
             ),
@@ -51,29 +114,32 @@ final class TeamLeaderboardCard extends StatelessWidget {
             StreamBuilder<List<TeamLeaderboardMember>>(
               stream: TeamLeaderboardService().watchActiveMembers(),
               builder: (context, snapshot) {
-                final members = snapshot.data ?? const [];
-                if (members.isEmpty) {
+                final allMembers = snapshot.data ?? const [];
+                if (allMembers.isEmpty) {
                   return const Padding(
                     padding: EdgeInsets.all(16),
                     child: Center(
                       child: Text(
                         'جاري حساب مؤشرات التميز...',
-                        style: TextStyle(color: Colors.white54),
+                        style: TextStyle(color: ZaWolfColors.textMuted),
                       ),
                     ),
                   );
                 }
 
-                final medals = [
-                  const Color(0xFFFFD700), // Gold
-                  const Color(0xFFC0C0C0), // Silver
-                  const Color(0xFFCD7F32), // Bronze
-                  const Color(0xFF38BDF8),
-                  const Color(0xFFA855F7),
+                final displayMembers =
+                    _showAll ? allMembers : allMembers.take(5).toList();
+
+                const medals = [
+                  ZaWolfColors.warning, // Gold
+                  ZaWolfColors.textSecondary, // Silver
+                  Color(0xFFCD7F32), // Bronze
+                  ZaWolfColors.primaryCyan,
+                  Color(0xFFA855F7),
                 ];
 
                 return Column(
-                  children: members.asMap().entries.map((entry) {
+                  children: displayMembers.asMap().entries.map((entry) {
                     final index = entry.key;
                     final member = entry.value;
                     final name = member.name;
@@ -88,8 +154,13 @@ final class TeamLeaderboardCard extends StatelessWidget {
                           vertical: 10,
                         ),
                         decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.04),
+                          color: ZaWolfColors.surface02,
                           borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: ZaWolfColors.surface03.withValues(
+                              alpha: 0.5,
+                            ),
+                          ),
                         ),
                         child: Row(
                           children: [
@@ -120,7 +191,7 @@ final class TeamLeaderboardCard extends StatelessWidget {
                                   Text(
                                     name,
                                     style: const TextStyle(
-                                      color: Colors.white,
+                                      color: ZaWolfColors.textPrimary,
                                       fontSize: 13,
                                       fontWeight: FontWeight.w600,
                                     ),
@@ -128,7 +199,7 @@ final class TeamLeaderboardCard extends StatelessWidget {
                                   Text(
                                     dept,
                                     style: const TextStyle(
-                                      color: Colors.white54,
+                                      color: ZaWolfColors.textMuted,
                                       fontSize: 10,
                                     ),
                                   ),
@@ -145,7 +216,7 @@ final class TeamLeaderboardCard extends StatelessWidget {
                                 borderRadius: BorderRadius.circular(8),
                               ),
                               child: Text(
-                                '${98 - index * 2}% التزام',
+                                '${member.commitmentScore.toInt()}% التزام',
                                 style: TextStyle(
                                   color: medalColor,
                                   fontSize: 11,

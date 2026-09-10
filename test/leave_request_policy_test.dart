@@ -246,4 +246,115 @@ void main() {
       ),
     );
   });
+
+  group('Casual leave notification & cycle threshold tests', () {
+    test('countCasualLeavesInCycle accurately counts distinct leaves in the same payroll cycle', () {
+      // Payroll cycle for 2026-08-10 is 2026-07-26 to 2026-08-25
+      final targetDate = DateTime(2026, 8, 10);
+
+      final records = [
+        // Within same cycle: 2026-07-26 to 2026-08-25
+        {
+          'id': 'leave-1',
+          'leaveType': 'casual',
+          'status': 'approved',
+          'startDate': DateTime(2026, 7, 28),
+        },
+        {
+          'id': 'leave-2',
+          'leaveType': 'casual',
+          'status': 'approved',
+          'startDate': DateTime(2026, 8, 2),
+        },
+        // In previous cycle (2026-07-20 is before 2026-07-26) -> should be excluded
+        {
+          'id': 'leave-old',
+          'leaveType': 'casual',
+          'status': 'approved',
+          'startDate': DateTime(2026, 7, 20),
+        },
+        // In next cycle (2026-08-27 is after 2026-08-25) -> should be excluded
+        {
+          'id': 'leave-future',
+          'leaveType': 'casual',
+          'status': 'approved',
+          'startDate': DateTime(2026, 8, 27),
+        },
+        // In same cycle, but cancelled -> should be excluded
+        {
+          'id': 'leave-cancelled',
+          'leaveType': 'casual',
+          'status': 'cancelled',
+          'startDate': DateTime(2026, 8, 5),
+        },
+        // In same cycle, but rejected -> should be excluded
+        {
+          'id': 'leave-rejected',
+          'leaveType': 'casual',
+          'status': 'rejected',
+          'startDate': DateTime(2026, 8, 6),
+        },
+        // In same cycle, but normal day_off -> should be excluded
+        {
+          'id': 'leave-dayoff',
+          'leaveType': 'day_off',
+          'status': 'approved',
+          'startDate': DateTime(2026, 8, 7),
+        },
+      ];
+
+      // With only previous leaves + new current leave
+      final countWithNew = LeaveService.countCasualLeavesInCycle(
+        leaveRecords: records,
+        targetDate: targetDate,
+        currentLeaveId: 'leave-3-current',
+      );
+      // 'leave-1', 'leave-2', 'leave-3-current' -> exactly 3
+      expect(countWithNew, equals(3));
+
+      // Without current leave
+      final countWithoutNew = LeaveService.countCasualLeavesInCycle(
+        leaveRecords: records,
+        targetDate: targetDate,
+      );
+      expect(countWithoutNew, equals(2));
+
+      // If currentLeaveId is already in the list (e.g. committed to Firestore)
+      final countDeduplicated = LeaveService.countCasualLeavesInCycle(
+        leaveRecords: [
+          ...records,
+          {
+            'id': 'leave-3-current',
+            'leaveType': 'casual',
+            'status': 'approved',
+            'startDate': DateTime(2026, 8, 10),
+          },
+        ],
+        targetDate: targetDate,
+        currentLeaveId: 'leave-3-current',
+      );
+      expect(countDeduplicated, equals(3));
+    });
+
+    test('LeaveService source confirms casual leave notifies manager and HR, and sends threshold alert to HR only on >= 3', () {
+      final source = File('lib/services/leave_service.dart').readAsStringSync();
+
+      // Confirms _notifyCasualLeaveCreated is called upon submitting casual leave
+      expect(source, contains('_notifyCasualLeaveCreated('));
+
+      // Confirms manager/team leader notification
+      expect(source, contains("'casual_leave_notification'"));
+      expect(source, contains('إشعار إجازة عارضة -'));
+
+      // Confirms HR notification
+      expect(source, contains('EmployeeRole.hrAdmin'));
+      expect(source, contains('إشعار إجازة عارضة جديدة -'));
+
+      // Confirms HR-only threshold alert for 3 or more casual leaves in the same period
+      expect(source, contains('casualCount >= 3'));
+      expect(source, contains("'casual_leave_threshold_alert'"));
+      expect(source, contains('تنبيه: تكرار إجازة عارضة (3 مرات أو أكثر)'));
+      expect(source, contains('استنفد \$casualCount إجازات عارضة خلال'));
+    });
+  });
 }

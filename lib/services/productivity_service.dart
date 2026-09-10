@@ -202,7 +202,7 @@ class ProductivityService {
               .toDouble();
     final attendedDays = attendanceSummary.presentDays;
     final punctualityScore = attendedDays == 0
-        ? 100.0
+        ? (absentDays > 0 ? 0.0 : 100.0)
         : ((attendedDays - lateDays) / attendedDays * 100)
               .clamp(0, 100)
               .toDouble();

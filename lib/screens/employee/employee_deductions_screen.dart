@@ -3,6 +3,7 @@ import 'package:intl/intl.dart' hide TextDirection;
 import 'package:provider/provider.dart';
 
 import '../../components/wolf_card.dart';
+import '../../services/attendance_service.dart';
 import '../../services/auth_service.dart';
 import '../../services/employee_deduction_service.dart';
 import '../../theme/theme.dart';
@@ -27,6 +28,12 @@ class _EmployeeDeductionsScreenState extends State<EmployeeDeductionsScreen> {
   void initState() {
     super.initState();
     _cycleDate = DateTime.now();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final user = context.read<AuthService>().currentUser;
+      if (user != null) {
+        AttendanceService().syncAbsenceDeductionsForUser(employee: user);
+      }
+    });
   }
 
   @override

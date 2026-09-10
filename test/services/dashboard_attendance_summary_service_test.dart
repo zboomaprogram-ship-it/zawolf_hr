@@ -128,6 +128,46 @@ void main() {
 
     expect(summary.disciplinePercentage, 87.5);
   });
+
+  test('discipline decreases when employee is absent with no attendance record', () {
+    final summary = AttendancePeriodSummary([
+      AttendancePeriodDay(
+        date: DateTime.parse('2026-08-16'),
+        dateKey: '2026-08-16',
+        attendance: null,
+        isExpectedWorkDay: true,
+        isApprovedLeave: false,
+      ),
+      _periodDay(dateKey: '2026-08-17'),
+    ]);
+
+    expect(summary.absentDays, 1);
+    expect(summary.disciplineImpactDayFractions, 1.0);
+    expect(summary.disciplinePercentage, 50.0);
+  });
+
+  test('discipline is 0% when employee did not attend any expected workdays', () {
+    final summary = AttendancePeriodSummary([
+      AttendancePeriodDay(
+        date: DateTime.parse('2026-08-16'),
+        dateKey: '2026-08-16',
+        attendance: null,
+        isExpectedWorkDay: true,
+        isApprovedLeave: false,
+      ),
+      AttendancePeriodDay(
+        date: DateTime.parse('2026-08-17'),
+        dateKey: '2026-08-17',
+        attendance: null,
+        isExpectedWorkDay: true,
+        isApprovedLeave: false,
+      ),
+    ]);
+
+    expect(summary.absentDays, 2);
+    expect(summary.disciplineImpactDayFractions, 2.0);
+    expect(summary.disciplinePercentage, 0.0);
+  });
 }
 
 AttendancePeriodDay _periodDay({

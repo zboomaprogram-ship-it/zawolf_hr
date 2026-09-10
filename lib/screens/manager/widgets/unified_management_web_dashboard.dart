@@ -3,27 +3,27 @@ import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart' hide TextDirection;
 
 import '../../../components/attendance_insights_card.dart';
+import '../../../components/sales_kpi_summary_card.dart';
 import '../../../components/team_leaderboard_card.dart';
 import '../../../components/wolf_card.dart';
 import '../../../design_system/components/priority_strip.dart';
 import '../../../design_system/tokens.dart';
 import '../../../models/attendance_model.dart';
 import '../../../models/employee_role.dart';
+import '../../../models/sales_kpi_summary.dart';
 import '../../../models/task_model.dart';
 import '../../../models/user_model.dart';
 import '../../../services/attendance_service.dart';
 import '../../../services/dashboard_attendance_summary_service.dart';
 import '../../../services/pending_requests_service.dart';
-import '../../../services/task_service.dart';
+import '../../../services/sales_kpi_integration_service.dart';
 import '../../../theme/theme.dart';
 import '../../../utils/payroll_cycle.dart';
 import '../../employee/widgets/web_recent_chats_card.dart';
-import '../../employee/widgets/web_tasks_card.dart';
-import '../../widgets/end_of_day_briefing_card.dart';
 
 /// Unified enterprise command center for management roles (Manager, Team Leader, HR, Executive, SuperAdmin).
-/// Merges personal daily operations (attendance punch, tasks, recent chats) with executive management
-/// (approvals, team presence, KPIs, and briefings) into a single cohesive, high-efficiency dashboard.
+/// Merges personal daily operations (attendance punch, recent chats) with executive management
+/// (approvals, team presence, sales KPIs, and leaderboard) into a single cohesive, high-efficiency dashboard.
 class UnifiedManagementWebDashboard extends StatefulWidget {
   final UserModel user;
   final DashboardAttendanceSummary? summary;
@@ -48,6 +48,7 @@ class UnifiedManagementWebDashboard extends StatefulWidget {
 class _UnifiedManagementWebDashboardState
     extends State<UnifiedManagementWebDashboard> {
   Stream<List<AttendanceModel>>? _personalAttendanceStream;
+  String? _selectedSalesKpiPeriod;
 
   @override
   void initState() {
@@ -198,10 +199,7 @@ class _UnifiedManagementWebDashboardState
                                 ),
                               ),
                             const SizedBox(height: DsSpacing.xl),
-                            EndOfDayBriefingCard(
-                              isHr: isHrRole,
-                              managerUid: widget.user.uid,
-                            ),
+                            _buildSalesKpiSection(theme),
                             const SizedBox(height: DsSpacing.xl),
                             const TeamLeaderboardCard(),
                           ],
@@ -215,16 +213,8 @@ class _UnifiedManagementWebDashboardState
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
-                            // Live Chats & Notifications Card (Fixed)
+                            // Live Chats & Notifications Card
                             WebRecentChatsCard(user: widget.user),
-                            const SizedBox(height: DsSpacing.xl),
-
-                            // Personal & Managed Tasks Card
-                            WebTasksCard(
-                              userId: widget.user.uid,
-                              taskStream: widget.taskStream ??
-                                  TaskService().watchManagedTasks(widget.user),
-                            ),
                             const SizedBox(height: DsSpacing.xl),
 
                             // Quick Navigation Hub
@@ -258,16 +248,7 @@ class _UnifiedManagementWebDashboardState
                     const SizedBox(height: DsSpacing.xl),
                     WebRecentChatsCard(user: widget.user),
                     const SizedBox(height: DsSpacing.xl),
-                    WebTasksCard(
-                      userId: widget.user.uid,
-                      taskStream: widget.taskStream ??
-                          TaskService().watchManagedTasks(widget.user),
-                    ),
-                    const SizedBox(height: DsSpacing.xl),
-                    EndOfDayBriefingCard(
-                      isHr: isHrRole,
-                      managerUid: widget.user.uid,
-                    ),
+                    _buildSalesKpiSection(theme),
                     const SizedBox(height: DsSpacing.xl),
                     const TeamLeaderboardCard(),
                     const SizedBox(height: DsSpacing.xl),
@@ -601,6 +582,40 @@ class _UnifiedManagementWebDashboardState
     );
   }
 
+  Widget _buildSalesKpiSection(ThemeData theme) {
+    return StreamBuilder<SalesKpiSummary?>(
+      stream: SalesKpiIntegrationService().watchCurrentSummary(),
+      builder: (context, currentSnapshot) {
+        final current = currentSnapshot.data;
+        if (current == null) return const SizedBox.shrink();
+        return StreamBuilder<List<SalesKpiSummary>>(
+          stream: SalesKpiIntegrationService().watchSummaryHistory(),
+          builder: (context, historySnapshot) {
+            final seenKeys = <String>{current.periodKey};
+            final history = <SalesKpiSummary>[
+              current,
+              ...?historySnapshot.data?.where(
+                (item) =>
+                    item.periodKey.isNotEmpty && seenKeys.add(item.periodKey),
+              ),
+            ];
+            final selected = history.firstWhere(
+              (item) => item.periodKey == _selectedSalesKpiPeriod,
+              orElse: () => current,
+            );
+            return SalesKpiSummaryCard(
+              summary: selected,
+              history: history,
+              onPeriodChanged: (value) => setState(
+                () => _selectedSalesKpiPeriod = value.periodKey,
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
   Widget _buildQuickActionsHub(BuildContext context, ThemeData theme, bool isHrRole) {
     return WolfCard(
       padding: const EdgeInsets.all(DsSpacing.lg),
@@ -626,17 +641,29 @@ class _UnifiedManagementWebDashboardState
                 onTap: () => _openPendingApprovals(context, isHrRole),
               ),
               _buildShortcutChip(
-                label: 'سجل الحضور الشهري',
+                label: 'سجل الحضور والغياب',
                 icon: Icons.calendar_month_outlined,
-                onTap: () => context.go('/employee/dashboard'),
+                onTap: () => context.go(
+                  isHrRole ? '/hr/attendance-summary' : '/manager/attendance-summary',
+                ),
               ),
               _buildShortcutChip(
-                label: 'كشوف الحضور',
+                label: isHrRole ? 'إدارة الموظفين' : 'كشوف وحضور فريقي',
                 icon: Icons.co_present_outlined,
                 onTap: () => context.go(isHrRole ? '/hr/employees' : '/manager/team'),
               ),
               _buildShortcutChip(
-                label: 'المحادثات',
+                label: 'الرواتب والمسيرات',
+                icon: Icons.payments_outlined,
+                onTap: () => context.go(isHrRole ? '/hr/payroll' : '/employee/payroll'),
+              ),
+              _buildShortcutChip(
+                label: 'التقارير الإدارية',
+                icon: Icons.assessment_outlined,
+                onTap: () => context.go(isHrRole ? '/hr/reports' : '/manager/performance'),
+              ),
+              _buildShortcutChip(
+                label: 'المحادثات والتواصل',
                 icon: Icons.chat_bubble_outline_rounded,
                 onTap: () => context.go('/conversations'),
               ),

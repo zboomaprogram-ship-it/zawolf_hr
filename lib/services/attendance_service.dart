@@ -1436,6 +1436,64 @@ class AttendanceService {
     return generatedCount;
   }
 
+  Future<int> syncAbsenceDeductionsForUser({
+    required UserModel employee,
+    String? monthKey,
+  }) async {
+    final targetMonth =
+        monthKey ?? DateFormat('yyyy-MM').format(DateTime.now());
+    final cycle = PayrollCycle.forKey(targetMonth);
+    final summaryService = AttendancePeriodSummaryService(firestore: _db);
+    final policy = await _policyService.getPolicyConfig();
+
+    var generatedCount = 0;
+    final summary = await summaryService.loadForUser(
+      user: employee,
+      start: cycle.start,
+      end: cycle.end,
+    );
+
+    final absentDays = summary.days.where((day) => day.isAbsent).toList();
+    for (final day in absentDays) {
+      final docId = '${employee.uid}_${day.dateKey}';
+      final ref = _db.collection('attendance').doc(docId);
+      final snap = await ref.get();
+
+      if (!snap.exists ||
+          snap.data()?['salaryDeductionApprovalStatus'] == null ||
+          snap.data()?['salaryDeductionApprovalStatus'] == 'none') {
+        final salaryDeductionAmount = policy.calculateSalaryDeductionAmount(
+          monthlySalary: employee.baseMonthlySalary,
+          dayFraction: 1.0,
+        );
+
+        await ref.set({
+          'attendanceId': docId,
+          'userId': employee.uid,
+          'employeeId': employee.employeeId,
+          'employeeName': employee.displayName,
+          'department': employee.department,
+          'managerId': employee.managerId ?? '',
+          'managerIds': employee.managerIds,
+          'date': day.dateKey,
+          'status': 'absent',
+          'isLate': false,
+          'lateMinutes': 0,
+          'salaryDeductionFraction': 1.0,
+          'salaryDeductionAmount': salaryDeductionAmount,
+          'salaryCurrency': employee.salaryCurrency,
+          'salaryDeductionCode': 'ABSENCE',
+          'salaryDeductionLabel': 'خصم غياب (يوم كامل)',
+          'salaryDeductionApprovalStatus': 'pending_hr',
+          'createdAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+
+        generatedCount++;
+      }
+    }
+    return generatedCount;
+  }
+
   Future<void> reverseSalaryDeduction({
     required String attendanceId,
     required String reviewerId,

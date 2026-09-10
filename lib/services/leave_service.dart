@@ -5,12 +5,14 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:http/http.dart' as http;
+import 'package:intl/intl.dart';
 import 'package:zawolf_hr/models/employee_role.dart';
 import '../models/user_model.dart';
 import '../models/leave_model.dart';
 import '../models/leave_type_policy.dart';
 import '../models/leave_entitlement_policy.dart';
 import '../models/manager_approval_chain.dart';
+import '../utils/payroll_cycle.dart';
 import 'audit_log_service.dart';
 import 'request_approval_policy_service.dart';
 import 'role_notification_service.dart';
@@ -590,6 +592,16 @@ class LeaveService {
       } catch (_) {
         // Reconciliation can be retried independently without duplicating leave.
       }
+      try {
+        await _notifyCasualLeaveCreated(
+          employee: employee,
+          req: req,
+          reqRefId: reqRef.id,
+          managerIds: managerIds,
+        );
+      } catch (_) {
+        // Notification errors must not fail leave submission.
+      }
       return;
     }
 
@@ -622,6 +634,19 @@ class LeaveService {
     } catch (_) {
       // The dispatcher can recover notification delivery from the committed
       // request without changing the employee-visible submission result.
+    }
+
+    if (effectiveType == LeaveTypePolicy.casual) {
+      try {
+        await _notifyCasualLeaveCreated(
+          employee: employee,
+          req: req,
+          reqRefId: reqRef.id,
+          managerIds: managerIds,
+        );
+      } catch (_) {
+        // Notification errors must not fail leave submission.
+      }
     }
   }
 
@@ -1190,5 +1215,157 @@ class LeaveService {
       data: data,
       eventId: notificationId,
     );
+  }
+
+  static int countCasualLeavesInCycle({
+    required Iterable<Map<String, dynamic>> leaveRecords,
+    required DateTime targetDate,
+    String? currentLeaveId,
+  }) {
+    final cycle = PayrollCycle.forDate(targetDate);
+    final cycleStartDateOnly = DateTime(
+      cycle.start.year,
+      cycle.start.month,
+      cycle.start.day,
+    );
+    final cycleEndDateOnly = DateTime(
+      cycle.end.year,
+      cycle.end.month,
+      cycle.end.day,
+    );
+
+    final distinctIds = <String>{};
+    for (final record in leaveRecords) {
+      final type = (record['leaveType'] as String? ?? '').trim();
+      final status = (record['status'] as String? ?? '').trim();
+      if (type != LeaveTypePolicy.casual) continue;
+      if (status == 'cancelled' || status == 'rejected') continue;
+
+      final rawStart = record['startDate'];
+      DateTime? startDate;
+      if (rawStart is Timestamp) {
+        startDate = rawStart.toDate();
+      } else if (rawStart is DateTime) {
+        startDate = rawStart;
+      } else if (rawStart is String) {
+        startDate = DateTime.tryParse(rawStart);
+      }
+      if (startDate == null) continue;
+
+      final dateOnly = DateTime(startDate.year, startDate.month, startDate.day);
+      if (!dateOnly.isBefore(cycleStartDateOnly) &&
+          !dateOnly.isAfter(cycleEndDateOnly)) {
+        final id = (record['id'] ?? record['leaveId'])?.toString().trim() ?? '';
+        if (id.isNotEmpty) {
+          distinctIds.add(id);
+        }
+      }
+    }
+
+    if (currentLeaveId != null && currentLeaveId.trim().isNotEmpty) {
+      distinctIds.add(currentLeaveId.trim());
+    }
+
+    return distinctIds.length;
+  }
+
+  Future<void> _notifyCasualLeaveCreated({
+    required UserModel employee,
+    required LeaveModel req,
+    required String reqRefId,
+    required List<String> managerIds,
+  }) async {
+    final startDateStr = DateFormat('yyyy-MM-dd').format(req.startDate);
+
+    // 1. Notify manager or team leader
+    try {
+      for (final managerId in managerIds) {
+        if (managerId.trim().isEmpty || managerId == employee.uid) continue;
+        await _createNotification(
+          recipientId: managerId,
+          notificationId: 'casual_leave_manager_${reqRefId}_$managerId',
+          type: 'casual_leave_notification',
+          title: 'إشعار إجازة عارضة - ${employee.displayName}',
+          body:
+              'سجل ${employee.displayName} إجازة عارضة لمدّة ${req.numberOfDays} يوم بدءاً من $startDateStr.',
+          data: {
+            'leaveId': reqRefId,
+            'category': 'leave',
+            'requestId': reqRefId,
+            'route': '/manager/requests?category=leave&requestId=$reqRefId',
+          },
+        );
+      }
+    } catch (_) {}
+
+    // 2. Notify HR
+    try {
+      await RoleNotificationService.instance.notifyRole(
+        role: EmployeeRole.hrAdmin,
+        includeSuperAdmins: true,
+        type: 'casual_leave_notification',
+        title: 'إشعار إجازة عارضة جديدة - ${employee.displayName}',
+        body:
+            'سجل ${employee.displayName} إجازة عارضة لمدّة ${req.numberOfDays} يوم بدءاً من $startDateStr.',
+        data: {
+          'leaveId': reqRefId,
+          'category': 'leave',
+          'requestId': reqRefId,
+          'route': '/manager/requests?category=leave&requestId=$reqRefId',
+        },
+      );
+    } catch (_) {}
+
+    // 3. If employee uses 3 or more casual leaves in the same period, notify HR ONLY again
+    try {
+      await _checkAndNotifyHrCasualThreshold(
+        employee: employee,
+        req: req,
+        reqRefId: reqRefId,
+      );
+    } catch (_) {}
+  }
+
+  Future<void> _checkAndNotifyHrCasualThreshold({
+    required UserModel employee,
+    required LeaveModel req,
+    required String reqRefId,
+  }) async {
+    final cycle = PayrollCycle.forDate(req.startDate);
+    final snapshot = await _db
+        .collection('leaves')
+        .where('userId', isEqualTo: employee.uid)
+        .get();
+
+    final records = snapshot.docs.map((doc) {
+      final map = Map<String, dynamic>.from(doc.data());
+      map['id'] = doc.id;
+      return map;
+    }).toList();
+
+    final casualCount = countCasualLeavesInCycle(
+      leaveRecords: records,
+      targetDate: req.startDate,
+      currentLeaveId: reqRefId,
+    );
+
+    if (casualCount >= 3) {
+      await RoleNotificationService.instance.notifyRole(
+        role: EmployeeRole.hrAdmin,
+        includeSuperAdmins: true,
+        type: 'casual_leave_threshold_alert',
+        title: 'تنبيه: تكرار إجازة عارضة (3 مرات أو أكثر)',
+        body:
+            'تنبيه للموارد البشرية: الموظف ${employee.displayName} استنفد $casualCount إجازات عارضة خلال نفس دورة العمل (${cycle.arabicRangeLabel}).',
+        data: {
+          'leaveId': reqRefId,
+          'category': 'leave',
+          'requestId': reqRefId,
+          'casualCount': casualCount,
+          'cycleKey': cycle.key,
+          'route': '/manager/requests?category=leave&requestId=$reqRefId',
+        },
+      );
+    }
   }
 }

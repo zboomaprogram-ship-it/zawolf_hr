@@ -57,12 +57,14 @@ class EmployeeRequestsScreen extends StatefulWidget {
     this.initialView = 1,
     this.initialHistoryFilter = 'all',
     this.initialHistoryTab = 0,
+    this.initialRequestId,
   });
 
   /// 1 is the request form and 2 is the employee-owned request history.
   final int initialView;
   final String initialHistoryFilter;
   final int initialHistoryTab;
+  final String? initialRequestId;
 
   @override
   State<EmployeeRequestsScreen> createState() => _EmployeeRequestsScreenState();
@@ -140,21 +142,33 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
   @override
   void initState() {
     super.initState();
-    _requestCentreView = widget.initialView == 2 ? 2 : 1;
-    _historyStatusFilter = widget.initialHistoryFilter;
+    _requestCentreView =
+        (widget.initialView == 2 || widget.initialRequestId != null) ? 2 : 1;
+    _historyStatusFilter =
+        widget.initialRequestId != null ? 'all' : widget.initialHistoryFilter;
   }
 
   @override
   void didUpdateWidget(covariant EmployeeRequestsScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.initialView == 2 &&
+    if ((widget.initialView == 2 || widget.initialRequestId != null) &&
         (oldWidget.initialHistoryFilter != widget.initialHistoryFilter ||
-            oldWidget.initialHistoryTab != widget.initialHistoryTab)) {
+            oldWidget.initialHistoryTab != widget.initialHistoryTab ||
+            oldWidget.initialRequestId != widget.initialRequestId ||
+            oldWidget.initialView != widget.initialView)) {
       setState(() {
         _requestCentreView = 2;
-        _historyStatusFilter = widget.initialHistoryFilter;
+        _historyStatusFilter =
+            widget.initialRequestId != null ? 'all' : widget.initialHistoryFilter;
       });
     }
+  }
+
+  bool _isHighlightedRequest(String? docId, [String? modelId]) {
+    final target = widget.initialRequestId?.trim();
+    if (target == null || target.isEmpty) return false;
+    return (docId != null && docId.trim() == target) ||
+        (modelId != null && modelId.trim() == target);
   }
 
   Stream<T> _cachedStream<T>(String key, Stream<T> Function() create) {
@@ -3042,6 +3056,10 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
         }
         final docs = [...?snapshot.data?.docs];
         docs.sort((a, b) {
+          final aHighlight = _isHighlightedRequest(a.id);
+          final bHighlight = _isHighlightedRequest(b.id);
+          if (aHighlight && !bHighlight) return -1;
+          if (!aHighlight && bHighlight) return 1;
           final left = a.data()['submittedAt'] as Timestamp?;
           final right = b.data()['submittedAt'] as Timestamp?;
           return (right?.millisecondsSinceEpoch ?? 0).compareTo(
@@ -3050,6 +3068,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
         });
         docs.removeWhere(
           (doc) =>
+              !_isHighlightedRequest(doc.id) &&
               !_matchesHistoryFilter(
                 doc.data()['status'] as String? ?? 'pending_hr',
               ),
@@ -3063,6 +3082,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
           separatorBuilder: (_, _) => const SizedBox(height: 10),
           itemBuilder: (context, index) {
             final data = docs[index].data();
+            final isTarget = _isHighlightedRequest(docs[index].id);
             final status = data['status'] as String? ?? 'pending_hr';
             final statusText = switch (status) {
               'approved' => 'مقبول',
@@ -3079,6 +3099,14 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
             final original = data['originalCheckInTime'] as Timestamp?;
             final requested = data['requestedCheckInTime'] as Timestamp?;
             return Card(
+              color: isTarget ? ZaWolfColors.primaryCyan.withValues(alpha: 0.08) : null,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+                side: BorderSide(
+                  color: isTarget ? ZaWolfColors.primaryCyan : ZaWolfColors.surface03,
+                  width: isTarget ? 1.5 : 1.0,
+                ),
+              ),
               child: Padding(
                 padding: const EdgeInsets.all(14),
                 child: Column(
@@ -3092,9 +3120,32 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
                         ),
                         const SizedBox(width: 8),
                         Expanded(
-                          child: Text(
-                            'تصحيح حضور ${data['attendanceDate'] ?? ''}',
-                            style: theme.textTheme.titleMedium,
+                          child: Row(
+                            children: [
+                              Text(
+                                'تصحيح حضور ${data['attendanceDate'] ?? ''}',
+                                style: theme.textTheme.titleMedium,
+                              ),
+                              if (isTarget) ...[
+                                const SizedBox(width: 8),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: ZaWolfColors.primaryCyan.withValues(alpha: 0.2),
+                                    borderRadius: BorderRadius.circular(4),
+                                    border: Border.all(color: ZaWolfColors.primaryCyan),
+                                  ),
+                                  child: const Text(
+                                    'الطلب المحدد',
+                                    style: TextStyle(
+                                      color: ZaWolfColors.primaryCyan,
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ],
                           ),
                         ),
                         Text(
@@ -3492,11 +3543,22 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
         final filteredDocs =
             docs
                 .where(
-                  (doc) => _matchesHistoryFilter(
-                    doc.data()['status'] as String? ?? '',
-                  ),
+                  (doc) =>
+                      _isHighlightedRequest(doc.id, AdministrativeRequestModel.fromFirestore(doc).id) ||
+                      _matchesHistoryFilter(
+                        doc.data()['status'] as String? ?? '',
+                      ),
                 )
                 .toList();
+        if (widget.initialRequestId != null) {
+          filteredDocs.sort((a, b) {
+            final aHighlight = _isHighlightedRequest(a.id, AdministrativeRequestModel.fromFirestore(a).id);
+            final bHighlight = _isHighlightedRequest(b.id, AdministrativeRequestModel.fromFirestore(b).id);
+            if (aHighlight && !bHighlight) return -1;
+            if (!aHighlight && bHighlight) return 1;
+            return 0;
+          });
+        }
         if (filteredDocs.isEmpty) {
           return _buildEmptyState('لا توجد طلبات إدارية سابقة.');
         }
@@ -3506,13 +3568,19 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
           itemBuilder: (context, index) {
             final doc = filteredDocs[index];
             final request = AdministrativeRequestModel.fromFirestore(doc);
+            final isTarget = _isHighlightedRequest(doc.id, request.id);
             return Container(
               margin: const EdgeInsets.only(bottom: 12),
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: ZaWolfColors.surface01,
+                color: isTarget
+                    ? ZaWolfColors.primaryCyan.withValues(alpha: 0.08)
+                    : ZaWolfColors.surface01,
                 borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: ZaWolfColors.surface03),
+                border: Border.all(
+                  color: isTarget ? ZaWolfColors.primaryCyan : ZaWolfColors.surface03,
+                  width: isTarget ? 1.5 : 1.0,
+                ),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -3525,12 +3593,35 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
                       ),
                       const SizedBox(width: 8),
                       Expanded(
-                        child: Text(
-                          request.categoryLabel,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.bold,
-                          ),
+                        child: Row(
+                          children: [
+                            Text(
+                              request.categoryLabel,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            if (isTarget) ...[
+                              const SizedBox(width: 8),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: ZaWolfColors.primaryCyan.withValues(alpha: 0.2),
+                                  borderRadius: BorderRadius.circular(4),
+                                  border: Border.all(color: ZaWolfColors.primaryCyan),
+                                ),
+                                child: const Text(
+                                  'الطلب المحدد',
+                                  style: TextStyle(
+                                    color: ZaWolfColors.primaryCyan,
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ],
                         ),
                       ),
                       _buildStatusBadge(request.status),
@@ -3674,8 +3765,19 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
         }
         final requests =
             (snapshot.data ?? const <ResignationModel>[])
-                .where((request) => _matchesHistoryFilter(request.status))
+                .where((request) =>
+                    _isHighlightedRequest(request.resignationId) ||
+                    _matchesHistoryFilter(request.status))
                 .toList();
+        if (widget.initialRequestId != null) {
+          requests.sort((a, b) {
+            final aHighlight = _isHighlightedRequest(a.resignationId);
+            final bHighlight = _isHighlightedRequest(b.resignationId);
+            if (aHighlight && !bHighlight) return -1;
+            if (!aHighlight && bHighlight) return 1;
+            return 0;
+          });
+        }
         if (requests.isEmpty) {
           return _buildEmptyState('لا توجد طلبات استقالة سابقة.');
         }
@@ -3684,13 +3786,19 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
           itemCount: requests.length,
           itemBuilder: (context, index) {
             final request = requests[index];
+            final isTarget = _isHighlightedRequest(request.resignationId);
             return Container(
               margin: const EdgeInsets.only(bottom: 12),
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: ZaWolfColors.surface01,
+                color: isTarget
+                    ? ZaWolfColors.primaryCyan.withValues(alpha: 0.08)
+                    : ZaWolfColors.surface01,
                 borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: ZaWolfColors.surface03),
+                border: Border.all(
+                  color: isTarget ? ZaWolfColors.primaryCyan : ZaWolfColors.surface03,
+                  width: isTarget ? 1.5 : 1.0,
+                ),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -3702,13 +3810,36 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
                         color: ZaWolfColors.error,
                       ),
                       const SizedBox(width: 8),
-                      const Expanded(
-                        child: Text(
-                          'طلب استقالة',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.bold,
-                          ),
+                      Expanded(
+                        child: Row(
+                          children: [
+                            const Text(
+                              'طلب استقالة',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            if (isTarget) ...[
+                              const SizedBox(width: 8),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: ZaWolfColors.primaryCyan.withValues(alpha: 0.2),
+                                  borderRadius: BorderRadius.circular(4),
+                                  border: Border.all(color: ZaWolfColors.primaryCyan),
+                                ),
+                                child: const Text(
+                                  'الطلب المحدد',
+                                  style: TextStyle(
+                                    color: ZaWolfColors.primaryCyan,
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ],
                         ),
                       ),
                       _buildStatusBadge(request.status),
@@ -3772,11 +3903,22 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
         final docs =
             (snapshot.data?.docs ?? [])
                 .where(
-                  (doc) => _matchesHistoryFilter(
-                    AdvanceModel.fromFirestore(doc).status,
-                  ),
+                  (doc) =>
+                      _isHighlightedRequest(doc.id, AdvanceModel.fromFirestore(doc).advanceId) ||
+                      _matchesHistoryFilter(
+                        AdvanceModel.fromFirestore(doc).status,
+                      ),
                 )
                 .toList();
+        if (widget.initialRequestId != null) {
+          docs.sort((a, b) {
+            final aHighlight = _isHighlightedRequest(a.id, AdvanceModel.fromFirestore(a).advanceId);
+            final bHighlight = _isHighlightedRequest(b.id, AdvanceModel.fromFirestore(b).advanceId);
+            if (aHighlight && !bHighlight) return -1;
+            if (!aHighlight && bHighlight) return 1;
+            return 0;
+          });
+        }
         if (docs.isEmpty) {
           return _buildEmptyState('لا توجد طلبات سلفة سابقة.');
         }
@@ -3787,14 +3929,20 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
           itemBuilder: (context, index) {
             final doc = docs[index];
             final req = AdvanceModel.fromFirestore(doc);
+            final isTarget = _isHighlightedRequest(doc.id, req.advanceId);
 
             return Container(
               margin: const EdgeInsets.only(bottom: 12),
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: ZaWolfColors.surface01,
+                color: isTarget
+                    ? ZaWolfColors.primaryCyan.withValues(alpha: 0.08)
+                    : ZaWolfColors.surface01,
                 borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: ZaWolfColors.surface02),
+                border: Border.all(
+                  color: isTarget ? ZaWolfColors.primaryCyan : ZaWolfColors.surface02,
+                  width: isTarget ? 1.5 : 1.0,
+                ),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -3817,6 +3965,25 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
                               fontWeight: FontWeight.bold,
                             ),
                           ),
+                          if (isTarget) ...[
+                            const SizedBox(width: 8),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: ZaWolfColors.primaryCyan.withValues(alpha: 0.2),
+                                borderRadius: BorderRadius.circular(4),
+                                border: Border.all(color: ZaWolfColors.primaryCyan),
+                              ),
+                              child: const Text(
+                                'الطلب المحدد',
+                                style: TextStyle(
+                                  color: ZaWolfColors.primaryCyan,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                          ],
                         ],
                       ),
                       _buildStatusBadge(req.status),
@@ -3902,13 +4069,24 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
         final docs =
             (snapshot.data?.docs ?? [])
                 .where(
-                  (doc) => _matchesHistoryFilter(
-                    ComplaintModel.fromFirestore(doc).status == 'new'
-                        ? 'pending'
-                        : ComplaintModel.fromFirestore(doc).status,
-                  ),
+                  (doc) =>
+                      _isHighlightedRequest(doc.id, ComplaintModel.fromFirestore(doc).complaintId) ||
+                      _matchesHistoryFilter(
+                        ComplaintModel.fromFirestore(doc).status == 'new'
+                            ? 'pending'
+                            : ComplaintModel.fromFirestore(doc).status,
+                      ),
                 )
                 .toList();
+        if (widget.initialRequestId != null) {
+          docs.sort((a, b) {
+            final aHighlight = _isHighlightedRequest(a.id, ComplaintModel.fromFirestore(a).complaintId);
+            final bHighlight = _isHighlightedRequest(b.id, ComplaintModel.fromFirestore(b).complaintId);
+            if (aHighlight && !bHighlight) return -1;
+            if (!aHighlight && bHighlight) return 1;
+            return 0;
+          });
+        }
         if (docs.isEmpty) {
           return _buildEmptyState('لا توجد شكاوى سابقة.');
         }
@@ -3918,13 +4096,19 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
           itemCount: docs.length,
           itemBuilder: (context, index) {
             final complaint = ComplaintModel.fromFirestore(docs[index]);
+            final isTarget = _isHighlightedRequest(docs[index].id, complaint.complaintId);
             return Container(
               margin: const EdgeInsets.only(bottom: 12),
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: ZaWolfColors.surface01,
+                color: isTarget
+                    ? ZaWolfColors.primaryCyan.withValues(alpha: 0.08)
+                    : ZaWolfColors.surface01,
                 borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: ZaWolfColors.surface02),
+                border: Border.all(
+                  color: isTarget ? ZaWolfColors.primaryCyan : ZaWolfColors.surface02,
+                  width: isTarget ? 1.5 : 1.0,
+                ),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -3933,12 +4117,35 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Expanded(
-                        child: Text(
-                          complaint.title,
-                          style: theme.textTheme.titleMedium!.copyWith(
-                            color: Colors.white,
-                            fontWeight: FontWeight.bold,
-                          ),
+                        child: Row(
+                          children: [
+                            Text(
+                              complaint.title,
+                              style: theme.textTheme.titleMedium!.copyWith(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            if (isTarget) ...[
+                              const SizedBox(width: 8),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: ZaWolfColors.primaryCyan.withValues(alpha: 0.2),
+                                  borderRadius: BorderRadius.circular(4),
+                                  border: Border.all(color: ZaWolfColors.primaryCyan),
+                                ),
+                                child: const Text(
+                                  'الطلب المحدد',
+                                  style: TextStyle(
+                                    color: ZaWolfColors.primaryCyan,
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ],
                         ),
                       ),
                       _buildStatusBadge(complaint.status),
@@ -4016,11 +4223,22 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
         final docs =
             (snapshot.data?.docs ?? [])
                 .where(
-                  (doc) => _matchesHistoryFilter(
-                    LeaveModel.fromFirestore(doc).status,
-                  ),
+                  (doc) =>
+                      _isHighlightedRequest(doc.id, LeaveModel.fromFirestore(doc).leaveId) ||
+                      _matchesHistoryFilter(
+                        LeaveModel.fromFirestore(doc).status,
+                      ),
                 )
                 .toList();
+        if (widget.initialRequestId != null) {
+          docs.sort((a, b) {
+            final aHighlight = _isHighlightedRequest(a.id, LeaveModel.fromFirestore(a).leaveId);
+            final bHighlight = _isHighlightedRequest(b.id, LeaveModel.fromFirestore(b).leaveId);
+            if (aHighlight && !bHighlight) return -1;
+            if (!aHighlight && bHighlight) return 1;
+            return 0;
+          });
+        }
         if (docs.isEmpty) {
           return _buildEmptyState('لا توجد طلبات إجازة سابقة.');
         }
@@ -4031,6 +4249,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
           itemBuilder: (context, index) {
             final doc = docs[index];
             final req = LeaveModel.fromFirestore(doc);
+            final isTarget = _isHighlightedRequest(doc.id, req.leaveId);
 
             final startStr = DateFormat('yyyy-MM-dd').format(req.startDate);
             final endStr = DateFormat('yyyy-MM-dd').format(req.endDate);
@@ -4039,9 +4258,14 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
               margin: const EdgeInsets.only(bottom: 12),
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: ZaWolfColors.surface01,
+                color: isTarget
+                    ? ZaWolfColors.primaryCyan.withValues(alpha: 0.08)
+                    : ZaWolfColors.surface01,
                 borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: ZaWolfColors.surface02),
+                border: Border.all(
+                  color: isTarget ? ZaWolfColors.primaryCyan : ZaWolfColors.surface02,
+                  width: isTarget ? 1.5 : 1.0,
+                ),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -4064,6 +4288,25 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
                               fontWeight: FontWeight.bold,
                             ),
                           ),
+                          if (isTarget) ...[
+                            const SizedBox(width: 8),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: ZaWolfColors.primaryCyan.withValues(alpha: 0.2),
+                                borderRadius: BorderRadius.circular(4),
+                                border: Border.all(color: ZaWolfColors.primaryCyan),
+                              ),
+                              child: const Text(
+                                'الطلب المحدد',
+                                style: TextStyle(
+                                  color: ZaWolfColors.primaryCyan,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                          ],
                         ],
                       ),
                       _buildStatusBadge(req.status),
@@ -4180,11 +4423,22 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
         final docs =
             (snapshot.data?.docs ?? [])
                 .where(
-                  (doc) => _matchesHistoryFilter(
-                    PermissionModel.fromFirestore(doc).status,
-                  ),
+                  (doc) =>
+                      _isHighlightedRequest(doc.id, PermissionModel.fromFirestore(doc).permissionId) ||
+                      _matchesHistoryFilter(
+                        PermissionModel.fromFirestore(doc).status,
+                      ),
                 )
                 .toList();
+        if (widget.initialRequestId != null) {
+          docs.sort((a, b) {
+            final aHighlight = _isHighlightedRequest(a.id, PermissionModel.fromFirestore(a).permissionId);
+            final bHighlight = _isHighlightedRequest(b.id, PermissionModel.fromFirestore(b).permissionId);
+            if (aHighlight && !bHighlight) return -1;
+            if (!aHighlight && bHighlight) return 1;
+            return 0;
+          });
+        }
         if (docs.isEmpty) {
           return _buildEmptyState('لا توجد طلبات إذن سابقة.');
         }
@@ -4195,6 +4449,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
           itemBuilder: (context, index) {
             final doc = docs[index];
             final req = PermissionModel.fromFirestore(doc);
+            final isTarget = _isHighlightedRequest(doc.id, req.permissionId);
             final hours = req.durationMinutes / 60;
             final permissionPeriod = _permissionPeriod(req);
 
@@ -4202,9 +4457,14 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
               margin: const EdgeInsets.only(bottom: 12),
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: ZaWolfColors.surface01,
+                color: isTarget
+                    ? ZaWolfColors.primaryCyan.withValues(alpha: 0.08)
+                    : ZaWolfColors.surface01,
                 borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: ZaWolfColors.surface02),
+                border: Border.all(
+                  color: isTarget ? ZaWolfColors.primaryCyan : ZaWolfColors.surface02,
+                  width: isTarget ? 1.5 : 1.0,
+                ),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -4227,6 +4487,25 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
                               fontWeight: FontWeight.bold,
                             ),
                           ),
+                          if (isTarget) ...[
+                            const SizedBox(width: 8),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: ZaWolfColors.primaryCyan.withValues(alpha: 0.2),
+                                borderRadius: BorderRadius.circular(4),
+                                border: Border.all(color: ZaWolfColors.primaryCyan),
+                              ),
+                              child: const Text(
+                                'الطلب المحدد',
+                                style: TextStyle(
+                                  color: ZaWolfColors.primaryCyan,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                          ],
                         ],
                       ),
                       _buildStatusBadge(req.status),

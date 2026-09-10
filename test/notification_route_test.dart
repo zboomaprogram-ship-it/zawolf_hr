@@ -101,13 +101,13 @@ void main() {
       NotificationRoutePolicy.dataWithRoute('leave_approved', {
         'requestId': 'leave-99',
       })['route'],
-      '/employee/requests?requestId=leave-99',
+      '/employee/requests?view=history&category=leaves&requestId=leave-99',
     );
     expect(
       NotificationRoutePolicy.dataWithRoute('permission_rejected', {
         'requestId': 'perm-101',
       })['route'],
-      '/employee/requests?requestId=perm-101',
+      '/employee/requests?view=history&category=permissions&requestId=perm-101',
     );
   });
 

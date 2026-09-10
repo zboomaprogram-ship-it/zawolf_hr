@@ -3475,11 +3475,13 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
     List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
     UserModel reviewer,
   ) {
+    final targetId = widget.initialRequestId?.trim();
     List<QueryDocumentSnapshot<Map<String, dynamic>>> filtered = docs
         .where(
           (doc) =>
-              doc.data()['managementArchived'] != true &&
-              !_resolvedRequestIds.contains(doc.id),
+              (targetId != null && targetId.isNotEmpty && doc.id == targetId) ||
+              (doc.data()['managementArchived'] != true &&
+                  !_resolvedRequestIds.contains(doc.id)),
         )
         .toList(growable: false);
     if (_searchQuery.isNotEmpty) {

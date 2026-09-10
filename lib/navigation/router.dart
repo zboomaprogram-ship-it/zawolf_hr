@@ -339,21 +339,28 @@ class ZaWolfRouter {
               builder:
                   (context, state) => EmployeeRequestsScreen(
                     initialView:
-                        state.uri.queryParameters['view'] == 'history' ? 2 : 1,
+                        state.uri.queryParameters['view'] == 'history' ||
+                                state.uri.queryParameters['requestId'] != null
+                            ? 2
+                            : 1,
+                    initialRequestId: state.uri.queryParameters['requestId'],
                     initialHistoryFilter:
                         state.uri.queryParameters['filter'] == 'pending'
                             ? 'pending'
                             : 'all',
                     initialHistoryTab: switch (state
                         .uri
-                        .queryParameters['category']) {
-                      'permission' => 1,
-                      'advance' => 2,
-                      'complaint' => 3,
-                      'resignation' => 4,
+                        .queryParameters['category']
+                        ?.trim()
+                        .toLowerCase()) {
+                      'permission' || 'permissions' => 1,
+                      'advance' || 'advances' => 2,
+                      'complaint' || 'complaints' => 3,
+                      'resignation' || 'resignations' => 4,
                       'administrative' => 5,
-                      'attendance_correction' => 6,
-                      'meeting' => 7,
+                      'field_mission' || 'mission' => 5,
+                      'attendance_correction' || 'attendance_corrections' => 6,
+                      'meeting' || 'meetings' => 7,
                       _ => 0,
                     },
                   ),

@@ -73,42 +73,117 @@ class NotificationRoutePolicy {
   ) {
     final payload = <String, dynamic>{...?data};
     final route = payload['route']?.toString().trim() ?? '';
-    if (route.isEmpty) {
-      final channelId = payload['channelId']?.toString().trim() ?? '';
-      if (channelId.isNotEmpty &&
-          (type.contains('conversation') ||
-              type.contains('chat') ||
-              type == 'message')) {
-        payload['route'] =
-            '/conversations/channel/${Uri.encodeComponent(channelId)}';
-        return payload;
-      }
-      final administrativeId =
-          payload['administrativeRequestId']?.toString().trim() ?? '';
-      final requestId = payload['requestId']?.toString().trim() ?? '';
-      if (administrativeId.isNotEmpty &&
-          (type.contains('administrative') || type.contains('field_mission'))) {
-        // Preserve the request identifier for the next navigation increment;
-        // the category parameter already prevents the old first-tab fallback.
-        payload['route'] =
-            '/manager/requests?category=administrative&requestId=${Uri.encodeComponent(administrativeId)}';
-      } else if (requestId.isNotEmpty &&
-          (type.contains('approved') ||
-              type.contains('rejected') ||
-              type.contains('reviewed') ||
-              type.startsWith('field_mission_') ||
-              type.startsWith('company_os_request_'))) {
-        payload['route'] =
-            '/employee/requests?requestId=${Uri.encodeComponent(requestId)}';
+    final channelId = payload['channelId']?.toString().trim() ?? '';
+
+    if (channelId.isNotEmpty &&
+        (type.contains('conversation') ||
+            type.contains('chat') ||
+            type == 'message')) {
+      payload['route'] =
+          '/conversations/channel/${Uri.encodeComponent(channelId)}';
+      return payload;
+    }
+
+    final requestId = _extractRequestId(payload);
+    final category = _categoryForPayload(type, payload);
+
+    final isGenericRoute = route.isEmpty ||
+        route == '/employee/requests' ||
+        route == '/manager/requests' ||
+        route == '/hr/requests';
+
+    if (isGenericRoute) {
+      final isEmployeeType = type.contains('approved') ||
+          type.contains('rejected') ||
+          type.contains('reviewed') ||
+          type.startsWith('field_mission_under_review') ||
+          type.startsWith('field_mission_approved') ||
+          type.startsWith('field_mission_rejected') ||
+          type.startsWith('company_os_request_');
+
+      if (isEmployeeType) {
+        final buffer = StringBuffer('/employee/requests?view=history');
+        if (category != null) {
+          buffer.write('&category=$category');
+        }
+        if (requestId.isNotEmpty) {
+          buffer.write('&requestId=${Uri.encodeComponent(requestId)}');
+        }
+        payload['route'] = buffer.toString();
       } else {
-        final category = _managerCategoryForType(type);
-        payload['route'] =
-            category != null && requestId.isNotEmpty
-                ? '/manager/requests?category=$category&requestId=${Uri.encodeComponent(requestId)}'
-                : routeForType(type);
+        final cat = category ?? _managerCategoryForType(type);
+        if (cat != null && requestId.isNotEmpty) {
+          payload['route'] =
+              '/manager/requests?category=$cat&requestId=${Uri.encodeComponent(requestId)}';
+        } else if (cat != null) {
+          payload['route'] = '/manager/requests?category=$cat';
+        } else {
+          payload['route'] = routeForType(type);
+        }
       }
     }
     return payload;
+  }
+
+  static String _extractRequestId(Map<String, dynamic> payload) {
+    const keys = [
+      'requestId',
+      'leaveId',
+      'permissionId',
+      'advanceId',
+      'meetingId',
+      'complaintId',
+      'resignationId',
+      'administrativeRequestId',
+      'fieldMissionId',
+      'attendanceCorrectionId',
+      'correctionId',
+      'salaryDeductionId',
+      'deductionId',
+      'taskId',
+      'resourceId',
+      'targetId',
+    ];
+    for (final key in keys) {
+      final value = payload[key]?.toString().trim() ?? '';
+      if (value.isNotEmpty) return value;
+    }
+    return '';
+  }
+
+  static String? _categoryForPayload(String type, Map<String, dynamic> payload) {
+    final rawCategory = (payload['category'] ??
+            payload['collection'] ??
+            payload['requestCollection'] ??
+            payload['sourceType'])
+        ?.toString()
+        .trim()
+        .toLowerCase();
+    if (rawCategory != null && rawCategory.isNotEmpty) {
+      final mapped = _normalizeCategory(rawCategory);
+      if (mapped != null) return mapped;
+    }
+    return _managerCategoryForType(type);
+  }
+
+  static String? _normalizeCategory(String val) {
+    if (val.contains('leave')) return 'leaves';
+    if (val.contains('permission')) return 'permissions';
+    if (val.contains('advance')) return 'advances';
+    if (val.contains('meeting')) return 'meetings';
+    if (val.contains('company_os') || val.contains('expense')) return 'company_os';
+    if (val.contains('custom')) return 'custom';
+    if (val.contains('deduction')) return 'salary_deductions';
+    if (val.contains('attendance_correction') || val.contains('correction')) {
+      return 'attendance_corrections';
+    }
+    if (val.contains('security')) return 'security';
+    if (val.contains('complaint')) return 'complaints';
+    if (val.contains('resignation')) return 'resignations';
+    if (val.contains('administrative') || val.contains('mission')) {
+      return 'administrative';
+    }
+    return null;
   }
 
   static String? _managerCategoryForType(String type) {
@@ -137,6 +212,9 @@ class NotificationRoutePolicy {
     }
     if (value.contains('resignation')) {
       return 'resignations';
+    }
+    if (value.contains('administrative') || value.contains('mission')) {
+      return 'administrative';
     }
     return null;
   }

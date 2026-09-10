@@ -10,6 +10,7 @@ import '../../components/wolf_card.dart';
 import '../../design_system/components/filter_bar.dart';
 import '../../design_system/bidi.dart';
 import '../../design_system/components/skeletons.dart';
+import '../../models/notification_route_policy.dart';
 import '../../services/auth_service.dart';
 import '../../services/notification_service.dart';
 import '../../features/employee_operations/domain/entities/notification_read_state.dart';
@@ -463,22 +464,17 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     }
 
     final rawData = notification.data()['data'];
-    final candidateRoute = rawData is Map
-        ? (rawData['route'] as String? ??
-            rawData['url'] as String? ??
-            rawData['link'] as String?)
-        : (notification.data()['route'] as String?);
-
-    String? finalRoute = candidateRoute;
-    if ((finalRoute == null || finalRoute.isEmpty) &&
-        rawData is Map &&
-        rawData['channelId'] != null) {
-      finalRoute =
-          '/conversations/channel/${Uri.encodeComponent(rawData['channelId'].toString())}';
+    final dataMap =
+        rawData is Map ? Map<String, dynamic>.from(rawData) : <String, dynamic>{};
+    if (notification.data()['route'] != null && !dataMap.containsKey('route')) {
+      dataMap['route'] = notification.data()['route'];
     }
 
+    final enriched = NotificationRoutePolicy.dataWithRoute(type, dataMap);
+    final candidateRoute = enriched['route']?.toString().trim();
+
     final route = NotificationService.instance.safeRoute(
-      finalRoute,
+      candidateRoute,
       type: type,
     );
     if (route != '/notifications' && mounted) context.go(route);
