@@ -70,3 +70,12 @@ same authorized conversation.
 If any of these checks fail, restore the retained Hostinger deployment and
 restart the Node application. The rollback is additive: conversations and
 notifications already stored in Firestore remain intact.
+
+### Pre-upload live check (2026-09-10)
+
+`/health` returned `ok: true`, a connected notification listener, no listener
+error, and the `conversations_rich_chat_v1` configuration. Unauthenticated
+requests to the direct inbox, direct-create, and company-group routes each
+returned the safe `401 session_expired` envelope. This confirms that the live
+runtime recognizes the protected route family; it does **not** prove that this
+prepared archive has been uploaded or restarted.
