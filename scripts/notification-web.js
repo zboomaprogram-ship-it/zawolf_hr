@@ -168,6 +168,7 @@ const {
 } = require('./request-approval-routing');
 
 const port = Number(process.env.PORT || 3000);
+const notificationRuntimeRelease = '2026-09-10-notification-channel-fallback-1';
 const dispatchSecret = process.env.NOTIFICATION_DISPATCH_SECRET || '';
 const defaultGoogleWorkspaceOrigins = [
   'https://zawolf-hr-system-60317.web.app',
@@ -4089,6 +4090,7 @@ const server = http.createServer(async (req, res) => {
     sendJson(res, 200, {
       ok: true,
       service: 'zawolf-notification-dispatcher',
+      release: notificationRuntimeRelease,
       notificationListener: notificationListenerOwner && notificationUnsubscribe
         ? 'connected'
         : 'standby',
