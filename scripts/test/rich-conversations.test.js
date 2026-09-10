@@ -32,6 +32,12 @@ test('attachment-only legacy send enters v2 change feed without synthetic text',
   const changes=await Q.changes({db,channel,params:new URLSearchParams('after=0')});
   assert.equal(changes.messages[0].attachments[0].fileName,'صورة.png'); assert.equal(changes.changeCursor,'1');
 });
+test('text-only message persists a null sticker rather than an undefined Firestore value', async () => {
+  const db = seed();
+  const result = await send(db, { operationId: 'text-only', body: 'رسالة نصية' });
+  const raw = db.dump()[`conversations/room/messages/${result.message.id}`];
+  assert.equal(raw.stickerId, null);
+});
 test('HR/admin can participate in approved custom groups without becoming listed members', async () => {
   const db=seed(); const message=(await send(db)).message;
   assert.equal((await C.channelFor(db,hr,'room')).canPost,true);

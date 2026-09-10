@@ -29,7 +29,10 @@ async function sendMessage({ db, admin, actor, channelId, payload, legacy = fals
       const reply = await tx.get(channel.ref.collection('messages').doc(payload.replyToMessageId));
       if (!reply.exists || reply.data().state === 'deleted') C.fail('reply_unavailable', 409);
     }
-    const message = { conversationId: channelId, senderUserId: actor.uid, senderDisplayName: displayName(actor), body: input.body, stickerId: input.stickerId, attachmentResourceIds: input.attachmentResourceIds, attachments, replyToMessageId: payload.replyToMessageId || null, sentAt: now, state: 'sent', revision: 1, reactions: {}, forwarded: false };
+    // Firestore rejects undefined values. Text-only messages deliberately have
+    // no sticker, so persist an explicit null rather than forwarding the
+    // optional JavaScript value into the transaction.
+    const message = { conversationId: channelId, senderUserId: actor.uid, senderDisplayName: displayName(actor), body: input.body, stickerId: input.stickerId || null, attachmentResourceIds: input.attachmentResourceIds, attachments, replyToMessageId: payload.replyToMessageId || null, sentAt: now, state: 'sent', revision: 1, reactions: {}, forwarded: false };
     tx.create(ref, message);
     C.change(tx, channel, 'message', { messageId }, now);
     C.audit(tx, db, channelId, input.operationId, actor, 'send', { messageId, revision: 1, message: C.messageDto(messageId, message) }, now);
