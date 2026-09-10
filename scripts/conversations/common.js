@@ -106,12 +106,27 @@ function notify(tx, db, ids, key, title, body, data, now, admin) {
     if (admin || FieldValue) tx.set(db.collection('users').doc(id), { unreadNotifications: inc }, { merge: true });
   }
 }
+
+function notificationRecipientIds(channel) {
+  const data = channel?.data || {};
+  // Direct conversations created by an older rollout stored only
+  // participantUserIds. They remain readable, but using memberUserIds for
+  // their notification fan-out made a normal send throw after the message
+  // transaction had started. Prefer the authoritative direct participant list
+  // and tolerate either historical shape.
+  const candidates = data.kind === 'direct'
+    ? (Array.isArray(data.participantUserIds)
+      ? data.participantUserIds
+      : data.memberUserIds)
+    : data.memberUserIds;
+  return Array.isArray(candidates) ? candidates : [];
+}
 // Company conversations deliberately do not duplicate every employee id onto
 // the channel document. Fan-out is therefore deferred to the notification
 // runtime, which pages active users and retains a durable cursor/retry state.
 function notifyChannel(tx, db, channel, senderId, key, title, body, data, now, admin) {
   if (channel.data.kind !== 'company') {
-    notify(tx, db, (channel.data.memberUserIds || []).filter(id => id !== senderId), key, title, body, data, now, admin);
+    notify(tx, db, notificationRecipientIds(channel).filter(id => id !== senderId), key, title, body, data, now, admin);
     return;
   }
   const id = `chat_${hash(key).slice(0, 40)}`;
@@ -128,4 +143,4 @@ function notifyChannel(tx, db, channel, senderId, key, title, body, data, now, a
     createdAt: now,
   }, { merge: true });
 }
-module.exports = { hash, notificationPreferenceId, iso, fail, access, channelFor, attachmentDto, messageDto, hydrate, cursor, encodeCursor, change, audit, operation, replay, receipt, notify, notifyChannel, isHrOrAdmin };
+module.exports = { hash, notificationPreferenceId, iso, fail, access, channelFor, attachmentDto, messageDto, hydrate, cursor, encodeCursor, change, audit, operation, replay, receipt, notify, notificationRecipientIds, notifyChannel, isHrOrAdmin };

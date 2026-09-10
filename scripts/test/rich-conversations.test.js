@@ -346,4 +346,24 @@ test('posting message to direct channel with encoded colon and admin object succ
   assert.equal(response.data.message.body, 'رسالة خاصة');
 });
 
-
+test('legacy direct channels without memberUserIds still send and notify the other participant', async () => {
+  const db = seed({
+    'conversations/direct:legacy': {
+      kind: 'direct', state: 'active', participantUserIds: ['alice', 'bob'],
+      name: 'بوب', revision: 1, changeSequence: 0, updatedAt: now,
+      latestActivityAt: now,
+    },
+  });
+  const result = await sendMessage({
+    db,
+    actor,
+    channelId: 'direct:legacy',
+    payload: { operationId: 'legacy-direct-send', body: 'رسالة', attachmentResourceIds: [] },
+    now,
+  });
+  assert.equal(result.message.body, 'رسالة');
+  assert.equal(
+    Object.keys(db.dump()).filter(key => key.startsWith('notifications/bob/items/chat_')).length,
+    1,
+  );
+});
