@@ -94,7 +94,9 @@ function replay(snap, op) {
   return snap.data().result;
 }
 function receipt(tx, op, result, now) { tx.set(op.ref, { fingerprint: op.fingerprint, result, createdAt: now }); return result; }
-function notify(tx, db, ids, key, title, body, data, now, admin) {
+function notify(tx, db, ids, key, title, body, data, now, admin, {
+  incrementUnreadCount = true,
+} = {}) {
   const inc = FieldValue?.increment
     ? FieldValue.increment(1)
     : admin?.firestore?.FieldValue?.increment
@@ -103,7 +105,13 @@ function notify(tx, db, ids, key, title, body, data, now, admin) {
   for (const id of [...new Set(ids)].filter(safeId)) {
     const notificationId = `chat_${hash(key, id).slice(0, 40)}`;
     tx.set(db.collection('notifications').doc(id).collection('items').doc(notificationId), { notificationId, type: 'conversation', title, body, data, isRead: false, pushSent: false, createdAt: now });
-    if (admin || FieldValue) tx.set(db.collection('users').doc(id), { unreadNotifications: inc }, { merge: true });
+    if (incrementUnreadCount && (admin || FieldValue)) {
+      tx.set(
+        db.collection('users').doc(id),
+        { unreadNotifications: inc },
+        { merge: true },
+      );
+    }
   }
 }
 
@@ -126,7 +134,22 @@ function notificationRecipientIds(channel) {
 // runtime, which pages active users and retains a durable cursor/retry state.
 function notifyChannel(tx, db, channel, senderId, key, title, body, data, now, admin) {
   if (channel.data.kind !== 'company') {
-    notify(tx, db, notificationRecipientIds(channel).filter(id => id !== senderId), key, title, body, data, now, admin);
+    // A chat message is authoritative once its message document commits. The
+    // legacy dashboard counter is only a derived convenience value; a corrupt
+    // historical counter must never reject the message itself. The recipient
+    // still receives a durable notification item and push dispatch.
+    notify(
+      tx,
+      db,
+      notificationRecipientIds(channel).filter(id => id !== senderId),
+      key,
+      title,
+      body,
+      data,
+      now,
+      admin,
+      { incrementUnreadCount: false },
+    );
     return;
   }
   const id = `chat_${hash(key).slice(0, 40)}`;

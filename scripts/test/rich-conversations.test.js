@@ -366,4 +366,9 @@ test('legacy direct channels without memberUserIds still send and notify the oth
     Object.keys(db.dump()).filter(key => key.startsWith('notifications/bob/items/chat_')).length,
     1,
   );
+  assert.equal(
+    Object.keys(db.dump()).some(key => key === 'users/bob' &&
+      Object.hasOwn(db.dump()[key], 'unreadNotifications')),
+    false,
+  );
 });
