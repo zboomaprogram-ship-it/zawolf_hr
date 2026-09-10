@@ -20,7 +20,7 @@ navigation.
 
 ```bash
 flutter run -d chrome
-flutter build web --release
+flutter build web --release --pwa-strategy none
 firebase deploy --only hosting --project zawolf-hr-system-60317
 ```
 
