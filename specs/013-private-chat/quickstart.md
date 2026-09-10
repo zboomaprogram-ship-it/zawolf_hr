@@ -39,3 +39,23 @@ the push payload. It requires an Android/iOS store update; do not attempt to
 ship it through a Dart or Shorebird patch. Verify one foreground, background,
 and terminated chat notification on each platform after the store build is
 installed. Older clients fall back to their platform default sound.
+
+## Hostinger release and rollback
+
+The prepared backend archive is
+`dist/zawolf-hostinger-private-chat-2026-09-10.zip`. It contains the Node
+runtime source, including `conversations/` and `workspace/`, but excludes
+credentials and `node_modules`. Its SHA-256 is
+`2f61bcd749aa6a785233ab4da326255b65e4ad9750e144913198485ec128f4fb`.
+
+Before uploading, retain the current Hostinger deployment. Upload the archive
+contents to the `notification.zawolf.ai` Node application root, run `npm
+install`, then use **Restart** in hPanel. Confirm `GET /health` reports
+`ok: true`, the notification listener is connected, and no new listener error
+is present. Use an enabled pilot account to open a private chat, send a text
+message and an attachment, then tap its notification and confirm it opens the
+same authorized conversation.
+
+If any of these checks fail, restore the retained Hostinger deployment and
+restart the Node application. The rollback is additive: conversations and
+notifications already stored in Firestore remain intact.

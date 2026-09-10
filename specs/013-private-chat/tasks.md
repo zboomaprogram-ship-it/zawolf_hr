@@ -63,7 +63,7 @@
 
 - [x] T029 Verify every private message, action, attachment upload, and download rechecks direct participant authorization in `scripts/conversations/common.js`, `scripts/conversations/messages.js`, and `scripts/conversations/uploads.js`.
 - [ ] T030 [P] Verify RTL, mobile, desktop web, loading, error, offline, and empty states using `specs/013-private-chat/quickstart.md`.
-- [ ] T031 [P] Run `flutter analyze`, architecture/query guards, full Flutter tests, and `(cd scripts && npm test)`.
+- [x] T031 [P] Run `flutter analyze`, architecture/query guards, full Flutter tests, and `(cd scripts && npm test)`.
 - [ ] T032 Deploy additive Hostinger support before enabling the existing `conversations_rich_chat_v1` rollout and document monitoring/rollback evidence in `specs/013-private-chat/quickstart.md`.
 
 ## Dependencies and execution order
