@@ -122,3 +122,23 @@ test('inactive directory records need their own scope before any query', async (
     (error) => error.code === 'scope_denied',
   );
 });
+
+test('an exact Hostinger environment credential grants only directory reads without a Firestore client record', async () => {
+  const credential = C.createCredential({
+    name: 'Environment integration',
+    scopes: ['directory.read'],
+    expiresAt: new Date(Date.now() + 60_000).toISOString(),
+  });
+  const authenticated = await C.authenticateCredential({
+    db: { collection() { throw new Error('environment key must not query developerApiClients'); } },
+    authorization: `Bearer ${credential.secret}`,
+    environment: {
+      ZAWOLF_DEVELOPER_API_SECRET: credential.secret,
+      ZAWOLF_DEVELOPER_API_CLIENT_NAME: 'Partner directory sync',
+    },
+  });
+  assert.equal(authenticated.source, 'environment');
+  assert.equal(authenticated.clientId, credential.clientId);
+  assert.deepEqual(authenticated.client.scopes, ['directory.read']);
+  assert.equal(authenticated.client.name, 'Partner directory sync');
+});

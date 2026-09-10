@@ -95,8 +95,29 @@ function safeEqual(left, right) {
   return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
 
-async function authenticateCredential({ db, authorization }) {
+async function authenticateCredential({ db, authorization, environment = process.env }) {
   const { clientId, secret } = parseBearerCredential(authorization);
+  const credential = `zwh_${clientId}_${secret}`;
+  const environmentSecret = asText(environment?.ZAWOLF_DEVELOPER_API_SECRET);
+
+  // A single environment credential is useful when the owner needs to grant
+  // a read-only integration without first retrieving a Firebase ID token. It
+  // deliberately grants only the public directory scope. Removing/rotating
+  // the Hostinger environment value and restarting revokes it immediately.
+  if (environmentSecret && safeEqual(credential, environmentSecret)) {
+    return {
+      clientId,
+      client: {
+        name: asText(environment?.ZAWOLF_DEVELOPER_API_CLIENT_NAME) || 'Hostinger environment integration',
+        scopes: [DIRECTORY_READ_SCOPE],
+        status: 'active',
+        source: 'environment',
+      },
+      cursorKey: secret,
+      source: 'environment',
+    };
+  }
+
   const snapshot = await db.collection('developerApiClients').doc(clientId).get();
   const client = snapshot.exists ? (snapshot.data() || {}) : null;
   if (!client || client.status !== 'active') fail('unauthenticated', 401, 'Invalid integration credential.');
@@ -108,7 +129,7 @@ async function authenticateCredential({ db, authorization }) {
   if (!safeEqual(candidate, client.secretHash || '')) {
     fail('unauthenticated', 401, 'Invalid integration credential.');
   }
-  return { clientId, client, cursorKey: secret };
+  return { clientId, client, cursorKey: secret, source: 'stored' };
 }
 
 function opaqueId(value) {

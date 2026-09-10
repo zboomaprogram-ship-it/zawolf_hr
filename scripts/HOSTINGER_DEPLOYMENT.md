@@ -227,13 +227,16 @@ continue accepting the legacy value during the rollout.
 
 ## External developer API
 
-The external developer API is served at `/developer-api/v1/`. It is read-only
-and disabled in practice until an HR/super-admin creates an integration client.
-Do not give a developer Firebase credentials, an ID token, or this runtime's
-environment variables. Create a short-lived `directory.read` client using the
-owner route described in `specs/014-developer-api/quickstart.md`; the returned
-secret is shown exactly once. The route publishes its OpenAPI contract at
-`/developer-api/v1/openapi.json`.
+The external developer API is served at `/developer-api/v1/`. It is read-only.
+For a no-UI integration key, set `ZAWOLF_DEVELOPER_API_SECRET` in the Hostinger
+Node application environment to a generated `zwh_...` value (see
+`developer-api.env.example`) and restart the application. That environment key
+has only `directory.read`; rotate or remove the environment value and restart
+to revoke it. Do not give a developer Firebase credentials, an ID token, or any
+other runtime environment variables. Alternatively, an HR/super-admin can
+create a short-lived `directory.read` client using the owner route described in
+`specs/014-developer-api/quickstart.md`; the returned secret is shown exactly
+once. The route publishes its OpenAPI contract at `/developer-api/v1/openapi.json`.
 
 Before issuing a client, deploy the two `users` indexes in the repository's
 `firestore.indexes.json`, upload this Node package, restart the Hostinger app,

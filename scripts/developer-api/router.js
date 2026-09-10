@@ -85,9 +85,11 @@ async function authenticateExternal({ req, db, admin }) {
   if (!C.allowRequest({ clientId: auth.clientId, ip: requestIp(req) })) {
     C.fail('rate_limited', 429, 'Rate limit exceeded.');
   }
-  await db.collection('developerApiClients').doc(auth.clientId).set({
-    lastUsedAt: timestamp(admin),
-  }, { merge: true });
+  if (auth.source !== 'environment') {
+    await db.collection('developerApiClients').doc(auth.clientId).set({
+      lastUsedAt: timestamp(admin),
+    }, { merge: true });
+  }
   return auth;
 }
 
