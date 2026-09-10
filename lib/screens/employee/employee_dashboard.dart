@@ -39,6 +39,7 @@ import 'widgets/employee_dashboard_header.dart';
 import 'widgets/employee_priority_strip.dart';
 import 'widgets/employee_quick_action.dart';
 import 'widgets/month_activity_section.dart';
+import 'widgets/employee_web_dashboard_view.dart';
 
 class EmployeeDashboardScreen extends StatefulWidget {
   const EmployeeDashboardScreen({super.key});
@@ -736,6 +737,24 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
             // Check for unseen celebration badges
             _checkUnseenCelebrationBadges(user);
 
+            if (kIsWeb && MediaQuery.sizeOf(context).width >= 980) {
+              return EmployeeWebDashboardView(
+                user: user,
+                logs: logs,
+                todayLog: todayLog,
+                disciplineScore: disciplineScore,
+                workedDays: workedDays,
+                pendingRequestsCount: _pendingRequestsCount,
+                onRefresh: () async {
+                  await attendanceService.syncPendingOfflineAttendance();
+                  await Future.wait([
+                    _checkCurrentGeofence(),
+                    _checkCompanyDayOff(),
+                  ]);
+                },
+              );
+            }
+
             return RefreshIndicator(
               onRefresh: () async {
                 await attendanceService.syncPendingOfflineAttendance();
@@ -829,7 +848,54 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
                       const SizedBox(height: 16),
                     ],
 
-                    if (user.excludeFromAttendanceReports &&
+                    if (kIsWeb) ...[
+                      WolfCard(
+                        padding: const EdgeInsets.all(16),
+                        child: Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(10),
+                              decoration: BoxDecoration(
+                                color: ZaWolfColors.primaryCyan.withValues(
+                                  alpha: 0.12,
+                                ),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: const Icon(
+                                Icons.phone_android_rounded,
+                                color: ZaWolfColors.primaryCyan,
+                                size: 28,
+                              ),
+                            ),
+                            const SizedBox(width: 14),
+                            const Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'تسجيل الحضور عبر تطبيق الجوال',
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 14,
+                                    ),
+                                  ),
+                                  SizedBox(height: 4),
+                                  Text(
+                                    'تسجيل الحضور والانصراف متاح حصراً عبر تطبيق الهاتف لضمان التحقق الجغرافي والبيومتري.',
+                                    style: TextStyle(
+                                      color: ZaWolfColors.textMuted,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+                    ] else if (user.excludeFromAttendanceReports &&
                         !_developerAttendanceAccess) ...[
                       WolfCard(
                         child: Row(
