@@ -21,9 +21,9 @@ test('approver notification resolves to management context with opaque focus id'
   assert.deepEqual(
     classifyRecipientRoute({ role: 'hr_admin', resource }),
     {
-      path: '/hr/requests',
+      path: '/hr/requests?category=leaves',
       focusId: 'leave-7',
-      fallbackPath: '/hr/requests',
+      fallbackPath: '/hr/requests?category=leaves',
     },
   );
 });
@@ -37,9 +37,9 @@ test('employee decision resolves to own request context, never stored manager ro
   assert.deepEqual(
     classifyRecipientRoute({ role: 'employee', resource }),
     {
-      path: '/employee/requests',
+      path: '/employee/requests?category=leaves',
       focusId: 'leave-7',
-      fallbackPath: '/employee/requests',
+      fallbackPath: '/employee/requests?category=leaves',
     },
   );
 });
@@ -98,4 +98,25 @@ test('destination contract accepts opaque notification ids only', () => {
     { notificationId: 'notification-77' },
   );
   assert.equal(normalizeResolveRequest({ notificationId: 'https://outside' }), null);
+});
+
+
+test('meeting paths and request categories retain the exact safe destination', () => {
+  const meeting = normalizeNotificationResource({
+    type: 'meeting_request',
+    data: { path: '/meeting/approvals', requestId: 'meeting-7' },
+  });
+  assert.deepEqual(
+    classifyRecipientRoute({ role: 'manager', resource: meeting }),
+    { path: '/meeting/approvals', focusId: 'meeting-7', fallbackPath: '/meeting/approvals' },
+  );
+
+  const mission = normalizeNotificationResource({
+    type: 'field_mission_approval_turn',
+    data: { requestId: 'mission-7' },
+  });
+  assert.deepEqual(
+    classifyRecipientRoute({ role: 'manager', resource: mission }),
+    { path: '/manager/requests?category=administrative', focusId: 'mission-7', fallbackPath: '/manager/requests?category=administrative' },
+  );
 });

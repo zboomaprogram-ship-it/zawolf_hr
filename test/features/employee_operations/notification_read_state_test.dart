@@ -39,6 +39,6 @@ void main() {
     );
 
     expect(destination.toUri().path, '/manager/requests');
-    expect(destination.toUri().queryParameters['focusId'], 'leave-7');
+    expect(destination.toUri().queryParameters['requestId'], 'leave-7');
   });
 }

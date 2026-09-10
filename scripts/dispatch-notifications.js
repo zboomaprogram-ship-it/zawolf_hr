@@ -67,7 +67,8 @@ function routeForNotification(type) {
   if (value === 'complaint_new') return '/manager/requests';
   if (
     value === 'administrative_request_submitted' ||
-    value === 'field_mission_pending_ceo'
+    value === 'field_mission_pending_ceo' ||
+    value === 'field_mission_approval_turn'
   ) return '/manager/requests';
   if (value.includes('pending_hr') || value.includes('pending_manager')) {
     return '/manager/requests';
@@ -97,32 +98,65 @@ function routeForNotification(type) {
 }
 
 const SAFE_NOTIFICATION_ROUTES = new Set([
-  '/notifications',
-  '/account-disabled',
-  '/polls',
-  '/employee/dashboard',
-  '/employee/requests',
-  '/employee/deductions',
-  '/employee/tasks',
-  '/employee/warnings-rewards',
-  '/employee/suggestions',
-  '/employee/kpi',
-  '/manager/requests',
-  '/team-leader/requests',
-  '/hr/requests',
-  '/hr/employees',
+  '/notifications', '/account-disabled', '/polls', '/employee/dashboard',
+  '/employee/requests', '/employee/deductions', '/employee/tasks',
+  '/employee/warnings-rewards', '/employee/suggestions', '/employee/kpi',
+  '/manager/requests', '/team-leader/requests', '/hr/requests',
+  '/hr/employees', '/meeting/history', '/meeting/approvals',
+  '/approver/custom-requests', '/employee/custom-requests', '/company-os',
 ]);
 
 const NOTIFICATION_FOCUS_ID = /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$/;
 const HR_NOTIFICATION_ROLES = new Set(['hr_admin', 'hr_manager']);
+const REQUEST_NOTIFICATION_PATHS = new Set([
+  '/employee/requests', '/manager/requests', '/team-leader/requests', '/hr/requests',
+]);
+const REQUEST_CATEGORIES = new Set([
+  'leaves', 'permissions', 'advances', 'meetings', 'company_os', 'custom',
+  'salary_deductions', 'attendance_corrections', 'security', 'complaints',
+  'resignations', 'administrative',
+]);
 
 function safeNotificationRoute(value) {
   const route = String(value || '').trim();
-  if (SAFE_NOTIFICATION_ROUTES.has(route)) return route;
-  if (/^\/conversations\/channel\/[A-Za-z0-9_.:%-]{1,256}$/.test(route)) return route;
-  return /^\/(?:employee\/requests|requests)\/operational\/[A-Za-z0-9_.:-]{1,128}$/.test(route)
-    ? route
-    : null;
+  if (!route.startsWith('/') || route.startsWith('//')) return null;
+  let parsed;
+  try { parsed = new URL(route, 'https://notification.zawolf.local'); } catch (_) { return null; }
+  if (parsed.origin !== 'https://notification.zawolf.local') return null;
+  const path = parsed.pathname;
+  const dynamicPath = /^(?:\/(?:employee|manager|hr)\/requests\/operational|\/requests\/operational)\/[A-Za-z0-9_.:-]{1,128}$/.test(path)
+    || /^\/conversations\/channel\/[A-Za-z0-9_.:%-]{1,256}$/.test(path);
+  if (!SAFE_NOTIFICATION_ROUTES.has(path) && !dynamicPath) return null;
+  for (const [key, current] of parsed.searchParams.entries()) {
+    if (!['category', 'requestId', 'focusId', 'tab', 'view', 'smart'].includes(key)) return null;
+    if (current.length > 128 || (key === 'category' && !REQUEST_CATEGORIES.has(current)) ||
+        ((key === 'requestId' || key === 'focusId') && !NOTIFICATION_FOCUS_ID.test(current)) ||
+        (key === 'smart' && current !== 'true')) return null;
+  }
+  return `${path}${parsed.search}`;
+}
+
+function requestCategory(type) {
+  const value = String(type || '').toLowerCase();
+  if (value.includes('field_mission') || value.includes('administrative')) return 'administrative';
+  if (value.includes('leave')) return 'leaves';
+  if (value.includes('permission')) return 'permissions';
+  if (value.includes('advance')) return 'advances';
+  if (value.includes('meeting')) return 'meetings';
+  if (value.includes('company_os') || value.includes('expense')) return 'company_os';
+  if (value.includes('custom')) return 'custom';
+  if (value.includes('deduction')) return 'salary_deductions';
+  if (value.includes('attendance_correction')) return 'attendance_corrections';
+  if (value.includes('security')) return 'security';
+  if (value.includes('complaint')) return 'complaints';
+  if (value.includes('resignation')) return 'resignations';
+  return null;
+}
+
+function requestDestination(path, type, focusId) {
+  if (!focusId || !REQUEST_NOTIFICATION_PATHS.has(path)) return path;
+  const category = requestCategory(type);
+  return category ? `${path}?category=${encodeURIComponent(category)}` : path;
 }
 
 function safeNotificationFocusId(value) {
@@ -138,7 +172,7 @@ function normalizeNotificationResource(input) {
     focusId: safeNotificationFocusId(
       data.requestId || data.resourceId || data.targetId || data.attendanceId,
     ),
-    storedRoute: safeNotificationRoute(data.route),
+    storedRoute: safeNotificationRoute(data.route || data.path),
   };
 }
 
@@ -178,9 +212,11 @@ function classifyRecipientRoute({ role, resource }) {
   }
 
   path = safeNotificationRoute(path) || '/notifications';
+  const focusId = safeNotificationFocusId(resource?.focusId);
+  path = requestDestination(path, type, focusId);
   return {
     path,
-    focusId: safeNotificationFocusId(resource?.focusId),
+    focusId,
     fallbackPath: path,
   };
 }

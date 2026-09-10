@@ -43,6 +43,10 @@ void main() {
       });
       final cubit = ChatInboxCubit(repository, section: 'direct');
       await Future<void>.delayed(Duration.zero);
+      repository.controllers['direct']!.add(
+        ChatPage(repository.pages['direct']!),
+      );
+      await Future<void>.delayed(Duration.zero);
       expect(cubit.state.channels.map((channel) => channel.id), ['b', 'a']);
 
       repository.controllers['direct']!.add(

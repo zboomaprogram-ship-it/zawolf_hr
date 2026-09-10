@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zawolf_hr/models/notification_route_policy.dart';
+import 'package:zawolf_hr/features/employee_operations/domain/entities/notification_read_state.dart';
 import 'package:zawolf_hr/services/notification_service.dart';
 
 void main() {
@@ -110,28 +111,34 @@ void main() {
     );
   });
 
-  test('conversation notifications route to exact channel or conversations hub', () {
-    expect(
-      NotificationRoutePolicy.dataWithRoute('conversation_message', {
-        'channelId': 'direct:userA_userB',
-      })['route'],
-      '/conversations/channel/direct%3AuserA_userB',
-    );
-    expect(
-      service.routeForType('conversation_message'),
-      '/conversations',
-    );
-    expect(
-      service.safeRoute('/conversations'),
-      '/conversations',
-    );
-    expect(
-      service.safeRoute('/manager/tasks'),
-      '/manager/tasks',
-    );
-    expect(
-      service.safeRoute('/hr/employees'),
-      '/hr/employees',
-    );
-  });
+  test(
+    'conversation notifications route to exact channel or conversations hub',
+    () {
+      expect(
+        NotificationRoutePolicy.dataWithRoute('conversation_message', {
+          'channelId': 'direct:userA_userB',
+        })['route'],
+        '/conversations/channel/direct%3AuserA_userB',
+      );
+      expect(service.routeForType('conversation_message'), '/conversations');
+      expect(service.safeRoute('/conversations'), '/conversations');
+      expect(service.safeRoute('/manager/tasks'), '/manager/tasks');
+      expect(service.safeRoute('/hr/employees'), '/hr/employees');
+    },
+  );
+
+  test(
+    'secure notification destinations keep request category and request ID',
+    () {
+      const destination = NotificationRouteDestination(
+        path: '/manager/requests?category=leaves',
+        fallbackPath: '/manager/requests',
+        focusId: 'leave-42',
+      );
+      expect(
+        destination.toUri().toString(),
+        '/manager/requests?category=leaves&requestId=leave-42',
+      );
+    },
+  );
 }

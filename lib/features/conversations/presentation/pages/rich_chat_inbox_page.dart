@@ -284,45 +284,49 @@ class _InboxSection extends StatelessWidget {
                 ),
               ),
             Expanded(
-              child: RefreshIndicator(
-                onRefresh: cubit.load,
-                child:
-                    state.loading && state.channels.isEmpty
-                        ? const _InboxSkeleton()
-                        : ListView.separated(
-                          physics: const AlwaysScrollableScrollPhysics(),
-                          padding: const EdgeInsets.only(bottom: 96),
-                          itemCount:
-                              state.channels.length +
-                              (state.cursor == null ? 0 : 1),
-                          separatorBuilder:
-                              (_, __) => const SizedBox(height: 8),
-                          itemBuilder: (context, index) {
-                            if (index == state.channels.length) {
-                              return TextButton.icon(
-                                onPressed:
-                                    state.loading
-                                        ? null
-                                        : () => cubit.load(more: true),
-                                icon: const Icon(Icons.expand_more),
-                                label: const Text('تحميل محادثات أقدم'),
-                              );
-                            }
-                            return _ConversationTile(
-                              channel: state.channels[index],
-                              direct: section == 'direct',
-                              onTap:
-                                  () => openChannel(
-                                    context,
-                                    state.channels[index],
-                                  ),
-                            );
-                          },
-                        ),
-              ),
+              child:
+                  state.channels.isEmpty &&
+                          !state.loading &&
+                          state.error == null
+                      ? _EmptyInbox(message: emptyText)
+                      : RefreshIndicator(
+                        onRefresh: cubit.load,
+                        child:
+                            state.loading && state.channels.isEmpty
+                                ? const _InboxSkeleton()
+                                : ListView.separated(
+                                  physics:
+                                      const AlwaysScrollableScrollPhysics(),
+                                  padding: const EdgeInsets.only(bottom: 96),
+                                  itemCount:
+                                      state.channels.length +
+                                      (state.cursor == null ? 0 : 1),
+                                  separatorBuilder:
+                                      (_, __) => const SizedBox(height: 8),
+                                  itemBuilder: (context, index) {
+                                    if (index == state.channels.length) {
+                                      return TextButton.icon(
+                                        onPressed:
+                                            state.loading
+                                                ? null
+                                                : () => cubit.load(more: true),
+                                        icon: const Icon(Icons.expand_more),
+                                        label: const Text('تحميل محادثات أقدم'),
+                                      );
+                                    }
+                                    return _ConversationTile(
+                                      channel: state.channels[index],
+                                      direct: section == 'direct',
+                                      onTap:
+                                          () => openChannel(
+                                            context,
+                                            state.channels[index],
+                                          ),
+                                    );
+                                  },
+                                ),
+                      ),
             ),
-            if (state.channels.isEmpty && !state.loading && state.error == null)
-              Expanded(child: _EmptyInbox(message: emptyText)),
           ],
         );
       },

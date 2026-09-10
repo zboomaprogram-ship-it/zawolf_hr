@@ -14,6 +14,7 @@ class NotificationRoutePolicy {
         value.contains('approval_turn')) {
       return '/manager/requests';
     }
+    if (value == 'field_mission_approval_turn') return '/manager/requests';
     if (value == 'field_mission_under_review' ||
         value == 'field_mission_approved' ||
         value == 'field_mission_rejected') {

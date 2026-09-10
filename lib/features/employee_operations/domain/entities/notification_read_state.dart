@@ -51,12 +51,17 @@ final class NotificationRouteDestination {
 
   Uri toUri() {
     final safePath = _safePath(path) ? path : fallbackPath;
-    return Uri(
-      path: safePath,
-      queryParameters: focusId == null || focusId!.trim().isEmpty
-          ? null
-          : <String, String>{'focusId': focusId!},
-    );
+    final destination = Uri.tryParse(safePath) ?? Uri(path: fallbackPath);
+    final query = <String, String>{...destination.queryParameters};
+    if (focusId != null && focusId!.trim().isNotEmpty) {
+      // Request screens already consume requestId. Using a generic focusId
+      // silently opened their default tab instead of the notified request.
+      final requestPath =
+          destination.path.endsWith('/requests') ||
+          destination.path.contains('/requests/operational/');
+      query[requestPath ? 'requestId' : 'focusId'] = focusId!;
+    }
+    return destination.replace(queryParameters: query.isEmpty ? null : query);
   }
 
   static bool _safePath(String value) =>
