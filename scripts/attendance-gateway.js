@@ -74,8 +74,11 @@ async function bindTrustedDevice({ db, admin, actor, action, userRef, user }) {
       const registeredRef = db.collection('attendanceDevices').doc(registered.replaceAll('/', '_'));
       const registeredSnap = await transaction.get(registeredRef);
       // A missing/wrong legacy binding is self-healed. A verified current
-      // binding remains protected and requires HR to reset it explicitly.
-      if (registeredSnap.exists && registeredSnap.data()?.userId === actor.uid) {
+      // binding remains protected and requires HR to reset it explicitly,
+      // except for executive accounts which may switch between authorized devices.
+      const empCode = String(user.employeeId || user.employeeCode || '').trim().toUpperCase();
+      const isExecutive = empCode === 'CEO-100' || empCode === 'COO-1300' || user.role === 'super_admin';
+      if (registeredSnap.exists && registeredSnap.data()?.userId === actor.uid && !isExecutive) {
         throw gatewayError('هذا الحساب مربوط بجهاز حضور آخر. اطلب من HR إعادة ضبط الجهاز.', 'device_mismatch');
       }
     }

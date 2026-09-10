@@ -168,10 +168,20 @@ class UserModel {
   /// CEO-100 account is never skipped because of that field-name difference.
   bool get isCompanyCeo => employeeId.trim().toUpperCase() == 'CEO-100';
 
+  /// COO-1300 oversees operations and division management.
+  bool get isCompanyCoo => employeeId.trim().toUpperCase() == 'COO-1300';
+
+  /// Top executive leaders with company-wide operational visibility and authority.
+  bool get isExecutiveLeader =>
+      isCompanyCeo || isCompanyCoo || role == EmployeeRole.superAdmin;
+
   /// CEO approval is an assigned workflow stage, not a generic administrator
   /// capability. Treating every super administrator as CEO allowed unrelated
   /// executive accounts to advance a request after their own manager decision.
   bool get canReviewCeoStage => isCompanyCeo;
+
+  /// Executive review authority for company operations and division approvals.
+  bool get canReviewExecutiveStage => isCompanyCeo || isCompanyCoo;
 
   UserModel({
     required this.uid,

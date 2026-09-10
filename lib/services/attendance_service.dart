@@ -225,7 +225,10 @@ class AttendanceService {
       throw Exception(locationRisk.message);
     }
 
-    final allowsExternalWork = hasWfhToday || activeFieldAssignment != null;
+    final allowsExternalWork =
+        hasWfhToday ||
+        activeFieldAssignment != null ||
+        employee.isExecutiveLeader;
     if (!geoResult.isWithinZone && !allowsExternalWork) {
       await _recordLocationDiagnostic(
         employee: employee,

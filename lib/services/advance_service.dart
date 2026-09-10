@@ -166,9 +166,13 @@ class AdvanceService {
   Stream<List<AdvanceModel>> watchTeamAdvances(UserModel reviewer) {
     Query<Map<String, dynamic>> query = _db.collection('advances');
 
-    final isCompanyCeo = reviewer.employeeId.trim().toUpperCase() == 'CEO-100';
-    if (isCompanyCeo || reviewer.role == EmployeeRole.manager) {
-      // CEO-100 can be the assigned manager while holding an HR role.
+    final reviewerCode = reviewer.employeeId.trim().toUpperCase();
+    final isCompanyCeo = reviewer.isCompanyCeo || reviewerCode == 'CEO-100';
+    final isCompanyCoo = reviewer.isCompanyCoo || reviewerCode == 'COO-1300';
+    final isExecutive =
+        isCompanyCeo || isCompanyCoo || reviewer.role == EmployeeRole.superAdmin;
+
+    if (!isExecutive && reviewer.role == EmployeeRole.manager) {
       query = query
           .where('status', isEqualTo: 'pending_manager')
           .where('managerId', isEqualTo: reviewer.uid);
@@ -236,6 +240,21 @@ class AdvanceService {
     if (!doc.exists) throw Exception('طلب السلفة غير موجود');
     final advance = AdvanceModel.fromFirestore(doc);
     final data = doc.data() ?? <String, dynamic>{};
+    final reviewerCode = reviewer.employeeId.trim().toUpperCase();
+    final isCompanyCeo = reviewer.isCompanyCeo || reviewerCode == 'CEO-100';
+    final isCompanyCoo = reviewer.isCompanyCoo || reviewerCode == 'COO-1300';
+    final isExecutive =
+        isCompanyCeo ||
+        isCompanyCoo ||
+        reviewer.role == EmployeeRole.superAdmin;
+    final isMatchingManager =
+        advance.managerId == reviewer.uid ||
+        (reviewerCode.isNotEmpty && advance.managerId == reviewerCode) ||
+        (data['managerCodes'] as List<dynamic>?)?.contains(reviewerCode) ==
+            true ||
+        (data['managerIds'] as List<dynamic>?)?.contains(reviewer.uid) ==
+            true ||
+        isExecutive;
 
     Map<String, dynamic> update;
     if (EmployeeRole.isHr(reviewer.role) && advance.status == 'pending_hr') {
@@ -254,7 +273,9 @@ class AdvanceService {
         'isRead': false,
       };
     } else if (data['advanceRouteStage'] == 'ceo' &&
-        advance.managerId == reviewer.uid) {
+        (advance.managerId == reviewer.uid ||
+            advance.managerId == 'CEO-100' ||
+            isCompanyCeo)) {
       final accountant = await _findAdvanceAccountant();
       update = {
         'status': 'pending_manager',
@@ -269,7 +290,7 @@ class AdvanceService {
         ]),
       };
     } else if (data['advanceRouteStage'] == 'accounting' &&
-        advance.managerId == reviewer.uid) {
+        (advance.managerId == reviewer.uid || isExecutive)) {
       update = {
         'status': 'approved',
         'advanceRouteStage': 'completed',
@@ -281,6 +302,9 @@ class AdvanceService {
         ]),
       };
     } else {
+      if (!isMatchingManager) {
+        throw Exception('هذا الطلب ينتظر قرار مدير آخر.');
+      }
       update = _nextManagerApprovalUpdate(
         data: data,
         reviewerId: reviewer.uid,

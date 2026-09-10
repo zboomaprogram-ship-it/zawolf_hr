@@ -48,18 +48,26 @@ final class FirestoreRequestVisibilityDataSource
     // them exactly like the current HR role so a valid HR reviewer does not
     // accidentally fall back to the manager-only query below.
     final role = query.actorScope.role.trim().toLowerCase();
-    final isHrOrAdmin = const <String>{
-      'hr',
-      'hr_admin',
-      'hr_manager',
-      'super_admin',
-      'admin',
-    }.contains(role);
+    final isExecutive =
+        query.actorScope.isExecutive ||
+        query.actorScope.employeeCode?.trim().toUpperCase() == 'CEO-100' ||
+        role == 'ceo' ||
+        role == 'coo';
+    final isHrOrAdmin =
+        isExecutive ||
+        const <String>{
+          'hr',
+          'hr_admin',
+          'hr_manager',
+          'super_admin',
+          'admin',
+        }.contains(role);
     try {
       // Legacy requests have one `managerId`; current sequential approvals
       // preserve the full chain in `managerIds`. Query both compatible shapes
       // and de-duplicate by document id so a secondary approver never loses a
       // valid request and a document containing both fields appears once.
+      final empCode = query.actorScope.employeeCode?.trim() ?? '';
       final snapshots = collection == 'attendance'
           ? (isHrOrAdmin
                 ? <Future<QuerySnapshot<Map<String, dynamic>>>>[
@@ -85,6 +93,24 @@ final class FirestoreRequestVisibilityDataSource
                   .where('managerIds', arrayContains: query.actorScope.actorId)
                   .limit(limit)
                   .get(),
+              request
+                  .where('currentApproverId', isEqualTo: query.actorScope.actorId)
+                  .limit(limit)
+                  .get(),
+              if (empCode.isNotEmpty) ...[
+                request
+                    .where('managerId', isEqualTo: empCode)
+                    .limit(limit)
+                    .get(),
+                request
+                    .where('managerCodes', arrayContains: empCode)
+                    .limit(limit)
+                    .get(),
+                request
+                    .where('currentApproverId', isEqualTo: empCode)
+                    .limit(limit)
+                    .get(),
+              ],
             ];
       final docs = (await Future.wait(snapshots))
           .expand((snapshot) => snapshot.docs)

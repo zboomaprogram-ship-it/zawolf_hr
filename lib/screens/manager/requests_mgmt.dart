@@ -820,6 +820,13 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
             authService.currentUser!,
             reason,
           );
+        } else if (type == 'resignation') {
+          await _resignationService.review(
+            resignationId: requestId,
+            reviewer: authService.currentUser!,
+            approve: false,
+            comment: reason,
+          );
         }
 
         if (mounted) {
@@ -1257,6 +1264,277 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
     }
   }
 
+  Future<void> _showInPlaceRequestAction(
+    BuildContext context,
+    RequestVisibilityRecord record,
+    UserModel reviewer,
+    List<Tab> tabs,
+  ) async {
+    final theme = Theme.of(context);
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: true,
+      builder: (dialogContext) {
+        return Directionality(
+          textDirection: TextDirection.rtl,
+          child: Dialog(
+            backgroundColor: ZaWolfColors.surface01,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+              side: const BorderSide(color: ZaWolfColors.surface03, width: 1),
+            ),
+            insetPadding:
+                const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+            child: ConstrainedBox(
+              constraints:
+                  const BoxConstraints(maxWidth: 680, maxHeight: 720),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+                    child: Row(
+                      children: [
+                        Icon(
+                          RequestTypeStyle.fromSourceType(
+                            record.sourceType,
+                          ).icon,
+                          color: RequestTypeStyle.fromSourceType(
+                            record.sourceType,
+                          ).borderColor,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'تفاصيل وإجراء الطلب',
+                            style: theme.textTheme.titleMedium?.copyWith(
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ),
+                        TextButton.icon(
+                          onPressed: () {
+                            Navigator.of(dialogContext).pop();
+                            _navigateToRecordCategory(context, record, tabs);
+                          },
+                          icon: const Icon(Icons.open_in_new, size: 15),
+                          label: const Text(
+                            'انتقال للقسم',
+                            style: TextStyle(fontSize: 12),
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(
+                            Icons.close,
+                            color: ZaWolfColors.textSecondary,
+                          ),
+                          onPressed: () => Navigator.of(dialogContext).pop(),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Divider(height: 1, color: ZaWolfColors.surface03),
+                  Flexible(
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.all(16),
+                      child: StreamBuilder<
+                          DocumentSnapshot<Map<String, dynamic>>>(
+                        stream: _db
+                            .collection(record.sourceReference)
+                            .doc(record.stableId)
+                            .snapshots(),
+                        builder: (context, snapshot) {
+                          if (snapshot.connectionState ==
+                              ConnectionState.waiting) {
+                            return const Center(
+                              child: Padding(
+                                padding: EdgeInsets.all(32),
+                                child: CircularProgressIndicator(
+                                  color: ZaWolfColors.primaryCyan,
+                                ),
+                              ),
+                            );
+                          }
+                          if (!snapshot.hasData || !snapshot.data!.exists) {
+                            return const Center(
+                              child: Padding(
+                                padding: EdgeInsets.all(24),
+                                child: Text(
+                                  'تعذر العثور على بيانات الطلب أو تم حذفه.',
+                                  style: TextStyle(
+                                    color: ZaWolfColors.textSecondary,
+                                  ),
+                                ),
+                              ),
+                            );
+                          }
+                          final doc = snapshot.data!;
+                          return _buildInPlaceCardForRecord(
+                            doc: doc,
+                            record: record,
+                            reviewer: reviewer,
+                            theme: theme,
+                          );
+                        },
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildInPlaceCardForRecord({
+    required DocumentSnapshot<Map<String, dynamic>> doc,
+    required RequestVisibilityRecord record,
+    required UserModel reviewer,
+    required ThemeData theme,
+  }) {
+    switch (record.sourceType) {
+      case RequestSourceType.leave:
+        return _buildLeaveRequestCard(
+          doc: doc,
+          reviewer: reviewer,
+          theme: theme,
+        );
+      case RequestSourceType.permission:
+        return _buildPermissionRequestCard(
+          doc: doc,
+          reviewer: reviewer,
+          theme: theme,
+        );
+      case RequestSourceType.advance:
+        return _buildAdvanceRequestCard(
+          doc: doc,
+          reviewer: reviewer,
+          theme: theme,
+        );
+      case RequestSourceType.administrative:
+        return _buildAdministrativeRequestCard(
+          doc: doc,
+          reviewer: reviewer,
+          theme: theme,
+        );
+      case RequestSourceType.resignation:
+        return _buildResignationRequestCard(
+          doc: doc,
+          reviewer: reviewer,
+          theme: theme,
+        );
+      case RequestSourceType.attendanceCorrection:
+        return _buildCorrectionRequestCard(
+          doc: doc,
+          reviewer: reviewer,
+          theme: theme,
+        );
+      default:
+        return _buildGenericRequestCard(
+          doc: doc,
+          record: record,
+          reviewer: reviewer,
+          theme: theme,
+        );
+    }
+  }
+
+  Widget _buildGenericRequestCard({
+    required DocumentSnapshot<Map<String, dynamic>> doc,
+    required RequestVisibilityRecord record,
+    required UserModel reviewer,
+    required ThemeData theme,
+  }) {
+    final data = doc.data() ?? <String, dynamic>{};
+    final style = RequestTypeStyle.fromSourceType(record.sourceType);
+    final title =
+        record.employeeName ?? record.employeeCode ?? record.employeeId;
+    final dept = (data['department'] ?? '').toString();
+    final notes = (data['notes'] ??
+            data['reason'] ??
+            data['categoryLabel'] ??
+            '')
+        .toString();
+    final status = (data['status'] ?? '').toString();
+
+    return WolfCard(
+      borderColor: style.borderColor,
+      shadowColor: style.shadowColor,
+      borderWidth: 1.5,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildEmployeeHeader(title, record.employeeId, dept, theme),
+          const SizedBox(height: 10),
+          if (notes.isNotEmpty)
+            Text(notes, style: const TextStyle(color: Colors.white)),
+          const SizedBox(height: 8),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: RequestTypeStyle.stateColor(
+                record.lifecycleState,
+              ).withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: Text(
+              'الحالة: $status',
+              style: TextStyle(
+                color: RequestTypeStyle.stateColor(record.lifecycleState),
+                fontSize: 12,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          RequestApprovalTimeline(data: data, compact: true),
+          const SizedBox(height: 12),
+          if (_canActOnApproval(data, reviewer))
+            _buildApprovalActions(
+              disabled: _isRequestBusy(record.stableId),
+              onDelete:
+                  () => _deleteRequestDocument(
+                    collection: record.sourceReference,
+                    docId: record.stableId,
+                    requestTitle: 'الطلب',
+                  ),
+              onApprove:
+                  () => _confirmAndRun(
+                    requestId: record.stableId,
+                    title: 'اعتماد الطلب',
+                    confirmLabel: 'اعتماد',
+                    run: () async {
+                      await _db
+                          .collection(record.sourceReference)
+                          .doc(record.stableId)
+                          .update({
+                            'status': 'approved',
+                            'reviewedBy': reviewer.uid,
+                            'reviewerName': reviewer.displayName,
+                            'reviewedAt': FieldValue.serverTimestamp(),
+                          });
+                    },
+                  ),
+              onReject:
+                  () => _showRejectionDialog(
+                    requestId: record.stableId,
+                    type: record.sourceReference == 'leaves'
+                        ? 'leave'
+                        : record.sourceReference == 'permissions'
+                            ? 'permission'
+                            : record.sourceReference == 'advances'
+                                ? 'advance'
+                                : 'administrative',
+                  ),
+            ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final authService = Provider.of<AuthService>(context);
@@ -1273,20 +1551,26 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
     final canReviewSalaryDeductions = EmployeeRole.isHr(manager.role);
     final canReviewTimeCorrections = EmployeeRole.isHr(manager.role);
     final canReviewSecurity = EmployeeRole.isHr(manager.role);
+    final actorScope = RequestActorScope(
+      actorId: manager.uid,
+      role: manager.role,
+      isExecutive: manager.isExecutiveLeader,
+      employeeCode: manager.employeeId,
+    );
     final allRequestsQuery = RequestViewQuery(
-      actorScope: RequestActorScope(actorId: manager.uid, role: manager.role),
+      actorScope: actorScope,
       tab: RequestViewTab.all,
       fromDate: DateTime.utc(2020),
       toDate: DateTime.now().toUtc().add(const Duration(days: 366)),
     );
     final historyQuery = RequestViewQuery(
-      actorScope: RequestActorScope(actorId: manager.uid, role: manager.role),
+      actorScope: actorScope,
       tab: RequestViewTab.history,
       fromDate: DateTime.utc(2020),
       toDate: DateTime.now().toUtc().add(const Duration(days: 366)),
     );
     final deductionQuery = RequestViewQuery(
-      actorScope: historyQuery.actorScope,
+      actorScope: actorScope,
       tab: RequestViewTab.deductions,
       fromDate: historyQuery.fromDate,
       toDate: historyQuery.toDate,
@@ -1319,8 +1603,12 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
               query: allRequestsQuery,
               searchTerm: _searchQuery,
               onSelectRecord:
-                  (record) =>
-                      _navigateToRecordCategory(tabContext, record, tabs),
+                  (record) => _showInPlaceRequestAction(
+                    tabContext,
+                    record,
+                    manager,
+                    tabs,
+                  ),
             ),
       ),
       _buildLeavesTab(manager, theme),
@@ -2263,36 +2551,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
           return _buildLoadingState('تحميل الطلبات الإدارية...');
         }
         final pendingDocs = snapshot.data?.docs ?? [];
-        final isCompanyCeo = reviewer.canReviewCeoStage;
-        final scopedDocs =
-            isCompanyCeo
-                ? pendingDocs
-                    .where((doc) {
-                      final data = doc.data();
-                      final status = (data['status'] ?? '').toString();
-                      final currentApproverId =
-                          (data['currentApproverId'] ?? '').toString();
-                      final managerId = (data['managerId'] ?? '').toString();
-                      final ceoId = (data['ceoId'] ?? '').toString();
-                      if (data['approvalRouteVersion'] == 1) {
-                        return status == 'pending_manager' &&
-                            (currentApproverId == reviewer.uid ||
-                                currentApproverId == 'CEO-100' ||
-                                currentApproverId == reviewer.employeeId ||
-                                managerId == reviewer.uid);
-                      }
-                      return (status == 'pending_manager' &&
-                              (managerId == reviewer.uid ||
-                                  currentApproverId == reviewer.uid)) ||
-                          (status == 'pending_ceo' &&
-                              (ceoId.isEmpty ||
-                                  ceoId == reviewer.uid ||
-                                  ceoId == 'CEO-100')) ||
-                          status == 'pending_hr';
-                    })
-                    .toList(growable: false)
-                : pendingDocs;
-        final docs = _newestFirst(_visibleApprovalDocs(scopedDocs, reviewer));
+        final docs = _newestFirst(_visibleApprovalDocs(pendingDocs, reviewer));
         final target = targetRequestId?.trim() ?? '';
         final targetMissing =
             target.isNotEmpty && !docs.any((doc) => doc.id == target);
@@ -2315,119 +2574,134 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
               );
             }
             final doc = docs[targetMissing ? index - 1 : index];
-            final request = AdministrativeRequestModel.fromFirestore(doc);
-            final isTarget = target.isNotEmpty && request.id == target;
-            return Padding(
-              padding: const EdgeInsets.only(bottom: 12),
-              child: Container(
-                decoration:
-                    isTarget
-                        ? BoxDecoration(
-                          border: Border.all(
-                            color: ZaWolfColors.primaryCyan,
-                            width: 2,
-                          ),
-                          borderRadius: BorderRadius.circular(16),
-                        )
-                        : null,
-                child: WolfCard(
-                  borderColor: RequestTypeStyle.administrative.borderColor,
-                  shadowColor: RequestTypeStyle.administrative.shadowColor,
-                  borderWidth: 1.5,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _buildEmployeeHeader(
-                        request.employeeName,
-                        request.employeeId,
-                        request.department,
-                        theme,
-                      ),
-                      const SizedBox(height: 10),
-                      Text(
-                        request.categoryLabel,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      Text(request.notes),
-                      if (request.category ==
-                          AdministrativeRequestCategory.fieldMission) ...[
-                        const SizedBox(height: 6),
-                        Text(
-                          'المكان: ${request.siteName ?? '-'} · التاريخ: ${request.missionDate ?? '-'}',
-                        ),
-                        Text(
-                          'الوقت: ${request.startTime ?? '-'} - ${request.endTime ?? '-'}',
-                        ),
-                        Text(
-                          'العودة للمكتب: ${request.requiresReturnToOffice ? "نعم" : "لا"} · تسجيل الانصراف: ${request.requiresCheckout ? "مطلوب" : "غير مطلوب"}',
-                        ),
-                      ],
-                      _buildRequestDateLine(
-                        label: 'تاريخ تقديم الطلب',
-                        date: request.submittedAt,
-                        fallback: request.submittedAt,
-                      ),
-                      if ((request.attachmentUrl ?? '').isNotEmpty)
-                        Text(
-                          request.attachmentUrl!,
-                          style: const TextStyle(
-                            color: ZaWolfColors.primaryCyan,
-                          ),
-                          textDirection: TextDirection.ltr,
-                        ),
-                      RequestApprovalTimeline(data: doc.data(), compact: true),
-                      const SizedBox(height: 10),
-                      if (request.category == 'company_os')
-                        FilledButton.icon(
-                          onPressed:
-                              () => context.push(
-                                '${EmployeeRole.isHr(reviewer.role) || reviewer.role == EmployeeRole.superAdmin ? '/hr' : '/manager'}/requests/operational/${request.id}',
-                              ),
-                          icon: const Icon(Icons.route_outlined),
-                          label: const Text('فتح مسار الموافقات'),
-                        )
-                      else if (_canActOnApproval(doc.data(), reviewer))
-                        _buildApprovalActions(
-                          disabled: _isRequestBusy(request.id),
-                          onDelete:
-                              () => _deleteRequestDocument(
-                                collection: 'administrativeRequests',
-                                docId: request.id,
-                                requestTitle: 'الطلب الإداري',
-                              ),
-                          onApprove:
-                              () => _confirmAndRun(
-                                requestId: request.id,
-                                title: 'اعتماد الطلب الإداري',
-                                confirmLabel: 'اعتماد',
-                                run:
-                                    () => _administrativeRequestService.approve(
-                                      request.id,
-                                      reviewer,
-                                    ),
-                              ),
-                          onReject:
-                              () => _showRejectionDialog(
-                                requestId: request.id,
-                                type: 'administrative',
-                              ),
-                        ),
-                      _buildArchiveRequestAction(
-                        reviewer: reviewer,
-                        collection: 'administrativeRequests',
-                        requestId: request.id,
-                      ),
-                    ],
-                  ),
-                ),
-              ),
+            final isTarget = target.isNotEmpty && doc.id == target;
+            return _buildAdministrativeRequestCard(
+              doc: doc,
+              reviewer: reviewer,
+              theme: theme,
+              isTarget: isTarget,
             );
           },
         );
       },
+    );
+  }
+
+  Widget _buildAdministrativeRequestCard({
+    required DocumentSnapshot<Map<String, dynamic>> doc,
+    required UserModel reviewer,
+    required ThemeData theme,
+    bool isTarget = false,
+  }) {
+    final request = AdministrativeRequestModel.fromFirestore(doc);
+    final data = doc.data() ?? <String, dynamic>{};
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Container(
+        decoration:
+            isTarget
+                ? BoxDecoration(
+                  border: Border.all(
+                    color: ZaWolfColors.primaryCyan,
+                    width: 2,
+                  ),
+                  borderRadius: BorderRadius.circular(16),
+                )
+                : null,
+        child: WolfCard(
+          borderColor: RequestTypeStyle.administrative.borderColor,
+          shadowColor: RequestTypeStyle.administrative.shadowColor,
+          borderWidth: 1.5,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _buildEmployeeHeader(
+                request.employeeName,
+                request.employeeId,
+                request.department,
+                theme,
+              ),
+              const SizedBox(height: 10),
+              Text(
+                request.categoryLabel,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              Text(request.notes),
+              if (request.category ==
+                  AdministrativeRequestCategory.fieldMission) ...[
+                const SizedBox(height: 6),
+                Text(
+                  'المكان: ${request.siteName ?? '-'} · التاريخ: ${request.missionDate ?? '-'}',
+                ),
+                Text(
+                  'الوقت: ${request.startTime ?? '-'} - ${request.endTime ?? '-'}',
+                ),
+                Text(
+                  'العودة للمكتب: ${request.requiresReturnToOffice ? "نعم" : "لا"} · تسجيل الانصراف: ${request.requiresCheckout ? "مطلوب" : "غير مطلوب"}',
+                ),
+              ],
+              _buildRequestDateLine(
+                label: 'تاريخ تقديم الطلب',
+                date: request.submittedAt,
+                fallback: request.submittedAt,
+              ),
+              if ((request.attachmentUrl ?? '').isNotEmpty)
+                Text(
+                  request.attachmentUrl!,
+                  style: const TextStyle(
+                    color: ZaWolfColors.primaryCyan,
+                  ),
+                  textDirection: TextDirection.ltr,
+                ),
+              RequestApprovalTimeline(data: data, compact: true),
+              const SizedBox(height: 10),
+              if (request.category == 'company_os')
+                FilledButton.icon(
+                  onPressed:
+                      () => context.push(
+                        '${EmployeeRole.isHr(reviewer.role) || reviewer.role == EmployeeRole.superAdmin ? '/hr' : '/manager'}/requests/operational/${request.id}',
+                      ),
+                  icon: const Icon(Icons.route_outlined),
+                  label: const Text('فتح مسار الموافقات'),
+                )
+              else if (_canActOnApproval(data, reviewer))
+                _buildApprovalActions(
+                  disabled: _isRequestBusy(request.id),
+                  onDelete:
+                      () => _deleteRequestDocument(
+                        collection: 'administrativeRequests',
+                        docId: request.id,
+                        requestTitle: 'الطلب الإداري',
+                      ),
+                  onApprove:
+                      () => _confirmAndRun(
+                        requestId: request.id,
+                        title: 'اعتماد الطلب الإداري',
+                        confirmLabel: 'اعتماد',
+                        run:
+                            () => _administrativeRequestService.approve(
+                              request.id,
+                              reviewer,
+                            ),
+                      ),
+                  onReject:
+                      () => _showRejectionDialog(
+                        requestId: request.id,
+                        type: 'administrative',
+                      ),
+                ),
+              _buildArchiveRequestAction(
+                reviewer: reviewer,
+                collection: 'administrativeRequests',
+                requestId: request.id,
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
@@ -2772,88 +3046,107 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
         return ListView.builder(
           padding: const EdgeInsets.all(16),
           itemCount: requests.length,
-          itemBuilder: (context, index) {
-            final request = requests[index];
-            return WolfCard(
-              margin: const EdgeInsets.only(bottom: 12),
-              borderColor: RequestTypeStyle.resignation.borderColor,
-              shadowColor: RequestTypeStyle.resignation.shadowColor,
-              borderWidth: 1.5,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    request.employeeName,
-                    style: theme.textTheme.titleLarge?.copyWith(
-                      color: Colors.white,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text('القسم: ${request.department}'),
-                  Text(
-                    'تاريخ الاستقالة: ${DateFormat('yyyy/MM/dd').format(request.resignationDate)}',
-                  ),
-                  const SizedBox(height: 8),
-                  Text('السبب: ${request.reason}'),
-                  const SizedBox(height: 14),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: WolfButton(
-                          onPressed:
-                              _isRequestBusy(request.resignationId)
-                                  ? null
-                                  : () => _confirmAndRun(
-                                    requestId: request.resignationId,
-                                    title: 'اعتماد طلب الاستقالة',
-                                    confirmLabel: 'اعتماد',
-                                    run:
-                                        () => _resignationService.review(
-                                          resignationId: request.resignationId,
-                                          reviewer: reviewer,
-                                          approve: true,
-                                        ),
-                                  ),
-                          text: 'موافقة',
-                          variant: WolfButtonVariant.teal,
-                          height: 42,
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: WolfButton(
-                          onPressed:
-                              () => _showModificationDialog(
-                                requestId: request.resignationId,
-                                collection: 'resignations',
-                                userId: request.userId,
-                                requestTitle: 'طلب الاستقالة',
-                              ),
-                          text: 'طلب تعديل',
-                          variant: WolfButtonVariant.purple,
-                          height: 42,
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: WolfButton(
-                          onPressed:
-                              _isRequestBusy(request.resignationId)
-                                  ? null
-                                  : () => _rejectResignation(request, reviewer),
-                          text: 'رفض',
-                          variant: WolfButtonVariant.danger,
-                          height: 42,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
+          itemBuilder:
+              (context, index) => _buildResignationCardFromModel(
+                requests[index],
+                reviewer,
+                theme,
               ),
-            );
-          },
         );
       },
+    );
+  }
+
+  Widget _buildResignationRequestCard({
+    required DocumentSnapshot<Map<String, dynamic>> doc,
+    required UserModel reviewer,
+    required ThemeData theme,
+  }) {
+    final request = ResignationModel.fromFirestore(doc);
+    return _buildResignationCardFromModel(request, reviewer, theme);
+  }
+
+  Widget _buildResignationCardFromModel(
+    ResignationModel request,
+    UserModel reviewer,
+    ThemeData theme,
+  ) {
+    return WolfCard(
+      margin: const EdgeInsets.only(bottom: 12),
+      borderColor: RequestTypeStyle.resignation.borderColor,
+      shadowColor: RequestTypeStyle.resignation.shadowColor,
+      borderWidth: 1.5,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            request.employeeName,
+            style: theme.textTheme.titleLarge?.copyWith(
+              color: Colors.white,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text('القسم: ${request.department}'),
+          Text(
+            'تاريخ الاستقالة: ${DateFormat('yyyy/MM/dd').format(request.resignationDate)}',
+          ),
+          const SizedBox(height: 8),
+          Text('السبب: ${request.reason}'),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              Expanded(
+                child: WolfButton(
+                  onPressed:
+                      _isRequestBusy(request.resignationId)
+                          ? null
+                          : () => _confirmAndRun(
+                            requestId: request.resignationId,
+                            title: 'اعتماد طلب الاستقالة',
+                            confirmLabel: 'اعتماد',
+                            run:
+                                () => _resignationService.review(
+                                  resignationId: request.resignationId,
+                                  reviewer: reviewer,
+                                  approve: true,
+                                ),
+                          ),
+                  text: 'موافقة',
+                  variant: WolfButtonVariant.teal,
+                  height: 42,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: WolfButton(
+                  onPressed:
+                      () => _showModificationDialog(
+                        requestId: request.resignationId,
+                        collection: 'resignations',
+                        userId: request.userId,
+                        requestTitle: 'طلب الاستقالة',
+                      ),
+                  text: 'طلب تعديل',
+                  variant: WolfButtonVariant.purple,
+                  height: 42,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: WolfButton(
+                  onPressed:
+                      _isRequestBusy(request.resignationId)
+                          ? null
+                          : () => _rejectResignation(request, reviewer),
+                  text: 'رفض',
+                  variant: WolfButtonVariant.danger,
+                  height: 42,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 
@@ -2977,9 +3270,6 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
               !_resolvedRequestIds.contains(doc.id),
         )
         .toList(growable: false);
-    // HR is allowed to monitor every pending stage.  The old filter fetched
-    // pending_manager records and then silently removed them unless HR was
-    // also their assigned manager, so valid requests looked missing.
     if (_searchQuery.isNotEmpty) {
       filtered =
           filtered.where((doc) {
@@ -2993,34 +3283,6 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
               data['categoryLabel'],
             ]);
           }).toList();
-    }
-    final reviewerIsCeo = reviewer.canReviewCeoStage;
-    if (reviewerIsCeo) {
-      filtered = filtered
-          .where((doc) {
-            final data = doc.data();
-            final status = (data['status'] ?? '').toString();
-            final currentApproverId =
-                (data['currentApproverId'] ?? '').toString();
-            final managerId = (data['managerId'] ?? '').toString();
-            final ceoId = (data['ceoId'] ?? '').toString();
-            if (data['approvalRouteVersion'] == 1) {
-              return status == 'pending_manager' &&
-                  (currentApproverId == reviewer.uid ||
-                      currentApproverId == 'CEO-100' ||
-                      currentApproverId == reviewer.employeeId ||
-                      managerId == reviewer.uid);
-            }
-            return (status == 'pending_manager' &&
-                    (managerId == reviewer.uid ||
-                        currentApproverId == reviewer.uid)) ||
-                (status == 'pending_ceo' &&
-                    (ceoId.isEmpty ||
-                        ceoId == reviewer.uid ||
-                        ceoId == 'CEO-100')) ||
-                status == 'pending_hr';
-          })
-          .toList(growable: false);
     }
     return _newestFirst(filtered);
   }
@@ -3059,40 +3321,91 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
 
   bool _canActOnApproval(Map<String, dynamic> data, UserModel reviewer) {
     final status = '${data['status'] ?? ''}';
-    final isCompanyCeo = reviewer.canReviewCeoStage;
+    final reviewerCode = reviewer.employeeId.trim().toUpperCase();
+    final isCompanyCeo =
+        reviewer.canReviewCeoStage || reviewerCode == 'CEO-100';
+    final isCompanyCoo =
+        reviewer.isCompanyCoo || reviewerCode == 'COO-1300';
+    final isExecutive =
+        reviewer.isExecutiveLeader || isCompanyCeo || isCompanyCoo;
+
+    final currentApproverId =
+        (data['currentApproverId'] ?? '').toString().trim().toUpperCase();
+    final managerId = (data['managerId'] ?? '').toString().trim().toUpperCase();
+    final ceoId = (data['ceoId'] ?? '').toString().trim().toUpperCase();
+    final cooId = (data['cooId'] ?? '').toString().trim().toUpperCase();
+
+    final managerCodes = (data['managerCodes'] as List<dynamic>?)
+            ?.map((e) => e.toString().trim().toUpperCase())
+            .toList() ??
+        const <String>[];
+    final managerIds = (data['managerIds'] as List<dynamic>?)
+            ?.map((e) => e.toString().trim())
+            .toList() ??
+        const <String>[];
+
+    final isAssignedManager =
+        managerId == reviewer.uid.toUpperCase() ||
+        managerId == reviewerCode ||
+        currentApproverId == reviewer.uid.toUpperCase() ||
+        currentApproverId == reviewerCode ||
+        managerCodes.contains(reviewerCode) ||
+        managerIds.contains(reviewer.uid);
 
     if (data['approvalRouteVersion'] == 1) {
-      final currentApproverId = (data['currentApproverId'] ?? '').toString();
-      return status == 'pending_manager' &&
-          (currentApproverId == reviewer.uid ||
-              (isCompanyCeo &&
-                  (currentApproverId == 'CEO-100' ||
-                      currentApproverId == reviewer.employeeId)));
-    }
-    if (isCompanyCeo) {
       if (status == 'pending_manager') {
-        final currentApproverId = (data['currentApproverId'] ?? '').toString();
-        final managerId = (data['managerId'] ?? '').toString();
-        if (managerId == reviewer.uid ||
-            currentApproverId == reviewer.uid ||
-            currentApproverId == 'CEO-100' ||
-            currentApproverId == reviewer.employeeId) {
-          return true;
-        }
+        return isAssignedManager || isExecutive;
       }
       if (status == 'pending_ceo') {
-        final ceoId = (data['ceoId'] ?? '').toString();
-        return ceoId.isEmpty || ceoId == reviewer.uid || ceoId == 'CEO-100';
+        return isCompanyCeo;
+      }
+      if (status == 'pending_hr') {
+        return EmployeeRole.isHr(reviewer.role) || isExecutive;
+      }
+      return false;
+    }
+
+    if (isCompanyCeo) {
+      if (status == 'pending_ceo') {
+        return ceoId.isEmpty ||
+            ceoId == reviewer.uid.toUpperCase() ||
+            ceoId == reviewerCode ||
+            ceoId == 'CEO-100';
+      }
+      if (status == 'pending_manager') {
+        return isAssignedManager || reviewer.role == EmployeeRole.superAdmin;
       }
       if (status == 'pending_hr') {
         return true;
       }
     }
-    if (EmployeeRole.isHr(reviewer.role)) {
-      if (status == 'pending_hr') return true;
-      return status == 'pending_ceo' && isCompanyCeo;
+
+    if (isCompanyCoo) {
+      if (status == 'pending_coo') {
+        return cooId.isEmpty ||
+            cooId == reviewer.uid.toUpperCase() ||
+            cooId == reviewerCode ||
+            cooId == 'COO-1300';
+      }
+      if (status == 'pending_manager') {
+        return true;
+      }
+      if (status == 'pending_hr') {
+        return true;
+      }
     }
-    return status == 'pending_manager' && data['managerId'] == reviewer.uid;
+
+    if (EmployeeRole.isHr(reviewer.role)) {
+      if (status == 'pending_hr' || status == 'pending') return true;
+      if (status == 'pending_manager' && isAssignedManager) return true;
+      return false;
+    }
+
+    if (status == 'pending_manager') {
+      return isAssignedManager;
+    }
+
+    return false;
   }
 
   Stream<QuerySnapshot<Map<String, dynamic>>> _pendingStream(
@@ -3106,23 +3419,34 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
         collection == 'leaves' ||
         collection == 'permissions' ||
         collection == 'advances';
-    final reviewerIsCeo = employeeId?.trim().toUpperCase() == 'CEO-100';
+    final empCode = employeeId?.trim().toUpperCase() ?? '';
+    final reviewerIsCeo = empCode == 'CEO-100' || role == 'ceo';
+    final isCoo = empCode == 'COO-1300' || role == 'coo';
+    final isExecutive =
+        reviewerIsCeo || isCoo || role == 'super_admin' || role == EmployeeRole.superAdmin;
+    final isHr = EmployeeRole.isHr(role);
     if (usesManagerChain && reviewerIsCeo) {
       query = query.where(
         'status',
         whereIn: ['pending_manager', 'pending_ceo'],
       );
-    } else if (usesManagerChain && EmployeeRole.isHr(role)) {
+    } else if (usesManagerChain && (isExecutive || isHr)) {
       query = query.where(
         'status',
-        whereIn: ['pending', 'pending_hr', 'pending_manager'],
+        whereIn: const [
+          'pending',
+          'pending_hr',
+          'pending_manager',
+          'pending_coo',
+          'pending_ceo',
+        ],
       );
     } else if (usesManagerChain && EmployeeRole.canActAsApprovalManager(role)) {
       query = query
           .where('status', isEqualTo: 'pending_manager')
           .where('managerId', isEqualTo: reviewerId);
     } else {
-      query = query.where('status', whereIn: ['pending', 'pending_hr']);
+      query = query.where('status', whereIn: const ['pending', 'pending_hr']);
     }
     return _cachedStream(
       'pending|$collection|$reviewerId|$role',
@@ -3217,11 +3541,12 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
   }
 
   Widget _buildLeaveRequestCard({
-    required QueryDocumentSnapshot<Map<String, dynamic>> doc,
+    required DocumentSnapshot<Map<String, dynamic>> doc,
     required UserModel reviewer,
     required ThemeData theme,
   }) {
     final leave = LeaveModel.fromFirestore(doc);
+    final data = doc.data() ?? <String, dynamic>{};
     return Padding(
       padding: const EdgeInsets.only(bottom: 16.0),
       child: WolfCard(
@@ -3303,9 +3628,9 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                 ],
               ),
             ],
-            RequestApprovalTimeline(data: doc.data(), compact: true),
+            RequestApprovalTimeline(data: data, compact: true),
             const SizedBox(height: 16),
-            if (_canActOnApproval(doc.data(), reviewer))
+            if (_canActOnApproval(data, reviewer))
               _buildApprovalActions(
                 disabled: _isRequestBusy(leave.leaveId),
                 onDelete:
@@ -3612,15 +3937,25 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
     UserModel reviewer,
   ) {
     var query = _db.collection('permissions') as Query<Map<String, dynamic>>;
-    final isCompanyCeo = reviewer.employeeId.trim().toUpperCase() == 'CEO-100';
-    if (isCompanyCeo) {
-      query = query
-          .where('status', isEqualTo: 'pending_manager')
-          .where('managerId', isEqualTo: reviewer.uid);
-    } else if (EmployeeRole.isHr(reviewer.role)) {
+    final isCompanyCeo =
+        reviewer.employeeId.trim().toUpperCase() == 'CEO-100';
+    final reviewerCode = reviewer.employeeId.trim().toUpperCase();
+    final isExecutive =
+        reviewer.isExecutiveLeader ||
+        reviewer.canReviewCeoStage ||
+        isCompanyCeo ||
+        reviewerCode == 'COO-1300' ||
+        reviewer.role == EmployeeRole.superAdmin;
+    if (isExecutive || EmployeeRole.isHr(reviewer.role)) {
       query = query.where(
         'status',
-        whereIn: ['pending', 'pending_hr', 'pending_manager'],
+        whereIn: const [
+          'pending',
+          'pending_hr',
+          'pending_manager',
+          'pending_coo',
+          'pending_ceo',
+        ],
       );
     } else if (EmployeeRole.canActAsApprovalManager(reviewer.role)) {
       query = query
@@ -3713,11 +4048,12 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
   }
 
   Widget _buildPermissionRequestCard({
-    required QueryDocumentSnapshot<Map<String, dynamic>> doc,
+    required DocumentSnapshot<Map<String, dynamic>> doc,
     required UserModel reviewer,
     required ThemeData theme,
   }) {
     final perm = PermissionModel.fromFirestore(doc);
+    final data = doc.data() ?? <String, dynamic>{};
     return Padding(
       padding: const EdgeInsets.only(bottom: 16.0),
       child: WolfCard(
@@ -3802,7 +4138,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
               'السبب: ${perm.reason}',
               style: const TextStyle(color: ZaWolfColors.textSecondary),
             ),
-            RequestApprovalTimeline(data: doc.data(), compact: true),
+            RequestApprovalTimeline(data: data, compact: true),
             const SizedBox(height: 8),
             Text(
               perm.status == 'pending_hr'
@@ -3812,7 +4148,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
             ),
             const SizedBox(height: 16),
 
-            if (_canActOnApproval(doc.data(), reviewer))
+            if (_canActOnApproval(data, reviewer))
               _buildApprovalActions(
                 disabled: _isRequestBusy(perm.permissionId),
                 onDelete:
@@ -3858,7 +4194,12 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
 
   Widget _buildAdvancesTab(UserModel reviewer, ThemeData theme) {
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-      stream: _pendingStream('advances', reviewer.uid, reviewer.role),
+      stream: _pendingStream(
+        'advances',
+        reviewer.uid,
+        reviewer.role,
+        employeeId: reviewer.employeeId,
+      ),
       builder: (context, snapshot) {
         if (snapshot.hasError) {
           return _buildStreamError('تعذر تحميل طلبات السلف');
@@ -3937,11 +4278,12 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
   }
 
   Widget _buildAdvanceRequestCard({
-    required QueryDocumentSnapshot<Map<String, dynamic>> doc,
+    required DocumentSnapshot<Map<String, dynamic>> doc,
     required UserModel reviewer,
     required ThemeData theme,
   }) {
     final advance = AdvanceModel.fromFirestore(doc);
+    final data = doc.data() ?? <String, dynamic>{};
     return Padding(
       padding: const EdgeInsets.only(bottom: 16.0),
       child: WolfCard(
@@ -3973,7 +4315,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                 style: const TextStyle(color: ZaWolfColors.textSecondary),
               ),
             const SizedBox(height: 16),
-            if (_canActOnApproval(doc.data(), reviewer))
+            if (_canActOnApproval(data, reviewer))
               _buildApprovalActions(
                 disabled: _isRequestBusy(advance.advanceId),
                 onDelete:
@@ -4013,7 +4355,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
             ),
             const SizedBox(height: 8),
             Text(
-              'المرحلة الحالية: ${_advanceStageLabel(doc.data())}',
+              'المرحلة الحالية: ${_advanceStageLabel(data)}',
               style: const TextStyle(color: ZaWolfColors.primaryCyan),
             ),
           ],
@@ -4893,11 +5235,11 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
   }
 
   Widget _buildCorrectionRequestCard({
-    required QueryDocumentSnapshot<Map<String, dynamic>> doc,
+    required DocumentSnapshot<Map<String, dynamic>> doc,
     required UserModel reviewer,
     required ThemeData theme,
   }) {
-    final data = doc.data();
+    final data = doc.data() ?? <String, dynamic>{};
     final original = data['originalCheckInTime'] as Timestamp?;
     final requested = data['requestedCheckInTime'] as Timestamp?;
     return WolfCard(

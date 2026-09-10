@@ -6,11 +6,15 @@ final class RequestActorScope {
   const RequestActorScope({
     required this.actorId,
     required this.role,
+    this.isExecutive = false,
+    this.employeeCode,
     this.teamEmployeeIds = const <String>[],
   });
 
   final String actorId;
   final String role;
+  final bool isExecutive;
+  final String? employeeCode;
   final List<String> teamEmployeeIds;
 }
 

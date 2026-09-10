@@ -32,12 +32,18 @@ class ResignationService {
 
   Stream<List<ResignationModel>> watchPending(UserModel reviewer) {
     Query<Map<String, dynamic>> query = _db.collection('resignations');
-    final isCompanyCeo = reviewer.employeeId.trim().toUpperCase() == 'CEO-100';
-    if (isCompanyCeo) {
-      query = query
-          .where('status', isEqualTo: 'pending_manager')
-          .where('managerId', isEqualTo: reviewer.uid);
-    } else if (reviewer.role == EmployeeRole.hrManager) {
+    final reviewerCode = reviewer.employeeId.trim().toUpperCase();
+    final isCompanyCeo = reviewer.isCompanyCeo || reviewerCode == 'CEO-100';
+    final isCompanyCoo = reviewer.isCompanyCoo || reviewerCode == 'COO-1300';
+    final isExecutive =
+        isCompanyCeo || isCompanyCoo || reviewer.role == EmployeeRole.superAdmin;
+    if (isExecutive) {
+      query = query.where(
+        'status',
+        whereIn: const ['pending_manager', 'pending_hr'],
+      );
+    } else if (reviewer.role == EmployeeRole.hrManager ||
+        EmployeeRole.isHr(reviewer.role)) {
       query = query.where('status', isEqualTo: 'pending_hr');
     } else {
       query = query
@@ -148,8 +154,17 @@ class ResignationService {
         'isRead': true,
       });
     } else {
-      if (request.status != 'pending_manager' ||
-          request.managerId != reviewer.uid) {
+      final reviewerCode = reviewer.employeeId.trim().toUpperCase();
+      final isMatchingManager =
+          request.managerId == reviewer.uid ||
+          (reviewerCode.isNotEmpty && request.managerId == reviewerCode) ||
+          (snapshot.data()?['managerCodes'] as List<dynamic>?)?.contains(
+                reviewerCode,
+              ) ==
+              true ||
+          request.managerIds.contains(reviewer.uid) ||
+          reviewer.isExecutiveLeader;
+      if (request.status != 'pending_manager' || !isMatchingManager) {
         throw Exception('هذا الطلب ليس في مرحلة موافقتك.');
       }
       final nextIndex = request.managerApprovalIndex + 1;

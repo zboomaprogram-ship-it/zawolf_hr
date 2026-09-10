@@ -516,9 +516,26 @@ class PermissionService {
     final reviewerName =
         (reviewerDoc.data()?['displayName'] as String?)?.trim() ?? '';
     final reviewerEmployeeId =
-        (reviewerDoc.data()?['employeeId'] as String?)?.trim().toUpperCase() ??
+        ((reviewerDoc.data()?['employeeId'] ??
+                reviewerDoc.data()?['employeeCode']) as String?)
+            ?.trim()
+            .toUpperCase() ??
         '';
     final isCompanyCeo = reviewerEmployeeId == 'CEO-100';
+    final isCompanyCoo = reviewerEmployeeId == 'COO-1300';
+    final isExecutive =
+        isCompanyCeo || isCompanyCoo || reviewerRole == EmployeeRole.superAdmin;
+    final isMatchingManager =
+        perm.managerId == reviewerId ||
+        (reviewerEmployeeId.isNotEmpty &&
+            perm.managerId == reviewerEmployeeId) ||
+        (doc.data()?['managerCodes'] as List<dynamic>?)?.contains(
+              reviewerEmployeeId,
+            ) ==
+            true ||
+        (doc.data()?['managerIds'] as List<dynamic>?)?.contains(reviewerId) ==
+            true ||
+        isExecutive;
     if (perm.status == 'pending_hr' && perm.userId == reviewerId) {
       throw Exception('لا يمكن اعتماد طلبك الشخصي. يجب أن يراجعه HR آخر.');
     }
@@ -651,11 +668,10 @@ class PermissionService {
       throw Exception('طلب الإذن ليس في مرحلة موافقة المدير.');
     }
 
-    if (!isCompanyCeo && !EmployeeRole.canActAsApprovalManager(reviewerRole)) {
+    if (!isExecutive && !EmployeeRole.canActAsApprovalManager(reviewerRole)) {
       throw Exception('هذا الطلب ينتظر موافقة المدير.');
     }
-    if (perm.managerId != reviewerId &&
-        reviewerRole != EmployeeRole.superAdmin) {
+    if (!isMatchingManager) {
       throw Exception(
         'هذا الطلب ينتظر موافقة المدير المحدد في المرحلة الحالية.',
       );
@@ -775,6 +791,27 @@ class PermissionService {
     final reviewerRole = (reviewerDoc.data()?['role'] as String?) ?? 'employee';
     final reviewerName =
         (reviewerDoc.data()?['displayName'] as String?)?.trim() ?? '';
+    final reviewerEmployeeId =
+        ((reviewerDoc.data()?['employeeId'] ??
+                reviewerDoc.data()?['employeeCode']) as String?)
+            ?.trim()
+            .toUpperCase() ??
+        '';
+    final isCompanyCeo = reviewerEmployeeId == 'CEO-100';
+    final isCompanyCoo = reviewerEmployeeId == 'COO-1300';
+    final isExecutive =
+        isCompanyCeo || isCompanyCoo || reviewerRole == EmployeeRole.superAdmin;
+    final isMatchingManager =
+        perm.managerId == reviewerId ||
+        (reviewerEmployeeId.isNotEmpty &&
+            perm.managerId == reviewerEmployeeId) ||
+        (doc.data()?['managerCodes'] as List<dynamic>?)?.contains(
+              reviewerEmployeeId,
+            ) ==
+            true ||
+        (doc.data()?['managerIds'] as List<dynamic>?)?.contains(reviewerId) ==
+            true ||
+        isExecutive;
     final isHrStage = perm.status == 'pending_hr'; // Legacy requests only.
     if (isHrStage && perm.userId == reviewerId) {
       throw Exception('لا يمكن رفض طلبك الشخصي. يجب أن يراجعه HR آخر.');
@@ -801,9 +838,7 @@ class PermissionService {
         reviewerRole != EmployeeRole.hrManager) {
       throw Exception('طلبات مالك النظام يراجعها HR فقط.');
     }
-    if (!isHrStage &&
-        perm.managerId != reviewerId &&
-        reviewerRole != EmployeeRole.superAdmin) {
+    if (!isHrStage && !isMatchingManager) {
       throw Exception('هذا الطلب ينتظر قرار مدير آخر.');
     }
 

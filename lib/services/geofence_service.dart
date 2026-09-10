@@ -140,25 +140,47 @@ class GeofenceService {
           'بيانات مواقع الحضور تحتاج تحديثاً. اتصل بالإنترنت ثم أعد المحاولة قبل تسجيل الحضور.',
         );
       }
-      return _validateAssignedLocations(
-        employee,
-        assignmentSnapshot.assignments,
-        strictLocationOnly: strictLocationOnly,
-      );
+      if (assignmentSnapshot.assignments.isNotEmpty ||
+          !employee.isExecutiveLeader) {
+        return _validateAssignedLocations(
+          employee,
+          assignmentSnapshot.assignments,
+          strictLocationOnly: strictLocationOnly,
+        );
+      }
     }
 
     // 2. Fetch employee's assigned location from Firestore
-    final locationRef = _db.collection('locations').doc(employee.locationId);
-    DocumentSnapshot<Map<String, dynamic>> locationDoc;
-    try {
-      locationDoc = await locationRef.get();
-    } catch (_) {
-      locationDoc = await locationRef.get(
-        const GetOptions(source: Source.cache),
-      );
+    DocumentSnapshot<Map<String, dynamic>>? locationDoc;
+    if (employee.locationId.trim().isNotEmpty) {
+      final locationRef = _db.collection('locations').doc(employee.locationId);
+      try {
+        locationDoc = await locationRef.get();
+      } catch (_) {
+        try {
+          locationDoc = await locationRef.get(
+            const GetOptions(source: Source.cache),
+          );
+        } catch (_) {}
+      }
     }
 
-    if (!locationDoc.exists) {
+    if (locationDoc == null || !locationDoc.exists) {
+      if (employee.isExecutiveLeader) {
+        try {
+          final activeSnap = await _db
+              .collection('locations')
+              .where('isActive', isEqualTo: true)
+              .limit(1)
+              .get();
+          if (activeSnap.docs.isNotEmpty) {
+            locationDoc = activeSnap.docs.first;
+          }
+        } catch (_) {}
+      }
+    }
+
+    if (locationDoc == null || !locationDoc.exists) {
       throw Exception('لم يتم العثور على الفرع المسند للموظف.');
     }
 
@@ -197,9 +219,10 @@ class GeofenceService {
       }
     }
 
-    // Super Admin oversees all branches and may record attendance at any active location
+    // Executive leaders oversee all branches and may record attendance at any active location
     if (distanceMeters > location.geofenceRadiusMeters &&
-        employee.role == EmployeeRole.superAdmin) {
+        (employee.role == EmployeeRole.superAdmin ||
+            employee.isExecutiveLeader)) {
       try {
         final activeLocationsSnap = await _db
             .collection('locations')

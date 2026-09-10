@@ -168,6 +168,13 @@ class AdministrativeRequestService {
           .limit(100)
           .snapshots();
     }
+    if (reviewer.isCompanyCoo) {
+      return _db
+          .collection('administrativeRequests')
+          .where('status', isEqualTo: 'pending_manager')
+          .limit(100)
+          .snapshots();
+    }
     return _db
         .collection('administrativeRequests')
         .where('status', isEqualTo: 'pending_manager')
@@ -277,7 +284,23 @@ class AdministrativeRequestService {
       );
       return;
     }
-    if (status != 'pending_manager' || data['managerId'] != reviewer.uid) {
+    final reviewerCode = reviewer.employeeId.trim().toUpperCase();
+    final isMatchingManager =
+        data['managerId'] == reviewer.uid ||
+        (reviewerCode.isNotEmpty && data['managerId'] == reviewerCode) ||
+        data['currentApproverId'] == reviewer.uid ||
+        (reviewerCode.isNotEmpty &&
+            data['currentApproverId'] == reviewerCode) ||
+        (data['managerCodes'] as List<dynamic>?)?.contains(reviewerCode) ==
+            true ||
+        (data['managerIds'] as List<dynamic>?)?.contains(reviewer.uid) ==
+            true ||
+        reviewer.isExecutiveLeader;
+    if (status != 'pending_manager') {
+      throw Exception('هذا الطلب ليس في مرحلة موافقة المدير.');
+    }
+    if ((status != 'pending_manager' || data['managerId'] != reviewer.uid) &&
+        !isMatchingManager) {
       throw Exception('هذا الطلب ينتظر مراجعاً آخر.');
     }
     final ids =
@@ -400,10 +423,20 @@ class AdministrativeRequestService {
     }
     final isCeo = reviewer.canReviewCeoStage;
     final ceoId = (data['ceoId'] ?? '').toString();
+    final reviewerCode = reviewer.employeeId.trim().toUpperCase();
+    final isMatchingManager =
+        data['managerId'] == reviewer.uid ||
+        (reviewerCode.isNotEmpty && data['managerId'] == reviewerCode) ||
+        data['currentApproverId'] == reviewer.uid ||
+        (reviewerCode.isNotEmpty &&
+            data['currentApproverId'] == reviewerCode) ||
+        (data['managerCodes'] as List<dynamic>?)?.contains(reviewerCode) ==
+            true ||
+        (data['managerIds'] as List<dynamic>?)?.contains(reviewer.uid) ==
+            true ||
+        reviewer.isExecutiveLeader;
     final allowed =
-        (status == 'pending_manager' &&
-            (data['managerId'] == reviewer.uid ||
-                data['currentApproverId'] == reviewer.uid)) ||
+        (status == 'pending_manager' && isMatchingManager) ||
         (status == 'pending_ceo' &&
             isCeo &&
             (ceoId.isEmpty || ceoId == reviewer.uid || ceoId == 'CEO-100')) ||

@@ -766,6 +766,23 @@ class LeaveService {
     final reviewerDoc = await _db.collection('users').doc(reviewerId).get();
     final reviewerName =
         (reviewerDoc.data()?['displayName'] as String?)?.trim() ?? '';
+    final reviewerCode =
+        ((reviewerDoc.data()?['employeeId'] ??
+                reviewerDoc.data()?['employeeCode']) as String?)
+            ?.trim()
+            .toUpperCase() ??
+        '';
+    final isCompanyCeo = reviewerCode == 'CEO-100';
+    final isCompanyCoo = reviewerCode == 'COO-1300';
+    final isExecutive =
+        isCompanyCeo || isCompanyCoo || role == EmployeeRole.superAdmin;
+    final isMatchingManager =
+        leave.managerId == reviewerId ||
+        (reviewerCode.isNotEmpty && leave.managerId == reviewerCode) ||
+        (data['managerCodes'] as List<dynamic>?)?.contains(reviewerCode) ==
+            true ||
+        (data['managerIds'] as List<dynamic>?)?.contains(reviewerId) == true ||
+        isExecutive;
     final requiresCeoApproval =
         (data['requiresCeoApproval'] as bool?) ??
         LeaveTypePolicy.requiresCeoApproval(
@@ -774,10 +791,11 @@ class LeaveService {
         );
 
     if (leave.status == 'pending_ceo') {
-      final reviewerCode =
-          (reviewerDoc.data()?['employeeId'] as String?)?.trim() ?? '';
       if (!reviewerCode.toUpperCase().startsWith('CEO-') ||
-          data['ceoId'] != reviewerId) {
+          (data['ceoId'] != null &&
+              data['ceoId'] != reviewerId &&
+              data['ceoId'] != 'CEO-100' &&
+              reviewerCode != 'CEO-100')) {
         throw Exception('هذه المرحلة متاحة للـ CEO المعيّن للموظف فقط.');
       }
       final event = _approvalEvent(
@@ -883,7 +901,7 @@ class LeaveService {
         };
         isFinalApproval = nextStatus == 'approved';
       } else {
-        if (leave.managerId != reviewerId && role != EmployeeRole.superAdmin) {
+        if (!isMatchingManager) {
           throw Exception('هذا الطلب ينتظر قرار مدير آخر.');
         }
         update = _nextManagerApprovalUpdate(
@@ -896,7 +914,7 @@ class LeaveService {
       }
     } else {
       // Manager
-      if (leave.managerId != reviewerId) {
+      if (!isMatchingManager) {
         throw Exception('هذا الطلب ينتظر قرار مدير آخر.');
       }
       update = _nextManagerApprovalUpdate(
@@ -1048,10 +1066,29 @@ class LeaveService {
     final reviewerRole = reviewerDoc.data()?['role'] as String? ?? '';
     final reviewerName =
         (reviewerDoc.data()?['displayName'] as String?)?.trim() ?? '';
+    final reviewerCode =
+        ((reviewerDoc.data()?['employeeId'] ??
+                reviewerDoc.data()?['employeeCode']) as String?)
+            ?.trim()
+            .toUpperCase() ??
+        '';
+    final isCompanyCeo = reviewerCode == 'CEO-100';
+    final isCompanyCoo = reviewerCode == 'COO-1300';
+    final isExecutive =
+        isCompanyCeo || isCompanyCoo || reviewerRole == EmployeeRole.superAdmin;
+    final isMatchingManager =
+        leave.managerId == reviewerId ||
+        (reviewerCode.isNotEmpty && leave.managerId == reviewerCode) ||
+        (doc.data()?['managerCodes'] as List<dynamic>?)?.contains(
+              reviewerCode,
+            ) ==
+            true ||
+        (doc.data()?['managerIds'] as List<dynamic>?)?.contains(reviewerId) ==
+            true ||
+        isExecutive;
+
     if (leave.status == 'pending_ceo') {
-      final reviewerCode =
-          (reviewerDoc.data()?['employeeId'] as String?)?.trim() ?? '';
-      if (reviewerCode != 'CEO-100') {
+      if (!reviewerCode.toUpperCase().startsWith('CEO-') && !isCompanyCeo) {
         throw Exception('رفض هذا الطلب متاح لحساب CEO-100 فقط.');
       }
     }
@@ -1081,9 +1118,7 @@ class LeaveService {
         throw Exception('طلبات مالك النظام يراجعها HR فقط.');
       }
     }
-    if (leave.status == 'pending_manager' &&
-        leave.managerId != reviewerId &&
-        reviewerRole != EmployeeRole.superAdmin) {
+    if (leave.status == 'pending_manager' && !isMatchingManager) {
       throw Exception('هذا الطلب ينتظر قرار مدير آخر.');
     }
 
