@@ -82,6 +82,8 @@ class ZaWolfTheme {
       colorScheme: const ColorScheme.dark(
         primary: ZaWolfColors.primaryCyan,
         onPrimary: ZaWolfColors.background,
+        primaryContainer: Color(0xFF164450),
+        onPrimaryContainer: ZaWolfColors.textPrimary,
         secondary: ZaWolfColors.wolfGreen,
         onSecondary: ZaWolfColors.background,
         tertiary: ZaWolfColors.perfGold,

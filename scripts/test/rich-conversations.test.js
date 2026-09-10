@@ -307,3 +307,43 @@ test('eligible-contacts and contact-departments route through router without thr
   assert.equal(response.data.departments[0].name, 'Data Analytics');
 });
 
+test('posting message to direct channel with encoded colon and admin object succeeds', async () => {
+  const { handleRichConversationRequest } = require('../conversations/router');
+  let response;
+  const db = seed({
+    'conversations/direct:abc': {
+      kind: 'direct',
+      state: 'active',
+      memberUserIds: ['alice', 'bob'],
+      participantUserIds: ['alice', 'bob'],
+      name: 'بوب',
+      revision: 1,
+      changeSequence: 0,
+      updatedAt: new Date(),
+      latestActivityAt: new Date(),
+    },
+    'users/alice': { isActive: true, displayName: 'أليس' },
+    'users/bob': { isActive: true, displayName: 'بوب' },
+  });
+  const mockAdmin = require('firebase-admin');
+  await handleRichConversationRequest({
+    req: { method: 'POST' },
+    res: {},
+    url: new URL('https://notification.zawolf.ai/conversations/v2/channels/direct%3Aabc/messages'),
+    db,
+    admin: mockAdmin,
+    actor: { uid: 'alice', role: 'employee', displayName: 'أليس' },
+    enabled: true,
+    readJsonBody: async () => ({
+      operationId: 'op-direct-send',
+      body: 'رسالة خاصة',
+      attachmentResourceIds: [],
+    }),
+    sendJson: (_res, status, data) => { response = { status, data }; },
+  });
+  assert.equal(response.status, 200);
+  assert.equal(response.data.ok, true);
+  assert.equal(response.data.message.body, 'رسالة خاصة');
+});
+
+

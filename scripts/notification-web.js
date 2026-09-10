@@ -9,6 +9,7 @@ const {
   watchPendingConversationOutboxes,
   initializeFirebase,
 } = require('./dispatch-notifications');
+const { isOneSignalConfigured } = require('./onesignal');
 const { createRuntimeLease } = require('./runtime-lease');
 const { queueAttendanceReminders } = require('./attendance-reminders');
 const { processAutomaticAttendance } = require('./auto-attendance');
@@ -4092,6 +4093,8 @@ const server = http.createServer(async (req, res) => {
         ? 'connected'
         : 'standby',
       backgroundScheduler: backgroundSchedulerEnabled ? 'internal' : 'external_cron',
+      // This exposes only readiness, never a OneSignal identifier or key.
+      oneSignal: { configured: isOneSignalConfigured() },
       workerId: runtimeLease?.owner || null,
       firestoreQuotaBlockedUntil: firestoreQuotaBlockedUntil
         ? new Date(firestoreQuotaBlockedUntil).toISOString()

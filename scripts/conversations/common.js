@@ -2,6 +2,12 @@
 const crypto = require('node:crypto');
 const { safeId, canAccessDepartment, isConversationMember } = require('../conversation-operations');
 const { isHrOrAdmin } = require('../phase007-authorization');
+let FieldValue;
+try {
+  FieldValue = require('firebase-admin/firestore').FieldValue;
+} catch (_) {
+  // Optional in environments where firebase-admin is mocked or uninstalled
+}
 const hash = (...parts) => crypto.createHash('sha256').update(JSON.stringify(parts)).digest('hex');
 const notificationPreferenceId = (channelId, userId) => `chat_pref_${hash(channelId, userId).slice(0, 40)}`;
 const iso = value => value?.toDate?.().toISOString() || (value instanceof Date ? value.toISOString() : typeof value === 'string' ? value : '');
@@ -89,10 +95,15 @@ function replay(snap, op) {
 }
 function receipt(tx, op, result, now) { tx.set(op.ref, { fingerprint: op.fingerprint, result, createdAt: now }); return result; }
 function notify(tx, db, ids, key, title, body, data, now, admin) {
+  const inc = FieldValue?.increment
+    ? FieldValue.increment(1)
+    : admin?.firestore?.FieldValue?.increment
+      ? admin.firestore.FieldValue.increment(1)
+      : 1;
   for (const id of [...new Set(ids)].filter(safeId)) {
     const notificationId = `chat_${hash(key, id).slice(0, 40)}`;
     tx.set(db.collection('notifications').doc(id).collection('items').doc(notificationId), { notificationId, type: 'conversation', title, body, data, isRead: false, pushSent: false, createdAt: now });
-    if (admin) tx.set(db.collection('users').doc(id), { unreadNotifications: admin.firestore.FieldValue.increment(1) }, { merge: true });
+    if (admin || FieldValue) tx.set(db.collection('users').doc(id), { unreadNotifications: inc }, { merge: true });
   }
 }
 // Company conversations deliberately do not duplicate every employee id onto

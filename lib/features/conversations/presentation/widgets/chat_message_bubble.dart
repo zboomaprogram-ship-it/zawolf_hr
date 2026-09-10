@@ -33,173 +33,232 @@ class ChatMessageBubble extends StatelessWidget {
     for (final emoji in message.reactions.values) {
       reactions[emoji] = (reactions[emoji] ?? 0) + 1;
     }
+    final bubbleColor =
+        mine ? const Color(0xFF80DEEA) : scheme.surfaceContainerLow;
+    final textColor = mine ? Colors.black : Colors.white;
+    final senderColor = mine ? const Color(0xFF0F3E48) : scheme.primary;
+    final metaColor = mine ? const Color(0xFF1E293B) : scheme.onSurfaceVariant;
+    final actionIconColor =
+        mine ? const Color(0xFF0F3E48) : scheme.onSurfaceVariant;
+    final errorColor = mine ? const Color(0xFFB91C1C) : scheme.error;
+
     return Align(
       alignment:
           mine
               ? AlignmentDirectional.centerEnd
               : AlignmentDirectional.centerStart,
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 560),
+        constraints: const BoxConstraints(minWidth: 120, maxWidth: 560),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
           child: Material(
-            color: mine ? scheme.primaryContainer : scheme.surfaceContainerLow,
+            color: bubbleColor,
             borderRadius: BorderRadius.circular(16),
             child: InkWell(
               borderRadius: BorderRadius.circular(16),
               onLongPress: onActions,
               child: Padding(
                 padding: const EdgeInsets.all(12),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Expanded(
+                child: IntrinsicWidth(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Flexible(
+                            child: Text(
+                              mine
+                                  ? 'أنت'
+                                  : (message.senderDisplayName.isEmpty
+                                      ? message.senderUserId
+                                      : message.senderDisplayName),
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: senderColor,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          IconButton(
+                            tooltip: 'خيارات الرسالة',
+                            onPressed: onActions,
+                            visualDensity: VisualDensity.compact,
+                            icon: Icon(
+                              Icons.more_horiz,
+                              size: 20,
+                              color: actionIconColor,
+                            ),
+                          ),
+                        ],
+                      ),
+                      if (message.forwarded)
+                        Text(
+                          'رسالة معاد توجيهها',
+                          style: TextStyle(fontSize: 12, color: metaColor),
+                        ),
+                      if (message.replyToMessageId != null)
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(8),
+                          margin: const EdgeInsets.only(bottom: 8),
+                          decoration: BoxDecoration(
+                            color:
+                                mine
+                                    ? Colors.black.withValues(alpha: 0.06)
+                                    : Colors.white.withValues(alpha: 0.05),
+                            borderRadius: BorderRadius.circular(6),
+                            border: BorderDirectional(
+                              start: BorderSide(color: senderColor, width: 3),
+                            ),
+                          ),
                           child: Text(
-                            mine
-                                ? 'أنت'
-                                : (message.senderDisplayName.isEmpty
-                                    ? message.senderUserId
-                                    : message.senderDisplayName),
+                            reply?.isDeleted == true
+                                ? 'تم حذف الرسالة الأصلية'
+                                : reply?.body.isNotEmpty == true
+                                ? reply!.body
+                                : 'رد على رسالة',
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
                             style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              color: scheme.primary,
+                              color: mine ? Colors.black87 : Colors.white70,
+                              fontSize: 13,
                             ),
                           ),
                         ),
-                        IconButton(
-                          tooltip: 'خيارات الرسالة',
-                          onPressed: onActions,
-                          visualDensity: VisualDensity.compact,
-                          icon: const Icon(Icons.more_horiz, size: 20),
-                        ),
-                      ],
-                    ),
-                    if (message.forwarded)
-                      const Text(
-                        'رسالة معاد توجيهها',
-                        style: TextStyle(fontSize: 12),
-                      ),
-                    if (message.replyToMessageId != null)
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(8),
-                        margin: const EdgeInsets.only(bottom: 8),
-                        decoration: BoxDecoration(
-                          border: BorderDirectional(
-                            start: BorderSide(color: scheme.primary, width: 3),
-                          ),
-                        ),
-                        child: Text(
-                          reply?.isDeleted == true
-                              ? 'تم حذف الرسالة الأصلية'
-                              : reply?.body.isNotEmpty == true
-                              ? reply!.body
-                              : 'رد على رسالة',
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                    if (message.isDeleted)
-                      const Text(
-                        'تم حذف هذه الرسالة',
-                        style: TextStyle(fontStyle: FontStyle.italic),
-                      )
-                    else ...[
-                      if (message.stickerId != null)
+                      if (message.isDeleted)
                         Text(
-                          chatStickers[message.stickerId] ?? '❔',
-                          style: const TextStyle(fontSize: 56),
-                        ),
-                      if (message.body.isNotEmpty) SelectableText(message.body),
-                      for (final attachment in message.attachments)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 8),
-                          child: attachmentBuilder(context, attachment),
-                        ),
-                      if (message.attachmentResourceIds.isNotEmpty &&
-                          message.attachments.isEmpty)
+                          'تم حذف هذه الرسالة',
+                          style: TextStyle(
+                            fontStyle: FontStyle.italic,
+                            color: metaColor,
+                          ),
+                        )
+                      else ...[
+                        if (message.stickerId != null)
+                          Text(
+                            chatStickers[message.stickerId] ?? '❔',
+                            style: const TextStyle(fontSize: 56),
+                          ),
+                        if (message.body.isNotEmpty)
+                          SelectableText(
+                            message.body,
+                            style: TextStyle(
+                              color: textColor,
+                              fontSize: 15,
+                              height: 1.35,
+                            ),
+                          ),
+                        for (final attachment in message.attachments)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 8),
+                            child: attachmentBuilder(context, attachment),
+                          ),
+                        if (message.attachmentResourceIds.isNotEmpty &&
+                            message.attachments.isEmpty)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 8),
+                            child: Text(
+                              'جارٍ تحميل بيانات الملفات…',
+                              style: TextStyle(color: metaColor),
+                            ),
+                          ),
+                      ],
+                      if (pending)
                         const Padding(
                           padding: EdgeInsets.only(top: 8),
-                          child: Text('جارٍ تحميل بيانات الملفات…'),
+                          child: LinearProgressIndicator(),
                         ),
-                    ],
-                    if (pending)
-                      const Padding(
-                        padding: EdgeInsets.only(top: 8),
-                        child: LinearProgressIndicator(),
-                      ),
-                    if (failed)
+                      if (failed)
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                chatErrorText(message.errorCode ?? 'failed'),
+                                style: TextStyle(
+                                  color: errorColor,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                            TextButton(
+                              style: TextButton.styleFrom(
+                                foregroundColor: errorColor,
+                              ),
+                              onPressed: onRetry,
+                              child: const Text('إعادة المحاولة'),
+                            ),
+                          ],
+                        ),
+                      if (reactions.isNotEmpty)
+                        Wrap(
+                          spacing: 6,
+                          children:
+                              reactions.entries
+                                  .map(
+                                    (entry) => Chip(
+                                      label: Text(
+                                        '${entry.key} ${entry.value}',
+                                      ),
+                                      visualDensity: VisualDensity.compact,
+                                    ),
+                                  )
+                                  .toList(),
+                        ),
+                      const SizedBox(height: 4),
                       Row(
+                        mainAxisSize: MainAxisSize.min,
                         children: [
-                          Expanded(
-                            child: Text(
-                              chatErrorText(message.errorCode ?? 'failed'),
-                              style: TextStyle(color: scheme.error),
+                          Text(
+                            time,
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: metaColor,
+                              fontWeight: FontWeight.w500,
                             ),
                           ),
-                          TextButton(
-                            onPressed: onRetry,
-                            child: const Text('إعادة المحاولة'),
-                          ),
+                          if (message.editedAt != null)
+                            Text(
+                              ' · معدّلة',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: metaColor,
+                              ),
+                            ),
+                          if (mine) ...[
+                            const SizedBox(width: 6),
+                            Icon(
+                              pending
+                                  ? Icons.schedule
+                                  : failed
+                                  ? Icons.error_outline
+                                  : seen
+                                  ? Icons.done_all
+                                  : Icons.done,
+                              size: 16,
+                              color: failed ? errorColor : senderColor,
+                            ),
+                            Text(
+                              pending
+                                  ? ' قيد الإرسال'
+                                  : failed
+                                  ? ' تعذر الإرسال'
+                                  : seen
+                                  ? ' تمت المشاهدة'
+                                  : ' أُرسلت',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: failed ? errorColor : metaColor,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ],
                         ],
                       ),
-                    if (reactions.isNotEmpty)
-                      Wrap(
-                        spacing: 6,
-                        children:
-                            reactions.entries
-                                .map(
-                                  (entry) => Chip(
-                                    label: Text('${entry.key} ${entry.value}'),
-                                    visualDensity: VisualDensity.compact,
-                                  ),
-                                )
-                                .toList(),
-                      ),
-                    const SizedBox(height: 4),
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          time,
-                          style: Theme.of(context).textTheme.labelSmall,
-                        ),
-                        if (message.editedAt != null)
-                          const Text(
-                            ' · معدّلة',
-                            style: TextStyle(fontSize: 11),
-                          ),
-                        if (mine) ...[
-                          const SizedBox(width: 6),
-                          Icon(
-                            pending
-                                ? Icons.schedule
-                                : failed
-                                ? Icons.error_outline
-                                : seen
-                                ? Icons.done_all
-                                : Icons.done,
-                            size: 16,
-                            color: seen ? scheme.primary : null,
-                          ),
-                          Text(
-                            pending
-                                ? ' قيد الإرسال'
-                                : failed
-                                ? ' تعذر الإرسال'
-                                : seen
-                                ? ' تمت المشاهدة'
-                                : ' أُرسلت',
-                            style: Theme.of(context).textTheme.labelSmall,
-                          ),
-                        ],
-                      ],
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             ),

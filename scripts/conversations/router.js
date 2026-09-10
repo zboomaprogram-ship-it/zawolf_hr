@@ -50,6 +50,7 @@ async function handleRichConversationRequest({ req, res, url, actor, db, admin, 
     }
     return sendJson(res, result ? 200 : 404, result ? { ok: true, ...result } : { ok: false, code: 'not_found' });
   } catch (error) {
+    console.error('[ConversationsRouter Error]', error);
     // Provider errors and URLs may contain credentials; never send their text.
     return sendJson(res, error.status || 500, { ok: false, code: error.status ? error.code : 'operation_failed' });
   }
