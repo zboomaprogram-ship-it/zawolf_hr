@@ -56,6 +56,12 @@ final class _DeveloperToolsAdminPageState
                   label: const Text('عرض تقارير سلامة النظام'),
                 ),
                 const SizedBox(height: 12),
+                OutlinedButton.icon(
+                  onPressed: () => context.push('/hr/developer-api'),
+                  icon: const Icon(Icons.key_outlined),
+                  label: const Text('إدارة مفاتيح API للمطوّرين'),
+                ),
+                const SizedBox(height: 12),
                 const Text(
                   'صلاحية تشخيص داخل التطبيق فقط. لا تمنح أي استثناء للحضور أو الموقع أو USB debugging.',
                 ),
