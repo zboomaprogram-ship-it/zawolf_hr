@@ -94,10 +94,28 @@ class RichChatRepositoryImpl implements RichChatRepository {
   Stream<ChatPage<RichChannel>> watchInbox({String? section}) {
     final key = section ?? 'all';
     _inboxes[key] ??= StreamController<ChatPage<RichChannel>>.broadcast(
-      onListen: () => _pollInbox(section),
+      onListen: () {
+        // Render the downloaded inbox immediately; the network refresh below
+        // replaces it without making a chat entry look empty or stalled.
+        unawaited(_emitCachedInbox(section));
+        unawaited(_pollInbox(section));
+      },
       onCancel: () => _timers.remove('inbox:$key')?.cancel(),
     );
     return _inboxes[key]!.stream;
+  }
+
+  Future<void> _emitCachedInbox(String? section) async {
+    final key = section ?? 'all';
+    final cached = await store.get('', 'inbox', '$key:');
+    if (cached == null || _disposed) return;
+    _inboxes[key]?.add(
+      ChatPage(
+        objectList(cached['channels']).map(decodeChannel).toList(),
+        nextCursor: cached['nextCursor'] as String?,
+        offline: true,
+      ),
+    );
   }
 
   Future<void> _pollInbox(String? section) async {

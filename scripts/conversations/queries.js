@@ -7,7 +7,7 @@ const { channelDto } = require('./requests');
 const pageSize = (value, max) => Math.min(max, Math.max(1, Number.parseInt(value, 10) || max));
 const inboxUnreadConcurrency = 8;
 function presenceDto(channel, now = new Date()) {
-  return { readers: channel.data.readers || {}, typing: Object.values(channel.data.typing || {}).filter(v => Date.parse(v.expiresAt) > now.getTime()), canPost: channel.canPost };
+  return { readers: channel.data?.readers || {}, typing: Object.values(channel.data?.typing || {}).filter(v => Date.parse(v.expiresAt) > now.getTime()), canPost: channel.canPost };
 }
 function pageById(query, value, limit) {
   if (value && !safeId(value)) C.fail('invalid_cursor');
@@ -109,8 +109,12 @@ async function sectionChannels({db, actor, params, section}) {
   const position = activityPosition(params.get('cursor'));
   // updatedAt already exists on historical conversation records and is updated
   // with each visible activity; latestActivityAt is the explicit companion field.
-  let query = db.collection('conversations').orderBy('updatedAt', 'desc').orderBy('__name__', 'desc');
-  if (position) query = query.startAfter(new Date(position.at), position.id);
+  let query = db.collection('conversations').orderBy('updatedAt', 'desc');
+  if (position) {
+    const snap = await db.collection('conversations').doc(position.id).get();
+    if (snap && snap.exists) query = query.startAfter(snap);
+    else query = query.startAfter(new Date(position.at));
+  }
   const docs = await query.limit(50).get();
   const allowed = docs.docs.map(doc => ({ id: doc.id, ref: doc.ref, data: doc.data() }))
     .filter(channel => C.access(actor, channel.data).canRead)
@@ -194,30 +198,36 @@ async function requests({db, actor, params}) {
   const docs = await pageById(query, params.get('cursor'), 50).get();
   return { requests: docs.docs.map(doc => ({ ...doc.data(), id: doc.id })), nextCursor: docs.size === 50 ? docs.docs.at(-1).id : null };
 }
-function historyQuery(channel, before) {
-  let query = channel.ref.collection('messages').orderBy('sentAt', 'desc').orderBy('__name__', 'desc');
+async function historyQuery(channel, before) {
+  let query = channel.ref.collection('messages').orderBy('sentAt', 'desc');
   const position = C.cursor(before);
-  if (position) query = query.startAfter(new Date(position.at), position.id);
+  if (position) {
+    const snap = await channel.ref.collection('messages').doc(position.id).get();
+    if (snap && snap.exists) query = query.startAfter(snap);
+    else query = query.startAfter(new Date(position.at));
+  }
   return query;
 }
 async function history({db, channel, params}) {
   const limit = pageSize(params.get('limit'), 50);
-  const docs = await historyQuery(channel, params.get('before')).limit(limit).get();
-  return { messages: await C.hydrate(db, docs.docs.map(doc => C.messageDto(doc.id, doc.data()))), nextCursor: docs.size === limit ? C.encodeCursor(docs.docs.at(-1)) : null, changeCursor: String(channel.data.changeSequence || 0), ...presenceDto(channel) };
+  const q = await historyQuery(channel, params.get('before'));
+  const docs = await q.limit(limit).get();
+  return { messages: await C.hydrate(db, docs.docs.map(doc => C.messageDto(doc.id, doc.data()))), nextCursor: docs.size === limit ? C.encodeCursor(docs.docs.at(-1)) : null, changeCursor: String(channel.data?.changeSequence || 0), ...presenceDto(channel) };
 }
 async function changes({db, channel, params}) {
   const after = params.get('after') || '0';
-  if (!/^\d{1,16}$/.test(after) || !Number.isSafeInteger(Number(after)) || Number(after) > (channel.data.changeSequence || 0)) C.fail('invalid_cursor');
+  if (!/^\d{1,16}$/.test(after) || !Number.isSafeInteger(Number(after)) || Number(after) > (channel.data?.changeSequence || 0)) C.fail('invalid_cursor');
   const limit = pageSize(params.get('limit'), 100);
   const docs = await channel.ref.collection('changes').where('sequence', '>', Number(after)).orderBy('sequence').limit(limit).get();
   const ids = [...new Set(docs.docs.map(doc => doc.data().messageId).filter(safeId))];
   const snapshots = ids.length ? await db.getAll(...ids.map(id => channel.ref.collection('messages').doc(id))) : [];
   const position = docs.size ? docs.docs.at(-1).data().sequence : Number(after);
-  return { messages: await C.hydrate(db, snapshots.filter(d => d.exists).map(d => C.messageDto(d.id, d.data()))), ...presenceDto(channel), changeCursor: String(position), hasMore: position < (channel.data.changeSequence || 0) || docs.size === limit };
+  return { messages: await C.hydrate(db, snapshots.filter(d => d.exists).map(d => C.messageDto(d.id, d.data()))), ...presenceDto(channel), changeCursor: String(position), hasMore: position < (channel.data?.changeSequence || 0) || docs.size === limit };
 }
 async function search({db, channel, params}) {
   const q = (params.get('q') || '').trim().toLocaleLowerCase(); if (!q || q.length > 200) C.fail('validation_failed');
-  const docs = await historyQuery(channel, params.get('cursor')).limit(200).get();
+  const qry = await historyQuery(channel, params.get('cursor'));
+  const docs = await qry.limit(200).get();
   const matched = docs.docs.filter(d => d.data().state !== 'deleted' && String(d.data().body || '').toLocaleLowerCase().includes(q));
   return { messages: await C.hydrate(db, matched.map(d => C.messageDto(d.id, d.data()))), nextCursor: docs.size === 200 ? C.encodeCursor(docs.docs.at(-1)) : null, complete: docs.size < 200 };
 }

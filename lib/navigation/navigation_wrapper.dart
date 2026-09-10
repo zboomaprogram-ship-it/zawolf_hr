@@ -144,7 +144,7 @@ class _NavigationWrapperState extends State<NavigationWrapper>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state != AppLifecycleState.resumed || _alarmUser == null) return;
+    if (kIsWeb || state != AppLifecycleState.resumed || _alarmUser == null) return;
     unawaited(
       RequiredAttendanceAlarmService.instance
           .syncIfEnabled(_alarmUser!)

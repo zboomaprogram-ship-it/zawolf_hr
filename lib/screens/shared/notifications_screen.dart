@@ -491,21 +491,10 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       final userRef = FirebaseFirestore.instance
           .collection('users')
           .doc(userId);
-      await FirebaseFirestore.instance.runTransaction((transaction) async {
-        final notification = await transaction.get(ref);
-        if (!notification.exists || notification.data()?['isRead'] == true) {
-          return;
-        }
-        final user = await transaction.get(userRef);
-        final unread =
-            (user.data()?['unreadNotifications'] as num?)?.toInt() ?? 0;
-        transaction.update(ref, {'isRead': true});
-        if (user.exists) {
-          transaction.update(userRef, {
-            'unreadNotifications': unread > 0 ? unread - 1 : 0,
-          });
-        }
-      });
+      await ref.update({'isRead': true});
+      await userRef
+          .update({'unreadNotifications': FieldValue.increment(-1)})
+          .catchError((_) {});
       if (mounted) {
         setState(() => _locallyRead.add(ref.id));
         final auth = context.read<AuthService>();

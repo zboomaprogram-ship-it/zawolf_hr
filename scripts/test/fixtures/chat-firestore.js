@@ -10,16 +10,32 @@ function firestore(seed = {}) {
   }
   function query(path, filters = [], orders = [], cap = Infinity, after = []) {
     return {
-      doc: id => document(`${path}/${id}`), where: (key, op, value) => query(path, [...filters, [key,op,value]], orders, cap, after), orderBy: (key, direction = 'asc') => query(path, filters, [...orders,[key,direction]], cap, after), limit: n => query(path, filters, orders, n, after), startAfter: (...values) => query(path, filters, orders, cap, values),
+      doc: id => document(`${path}/${id}`), where: (key, op, value) => query(path, [...filters, [key,op,value]], orders, cap, after), orderBy: (key, direction = 'asc') => query(path, filters, [...orders,[key,direction]], cap, after), limit: n => query(path, filters, orders, n, after),
+      startAfter: (...values) => {
+        if (values.length === 1 && values[0] && typeof values[0].data === 'function') {
+          const s = values[0];
+          const extracted = orders.map(([key]) => key === '__name__' ? s.id : s.data()?.[key]);
+          return query(path, filters, orders, cap, [...extracted, s.id]);
+        }
+        return query(path, filters, orders, cap, values);
+      },
       count: () => ({ get: async () => { const result = await query(path, filters, orders, cap, after).get(); return { data: () => ({ count: result.size }) }; } }),
       get: async () => {
         if (!Number.isFinite(cap)) throw Error('unbounded query'); reads.push({ path, limit: cap });
         const value = (row,key) => key === '__name__' ? row.id : row.data()[key];
         let rows = [...data.keys()].filter(key => key.startsWith(`${path}/`) && key.split('/').length === path.split('/').length + 1).map(key => snap(document(key)));
-        rows = rows.filter(row => filters.every(([key,op,v]) => { const actual = value(row,key); return op === '==' ? (actual instanceof Date && v instanceof Date ? +actual === +v : actual === v) : op === '!=' ? actual !== v : op === 'in' ? v.includes(actual) : op === 'array-contains' ? actual?.includes(v) : op === '>' ? actual > v : false; }));
+        rows = rows.filter(row => filters.every(([key,op,v]) => { const actual = value(row,key); return op === '==' ? (actual instanceof Date && v instanceof Date ? +actual === +v : actual === v) : op === '!=' ? actual !== v : op === 'in' ? v.includes(actual) : op === '>' ? actual > v : false; }));
         const compare = (a,b) => a < b ? -1 : a > b ? 1 : 0;
-        rows.sort((a,b) => { for (const [key,dir] of orders) { const diff = compare(value(a,key), value(b,key)); if (diff) return diff * (dir === 'desc' ? -1 : 1); } return 0; });
-        if (after.length) rows = rows.filter(row => { for(let i=0;i<after.length;i++) { const diff=compare(value(row,orders[i][0]),after[i])*(orders[i][1]==='desc'?-1:1); if(diff) return diff>0; } return false; });
+        const effectiveOrders = orders.some(([k]) => k === '__name__') ? orders : [...orders, ['__name__', orders.length ? orders[orders.length - 1][1] : 'asc']];
+        rows.sort((a,b) => { for (const [key,dir] of effectiveOrders) { const diff = compare(value(a,key), value(b,key)); if (diff) return diff * (dir === 'desc' ? -1 : 1); } return 0; });
+        if (after.length) rows = rows.filter(row => {
+          for(let i=0; i<after.length && i<effectiveOrders.length; i++) {
+            const diff = compare(value(row, effectiveOrders[i][0]), after[i]) * (effectiveOrders[i][1] === 'desc' ? -1 : 1);
+            if (diff > 0) return true;
+            if (diff < 0) return false;
+          }
+          return false;
+        });
         rows = rows.slice(0,cap); return { docs: rows, size: rows.length, empty: !rows.length };
       },
     };

@@ -17,7 +17,9 @@ function access(actor, data) {
   const deptName = data.departmentName || data.department || data.departmentKey;
   const direct = data.kind === 'direct';
   if (data.kind === 'company') return { canRead: true, canPost: true };
-  const participantIds = Array.isArray(data.participantUserIds) ? data.participantUserIds : data.memberUserIds;
+  const participantIds = Array.isArray(data.participantUserIds)
+    ? data.participantUserIds
+    : (Array.isArray(data.memberUserIds) ? data.memberUserIds : []);
   const member = direct
     ? participantIds.length === 2 && participantIds.includes(actor.uid)
     : data.kind === 'department' ? canAccessDepartment(actor, deptName) : isConversationMember(data, actor.uid);
@@ -46,7 +48,7 @@ async function channelFor(db, actor, id, tx, write = false) {
         : db.collection('users').doc(userId).get()),
     );
     permissions.canPost = users.length === 2 && users.every(user =>
-      user.exists && user.data().isActive !== false);
+      user.exists && user.data()?.isActive !== false);
   }
   if (!permissions.canRead || (write && !permissions.canPost)) fail('access_denied', 403);
   return { id, ref, data, ...permissions };
@@ -60,13 +62,20 @@ function messageDto(id, data) {
   return { id, conversationId: data.conversationId, senderUserId: data.senderUserId || '', senderDisplayName: data.senderDisplayName || '', body: data.state === 'deleted' ? '' : data.body || '', stickerId: data.state === 'deleted' ? null : data.stickerId || null, sentAt: iso(data.sentAt), state: data.state || 'sent', attachmentResourceIds: data.state === 'deleted' ? [] : data.attachmentResourceIds || [], attachments: data.state === 'deleted' ? [] : data.attachments || [], replyToMessageId: data.replyToMessageId || null, forwarded: data.forwarded || false, revision: data.revision || 1, editedAt: iso(data.editedAt) || null, deletedAt: iso(data.deletedAt) || null, reactions: data.state === 'deleted' ? {} : data.reactions || {} };
 }
 async function hydrate(db, messages) {
-  const missing = [...new Set(messages.flatMap(m => m.attachmentResourceIds.filter(id => !m.attachments.some(a => a.resourceId === id))))];
+  const missing = [...new Set(messages.flatMap(m => (Array.isArray(m.attachmentResourceIds) ? m.attachmentResourceIds : []).filter(id => !(Array.isArray(m.attachments) ? m.attachments : []).some(a => a.resourceId === id))))];
   const resources = new Map();
   for (let offset = 0; offset < missing.length; offset += 100) {
     const docs = await db.getAll(...missing.slice(offset, offset + 100).map(id => db.collection('conversationAttachments').doc(id)));
     for (const doc of docs) if (doc.exists) resources.set(doc.id, doc.data());
   }
-  return messages.map(m => ({ ...m, attachments: m.attachmentResourceIds.map(id => m.attachments.find(a => a.resourceId === id) || (resources.get(id)?.conversationId === m.conversationId ? attachmentDto(id, resources.get(id)) : {resourceId:id,fileName:'',mimeType:'application/octet-stream',sizeBytes:0,kind:'file',status:'unavailable'})) }));
+  return messages.map(m => {
+    const resIds = Array.isArray(m.attachmentResourceIds) ? m.attachmentResourceIds : [];
+    const atts = Array.isArray(m.attachments) ? m.attachments : [];
+    return {
+      ...m,
+      attachments: resIds.map(id => atts.find(a => a.resourceId === id) || (resources.get(id)?.conversationId === m.conversationId ? attachmentDto(id, resources.get(id)) : {resourceId:id,fileName:'',mimeType:'application/octet-stream',sizeBytes:0,kind:'file',status:'unavailable'}))
+    };
+  });
 }
 function cursor(value) {
   if (!value) return null;

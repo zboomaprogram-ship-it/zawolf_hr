@@ -140,30 +140,9 @@ class _RichConversationEntryState extends State<RichConversationEntry> {
         latestActivityAt: authorized.latestActivityAt,
       );
     } else {
-      final legacy = ConversationRepositoryImpl(
-        operationClient: AuthenticatedOperationClient(
-          client: _client,
-          tokenProvider: token,
-        ),
-        operationsBaseUri: base,
-      );
-      unawaited(() async {
-        try {
-          final depts = await legacy.listAvailableDepartments();
-          if (caps.canReview) {
-            for (final dept in depts) {
-              await legacy.openDepartmentChannel(dept);
-            }
-            await legacy.openManagerChannel();
-          } else {
-            for (final dept in depts) {
-              try {
-                await legacy.openDepartmentChannel(dept);
-              } catch (_) {}
-            }
-          }
-        } catch (_) {}
-      }());
+      // The rich inbox creates and authorizes its own bounded channel page.
+      // Opening every legacy department here produced a request burst each
+      // time a user opened chat and delayed the first useful conversation.
     }
     return (capabilities: caps, channel: channel);
   }

@@ -61,7 +61,6 @@ class ChatInboxCubit extends Cubit<ChatInboxState> {
             },
           );
     }
-    load();
   }
   final RichChatRepository repository;
   final String? section;
