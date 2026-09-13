@@ -326,6 +326,124 @@ NavigationItem _departmentChat() => NavigationItem(
   domain: NavDomain.people,
 );
 
+/// Operational administration routes that were available in the legacy HR
+/// dashboard. Keep them in the sidebar too: a dashboard redesign must never
+/// make an existing management surface unreachable.
+List<NavigationItem> _operationalAdminItems() => [
+  NavigationItem(
+    icon: Icons.edit_calendar_outlined,
+    activeIcon: Icons.edit_calendar,
+    label: 'تسجيل حضور يدوي',
+    englishLabel: 'Manual Attendance',
+    path: '/hr/manual-attendance',
+    domain: NavDomain.time,
+  ),
+  NavigationItem(
+    icon: Icons.schedule_outlined,
+    activeIcon: Icons.schedule,
+    label: 'سياسة الدوام',
+    englishLabel: 'Attendance Policy',
+    path: '/hr/attendance-policy',
+    domain: NavDomain.time,
+  ),
+  NavigationItem(
+    icon: Icons.directions_walk_outlined,
+    activeIcon: Icons.directions_walk,
+    label: 'المهام الميدانية',
+    englishLabel: 'Field Missions',
+    path: '/hr/field-assignments',
+    domain: NavDomain.time,
+  ),
+  NavigationItem(
+    icon: Icons.meeting_room_outlined,
+    activeIcon: Icons.meeting_room,
+    label: 'قاعات الاجتماعات',
+    englishLabel: 'Meeting Rooms',
+    path: '/hr/meeting-rooms',
+    domain: NavDomain.approvals,
+  ),
+  NavigationItem(
+    icon: Icons.groups_2_outlined,
+    activeIcon: Icons.groups_2,
+    label: 'موافقات الاجتماعات',
+    englishLabel: 'Meeting Approvals',
+    path: '/meeting/approvals',
+    domain: NavDomain.approvals,
+  ),
+  NavigationItem(
+    icon: Icons.history_outlined,
+    activeIcon: Icons.history,
+    label: 'سجل الاجتماعات',
+    englishLabel: 'Meeting History',
+    path: '/meeting/history',
+    domain: NavDomain.approvals,
+  ),
+  NavigationItem(
+    icon: Icons.playlist_add_check_outlined,
+    activeIcon: Icons.playlist_add_check,
+    label: 'أنواع الطلبات المخصصة',
+    englishLabel: 'Custom Request Types',
+    path: '/hr/custom-request-types',
+    domain: NavDomain.approvals,
+  ),
+  NavigationItem(
+    icon: Icons.account_tree_outlined,
+    activeIcon: Icons.account_tree,
+    label: 'الهيكل التنظيمي',
+    englishLabel: 'Organization Structure',
+    path: '/hr/organization-trees',
+    domain: NavDomain.people,
+  ),
+  NavigationItem(
+    icon: Icons.workspace_premium_outlined,
+    activeIcon: Icons.workspace_premium,
+    label: 'الشارات المخصصة',
+    englishLabel: 'Custom Badges',
+    path: '/hr/custom-badges',
+    domain: NavDomain.performance,
+  ),
+  NavigationItem(
+    icon: Icons.business_center_outlined,
+    activeIcon: Icons.business_center,
+    label: 'مركز تشغيل الشركة',
+    englishLabel: 'Company Operations',
+    path: '/company-os',
+    domain: NavDomain.people,
+  ),
+  NavigationItem(
+    icon: Icons.cloud_sync_outlined,
+    activeIcon: Icons.cloud_sync,
+    label: 'مركز ملفات الشركة',
+    englishLabel: 'Company Workspace',
+    path: '/workspace',
+    domain: NavDomain.people,
+  ),
+  NavigationItem(
+    icon: Icons.developer_mode_outlined,
+    activeIcon: Icons.developer_mode,
+    label: 'إدارة أدوات المطوّر',
+    englishLabel: 'Developer Tools Management',
+    path: '/hr/developer-tools',
+    domain: NavDomain.people,
+  ),
+  NavigationItem(
+    icon: Icons.key_outlined,
+    activeIcon: Icons.key,
+    label: 'واجهة المطوّر API',
+    englishLabel: 'Developer API',
+    path: '/hr/developer-api',
+    domain: NavDomain.people,
+  ),
+  NavigationItem(
+    icon: Icons.health_and_safety_outlined,
+    activeIcon: Icons.health_and_safety,
+    label: 'التشخيص',
+    englishLabel: 'Diagnostics',
+    path: '/hr/diagnostics',
+    domain: NavDomain.people,
+  ),
+];
+
 List<NavigationItem> _employeeItems() {
   return [
     NavigationItem(
@@ -665,6 +783,7 @@ List<NavigationItem> _hrItems() {
       domain: NavDomain.people,
     ),
     _departmentChat(),
+    ..._operationalAdminItems(),
     _myProfile(),
   ];
 }
@@ -802,6 +921,7 @@ List<NavigationItem> _superAdminItems() {
       domain: NavDomain.people,
     ),
     _departmentChat(),
+    ..._operationalAdminItems(),
     _myProfile(),
   ];
 }
