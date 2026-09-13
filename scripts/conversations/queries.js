@@ -58,8 +58,18 @@ async function directDisplayNames(db, actor, channels) {
     return [doc.id, {
       name: data.displayName || data.name || data.employeeName || doc.id,
       active: data.isActive !== false,
+      user: { id: doc.id, ...data },
     }];
   }));
+}
+function isVisibleDirect(channel, actor, fullActor, names) {
+  if (channel.data.kind !== 'direct') return true;
+  const otherId = (channel.data.participantUserIds || []).find(id => id !== actor.uid);
+  const target = otherId ? names.get(otherId)?.user : null;
+  // Keep a legacy channel visible only when its old participant metadata is
+  // incomplete. A deactivated participant is deliberately retained read-only;
+  // otherwise a resolved target must satisfy the same policy as the picker.
+  return target == null || target.isActive === false || P.canDirect(fullActor, target);
 }
 function directName(channel, actor, names) {
   const otherId = (channel.data.participantUserIds || []).find(id => id !== actor.uid);
@@ -87,7 +97,10 @@ async function channels({db, actor, params}) {
   // Firestore child queries used to run one-by-one, making each inbox open wait
   // for every channel. Eight workers retain a fixed read/concurrency budget.
   const names = await directDisplayNames(db, actor, accessible);
-  const result = await boundedMap(accessible, inboxUnreadConcurrency, async item => {
+  const actorDoc = await db.collection('users').doc(actor.uid).get();
+  const fullActor = actorDoc.exists ? { ...actorDoc.data(), ...actor } : actor;
+  const visible = accessible.filter(channel => isVisibleDirect(channel, actor, fullActor, names));
+  const result = await boundedMap(visible, inboxUnreadConcurrency, async item => {
     const channel = directPostPermission(item, actor, names);
     return channelDto(channel, actor, await unreadCount(channel, actor), directName(channel, actor, names));
   });
@@ -120,7 +133,10 @@ async function sectionChannels({db, actor, params, section}) {
     .filter(channel => C.access(actor, channel.data).canRead)
     .filter(channel => section === 'direct' ? channel.data.kind === 'direct' : channel.data.kind !== 'direct');
   const names = await directDisplayNames(db, actor, allowed);
-  const result = await boundedMap(allowed, inboxUnreadConcurrency, async item => {
+  const actorDoc = await db.collection('users').doc(actor.uid).get();
+  const fullActor = actorDoc.exists ? { ...actorDoc.data(), ...actor } : actor;
+  const visible = allowed.filter(channel => isVisibleDirect(channel, actor, fullActor, names));
+  const result = await boundedMap(visible, inboxUnreadConcurrency, async item => {
     const channel = directPostPermission(item, actor, names);
     return channelDto(channel, actor, await unreadCount(channel, actor), directName(channel, actor, names));
   });

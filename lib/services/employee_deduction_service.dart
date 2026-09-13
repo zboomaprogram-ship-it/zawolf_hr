@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:intl/intl.dart';
 
 import '../models/attendance_model.dart';
 import '../models/attendance_policy.dart';
@@ -19,6 +20,9 @@ class EmployeeDeductionEntry {
   final String? currency;
   final DateTime? approvedAt;
   final String? approvedByName;
+  final String? attendanceStatus;
+  final DateTime? checkInTime;
+  final DateTime? checkOutTime;
 
   const EmployeeDeductionEntry({
     required this.id,
@@ -31,6 +35,9 @@ class EmployeeDeductionEntry {
     this.currency,
     this.approvedAt,
     this.approvedByName,
+    this.attendanceStatus,
+    this.checkInTime,
+    this.checkOutTime,
   });
 
   bool get hasCompleteDetails =>
@@ -42,6 +49,11 @@ class EmployeeDeductionEntry {
   List<String> get detailLines => [
     'المصدر: ${_orFallback(sourceLabel, 'غير محدد')}',
     'السبب: ${_orFallback(reasonLabel, 'غير مسجل في السجل التاريخي')}',
+    if (attendanceStatus != null) 'حالة الحضور: $attendanceStatus',
+    if (checkInTime != null)
+      'وقت الحضور: ${DateFormat('hh:mm a', 'ar').format(checkInTime!)}',
+    if (checkOutTime != null)
+      'وقت الانصراف: ${DateFormat('hh:mm a', 'ar').format(checkOutTime!)}',
     'تاريخ الاستحقاق: ${_orFallback(date, 'غير متاح')}',
     'الخصم: $fractionLabel',
     'القيمة: ${_amountLabel()}',
@@ -71,6 +83,8 @@ class EmployeeDeductionEntry {
     if (dayFraction >= 0.5) return 'نصف يوم';
     return 'ربع يوم';
   }
+
+  String get deductionTitle => 'خصم $fractionLabel';
 
   String get approvalLabel {
     switch (approvalStatus) {
@@ -208,6 +222,14 @@ class EmployeeDeductionService {
           item.salaryDeductionReviewedAt ??
           (isApproved ? item.checkInTime : null),
       approvedByName: item.salaryDeductionReviewedBy,
+      attendanceStatus:
+          isAbsent
+              ? 'لم يُسجّل حضور'
+              : item.isLate
+              ? 'حضور متأخر'
+              : 'حضور وانصراف',
+      checkInTime: item.checkInTime,
+      checkOutTime: item.checkOutTime,
     );
   }
 

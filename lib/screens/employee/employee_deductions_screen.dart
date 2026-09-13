@@ -288,7 +288,7 @@ class _DeductionTile extends StatelessWidget {
               ),
               const Spacer(),
               Text(
-                entry.fractionLabel,
+                entry.deductionTitle,
                 style: Theme.of(context).textTheme.titleMedium?.copyWith(
                   color: Colors.white,
                   fontWeight: FontWeight.bold,
