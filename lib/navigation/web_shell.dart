@@ -538,17 +538,15 @@ class _WebManagementShellState extends State<WebManagementShell> {
               ),
               child: Row(
                 children: [
-                  AnimatedRotation(
-                    turns: collapsed ? -0.25 : 0,
-                    duration: DsMotion.fast,
-                    child: Icon(
-                      Icons.keyboard_arrow_down_rounded,
-                      size: 18,
-                      color:
-                          groupActive
-                              ? ZaWolfColors.primaryCyan
-                              : ZaWolfColors.textMuted,
-                    ),
+                  Icon(
+                    collapsed
+                        ? Icons.keyboard_arrow_left_rounded
+                        : Icons.keyboard_arrow_down_rounded,
+                    size: 18,
+                    color:
+                        groupActive
+                            ? ZaWolfColors.primaryCyan
+                            : ZaWolfColors.textMuted,
                   ),
                   const SizedBox(width: DsSpacing.sm),
                   Icon(

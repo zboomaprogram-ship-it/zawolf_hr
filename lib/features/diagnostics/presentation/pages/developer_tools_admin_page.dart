@@ -56,12 +56,6 @@ final class _DeveloperToolsAdminPageState
                   label: const Text('عرض تقارير سلامة النظام'),
                 ),
                 const SizedBox(height: 12),
-                OutlinedButton.icon(
-                  onPressed: () => context.push('/hr/developer-api'),
-                  icon: const Icon(Icons.key_outlined),
-                  label: const Text('إدارة مفاتيح API للمطوّرين'),
-                ),
-                const SizedBox(height: 12),
                 const Text(
                   'تمنح أدوات التشخيص، وإعادة ربط جهاز الحضور المسجّل للحساب عند الحاجة. لا تتجاوز الموقع أو البصمة أو ربط جهاز مستخدم آخر.',
                 ),

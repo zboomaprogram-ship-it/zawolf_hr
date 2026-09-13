@@ -427,14 +427,6 @@ List<NavigationItem> _operationalAdminItems() => [
     domain: NavDomain.people,
   ),
   NavigationItem(
-    icon: Icons.key_outlined,
-    activeIcon: Icons.key,
-    label: 'واجهة المطوّر API',
-    englishLabel: 'Developer API',
-    path: '/hr/developer-api',
-    domain: NavDomain.people,
-  ),
-  NavigationItem(
     icon: Icons.health_and_safety_outlined,
     activeIcon: Icons.health_and_safety,
     label: 'التشخيص',

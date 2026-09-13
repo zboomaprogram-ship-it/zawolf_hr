@@ -456,10 +456,6 @@ class ZaWolfRouter {
               builder: (context, state) => const DeveloperToolsAdminEntry(),
             ),
             GoRoute(
-              path: '/hr/developer-api',
-              builder: (context, state) => const DeveloperApiAdminEntry(),
-            ),
-            GoRoute(
               path: '/hr/diagnostics',
               builder: (context, state) {
                 final actorId = authService.currentUser?.uid ?? '';

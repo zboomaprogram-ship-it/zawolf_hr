@@ -682,12 +682,76 @@ class _UnifiedManagementWebDashboardState
                 icon: Icons.campaign_outlined,
                 onTap: () => context.go('/hr/announcements'),
               ),
+              if (isHrRole) ..._buildHrOperationalShortcuts(context),
             ],
           ),
         ],
       ),
     );
   }
+
+  List<Widget> _buildHrOperationalShortcuts(BuildContext context) => [
+    _buildShortcutChip(
+      label: 'تسجيل حضور يدوي',
+      icon: Icons.edit_calendar_outlined,
+      onTap: () => context.go('/hr/manual-attendance'),
+    ),
+    _buildShortcutChip(
+      label: 'سياسة الدوام',
+      icon: Icons.schedule_outlined,
+      onTap: () => context.go('/hr/attendance-policy'),
+    ),
+    _buildShortcutChip(
+      label: 'المهام الميدانية / المأمورية',
+      icon: Icons.directions_walk_outlined,
+      onTap: () => context.go('/hr/field-assignments'),
+    ),
+    _buildShortcutChip(
+      label: 'قاعات الاجتماعات',
+      icon: Icons.meeting_room_outlined,
+      onTap: () => context.go('/hr/meeting-rooms'),
+    ),
+    _buildShortcutChip(
+      label: 'موافقات الاجتماعات',
+      icon: Icons.groups_2_outlined,
+      onTap: () => context.go('/meeting/approvals'),
+    ),
+    _buildShortcutChip(
+      label: 'سجل الاجتماعات',
+      icon: Icons.history_outlined,
+      onTap: () => context.go('/meeting/history'),
+    ),
+    _buildShortcutChip(
+      label: 'أنواع الطلبات المخصصة',
+      icon: Icons.playlist_add_check_outlined,
+      onTap: () => context.go('/hr/custom-request-types'),
+    ),
+    _buildShortcutChip(
+      label: 'الهيكل التنظيمي',
+      icon: Icons.account_tree_outlined,
+      onTap: () => context.go('/hr/organization-trees'),
+    ),
+    _buildShortcutChip(
+      label: 'الشارات المخصصة',
+      icon: Icons.workspace_premium_outlined,
+      onTap: () => context.go('/hr/custom-badges'),
+    ),
+    _buildShortcutChip(
+      label: 'مركز تشغيل الشركة',
+      icon: Icons.business_center_outlined,
+      onTap: () => context.go('/company-os'),
+    ),
+    _buildShortcutChip(
+      label: 'مركز ملفات الشركة',
+      icon: Icons.cloud_sync_outlined,
+      onTap: () => context.go('/workspace'),
+    ),
+    _buildShortcutChip(
+      label: 'إدارة أدوات المطوّر',
+      icon: Icons.developer_mode_outlined,
+      onTap: () => context.go('/hr/developer-tools'),
+    ),
+  ];
 
   Widget _buildShortcutChip({
     required String label,

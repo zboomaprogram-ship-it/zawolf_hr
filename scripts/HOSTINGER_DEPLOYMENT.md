@@ -224,21 +224,3 @@ DRY_RUN=false npm run migrate-hr-role
 
 It converts stored `hr_manager` users to `hr_admin`. The application and rules
 continue accepting the legacy value during the rollout.
-
-## External developer API
-
-The external developer API is served at `/developer-api/v1/`. It is read-only.
-For a no-UI integration key, set `ZAWOLF_DEVELOPER_API_SECRET` in the Hostinger
-Node application environment to a generated `zwh_...` value (see
-`developer-api.env.example`) and restart the application. That environment key
-has only `directory.read`; rotate or remove the environment value and restart
-to revoke it. Do not give a developer Firebase credentials, an ID token, or any
-other runtime environment variables. Alternatively, an HR/super-admin can
-create a short-lived `directory.read` client using the owner route described in
-`specs/014-developer-api/quickstart.md`; the returned secret is shown exactly
-once. The route publishes its OpenAPI contract at `/developer-api/v1/openapi.json`.
-
-Before issuing a client, deploy the two `users` indexes in the repository's
-`firestore.indexes.json`, upload this Node package, restart the Hostinger app,
-and verify the OpenAPI route returns HTTP 200. Revocation is immediate on the
-next API request and is the rollback control for an individual integration.
