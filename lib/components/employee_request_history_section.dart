@@ -109,7 +109,8 @@ class _EmployeeRequestHistorySectionState
               child: SectionHeader(
                 title: 'سجل الطلبات',
                 actionLabel: 'عرض الكل',
-                onAction: () => context.go('/employee/requests'),
+                onAction: () =>
+                    context.go('/employee/requests?view=history'),
               ),
             ),
           ],
