@@ -49,7 +49,8 @@ class EmployeeDashboardScreen extends StatefulWidget {
       _EmployeeDashboardScreenState();
 }
 
-class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
+class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
+    with WidgetsBindingObserver {
   static const _pilotEmployeeScopeId = String.fromEnvironment(
     'ATTENDANCE_CHECKIN_PILOT_USER_ID',
     defaultValue: '',
@@ -76,18 +77,39 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     AttendanceService().syncPendingOfflineAttendance();
     _clockTimer = Timer.periodic(const Duration(minutes: 1), (_) {
-      if (mounted) setState(() => _now = DateTime.now());
+      if (!mounted) return;
+      final previousDay = DateUtils.dateOnly(_now);
+      final current = DateTime.now();
+      setState(() => _now = current);
+      final user = context.read<AuthService>().currentUser;
+      if (user != null && DateUtils.dateOnly(current) != previousDay) {
+        unawaited(_checkCompanyDayOff());
+        unawaited(_refreshAttendanceGate(user));
+      }
     });
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _clockTimer?.cancel();
     final pilot = _checkInPilot;
     if (pilot != null) unawaited(pilot.close());
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed || !mounted) return;
+    final user = context.read<AuthService>().currentUser;
+    setState(() => _now = DateTime.now());
+    if (user != null) {
+      unawaited(_checkCompanyDayOff());
+      unawaited(_refreshAttendanceGate(user));
+    }
   }
 
   bool _isCheckInPilotEnabledFor(UserModel employee) =>
@@ -1114,7 +1136,13 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
                     ),
                     const SizedBox(height: DsSpacing.xl),
 
-                    MonthActivitySection(logs: logs),
+                    MonthActivitySection(
+                      logs: logs,
+                      absentDates: periodSummary.days
+                          .where((day) => day.isAbsent)
+                          .map((day) => day.date)
+                          .toList(growable: false),
+                    ),
                   ],
                 ),
               ),

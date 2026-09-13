@@ -107,6 +107,8 @@ final class DeveloperToolsRepositoryImpl implements DeveloperToolsRepository {
             'app_diagnostics' => DeveloperToolScope.appDiagnostics,
             'network_diagnostics' => DeveloperToolScope.networkDiagnostics,
             'release_information' => DeveloperToolScope.releaseInformation,
+            'attendance_device_override' =>
+              DeveloperToolScope.attendanceDeviceOverride,
             _ => null,
           },
         )
@@ -118,6 +120,7 @@ final class DeveloperToolsRepositoryImpl implements DeveloperToolsRepository {
     DeveloperToolScope.appDiagnostics => 'app_diagnostics',
     DeveloperToolScope.networkDiagnostics => 'network_diagnostics',
     DeveloperToolScope.releaseInformation => 'release_information',
+    DeveloperToolScope.attendanceDeviceOverride => 'attendance_device_override',
   };
 }
 

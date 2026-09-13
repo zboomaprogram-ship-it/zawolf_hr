@@ -44,72 +44,75 @@ class _EmployeeDeductionsScreenState extends State<EmployeeDeductionsScreen> {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
-    return Scaffold(
-      appBar: AppBar(title: const Text('خصوماتي')),
-      body: StreamBuilder<List<EmployeeDeductionEntry>>(
-        stream: _service.watchForCycle(userId: user.uid, monthKey: cycle.key),
-        builder: (context, snapshot) {
-          if (snapshot.hasError) {
-            return const _Message(
-              icon: Icons.cloud_off_outlined,
-              text: 'تعذر تحميل الخصومات. أعد المحاولة.',
-            );
-          }
-          if (!snapshot.hasData) {
-            return Padding(
-              padding: const EdgeInsets.all(16),
-              child: SkeletonList(itemCount: 4, itemHeight: 84),
-            );
-          }
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: Scaffold(
+        appBar: AppBar(title: const Text('خصوماتي')),
+        body: StreamBuilder<List<EmployeeDeductionEntry>>(
+          stream: _service.watchForCycle(userId: user.uid, monthKey: cycle.key),
+          builder: (context, snapshot) {
+            if (snapshot.hasError) {
+              return const _Message(
+                icon: Icons.cloud_off_outlined,
+                text: 'تعذر تحميل الخصومات. أعد المحاولة.',
+              );
+            }
+            if (!snapshot.hasData) {
+              return Padding(
+                padding: const EdgeInsets.all(16),
+                child: SkeletonList(itemCount: 4, itemHeight: 84),
+              );
+            }
 
-          final entries = snapshot.data!;
-          return ListView(
-            padding: const EdgeInsets.all(16),
-            children: [
-              _CycleSelector(
-                cycle: cycle,
-                onPrevious:
-                    () => setState(
-                      () =>
-                          _cycleDate = DateTime(
-                            _cycleDate.year,
-                            _cycleDate.month - 1,
-                            15,
-                          ),
-                    ),
-                onNext:
-                    () => setState(
-                      () =>
-                          _cycleDate = DateTime(
-                            _cycleDate.year,
-                            _cycleDate.month + 1,
-                            15,
-                          ),
-                    ),
-              ),
-              const SizedBox(height: 12),
-              _Summary(entries: entries),
-              const SizedBox(height: 18),
-              Text(
-                'تفاصيل الخصومات',
-                style: Theme.of(context).textTheme.titleLarge,
-              ),
-              const SizedBox(height: 10),
-              if (entries.isEmpty)
-                const _Message(
-                  icon: Icons.verified_outlined,
-                  text: 'لا توجد خصومات مسجلة في هذه الدورة.',
-                )
-              else
-                ...entries.map(
-                  (entry) => Padding(
-                    padding: const EdgeInsets.only(bottom: 10),
-                    child: _DeductionTile(entry: entry),
-                  ),
+            final entries = snapshot.data!;
+            return ListView(
+              padding: const EdgeInsets.all(16),
+              children: [
+                _CycleSelector(
+                  cycle: cycle,
+                  onPrevious:
+                      () => setState(
+                        () =>
+                            _cycleDate = DateTime(
+                              _cycleDate.year,
+                              _cycleDate.month - 1,
+                              15,
+                            ),
+                      ),
+                  onNext:
+                      () => setState(
+                        () =>
+                            _cycleDate = DateTime(
+                              _cycleDate.year,
+                              _cycleDate.month + 1,
+                              15,
+                            ),
+                      ),
                 ),
-            ],
-          );
-        },
+                const SizedBox(height: 12),
+                _Summary(entries: entries),
+                const SizedBox(height: 18),
+                Text(
+                  'تفاصيل الخصومات',
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
+                const SizedBox(height: 10),
+                if (entries.isEmpty)
+                  const _Message(
+                    icon: Icons.verified_outlined,
+                    text: 'لا توجد خصومات مسجلة في هذه الدورة.',
+                  )
+                else
+                  ...entries.map(
+                    (entry) => Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: _DeductionTile(entry: entry),
+                    ),
+                  ),
+              ],
+            );
+          },
+        ),
       ),
     );
   }
@@ -261,6 +264,7 @@ class _DeductionTile extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Row(
+            textDirection: TextDirection.rtl,
             children: [
               Container(
                 padding: const EdgeInsets.symmetric(
@@ -329,7 +333,7 @@ class _DeductionTile extends StatelessWidget {
       context: context,
       builder:
           (dialogContext) => AlertDialog(
-            title: const Text('تفاصيل خصم الراتب'),
+            title: const Text('تفاصيل خصم الراتب', textAlign: TextAlign.right),
             content: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,

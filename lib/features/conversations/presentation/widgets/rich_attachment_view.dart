@@ -63,21 +63,6 @@ class _RichAttachmentViewState extends State<RichAttachmentView> {
         icon: const Icon(Icons.share),
         onPressed: () => _action(() => widget.gateway.share(file)),
       ),
-      if (file.mimeType.startsWith('image/'))
-        IconButton(
-          tooltip: 'نسخ الصورة',
-          icon: const Icon(Icons.copy),
-          onPressed:
-              () => _action(() async {
-                final copied = await widget.gateway.copyImage(file);
-                if (!copied) throw StateError('clipboard_unavailable');
-                if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('تم نسخ الصورة.')),
-                  );
-                }
-              }),
-        ),
     ],
   );
   Widget _content(ChatDraftFile file) {

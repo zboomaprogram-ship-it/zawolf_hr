@@ -143,7 +143,16 @@ class RichChatRepositoryImpl implements RichChatRepository {
     return (_channels[channelId] ??=
             StreamController<RichChatSnapshot>.broadcast(
               onListen: () async {
-                await _emit(channelId);
+                // Do not briefly render "no messages" while the first server
+                // response is still in flight. Cached messages and pending
+                // drafts remain immediately visible, but an empty store keeps
+                // the timeline in its loading state until polling completes.
+                final meta = await store.get(channelId, 'meta', 'timeline');
+                final messages = await store.rows(channelId, 'message');
+                final outbox = await store.rows(channelId, 'outbox');
+                if (meta != null || messages.isNotEmpty || outbox.isNotEmpty) {
+                  await _emit(channelId);
+                }
                 await _poll(channelId);
               },
               onCancel: () => _timers.remove(channelId)?.cancel(),

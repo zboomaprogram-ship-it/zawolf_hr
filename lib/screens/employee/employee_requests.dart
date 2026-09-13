@@ -1090,7 +1090,9 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
-    return Scaffold(
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: Scaffold(
       appBar: AppBar(
         title: const Text(
           'المقر الافتراضي ومركز الخدمات',
@@ -1199,6 +1201,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
                     : _buildSubmitConsole(user, theme),
           ),
         ],
+      ),
       ),
     );
   }

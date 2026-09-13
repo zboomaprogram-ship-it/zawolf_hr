@@ -48,10 +48,9 @@ class AttendancePeriodSummary {
   int get lateDays => days.where((day) => day.isLate).length;
   int get absentDays => days.where((day) => day.isAbsent).length;
 
-  /// A discipline score must expose an absence or lateness that HR is still
-  /// reviewing. It is not a payroll calculation: payroll continues to use
-  /// only `approved` deductions. Rejected and zero-value records have no
-  /// discipline impact.
+  /// Discipline follows a final HR decision. A pending deduction is visible
+  /// to the employee, but must never lower their score while an approved
+  /// permission, correction, or HR review can still clear it.
   double get disciplineImpactDayFractions => days.fold<double>(0, (total, day) {
     if (day.isAbsent) {
       final attendance = day.attendance;
@@ -65,7 +64,6 @@ class AttendancePeriodSummary {
     final attendance = day.attendance;
     if (attendance == null ||
         !const {
-          'pending_hr',
           'approved',
         }.contains(attendance.salaryDeductionApprovalStatus) ||
         attendance.salaryDeductionFraction <= 0) {

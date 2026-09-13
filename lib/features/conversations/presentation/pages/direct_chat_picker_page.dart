@@ -55,7 +55,7 @@ class DirectChatPickerPage extends StatelessWidget {
                         padding: const EdgeInsets.all(8),
                         child: TextButton.icon(
                           onPressed: cubit.loadDepartments,
-                          icon: const Icon(Icons.arrow_back),
+                          icon: const Icon(Icons.arrow_forward),
                           label: const Text('تغيير القسم'),
                         ),
                       ),

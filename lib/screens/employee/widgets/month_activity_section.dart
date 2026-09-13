@@ -12,8 +12,13 @@ import 'employee_quick_action.dart';
 /// Presentation only; the stream stays owned by the dashboard screen.
 class MonthActivitySection extends StatelessWidget {
   final List<AttendanceModel> logs;
+  final List<DateTime> absentDates;
 
-  const MonthActivitySection({super.key, required this.logs});
+  const MonthActivitySection({
+    super.key,
+    required this.logs,
+    this.absentDates = const [],
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -29,17 +34,13 @@ class MonthActivitySection extends StatelessWidget {
           ),
         ),
         const SizedBox(height: DsSpacing.md),
-        if (logs.isEmpty)
+        if (logs.isEmpty && absentDates.isEmpty)
           Container(
             padding: const EdgeInsets.symmetric(vertical: 32),
             alignment: Alignment.center,
             child: Column(
               children: [
-                Icon(
-                  Icons.history,
-                  color: ZaWolfColors.textMuted,
-                  size: 40,
-                ),
+                Icon(Icons.history, color: ZaWolfColors.textMuted, size: 40),
                 const SizedBox(height: DsSpacing.md),
                 Text(
                   'لا توجد سجلات حضور هذا الشهر.',
@@ -48,7 +49,7 @@ class MonthActivitySection extends StatelessWidget {
               ],
             ),
           )
-        else
+        else ...[
           ListView.builder(
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
@@ -56,17 +57,20 @@ class MonthActivitySection extends StatelessWidget {
             itemBuilder: (context, index) {
               final log = logs[index];
               final dateParsed = DateTime.parse(log.date);
-              final formatDay = DateFormat('EEEE dd MMM', 'ar').format(
-                dateParsed,
-              );
+              final formatDay = DateFormat(
+                'EEEE dd MMM',
+                'ar',
+              ).format(dateParsed);
               final checkInTime = log.checkInTime;
               final checkOutTime = log.checkOutTime;
-              final checkInText = checkInTime == null
-                  ? 'لم يسجل حضور'
-                  : 'حضور: ${DateFormat('hh:mm a').format(checkInTime)}';
-              final checkOutText = checkOutTime == null
-                  ? null
-                  : 'انصراف: ${DateFormat('hh:mm a').format(checkOutTime)}';
+              final checkInText =
+                  checkInTime == null
+                      ? 'لم يسجل حضور'
+                      : 'حضور: ${DateFormat('hh:mm a').format(checkInTime)}';
+              final checkOutText =
+                  checkOutTime == null
+                      ? null
+                      : 'انصراف: ${DateFormat('hh:mm a').format(checkOutTime)}';
 
               final dsStatus = attendanceStatusToDsStatus(log.status);
 
@@ -101,12 +105,60 @@ class MonthActivitySection extends StatelessWidget {
                         ],
                       ),
                     ),
-                    StatusPill(status: dsStatus, label: _statusLabel(log.status), compact: true),
+                    StatusPill(
+                      status: dsStatus,
+                      label: _statusLabel(log.status),
+                      compact: true,
+                    ),
                   ],
                 ),
               );
             },
           ),
+          // An absence is calculated from the employee's assigned schedule.
+          // It remains visible here even before the nightly worker writes the
+          // canonical attendance row and pending HR deduction.
+          for (final date in absentDates)
+            Container(
+              margin: const EdgeInsets.only(bottom: DsSpacing.md),
+              padding: const EdgeInsets.all(DsSpacing.md),
+              decoration: BoxDecoration(
+                color: ZaWolfColors.surface01,
+                borderRadius: DsRadius.inputBorder,
+                border: Border.all(
+                  color: ZaWolfColors.error.withValues(alpha: .45),
+                ),
+              ),
+              child: Row(
+                textDirection: TextDirection.rtl,
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          DateFormat('EEEE dd MMM', 'ar').format(date),
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        Text(
+                          'لم يُسجّل حضور في يوم العمل هذا.',
+                          style: theme.textTheme.bodySmall,
+                        ),
+                      ],
+                    ),
+                  ),
+                  const StatusPill(
+                    status: DsStatus.absent,
+                    label: 'غائب',
+                    compact: true,
+                  ),
+                ],
+              ),
+            ),
+        ],
       ],
     );
   }

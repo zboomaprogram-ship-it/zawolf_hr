@@ -43,14 +43,17 @@ class RequestApprovalTimeline extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<RequestApprovalPolicy>(
-      future: _approvalPolicy,
-      initialData: const RequestApprovalPolicy(),
-      builder:
-          (context, snapshot) => _buildTimeline(
-            context,
-            snapshot.data ?? const RequestApprovalPolicy(),
-          ),
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: FutureBuilder<RequestApprovalPolicy>(
+        future: _approvalPolicy,
+        initialData: const RequestApprovalPolicy(),
+        builder:
+            (context, snapshot) => _buildTimeline(
+              context,
+              snapshot.data ?? const RequestApprovalPolicy(),
+            ),
+      ),
     );
   }
 

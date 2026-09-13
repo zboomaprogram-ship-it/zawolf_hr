@@ -62,7 +62,7 @@ function parseAction(raw, actor) {
   return { type, date, eventTime, latitude, longitude, deviceId, raw, actor };
 }
 
-async function bindTrustedDevice({ db, admin, actor, action, userRef, user }) {
+async function bindTrustedDevice({ db, admin, actor, action, userRef, user, developerDeviceOverride = false }) {
   const deviceRef = db.collection('attendanceDevices').doc(action.deviceId.replaceAll('/', '_'));
   await db.runTransaction(async (transaction) => {
     const deviceSnap = await transaction.get(deviceRef);
@@ -78,7 +78,7 @@ async function bindTrustedDevice({ db, admin, actor, action, userRef, user }) {
       // except for executive accounts which may switch between authorized devices.
       const empCode = String(user.employeeId || user.employeeCode || '').trim().toUpperCase();
       const isExecutive = empCode === 'CEO-100' || empCode === 'COO-1300' || user.role === 'super_admin';
-      if (registeredSnap.exists && registeredSnap.data()?.userId === actor.uid && !isExecutive) {
+      if (registeredSnap.exists && registeredSnap.data()?.userId === actor.uid && !isExecutive && !developerDeviceOverride) {
         throw gatewayError('هذا الحساب مربوط بجهاز حضور آخر. اطلب من HR إعادة ضبط الجهاز.', 'device_mismatch');
       }
     }
@@ -97,6 +97,16 @@ async function bindTrustedDevice({ db, admin, actor, action, userRef, user }) {
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     }, { merge: true });
   });
+}
+
+async function hasDeveloperDeviceOverride(db, userId) {
+  const entitlement = await db.collection('developerToolEntitlements').doc(userId).get();
+  if (!entitlement.exists) return false;
+  const data = entitlement.data() || {};
+  if (data.revokedAt != null || !Array.isArray(data.scopes) || !data.scopes.includes('attendance_device_override')) return false;
+  if (data.permanent === true) return true;
+  const expiresAt = data.expiresAt?.toDate?.() || data.expiresAt;
+  return expiresAt instanceof Date && expiresAt.getTime() > Date.now();
 }
 
 function actionData({ admin, action, user, receivedAt, locationEvidence = null }) {
@@ -192,6 +202,7 @@ async function submitAttendanceAction({ admin, actor, rawAction }) {
   const expectedId = `${actor.uid}_${action.date}`;
   if (asString(rawAction.attendanceId) !== expectedId) throw gatewayError('Attendance identity is invalid.');
   const ref = db.collection('attendance').doc(expectedId);
+  const developerDeviceOverride = await hasDeveloperDeviceOverride(db, actor.uid);
   const receivedAt = new Date();
   if (action.type === 'checkIn') {
     // A retry must converge even when the employee's assignments changed after
@@ -206,7 +217,7 @@ async function submitAttendanceAction({ admin, actor, rawAction }) {
         db, actorUid: actor.uid, rawAction, eventTime: action.eventTime,
       })
       : null;
-    await bindTrustedDevice({ db, admin, actor, action, userRef, user });
+    await bindTrustedDevice({ db, admin, actor, action, userRef, user, developerDeviceOverride });
     // Use a transaction for the canonical Cairo-day identity. Two retries (or
     // an automatic/manual race) therefore converge to one record and a
     // semantic receipt instead of leaking an "already exists" error.
@@ -224,7 +235,7 @@ async function submitAttendanceAction({ admin, actor, rawAction }) {
     });
     return { action: 'check_in', status, attendanceId: expectedId };
   }
-  await bindTrustedDevice({ db, admin, actor, action, userRef, user });
+  await bindTrustedDevice({ db, admin, actor, action, userRef, user, developerDeviceOverride });
   const existing = await ref.get();
   if (!existing.exists || !existing.data()?.checkInTime) throw gatewayError('سجل الحضور غير موجود بعد.', 'checkin_missing');
   if (existing.data()?.checkOutTime) return { action: 'check_out', status: 'already_recorded', attendanceId: expectedId };
@@ -244,6 +255,7 @@ async function bindAttendanceDevice({ admin, actor, rawAction }) {
   if (!userSnap.exists || user.isActive === false) {
     throw gatewayError('حساب الموظف غير نشط.', 'account_inactive');
   }
+  const developerDeviceOverride = await hasDeveloperDeviceOverride(db, actor.uid);
   await bindTrustedDevice({
     db,
     admin,
@@ -254,6 +266,7 @@ async function bindAttendanceDevice({ admin, actor, rawAction }) {
     },
     userRef,
     user,
+    developerDeviceOverride,
   });
   return { action: 'device_bound', status: 'recorded' };
 }

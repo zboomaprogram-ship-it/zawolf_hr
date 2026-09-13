@@ -2,6 +2,7 @@ const DEVELOPER_TOOL_SCOPES = new Set([
   'app_diagnostics',
   'network_diagnostics',
   'release_information',
+  'attendance_device_override',
 ]);
 const MAX_ENTITLEMENT_MS = 7 * 24 * 60 * 60 * 1000;
 

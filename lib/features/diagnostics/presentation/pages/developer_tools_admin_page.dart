@@ -14,8 +14,8 @@ final class DeveloperToolsAdminPage extends StatefulWidget {
 final class _DeveloperToolsAdminPageState
     extends State<DeveloperToolsAdminPage> {
   DateTime _expiry = DateTime.now().add(const Duration(hours: 8));
-  // Developer diagnostics are deliberately permanent by default. They remain
-  // diagnostic-only and do not change USB, mock-location, or attendance rules.
+  // Grants remain audited. The only attendance exception is a user's own stale
+  // device binding; location, biometric, and account checks are unchanged.
   bool _permanent = true;
 
   String _employeeLabel(DeveloperToolsAdminState state, String userId) {
@@ -63,7 +63,7 @@ final class _DeveloperToolsAdminPageState
                 ),
                 const SizedBox(height: 12),
                 const Text(
-                  'صلاحية تشخيص داخل التطبيق فقط. لا تمنح أي استثناء للحضور أو الموقع أو USB debugging.',
+                  'تمنح أدوات التشخيص، وإعادة ربط جهاز الحضور المسجّل للحساب عند الحاجة. لا تتجاوز الموقع أو البصمة أو ربط جهاز مستخدم آخر.',
                 ),
                 const SizedBox(height: 16),
                 if (state.status == DeveloperToolsAdminStatus.loading)
@@ -168,7 +168,9 @@ final class _DeveloperToolsAdminPageState
                 const SizedBox(height: 12),
                 SwitchListTile.adaptive(
                   title: const Text('صلاحية دائمة'),
-                  subtitle: const Text('لأدوات المطوّر داخل التطبيق فقط.'),
+                  subtitle: const Text(
+                    'تظل حماية الموقع والبصمة والحساب مفعّلة.',
+                  ),
                   value: _permanent,
                   onChanged: (value) => setState(() => _permanent = value),
                 ),

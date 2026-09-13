@@ -176,14 +176,25 @@ class EmployeeDeductionService {
         item.salaryDeductionFraction > 0
             ? item.salaryDeductionFraction
             : (isAbsent ? 1.0 : 0.0);
-    final fallbackReason = isAbsent ? 'خصم غياب (يوم كامل)' : 'خصم تأخير';
-    final reason = AttendancePolicy.arabicDeductionLabel(
-      item.salaryDeductionCode,
-      fallback:
-          item.salaryDeductionLabel.isNotEmpty
-              ? item.salaryDeductionLabel
-              : fallbackReason,
-    );
+    final fallbackReason =
+        isAbsent ? 'غياب كامل: لم يُسجّل حضور خلال وردية العمل' : 'خصم تأخير';
+    // Legacy absence rows use the stable ABSENCE code.  The generic policy
+    // label used to turn that into only "خصم يوم كامل", hiding the actual
+    // reason from the employee. Preserve an authored label when available and
+    // otherwise explain the missing attendance explicitly.
+    final reason =
+        isAbsent
+            ? (item.salaryDeductionLabel.trim().isNotEmpty &&
+                    item.salaryDeductionLabel.trim() != 'خصم غياب (يوم كامل)'
+                ? item.salaryDeductionLabel.trim()
+                : fallbackReason)
+            : AttendancePolicy.arabicDeductionLabel(
+              item.salaryDeductionCode,
+              fallback:
+                  item.salaryDeductionLabel.isNotEmpty
+                      ? item.salaryDeductionLabel
+                      : fallbackReason,
+            );
     return EmployeeDeductionEntry(
       id: item.attendanceId,
       date: item.date,
@@ -194,7 +205,8 @@ class EmployeeDeductionService {
       amount: item.salaryDeductionAmount,
       currency: item.salaryCurrency,
       approvedAt:
-          item.salaryDeductionReviewedAt ?? (isApproved ? item.checkInTime : null),
+          item.salaryDeductionReviewedAt ??
+          (isApproved ? item.checkInTime : null),
       approvedByName: item.salaryDeductionReviewedBy,
     );
   }

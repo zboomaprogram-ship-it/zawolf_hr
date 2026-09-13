@@ -146,7 +146,7 @@ test('private chat policy enforces employee, manager, HR/admin, and IT boundarie
   assert.equal(P.canDirect(employee, { id: 'manager', role: 'manager', department: 'Sales' }), true);
   assert.equal(P.canDirect(employee, { id: 'foreign-manager', role: 'manager', department: 'Other' }), false);
   assert.equal(P.canDirect(employee, { id: 'hr', role: 'hr_manager' }), true);
-  assert.equal(P.canDirect(employee, { id: 'admin', role: 'super_admin' }), true);
+  assert.equal(P.canDirect(employee, { id: 'admin', role: 'super_admin' }), false);
   assert.equal(P.canDirect(employee, { id: 'it', role: 'manager', department: 'IT' }), true);
   assert.equal(P.canDirect({ uid: 'manager', role: 'manager' }, { id: 'any', role: 'manager' }), true);
   assert.equal(P.canDirect({ uid: 'admin', role: 'super_admin' }, { id: 'any', role: 'employee' }), true);

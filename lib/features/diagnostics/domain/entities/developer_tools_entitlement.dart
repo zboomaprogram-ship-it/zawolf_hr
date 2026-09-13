@@ -1,11 +1,14 @@
 /// A temporary, in-app entitlement for troubleshooting tools.
 ///
-/// It deliberately has no attendance, device, location, USB, or mock-location
-/// scope. Those protections remain enforced by the attendance service.
+/// The attendance device override is an explicit, audited troubleshooting
+/// exception. It only permits rebinding the entitled employee's own device;
+/// location, biometric, account, and cross-account device protections remain
+/// enforced by the attendance gateway.
 enum DeveloperToolScope {
   appDiagnostics,
   networkDiagnostics,
   releaseInformation,
+  attendanceDeviceOverride,
 }
 
 final class DeveloperToolsEntitlement {
