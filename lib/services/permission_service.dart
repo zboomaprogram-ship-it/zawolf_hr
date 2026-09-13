@@ -10,6 +10,7 @@ import 'attendance_policy_service.dart';
 import 'request_approval_policy_service.dart';
 import 'role_notification_service.dart';
 import 'attendance_reconciliation_service.dart';
+import '../features/request_staffing_alerts/data/request_staffing_conflict_service.dart';
 import 'attendance_gateway_service.dart';
 import '../utils/payroll_cycle.dart';
 import '../utils/permission_cycle_accounting.dart';
@@ -419,6 +420,7 @@ class PermissionService {
 
     await permRef.set({
       ...finalModel.toFirestore(),
+      'jobTitle': employee.position.trim(),
       'requestDateTimestamp': Timestamp.fromDate(
         DateTime(
           req.requestDate.isEmpty
@@ -459,6 +461,17 @@ class PermissionService {
         ),
       ],
     });
+
+    // Advisory staffing notification: it never blocks or mutates the request.
+    if (!usesHrFallback && firstManagerId.isNotEmpty) {
+      try {
+        await RequestStaffingConflictService().notifyManagerForPermission(
+          finalModel,
+          managerId: firstManagerId,
+          jobTitle: employee.position,
+        );
+      } catch (_) {}
+    }
 
     // ── Triggers notifications (No functions, direct Firestore write) ──
     if (usesHrFallback) {
@@ -517,7 +530,8 @@ class PermissionService {
         (reviewerDoc.data()?['displayName'] as String?)?.trim() ?? '';
     final reviewerEmployeeId =
         ((reviewerDoc.data()?['employeeId'] ??
-                reviewerDoc.data()?['employeeCode']) as String?)
+                    reviewerDoc.data()?['employeeCode'])
+                as String?)
             ?.trim()
             .toUpperCase() ??
         '';
@@ -795,7 +809,8 @@ class PermissionService {
         (reviewerDoc.data()?['displayName'] as String?)?.trim() ?? '';
     final reviewerEmployeeId =
         ((reviewerDoc.data()?['employeeId'] ??
-                reviewerDoc.data()?['employeeCode']) as String?)
+                    reviewerDoc.data()?['employeeCode'])
+                as String?)
             ?.trim()
             .toUpperCase() ??
         '';

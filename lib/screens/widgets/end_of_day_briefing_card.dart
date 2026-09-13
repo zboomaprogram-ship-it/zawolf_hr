@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../../services/end_of_day_briefing_service.dart';
+import '../../theme/theme.dart';
 
 final class EndOfDayBriefingCard extends StatefulWidget {
   const EndOfDayBriefingCard({super.key, required this.isHr, this.managerUid});
@@ -59,19 +60,19 @@ class _EndOfDayBriefingCardState extends State<EndOfDayBriefingCard> {
       margin: const EdgeInsets.symmetric(vertical: 12),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [const Color(0xFF1E293B), const Color(0xFF0F172A)],
+        gradient: const LinearGradient(
+          colors: [ZaWolfColors.surface02, ZaWolfColors.surface01],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
         borderRadius: BorderRadius.circular(20),
         border: Border.all(
-          color: const Color(0xFF38BDF8).withValues(alpha: 0.3),
+          color: ZaWolfColors.primaryCyan.withValues(alpha: 0.3),
           width: 1.5,
         ),
         boxShadow: [
           BoxShadow(
-            color: const Color(0xFF38BDF8).withValues(alpha: 0.1),
+            color: ZaWolfColors.primaryCyan.withValues(alpha: 0.1),
             blurRadius: 16,
             spreadRadius: 2,
           ),
@@ -85,12 +86,12 @@ class _EndOfDayBriefingCardState extends State<EndOfDayBriefingCard> {
               Container(
                 padding: const EdgeInsets.all(10),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF38BDF8).withValues(alpha: 0.15),
+                  color: ZaWolfColors.primaryCyan.withValues(alpha: 0.15),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: const Icon(
                   Icons.auto_awesome_rounded,
-                  color: Color(0xFF38BDF8),
+                  color: ZaWolfColors.primaryCyan,
                   size: 22,
                 ),
               ),
@@ -104,7 +105,7 @@ class _EndOfDayBriefingCardState extends State<EndOfDayBriefingCard> {
                           ? 'تقرير الإحاطة اليومي للمنظومة'
                           : 'تقرير الإحاطة اليومي لفريق العمل',
                       style: const TextStyle(
-                        color: Colors.white,
+                        color: ZaWolfColors.textPrimary,
                         fontSize: 16,
                         fontWeight: FontWeight.bold,
                       ),
@@ -113,7 +114,7 @@ class _EndOfDayBriefingCardState extends State<EndOfDayBriefingCard> {
                     Text(
                       'ملخص اليوم ${DateFormat('yyyy/MM/dd').format(DateTime.now())}',
                       style: const TextStyle(
-                        color: Colors.white54,
+                        color: ZaWolfColors.textMuted,
                         fontSize: 12,
                       ),
                     ),
@@ -123,7 +124,7 @@ class _EndOfDayBriefingCardState extends State<EndOfDayBriefingCard> {
               IconButton(
                 icon: const Icon(
                   Icons.refresh_rounded,
-                  color: Colors.white70,
+                  color: ZaWolfColors.textSecondary,
                   size: 20,
                 ),
                 onPressed: _loadBriefingData,
@@ -135,7 +136,7 @@ class _EndOfDayBriefingCardState extends State<EndOfDayBriefingCard> {
             const Center(
               child: Padding(
                 padding: EdgeInsets.all(16),
-                child: CircularProgressIndicator(color: Color(0xFF38BDF8)),
+                child: CircularProgressIndicator(color: ZaWolfColors.primaryCyan),
               ),
             )
           else ...[
@@ -146,7 +147,7 @@ class _EndOfDayBriefingCardState extends State<EndOfDayBriefingCard> {
                     label: 'نسبة الحضور',
                     value: '$attendancePct%',
                     icon: Icons.pie_chart_outline_rounded,
-                    color: const Color(0xFF10B981),
+                    color: ZaWolfColors.success,
                   ),
                 ),
                 const SizedBox(width: 10),
@@ -155,7 +156,7 @@ class _EndOfDayBriefingCardState extends State<EndOfDayBriefingCard> {
                     label: 'التأخيرات',
                     value: '$_lateCount',
                     icon: Icons.access_time_filled_rounded,
-                    color: const Color(0xFFF59E0B),
+                    color: ZaWolfColors.warning,
                   ),
                 ),
                 const SizedBox(width: 10),
@@ -164,7 +165,7 @@ class _EndOfDayBriefingCardState extends State<EndOfDayBriefingCard> {
                     label: 'تذاكر حُلت',
                     value: '$_resolvedTicketsCount',
                     icon: Icons.task_alt_rounded,
-                    color: const Color(0xFF3B82F6),
+                    color: ZaWolfColors.primaryBlue,
                   ),
                 ),
               ],
@@ -173,14 +174,14 @@ class _EndOfDayBriefingCardState extends State<EndOfDayBriefingCard> {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.05),
+                color: ZaWolfColors.surface02,
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Row(
                 children: [
                   const Icon(
                     Icons.calendar_today_rounded,
-                    color: Color(0xFFA855F7),
+                    color: ZaWolfColors.dayoffPurple,
                     size: 18,
                   ),
                   const SizedBox(width: 8),
@@ -189,7 +190,7 @@ class _EndOfDayBriefingCardState extends State<EndOfDayBriefingCard> {
                       _tomorrowLeavesCount > 0
                           ? 'تنويه الغد: يوجد $_tomorrowLeavesCount إجازة معتمدة غداً'
                           : 'تنويه الغد: لا توجد إجازات جديدة مسجلة غداً',
-                      style: const TextStyle(color: Colors.white, fontSize: 12),
+                      style: const TextStyle(color: ZaWolfColors.textPrimary, fontSize: 12),
                     ),
                   ),
                 ],
@@ -239,7 +240,7 @@ class _BriefingStatTile extends StatelessWidget {
           const SizedBox(height: 2),
           Text(
             label,
-            style: const TextStyle(color: Colors.white60, fontSize: 10),
+            style: const TextStyle(color: ZaWolfColors.textSecondary, fontSize: 10),
           ),
         ],
       ),

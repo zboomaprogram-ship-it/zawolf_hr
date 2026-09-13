@@ -51,6 +51,7 @@ import '../../utils/user_facing_error.dart';
 import '../../services/safe_diagnostics_service.dart';
 import '../../core/sync/authenticated_operation_client.dart';
 import '../../features/request_visibility/domain/entities/request_view_query.dart';
+import '../../features/request_staffing_alerts/data/request_staffing_conflict_service.dart';
 import '../../features/request_visibility/domain/entities/request_visibility_record.dart';
 import '../../features/request_visibility/presentation/widgets/request_type_style.dart';
 import '../../navigation/request_visibility_entry.dart';
@@ -81,6 +82,8 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
   final LeaveService _leaveService = LeaveService();
   final PermissionService _permissionService = PermissionService();
+  final RequestStaffingConflictService _staffingConflictService =
+      RequestStaffingConflictService();
   final AttendanceService _attendanceService = AttendanceService();
   final ComplaintService _complaintService = ComplaintService();
   final AdvanceService _advanceService = AdvanceService();
@@ -111,6 +114,59 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
       );
 
   bool _isRequestBusy(String requestId) => _busyRequestIds.contains(requestId);
+
+  Future<void> _confirmLeaveWithStaffing(
+    LeaveModel leave,
+    UserModel reviewer,
+  ) async {
+    final conflicts = await _staffingConflictService.forLeave(
+      leave,
+      reviewer.uid,
+    );
+    final detail =
+        conflicts.isEmpty
+            ? 'سيتم تنفيذ الإجراء على هذا الطلب.'
+            : 'تنبيه تغطية الفريق: يوجد ${conflicts.length} طلب متداخل لموظف بالمسمى الوظيفي نفسه (${conflicts.first.employeeName} • ${conflicts.first.date}). يمكنك المتابعة أو الرفض حسب احتياج العمل.';
+    if (!mounted) return;
+    await _confirmAndRun(
+      requestId: leave.leaveId,
+      title: 'اعتماد طلب الإجازة',
+      message: detail,
+      confirmLabel: 'اعتماد',
+      run:
+          () => _leaveService.approveLeave(
+            leave.leaveId,
+            reviewer.uid,
+            reviewer.role,
+          ),
+    );
+  }
+
+  Future<void> _confirmPermissionWithStaffing(
+    PermissionModel permission,
+    UserModel reviewer,
+  ) async {
+    final conflicts = await _staffingConflictService.forPermission(
+      permission,
+      reviewer.uid,
+    );
+    final detail =
+        conflicts.isEmpty
+            ? 'سيتم تنفيذ الإجراء على هذا الطلب.'
+            : 'تنبيه تغطية الفريق: يوجد ${conflicts.length} طلب متداخل لموظف بالمسمى الوظيفي نفسه (${conflicts.first.employeeName} • ${conflicts.first.date}). يمكنك المتابعة أو الرفض حسب احتياج العمل.';
+    if (!mounted) return;
+    await _confirmAndRun(
+      requestId: permission.permissionId,
+      title: 'اعتماد طلب الإذن',
+      message: detail,
+      confirmLabel: 'اعتماد',
+      run:
+          () => _permissionService.approvePermission(
+            permission.permissionId,
+            reviewer.uid,
+          ),
+    );
+  }
 
   /// Runs [action] with the request's action buttons disabled until done
   /// (specs/ui_redesign/06 R2: disable during submission).
@@ -3880,18 +3936,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                       docId: leave.leaveId,
                       requestTitle: 'طلب الإجازة',
                     ),
-                onApprove:
-                    () => _confirmAndRun(
-                      requestId: leave.leaveId,
-                      title: 'اعتماد طلب الإجازة',
-                      confirmLabel: 'اعتماد',
-                      run:
-                          () => _leaveService.approveLeave(
-                            leave.leaveId,
-                            reviewer.uid,
-                            reviewer.role,
-                          ),
-                    ),
+                onApprove: () => _confirmLeaveWithStaffing(leave, reviewer),
                 onReject:
                     () => _showRejectionDialog(
                       requestId: leave.leaveId,
@@ -4489,17 +4534,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                       docId: perm.permissionId,
                       requestTitle: 'طلب الإذن',
                     ),
-                onApprove:
-                    () => _confirmAndRun(
-                      requestId: perm.permissionId,
-                      title: 'اعتماد طلب الإذن',
-                      confirmLabel: 'اعتماد',
-                      run:
-                          () => _permissionService.approvePermission(
-                            perm.permissionId,
-                            reviewer.uid,
-                          ),
-                    ),
+                onApprove: () => _confirmPermissionWithStaffing(perm, reviewer),
                 onReject:
                     () => _showRejectionDialog(
                       requestId: perm.permissionId,
@@ -6653,7 +6688,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                 ),
                 FilledButton(
                   style: FilledButton.styleFrom(
-                    backgroundColor: Colors.redAccent,
+                    backgroundColor: ZaWolfColors.error,
                   ),
                   onPressed: () => Navigator.pop(dialogContext, true),
                   child: const Text('حذف نهائي'),

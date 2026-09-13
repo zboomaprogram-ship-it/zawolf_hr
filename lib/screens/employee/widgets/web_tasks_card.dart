@@ -110,7 +110,7 @@ class _WebTasksCardState extends State<WebTasksCard> {
                         Text(
                           'متابعة تنفيذ المهام (Task Execution)',
                           style: TextStyle(
-                            color: Colors.white,
+                            color: ZaWolfColors.textPrimary,
                             fontSize: 16,
                             fontWeight: FontWeight.bold,
                           ),
@@ -243,7 +243,7 @@ class _WebTasksCardState extends State<WebTasksCard> {
         child: Text(
           label,
           style: TextStyle(
-            color: isSelected ? Colors.white : ZaWolfColors.textSecondary,
+            color: isSelected ? ZaWolfColors.textPrimary : ZaWolfColors.textSecondary,
             fontSize: 12,
             fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
           ),
@@ -325,7 +325,7 @@ class _WebTasksCardState extends State<WebTasksCard> {
                         child: Text(
                           task.title,
                           style: TextStyle(
-                            color: Colors.white,
+                            color: ZaWolfColors.textPrimary,
                             fontSize: 14,
                             fontWeight: FontWeight.w600,
                             decoration:
@@ -475,7 +475,7 @@ class _WebTasksCardState extends State<WebTasksCard> {
       case TaskPriority.urgent:
         return ZaWolfColors.error;
       case TaskPriority.high:
-        return Colors.orangeAccent;
+        return ZaWolfColors.warning;
       case TaskPriority.low:
         return ZaWolfColors.textMuted;
       default:

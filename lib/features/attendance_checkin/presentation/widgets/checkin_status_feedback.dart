@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../../core/errors/user_safe_failure_message.dart';
+import '../../../../theme/theme.dart';
 import '../../domain/entities/check_in_presentation_state.dart';
 
 class CheckInStatusFeedback extends StatelessWidget {
@@ -25,30 +26,30 @@ class CheckInStatusFeedback extends StatelessWidget {
     final (icon, color, text) = switch (state.status) {
       CheckInViewStatus.saved => (
         Icons.check_circle_outline,
-        Colors.green,
+        ZaWolfColors.success,
         state.receipt?.status.name == 'alreadyRecorded'
             ? 'تم تسجيل حضورك مسبقاً لهذا اليوم.'
             : 'تم حفظ تسجيل الحضور بنجاح.',
       ),
       CheckInViewStatus.pendingSync => (
         Icons.sync,
-        Colors.orange,
+        ZaWolfColors.warning,
         'تم حفظ طلب الحضور وبانتظار المزامنة عند توفر الإنترنت.',
       ),
       CheckInViewStatus.requiresStatusCheck => (
         Icons.manage_search,
-        Colors.orange,
+        ZaWolfColors.warning,
         'تعذر تأكيد النتيجة. تحقق من حالة الطلب قبل إعادة الإرسال.',
       ),
       CheckInViewStatus.failed => (
         Icons.info_outline,
-        Colors.redAccent,
+        ZaWolfColors.error,
         resolvedFailureMessage?.text ??
             'تعذر إتمام تسجيل الحضور. تواصل مع المسؤول.',
       ),
       CheckInViewStatus.submitting => (
         Icons.hourglass_top,
-        Colors.cyan,
+        ZaWolfColors.primaryCyan,
         'جارٍ حفظ تسجيل الحضور…',
       ),
       CheckInViewStatus.idle => (Icons.info_outline, Colors.transparent, ''),

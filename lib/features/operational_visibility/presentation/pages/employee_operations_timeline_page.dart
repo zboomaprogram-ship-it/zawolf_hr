@@ -28,6 +28,7 @@ final class EmployeeOperationsTimelinePage extends StatefulWidget {
 final class _EmployeeOperationsTimelinePageState
     extends State<EmployeeOperationsTimelinePage> {
   late DateTimeRange _range;
+  String _selectedCategory = 'all';
 
   @override
   void initState() {
@@ -63,6 +64,32 @@ final class _EmployeeOperationsTimelinePageState
     _load();
   }
 
+  void _setPresetRange(int monthOffset) {
+    final now = DateTime.now();
+    final targetMonth = DateTime(now.year, now.month + monthOffset, 1);
+    setState(() {
+      _range = DateTimeRange(
+        start: targetMonth,
+        end: DateTime(targetMonth.year, targetMonth.month + 1, 0, 23, 59, 59),
+      );
+    });
+    _load();
+  }
+
+  List<EmployeeTimelineEntry> _filterItems(List<EmployeeTimelineEntry> items) {
+    if (_selectedCategory == 'all') return items;
+    return items.where((item) {
+      return switch (_selectedCategory) {
+        'attendance' => item.kind == EmployeeTimelineKind.attendance,
+        'leave' => item.kind == EmployeeTimelineKind.leave,
+        'permission' => item.kind == EmployeeTimelineKind.permission,
+        'deduction' => item.kind == EmployeeTimelineKind.deduction,
+        'correction' => item.kind == EmployeeTimelineKind.correction,
+        _ => true,
+      };
+    }).toList();
+  }
+
   @override
   Widget build(BuildContext context) => Directionality(
     textDirection: TextDirection.rtl,
@@ -76,111 +103,397 @@ final class _EmployeeOperationsTimelinePageState
         ),
         title: const Text('سجل الموظف التشغيلي'),
       ),
-      body: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Wrap(
-              spacing: 12,
-              runSpacing: 12,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              children: [
-                OutlinedButton.icon(
-                  onPressed: _pickPeriod,
-                  icon: const Icon(Icons.date_range),
-                  label: Text(
-                    '${DateFormat('yyyy/MM/dd').format(_range.start)} — '
-                    '${DateFormat('yyyy/MM/dd').format(_range.end)}',
-                  ),
-                ),
-                if (widget.canManageVisibility)
-                  BlocBuilder<
-                    OperationalVisibilityCubit,
-                    OperationalVisibilityState
-                  >(
-                    builder: (context, state) {
-                      final hidden = state.hiddenEmployeeIds.contains(
-                        widget.employeeUserId,
-                      );
-                      return FilterChip(
-                        selected: hidden,
-                        label: Text(
-                          hidden
-                              ? 'مخفي من الحضور اليومي'
-                              : 'إخفاء حساب الاختبار من الحضور',
-                        ),
-                        onSelected:
-                            state.savingEmployeeId != null
-                                ? null
-                                : (value) => context
-                                    .read<OperationalVisibilityCubit>()
-                                    .setHidden(
-                                      employeeUserId: widget.employeeUserId,
-                                      hidden: value,
-                                      reasonAr:
-                                          value
-                                              ? 'حساب غير تشغيلي أو مخصص للاختبار'
-                                              : 'إعادة الحساب إلى العرض التشغيلي',
-                                    ),
-                      );
-                    },
-                  ),
-              ],
-            ),
-          ),
-          Expanded(
-            child: BlocBuilder<EmployeeTimelineCubit, EmployeeTimelineState>(
-              builder: (context, state) {
-                if (state.loading && state.items.isEmpty) {
-                  return const Center(child: CircularProgressIndicator());
-                }
-                if (state.safeErrorCode != null && state.items.isEmpty) {
-                  return _TimelineMessage(
-                    icon: Icons.error_outline,
-                    message: 'تعذر تحميل السجل الآن. حاول مرة أخرى.',
-                    onRetry: _load,
-                  );
-                }
-                if (state.items.isEmpty) {
-                  return const _TimelineMessage(
-                    icon: Icons.history_toggle_off,
-                    message: 'لا توجد عمليات ضمن الفترة المحددة.',
-                  );
-                }
-                return ListView.builder(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-                  itemCount: state.items.length + (state.hasMore ? 2 : 1),
-                  itemBuilder: (context, index) {
-                    if (index == 0) {
-                      return Padding(
-                        padding: const EdgeInsets.only(bottom: 12),
-                        child: _PeriodSummaryCard(summary: state.summary),
-                      );
-                    }
-                    final itemIndex = index - 1;
-                    if (itemIndex == state.items.length) {
-                      return Center(
-                        child: TextButton(
-                          onPressed:
-                              state.loading
-                                  ? null
-                                  : context
-                                      .read<EmployeeTimelineCubit>()
-                                      .loadMore,
-                          child: const Text('تحميل المزيد'),
-                        ),
-                      );
-                    }
-                    return _TimelineTile(item: state.items[itemIndex]);
-                  },
+      body: LayoutBuilder(
+        builder: (context, constraints) {
+          final isDesktop = constraints.maxWidth >= 900;
+          return BlocBuilder<EmployeeTimelineCubit, EmployeeTimelineState>(
+            builder: (context, state) {
+              if (state.loading && state.items.isEmpty) {
+                return const Center(
+                  child: CircularProgressIndicator(color: ZaWolfColors.primaryCyan),
                 );
-              },
-            ),
-          ),
-        ],
+              }
+              if (state.safeErrorCode != null && state.items.isEmpty) {
+                return _TimelineMessage(
+                  icon: Icons.error_outline,
+                  message: 'تعذر تحميل السجل الآن. حاول مرة أخرى.',
+                  onRetry: _load,
+                );
+              }
+
+              final filteredItems = _filterItems(state.items);
+
+              if (isDesktop) {
+                return Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 1320),
+                    child: Padding(
+                      padding: const EdgeInsets.all(20),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          SizedBox(
+                            width: 360,
+                            child: ListView(
+                              children: [
+                                _buildPeriodCard(isDesktop),
+                                const SizedBox(height: 16),
+                                _PeriodSummaryCard(summary: state.summary),
+                                const SizedBox(height: 16),
+                                _buildFilterCard(),
+                                if (widget.canManageVisibility) ...[
+                                  const SizedBox(height: 16),
+                                  _buildVisibilityCard(),
+                                ],
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 24),
+                          Expanded(
+                            child: _buildTimelineStream(state, filteredItems),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                );
+              }
+
+              return Column(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                    child: Column(
+                      children: [
+                        _buildPeriodCard(isDesktop),
+                        const SizedBox(height: 10),
+                        _PeriodSummaryCard(summary: state.summary),
+                        const SizedBox(height: 10),
+                        _buildFilterChipsRow(),
+                        if (widget.canManageVisibility) ...[
+                          const SizedBox(height: 8),
+                          _buildVisibilityChipOnly(),
+                        ],
+                      ],
+                    ),
+                  ),
+                  const Divider(color: ZaWolfColors.surface03, height: 1),
+                  Expanded(
+                    child: _buildTimelineStream(state, filteredItems),
+                  ),
+                ],
+              );
+            },
+          );
+        },
       ),
     ),
   );
+
+  Widget _buildPeriodCard(bool isDesktop) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: ZaWolfColors.surface01,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: ZaWolfColors.surface03),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.date_range_rounded, color: ZaWolfColors.primaryCyan, size: 18),
+              const SizedBox(width: 8),
+              const Text(
+                'فترة المراجعة',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 14,
+                ),
+              ),
+              const Spacer(),
+              InkWell(
+                onTap: _pickPeriod,
+                borderRadius: BorderRadius.circular(6),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  child: Row(
+                    children: [
+                      Text(
+                        'تعديل',
+                        style: TextStyle(
+                          color: ZaWolfColors.primaryCyan,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      Icon(Icons.edit_calendar_outlined, size: 14, color: ZaWolfColors.primaryCyan),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: ZaWolfColors.surface02,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Text(
+              '${DateFormat('yyyy/MM/dd').format(_range.start)} — ${DateFormat('yyyy/MM/dd').format(_range.end)}',
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w600,
+                fontSize: 13,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton(
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 6),
+                    side: const BorderSide(color: ZaWolfColors.surface03),
+                  ),
+                  onPressed: () => _setPresetRange(0),
+                  child: const Text('الشهر الحالي', style: TextStyle(fontSize: 12)),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: OutlinedButton(
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 6),
+                    side: const BorderSide(color: ZaWolfColors.surface03),
+                  ),
+                  onPressed: () => _setPresetRange(-1),
+                  child: const Text('الشهر السابق', style: TextStyle(fontSize: 12)),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFilterCard() {
+    final categories = [
+      ('all', 'جميع العمليات', Icons.all_inclusive_rounded),
+      ('attendance', 'بصمات الحضور', Icons.fingerprint_rounded),
+      ('leave', 'الإجازات', Icons.event_available_rounded),
+      ('permission', 'الأذونات', Icons.schedule_rounded),
+      ('deduction', 'الخصومات', Icons.money_off_rounded),
+      ('correction', 'تصحيحات الحضور', Icons.edit_calendar_rounded),
+    ];
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: ZaWolfColors.surface01,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: ZaWolfColors.surface03),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'تصفية نوع العملية',
+            style: TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.bold,
+              fontSize: 14,
+            ),
+          ),
+          const SizedBox(height: 10),
+          ...categories.map((cat) {
+            final isSelected = _selectedCategory == cat.$1;
+            return InkWell(
+              onTap: () => setState(() => _selectedCategory = cat.$1),
+              borderRadius: BorderRadius.circular(8),
+              child: Container(
+                margin: const EdgeInsets.only(bottom: 6),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                decoration: BoxDecoration(
+                  color: isSelected
+                      ? ZaWolfColors.primaryCyan.withValues(alpha: 0.15)
+                      : Colors.transparent,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: isSelected ? ZaWolfColors.primaryCyan : Colors.transparent,
+                    width: 1,
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      cat.$3,
+                      size: 18,
+                      color: isSelected ? ZaWolfColors.primaryCyan : ZaWolfColors.textSecondary,
+                    ),
+                    const SizedBox(width: 10),
+                    Text(
+                      cat.$2,
+                      style: TextStyle(
+                        color: isSelected ? Colors.white : ZaWolfColors.textSecondary,
+                        fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFilterChipsRow() {
+    final categories = [
+      ('all', 'الكل'),
+      ('attendance', 'حضور'),
+      ('leave', 'إجازات'),
+      ('permission', 'أذونات'),
+      ('deduction', 'خصومات'),
+      ('correction', 'تصحيحات'),
+    ];
+
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: categories.map((cat) {
+          final isSelected = _selectedCategory == cat.$1;
+          return Padding(
+            padding: const EdgeInsets.only(left: 6),
+            child: ChoiceChip(
+              selected: isSelected,
+              label: Text(cat.$2),
+              onSelected: (_) => setState(() => _selectedCategory = cat.$1),
+            ),
+          );
+        }).toList(),
+      ),
+    );
+  }
+
+  Widget _buildVisibilityCard() {
+    return BlocBuilder<OperationalVisibilityCubit, OperationalVisibilityState>(
+      builder: (context, state) {
+        final hidden = state.hiddenEmployeeIds.contains(widget.employeeUserId);
+        return Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: ZaWolfColors.surface01,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: ZaWolfColors.surface03),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'الرؤية والظهور التشغيلي',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 14,
+                ),
+              ),
+              const SizedBox(height: 8),
+              FilterChip(
+                selected: hidden,
+                label: Text(
+                  hidden
+                      ? 'مخفي من الحضور اليومي'
+                      : 'إخفاء حساب الاختبار من الحضور',
+                ),
+                onSelected: state.savingEmployeeId != null
+                    ? null
+                    : (value) => context.read<OperationalVisibilityCubit>().setHidden(
+                          employeeUserId: widget.employeeUserId,
+                          hidden: value,
+                          reasonAr: value
+                              ? 'حساب غير تشغيلي أو مخصص للاختبار'
+                              : 'إعادة الحساب إلى العرض التشغيلي',
+                        ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildVisibilityChipOnly() {
+    return BlocBuilder<OperationalVisibilityCubit, OperationalVisibilityState>(
+      builder: (context, state) {
+        final hidden = state.hiddenEmployeeIds.contains(widget.employeeUserId);
+        return Align(
+          alignment: Alignment.centerRight,
+          child: FilterChip(
+            selected: hidden,
+            label: Text(
+              hidden
+                  ? 'مخفي من الحضور اليومي'
+                  : 'إخفاء حساب الاختبار من الحضور',
+            ),
+            onSelected: state.savingEmployeeId != null
+                ? null
+                : (value) => context.read<OperationalVisibilityCubit>().setHidden(
+                      employeeUserId: widget.employeeUserId,
+                      hidden: value,
+                      reasonAr: value
+                          ? 'حساب غير تشغيلي أو مخصص للاختبار'
+                          : 'إعادة الحساب إلى العرض التشغيلي',
+                    ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildTimelineStream(
+    EmployeeTimelineState state,
+    List<EmployeeTimelineEntry> items,
+  ) {
+    if (items.isEmpty) {
+      return const _TimelineMessage(
+        icon: Icons.history_toggle_off,
+        message: 'لا توجد عمليات مسجلة مطابقة للفترة والتصفية المحددة.',
+      );
+    }
+
+    return ListView.builder(
+      padding: const EdgeInsets.only(bottom: 24),
+      itemCount: items.length + (state.hasMore ? 1 : 0),
+      itemBuilder: (context, index) {
+        if (index == items.length) {
+          return Center(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              child: FilledButton.tonal(
+                onPressed: state.loading
+                    ? null
+                    : context.read<EmployeeTimelineCubit>().loadMore,
+                child: const Text('تحميل المزيد من العمليات'),
+              ),
+            ),
+          );
+        }
+        return _TimelineTile(item: items[index]);
+      },
+    );
+  }
 }
 
 final class _TimelineTile extends StatelessWidget {
@@ -188,21 +501,123 @@ final class _TimelineTile extends StatelessWidget {
   final EmployeeTimelineEntry item;
 
   @override
-  Widget build(BuildContext context) => Card(
-    child: ListTile(
-      leading: Icon(_icon(item.kind), color: ZaWolfColors.primaryCyan),
-      title: Text(_label(item.kind)),
-      subtitle: Text(
-        '${DateFormat('yyyy/MM/dd – HH:mm').format(item.effectiveAt.toLocal())}'
-        '${item.summaryAr?.isNotEmpty == true ? '\n${item.summaryAr}' : ''}',
+  Widget build(BuildContext context) {
+    final color = _color(item.kind);
+    final statusText = _statusLabel(item);
+    final isConfirmed = item.status == 'present' ||
+        item.status == 'approved' ||
+        item.status == 'accepted';
+    final isPending = item.status.contains('pending');
+    final isNegative = item.status == 'rejected' ||
+        item.status == 'cancelled' ||
+        item.kind == EmployeeTimelineKind.deduction;
+
+    final badgeColor = isConfirmed
+        ? ZaWolfColors.success
+        : isPending
+            ? ZaWolfColors.warning
+            : isNegative
+                ? ZaWolfColors.error
+                : ZaWolfColors.primaryCyan;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      decoration: BoxDecoration(
+        color: ZaWolfColors.surface01,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: color.withValues(alpha: 0.25),
+          width: 1,
+        ),
       ),
-      trailing: Text(
-        _statusLabel(item),
-        textAlign: TextAlign.end,
-        style: const TextStyle(color: ZaWolfColors.textSecondary, fontSize: 12),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: color.withValues(alpha: 0.3)),
+              ),
+              child: Icon(_icon(item.kind), color: color, size: 22),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Text(
+                        _label(item.kind),
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 15,
+                        ),
+                      ),
+                      const Spacer(),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: badgeColor.withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(color: badgeColor.withValues(alpha: 0.3)),
+                        ),
+                        child: Text(
+                          statusText,
+                          style: TextStyle(
+                            color: badgeColor,
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  Row(
+                    children: [
+                      const Icon(Icons.schedule_rounded, size: 14, color: ZaWolfColors.textMuted),
+                      const SizedBox(width: 4),
+                      Text(
+                        DateFormat('yyyy/MM/dd – hh:mm a').format(item.effectiveAt.toLocal()),
+                        style: const TextStyle(
+                          color: ZaWolfColors.textMuted,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (item.summaryAr?.isNotEmpty == true) ...[
+                    const SizedBox(height: 6),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: ZaWolfColors.surface02,
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Text(
+                        item.summaryAr!,
+                        style: const TextStyle(
+                          color: ZaWolfColors.textSecondary,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
-    ),
-  );
+    );
+  }
 
   static IconData _icon(EmployeeTimelineKind kind) => switch (kind) {
     EmployeeTimelineKind.attendance => Icons.fingerprint,
@@ -213,12 +628,21 @@ final class _TimelineTile extends StatelessWidget {
     _ => Icons.assignment_outlined,
   };
 
+  static Color _color(EmployeeTimelineKind kind) => switch (kind) {
+    EmployeeTimelineKind.attendance => ZaWolfColors.success,
+    EmployeeTimelineKind.leave => ZaWolfColors.dayoffPurple,
+    EmployeeTimelineKind.permission => ZaWolfColors.permissionTeal,
+    EmployeeTimelineKind.correction => ZaWolfColors.primaryCyan,
+    EmployeeTimelineKind.deduction => ZaWolfColors.error,
+    _ => ZaWolfColors.primaryBlue,
+  };
+
   static String _label(EmployeeTimelineKind kind) => switch (kind) {
-    EmployeeTimelineKind.attendance => 'حضور',
-    EmployeeTimelineKind.leave => 'إجازة',
-    EmployeeTimelineKind.permission => 'إذن',
-    EmployeeTimelineKind.correction => 'تصحيح حضور',
-    EmployeeTimelineKind.deduction => 'خصم',
+    EmployeeTimelineKind.attendance => 'تسجيل حضور / انصراف',
+    EmployeeTimelineKind.leave => 'طلب إجازة',
+    EmployeeTimelineKind.permission => 'طلب إذن',
+    EmployeeTimelineKind.correction => 'تصحيح حضور يدوي',
+    EmployeeTimelineKind.deduction => 'خصم من الراتب',
     _ => 'طلب إداري',
   };
 
@@ -229,7 +653,7 @@ final class _TimelineTile extends StatelessWidget {
     }
     if (item.kind == EmployeeTimelineKind.attendance ||
         item.kind == EmployeeTimelineKind.deduction) {
-      if (item.status == 'present') return 'حضور مؤكد\nلا يوجد خصم';
+      if (item.status == 'present') return 'حضور مؤكد';
       return AttendancePolicy.arabicDeductionLabel(
         item.status,
         fallback: item.summaryAr,
@@ -248,7 +672,7 @@ final class _TimelineTile extends StatelessWidget {
       _ =>
         item.summaryAr?.trim().isNotEmpty == true
             ? item.summaryAr!.trim()
-            : 'مسجل في السجل',
+            : 'مسجل بالنظام',
     };
   }
 }
@@ -259,63 +683,65 @@ final class _PeriodSummaryCard extends StatelessWidget {
   final EmployeeTimelineSummary summary;
 
   @override
-  Widget build(BuildContext context) => Card(
-    color: ZaWolfColors.surface01,
-    child: Padding(
-      padding: const EdgeInsets.all(14),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'ملخص الفترة المختارة',
-            style: TextStyle(
-              color: Colors.white,
-              fontWeight: FontWeight.bold,
-              fontSize: 15,
-            ),
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.all(14),
+    decoration: BoxDecoration(
+      color: ZaWolfColors.surface01,
+      borderRadius: BorderRadius.circular(12),
+      border: Border.all(color: ZaWolfColors.surface03),
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'ملخص مؤشرات الفترة',
+          style: TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.bold,
+            fontSize: 14,
           ),
-          const SizedBox(height: 12),
-          LayoutBuilder(
-            builder: (context, constraints) {
-              final isWide = constraints.maxWidth >= 600;
-              return GridView.count(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                crossAxisCount: isWide ? 4 : 2,
-                crossAxisSpacing: 10,
-                mainAxisSpacing: 10,
-                childAspectRatio: isWide ? 2.8 : 2.4,
-                children: [
-                  _SummaryMetric(
-                    icon: Icons.money_off_csred_outlined,
-                    value: _formatDays(summary.salaryDeductionDays),
-                    label: 'خصومات راتب',
-                    color: ZaWolfColors.warning,
-                  ),
-                  _SummaryMetric(
-                    icon: Icons.event_available_outlined,
-                    value: '${summary.leaveRequests}',
-                    label: 'طلبات إجازة',
-                    color: ZaWolfColors.primaryCyan,
-                  ),
-                  _SummaryMetric(
-                    icon: Icons.schedule_outlined,
-                    value: '${summary.permissionRequests}',
-                    label: 'طلبات إذن',
-                    color: ZaWolfColors.success,
-                  ),
-                  _SummaryMetric(
-                    icon: Icons.assignment_outlined,
-                    value: '${summary.otherRequests}',
-                    label: 'طلبات أخرى',
-                    color: Colors.deepPurpleAccent,
-                  ),
-                ],
-              );
-            },
-          ),
-        ],
-      ),
+        ),
+        const SizedBox(height: 12),
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final isWide = constraints.maxWidth >= 500;
+            return GridView.count(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              crossAxisCount: isWide ? 4 : 2,
+              crossAxisSpacing: 8,
+              mainAxisSpacing: 8,
+              childAspectRatio: isWide ? 2.4 : 2.2,
+              children: [
+                _SummaryMetric(
+                  icon: Icons.money_off_csred_outlined,
+                  value: _formatDays(summary.salaryDeductionDays),
+                  label: 'خصومات راتب',
+                  color: ZaWolfColors.warning,
+                ),
+                _SummaryMetric(
+                  icon: Icons.event_available_outlined,
+                  value: '${summary.leaveRequests}',
+                  label: 'طلبات إجازة',
+                  color: ZaWolfColors.dayoffPurple,
+                ),
+                _SummaryMetric(
+                  icon: Icons.schedule_outlined,
+                  value: '${summary.permissionRequests}',
+                  label: 'طلبات إذن',
+                  color: ZaWolfColors.permissionTeal,
+                ),
+                _SummaryMetric(
+                  icon: Icons.assignment_outlined,
+                  value: '${summary.otherRequests}',
+                  label: 'طلبات أخرى',
+                  color: ZaWolfColors.primaryCyan,
+                ),
+              ],
+            );
+          },
+        ),
+      ],
     ),
   );
 
@@ -341,21 +767,21 @@ final class _SummaryMetric extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
     decoration: BoxDecoration(
-      color: color.withValues(alpha: 0.12),
-      borderRadius: BorderRadius.circular(12),
-      border: Border.all(color: color.withValues(alpha: 0.35)),
+      color: color.withValues(alpha: 0.10),
+      borderRadius: BorderRadius.circular(10),
+      border: Border.all(color: color.withValues(alpha: 0.3)),
     ),
     child: Row(
       children: [
         Container(
-          padding: const EdgeInsets.all(6),
+          padding: const EdgeInsets.all(5),
           decoration: BoxDecoration(
             color: color.withValues(alpha: 0.20),
             shape: BoxShape.circle,
           ),
-          child: Icon(icon, color: color, size: 18),
+          child: Icon(icon, color: color, size: 16),
         ),
         const SizedBox(width: 8),
         Expanded(
@@ -366,9 +792,9 @@ final class _SummaryMetric extends StatelessWidget {
               Text(
                 value,
                 style: const TextStyle(
-                  color: Colors.white,
+                  color: ZaWolfColors.textPrimary,
                   fontWeight: FontWeight.bold,
-                  fontSize: 14,
+                  fontSize: 13,
                 ),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
@@ -378,7 +804,7 @@ final class _SummaryMetric extends StatelessWidget {
                 label,
                 style: const TextStyle(
                   color: ZaWolfColors.textSecondary,
-                  fontSize: 11,
+                  fontSize: 10,
                   fontWeight: FontWeight.w500,
                 ),
                 maxLines: 1,
@@ -405,15 +831,24 @@ final class _TimelineMessage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Center(
-    child: Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(icon, size: 44, color: ZaWolfColors.textMuted),
-        const SizedBox(height: 12),
-        Text(message, textAlign: TextAlign.center),
-        if (onRetry != null)
-          TextButton(onPressed: onRetry, child: const Text('إعادة المحاولة')),
-      ],
+    child: Padding(
+      padding: const EdgeInsets.all(32),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 48, color: ZaWolfColors.textMuted),
+          const SizedBox(height: 14),
+          Text(
+            message,
+            textAlign: TextAlign.center,
+            style: const TextStyle(color: ZaWolfColors.textSecondary, fontSize: 14),
+          ),
+          if (onRetry != null) ...[
+            const SizedBox(height: 12),
+            OutlinedButton(onPressed: onRetry, child: const Text('إعادة المحاولة')),
+          ],
+        ],
+      ),
     ),
   );
 }

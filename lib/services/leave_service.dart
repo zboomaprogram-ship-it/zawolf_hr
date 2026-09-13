@@ -17,6 +17,7 @@ import 'audit_log_service.dart';
 import 'request_approval_policy_service.dart';
 import 'role_notification_service.dart';
 import 'attendance_reconciliation_service.dart';
+import '../features/request_staffing_alerts/data/request_staffing_conflict_service.dart';
 
 class LeaveService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
@@ -507,6 +508,7 @@ class LeaveService {
 
     final leaveData = {
       ...finalModel.toFirestore(),
+      'jobTitle': employee.position.trim(),
       'deductsLeaveBalance':
           LeaveTypePolicy.balanceKeys(effectiveType).isNotEmpty,
       if (LeaveTypePolicy.balanceKey(effectiveType) != null)
@@ -606,6 +608,18 @@ class LeaveService {
     }
 
     await reqRef.set(leaveData);
+
+    // Advisory staffing notification: a same-title overlap never changes the
+    // leave request or its approval route.
+    if (!usesHrFallback && firstManagerId.isNotEmpty) {
+      try {
+        await RequestStaffingConflictService().notifyManagerForLeave(
+          finalModel,
+          managerId: firstManagerId,
+          jobTitle: employee.position,
+        );
+      } catch (_) {}
+    }
 
     // The leave is authoritative once its document is committed. A
     // notification permission or transient delivery error must never make the
@@ -793,7 +807,8 @@ class LeaveService {
         (reviewerDoc.data()?['displayName'] as String?)?.trim() ?? '';
     final reviewerCode =
         ((reviewerDoc.data()?['employeeId'] ??
-                reviewerDoc.data()?['employeeCode']) as String?)
+                    reviewerDoc.data()?['employeeCode'])
+                as String?)
             ?.trim()
             .toUpperCase() ??
         '';
@@ -1093,7 +1108,8 @@ class LeaveService {
         (reviewerDoc.data()?['displayName'] as String?)?.trim() ?? '';
     final reviewerCode =
         ((reviewerDoc.data()?['employeeId'] ??
-                reviewerDoc.data()?['employeeCode']) as String?)
+                    reviewerDoc.data()?['employeeCode'])
+                as String?)
             ?.trim()
             .toUpperCase() ??
         '';
@@ -1332,16 +1348,18 @@ class LeaveService {
     required String reqRefId,
   }) async {
     final cycle = PayrollCycle.forDate(req.startDate);
-    final snapshot = await _db
-        .collection('leaves')
-        .where('userId', isEqualTo: employee.uid)
-        .get();
+    final snapshot =
+        await _db
+            .collection('leaves')
+            .where('userId', isEqualTo: employee.uid)
+            .get();
 
-    final records = snapshot.docs.map((doc) {
-      final map = Map<String, dynamic>.from(doc.data());
-      map['id'] = doc.id;
-      return map;
-    }).toList();
+    final records =
+        snapshot.docs.map((doc) {
+          final map = Map<String, dynamic>.from(doc.data());
+          map['id'] = doc.id;
+          return map;
+        }).toList();
 
     final casualCount = countCasualLeavesInCycle(
       leaveRecords: records,

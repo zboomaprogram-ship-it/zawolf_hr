@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../services/performance_badge_service.dart';
 import '../models/custom_badge_model.dart';
+import '../theme/theme.dart';
 
 /// Presentation catalogue. HR manages award IDs on the employee document;
 /// badges never affect salary, payroll, attendance, or performance scoring.
@@ -26,56 +27,56 @@ const performanceBadgeCatalog = <PerformanceBadgeDefinition>[
     title: 'بطل الالتزام',
     description: 'التزام متميز بالحضور خلال الشهر',
     icon: Icons.military_tech_rounded,
-    color: Color(0xFFFFD700),
+    color: ZaWolfColors.perfGold,
   ),
   PerformanceBadgeDefinition(
     id: 'support_star',
     title: 'نجم الدعم الفني',
     description: 'مساندة فعّالة وحل سريع للتذاكر',
     icon: Icons.auto_awesome_rounded,
-    color: Color(0xFF38BDF8),
+    color: ZaWolfColors.primaryCyan,
   ),
   PerformanceBadgeDefinition(
     id: 'task_achievement',
     title: 'بطل إنجاز المهام',
     description: 'إنجاز المخرجات المطلوبة بجودة عالية',
     icon: Icons.rocket_launch_rounded,
-    color: Color(0xFFA855F7),
+    color: ZaWolfColors.dayoffPurple,
   ),
   PerformanceBadgeDefinition(
     id: 'ideal_employee',
     title: 'الموظف المثالي',
     description: 'تميز متوازن في الحضور والمهام والتعاون',
     icon: Icons.workspace_premium_rounded,
-    color: Color(0xFF10B981),
+    color: ZaWolfColors.wolfGreen,
   ),
   PerformanceBadgeDefinition(
     id: 'team_player',
     title: 'روح الفريق',
     description: 'تعاون واضح ومساندة مستمرة للفريق',
     icon: Icons.groups_rounded,
-    color: Color(0xFFF97316),
+    color: ZaWolfColors.warning,
   ),
   PerformanceBadgeDefinition(
     id: 'customer_care',
     title: 'سفير الخدمة',
     description: 'تواصل احترافي وتجربة مميزة للمستفيدين',
     icon: Icons.volunteer_activism_rounded,
-    color: Color(0xFFEC4899),
+    color: ZaWolfColors.primaryBlue,
   ),
   PerformanceBadgeDefinition(
     id: 'quality_guardian',
     title: 'حارس الجودة',
     description: 'دقة عالية وحرص على جودة العمل',
     icon: Icons.verified_user_rounded,
-    color: Color(0xFF14B8A6),
+    color: ZaWolfColors.permissionTeal,
   ),
   PerformanceBadgeDefinition(
     id: 'growth_mindset',
     title: 'نجم التطور',
     description: 'مبادرة بالتعلّم وتحسين أسلوب العمل',
     icon: Icons.trending_up_rounded,
-    color: Color(0xFF818CF8),
+    color: ZaWolfColors.steel,
   ),
 ];
 
@@ -116,10 +117,10 @@ final class PerformanceBadgesWidget extends StatelessWidget {
           margin: const EdgeInsets.symmetric(vertical: 12),
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            color: const Color(0xFF1E293B),
+            color: ZaWolfColors.surface01,
             borderRadius: BorderRadius.circular(18),
             border: Border.all(
-              color: const Color(0xFFFFD700).withValues(alpha: 0.3),
+              color: ZaWolfColors.surface03,
             ),
           ),
           child: Column(
@@ -130,12 +131,12 @@ final class PerformanceBadgesWidget extends StatelessWidget {
                   Container(
                     padding: const EdgeInsets.all(8),
                     decoration: BoxDecoration(
-                      color: const Color(0xFFFFD700).withValues(alpha: 0.15),
+                      color: ZaWolfColors.perfGold.withValues(alpha: 0.15),
                       borderRadius: BorderRadius.circular(10),
                     ),
                     child: const Icon(
                       Icons.emoji_events_rounded,
-                      color: Color(0xFFFFD700),
+                      color: ZaWolfColors.perfGold,
                       size: 20,
                     ),
                   ),
@@ -144,7 +145,7 @@ final class PerformanceBadgesWidget extends StatelessWidget {
                     child: Text(
                       'شارات ووسام التميز الشهري',
                       style: TextStyle(
-                        color: Colors.white,
+                        color: ZaWolfColors.textPrimary,
                         fontSize: 15,
                         fontWeight: FontWeight.bold,
                       ),
@@ -153,7 +154,7 @@ final class PerformanceBadgesWidget extends StatelessWidget {
                   Text(
                     '${awardedBadgeIds.length}/${allBadges.length}',
                     style: const TextStyle(
-                      color: Color(0xFFFFD700),
+                      color: ZaWolfColors.perfGold,
                       fontWeight: FontWeight.bold,
                     ),
                   ),
@@ -164,7 +165,7 @@ final class PerformanceBadgesWidget extends StatelessWidget {
                 awardedBadgeIds.isEmpty
                     ? 'لم تُعتمد لك شارة بعد. تُمنح الشارات من مديرك أو الموارد البشرية.'
                     : 'مبروك، لديك ${awardedBadgeIds.length} شارة تميز معتمدة.',
-                style: const TextStyle(color: Colors.white70, fontSize: 11),
+                style: const TextStyle(color: ZaWolfColors.textSecondary, fontSize: 11),
               ),
               const SizedBox(height: 14),
               GridView.builder(
@@ -195,7 +196,7 @@ final class PerformanceBadgesWidget extends StatelessWidget {
       final clean = hex.replaceAll('#', '');
       return Color(int.parse('FF$clean', radix: 16));
     } catch (_) {
-      return const Color(0xFFFFD700);
+      return ZaWolfColors.perfGold;
     }
   }
 
@@ -223,10 +224,10 @@ final class _BadgeTile extends StatelessWidget {
       color:
           unlocked
               ? badge.color.withValues(alpha: 0.12)
-              : Colors.white.withValues(alpha: 0.03),
+              : ZaWolfColors.surface02,
       borderRadius: BorderRadius.circular(14),
       border: Border.all(
-        color: unlocked ? badge.color.withValues(alpha: 0.4) : Colors.white12,
+        color: unlocked ? badge.color.withValues(alpha: 0.4) : ZaWolfColors.surface03,
       ),
     ),
     child: Row(
@@ -235,12 +236,12 @@ final class _BadgeTile extends StatelessWidget {
           padding: const EdgeInsets.all(8),
           decoration: BoxDecoration(
             color:
-                unlocked ? badge.color.withValues(alpha: 0.2) : Colors.white12,
+                unlocked ? badge.color.withValues(alpha: 0.2) : ZaWolfColors.surface03,
             shape: BoxShape.circle,
           ),
           child: Icon(
             unlocked ? badge.icon : Icons.lock_outline_rounded,
-            color: unlocked ? badge.color : Colors.white38,
+            color: unlocked ? badge.color : ZaWolfColors.textMuted,
             size: 20,
           ),
         ),
@@ -255,7 +256,7 @@ final class _BadgeTile extends StatelessWidget {
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                  color: unlocked ? Colors.white : Colors.white38,
+                  color: unlocked ? ZaWolfColors.textPrimary : ZaWolfColors.textMuted,
                   fontSize: 12,
                   fontWeight: FontWeight.bold,
                 ),
@@ -266,7 +267,7 @@ final class _BadgeTile extends StatelessWidget {
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                  color: unlocked ? Colors.white70 : Colors.white38,
+                  color: unlocked ? ZaWolfColors.textSecondary : ZaWolfColors.textMuted,
                   fontSize: 9,
                 ),
               ),

@@ -17,6 +17,8 @@ class OperationalRequestFormPage extends StatefulWidget {
     required this.repository,
     this.attachmentRepository,
     this.initialCategory,
+    this.isEmbedded = false,
+    this.onSubmitted,
   });
   final OperationalRequestRepository repository;
   final CompanyOsAttachmentRepository? attachmentRepository;
@@ -24,6 +26,8 @@ class OperationalRequestFormPage extends StatefulWidget {
   /// Keeps financial and technical requests separate in the employee journey
   /// without changing the persisted request type or approval workflow.
   final OperationalRequestCategory? initialCategory;
+  final bool isEmbedded;
+  final VoidCallback? onSubmitted;
 
   @override
   State<OperationalRequestFormPage> createState() =>
@@ -83,6 +87,15 @@ class _OperationalRequestFormPageState
     _selectedCategory =
         widget.initialCategory ?? OperationalRequestCategory.technical;
     type = _requestTypes.keys.first;
+  }
+
+  @override
+  void didUpdateWidget(covariant OperationalRequestFormPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.initialCategory != null &&
+        widget.initialCategory != _selectedCategory) {
+      _selectCategory(widget.initialCategory!);
+    }
   }
 
   void _selectCategory(OperationalRequestCategory category) {
@@ -187,170 +200,190 @@ class _OperationalRequestFormPageState
   }
 
   @override
-  Widget build(BuildContext context) => BlocProvider(
-    create: (_) => OperationalRequestSubmitCubit(widget.repository),
-    child: Directionality(
-      textDirection: TextDirection.rtl,
-      child: Scaffold(
-        appBar: AppBar(title: Text(_title)),
-        body: ListView(
-          padding: const EdgeInsets.all(16),
+  Widget build(BuildContext context) {
+    final formChildren = <Widget>[
+      if (widget.initialCategory == null) ...[
+        const Text(
+          'اختر مسار الطلب',
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
           children: [
-            if (widget.initialCategory == null) ...[
-              const Text(
-                'اختر مسار الطلب',
-                style: TextStyle(fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  ChoiceChip(
-                    label: const Text('خدمات تقنية وتشغيلية'),
-                    avatar: const Icon(Icons.build_outlined, size: 18),
-                    selected:
-                        _selectedCategory ==
-                        OperationalRequestCategory.technical,
-                    onSelected: (_) =>
-                        _selectCategory(OperationalRequestCategory.technical),
-                  ),
-                  ChoiceChip(
-                    label: const Text('مصروفات ومدفوعات الشركة'),
-                    avatar: const Icon(Icons.payments_outlined, size: 18),
-                    selected:
-                        _selectedCategory ==
-                        OperationalRequestCategory.financial,
-                    onSelected: (_) =>
-                        _selectCategory(OperationalRequestCategory.financial),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-            ],
-            DropdownButtonFormField<String>(
-              initialValue: type,
-              decoration: const InputDecoration(labelText: 'نوع الطلب'),
-              items: _requestTypes.entries
-                  .map(
-                    (entry) => DropdownMenuItem(
-                      value: entry.key,
-                      child: Text(entry.value),
-                    ),
-                  )
-                  .toList(growable: false),
-              onChanged: _selectType,
+            ChoiceChip(
+              label: const Text('خدمات تقنية وتشغيلية'),
+              avatar: const Icon(Icons.build_outlined, size: 18),
+              selected:
+                  _selectedCategory ==
+                  OperationalRequestCategory.technical,
+              onSelected: (_) =>
+                  _selectCategory(OperationalRequestCategory.technical),
             ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: reason,
-              maxLines: 4,
-              decoration: const InputDecoration(labelText: 'سبب العمل'),
-            ),
-            const SizedBox(height: 16),
-            if (_requiresAmount) ...[
-              TextField(
-                controller: amount,
-                keyboardType: const TextInputType.numberWithOptions(
-                  decimal: true,
-                ),
-                decoration: const InputDecoration(
-                  labelText: 'المبلغ المطلوب',
-                  helperText:
-                      'هذا النوع من الطلبات يتطلب مبلغاً للمراجعة المالية.',
-                ),
-              ),
-              const SizedBox(height: 8),
-            ],
-            const SizedBox(height: 8),
-            OutlinedButton.icon(
-              onPressed:
-                  _uploadingAttachment || widget.attachmentRepository == null
-                  ? null
-                  : _addAttachments,
-              icon: _uploadingAttachment
-                  ? const SizedBox.square(
-                      dimension: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.attach_file_outlined),
-              label: Text(
-                _uploadingAttachment
-                    ? 'جارٍ رفع المرفقات…'
-                    : 'إرفاق ملفات داعمة',
-              ),
-            ),
-            if (_attachments.isNotEmpty) ...[
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: _attachments
-                    .map(
-                      (attachment) => InputChip(
-                        label: Text(attachment.displayName),
-                        onDeleted: () =>
-                            setState(() => _attachments.remove(attachment)),
-                      ),
-                    )
-                    .toList(growable: false),
-              ),
-            ],
-            const SizedBox(height: 24),
-            BlocConsumer<
-              OperationalRequestSubmitCubit,
-              OperationalRequestSubmitState
-            >(
-              listener: (context, state) {
-                final message = switch (state) {
-                  OperationalRequestSubmitted(:final message) => message,
-                  OperationalRequestSubmitFailure(:final message) => message,
-                  _ => null,
-                };
-                if (message != null) {
-                  ScaffoldMessenger.of(context)
-                    ..hideCurrentSnackBar()
-                    ..showSnackBar(SnackBar(content: Text(message)));
-                }
-              },
-              builder: (context, state) => FilledButton(
-                onPressed:
-                    state is OperationalRequestSubmitting ||
-                        _uploadingAttachment
-                    ? null
-                    : () {
-                        final requestedAmount = num.tryParse(amount.text);
-                        if (_requiresAmount && requestedAmount == null) {
-                          ScaffoldMessenger.of(context)
-                            ..hideCurrentSnackBar()
-                            ..showSnackBar(
-                              const SnackBar(
-                                content: Text('أدخل مبلغاً صحيحاً للطلب.'),
-                              ),
-                            );
-                          return;
-                        }
-                        context.read<OperationalRequestSubmitCubit>().submit(
-                          requestType: type,
-                          businessReason: reason.text,
-                          executionDate: DateTime.now(),
-                          amount: _requiresAmount ? requestedAmount : null,
-                          currency: _requiresAmount ? 'EGP' : null,
-                          attachments: _attachments,
-                        );
-                      },
-                child: Text(
-                  state is OperationalRequestSubmitting
-                      ? 'جارٍ الحفظ…'
-                      : 'إرسال الطلب',
-                ),
-              ),
+            ChoiceChip(
+              label: const Text('مصروفات ومدفوعات الشركة'),
+              avatar: const Icon(Icons.payments_outlined, size: 18),
+              selected:
+                  _selectedCategory ==
+                  OperationalRequestCategory.financial,
+              onSelected: (_) =>
+                  _selectCategory(OperationalRequestCategory.financial),
             ),
           ],
         ),
+        const SizedBox(height: 16),
+      ],
+      DropdownButtonFormField<String>(
+        initialValue: type,
+        decoration: const InputDecoration(labelText: 'نوع الطلب'),
+        items: _requestTypes.entries
+            .map(
+              (entry) => DropdownMenuItem(
+                value: entry.key,
+                child: Text(entry.value),
+              ),
+            )
+            .toList(growable: false),
+        onChanged: _selectType,
       ),
-    ),
-  );
+      const SizedBox(height: 16),
+      TextField(
+        controller: reason,
+        maxLines: 4,
+        decoration: const InputDecoration(labelText: 'سبب العمل'),
+      ),
+      const SizedBox(height: 16),
+      if (_requiresAmount) ...[
+        TextField(
+          controller: amount,
+          keyboardType: const TextInputType.numberWithOptions(
+            decimal: true,
+          ),
+          decoration: const InputDecoration(
+            labelText: 'المبلغ المطلوب',
+            helperText:
+                'هذا النوع من الطلبات يتطلب مبلغاً للمراجعة المالية.',
+          ),
+        ),
+        const SizedBox(height: 8),
+      ],
+      const SizedBox(height: 8),
+      OutlinedButton.icon(
+        onPressed:
+            _uploadingAttachment || widget.attachmentRepository == null
+            ? null
+            : _addAttachments,
+        icon: _uploadingAttachment
+            ? const SizedBox.square(
+                dimension: 18,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : const Icon(Icons.attach_file_outlined),
+        label: Text(
+          _uploadingAttachment
+              ? 'جارٍ رفع المرفقات…'
+              : 'إرفاق ملفات داعمة',
+        ),
+      ),
+      if (_attachments.isNotEmpty) ...[
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: _attachments
+              .map(
+                (attachment) => InputChip(
+                  label: Text(attachment.displayName),
+                  onDeleted: () =>
+                      setState(() => _attachments.remove(attachment)),
+                ),
+              )
+              .toList(growable: false),
+        ),
+      ],
+      const SizedBox(height: 24),
+      BlocConsumer<
+        OperationalRequestSubmitCubit,
+        OperationalRequestSubmitState
+      >(
+        listener: (context, state) {
+          final message = switch (state) {
+            OperationalRequestSubmitted(:final message) => message,
+            OperationalRequestSubmitFailure(:final message) => message,
+            _ => null,
+          };
+          if (message != null) {
+            ScaffoldMessenger.of(context)
+              ..hideCurrentSnackBar()
+              ..showSnackBar(SnackBar(content: Text(message)));
+          }
+          if (state is OperationalRequestSubmitted) {
+            reason.clear();
+            amount.clear();
+            setState(() => _attachments.clear());
+            widget.onSubmitted?.call();
+          }
+        },
+        builder: (context, state) => FilledButton(
+          onPressed:
+              state is OperationalRequestSubmitting ||
+                  _uploadingAttachment
+              ? null
+              : () {
+                  final requestedAmount = num.tryParse(amount.text);
+                  if (_requiresAmount && requestedAmount == null) {
+                    ScaffoldMessenger.of(context)
+                      ..hideCurrentSnackBar()
+                      ..showSnackBar(
+                        const SnackBar(
+                          content: Text('أدخل مبلغاً صحيحاً للطلب.'),
+                        ),
+                      );
+                    return;
+                  }
+                  context.read<OperationalRequestSubmitCubit>().submit(
+                    requestType: type,
+                    businessReason: reason.text,
+                    executionDate: DateTime.now(),
+                    amount: _requiresAmount ? requestedAmount : null,
+                    currency: _requiresAmount ? 'EGP' : null,
+                    attachments: _attachments,
+                  );
+                },
+          child: Text(
+            state is OperationalRequestSubmitting
+                ? 'جارٍ الحفظ…'
+                : 'إرسال الطلب',
+          ),
+        ),
+      ),
+    ];
+
+    final Widget content = widget.isEmbedded
+        ? Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: formChildren,
+            ),
+          )
+        : Scaffold(
+            appBar: AppBar(title: Text(_title)),
+            body: ListView(
+              padding: const EdgeInsets.all(16),
+              children: formChildren,
+            ),
+          );
+
+    return BlocProvider(
+      create: (_) => OperationalRequestSubmitCubit(widget.repository),
+      child: Directionality(
+        textDirection: TextDirection.rtl,
+        child: content,
+      ),
+    );
+  }
 }
 
 class OperationalRequestDetailPage extends StatelessWidget {

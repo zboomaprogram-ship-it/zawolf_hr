@@ -1,0 +1,7 @@
+- [x] Define period and visual-analysis domain objects
+- [x] Add bounded dashboard attendance range read
+- [x] Implement analysis repository and Cubit
+- [x] Add management action, trend and department panels
+- [x] Add employee personal trend panel
+- [x] Add date-aware attendance drill-down routes
+- [x] Verify RTL, scope and period tests

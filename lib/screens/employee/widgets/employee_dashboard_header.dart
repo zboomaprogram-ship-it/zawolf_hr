@@ -103,10 +103,10 @@ class EmployeeDashboardHeader extends StatelessWidget {
           'مرحباً، ${user.displayName}',
           style:
               theme.textTheme.headlineSmall?.copyWith(
-                color: Colors.white,
+                color: ZaWolfColors.textPrimary,
                 fontSize: 22,
               ) ??
-              const TextStyle(color: Colors.white, fontSize: 22),
+              const TextStyle(color: ZaWolfColors.textPrimary, fontSize: 22),
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           textDirection: TextDirection.rtl,
@@ -187,11 +187,11 @@ class MyStatusCard extends StatelessWidget {
                   'حضور اليوم: ${DateFormat('hh:mm a').format(checkInTime)}',
                   style:
                       theme.textTheme.bodyMedium?.copyWith(
-                        color: Colors.white,
+                        color: ZaWolfColors.textPrimary,
                         fontWeight: FontWeight.bold,
                       ) ??
                       const TextStyle(
-                        color: Colors.white,
+                        color: ZaWolfColors.textPrimary,
                         fontWeight: FontWeight.bold,
                       ),
                 ),
@@ -200,11 +200,11 @@ class MyStatusCard extends StatelessWidget {
                     'انصراف اليوم: ${DateFormat('hh:mm a').format(checkOutTime)}',
                     style:
                         theme.textTheme.bodyMedium?.copyWith(
-                          color: Colors.white,
+                          color: ZaWolfColors.textPrimary,
                           fontWeight: FontWeight.bold,
                         ) ??
                         const TextStyle(
-                          color: Colors.white,
+                          color: ZaWolfColors.textPrimary,
                           fontWeight: FontWeight.bold,
                         ),
                   )

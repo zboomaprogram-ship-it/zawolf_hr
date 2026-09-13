@@ -39,7 +39,7 @@ void main() {
           (
             category: FailureCategory.capacityQuota,
             recovery: RecoveryGuidance.contactResponsibleTeam,
-            nextAction: 'قليلاً',
+            nextAction: 'مساحة',
           ),
           (
             category: FailureCategory.conflictDuplicate,

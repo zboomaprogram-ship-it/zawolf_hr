@@ -102,7 +102,9 @@ class _EmployeeRecordCard extends StatelessWidget {
           const SizedBox(height: 10),
           Text(
             record.title,
-            style: theme.textTheme.titleLarge?.copyWith(color: Colors.white),
+            style: theme.textTheme.titleLarge?.copyWith(
+              color: ZaWolfColors.textPrimary,
+            ),
             textAlign: TextAlign.right,
           ),
           const SizedBox(height: 6),

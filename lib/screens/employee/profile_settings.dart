@@ -11,7 +11,6 @@ import '../../design_system/components/app_logo.dart';
 import '../../services/auth_service.dart';
 import '../../models/employee_role.dart';
 import '../../models/user_model.dart';
-import '../../services/onesignal_service.dart';
 import '../../services/personal_alarm_service.dart';
 import '../../services/required_attendance_alarm_service.dart';
 import '../../services/automatic_attendance_service.dart';
@@ -40,9 +39,6 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
   Color _passwordStrengthColor = ZaWolfColors.error;
 
   // Preferences visual triggers
-  bool _notificationBanners = true;
-  String _appLanguage = 'ar'; // ar | en
-  bool _registeringNotifications = false;
   PersonalAlarmSettings _personalAlarm = const PersonalAlarmSettings.disabled();
   String? _personalAlarmUserId;
   bool _loadingPersonalAlarm = false;
@@ -239,40 +235,7 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
     }
   }
 
-  Future<void> _enablePushNotifications(String uid) async {
-    setState(() => _registeringNotifications = true);
-    try {
-      final state = await OneSignalService.instance.ensureRegistered(uid);
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          backgroundColor:
-              state.isReady ? ZaWolfColors.success : ZaWolfColors.warning,
-          content: Text(
-            state.isReady
-                ? 'تم تفعيل الإشعارات وربط هذا الجهاز بالحساب.'
-                : 'لم يكتمل التفعيل. اسمح بالإشعارات من إعدادات الهاتف ثم حاول مرة أخرى.',
-          ),
-        ),
-      );
-      setState(() {});
-    } catch (error) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          backgroundColor: ZaWolfColors.error,
-          content: Text(
-            userFacingError(
-              error,
-              fallback: 'تعذر ربط الإشعارات الآن. حاول مرة أخرى.',
-            ),
-          ),
-        ),
-      );
-    } finally {
-      if (mounted) setState(() => _registeringNotifications = false);
-    }
-  }
+
 
   Future<void> _loadPersonalAlarm(String userId) async {
     _personalAlarmUserId = userId;
@@ -432,7 +395,6 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
             ? DateFormat('yyyy-MM-dd').format(user.joinDate!)
             : 'غير متوفر';
     final mustChangeDefaultPassword = user.passwordChangedAt == null;
-    final pushState = OneSignalService.instance.registrationState();
 
     // Keep every list-row affordance in Arabic RTL, even when this screen is
     // reached from a route whose inherited direction is temporarily LTR.
@@ -491,7 +453,7 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                     Text(
                       user.displayName,
                       style: theme.textTheme.headlineMedium!.copyWith(
-                        color: Colors.white,
+                        color: ZaWolfColors.textPrimary,
                         fontWeight: FontWeight.bold,
                       ),
                     ),
@@ -508,7 +470,7 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                       child: Text(
                         _getRoleLabel(user.role),
                         style: const TextStyle(
-                          color: Colors.white,
+                          color: ZaWolfColors.textPrimary,
                           fontSize: 11,
                           fontWeight: FontWeight.bold,
                         ),
@@ -550,7 +512,7 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                     Text(
                       'البيانات الشخصية / Personal Info',
                       style: theme.textTheme.titleMedium!.copyWith(
-                        color: Colors.white,
+                        color: ZaWolfColors.textPrimary,
                       ),
                     ),
                     const Divider(color: ZaWolfColors.surface02, height: 20),
@@ -673,7 +635,7 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
               Text(
                 'الإعدادات العامة / Preferences',
                 style: theme.textTheme.titleMedium!.copyWith(
-                  color: Colors.white,
+                  color: ZaWolfColors.textPrimary,
                   fontWeight: FontWeight.bold,
                 ),
               ),
@@ -686,28 +648,7 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                 ),
                 child: Column(
                   children: [
-                    // Language Toggle Switch
-                    ListTile(
-                      leading: const Icon(
-                        Icons.language,
-                        color: ZaWolfColors.primaryCyan,
-                      ),
-                      title: const Text('لغة التطبيق / Language'),
-                      subtitle: Text(
-                        _appLanguage == 'ar' ? 'العربية' : 'English',
-                      ),
-                      trailing: Switch(
-                        value: _appLanguage == 'ar',
-                        activeThumbColor: ZaWolfColors.primaryCyan,
-                        onChanged: (val) {
-                          setState(() {
-                            _appLanguage = val ? 'ar' : 'en';
-                          });
-                        },
-                      ),
-                    ),
                     if (AutomaticAttendanceService.instance.isSupported) ...[
-                      const Divider(color: ZaWolfColors.surface02, height: 1),
                       ListTile(
                         leading: const Icon(
                           Icons.location_searching,
@@ -729,68 +670,13 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                                 : Switch(
                                   value: _automaticAttendanceEnabled,
                                   activeThumbColor: ZaWolfColors.primaryCyan,
+                                  inactiveThumbColor: ZaWolfColors.textPrimary,
+                                  inactiveTrackColor: ZaWolfColors.surface03,
                                   onChanged: _setAutomaticAttendanceEnabled,
                                 ),
                       ),
+                      const Divider(color: ZaWolfColors.surface02, height: 1),
                     ],
-                    const Divider(color: ZaWolfColors.surface02, height: 1),
-
-                    // Notifications Toggle Switch
-                    ListTile(
-                      leading: const Icon(
-                        Icons.notifications_active,
-                        color: ZaWolfColors.primaryCyan,
-                      ),
-                      title: const Text('إشعارات فورية (Foreground)'),
-                      subtitle: const Text(
-                        'عرض إشعارات تفاعلية أثناء فتح التطبيق',
-                      ),
-                      trailing: Switch(
-                        value: _notificationBanners,
-                        activeThumbColor: ZaWolfColors.primaryCyan,
-                        onChanged: (val) {
-                          setState(() {
-                            _notificationBanners = val;
-                          });
-                        },
-                      ),
-                    ),
-                    const Divider(color: ZaWolfColors.surface02, height: 1),
-                    ListTile(
-                      leading: Icon(
-                        pushState.isReady
-                            ? Icons.notifications_active
-                            : Icons.notifications_off_outlined,
-                        color:
-                            pushState.isReady
-                                ? ZaWolfColors.success
-                                : ZaWolfColors.warning,
-                      ),
-                      title: const Text('إشعارات الهاتف'),
-                      subtitle: Text(
-                        !pushState.configured
-                            ? 'غير مفعلة في نسخة التطبيق الحالية'
-                            : pushState.isReady
-                            ? 'مفعلة ومرتبطة بهذا الحساب'
-                            : 'تحتاج إلى تفعيل أو إعادة ربط',
-                      ),
-                      trailing:
-                          _registeringNotifications
-                              ? const SizedBox(
-                                width: 22,
-                                height: 22,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                ),
-                              )
-                              : IconButton(
-                                tooltip: 'تفعيل الإشعارات',
-                                onPressed:
-                                    () => _enablePushNotifications(user.uid),
-                                icon: const Icon(Icons.refresh),
-                              ),
-                    ),
-                    const Divider(color: ZaWolfColors.surface02, height: 1),
                     ListTile(
                       leading: const Icon(
                         Icons.notifications_none,
@@ -832,6 +718,8 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                               : Switch(
                                 value: _personalAlarm.enabled,
                                 activeThumbColor: ZaWolfColors.primaryCyan,
+                                inactiveThumbColor: ZaWolfColors.textPrimary,
+                                inactiveTrackColor: ZaWolfColors.surface03,
                                 onChanged:
                                     (value) => _setPersonalAlarmEnabled(
                                       user.uid,
@@ -945,7 +833,7 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                             'تغيير كلمة المرور',
                             style: TextStyle(
                               fontWeight: FontWeight.bold,
-                              color: Colors.white,
+                              color: ZaWolfColors.textPrimary,
                             ),
                           ),
                         ],
@@ -1091,7 +979,7 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
             child: Text(
               value,
               style: theme.textTheme.bodyMedium!.copyWith(
-                color: Colors.white,
+                color: ZaWolfColors.textPrimary,
                 fontWeight: FontWeight.bold,
               ),
               textAlign: TextAlign.left,
@@ -1128,7 +1016,7 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
               Text(
                 'رصيد الإجازات المتبقي',
                 style: theme.textTheme.titleMedium?.copyWith(
-                  color: Colors.white,
+                  color: ZaWolfColors.textPrimary,
                   fontWeight: FontWeight.bold,
                 ),
               ),

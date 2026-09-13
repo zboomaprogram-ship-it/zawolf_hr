@@ -1391,7 +1391,7 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
                                   tooltip: 'إدارة شارات التميز',
                                   icon: const Icon(
                                     Icons.emoji_events_outlined,
-                                    color: Color(0xFFFFD700),
+                                    color: ZaWolfColors.perfGold,
                                     size: 20,
                                   ),
                                   onPressed:

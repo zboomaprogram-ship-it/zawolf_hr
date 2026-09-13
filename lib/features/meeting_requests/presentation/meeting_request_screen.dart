@@ -100,9 +100,9 @@ class _MeetingRequestScreenState extends State<MeetingRequestScreen> {
           data: Theme.of(context).copyWith(
             colorScheme: ColorScheme.dark(
               primary: ZaWolfColors.primaryCyan,
-              onPrimary: Colors.black,
+              onPrimary: ZaWolfColors.background,
               surface: ZaWolfColors.surface01,
-              onSurface: Colors.white,
+              onSurface: ZaWolfColors.textPrimary,
             ),
           ),
           child: child ?? const SizedBox.shrink(),
@@ -124,9 +124,9 @@ class _MeetingRequestScreenState extends State<MeetingRequestScreen> {
           data: Theme.of(context).copyWith(
             colorScheme: ColorScheme.dark(
               primary: ZaWolfColors.primaryCyan,
-              onPrimary: Colors.black,
+              onPrimary: ZaWolfColors.background,
               surface: ZaWolfColors.surface01,
-              onSurface: Colors.white,
+              onSurface: ZaWolfColors.textPrimary,
             ),
           ),
           child: child ?? const SizedBox.shrink(),
@@ -191,7 +191,7 @@ class _MeetingRequestScreenState extends State<MeetingRequestScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(message),
-          backgroundColor: error ? Colors.red : Colors.green,
+          backgroundColor: error ? ZaWolfColors.error : ZaWolfColors.success,
         ),
       );
 
@@ -322,7 +322,7 @@ class _MeetingRequestScreenState extends State<MeetingRequestScreen> {
                           ? 'القاعة متاحة في هذا الوقت.'
                           : 'القاعة مشغولة في هذا الوقت. اختر وقتاً أو قاعة أخرى.',
                       style: TextStyle(
-                        color: _available! ? Colors.green : Colors.red,
+                        color: _available! ? ZaWolfColors.success : ZaWolfColors.error,
                         fontWeight: FontWeight.bold,
                       ),
                     ),

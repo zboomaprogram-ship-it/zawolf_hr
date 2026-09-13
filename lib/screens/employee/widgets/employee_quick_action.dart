@@ -39,7 +39,7 @@ class EmployeeQuickAction extends StatelessWidget {
             overflow: TextOverflow.ellipsis,
             textAlign: TextAlign.center,
             style: theme.textTheme.bodyMedium?.copyWith(
-              color: Colors.white,
+              color: ZaWolfColors.textPrimary,
               fontWeight: FontWeight.bold,
               fontSize: 13,
             ),

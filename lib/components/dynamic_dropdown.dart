@@ -49,11 +49,11 @@ class _DynamicDropdownState extends State<DynamicDropdown> {
           backgroundColor: ZaWolfColors.surface01,
           title: Text(
             widget.dialogTitle,
-            style: const TextStyle(color: Colors.white),
+            style: const TextStyle(color: ZaWolfColors.textPrimary),
           ),
           content: TextField(
             controller: controller,
-            style: const TextStyle(color: Colors.white),
+            style: const TextStyle(color: ZaWolfColors.textPrimary),
             decoration: const InputDecoration(
               hintText: 'اكتب هنا...',
               hintStyle: TextStyle(color: ZaWolfColors.textMuted),
@@ -148,7 +148,7 @@ class _DynamicDropdownState extends State<DynamicDropdown> {
                 ),
               ),
               dropdownColor: ZaWolfColors.surface02,
-              style: const TextStyle(color: Colors.white),
+              style: const TextStyle(color: ZaWolfColors.textPrimary),
               items: items.map((item) {
                 return DropdownMenuItem(
                   value: item,

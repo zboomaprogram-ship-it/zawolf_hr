@@ -47,7 +47,7 @@ class ZaWolfColors {
   static const Color dangerDeep = Color(0xFFC62828);
 
   static const LinearGradient primaryGradient = LinearGradient(
-    colors: [primaryCyan, Color(0xFF6AF2BC), primaryBlue],
+    colors: [Color(0xFF168099), primaryBlue, Color(0xFF0A3644)],
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
   );
@@ -100,6 +100,34 @@ class ZaWolfTheme {
       // Focus-visible ring: keyboard/web tab focus shows the brand accent
       // ring on every interactive component (specs/ui_redesign/04).
       focusColor: ZaWolfColors.primaryCyan.withValues(alpha: 0.45),
+      iconTheme: const IconThemeData(
+        color: ZaWolfColors.textPrimary,
+        size: 22,
+      ),
+      primaryIconTheme: const IconThemeData(
+        color: ZaWolfColors.primaryCyan,
+        size: 22,
+      ),
+      switchTheme: SwitchThemeData(
+        thumbColor: WidgetStateProperty.resolveWith((states) {
+          if (states.contains(WidgetState.selected)) {
+            return ZaWolfColors.primaryCyan;
+          }
+          return ZaWolfColors.textPrimary;
+        }),
+        trackColor: WidgetStateProperty.resolveWith((states) {
+          if (states.contains(WidgetState.selected)) {
+            return const Color(0xFF164450);
+          }
+          return ZaWolfColors.surface03;
+        }),
+        trackOutlineColor: WidgetStateProperty.resolveWith((states) {
+          if (states.contains(WidgetState.selected)) {
+            return ZaWolfColors.primaryCyan.withValues(alpha: 0.5);
+          }
+          return ZaWolfColors.surface02;
+        }),
+      ),
       actionIconTheme: ActionIconThemeData(
         backButtonIconBuilder: (context) => Icon(
           Directionality.of(context) == TextDirection.rtl
@@ -213,13 +241,28 @@ class ZaWolfTheme {
         ),
         errorBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(8),
-          borderSide: const BorderSide(color: ZaWolfColors.error),
+          borderSide: const BorderSide(color: ZaWolfColors.error, width: 1.5),
         ),
+        focusedErrorBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(8),
+          borderSide: const BorderSide(
+            color: ZaWolfColors.error,
+            width: 1.8,
+          ),
+        ),
+        errorStyle: GoogleFonts.ibmPlexSansArabic(
+          color: ZaWolfColors.error,
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
+        ),
+        errorMaxLines: 3,
       ),
       dividerTheme: const DividerThemeData(color: ZaWolfColors.surface03),
       snackBarTheme: SnackBarThemeData(
         backgroundColor: ZaWolfColors.surface02,
-        contentTextStyle: GoogleFonts.ibmPlexSansArabic(color: Colors.white),
+        contentTextStyle: GoogleFonts.ibmPlexSansArabic(
+          color: ZaWolfColors.textPrimary,
+        ),
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
       ),
@@ -232,20 +275,20 @@ class ZaWolfTheme {
         backgroundColor: ZaWolfColors.surface01,
         surfaceTintColor: Colors.transparent,
         headerBackgroundColor: ZaWolfColors.surface02,
-        headerForegroundColor: Colors.white,
-        dayForegroundColor: WidgetStateProperty.all(Colors.white),
-        yearForegroundColor: WidgetStateProperty.all(Colors.white),
+        headerForegroundColor: ZaWolfColors.textPrimary,
+        dayForegroundColor: WidgetStateProperty.all(ZaWolfColors.textPrimary),
+        yearForegroundColor: WidgetStateProperty.all(ZaWolfColors.textPrimary),
         todayForegroundColor: WidgetStateProperty.all(ZaWolfColors.primaryCyan),
       ),
       timePickerTheme: const TimePickerThemeData(
         backgroundColor: ZaWolfColors.surface01,
-        hourMinuteTextColor: Colors.white,
+        hourMinuteTextColor: ZaWolfColors.textPrimary,
         hourMinuteColor: ZaWolfColors.surface02,
-        dayPeriodTextColor: Colors.white,
+        dayPeriodTextColor: ZaWolfColors.textPrimary,
         dayPeriodColor: ZaWolfColors.surface02,
         dialHandColor: ZaWolfColors.primaryCyan,
         dialBackgroundColor: ZaWolfColors.surface02,
-        dialTextColor: Colors.white,
+        dialTextColor: ZaWolfColors.textPrimary,
       ),
     );
   }

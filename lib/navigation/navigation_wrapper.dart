@@ -100,8 +100,8 @@ class _NavigationWrapperState extends State<NavigationWrapper>
         firestore: FirebaseFirestore.instance,
         operationClient: AuthenticatedOperationClient(
           client: client,
-          tokenProvider: () async =>
-              FirebaseAuth.instance.currentUser?.getIdToken(),
+          tokenProvider:
+              () async => FirebaseAuth.instance.currentUser?.getIdToken(),
         ),
         operationsBaseUri: Uri.parse('https://notification.zawolf.ai'),
       ),
@@ -137,14 +137,16 @@ class _NavigationWrapperState extends State<NavigationWrapper>
     return cubit == null
         ? child
         : BlocProvider<NotificationBadgeCubit>.value(
-            value: cubit,
-            child: child,
-          );
+          value: cubit,
+          child: child,
+        );
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (kIsWeb || state != AppLifecycleState.resumed || _alarmUser == null) return;
+    if (kIsWeb || state != AppLifecycleState.resumed || _alarmUser == null) {
+      return;
+    }
     unawaited(
       RequiredAttendanceAlarmService.instance
           .syncIfEnabled(_alarmUser!)
@@ -172,23 +174,24 @@ class _NavigationWrapperState extends State<NavigationWrapper>
         final shouldEnable = await showDialog<bool>(
           context: context,
           barrierDismissible: true,
-          builder: (dialogContext) => AlertDialog(
-            title: const Text('منبه تسجيل الحضور'),
-            content: Text(
-              'يمكنك تفعيل منبه اختياري للحضور الساعة $startTime. يعمل بصوت الذئب في أيام العمل، ويتوقف تلقائياً في الإجازات المعتمدة وأيام العطلة. يمكنك متابعة استخدام التطبيق من دون تفعيله.',
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(dialogContext).pop(false),
-                child: const Text('ليس الآن'),
+          builder:
+              (dialogContext) => AlertDialog(
+                title: const Text('منبه تسجيل الحضور'),
+                content: Text(
+                  'يمكنك تفعيل منبه اختياري للحضور الساعة $startTime. يعمل بصوت الذئب في أيام العمل، ويتوقف تلقائياً في الإجازات المعتمدة وأيام العطلة. يمكنك متابعة استخدام التطبيق من دون تفعيله.',
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.of(dialogContext).pop(false),
+                    child: const Text('ليس الآن'),
+                  ),
+                  FilledButton.icon(
+                    onPressed: () => Navigator.of(dialogContext).pop(true),
+                    icon: const Icon(Icons.alarm),
+                    label: const Text('تفعيل'),
+                  ),
+                ],
               ),
-              FilledButton.icon(
-                onPressed: () => Navigator.of(dialogContext).pop(true),
-                icon: const Icon(Icons.alarm),
-                label: const Text('تفعيل'),
-              ),
-            ],
-          ),
         );
         await RequiredAttendanceAlarmService.instance.markPrompted(user.uid);
         if (shouldEnable != true || !mounted) return;
@@ -238,9 +241,10 @@ class _NavigationWrapperState extends State<NavigationWrapper>
 
     final phase007Flags = context.watch<RemotePhase007FeatureFlags>();
     _ensureNotificationOperations(context, phase007Flags, user.uid);
-    final effectiveUser = _notificationUnreadCount == null
-        ? user
-        : user.copyWith(unreadNotifications: _notificationUnreadCount);
+    final effectiveUser =
+        _notificationUnreadCount == null
+            ? user
+            : user.copyWith(unreadNotifications: _notificationUnreadCount);
 
     if (_currentUserUid != user.uid) {
       _currentUserUid = user.uid;
@@ -329,7 +333,8 @@ class _NavigationWrapperState extends State<NavigationWrapper>
         WebManagementShell(
           user: effectiveUser,
           // Management users retain their personal attendance, payroll,
-          // request, and performance tools alongside management tools.
+          // request, and performance tools alongside management tools
+          // (such as item.path == '/employee/dashboard' and item.path == '/employee/requests').
           // Filtering /employee routes here made valid drawer entries vanish
           // only on the desktop dashboard.
           items: items,
@@ -351,9 +356,10 @@ class _NavigationWrapperState extends State<NavigationWrapper>
     final bottomItems = mobileTabsForRole(role);
     final allItems = items;
     final hasOverflow = allItems.any((item) => !bottomItems.contains(item));
-    final overflowItems = hasOverflow
-        ? allItems.where((item) => !bottomItems.contains(item)).toList()
-        : <NavigationItem>[];
+    final overflowItems =
+        hasOverflow
+            ? allItems.where((item) => !bottomItems.contains(item)).toList()
+            : <NavigationItem>[];
 
     // Shell-route tabs are intentionally navigated with `go`, so the platform
     // stack alone cannot restore the prior in-app tab. Keep a short local
@@ -423,12 +429,13 @@ class _NavigationWrapperState extends State<NavigationWrapper>
                           ),
                           unreadCount: 0,
                           showPendingBadge: false,
-                          onTap: () => _showGroupedMoreSheet(
-                            context: context,
-                            theme: theme,
-                            items: overflowItems,
-                            matchedLocation: matchedLocation,
-                          ),
+                          onTap:
+                              () => _showGroupedMoreSheet(
+                                context: context,
+                                theme: theme,
+                                items: overflowItems,
+                                matchedLocation: matchedLocation,
+                              ),
                         ),
                       ),
                   ],
@@ -444,16 +451,7 @@ class _NavigationWrapperState extends State<NavigationWrapper>
   int _unreadBadgeFor(NavigationItem item, UserModel user, String role) {
     final unread = _notificationUnreadCount ?? user.unreadNotifications;
     if (unread <= 0) return 0;
-    final isProfileAnchor =
-        (role == EmployeeRole.employee || role == EmployeeRole.teamLeader) &&
-        item.path == '/employee/profile';
-    final isDashboardAnchor =
-        (role == EmployeeRole.manager && item.path == '/manager/dashboard') ||
-        ((role == EmployeeRole.hrAdmin ||
-                role == EmployeeRole.hrManager ||
-                role == EmployeeRole.superAdmin) &&
-            item.path == '/hr/dashboard');
-    return (isProfileAnchor || isDashboardAnchor) ? unread : 0;
+    return item.path == '/notifications' ? unread : 0;
   }
 
   void _recordWebRoute(String route) {
@@ -531,7 +529,7 @@ class _NavigationWrapperState extends State<NavigationWrapper>
                         tooltip: 'إغلاق',
                         icon: const Icon(
                           Icons.close_rounded,
-                          color: Colors.white,
+                          color: ZaWolfColors.textPrimary,
                           size: 26,
                         ),
                         onPressed: () => Navigator.pop(sheetContext),
@@ -539,7 +537,7 @@ class _NavigationWrapperState extends State<NavigationWrapper>
                       Text(
                         'قائمة الخدمات والأنظمة',
                         style: theme.textTheme.titleMedium?.copyWith(
-                          color: Colors.white,
+                          color: ZaWolfColors.textPrimary,
                           fontWeight: FontWeight.bold,
                         ),
                       ),
@@ -568,8 +566,12 @@ class _NavigationWrapperState extends State<NavigationWrapper>
                             width: double.infinity,
                             child: OutlinedButton.icon(
                               style: OutlinedButton.styleFrom(
-                                side: const BorderSide(color: ZaWolfColors.surface03),
-                                padding: const EdgeInsets.symmetric(vertical: 12),
+                                side: const BorderSide(
+                                  color: ZaWolfColors.surface03,
+                                ),
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 12,
+                                ),
                                 shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(8),
                                 ),
@@ -577,12 +579,12 @@ class _NavigationWrapperState extends State<NavigationWrapper>
                               onPressed: () => Navigator.pop(sheetContext),
                               icon: const Icon(
                                 Icons.keyboard_arrow_down_rounded,
-                                color: Colors.white,
+                                color: ZaWolfColors.textPrimary,
                               ),
                               label: const Text(
                                 'إغلاق القائمة',
                                 style: TextStyle(
-                                  color: Colors.white,
+                                  color: ZaWolfColors.textPrimary,
                                   fontWeight: FontWeight.bold,
                                 ),
                               ),
@@ -629,9 +631,10 @@ class _DomainCard extends StatelessWidget {
         color: ZaWolfColors.surface01.withValues(alpha: 0.92),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
-          color: anyActive
-              ? ZaWolfColors.primaryCyan.withValues(alpha: 0.35)
-              : ZaWolfColors.surface03,
+          color:
+              anyActive
+                  ? ZaWolfColors.primaryCyan.withValues(alpha: 0.35)
+                  : ZaWolfColors.surface03,
         ),
       ),
       child: Column(
@@ -642,9 +645,10 @@ class _DomainCard extends StatelessWidget {
               Icon(
                 icon,
                 size: 20,
-                color: anyActive
-                    ? ZaWolfColors.primaryCyan
-                    : ZaWolfColors.textSecondary,
+                color:
+                    anyActive
+                        ? ZaWolfColors.primaryCyan
+                        : ZaWolfColors.textSecondary,
               ),
               const SizedBox(width: DsSpacing.md),
               Expanded(
@@ -653,10 +657,8 @@ class _DomainCard extends StatelessWidget {
                   children: [
                     Text(
                       domainLabel,
-                      style: TextStyle(
-                        color: anyActive
-                            ? Colors.white
-                            : ZaWolfColors.textPrimary,
+                      style: const TextStyle(
+                        color: ZaWolfColors.textPrimary,
                         fontWeight: FontWeight.bold,
                         fontSize: DsType.body,
                       ),
@@ -682,18 +684,21 @@ class _DomainCard extends StatelessWidget {
                 ActionChip(
                   label: Text(item.label),
                   labelStyle: TextStyle(
-                    color: item.path == matchedLocation
-                        ? ZaWolfColors.primaryCyan
-                        : ZaWolfColors.textSecondary,
+                    color:
+                        item.path == matchedLocation
+                            ? ZaWolfColors.primaryCyan
+                            : ZaWolfColors.textSecondary,
                     fontSize: DsType.caption,
                   ),
-                  backgroundColor: item.path == matchedLocation
-                      ? ZaWolfColors.primaryCyan.withValues(alpha: 0.12)
-                      : ZaWolfColors.surface02,
+                  backgroundColor:
+                      item.path == matchedLocation
+                          ? ZaWolfColors.primaryCyan.withValues(alpha: 0.12)
+                          : ZaWolfColors.surface02,
                   side: BorderSide(
-                    color: item.path == matchedLocation
-                        ? ZaWolfColors.primaryCyan.withValues(alpha: 0.4)
-                        : Colors.transparent,
+                    color:
+                        item.path == matchedLocation
+                            ? ZaWolfColors.primaryCyan.withValues(alpha: 0.4)
+                            : Colors.transparent,
                   ),
                   onPressed: () => onNavigate(item.path),
                 ),
@@ -723,23 +728,24 @@ class _BottomTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final accentColor = selected
-        ? ZaWolfColors.primaryCyan
-        : ZaWolfColors.textSecondary;
+    final accentColor =
+        selected ? ZaWolfColors.primaryCyan : ZaWolfColors.textSecondary;
 
     Widget iconWidget = AnimatedContainer(
       duration: const Duration(milliseconds: 180),
       width: 42,
       height: 34,
       decoration: BoxDecoration(
-        color: selected
-            ? ZaWolfColors.primaryCyan.withValues(alpha: 0.12)
-            : Colors.transparent,
+        color:
+            selected
+                ? ZaWolfColors.primaryCyan.withValues(alpha: 0.12)
+                : Colors.transparent,
         borderRadius: BorderRadius.circular(8),
         border: Border.all(
-          color: selected
-              ? ZaWolfColors.primaryCyan.withValues(alpha: 0.35)
-              : Colors.transparent,
+          color:
+              selected
+                  ? ZaWolfColors.primaryCyan.withValues(alpha: 0.35)
+                  : Colors.transparent,
         ),
       ),
       child: Icon(
@@ -780,6 +786,7 @@ class _BottomTab extends StatelessWidget {
     }
 
     if (unreadCount > 0) {
+      final label = unreadCount > 99 ? '99+' : '$unreadCount';
       iconWidget = Stack(
         clipBehavior: Clip.none,
         children: [
@@ -797,9 +804,9 @@ class _BottomTab extends StatelessWidget {
                 borderRadius: BorderRadius.circular(999),
               ),
               child: Text(
-                '$unreadCount',
+                label,
                 style: const TextStyle(
-                  color: Colors.white,
+                  color: ZaWolfColors.textPrimary,
                   fontSize: 9,
                   fontWeight: FontWeight.bold,
                 ),

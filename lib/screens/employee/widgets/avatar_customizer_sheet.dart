@@ -122,9 +122,9 @@ class _AvatarCustomizerSheetState extends State<AvatarCustomizerSheet> {
 
     return Container(
       padding: const EdgeInsets.all(24.0),
-      decoration: BoxDecoration(
-        color: theme.scaffoldBackgroundColor,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+      decoration: const BoxDecoration(
+        color: ZaWolfColors.surface01,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -133,7 +133,7 @@ class _AvatarCustomizerSheetState extends State<AvatarCustomizerSheet> {
             width: 40,
             height: 4,
             decoration: BoxDecoration(
-              color: Colors.white24,
+              color: ZaWolfColors.surface03,
               borderRadius: BorderRadius.circular(2),
             ),
           ),
@@ -142,7 +142,7 @@ class _AvatarCustomizerSheetState extends State<AvatarCustomizerSheet> {
             'تخصيص الشخصية الافتراضية (Avatar)',
             style: theme.textTheme.titleLarge?.copyWith(
               fontWeight: FontWeight.bold,
-              color: Colors.white,
+              color: ZaWolfColors.textPrimary,
             ),
           ),
           const SizedBox(height: 24),
@@ -178,7 +178,7 @@ class _AvatarCustomizerSheetState extends State<AvatarCustomizerSheet> {
             child: Text(
               'لون الزي:',
               style: TextStyle(
-                color: Colors.white70,
+                color: ZaWolfColors.textSecondary,
                 fontWeight: FontWeight.bold,
               ),
             ),
@@ -189,10 +189,10 @@ class _AvatarCustomizerSheetState extends State<AvatarCustomizerSheet> {
             spacing: 10,
             runSpacing: 8,
             children: [
-                  ('cyan', const Color(0xFF22D3EE), 'سماوي'),
-                  ('violet', const Color(0xFFA78BFA), 'بنفسجي'),
-                  ('amber', const Color(0xFFFBBF24), 'ذهبي'),
-                  ('rose', const Color(0xFFFB7185), 'وردي'),
+                  ('cyan', ZaWolfColors.primaryCyan, 'سماوي'),
+                  ('violet', ZaWolfColors.dayoffPurple, 'بنفسجي'),
+                  ('amber', ZaWolfColors.warning, 'ذهبي'),
+                  ('rose', ZaWolfColors.error, 'وردي'),
                 ]
                 .map(
                   (choice) => ChoiceChip(
@@ -211,7 +211,7 @@ class _AvatarCustomizerSheetState extends State<AvatarCustomizerSheet> {
             child: Text(
               'اختر نوع الشخصية:',
               style: TextStyle(
-                color: Colors.white70,
+                color: ZaWolfColors.textSecondary,
                 fontWeight: FontWeight.bold,
               ),
             ),
@@ -228,7 +228,7 @@ class _AvatarCustomizerSheetState extends State<AvatarCustomizerSheet> {
                       color:
                           _selectedGender == 'male'
                               ? ZaWolfColors.primaryCyan.withValues(alpha: 0.2)
-                              : Colors.white.withValues(alpha: 0.05),
+                              : ZaWolfColors.surface02,
                       border: Border.all(
                         color:
                             _selectedGender == 'male'
@@ -240,11 +240,11 @@ class _AvatarCustomizerSheetState extends State<AvatarCustomizerSheet> {
                     ),
                     child: const Column(
                       children: [
-                        Icon(Icons.man, color: Colors.white, size: 36),
+                        Icon(Icons.man, color: ZaWolfColors.textPrimary, size: 36),
                         SizedBox(height: 4),
                         Text(
                           'موظف (ذكر)',
-                          style: TextStyle(color: Colors.white),
+                          style: TextStyle(color: ZaWolfColors.textPrimary),
                         ),
                       ],
                     ),
@@ -261,7 +261,7 @@ class _AvatarCustomizerSheetState extends State<AvatarCustomizerSheet> {
                       color:
                           _selectedGender == 'female'
                               ? ZaWolfColors.primaryCyan.withValues(alpha: 0.2)
-                              : Colors.white.withValues(alpha: 0.05),
+                              : ZaWolfColors.surface02,
                       border: Border.all(
                         color:
                             _selectedGender == 'female'
@@ -273,11 +273,11 @@ class _AvatarCustomizerSheetState extends State<AvatarCustomizerSheet> {
                     ),
                     child: const Column(
                       children: [
-                        Icon(Icons.woman, color: Colors.white, size: 36),
+                        Icon(Icons.woman, color: ZaWolfColors.textPrimary, size: 36),
                         SizedBox(height: 4),
                         Text(
                           'موظفة (أنثى)',
-                          style: TextStyle(color: Colors.white),
+                          style: TextStyle(color: ZaWolfColors.textPrimary),
                         ),
                       ],
                     ),

@@ -131,11 +131,11 @@ class _TeamLeaderboardCardState extends State<TeamLeaderboardCard> {
                     _showAll ? allMembers : allMembers.take(5).toList();
 
                 const medals = [
-                  ZaWolfColors.warning, // Gold
+                  ZaWolfColors.perfGold, // Gold
                   ZaWolfColors.textSecondary, // Silver
-                  Color(0xFFCD7F32), // Bronze
+                  ZaWolfColors.warning, // Bronze
                   ZaWolfColors.primaryCyan,
-                  Color(0xFFA855F7),
+                  ZaWolfColors.dayoffPurple,
                 ];
 
                 return Column(

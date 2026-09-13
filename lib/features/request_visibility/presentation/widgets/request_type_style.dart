@@ -20,68 +20,68 @@ final class RequestTypeStyle {
 
   static RequestTypeStyle fromSourceType(RequestSourceType type) => switch (type) {
     RequestSourceType.leave => const RequestTypeStyle(
-      borderColor: Color(0xFF10B981), // Emerald
-      shadowColor: Color(0x4710B981),
+      borderColor: ZaWolfColors.dayoffPurple,
+      shadowColor: Color(0x477D8CFF),
       icon: Icons.event_available_outlined,
       label: 'إجازة',
     ),
     RequestSourceType.permission => const RequestTypeStyle(
-      borderColor: ZaWolfColors.primaryCyan, // Cyan
-      shadowColor: Color(0x4706B6D4),
+      borderColor: ZaWolfColors.permissionTeal,
+      shadowColor: Color(0x474FC3B2),
       icon: Icons.schedule_outlined,
       label: 'إذن',
     ),
     RequestSourceType.advance => const RequestTypeStyle(
-      borderColor: Color(0xFFF59E0B), // Amber/Gold
-      shadowColor: Color(0x47F59E0B),
+      borderColor: ZaWolfColors.perfGold,
+      shadowColor: Color(0x47E7C66A),
       icon: Icons.account_balance_wallet_outlined,
       label: 'سلفة',
     ),
     RequestSourceType.attendanceCorrection => const RequestTypeStyle(
-      borderColor: Color(0xFFFF7043), // Deep Orange
-      shadowColor: Color(0x47FF7043),
+      borderColor: ZaWolfColors.warning,
+      shadowColor: Color(0x47E4B55D),
       icon: Icons.edit_calendar_outlined,
       label: 'تصحيح حضور',
     ),
     RequestSourceType.salaryDeduction => const RequestTypeStyle(
-      borderColor: Color(0xFFEF4444), // Crimson
-      shadowColor: Color(0x47EF4444),
+      borderColor: ZaWolfColors.error,
+      shadowColor: Color(0x47FF6B6B),
       icon: Icons.money_off_outlined,
       label: 'خصم راتب',
     ),
     RequestSourceType.lateArrivalDeduction => const RequestTypeStyle(
-      borderColor: Color(0xFFEF4444), // Crimson
-      shadowColor: Color(0x47EF4444),
+      borderColor: ZaWolfColors.error,
+      shadowColor: Color(0x47FF6B6B),
       icon: Icons.money_off_outlined,
       label: 'خصم حضور',
     ),
     RequestSourceType.administrative => const RequestTypeStyle(
-      borderColor: Color(0xFF8B5CF6), // Violet/Purple
-      shadowColor: Color(0x478B5CF6),
+      borderColor: ZaWolfColors.primaryCyan,
+      shadowColor: Color(0x4745F0FF),
       icon: Icons.assignment_outlined,
       label: 'طلب إداري ومهمة',
     ),
     RequestSourceType.complaint => const RequestTypeStyle(
-      borderColor: Color(0xFFEC4899), // Pink/Coral
-      shadowColor: Color(0x47EC4899),
+      borderColor: ZaWolfColors.warning,
+      shadowColor: Color(0x47E4B55D),
       icon: Icons.report_problem_outlined,
       label: 'شكوى',
     ),
     RequestSourceType.resignation => const RequestTypeStyle(
-      borderColor: Color(0xFFE11D48), // Ruby/Rose
-      shadowColor: Color(0x47E11D48),
+      borderColor: ZaWolfColors.error,
+      shadowColor: Color(0x47FF6B6B),
       icon: Icons.meeting_room_outlined,
       label: 'استقالة',
     ),
     RequestSourceType.employeeDeletion => const RequestTypeStyle(
-      borderColor: Color(0xFF64748B), // Slate
-      shadowColor: Color(0x4764748B),
+      borderColor: ZaWolfColors.steel,
+      shadowColor: Color(0x479AA9B5),
       icon: Icons.person_remove_outlined,
       label: 'حذف موظف',
     ),
     RequestSourceType.unknown => const RequestTypeStyle(
-      borderColor: Color(0xFF0EA5E9), // Sky Blue
-      shadowColor: Color(0x470EA5E9),
+      borderColor: ZaWolfColors.primaryBlue,
+      shadowColor: Color(0x47166C8C),
       icon: Icons.description_outlined,
       label: 'طلب',
     ),
@@ -102,12 +102,12 @@ final class RequestTypeStyle {
 
 
   static Color stateColor(RequestLifecycleState state) => switch (state) {
-    RequestLifecycleState.pending => const Color(0xFFF59E0B),
+    RequestLifecycleState.pending => ZaWolfColors.warning,
     RequestLifecycleState.approved ||
-    RequestLifecycleState.confirmed => const Color(0xFF10B981),
-    RequestLifecycleState.rejected => const Color(0xFFEF4444),
-    RequestLifecycleState.cancelled => const Color(0xFF94A3B8),
-    RequestLifecycleState.unknown => const Color(0xFF64748B),
+    RequestLifecycleState.confirmed => ZaWolfColors.success,
+    RequestLifecycleState.rejected => ZaWolfColors.error,
+    RequestLifecycleState.cancelled => ZaWolfColors.textMuted,
+    RequestLifecycleState.unknown => ZaWolfColors.textSecondary,
   };
 
   static String stateLabel(RequestLifecycleState state) => switch (state) {

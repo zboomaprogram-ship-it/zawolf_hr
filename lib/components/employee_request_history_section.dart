@@ -218,7 +218,7 @@ class _RequestSummaryTile extends StatelessWidget {
                 Text(
                   request.type,
                   style: const TextStyle(
-                    color: Colors.white,
+                    color: ZaWolfColors.textPrimary,
                     fontWeight: FontWeight.w700,
                   ),
                 ),

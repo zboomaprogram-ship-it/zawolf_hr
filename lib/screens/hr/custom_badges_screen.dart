@@ -18,7 +18,7 @@ class _CustomBadgesScreenState extends State<CustomBadgesScreen> {
   final _titleController = TextEditingController();
   final _descController = TextEditingController();
   String _selectedIcon = 'emoji_events';
-  String _selectedColor = '#FFD700';
+  String _selectedColor = '#E7C66A';
   static const String _selectedGoal = 'manual';
   static const int _targetValue = 1;
   bool _saving = false;
@@ -33,12 +33,12 @@ class _CustomBadgesScreenState extends State<CustomBadgesScreen> {
   ];
 
   static const List<Map<String, String>> _colorOptions = [
-    {'hex': '#FFD700', 'label': 'ذهبي'},
-    {'hex': '#38BDF8', 'label': 'سيبان'},
-    {'hex': '#A78BFA', 'label': 'بنفسجي'},
-    {'hex': '#10B981', 'label': 'أخضر'},
-    {'hex': '#F97316', 'label': 'برتقالي'},
-    {'hex': '#EC4899', 'label': 'وردي'},
+    {'hex': '#E7C66A', 'label': 'ذهبي'},
+    {'hex': '#45F0FF', 'label': 'سيبان'},
+    {'hex': '#7D8CFF', 'label': 'بنفسجي'},
+    {'hex': '#7DDC8A', 'label': 'أخضر'},
+    {'hex': '#E4B55D', 'label': 'عنبري'},
+    {'hex': '#4FC3B2', 'label': 'تيل'},
   ];
 
   Color _parseHex(String hex) {
@@ -46,7 +46,7 @@ class _CustomBadgesScreenState extends State<CustomBadgesScreen> {
       final clean = hex.replaceAll('#', '');
       return Color(int.parse('FF$clean', radix: 16));
     } catch (_) {
-      return const Color(0xFFFFD700);
+      return ZaWolfColors.perfGold;
     }
   }
 
@@ -109,14 +109,14 @@ class _CustomBadgesScreenState extends State<CustomBadgesScreen> {
               return Directionality(
                 textDirection: TextDirection.rtl,
                 child: AlertDialog(
-                  backgroundColor: const Color(0xFF0F172A),
+                  backgroundColor: ZaWolfColors.surface01,
                   title: const Row(
                     children: [
-                      Icon(Icons.emoji_events, color: Color(0xFFFFD700)),
+                      Icon(Icons.emoji_events, color: ZaWolfColors.perfGold),
                       SizedBox(width: 8),
                       Text(
                         'إضافة كأس / شارة تميز جديدة',
-                        style: TextStyle(color: Colors.white, fontSize: 16),
+                        style: TextStyle(color: ZaWolfColors.textPrimary, fontSize: 16),
                       ),
                     ],
                   ),
@@ -129,7 +129,7 @@ class _CustomBadgesScreenState extends State<CustomBadgesScreen> {
                         children: [
                           TextFormField(
                             controller: _titleController,
-                            style: const TextStyle(color: Colors.white),
+                            style: const TextStyle(color: ZaWolfColors.textPrimary),
                             decoration: const InputDecoration(
                               labelText: 'اسم الكأس / الشارة',
                               hintText: 'مثال: نجم المبيعات أو بطل الالتزام',
@@ -143,7 +143,7 @@ class _CustomBadgesScreenState extends State<CustomBadgesScreen> {
                           const SizedBox(height: 14),
                           TextFormField(
                             controller: _descController,
-                            style: const TextStyle(color: Colors.white),
+                            style: const TextStyle(color: ZaWolfColors.textPrimary),
                             maxLines: 2,
                             decoration: const InputDecoration(
                               labelText: 'الوصف أو سبب المنح',
@@ -159,7 +159,7 @@ class _CustomBadgesScreenState extends State<CustomBadgesScreen> {
                           const SizedBox(height: 16),
                           const Text(
                             'اختر أيقونة الشارة:',
-                            style: TextStyle(color: Colors.white70, fontSize: 12),
+                            style: TextStyle(color: ZaWolfColors.textSecondary, fontSize: 12),
                           ),
                           const SizedBox(height: 8),
                           Wrap(
@@ -170,12 +170,12 @@ class _CustomBadgesScreenState extends State<CustomBadgesScreen> {
                                   return ChoiceChip(
                                     label: Icon(
                                       opt['icon'] as IconData,
-                                      color: isSel ? Colors.black : Colors.white,
+                                      color: isSel ? ZaWolfColors.background : ZaWolfColors.textPrimary,
                                       size: 18,
                                     ),
                                     selected: isSel,
-                                    selectedColor: const Color(0xFFFFD700),
-                                    backgroundColor: Colors.white10,
+                                    selectedColor: ZaWolfColors.perfGold,
+                                    backgroundColor: ZaWolfColors.surface02,
                                     onSelected:
                                         (_) => setModalState(
                                           () =>
@@ -188,7 +188,7 @@ class _CustomBadgesScreenState extends State<CustomBadgesScreen> {
                           const SizedBox(height: 16),
                           const Text(
                             'اختر لون الشارة المميز:',
-                            style: TextStyle(color: Colors.white70, fontSize: 12),
+                            style: TextStyle(color: ZaWolfColors.textSecondary, fontSize: 12),
                           ),
                           const SizedBox(height: 8),
                           Wrap(
@@ -211,7 +211,7 @@ class _CustomBadgesScreenState extends State<CustomBadgesScreen> {
                                         border: Border.all(
                                           color:
                                               isSel
-                                                  ? Colors.white
+                                                  ? ZaWolfColors.textPrimary
                                                   : Colors.transparent,
                                           width: 2.5,
                                         ),
@@ -220,7 +220,7 @@ class _CustomBadgesScreenState extends State<CustomBadgesScreen> {
                                           isSel
                                               ? const Icon(
                                                 Icons.check,
-                                                color: Colors.black,
+                                                color: ZaWolfColors.background,
                                                 size: 16,
                                               )
                                               : null,
@@ -235,12 +235,12 @@ class _CustomBadgesScreenState extends State<CustomBadgesScreen> {
                   actions: [
                     TextButton(
                       onPressed: () => Navigator.pop(context),
-                      child: const Text('إلغاء', style: TextStyle(color: Colors.white60)),
+                      child: const Text('إلغاء', style: TextStyle(color: ZaWolfColors.textSecondary)),
                     ),
                     ElevatedButton(
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFFFFD700),
-                        foregroundColor: Colors.black,
+                        backgroundColor: ZaWolfColors.perfGold,
+                        foregroundColor: ZaWolfColors.background,
                       ),
                       onPressed: _saving ? null : _createBadge,
                       child:
@@ -250,7 +250,7 @@ class _CustomBadgesScreenState extends State<CustomBadgesScreen> {
                                 height: 16,
                                 child: CircularProgressIndicator(
                                   strokeWidth: 2,
-                                  color: Colors.black,
+                                  color: ZaWolfColors.background,
                                 ),
                               )
                               : const Text('حفظ وإنشاء', style: TextStyle(fontWeight: FontWeight.bold)),
@@ -271,7 +271,7 @@ class _CustomBadgesScreenState extends State<CustomBadgesScreen> {
         actions: [
           IconButton(
             tooltip: 'إضافة كأس جديد',
-            icon: const Icon(Icons.add_circle, color: Color(0xFFFFD700)),
+            icon: const Icon(Icons.add_circle, color: ZaWolfColors.perfGold),
             onPressed: _showCreateDialog,
           ),
         ],
@@ -291,12 +291,12 @@ class _CustomBadgesScreenState extends State<CustomBadgesScreen> {
                       Container(
                         padding: const EdgeInsets.all(10),
                         decoration: BoxDecoration(
-                          color: const Color(0xFFFFD700).withValues(alpha: 0.15),
+                          color: ZaWolfColors.perfGold.withValues(alpha: 0.15),
                           shape: BoxShape.circle,
                         ),
                         child: const Icon(
                           Icons.emoji_events,
-                          color: Color(0xFFFFD700),
+                          color: ZaWolfColors.perfGold,
                           size: 26,
                         ),
                       ),
@@ -308,7 +308,7 @@ class _CustomBadgesScreenState extends State<CustomBadgesScreen> {
                             Text(
                               'نظام الكؤوس والأوسمة المخصصة',
                               style: TextStyle(
-                                color: Colors.white,
+                                color: ZaWolfColors.textPrimary,
                                 fontWeight: FontWeight.bold,
                                 fontSize: 15,
                               ),
@@ -335,15 +335,15 @@ class _CustomBadgesScreenState extends State<CustomBadgesScreen> {
                     const Text(
                       'الكؤوس والشارات المخصصة',
                       style: TextStyle(
-                        color: Colors.white,
+                        color: ZaWolfColors.textPrimary,
                         fontSize: 16,
                         fontWeight: FontWeight.bold,
                       ),
                     ),
                     ElevatedButton.icon(
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFFFFD700),
-                        foregroundColor: Colors.black,
+                        backgroundColor: ZaWolfColors.perfGold,
+                        foregroundColor: ZaWolfColors.background,
                       ),
                       onPressed: _showCreateDialog,
                       icon: const Icon(Icons.add, size: 18),
@@ -359,11 +359,11 @@ class _CustomBadgesScreenState extends State<CustomBadgesScreen> {
                     alignment: Alignment.center,
                     child: const Column(
                       children: [
-                        Icon(Icons.emoji_events_outlined, color: Colors.white38, size: 48),
+                        Icon(Icons.emoji_events_outlined, color: ZaWolfColors.textMuted, size: 48),
                         SizedBox(height: 12),
                         Text(
                           'لا توجد كؤوس مخصصة حتى الآن. اضغط "كأس جديد" لإضافة أول وسام مخصص.',
-                          style: TextStyle(color: Colors.white60),
+                          style: TextStyle(color: ZaWolfColors.textSecondary),
                         ),
                       ],
                     ),
@@ -398,7 +398,7 @@ class _CustomBadgesScreenState extends State<CustomBadgesScreen> {
                                   Text(
                                     badge.title,
                                     style: const TextStyle(
-                                      color: Colors.white,
+                                      color: ZaWolfColors.textPrimary,
                                       fontWeight: FontWeight.bold,
                                       fontSize: 14,
                                     ),
@@ -415,7 +415,7 @@ class _CustomBadgesScreenState extends State<CustomBadgesScreen> {
                                   Text(
                                     'أنشأها: ${badge.createdByName}',
                                     style: const TextStyle(
-                                      color: Colors.white38,
+                                      color: ZaWolfColors.textMuted,
                                       fontSize: 10,
                                     ),
                                   ),

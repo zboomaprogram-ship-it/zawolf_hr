@@ -15,9 +15,11 @@ import '../../design_system/components/feedback_states.dart'
 import '../../design_system/components/skeletons.dart' show SkeletonList;
 
 class AttendanceSummaryDetailsScreen extends StatefulWidget {
-  const AttendanceSummaryDetailsScreen({super.key, this.initialStatus});
+  const AttendanceSummaryDetailsScreen({super.key, this.initialStatus, this.initialDate, this.initialDepartment});
 
   final String? initialStatus;
+  final DateTime? initialDate;
+  final String? initialDepartment;
 
   @override
   State<AttendanceSummaryDetailsScreen> createState() =>
@@ -71,6 +73,8 @@ class _AttendanceSummaryDetailsScreenState
               service: _service,
               user: user,
               status: widget.initialStatus!,
+              date: widget.initialDate,
+              department: widget.initialDepartment,
             )
           : FutureBuilder<List<DashboardAttendanceSummary>>(
               future: _future,
@@ -484,24 +488,30 @@ class _TodayCategoryDetails extends StatelessWidget {
     required this.service,
     required this.user,
     required this.status,
+    this.date,
+    this.department,
   });
 
   final DashboardAttendanceSummaryService service;
   final UserModel user;
   final String status;
+  final DateTime? date;
+  final String? department;
 
   @override
   Widget build(BuildContext context) {
     final metadata = switch (status) {
+      'all' => ('تفاصيل الحضور', ZaWolfColors.primaryCyan),
       'attended' => ('الحضور', ZaWolfColors.primaryCyan),
       'present' => ('حضر في الموعد', ZaWolfColors.success),
       'late' => ('المتأخرون', ZaWolfColors.warning),
       'permission' => ('لديهم إذن', ZaWolfColors.permissionTeal),
       'day_off' => ('في إجازة', ZaWolfColors.dayoffPurple),
+      'field_mission' => ('في مأمورية ميدانية', ZaWolfColors.warning),
       _ => ('لم يسجلوا الحضور', ZaWolfColors.error),
     };
     return FutureBuilder<DashboardAttendanceDayDetails>(
-      future: service.loadDayDetails(user, DateTime.now()),
+      future: service.loadDayDetails(user, date ?? DateTime.now()),
       builder: (context, snapshot) {
         if (snapshot.hasError) {
           return const ErrorState(message: 'تعذر تحميل تفاصيل الحضور.');
@@ -514,16 +524,22 @@ class _TodayCategoryDetails extends StatelessWidget {
         }
         final people = snapshot.data!.people
             .where(
-              (person) => status == 'attended'
-                  ? person.status == 'present' || person.status == 'late'
-                  : person.status == status,
+              (person) => (department == null ||
+                      person.employee.department == department) &&
+                  (status == 'all'
+                      ? true
+                      : status == 'attended'
+                      ? person.status == 'present' ||
+                          person.status == 'late' ||
+                          person.status == 'field_mission'
+                      : person.status == status),
             )
             .toList();
         return ListView(
           padding: const EdgeInsets.all(16),
           children: [
             Text(
-              '${metadata.$1} · ${DateFormat('yyyy/MM/dd').format(DateTime.now())}',
+              '${metadata.$1} · ${DateFormat('yyyy/MM/dd').format(date ?? DateTime.now())}',
               textAlign: TextAlign.right,
               style: Theme.of(context).textTheme.titleLarge?.copyWith(
                 color: Colors.white,

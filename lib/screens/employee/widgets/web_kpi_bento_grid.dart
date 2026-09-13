@@ -151,7 +151,7 @@ class WebKpiBentoGrid extends StatelessWidget {
               Text(
                 '$scoreFormatted%',
                 style: const TextStyle(
-                  color: Colors.white,
+                  color: ZaWolfColors.textPrimary,
                   fontSize: 28,
                   fontWeight: FontWeight.bold,
                   letterSpacing: -0.5,
@@ -248,7 +248,7 @@ class WebKpiBentoGrid extends StatelessWidget {
                   Text(
                     '$rate%',
                     style: const TextStyle(
-                      color: Colors.white,
+                      color: ZaWolfColors.textPrimary,
                       fontSize: 28,
                       fontWeight: FontWeight.bold,
                       letterSpacing: -0.5,
@@ -305,8 +305,8 @@ class WebKpiBentoGrid extends StatelessWidget {
     final usedPermissionHours = user.permissionBalance.usedHoursThisMonth;
 
     return WolfCard(
-      borderColor: Colors.tealAccent.withValues(alpha: 0.25),
-      shadowColor: Colors.tealAccent,
+      borderColor: ZaWolfColors.permissionTeal.withValues(alpha: 0.25),
+      shadowColor: ZaWolfColors.permissionTeal,
       padding: const EdgeInsets.all(DsSpacing.lg),
       onTap: () => context.go('/employee/requests'),
       child: Column(
@@ -318,12 +318,12 @@ class WebKpiBentoGrid extends StatelessWidget {
               Container(
                 padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
-                  color: Colors.tealAccent.withValues(alpha: 0.12),
+                  color: ZaWolfColors.permissionTeal.withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: const Icon(
                   Icons.beach_access_rounded,
-                  color: Colors.tealAccent,
+                  color: ZaWolfColors.permissionTeal,
                   size: 20,
                 ),
               ),
@@ -342,7 +342,7 @@ class WebKpiBentoGrid extends StatelessWidget {
               Text(
                 '$annualBalance',
                 style: const TextStyle(
-                  color: Colors.white,
+                  color: ZaWolfColors.textPrimary,
                   fontSize: 28,
                   fontWeight: FontWeight.bold,
                   letterSpacing: -0.5,
@@ -370,7 +370,7 @@ class WebKpiBentoGrid extends StatelessWidget {
           const Text(
             'رصيد الإجازات السنوية',
             style: TextStyle(
-              color: Colors.tealAccent,
+              color: ZaWolfColors.permissionTeal,
               fontSize: 12,
               fontWeight: FontWeight.w600,
             ),
@@ -428,7 +428,7 @@ class WebKpiBentoGrid extends StatelessWidget {
               Text(
                 '$pendingRequestsCount',
                 style: TextStyle(
-                  color: hasPending ? accentColor : Colors.white,
+                  color: hasPending ? accentColor : ZaWolfColors.textPrimary,
                   fontSize: 28,
                   fontWeight: FontWeight.bold,
                   letterSpacing: -0.5,

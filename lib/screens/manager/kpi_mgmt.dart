@@ -22,6 +22,7 @@ import '../../navigation/sales_indicators_entry.dart';
 import '../../theme/theme.dart';
 import '../../utils/user_facing_error.dart';
 import '../../utils/payroll_cycle.dart';
+import '../../design_system/components/rtl_navigation.dart';
 import '../../design_system/components/skeletons.dart' show SkeletonList;
 import '../../design_system/components/feedback_states.dart' show EmptyState;
 
@@ -49,18 +50,27 @@ class _KpiManagementScreenState extends State<KpiManagementScreen> {
       );
     }
 
-    return DefaultTabController(
-      length: 3,
-      child: Scaffold(
-        appBar: AppBar(
-          title: Text('إدارة KPI', style: theme.textTheme.headlineMedium),
-          bottom: const TabBar(
-            tabs: [
-              Tab(text: 'لوحة الفريق'),
-              Tab(text: 'أهداف الموظفين'),
-              Tab(text: 'القوالب'),
-            ],
-          ),
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: DefaultTabController(
+        length: 3,
+        child: Scaffold(
+          appBar: AppBar(
+            leading: Navigator.canPop(context)
+                ? IconButton(
+                    icon: Icon(RtlNavigation.backIcon(context)),
+                    tooltip: 'رجوع',
+                    onPressed: () => Navigator.pop(context),
+                  )
+                : null,
+            title: Text('إدارة KPI', style: theme.textTheme.headlineMedium),
+            bottom: const TabBar(
+              tabs: [
+                Tab(text: 'لوحة الفريق'),
+                Tab(text: 'أهداف الموظفين'),
+                Tab(text: 'القوالب'),
+              ],
+            ),
           actions: [
             IconButton(
               tooltip: 'إضافة قالب',
@@ -103,7 +113,8 @@ class _KpiManagementScreenState extends State<KpiManagementScreen> {
           label: const Text('تعيين KPI'),
         ),
       ),
-    );
+    ),
+  );
   }
 
   void _showTemplateSheet(BuildContext context, UserModel reviewer) {
@@ -284,96 +295,55 @@ class _ProviderDashboardTabState extends State<_ProviderDashboardTab> {
               ) /
               visibleRecords.length;
 
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        if (summary != null &&
-            summary.apiAgentCount > 0 &&
-            !summary.apiIdentityMappingReady) ...[
-          _KpiIdentityWarning(summary: summary),
-          const SizedBox(height: 14),
-        ],
-        WolfCard(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isDesktop = constraints.maxWidth >= 900;
+        final colCount = constraints.maxWidth >= 1350 ? 3 : (isDesktop ? 2 : 1);
+
+        Widget buildCardsGrid(List<Widget> cards) {
+          if (!isDesktop || cards.length <= 1) {
+            return Column(
+              children: cards
+                  .map((c) => Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: c,
+                      ))
+                  .toList(),
+            );
+          }
+          final columns = List.generate(colCount, (_) => <Widget>[]);
+          for (var i = 0; i < cards.length; i++) {
+            columns[i % colCount].add(cards[i]);
+          }
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                'مؤشرات الفريق المتصلة',
-                textAlign: TextAlign.right,
-                style: Theme.of(
-                  context,
-                ).textTheme.titleLarge?.copyWith(color: Colors.white),
-              ),
-              const SizedBox(height: 12),
-              SegmentedButton<String>(
-                segments: [
-                  ButtonSegment(
-                    value: 'all',
-                    label: Text('الكل ($totalCount)'),
-                    icon: const Icon(Icons.dashboard_outlined),
+              for (var i = 0; i < colCount; i++) ...[
+                if (i > 0) const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    children: columns[i]
+                        .map((card) => Padding(
+                              padding: const EdgeInsets.only(bottom: 12),
+                              child: card,
+                            ))
+                        .toList(),
                   ),
-                  ButtonSegment(
-                    value: 'sales',
-                    label: Text('المبيعات ($salesCount)'),
-                    icon: const Icon(Icons.payments_outlined),
-                  ),
-                  ButtonSegment(
-                    value: 'tele_sales',
-                    label: Text('الهاتف ($teleCount)'),
-                    icon: const Icon(Icons.support_agent_outlined),
-                  ),
-                ],
-                selected: {_department},
-                showSelectedIcon: false,
-                onSelectionChanged: (value) =>
-                    setState(() => _department = value.first),
-              ),
-              const SizedBox(height: 14),
-              Row(
-                children: [
-                  _DashboardStat(
-                    label: 'متوسط KPI',
-                    value: '${average.toStringAsFixed(1)}%',
-                    color: ZaWolfColors.perfGold,
-                  ),
-                  const SizedBox(width: 10),
-                  _DashboardStat(
-                    label: 'الموظفون',
-                    value:
-                        '${useExternal ? visibleExternal.length : visibleRecords.length}',
-                    color: ZaWolfColors.primaryCyan,
-                  ),
-                ],
-              ),
+                ),
+              ],
             ],
-          ),
-        ),
-        const SizedBox(height: 14),
-        if (useExternal && visibleExternal.isNotEmpty)
-          ...visibleExternal.map(
-            (agent) => Padding(
-              padding: const EdgeInsets.only(bottom: 10),
-              child: _ExternalAgentCard(agent: agent),
-            ),
-          )
-        else if (visibleRecords.isEmpty)
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 80),
-            child: Text(
-              totalCount == 0
-                  ? EmployeeRole.isHr(widget.reviewer.role)
-                        ? 'لا توجد بيانات KPI متصلة في هذه الدورة'
-                        : 'لا توجد مؤشرات مرتبطة بحسابات فريقك. يجب أن يرسل مصدر KPI كود الموظف الثابت idEmp لعرض بيانات كل موظف بأمان.'
-                  : 'لا توجد بيانات في هذا القسم',
-              textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
-          )
-        else
-          ...visibleRecords.map(
-            (record) => Padding(
-              padding: const EdgeInsets.only(bottom: 12),
-              child: InkWell(
+          );
+        }
+
+        final cards = <Widget>[];
+        if (useExternal && visibleExternal.isNotEmpty) {
+          for (final agent in visibleExternal) {
+            cards.add(_ExternalAgentCard(agent: agent));
+          }
+        } else if (visibleRecords.isNotEmpty) {
+          for (final record in visibleRecords) {
+            cards.add(
+              InkWell(
                 borderRadius: BorderRadius.circular(8),
                 onTap: () => showDialog<void>(
                   context: context,
@@ -390,9 +360,96 @@ class _ProviderDashboardTabState extends State<_ProviderDashboardTab> {
                 ),
                 child: SalesKpiDetailsPanel(kpi: record, compact: true),
               ),
-            ),
+            );
+          }
+        }
+
+        return ListView(
+          padding: EdgeInsets.symmetric(
+            horizontal: isDesktop ? 24 : 16,
+            vertical: 16,
           ),
-      ],
+          children: [
+            if (summary != null &&
+                summary.apiAgentCount > 0 &&
+                !summary.apiIdentityMappingReady) ...[
+              _KpiIdentityWarning(summary: summary),
+              const SizedBox(height: 14),
+            ],
+            WolfCard(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    'مؤشرات الفريق المتصلة',
+                    textAlign: TextAlign.right,
+                    style: Theme.of(
+                      context,
+                    ).textTheme.titleLarge?.copyWith(color: Colors.white),
+                  ),
+                  const SizedBox(height: 12),
+                  SegmentedButton<String>(
+                    segments: [
+                      ButtonSegment(
+                        value: 'all',
+                        label: Text('الكل ($totalCount)'),
+                        icon: const Icon(Icons.dashboard_outlined),
+                      ),
+                      ButtonSegment(
+                        value: 'sales',
+                        label: Text('المبيعات ($salesCount)'),
+                        icon: const Icon(Icons.payments_outlined),
+                      ),
+                      ButtonSegment(
+                        value: 'tele_sales',
+                        label: Text('الهاتف ($teleCount)'),
+                        icon: const Icon(Icons.support_agent_outlined),
+                      ),
+                    ],
+                    selected: {_department},
+                    showSelectedIcon: false,
+                    onSelectionChanged: (value) =>
+                        setState(() => _department = value.first),
+                  ),
+                  const SizedBox(height: 14),
+                  Row(
+                    children: [
+                      _DashboardStat(
+                        label: 'متوسط KPI',
+                        value: '${average.toStringAsFixed(1)}%',
+                        color: ZaWolfColors.perfGold,
+                      ),
+                      const SizedBox(width: 10),
+                      _DashboardStat(
+                        label: 'الموظفون',
+                        value:
+                            '${useExternal ? visibleExternal.length : visibleRecords.length}',
+                        color: ZaWolfColors.primaryCyan,
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+            if (cards.isNotEmpty)
+              buildCardsGrid(cards)
+            else
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 80),
+                child: Text(
+                  totalCount == 0
+                      ? EmployeeRole.isHr(widget.reviewer.role)
+                            ? 'لا توجد بيانات KPI متصلة في هذه الدورة'
+                            : 'لا توجد مؤشرات مرتبطة بحسابات فريقك. يجب أن يرسل مصدر KPI كود الموظف الثابت idEmp لعرض بيانات كل موظف بأمان.'
+                      : 'لا توجد بيانات في هذا القسم',
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+              ),
+          ],
+        );
+      },
     );
   }
 }
@@ -764,16 +821,16 @@ class _EmployeeKpiTabState extends State<_EmployeeKpiTab> {
                         style: theme.textTheme.titleMedium,
                       ),
                     )
-                  : ListView(
-                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                      children: records
-                          .map(
-                            (kpi) => Padding(
-                              padding: const EdgeInsets.only(bottom: 12),
-                              child: WolfCard(
+                  : LayoutBuilder(
+                      builder: (context, listConstraints) {
+                        final isDesktop = listConstraints.maxWidth >= 900;
+                        final colCount = listConstraints.maxWidth >= 1350 ? 3 : (isDesktop ? 2 : 1);
+
+                        final kpiCards = records
+                            .map(
+                              (kpi) => WolfCard(
                                 child: Column(
-                                  crossAxisAlignment:
-                                      CrossAxisAlignment.stretch,
+                                  crossAxisAlignment: CrossAxisAlignment.stretch,
                                   children: [
                                     Row(
                                       children: [
@@ -880,9 +937,50 @@ class _EmployeeKpiTabState extends State<_EmployeeKpiTab> {
                                   ],
                                 ),
                               ),
-                            ),
-                          )
-                          .toList(),
+                            )
+                            .toList();
+
+                        if (!isDesktop || kpiCards.length <= 1) {
+                          return ListView(
+                            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                            children: kpiCards
+                                .map(
+                                  (c) => Padding(
+                                    padding: const EdgeInsets.only(bottom: 12),
+                                    child: c,
+                                  ),
+                                )
+                                .toList(),
+                          );
+                        }
+
+                        final columns = List.generate(colCount, (_) => <Widget>[]);
+                        for (var i = 0; i < kpiCards.length; i++) {
+                          columns[i % colCount].add(kpiCards[i]);
+                        }
+
+                        return SingleChildScrollView(
+                          padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              for (var i = 0; i < colCount; i++) ...[
+                                if (i > 0) const SizedBox(width: 14),
+                                Expanded(
+                                  child: Column(
+                                    children: columns[i]
+                                        .map((c) => Padding(
+                                              padding: const EdgeInsets.only(bottom: 14),
+                                              child: c,
+                                            ))
+                                        .toList(),
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                        );
+                      },
                     ),
             ),
           ],
@@ -1007,20 +1105,62 @@ class _TemplatesTab extends StatelessWidget {
             icon: Icons.assignment_outlined,
           );
         }
-        return ListView(
-          padding: const EdgeInsets.all(16),
-          children: templates
-              .map(
-                (template) => Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
-                  child: _TemplateCard(
+        return LayoutBuilder(
+          builder: (context, constraints) {
+            final isDesktop = constraints.maxWidth >= 900;
+            final colCount = constraints.maxWidth >= 1350 ? 3 : (isDesktop ? 2 : 1);
+
+            final cards = templates
+                .map(
+                  (template) => _TemplateCard(
                     template: template,
                     reviewer: reviewer,
                     kpiService: kpiService,
                   ),
-                ),
-              )
-              .toList(),
+                )
+                .toList();
+
+            if (!isDesktop || cards.length <= 1) {
+              return ListView(
+                padding: const EdgeInsets.all(16),
+                children: cards
+                    .map(
+                      (c) => Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: c,
+                      ),
+                    )
+                    .toList(),
+              );
+            }
+
+            final columns = List.generate(colCount, (_) => <Widget>[]);
+            for (var i = 0; i < cards.length; i++) {
+              columns[i % colCount].add(cards[i]);
+            }
+
+            return SingleChildScrollView(
+              padding: const EdgeInsets.all(24),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  for (var i = 0; i < colCount; i++) ...[
+                    if (i > 0) const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        children: columns[i]
+                            .map((c) => Padding(
+                                  padding: const EdgeInsets.only(bottom: 14),
+                                  child: c,
+                                ))
+                            .toList(),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            );
+          },
         );
       },
     );

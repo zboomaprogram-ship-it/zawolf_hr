@@ -19,16 +19,24 @@ String userFacingError(
     return 'تم تحديث اتصال شبكة البيانات تلقائياً. يمكنك إجراء المحاولة الآن أو إعادة تنشيط الصفحة.';
   }
 
+  if (errorStr.contains('Account profile not found') ||
+      errorStr.contains('profile not found')) {
+    return 'تم التحقق من بيانات الدخول، ولكن لا يوجد ملف وظيفي نشط لهذا الحساب. يرجى مراجعة إدارة الموارد البشرية.';
+  }
+
   if (error is FirebaseAuthException) {
     return switch (error.code) {
       'invalid-credential' ||
       'wrong-password' ||
-      'user-not-found' => 'البريد الإلكتروني أو كلمة المرور غير صحيحة.',
+      'user-not-found' => 'البريد الإلكتروني أو كلمة المرور غير صحيحة. تأكد من البيانات أو أعد تعيين كلمة المرور.',
+      'invalid-email' => 'صيغة البريد الإلكتروني غير صحيحة.',
       'too-many-requests' =>
-        'تمت محاولات كثيرة. انتظر قليلاً ثم حاول مرة أخرى.',
+        'تم إيقاف محاولات الدخول مؤقتاً بسبب تكرار المحاولات الخاطئة. انتظر 5 دقائق أو أعد تعيين كلمة المرور.',
       'network-request-failed' =>
         'تعذر الاتصال بالإنترنت. تحقق من الشبكة ثم أعد المحاولة.',
-      'user-disabled' => 'هذا الحساب موقوف. تواصل مع إدارة الموارد البشرية.',
+      'user-disabled' => 'هذا الحساب موقوف من قبل الإدارة. تواصل مع إدارة الموارد البشرية.',
+      'operation-not-allowed' =>
+        'تسجيل الدخول بالبريد الإلكتروني غير مفعّل حالياً.',
       _ => fallback,
     };
   }
@@ -56,7 +64,10 @@ String userFacingError(
 
   if (error is http.ClientException ||
       error is TimeoutException ||
-      error.toString().contains('Failed to fetch')) {
+      errorStr.contains('Failed to fetch') ||
+      errorStr.contains('XMLHttpRequest error') ||
+      errorStr.contains('SocketException') ||
+      errorStr.contains('ClientException')) {
     return 'تعذر الاتصال بالخدمة مؤقتاً. لم يتم تنفيذ أي تعديل؛ تحقق من الإنترنت ثم أعد المحاولة.';
   }
 

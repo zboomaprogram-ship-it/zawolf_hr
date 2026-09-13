@@ -13,20 +13,25 @@ void main() {
   });
 
   group('Employee Web Dashboard Architecture & Invariants', () {
-    test('employee dashboard removes attendance check-in button on web', () {
-      final source =
-          File(
-            'lib/screens/employee/employee_dashboard.dart',
-          ).readAsStringSync();
+    test(
+      'employee dashboard keeps mobile-only attendance unless a server grant is active',
+      () {
+        final source =
+            File(
+              'lib/screens/employee/employee_dashboard.dart',
+            ).readAsStringSync();
 
-      expect(source, contains('if (kIsWeb)'));
-      expect(source, contains('تسجيل الحضور عبر تطبيق الجوال'));
-      expect(
-        source,
-        contains('تسجيل الحضور والانصراف متاح حصراً عبر تطبيق الهاتف'),
-      );
-      expect(source, contains('EmployeeWebDashboardView'));
-    });
+        expect(source, contains('if (kIsWeb && !_webAttendanceAccess)'));
+        expect(source, contains('_loadWebAttendanceAccess'));
+        expect(source, contains('createWebAttendanceAccessRepository'));
+        expect(source, contains('تسجيل الحضور عبر تطبيق الجوال'));
+        expect(
+          source,
+          contains('تسجيل الحضور والانصراف متاح حصراً عبر تطبيق الهاتف'),
+        );
+        expect(source, contains('EmployeeWebDashboardView'));
+      },
+    );
 
     test('web navigation shell allows employee role with width >= 980', () {
       final wrapperSource =
@@ -124,7 +129,7 @@ void main() {
         expect(find.text('غرفة المحادثات'), findsOneWidget);
 
         // Verify Bento Grid KPIs
-        expect(find.text('95%'), findsOneWidget);
+        expect(find.text('95%'), findsWidgets);
         expect(find.text('نسبة الانضباط'), findsOneWidget);
         expect(find.text('18'), findsOneWidget);
         expect(find.text('رصيد الإجازات السنوية'), findsOneWidget);

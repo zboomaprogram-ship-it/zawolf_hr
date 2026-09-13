@@ -46,14 +46,14 @@ class RequiredUpdateScreen extends StatelessWidget {
       home: Directionality(
         textDirection: TextDirection.rtl,
         child: Scaffold(
-          backgroundColor: const Color(0xFF07111F),
+          backgroundColor: ZaWolfColors.background,
           body: SafeArea(
             child: Container(
               decoration: const BoxDecoration(
                 gradient: LinearGradient(
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
-                  colors: [Color(0xFF102B46), Color(0xFF07111F)],
+                  colors: [ZaWolfColors.surface01, ZaWolfColors.background],
                 ),
               ),
               child: Center(
@@ -63,14 +63,14 @@ class RequiredUpdateScreen extends StatelessWidget {
                     margin: const EdgeInsets.all(24),
                     padding: const EdgeInsets.all(28),
                     decoration: BoxDecoration(
-                      color: const Color(0xFF13263A),
+                      color: ZaWolfColors.surface01,
                       borderRadius: BorderRadius.circular(24),
                       border: Border.all(
                         color: ZaWolfColors.primaryCyan.withValues(alpha: 0.6),
                       ),
                       boxShadow: const [
                         BoxShadow(
-                          color: Color(0x66000000),
+                          color: Colors.black54,
                           blurRadius: 28,
                           offset: Offset(0, 12),
                         ),
@@ -101,7 +101,7 @@ class RequiredUpdateScreen extends StatelessWidget {
                           style: Theme.of(
                             context,
                           ).textTheme.headlineMedium?.copyWith(
-                            color: Colors.white,
+                            color: ZaWolfColors.textPrimary,
                             fontWeight: FontWeight.w800,
                           ),
                           textAlign: TextAlign.center,
@@ -116,7 +116,7 @@ class RequiredUpdateScreen extends StatelessWidget {
                           style: Theme.of(
                             context,
                           ).textTheme.bodyLarge?.copyWith(
-                            color: const Color(0xFFE0EDF8),
+                            color: ZaWolfColors.textSecondary,
                             height: 1.55,
                           ),
                           textAlign: TextAlign.center,
@@ -125,7 +125,7 @@ class RequiredUpdateScreen extends StatelessWidget {
                         Text(
                           'الإصدار الحالي ${status.version}+${status.currentBuild}',
                           style: Theme.of(context).textTheme.bodySmall
-                              ?.copyWith(color: const Color(0xFFAFC6D8)),
+                              ?.copyWith(color: ZaWolfColors.textMuted),
                         ),
                         const SizedBox(height: 28),
                         if (!unavailable && !unsupported)

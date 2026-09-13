@@ -41,4 +41,12 @@ void main() {
       contains("key: ValueKey('history-\${widget.initialHistoryTab}')"),
     );
   });
+
+  test('operational technical and financial requests open inline on the same page', () {
+    expect(requestScreen, contains("id: 'operational_technical'"));
+    expect(requestScreen, contains("id: 'operational_financial'"));
+    expect(requestScreen, isNot(contains("route: '/employee/requests/operational/new?category=")));
+    expect(requestScreen, contains("surface: CompanyOsRequestSurface.create"));
+    expect(requestScreen, contains("isEmbedded: true"));
+  });
 }

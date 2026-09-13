@@ -51,8 +51,8 @@ final class UserSafeFailureMessage {
         actionLabel: 'إعادة المحاولة',
       ),
       FailureCategory.capacityQuota => const UserSafeFailureMessage(
-        title: 'تعذر تنفيذ العملية حالياً',
-        body: 'انتظر قليلاً ثم أعد المحاولة أو تواصل مع المسؤول.',
+        title: 'مساحة تخزين ملفات الشركة ممتلئة',
+        body: 'حرر مساحة في Google Drive الخاص بالشركة أو اضبط ملف التقارير المخصص، ثم أعد المحاولة.',
         actionLabel: 'تواصل مع المسؤول',
       ),
       FailureCategory.conflictDuplicate => const UserSafeFailureMessage(

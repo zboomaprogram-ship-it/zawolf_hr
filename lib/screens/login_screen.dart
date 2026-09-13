@@ -66,7 +66,12 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _handleLogin() async {
-    if (!_formKey.currentState!.validate()) return;
+    if (!_formKey.currentState!.validate()) {
+      setState(() {
+        _errorMessage = 'يرجى إدخال البريد الإلكتروني وكلمة المرور بشكل صحيح.';
+      });
+      return;
+    }
 
     setState(() {
       _isLoading = true;
@@ -148,11 +153,14 @@ class _LoginScreenState extends State<LoginScreen> {
           ),
         ),
       );
-    } catch (_) {
+    } catch (error) {
       if (!mounted) return;
       setState(() {
-        _errorMessage =
-            'تعذر إرسال رابط تغيير كلمة المرور. تأكد من البريد الإلكتروني وحاول مرة أخرى.';
+        _errorMessage = userFacingError(
+          error,
+          fallback:
+              'تعذر إرسال رابط تغيير كلمة المرور. تأكد من البريد الإلكتروني وحاول مرة أخرى.',
+        );
       });
     } finally {
       if (mounted) {
@@ -204,7 +212,10 @@ class _LoginScreenState extends State<LoginScreen> {
 
                   if (_errorMessage != null) ...[
                     Container(
-                      padding: const EdgeInsets.all(12),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 10,
+                      ),
                       decoration: BoxDecoration(
                         color: ZaWolfColors.error.withValues(alpha: 0.12),
                         borderRadius: BorderRadius.circular(8),
@@ -217,16 +228,34 @@ class _LoginScreenState extends State<LoginScreen> {
                           const Icon(
                             Icons.error_outline,
                             color: ZaWolfColors.error,
+                            size: 22,
                           ),
-                          const SizedBox(width: 12),
+                          const SizedBox(width: 10),
                           Expanded(
                             child: Text(
                               _errorMessage!,
                               style: theme.textTheme.bodyMedium!.copyWith(
                                 color: ZaWolfColors.error,
+                                height: 1.4,
                               ),
                               textDirection: TextDirection.rtl,
                             ),
+                          ),
+                          IconButton(
+                            icon: const Icon(
+                              Icons.close,
+                              size: 18,
+                              color: ZaWolfColors.error,
+                            ),
+                            tooltip: 'إغلاق',
+                            visualDensity: VisualDensity.compact,
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(),
+                            onPressed: () {
+                              setState(() {
+                                _errorMessage = null;
+                              });
+                            },
                           ),
                         ],
                       ),
@@ -250,6 +279,9 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                     child: Form(
                       key: _formKey,
+                      autovalidateMode: _errorMessage != null
+                          ? AutovalidateMode.onUserInteraction
+                          : AutovalidateMode.disabled,
                       child: Column(
                         children: [
                           WolfInputField(
@@ -259,6 +291,11 @@ class _LoginScreenState extends State<LoginScreen> {
                             prefixIcon: Icons.alternate_email,
                             keyboardType: TextInputType.emailAddress,
                             textDirection: TextDirection.ltr,
+                            onChanged: (_) {
+                              if (_errorMessage != null) {
+                                setState(() => _errorMessage = null);
+                              }
+                            },
                             validator: (val) {
                               if (val == null || val.isEmpty) {
                                 return 'يرجى إدخال البريد الإلكتروني';
@@ -275,6 +312,11 @@ class _LoginScreenState extends State<LoginScreen> {
                             prefixIcon: Icons.lock_outline,
                             isPassword: true,
                             textDirection: TextDirection.ltr,
+                            onChanged: (_) {
+                              if (_errorMessage != null) {
+                                setState(() => _errorMessage = null);
+                              }
+                            },
                             validator: (val) {
                               if (val == null || val.isEmpty) {
                                 return 'يرجى إدخال كلمة المرور';

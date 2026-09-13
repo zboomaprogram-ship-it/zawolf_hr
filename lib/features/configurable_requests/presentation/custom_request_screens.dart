@@ -59,7 +59,7 @@ class _CustomRequestTypesScreenState extends State<CustomRequestTypesScreen> {
                 SizedBox(width: 10),
                 Text(
                   'طلب مخصص جديد',
-                  style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                  style: TextStyle(color: ZaWolfColors.textPrimary, fontWeight: FontWeight.bold),
                 ),
               ],
             ),
@@ -72,7 +72,7 @@ class _CustomRequestTypesScreenState extends State<CustomRequestTypesScreen> {
                   children: [
                     TextField(
                       controller: titleController,
-                      style: const TextStyle(color: Colors.white),
+                      style: const TextStyle(color: ZaWolfColors.textPrimary),
                       decoration: const InputDecoration(
                         labelText: 'عنوان الطلب (مطلوب)',
                         hintText: 'مثال: طلب شراء أجهزة لفرع الرياض',
@@ -82,7 +82,7 @@ class _CustomRequestTypesScreenState extends State<CustomRequestTypesScreen> {
                     TextField(
                       controller: descriptionController,
                       maxLines: 4,
-                      style: const TextStyle(color: Colors.white),
+                      style: const TextStyle(color: ZaWolfColors.textPrimary),
                       decoration: const InputDecoration(
                         labelText: 'تفاصيل وشرح الطلب (مطلوب)',
                         hintText: 'اكتب كافة التفاصيل الفنية أو الإدارية المطلوبة...',
@@ -91,7 +91,7 @@ class _CustomRequestTypesScreenState extends State<CustomRequestTypesScreen> {
                     const SizedBox(height: 12),
                     TextField(
                       controller: attachmentController,
-                      style: const TextStyle(color: Colors.white),
+                      style: const TextStyle(color: ZaWolfColors.textPrimary),
                       decoration: const InputDecoration(
                         labelText: 'رابط مرفق أو مستند إضافي (اختياري)',
                       ),
@@ -149,10 +149,10 @@ class _CustomRequestTypesScreenState extends State<CustomRequestTypesScreen> {
                                 dense: true,
                                 value: isSelected,
                                 activeColor: ZaWolfColors.primaryCyan,
-                                checkColor: Colors.black,
+                                checkColor: ZaWolfColors.background,
                                 title: Text(
                                   user.name,
-                                  style: const TextStyle(color: Colors.white),
+                                  style: const TextStyle(color: ZaWolfColors.textPrimary),
                                 ),
                                 subtitle: Text(
                                   '${user.department} · ${user.role}',
@@ -238,7 +238,7 @@ class _CustomRequestTypesScreenState extends State<CustomRequestTypesScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(message),
-          backgroundColor: error ? Colors.red : Colors.green,
+          backgroundColor: error ? ZaWolfColors.error : ZaWolfColors.success,
         ),
       );
 
@@ -254,7 +254,7 @@ class _CustomRequestTypesScreenState extends State<CustomRequestTypesScreen> {
             icon: const Icon(Icons.add),
             label: const Text('طلب مخصص جديد'),
             backgroundColor: ZaWolfColors.primaryCyan,
-            foregroundColor: Colors.black,
+            foregroundColor: ZaWolfColors.background,
           ),
           body: _loading
               ? const Center(child: CircularProgressIndicator())
@@ -337,7 +337,7 @@ class _CustomRequestTypesScreenState extends State<CustomRequestTypesScreen> {
                                     Text(
                                       '${req['title'] ?? 'طلب مخصص'}',
                                       style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                                        color: Colors.white,
+                                        color: ZaWolfColors.textPrimary,
                                         fontWeight: FontWeight.bold,
                                       ),
                                     ),
@@ -474,7 +474,7 @@ class _CustomRequestSubmissionScreenState
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(message),
-          backgroundColor: error ? Colors.red : Colors.green,
+          backgroundColor: error ? ZaWolfColors.error : ZaWolfColors.success,
         ),
       );
   @override
@@ -600,7 +600,7 @@ class _CustomRequestQueueScreenState extends State<CustomRequestQueueScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(message),
-          backgroundColor: error ? Colors.red : Colors.green,
+          backgroundColor: error ? ZaWolfColors.error : ZaWolfColors.success,
         ),
       );
   @override
@@ -630,11 +630,11 @@ class _CustomRequestQueueScreenState extends State<CustomRequestQueueScreen> {
                         children: [
                           IconButton(
                             onPressed: () => _decide('${item['id']}', false),
-                            icon: const Icon(Icons.close, color: Colors.red),
+                            icon: const Icon(Icons.close, color: ZaWolfColors.error),
                           ),
                           IconButton(
                             onPressed: () => _decide('${item['id']}', true),
-                            icon: const Icon(Icons.check, color: Colors.green),
+                            icon: const Icon(Icons.check, color: ZaWolfColors.success),
                           ),
                         ],
                       ),

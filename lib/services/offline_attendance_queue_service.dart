@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -96,9 +97,10 @@ class OfflineAttendanceAction {
   factory OfflineAttendanceAction.fromJson(Map<String, dynamic> json) {
     return OfflineAttendanceAction(
       id: json['id'] as String,
-      type: json['type'] == 'checkOut'
-          ? OfflineAttendanceActionType.checkOut
-          : OfflineAttendanceActionType.checkIn,
+      type:
+          json['type'] == 'checkOut'
+              ? OfflineAttendanceActionType.checkOut
+              : OfflineAttendanceActionType.checkIn,
       attendanceId: json['attendanceId'] as String,
       userId: json['userId'] as String,
       employeeId: json['employeeId'] as String,
@@ -146,9 +148,9 @@ class OfflineAttendanceAction {
   Map<String, dynamic> toJson() {
     return {
       'id': id,
-      'type': type == OfflineAttendanceActionType.checkOut
-          ? 'checkOut'
-          : 'checkIn',
+      'clientPlatform': kIsWeb ? 'web' : 'mobile',
+      'type':
+          type == OfflineAttendanceActionType.checkOut ? 'checkOut' : 'checkIn',
       'attendanceId': attendanceId,
       'userId': userId,
       'employeeId': employeeId,
@@ -292,22 +294,27 @@ class OfflineAttendanceAction {
         isWithinGeofence: existing.isWithinGeofence,
         isLate: existing.isLate,
         lateMinutes: existing.lateMinutes,
-        salaryDeductionFraction: salaryDeductionFraction > 0
-            ? salaryDeductionFraction
-            : existing.salaryDeductionFraction,
-        salaryDeductionAmount: salaryDeductionFraction > 0
-            ? salaryDeductionAmount
-            : existing.salaryDeductionAmount,
+        salaryDeductionFraction:
+            salaryDeductionFraction > 0
+                ? salaryDeductionFraction
+                : existing.salaryDeductionFraction,
+        salaryDeductionAmount:
+            salaryDeductionFraction > 0
+                ? salaryDeductionAmount
+                : existing.salaryDeductionAmount,
         salaryCurrency: salaryCurrency,
-        salaryDeductionCode: salaryDeductionFraction > 0
-            ? salaryDeductionCode
-            : existing.salaryDeductionCode,
-        salaryDeductionLabel: salaryDeductionFraction > 0
-            ? salaryDeductionLabel
-            : existing.salaryDeductionLabel,
-        salaryDeductionApprovalStatus: salaryDeductionFraction > 0
-            ? salaryDeductionApprovalStatus
-            : existing.salaryDeductionApprovalStatus,
+        salaryDeductionCode:
+            salaryDeductionFraction > 0
+                ? salaryDeductionCode
+                : existing.salaryDeductionCode,
+        salaryDeductionLabel:
+            salaryDeductionFraction > 0
+                ? salaryDeductionLabel
+                : existing.salaryDeductionLabel,
+        salaryDeductionApprovalStatus:
+            salaryDeductionFraction > 0
+                ? salaryDeductionApprovalStatus
+                : existing.salaryDeductionApprovalStatus,
         deviceId: existing.deviceId,
         deviceLabel: existing.deviceLabel,
         biometricVerified: true,

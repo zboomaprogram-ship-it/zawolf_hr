@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../../theme/theme.dart';
 import '../../domain/entities/organization_unit.dart';
 
 final class InteractiveOrgNodeCard extends StatefulWidget {
@@ -54,11 +55,11 @@ class _InteractiveOrgNodeCardState extends State<InteractiveOrgNodeCard> {
   Widget build(BuildContext context) {
     final isSector = widget.unit.type == OrganizationUnitType.sector;
     final primaryColor = isSector
-        ? const Color(0xFF00E5FF)
-        : const Color(0xFF7C4DFF);
+        ? ZaWolfColors.primaryCyan
+        : ZaWolfColors.dayoffPurple;
     final badgeBg = isSector
-        ? const Color(0xFF00E5FF).withValues(alpha: 0.15)
-        : const Color(0xFF7C4DFF).withValues(alpha: 0.15);
+        ? ZaWolfColors.primaryCyan.withValues(alpha: 0.15)
+        : ZaWolfColors.dayoffPurple.withValues(alpha: 0.15);
 
     return Semantics(
       container: true,
@@ -66,7 +67,7 @@ class _InteractiveOrgNodeCardState extends State<InteractiveOrgNodeCard> {
       child: Container(
         margin: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
         decoration: BoxDecoration(
-          color: const Color(0xFF1E293B),
+          color: ZaWolfColors.surface01,
           borderRadius: BorderRadius.circular(16),
           border: Border.all(
             color: primaryColor.withValues(alpha: _expanded ? 0.6 : 0.25),
@@ -130,13 +131,13 @@ class _InteractiveOrgNodeCardState extends State<InteractiveOrgNodeCard> {
                                     vertical: 2,
                                   ),
                                   decoration: BoxDecoration(
-                                    color: Colors.white10,
+                                    color: ZaWolfColors.surface02,
                                     borderRadius: BorderRadius.circular(8),
                                   ),
                                   child: Text(
                                     '${widget.memberCount} موظف',
                                     style: const TextStyle(
-                                      color: Colors.white70,
+                                      color: ZaWolfColors.textSecondary,
                                       fontSize: 10,
                                     ),
                                   ),
@@ -148,7 +149,7 @@ class _InteractiveOrgNodeCardState extends State<InteractiveOrgNodeCard> {
                           Text(
                             widget.unit.name,
                             style: const TextStyle(
-                              color: Colors.white,
+                              color: ZaWolfColors.textPrimary,
                               fontSize: 15,
                               fontWeight: FontWeight.w600,
                             ),
@@ -160,13 +161,13 @@ class _InteractiveOrgNodeCardState extends State<InteractiveOrgNodeCard> {
                                 Icon(
                                   Icons.warning_amber_rounded,
                                   size: 13,
-                                  color: Colors.amber,
+                                  color: ZaWolfColors.warning,
                                 ),
                                 SizedBox(width: 4),
                                 Text(
                                   'لا يوجد مدير حاليًا',
                                   style: TextStyle(
-                                    color: Colors.amber,
+                                    color: ZaWolfColors.warning,
                                     fontSize: 11,
                                   ),
                                 ),
@@ -179,13 +180,13 @@ class _InteractiveOrgNodeCardState extends State<InteractiveOrgNodeCard> {
                                 const Icon(
                                   Icons.person_outline_rounded,
                                   size: 13,
-                                  color: Colors.white54,
+                                  color: ZaWolfColors.textMuted,
                                 ),
                                 const SizedBox(width: 4),
                                 Text(
                                   'المدير: ${widget.unit.managerUid}',
                                   style: const TextStyle(
-                                    color: Colors.white54,
+                                    color: ZaWolfColors.textMuted,
                                     fontSize: 11,
                                   ),
                                 ),
@@ -199,7 +200,7 @@ class _InteractiveOrgNodeCardState extends State<InteractiveOrgNodeCard> {
                         tooltip: 'إجراءات الوحدة',
                         icon: const Icon(
                           Icons.more_vert_rounded,
-                          color: Colors.white70,
+                          color: ZaWolfColors.textSecondary,
                         ),
                         onSelected: (value) => switch (value) {
                           'rename' => widget.onRename?.call(),
@@ -267,7 +268,7 @@ class _InteractiveOrgNodeCardState extends State<InteractiveOrgNodeCard> {
                           duration: const Duration(milliseconds: 200),
                           child: const Icon(
                             Icons.keyboard_arrow_down_rounded,
-                            color: Colors.white70,
+                            color: ZaWolfColors.textSecondary,
                           ),
                         ),
                         onPressed: () => setState(() => _expanded = !_expanded),

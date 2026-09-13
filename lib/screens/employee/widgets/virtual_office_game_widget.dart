@@ -50,9 +50,9 @@ class _VirtualOfficeGameWidgetState extends State<VirtualOfficeGameWidget>
   OfficeDepartmentHotspot? _nearbyHotspot;
 
   Color get _avatarAccent => switch (widget.user.avatarAccent) {
-    'violet' => const Color(0xFFA78BFA),
-    'amber' => const Color(0xFFFBBF24),
-    'rose' => const Color(0xFFFB7185),
+    'violet' => ZaWolfColors.dayoffPurple,
+    'amber' => ZaWolfColors.warning,
+    'rose' => ZaWolfColors.error,
     _ => ZaWolfColors.primaryCyan,
   };
 
@@ -205,9 +205,9 @@ class _VirtualOfficeGameWidgetState extends State<VirtualOfficeGameWidget>
   Widget _buildQuickTravel() => Container(
     padding: const EdgeInsets.all(6),
     decoration: BoxDecoration(
-      color: const Color(0xFF0F172A).withValues(alpha: 0.9),
+      color: ZaWolfColors.surface01.withValues(alpha: 0.9),
       borderRadius: BorderRadius.circular(14),
-      border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
+      border: Border.all(color: ZaWolfColors.surface03),
     ),
     child: Wrap(
       spacing: 4,
@@ -329,7 +329,7 @@ class _VirtualOfficeGameWidgetState extends State<VirtualOfficeGameWidget>
         fullscreenDialog: true,
         builder:
             (context) => Scaffold(
-              backgroundColor: const Color(0xFF050914),
+              backgroundColor: ZaWolfColors.background,
               body: SafeArea(
                 child: Padding(
                   padding: const EdgeInsets.all(12),
@@ -355,7 +355,7 @@ class _VirtualOfficeGameWidgetState extends State<VirtualOfficeGameWidget>
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
           decoration: BoxDecoration(
-            color: const Color(0xFF0F172A).withValues(alpha: 0.85),
+            color: ZaWolfColors.surface01.withValues(alpha: 0.85),
             borderRadius: BorderRadius.circular(16),
             border: Border.all(
               color: ZaWolfColors.primaryCyan.withValues(alpha: 0.4),
@@ -423,7 +423,7 @@ class _VirtualOfficeGameWidgetState extends State<VirtualOfficeGameWidget>
                                 Text(
                                   widget.user.displayName,
                                   style: const TextStyle(
-                                    color: Colors.white,
+                                    color: ZaWolfColors.textPrimary,
                                     fontWeight: FontWeight.bold,
                                     fontSize: 13,
                                   ),
@@ -476,7 +476,7 @@ class _VirtualOfficeGameWidgetState extends State<VirtualOfficeGameWidget>
                           vertical: 5,
                         ),
                         decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.08),
+                          color: ZaWolfColors.surface02,
                           borderRadius: BorderRadius.circular(20),
                           border: Border.all(
                             color: ZaWolfColors.primaryCyan.withValues(
@@ -495,7 +495,7 @@ class _VirtualOfficeGameWidgetState extends State<VirtualOfficeGameWidget>
                             Text(
                               'استخدم عصا التحكم Joystick أو المس الخريطة',
                               style: TextStyle(
-                                color: Colors.white70,
+                                color: ZaWolfColors.textSecondary,
                                 fontSize: 10.5,
                                 fontWeight: FontWeight.bold,
                               ),
@@ -552,26 +552,26 @@ class _VirtualOfficeGameWidgetState extends State<VirtualOfficeGameWidget>
                       vertical: 2,
                     ),
                     decoration: BoxDecoration(
-                      color: Colors.amberAccent.withValues(alpha: 0.15),
+                      color: ZaWolfColors.perfGold.withValues(alpha: 0.15),
                       borderRadius: BorderRadius.circular(10),
                       border: Border.all(
-                        color: Colors.amberAccent.withValues(alpha: 0.4),
+                        color: ZaWolfColors.perfGold.withValues(alpha: 0.4),
                       ),
                     ),
                     child: Row(
                       children: [
-                        Icon(
+                        const Icon(
                           Icons.star_rounded,
-                          color: Colors.amberAccent,
+                          color: ZaWolfColors.perfGold,
                           size: 12,
                         ),
-                        SizedBox(width: 4),
+                        const SizedBox(width: 4),
                         Text(
                           widget.attendedToday
                               ? 'حضور اليوم ✓'
                               : 'لم يُسجل حضور اليوم',
-                          style: TextStyle(
-                            color: Colors.amberAccent,
+                          style: const TextStyle(
+                            color: ZaWolfColors.perfGold,
                             fontSize: 10,
                             fontWeight: FontWeight.bold,
                           ),
@@ -588,16 +588,16 @@ class _VirtualOfficeGameWidgetState extends State<VirtualOfficeGameWidget>
                         vertical: 2,
                       ),
                       decoration: BoxDecoration(
-                        color: Colors.purpleAccent.withValues(alpha: 0.14),
+                        color: ZaWolfColors.dayoffPurple.withValues(alpha: 0.14),
                         borderRadius: BorderRadius.circular(10),
                         border: Border.all(
-                          color: Colors.purpleAccent.withValues(alpha: 0.35),
+                          color: ZaWolfColors.dayoffPurple.withValues(alpha: 0.35),
                         ),
                       ),
                       child: Text(
                         'XP $_visualXp · مهام ${widget.completedTasksThisWeek}',
                         style: const TextStyle(
-                          color: Colors.purpleAccent,
+                          color: ZaWolfColors.dayoffPurple,
                           fontSize: 10,
                           fontWeight: FontWeight.bold,
                         ),
@@ -617,9 +617,9 @@ class _VirtualOfficeGameWidgetState extends State<VirtualOfficeGameWidget>
             borderRadius: BorderRadius.circular(20),
             child: Container(
               decoration: BoxDecoration(
-                color: const Color(0xFF0B101D),
+                color: ZaWolfColors.surface01,
                 border: Border.all(
-                  color: Colors.white.withValues(alpha: 0.1),
+                  color: ZaWolfColors.surface03,
                   width: 1.5,
                 ),
               ),
@@ -812,7 +812,7 @@ class _VirtualOfficeGameWidgetState extends State<VirtualOfficeGameWidget>
       constraints: const BoxConstraints(maxWidth: 130),
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: const Color(0xFF1E293B).withValues(alpha: 0.95),
+        color: ZaWolfColors.surface02.withValues(alpha: 0.95),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
           color: ZaWolfColors.primaryCyan.withValues(alpha: 0.8),
@@ -826,7 +826,7 @@ class _VirtualOfficeGameWidgetState extends State<VirtualOfficeGameWidget>
         text,
         textAlign: TextAlign.center,
         style: const TextStyle(
-          color: Colors.white,
+          color: ZaWolfColors.textPrimary,
           fontSize: 9.5,
           fontWeight: FontWeight.bold,
         ),
@@ -850,7 +850,7 @@ class _VirtualOfficeGameWidgetState extends State<VirtualOfficeGameWidget>
           width: 90,
           height: 90,
           decoration: BoxDecoration(
-            color: const Color(0xFF0F172A).withValues(alpha: 0.75),
+            color: ZaWolfColors.surface01.withValues(alpha: 0.75),
             shape: BoxShape.circle,
             border: Border.all(
               color: ZaWolfColors.primaryCyan.withValues(alpha: 0.6),
@@ -872,7 +872,7 @@ class _VirtualOfficeGameWidgetState extends State<VirtualOfficeGameWidget>
                 top: 4,
                 child: Icon(
                   Icons.arrow_drop_up_rounded,
-                  color: Colors.white38,
+                  color: ZaWolfColors.textMuted,
                   size: 20,
                 ),
               ),
@@ -880,7 +880,7 @@ class _VirtualOfficeGameWidgetState extends State<VirtualOfficeGameWidget>
                 bottom: 4,
                 child: Icon(
                   Icons.arrow_drop_down_rounded,
-                  color: Colors.white38,
+                  color: ZaWolfColors.textMuted,
                   size: 20,
                 ),
               ),
@@ -888,7 +888,7 @@ class _VirtualOfficeGameWidgetState extends State<VirtualOfficeGameWidget>
                 left: 4,
                 child: Icon(
                   Icons.arrow_left_rounded,
-                  color: Colors.white38,
+                  color: ZaWolfColors.textMuted,
                   size: 20,
                 ),
               ),
@@ -896,7 +896,7 @@ class _VirtualOfficeGameWidgetState extends State<VirtualOfficeGameWidget>
                 right: 4,
                 child: Icon(
                   Icons.arrow_right_rounded,
-                  color: Colors.white38,
+                  color: ZaWolfColors.textMuted,
                   size: 20,
                 ),
               ),
@@ -917,10 +917,10 @@ class _VirtualOfficeGameWidgetState extends State<VirtualOfficeGameWidget>
                       begin: Alignment.topLeft,
                       end: Alignment.bottomRight,
                     ),
-                    border: Border.all(color: Colors.white, width: 2.0),
+                    border: Border.all(color: ZaWolfColors.textPrimary, width: 2.0),
                     boxShadow: const [
                       BoxShadow(
-                        color: Colors.black54,
+                        color: Colors.black45,
                         blurRadius: 6,
                         offset: Offset(0, 2),
                       ),
@@ -929,7 +929,7 @@ class _VirtualOfficeGameWidgetState extends State<VirtualOfficeGameWidget>
                   child: const Center(
                     child: CircleAvatar(
                       radius: 6,
-                      backgroundColor: Colors.black,
+                      backgroundColor: ZaWolfColors.background,
                     ),
                   ),
                 ),
@@ -946,7 +946,7 @@ class _VirtualOfficeGameWidgetState extends State<VirtualOfficeGameWidget>
     return ElevatedButton.icon(
       style: ElevatedButton.styleFrom(
         backgroundColor: config.color,
-        foregroundColor: Colors.black,
+        foregroundColor: ZaWolfColors.background,
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         elevation: 6,
@@ -1025,7 +1025,7 @@ class _VirtualOfficeGameWidgetState extends State<VirtualOfficeGameWidget>
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
               decoration: BoxDecoration(
-                color: const Color(0xFF0F172A).withValues(alpha: 0.85),
+                color: ZaWolfColors.surface01.withValues(alpha: 0.85),
                 borderRadius: BorderRadius.circular(10),
                 border: Border.all(
                   color: config.color.withValues(alpha: 0.6),
@@ -1039,7 +1039,7 @@ class _VirtualOfficeGameWidgetState extends State<VirtualOfficeGameWidget>
                     config.title,
                     textAlign: TextAlign.center,
                     style: const TextStyle(
-                      color: Colors.white,
+                      color: ZaWolfColors.textPrimary,
                       fontSize: 9.5,
                       fontWeight: FontWeight.bold,
                     ),
@@ -1067,7 +1067,7 @@ class _VirtualOfficeGameWidgetState extends State<VirtualOfficeGameWidget>
               label: Text('!'),
               child: Icon(
                 Icons.notifications_active,
-                color: Colors.white,
+                color: ZaWolfColors.textPrimary,
                 size: 17,
               ),
             ),
@@ -1153,16 +1153,16 @@ class _VirtualOfficeGameWidgetState extends State<VirtualOfficeGameWidget>
                           decoration: BoxDecoration(
                             color:
                                 widget.user.avatarGender == 'female'
-                                    ? const Color(0xFFEC4899)
-                                    : const Color(0xFF0EA5E9),
+                                    ? ZaWolfColors.dayoffPurple
+                                    : ZaWolfColors.primaryCyan,
                             borderRadius: BorderRadius.circular(10),
-                            border: Border.all(color: Colors.white, width: 1.2),
+                            border: Border.all(color: ZaWolfColors.textPrimary, width: 1.2),
                           ),
                           child: Icon(
                             widget.user.avatarGender == 'female'
                                 ? Icons.female
                                 : Icons.male,
-                            color: Colors.white,
+                            color: ZaWolfColors.textPrimary,
                             size: 16,
                           ),
                         ),
@@ -1198,49 +1198,49 @@ class _VirtualOfficeGameWidgetState extends State<VirtualOfficeGameWidget>
       title: '🚪 بوابة الشركة',
       subtitle: 'تسجيل الحضور',
       icon: Icons.sensor_door,
-      color: Colors.greenAccent,
+      color: ZaWolfColors.wolfGreen,
       assetPath: 'assets/images/iso_gate_entrance.png',
     ),
     OfficeDepartmentHotspot.hrOffice => (
       title: '📄 الموارد البشرية',
       subtitle: 'الإجازات والخصومات',
       icon: Icons.badge_outlined,
-      color: Colors.cyanAccent,
+      color: ZaWolfColors.primaryCyan,
       assetPath: 'assets/images/iso_hr_desk.png',
     ),
     OfficeDepartmentHotspot.itDesk => (
       title: '💻 الدعم التقني',
       subtitle: 'الأجهزة والمستندات',
       icon: Icons.computer,
-      color: Colors.purpleAccent,
+      color: ZaWolfColors.dayoffPurple,
       assetPath: 'assets/images/iso_it_server.png',
     ),
     OfficeDepartmentHotspot.financeOffice => (
       title: '💰 المكتب المالي',
       subtitle: 'السلف والاعتراضات',
       icon: Icons.account_balance_wallet_outlined,
-      color: Colors.amberAccent,
+      color: ZaWolfColors.perfGold,
       assetPath: 'assets/images/iso_finance_vault.png',
     ),
     OfficeDepartmentHotspot.managerOffice => (
       title: '👔 مكتب الإدارة',
       subtitle: 'المهمات والهيكل',
       icon: Icons.business_center_outlined,
-      color: Colors.blueAccent,
+      color: ZaWolfColors.primaryBlue,
       assetPath: 'assets/images/iso_manager_suite.png',
     ),
     OfficeDepartmentHotspot.archiveDept => (
       title: '🗄️ قسم الأرشيف',
       subtitle: 'سجل الطلبات',
       icon: Icons.archive_outlined,
-      color: Colors.orangeAccent,
+      color: ZaWolfColors.warning,
       assetPath: 'assets/images/iso_archive_dept.png',
     ),
     OfficeDepartmentHotspot.chatRoom => (
       title: '💬 قاعة المحادثات',
       subtitle: 'شات القسم',
       icon: Icons.chat_bubble_outline_rounded,
-      color: Colors.purpleAccent,
+      color: ZaWolfColors.dayoffPurple,
       assetPath: 'assets/images/iso_chat_lounge.png',
     ),
   };

@@ -232,7 +232,7 @@ class _SectionButton extends StatelessWidget {
                 Text(
                   label,
                   style: TextStyle(
-                    color: selected ? Colors.white : ZaWolfColors.textSecondary,
+                    color: selected ? ZaWolfColors.textPrimary : ZaWolfColors.textSecondary,
                     fontWeight: FontWeight.w700,
                   ),
                 ),
@@ -386,13 +386,13 @@ class _ConversationTile extends StatelessWidget {
                           ? Text(
                             initials,
                             style: const TextStyle(
-                              color: Colors.white,
+                              color: ZaWolfColors.textPrimary,
                               fontWeight: FontWeight.bold,
                             ),
                           )
                           : const Icon(
                             Icons.groups_outlined,
-                            color: Colors.white,
+                            color: ZaWolfColors.textPrimary,
                           ),
                 ),
                 const SizedBox(width: 12),

@@ -393,7 +393,20 @@ class RichChatRepositoryImpl implements RichChatRepository {
           e is ChatFailure && e.code.contains('conflict')
               ? 'conflict'
               : 'failed';
-      row['errorCode'] = e is ChatFailure ? e.code : 'storage_unavailable';
+      final String code;
+      if (e is ChatFailure) {
+        code = e.code;
+      } else {
+        final errStr = e.toString().toLowerCase();
+        if (errStr.contains('quota') || errStr.contains('disk full')) {
+          code = 'storage_unavailable';
+        } else if (errStr.contains('timeout')) {
+          code = 'timeout';
+        } else {
+          code = 'connection_interrupted';
+        }
+      }
+      row['errorCode'] = code;
       await store.put(channelId, 'outbox', id, row);
     }
     await _emit(channelId);

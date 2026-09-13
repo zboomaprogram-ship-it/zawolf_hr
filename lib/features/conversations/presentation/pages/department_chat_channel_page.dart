@@ -5,6 +5,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart' hide TextDirection;
 
+import '../../../../theme/theme.dart';
 import '../../domain/entities/conversation.dart';
 import '../../domain/entities/governed_attachment.dart';
 import '../../domain/repositories/conversation_repository.dart';
@@ -241,7 +242,7 @@ class _DepartmentChatChannelPageState extends State<DepartmentChatChannelPage> {
           context: context,
           builder:
               (dialogContext) => Dialog(
-                backgroundColor: const Color(0xFF0F172A),
+                backgroundColor: ZaWolfColors.surface01,
                 child: InteractiveViewer(
                   minScale: 0.6,
                   maxScale: 4,
@@ -281,10 +282,10 @@ class _DepartmentChatChannelPageState extends State<DepartmentChatChannelPage> {
     return Directionality(
       textDirection: TextDirection.rtl,
       child: Scaffold(
-        backgroundColor: const Color(0xFF0F172A),
+        backgroundColor: ZaWolfColors.background,
         appBar: AppBar(
           automaticallyImplyLeading: false,
-          backgroundColor: const Color(0xFF1E293B),
+          backgroundColor: ZaWolfColors.surface01,
           leading: IconButton(
             tooltip: 'رجوع',
             icon: const Icon(
@@ -296,9 +297,9 @@ class _DepartmentChatChannelPageState extends State<DepartmentChatChannelPage> {
           title: Row(
             children: [
               const CircleAvatar(
-                backgroundColor: Color(0xFF38BDF8),
+                backgroundColor: ZaWolfColors.primaryCyan,
                 radius: 16,
-                child: Icon(Icons.tag_rounded, color: Colors.black, size: 18),
+                child: Icon(Icons.tag_rounded, color: ZaWolfColors.background, size: 18),
               ),
               const SizedBox(width: 10),
               Expanded(
@@ -308,9 +309,9 @@ class _DepartmentChatChannelPageState extends State<DepartmentChatChannelPage> {
                 DropdownButtonHideUnderline(
                   child: DropdownButton<String>(
                     value: widget.selectedDepartment,
-                    dropdownColor: const Color(0xFF1E293B),
-                    iconEnabledColor: const Color(0xFF38BDF8),
-                    style: const TextStyle(color: Colors.white),
+                    dropdownColor: ZaWolfColors.surface01,
+                    iconEnabledColor: ZaWolfColors.primaryCyan,
+                    style: const TextStyle(color: ZaWolfColors.textPrimary),
                     items: widget.availableDepartments
                         .map(
                           (department) => DropdownMenuItem<String>(
@@ -372,7 +373,7 @@ class _DepartmentChatChannelPageState extends State<DepartmentChatChannelPage> {
                         _optimisticMessages.isEmpty) {
                       return const Center(
                         child: CircularProgressIndicator(
-                          color: Color(0xFF38BDF8),
+                          color: ZaWolfColors.primaryCyan,
                         ),
                       );
                     }
@@ -381,7 +382,7 @@ class _DepartmentChatChannelPageState extends State<DepartmentChatChannelPage> {
                       return const Center(
                         child: Text(
                           'تعذر تحميل رسائل القسم. أعد فتح الجروب.',
-                          style: TextStyle(color: Colors.white70),
+                          style: TextStyle(color: ZaWolfColors.textSecondary),
                         ),
                       );
                     }
@@ -395,13 +396,13 @@ class _DepartmentChatChannelPageState extends State<DepartmentChatChannelPage> {
                               Icon(
                                 Icons.forum_outlined,
                                 size: 48,
-                                color: Colors.white38,
+                                color: ZaWolfColors.textMuted,
                               ),
                               SizedBox(height: 12),
                               Text(
                                 'لا توجد رسائل في هذا الجروب بعد.\nابدأ المحادثة مع فريق العمل.',
                                 textAlign: TextAlign.center,
-                                style: TextStyle(color: Colors.white54),
+                                style: TextStyle(color: ZaWolfColors.textMuted),
                               ),
                             ],
                           ),
@@ -444,8 +445,8 @@ class _DepartmentChatChannelPageState extends State<DepartmentChatChannelPage> {
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 10, 16, 20),
       decoration: const BoxDecoration(
-        color: Color(0xFF1E293B),
-        border: Border(top: BorderSide(color: Colors.white12)),
+        color: ZaWolfColors.surface01,
+        border: Border(top: BorderSide(color: ZaWolfColors.surface03)),
       ),
       child: Row(
         children: [
@@ -459,7 +460,7 @@ class _DepartmentChatChannelPageState extends State<DepartmentChatChannelPage> {
                     )
                     : const Icon(
                       Icons.attach_file_rounded,
-                      color: Color(0xFF38BDF8),
+                      color: ZaWolfColors.primaryCyan,
                     ),
             tooltip: 'إرفاق ملف Google Drive',
             onPressed: _uploading ? null : _attachFile,
@@ -467,12 +468,12 @@ class _DepartmentChatChannelPageState extends State<DepartmentChatChannelPage> {
           Expanded(
             child: TextField(
               controller: _messageController,
-              style: const TextStyle(color: Colors.white),
+              style: const TextStyle(color: ZaWolfColors.textPrimary),
               decoration: InputDecoration(
                 hintText: 'اكتب رسالتك للروم...',
-                hintStyle: const TextStyle(color: Colors.white38),
+                hintStyle: const TextStyle(color: ZaWolfColors.textMuted),
                 filled: true,
-                fillColor: const Color(0xFF0F172A),
+                fillColor: ZaWolfColors.background,
                 contentPadding: const EdgeInsets.symmetric(
                   horizontal: 16,
                   vertical: 10,
@@ -488,7 +489,7 @@ class _DepartmentChatChannelPageState extends State<DepartmentChatChannelPage> {
           const SizedBox(width: 8),
           Container(
             decoration: const BoxDecoration(
-              color: Color(0xFF38BDF8),
+              color: ZaWolfColors.primaryCyan,
               shape: BoxShape.circle,
             ),
             child: IconButton(
@@ -499,12 +500,12 @@ class _DepartmentChatChannelPageState extends State<DepartmentChatChannelPage> {
                         height: 18,
                         child: CircularProgressIndicator(
                           strokeWidth: 2,
-                          color: Colors.black,
+                          color: ZaWolfColors.background,
                         ),
                       )
                       : const Icon(
                         Icons.send_rounded,
-                        color: Colors.black,
+                        color: ZaWolfColors.background,
                         size: 20,
                       ),
               onPressed: _sending ? null : _sendMessage,
@@ -547,10 +548,10 @@ class _MessageBubble extends StatelessWidget {
   Widget build(BuildContext context) {
     final bg =
         isMe
-            ? const Color(0xFF0284C7).withValues(alpha: 0.3)
-            : const Color(0xFF334155);
+            ? ZaWolfColors.primaryBlue.withValues(alpha: 0.35)
+            : ZaWolfColors.surface02;
     final border =
-        isMe ? const Color(0xFF38BDF8).withValues(alpha: 0.5) : Colors.white12;
+        isMe ? ZaWolfColors.primaryCyan.withValues(alpha: 0.5) : ZaWolfColors.surface03;
 
     String timeFormatted = '';
     if (createdAt.isNotEmpty) {
@@ -584,7 +585,7 @@ class _MessageBubble extends StatelessWidget {
               Text(
                 senderName,
                 style: const TextStyle(
-                  color: Color(0xFF38BDF8),
+                  color: ZaWolfColors.primaryCyan,
                   fontSize: 11,
                   fontWeight: FontWeight.bold,
                 ),
@@ -593,7 +594,7 @@ class _MessageBubble extends StatelessWidget {
             ],
             Text(
               body,
-              style: const TextStyle(color: Colors.white, fontSize: 13),
+              style: const TextStyle(color: ZaWolfColors.textPrimary, fontSize: 13),
             ),
             if (attachmentResourceIds.isNotEmpty) ...[
               const SizedBox(height: 6),
@@ -621,7 +622,7 @@ class _MessageBubble extends StatelessWidget {
                 alignment: Alignment.centerLeft,
                 child: Text(
                   timeFormatted,
-                  style: const TextStyle(color: Colors.white38, fontSize: 9),
+                  style: const TextStyle(color: ZaWolfColors.textMuted, fontSize: 9),
                 ),
               ),
             ],

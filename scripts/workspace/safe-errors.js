@@ -1,6 +1,21 @@
 function workspaceSafeError(error, { writeMayHaveStarted = false } = {}) {
   const code = error && error.code;
   const status = error && Number(error.statusCode || error.status);
+  const providerMessage = String(
+    error?.message || error?.response?.data?.error?.message || '',
+  );
+  // Google returns a 403 for both authorization and exhausted Drive storage.
+  // Detect quota before the generic 403 branch so HR receives an actionable,
+  // provider-neutral recovery message rather than a false permission denial.
+  if (code === 'drive_storage_quota' ||
+      /(?:drive\s+)?storage quota has been exceeded|storage quota.*exceeded|quota.*exceeded/i.test(providerMessage)) {
+    return {
+      statusCode: 429,
+      code: 'drive_storage_quota',
+      error: 'مساحة تخزين ملفات الشركة ممتلئة. حرر مساحة أو اضبط ملف تقارير تملكه الشركة ثم أعد المحاولة.',
+      retry: 'contact_responsible',
+    };
+  }
   if (code === 'not_authorized' || code === 'forbidden' || status === 403) {
     return { statusCode: 403, error: 'لا تتوفر لك صلاحية تنفيذ هذا الإجراء.', retry: 'contact_responsible' };
   }

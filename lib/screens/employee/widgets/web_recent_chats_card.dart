@@ -89,7 +89,7 @@ class _WebRecentChatsCardState extends State<WebRecentChatsCard> {
                     Text(
                       'المحادثات والتواصل السريع',
                       style: TextStyle(
-                        color: Colors.white,
+                        color: ZaWolfColors.textPrimary,
                         fontSize: 16,
                         fontWeight: FontWeight.bold,
                       ),
@@ -172,7 +172,7 @@ class _WebRecentChatsCardState extends State<WebRecentChatsCard> {
                             ? 'آخر الرسائل والتنبيهات المباشرة'
                             : 'حالة التواصل والنشاط',
                         style: const TextStyle(
-                          color: Colors.white,
+                          color: ZaWolfColors.textPrimary,
                           fontSize: 13,
                           fontWeight: FontWeight.w600,
                         ),
@@ -244,7 +244,7 @@ class _WebRecentChatsCardState extends State<WebRecentChatsCard> {
                           const Text(
                             'أنت على اطلاع بكل المحادثات',
                             style: TextStyle(
-                              color: Colors.white,
+                              color: ZaWolfColors.textPrimary,
                               fontSize: 13,
                               fontWeight: FontWeight.w600,
                             ),
@@ -305,7 +305,7 @@ class _WebRecentChatsCardState extends State<WebRecentChatsCard> {
                   Text(
                     title,
                     style: const TextStyle(
-                      color: Colors.white,
+                      color: ZaWolfColors.textPrimary,
                       fontSize: 13,
                       fontWeight: FontWeight.bold,
                     ),
@@ -392,7 +392,7 @@ class _WebRecentChatsCardState extends State<WebRecentChatsCard> {
                         child: Text(
                           message.title,
                           style: TextStyle(
-                            color: Colors.white,
+                            color: ZaWolfColors.textPrimary,
                             fontSize: 13,
                             fontWeight:
                                 message.isRead

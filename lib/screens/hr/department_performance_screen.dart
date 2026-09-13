@@ -201,59 +201,69 @@ class _DepartmentPerformanceScreenState
     final organizationTabSelected = _tabController.index == 1;
     final activeRefresh =
         organizationTabSelected ? _organizationRefreshing : _refreshing;
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(
-          'الأقسام والهيكل الوظيفي',
-          style: theme.textTheme.headlineMedium,
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: Scaffold(
+        appBar: AppBar(
+          leading: Navigator.canPop(context)
+              ? IconButton(
+                  icon: Icon(RtlNavigation.backIcon(context)),
+                  tooltip: 'رجوع',
+                  onPressed: () => Navigator.pop(context),
+                )
+              : null,
+          title: Text(
+            'الأقسام والهيكل الوظيفي',
+            style: theme.textTheme.headlineMedium,
+          ),
+          actions: [
+            if (!(organizationTabSelected && _showOrganizationTrees))
+              IconButton(
+                tooltip:
+                    organizationTabSelected
+                        ? 'تحديث الهيكل الوظيفي'
+                        : 'تحديث أداء الأقسام',
+                onPressed:
+                    activeRefresh
+                        ? null
+                        : () =>
+                            organizationTabSelected
+                                ? _refreshOrganization(
+                                  reviewer,
+                                  showConfirmation: true,
+                                )
+                                : _refresh(reviewer),
+                icon:
+                    activeRefresh
+                        ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                        : const Icon(
+                          Icons.refresh,
+                          color: ZaWolfColors.primaryCyan,
+                        ),
+              ),
+          ],
+          bottom: TabBar(
+            controller: _tabController,
+            tabs: [
+              Tab(icon: Icon(Icons.analytics_outlined), text: 'أداء الأقسام'),
+              Tab(
+                icon: Icon(Icons.account_tree_outlined),
+                text: 'الهيكل الوظيفي',
+              ),
+            ],
+          ),
         ),
-        actions: [
-          if (!(organizationTabSelected && _showOrganizationTrees))
-            IconButton(
-              tooltip:
-                  organizationTabSelected
-                      ? 'تحديث الهيكل الوظيفي'
-                      : 'تحديث أداء الأقسام',
-              onPressed:
-                  activeRefresh
-                      ? null
-                      : () =>
-                          organizationTabSelected
-                              ? _refreshOrganization(
-                                reviewer,
-                                showConfirmation: true,
-                              )
-                              : _refresh(reviewer),
-              icon:
-                  activeRefresh
-                      ? const SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                      : const Icon(
-                        Icons.refresh,
-                        color: ZaWolfColors.primaryCyan,
-                      ),
-            ),
-        ],
-        bottom: TabBar(
+        body: TabBarView(
           controller: _tabController,
-          tabs: [
-            Tab(icon: Icon(Icons.analytics_outlined), text: 'أداء الأقسام'),
-            Tab(
-              icon: Icon(Icons.account_tree_outlined),
-              text: 'الهيكل الوظيفي',
-            ),
+          children: [
+            _buildPerformanceTab(reviewer, theme),
+            _buildOrganizationTab(reviewer),
           ],
         ),
-      ),
-      body: TabBarView(
-        controller: _tabController,
-        children: [
-          _buildPerformanceTab(reviewer, theme),
-          _buildOrganizationTab(reviewer),
-        ],
       ),
     );
   }
@@ -316,136 +326,236 @@ class _DepartmentPerformanceScreenState
         final needsFollowUp = [...departments]
           ..sort((a, b) => a.averageScore.compareTo(b.averageScore));
         final worst = needsFollowUp.first;
+        final overallAverage = departments.fold<double>(
+              0,
+              (acc, d) => acc + d.averageScore,
+            ) /
+            departments.length;
+        final totalEmployees = departments.fold<int>(
+          0,
+          (acc, d) => acc + d.employeeCount,
+        );
 
-        return ListView(
-          padding: const EdgeInsets.all(16),
-          children: [
-            if (departments.length > 1) ...[
-              Row(
-                children: [
-                  Expanded(
-                    child: _HighlightCard(
-                      title: 'أفضل قسم',
-                      value: best.departmentName,
-                      subtitle: '${best.averageScore.toStringAsFixed(1)}%',
-                      color: ZaWolfColors.success,
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: _HighlightCard(
-                      title: 'يحتاج متابعة',
-                      value: worst.departmentName,
-                      subtitle: '${worst.averageScore.toStringAsFixed(1)}%',
-                      color: ZaWolfColors.error,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-            ],
-            ...departments.asMap().entries.map((entry) {
+        return LayoutBuilder(
+          builder: (context, constraints) {
+            final isDesktop = constraints.maxWidth >= 900;
+            final colCount =
+                constraints.maxWidth >= 1350 ? 3 : (isDesktop ? 2 : 1);
+
+            final deptCards = departments.asMap().entries.map((entry) {
               final rank = entry.key + 1;
               final dept = entry.value;
-              return Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: WolfCard(
-                  onTap:
-                      () => showDepartmentProductivityDetails(
-                        context,
-                        department: dept.departmentName,
-                        scores:
-                            scores
-                                .where(
-                                  (score) =>
-                                      (score.department.trim().isEmpty
-                                          ? 'غير محدد'
-                                          : score.department) ==
-                                      dept.departmentName,
-                                )
-                                .toList(),
-                        onUpdateBehavior: (score, value, reason) async {
-                          await _service.updateBehaviorScore(
-                            employeeUserId: score.userId,
-                            reviewer: reviewer,
-                            monthKey: score.monthKey,
-                            behaviorScore: value,
-                            reason: reason,
-                          );
-                        },
-                      ),
-                  child: Row(
-                    children: [
-                      _RankBadge(rank: rank),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.end,
-                          children: [
-                            Text(
-                              dept.departmentName,
-                              style: theme.textTheme.titleLarge?.copyWith(
-                                color: Colors.white,
+              return WolfCard(
+                onTap: () => showDepartmentProductivityDetails(
+                  context,
+                  department: dept.departmentName,
+                  scores: scores
+                      .where(
+                        (score) =>
+                            (score.department.trim().isEmpty
+                                ? 'غير محدد'
+                                : score.department) ==
+                            dept.departmentName,
+                      )
+                      .toList(),
+                  onUpdateBehavior: (score, value, reason) async {
+                    await _service.updateBehaviorScore(
+                      employeeUserId: score.userId,
+                      reviewer: reviewer,
+                      monthKey: score.monthKey,
+                      behaviorScore: value,
+                      reason: reason,
+                    );
+                  },
+                ),
+                child: Row(
+                  children: [
+                    _RankBadge(rank: rank),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          Text(
+                            dept.departmentName,
+                            style: theme.textTheme.titleMedium?.copyWith(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          Text(
+                            'عدد الموظفين: ${dept.employeeCount}',
+                            style: theme.textTheme.bodySmall,
+                          ),
+                          if (scores
+                              .where(
+                                (score) =>
+                                    (score.department.trim().isEmpty
+                                        ? 'غير محدد'
+                                        : score.department) ==
+                                    dept.departmentName,
+                              )
+                              .any(
+                                (score) =>
+                                    score.inputState !=
+                                    ProductivityInputState.complete,
+                              ))
+                            const Text(
+                              'يتضمن بيانات جزئية',
+                              style: TextStyle(
+                                color: ZaWolfColors.warning,
+                                fontSize: 12,
                               ),
                             ),
-                            Text(
-                              'عدد الموظفين: ${dept.employeeCount}',
-                              style: theme.textTheme.bodySmall,
-                            ),
-                            if (scores
-                                .where(
-                                  (score) =>
-                                      (score.department.trim().isEmpty
-                                          ? 'غير محدد'
-                                          : score.department) ==
-                                      dept.departmentName,
-                                )
-                                .any(
-                                  (score) =>
-                                      score.inputState !=
-                                      ProductivityInputState.complete,
-                                ))
-                              const Text(
-                                'يتضمن بيانات جزئية',
-                                style: TextStyle(
-                                  color: ZaWolfColors.warning,
-                                  fontSize: 12,
-                                ),
-                              ),
-                            const SizedBox(height: 8),
-                            LinearProgressIndicator(
-                              value: (dept.averageScore / 100).clamp(0, 1),
-                              minHeight: 7,
-                              borderRadius: BorderRadius.circular(8),
-                              color: _scoreColor(dept.averageScore),
-                              backgroundColor: ZaWolfColors.surface03,
-                            ),
-                          ],
-                        ),
+                          const SizedBox(height: 8),
+                          LinearProgressIndicator(
+                            value: (dept.averageScore / 100).clamp(0, 1),
+                            minHeight: 7,
+                            borderRadius: BorderRadius.circular(8),
+                            color: _scoreColor(dept.averageScore),
+                            backgroundColor: ZaWolfColors.surface03,
+                          ),
+                        ],
                       ),
-                      const SizedBox(width: 12),
-                      Text(
-                        '${dept.averageScore.toStringAsFixed(1)}%',
-                        style: TextStyle(
-                          color: _scoreColor(dept.averageScore),
-                          fontWeight: FontWeight.bold,
-                          fontSize: 18,
-                        ),
+                    ),
+                    const SizedBox(width: 12),
+                    Text(
+                      '${dept.averageScore.toStringAsFixed(1)}%',
+                      style: TextStyle(
+                        color: _scoreColor(dept.averageScore),
+                        fontWeight: FontWeight.bold,
+                        fontSize: 18,
                       ),
-                      const SizedBox(width: 4),
-                      Icon(
-                        RtlNavigation.chevronEnd(context),
-                        color: ZaWolfColors.textMuted,
-                        size: 20,
-                      ),
-                    ],
-                  ),
+                    ),
+                    const SizedBox(width: 4),
+                    Icon(
+                      RtlNavigation.chevronEnd(context),
+                      color: ZaWolfColors.textMuted,
+                      size: 20,
+                    ),
+                  ],
                 ),
               );
-            }),
-          ],
+            }).toList();
+
+            return ListView(
+              padding: EdgeInsets.symmetric(
+                horizontal: isDesktop ? 24 : 16,
+                vertical: 16,
+              ),
+              children: [
+                if (departments.length > 1) ...[
+                  if (isDesktop)
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _HighlightCard(
+                            title: 'أفضل قسم أداءً',
+                            value: best.departmentName,
+                            subtitle:
+                                '${best.averageScore.toStringAsFixed(1)}%',
+                            color: ZaWolfColors.success,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: _HighlightCard(
+                            title: 'يحتاج متابعة وتطوير',
+                            value: worst.departmentName,
+                            subtitle:
+                                '${worst.averageScore.toStringAsFixed(1)}%',
+                            color: ZaWolfColors.error,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: _HighlightCard(
+                            title: 'إجمالي الأقسام',
+                            value: '${departments.length} أقسام',
+                            subtitle: '$totalEmployees موظف مسجل',
+                            color: ZaWolfColors.primaryCyan,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: _HighlightCard(
+                            title: 'متوسط أداء المنشأة',
+                            value:
+                                '${overallAverage.toStringAsFixed(1)}%',
+                            subtitle: 'لشهر $_monthKey',
+                            color: ZaWolfColors.perfGold,
+                          ),
+                        ),
+                      ],
+                    )
+                  else
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _HighlightCard(
+                            title: 'أفضل قسم',
+                            value: best.departmentName,
+                            subtitle:
+                                '${best.averageScore.toStringAsFixed(1)}%',
+                            color: ZaWolfColors.success,
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: _HighlightCard(
+                            title: 'يحتاج متابعة',
+                            value: worst.departmentName,
+                            subtitle:
+                                '${worst.averageScore.toStringAsFixed(1)}%',
+                            color: ZaWolfColors.error,
+                          ),
+                        ),
+                      ],
+                    ),
+                  const SizedBox(height: 16),
+                ],
+                if (!isDesktop || deptCards.length <= 1)
+                  ...deptCards.map(
+                    (c) => Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: c,
+                    ),
+                  )
+                else
+                  _buildDeptGrid(deptCards, colCount),
+              ],
+            );
+          },
         );
       },
+    );
+  }
+
+  Widget _buildDeptGrid(List<Widget> cards, int colCount) {
+    final columns = List.generate(colCount, (_) => <Widget>[]);
+    for (var i = 0; i < cards.length; i++) {
+      columns[i % colCount].add(cards[i]);
+    }
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        for (var i = 0; i < colCount; i++) ...[
+          if (i > 0) const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              children: columns[i]
+                  .map(
+                    (c) => Padding(
+                      padding: const EdgeInsets.only(bottom: 14),
+                      child: c,
+                    ),
+                  )
+                  .toList(),
+            ),
+          ),
+        ],
+      ],
     );
   }
 
@@ -890,10 +1000,10 @@ class _OrganizationChartBodyState extends State<_OrganizationChartBody> {
       margin: const EdgeInsets.only(bottom: 14),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       decoration: BoxDecoration(
-        color: const Color(0xFF0F2B33),
+        color: ZaWolfColors.surface01,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
-          color: const Color(0xFF00E5FF).withValues(alpha: 0.3),
+          color: ZaWolfColors.primaryCyan.withValues(alpha: 0.3),
         ),
       ),
       child: LayoutBuilder(
@@ -902,13 +1012,13 @@ class _OrganizationChartBodyState extends State<_OrganizationChartBody> {
           final selector = Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(Icons.account_tree_outlined, color: Color(0xFF00E5FF)),
+              const Icon(Icons.account_tree_outlined, color: ZaWolfColors.primaryCyan),
               const SizedBox(width: 10),
               if (!compact) ...[
                 const Text(
                   'اختر الهيكل الوظيفي:',
                   style: TextStyle(
-                    color: Colors.white,
+                    color: ZaWolfColors.textPrimary,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
@@ -921,9 +1031,9 @@ class _OrganizationChartBodyState extends State<_OrganizationChartBody> {
                 child: DropdownButton<String?>(
                   isExpanded: compact,
                   value: _selectedTreeId,
-                  dropdownColor: const Color(0xFF0F2B33),
+                  dropdownColor: ZaWolfColors.surface01,
                   style: const TextStyle(
-                    color: Color(0xFF00E5FF),
+                    color: ZaWolfColors.primaryCyan,
                     fontWeight: FontWeight.bold,
                   ),
                   underline: const SizedBox(),
@@ -959,16 +1069,16 @@ class _OrganizationChartBodyState extends State<_OrganizationChartBody> {
                 IconButton.outlined(
                   tooltip: 'حذف هذا الهيكل نهائياً',
                   style: IconButton.styleFrom(
-                    foregroundColor: Colors.redAccent,
-                    side: const BorderSide(color: Colors.redAccent),
+                    foregroundColor: ZaWolfColors.error,
+                    side: const BorderSide(color: ZaWolfColors.error),
                   ),
                   icon: const Icon(Icons.delete_forever_outlined),
                   onPressed: _deleteCurrentCustomTree,
                 ),
               FilledButton.icon(
                 style: FilledButton.styleFrom(
-                  backgroundColor: const Color(0xFF00E5FF),
-                  foregroundColor: const Color(0xFF08181E),
+                  backgroundColor: ZaWolfColors.primaryCyan,
+                  foregroundColor: ZaWolfColors.background,
                 ),
                 icon: const Icon(Icons.person_add_alt_1_outlined),
                 label: const Text('هيكل جديد بـ CEO'),
@@ -1114,7 +1224,7 @@ class _OrganizationChartBodyState extends State<_OrganizationChartBody> {
                 ),
                 FilledButton(
                   style: FilledButton.styleFrom(
-                    backgroundColor: Colors.redAccent,
+                    backgroundColor: ZaWolfColors.error,
                   ),
                   onPressed: () => Navigator.pop(dialogContext, true),
                   child: const Text('حذف نهائي'),
@@ -1490,18 +1600,12 @@ class _DesktopOrganizationMapState extends State<_DesktopOrganizationMap> {
                 IconButton(
                   onPressed: () => _moveHorizontally(towardLeft: false),
                   tooltip: 'تحريك لليمين',
-                  icon: const Directionality(
-                    textDirection: TextDirection.ltr,
-                    child: Icon(Icons.arrow_forward_ios_rounded),
-                  ),
+                  icon: const Icon(Icons.chevron_right_rounded),
                 ),
                 IconButton(
                   onPressed: () => _moveHorizontally(towardLeft: true),
                   tooltip: 'تحريك لليسار',
-                  icon: const Directionality(
-                    textDirection: TextDirection.ltr,
-                    child: Icon(Icons.arrow_back_ios_new_rounded),
-                  ),
+                  icon: const Icon(Icons.chevron_left_rounded),
                 ),
                 const SizedBox(width: 8),
                 const Expanded(

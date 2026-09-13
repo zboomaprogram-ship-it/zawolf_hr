@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart' hide TextDirection;
 
+import '../../../../theme/theme.dart';
 import '../domain/meeting_repository.dart';
 
 /// Reusable requester history and recipient approval queue. The server decides
@@ -139,7 +140,7 @@ class _MeetingRequestsListScreenState extends State<MeetingRequestsListScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(value),
-          backgroundColor: error ? Colors.red : Colors.green,
+          backgroundColor: error ? ZaWolfColors.error : ZaWolfColors.success,
         ),
       );
 

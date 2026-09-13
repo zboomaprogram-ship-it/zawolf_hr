@@ -14,6 +14,7 @@ import '../../theme/theme.dart';
 import '../../components/attendance_insights_card.dart';
 import '../../components/wolf_card.dart';
 import '../../design_system/tokens.dart';
+import '../../design_system/components/badge.dart';
 import '../../design_system/components/priority_strip.dart';
 import '../../design_system/components/section_header.dart';
 import '../../design_system/components/stat_card.dart';
@@ -110,6 +111,28 @@ class _ManagerDashboardScreenState extends State<ManagerDashboardScreen> {
       appBar: AppBar(
         title: Text('لوحة المدير', style: theme.textTheme.headlineMedium),
         actions: [
+          IconButton(
+            tooltip: 'الإشعارات',
+            icon: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                const Icon(
+                  Icons.notifications_outlined,
+                  color: ZaWolfColors.textSecondary,
+                ),
+                if (manager.unreadNotifications > 0)
+                  Positioned(
+                    top: -4,
+                    left: -6,
+                    child: DsBadge(
+                      count: manager.unreadNotifications,
+                      accent: ZaWolfColors.error,
+                    ),
+                  ),
+              ],
+            ),
+            onPressed: () => context.push('/notifications'),
+          ),
           IconButton(
             tooltip: 'بصمتي الشخصية (تسجيل الحضور)',
             icon: const Icon(

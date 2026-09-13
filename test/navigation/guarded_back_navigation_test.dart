@@ -45,4 +45,19 @@ void main() {
     );
     expect(backIcon, Icons.arrow_forward);
   });
+
+  test('dashboard tabs do not display notification badge and bottom tab badges cap at 99+', () {
+    expect(source, isNot(contains('isDashboardAnchor')));
+    expect(source, contains("unreadCount > 99 ? '99+' : '\$unreadCount'"));
+  });
+
+  test('HR and Manager dashboards provide notification bell action in AppBar', () {
+    final hrDashboard = File('lib/screens/hr/hr_dashboard.dart').readAsStringSync();
+    final managerDashboard = File('lib/screens/manager/manager_dashboard.dart').readAsStringSync();
+
+    expect(hrDashboard, contains("context.push('/notifications')"));
+    expect(hrDashboard, contains("Icons.notifications_outlined"));
+    expect(managerDashboard, contains("context.push('/notifications')"));
+    expect(managerDashboard, contains("Icons.notifications_outlined"));
+  });
 }

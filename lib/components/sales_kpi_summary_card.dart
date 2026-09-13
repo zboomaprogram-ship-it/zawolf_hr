@@ -89,7 +89,7 @@ class _SalesKpiSummaryCardState extends State<SalesKpiSummaryCard> {
               Text(
                 'مؤشرات المبيعات',
                 style: theme.textTheme.titleLarge?.copyWith(
-                  color: Colors.white,
+                  color: ZaWolfColors.textPrimary,
                 ),
               ),
             ],
@@ -216,7 +216,9 @@ class _SalesKpiSummaryCardState extends State<SalesKpiSummaryCard> {
             Text(
               'أداء الموظفين من نظام المبيعات',
               textAlign: TextAlign.right,
-              style: theme.textTheme.titleMedium?.copyWith(color: Colors.white),
+              style: theme.textTheme.titleMedium?.copyWith(
+                color: ZaWolfColors.textPrimary,
+              ),
             ),
             const SizedBox(height: 10),
             ...summary.agents.where((a) => a.isMapped).map(

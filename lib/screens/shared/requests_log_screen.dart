@@ -333,7 +333,7 @@ class _PeriodSelector extends StatelessWidget {
                         Text(
                           'دورة ${cycle.key}',
                           style: const TextStyle(
-                            color: Colors.white,
+                            color: ZaWolfColors.textPrimary,
                             fontWeight: FontWeight.bold,
                           ),
                         ),
@@ -383,8 +383,8 @@ class _RequestSummary extends StatelessWidget {
     final permissions = logs.where((item) => item.type == 'permission').length;
     final values = [
       ('الإجمالي', logs.length, ZaWolfColors.primaryCyan),
-      ('إجازات', leaves, Colors.purpleAccent),
-      ('أذونات', permissions, Colors.lightBlueAccent),
+      ('إجازات', leaves, ZaWolfColors.dayoffPurple),
+      ('أذونات', permissions, ZaWolfColors.permissionTeal),
       ('معلق', pending, ZaWolfColors.warning),
       ('مقبول', approved, ZaWolfColors.success),
       ('مرفوض', rejected, ZaWolfColors.error),
@@ -635,7 +635,7 @@ class _RequestLogCard extends StatelessWidget {
                 child: Text(
                   item.requestType,
                   style: const TextStyle(
-                    color: Colors.white,
+                    color: ZaWolfColors.textPrimary,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
@@ -661,7 +661,7 @@ class _RequestLogCard extends StatelessWidget {
           const SizedBox(height: 10),
           Text(
             item.employeeName,
-            style: const TextStyle(color: Colors.white, fontSize: 16),
+            style: const TextStyle(color: ZaWolfColors.textPrimary, fontSize: 16),
           ),
           Text(
             [
@@ -786,7 +786,7 @@ class _RequestLogCard extends StatelessWidget {
         textDirection: TextDirection.rtl,
         child: AlertDialog(
           backgroundColor: ZaWolfColors.surface01,
-          title: const Text('تعديل تاريخ الإجازة العارضة', style: TextStyle(color: Colors.white)),
+          title: const Text('تعديل تاريخ الإجازة العارضة', style: TextStyle(color: ZaWolfColors.textPrimary)),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -799,7 +799,7 @@ class _RequestLogCard extends StatelessWidget {
               TextField(
                 controller: controller,
                 maxLines: 2,
-                style: const TextStyle(color: Colors.white),
+                style: const TextStyle(color: ZaWolfColors.textPrimary),
                 decoration: const InputDecoration(
                   labelText: 'سبب التعديل الإداري (اختياري)',
                 ),

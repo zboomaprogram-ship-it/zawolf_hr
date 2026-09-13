@@ -4,6 +4,18 @@ import 'package:intl/intl.dart';
 import '../models/employee_role.dart';
 import '../models/user_model.dart';
 
+/// Compares calendar days, not timestamp instants. Leave requests may store
+/// their end timestamp at the time the request was created; adding 24 hours
+/// would incorrectly make a one-day leave cover the following day.
+bool dashboardLeaveOverlapsDate({
+  required DateTime leaveEnd,
+  required DateTime date,
+}) {
+  final leaveEndDay = DateTime(leaveEnd.year, leaveEnd.month, leaveEnd.day);
+  final selectedDay = DateTime(date.year, date.month, date.day);
+  return !leaveEndDay.isBefore(selectedDay);
+}
+
 class DashboardAttendanceSummary {
   final int totalEmployees;
   final int present;
@@ -184,6 +196,43 @@ class DashboardAttendanceSummaryService {
     return summaries;
   }
 
+  /// Loads an inclusive, bounded range for the dashboard visual analysis.
+  /// The range cap keeps the read budget predictable on web refreshes.
+  Future<List<DashboardAttendanceSummary>> loadDateRangeForReviewer(
+    UserModel reviewer, {
+    required DateTime start,
+    required DateTime end,
+  }) async {
+    final first = DateTime(start.year, start.month, start.day);
+    final last = DateTime(end.year, end.month, end.day);
+    final dayCount = last.difference(first).inDays + 1;
+    if (dayCount < 1 || dayCount > 31) {
+      throw ArgumentError('Dashboard attendance ranges must contain 1 to 31 days.');
+    }
+    final today = DateTime.now();
+    final normalizedToday = DateTime(today.year, today.month, today.day);
+    if (dayCount == 30 && last == normalizedToday) {
+      return loadLast30DaysForReviewer(reviewer);
+    }
+
+    final employees = await _loadEmployees(reviewer);
+    final dates = List<DateTime>.generate(
+      dayCount,
+      (index) => last.subtract(Duration(days: index)),
+    );
+    final summaries = <DashboardAttendanceSummary>[];
+    const batchSize = 3;
+    for (var offset = 0; offset < dates.length; offset += batchSize) {
+      final batchEnd = (offset + batchSize).clamp(0, dates.length);
+      summaries.addAll(await Future.wait(
+        dates.sublist(offset, batchEnd).map(
+          (date) => _buildSummaryForDate(reviewer, employees, date),
+        ),
+      ));
+    }
+    return summaries;
+  }
+
   Future<DashboardAttendanceSummary> loadForReviewerDate(
     UserModel reviewer,
     DateTime date,
@@ -275,7 +324,10 @@ class DashboardAttendanceSummaryService {
       if (!employeeIds.contains(userId)) continue;
       final endDate = (data['endDate'] as Timestamp?)?.toDate();
       if (endDate == null) continue;
-      if (endDate.add(const Duration(days: 1)).isAfter(startOfToday)) {
+      if (dashboardLeaveOverlapsDate(
+        leaveEnd: endDate,
+        date: startOfToday,
+      )) {
         dayOffUsers.add(userId);
       }
     }

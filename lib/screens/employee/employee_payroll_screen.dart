@@ -77,7 +77,7 @@ class EmployeePayrollScreen extends StatelessWidget {
                 label: 'الراتب الأساسي',
                 value: run.baseSalary,
                 currency: run.currency,
-                color: Colors.white,
+                color: ZaWolfColors.textPrimary,
               ),
               _PayrollLine(
                 label: 'خصومات الحضور المعتمدة',
@@ -161,7 +161,7 @@ class _MetricLine extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 6),
       child: Row(
         children: [
-          Text(value, style: const TextStyle(color: Colors.white)),
+          Text(value, style: const TextStyle(color: ZaWolfColors.textPrimary)),
           const Spacer(),
           Text(
             label,

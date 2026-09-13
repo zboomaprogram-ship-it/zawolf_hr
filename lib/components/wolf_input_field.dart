@@ -18,6 +18,7 @@ class WolfInputField extends StatefulWidget {
   final ValueChanged<String>? onSubmitted;
   final String? helperText;
   final String? errorText;
+  final AutovalidateMode? autovalidateMode;
 
   const WolfInputField({
     super.key,
@@ -37,6 +38,7 @@ class WolfInputField extends StatefulWidget {
     this.onSubmitted,
     this.helperText,
     this.errorText,
+    this.autovalidateMode,
   });
 
   @override
@@ -124,10 +126,12 @@ class _WolfInputFieldState extends State<WolfInputField> {
               textDirection: widget.textDirection ?? TextDirection.rtl,
               style: theme.textTheme.bodyLarge,
               validator: widget.validator,
+              autovalidateMode: widget.autovalidateMode,
               decoration: InputDecoration(
                 hintText: widget.hintText,
                 helperText: widget.helperText,
                 errorText: widget.errorText,
+                errorMaxLines: 3,
                 prefixIcon: widget.prefixIcon != null
                     ? Icon(
                         widget.prefixIcon,

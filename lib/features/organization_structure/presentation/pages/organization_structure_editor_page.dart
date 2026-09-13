@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import '../../../../theme/theme.dart';
 import '../../domain/entities/organization_change_set.dart';
 import '../../domain/entities/organization_membership.dart';
 import '../../domain/entities/organization_snapshot.dart';
@@ -850,7 +851,7 @@ class _HierarchyContentState extends State<_HierarchyContent> {
           dense: true,
           leading: Icon(
             membership.isPrimary ? Icons.star : Icons.person_outline,
-            color: membership.isPrimary ? Colors.amber : null,
+            color: membership.isPrimary ? ZaWolfColors.warning : null,
           ),
           title: SelectableText(
             membership.employeeName.trim().isNotEmpty
@@ -1154,8 +1155,8 @@ final class _OrganizationTreeSelector extends StatelessWidget {
           IconButton.outlined(
             tooltip: 'حذف / أرشفة هذا الهيكل',
             style: IconButton.styleFrom(
-              foregroundColor: Colors.redAccent,
-              side: BorderSide(color: Colors.redAccent.withValues(alpha: 0.5)),
+              foregroundColor: ZaWolfColors.error,
+              side: BorderSide(color: ZaWolfColors.error.withValues(alpha: 0.5)),
             ),
             onPressed: () => _archiveTree(context, selectedTree),
             icon: const Icon(Icons.delete_outline_rounded),
@@ -1718,16 +1719,16 @@ class _SnapshotVisualMap extends StatelessWidget {
       return Container(
         padding: const EdgeInsets.all(40),
         decoration: BoxDecoration(
-          color: const Color(0xFF0F2B33),
+          color: ZaWolfColors.surface01,
           borderRadius: BorderRadius.circular(16),
           border: Border.all(
-            color: const Color(0xFF00E5FF).withValues(alpha: 0.2),
+            color: ZaWolfColors.primaryCyan.withValues(alpha: 0.2),
           ),
         ),
         child: const Center(
           child: Text(
             'لا توجد قطاعات في هذا الهيكل حتى الآن.',
-            style: TextStyle(color: Colors.white70, fontSize: 16),
+            style: TextStyle(color: ZaWolfColors.textSecondary, fontSize: 16),
           ),
         ),
       );
@@ -1764,10 +1765,10 @@ class _SnapshotVisualMap extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: const Color(0xFF0A1C22),
+        color: ZaWolfColors.surface01,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: const Color(0xFF00E5FF).withValues(alpha: 0.25),
+          color: ZaWolfColors.primaryCyan.withValues(alpha: 0.25),
         ),
       ),
       child: Column(
@@ -1777,13 +1778,13 @@ class _SnapshotVisualMap extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
             decoration: BoxDecoration(
               gradient: const LinearGradient(
-                colors: [Color(0xFF133B47), Color(0xFF0A222A)],
+                colors: [ZaWolfColors.surface02, ZaWolfColors.surface01],
               ),
               borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: const Color(0xFF00E5FF), width: 1.5),
+              border: Border.all(color: ZaWolfColors.primaryCyan, width: 1.5),
               boxShadow: [
                 BoxShadow(
-                  color: const Color(0xFF00E5FF).withValues(alpha: 0.15),
+                  color: ZaWolfColors.primaryCyan.withValues(alpha: 0.15),
                   blurRadius: 12,
                   spreadRadius: 2,
                 ),
@@ -1796,7 +1797,7 @@ class _SnapshotVisualMap extends StatelessWidget {
                   children: [
                     const Icon(
                       Icons.workspace_premium,
-                      color: Color(0xFFFFD700),
+                      color: ZaWolfColors.perfGold,
                       size: 24,
                     ),
                     const SizedBox(width: 8),
@@ -1807,7 +1808,7 @@ class _SnapshotVisualMap extends StatelessWidget {
                             : 'سامي المتولي التولي',
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
-                          color: Colors.white,
+                          color: ZaWolfColors.textPrimary,
                           fontSize: 18,
                           fontWeight: FontWeight.bold,
                         ),
@@ -1822,16 +1823,16 @@ class _SnapshotVisualMap extends StatelessWidget {
                     vertical: 3,
                   ),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFFFD700).withValues(alpha: 0.15),
+                    color: ZaWolfColors.perfGold.withValues(alpha: 0.15),
                     borderRadius: BorderRadius.circular(12),
                     border: Border.all(
-                      color: const Color(0xFFFFD700).withValues(alpha: 0.4),
+                      color: ZaWolfColors.perfGold.withValues(alpha: 0.4),
                     ),
                   ),
                   child: Text(
                     'المدير التنفيذي (CEO) · ${tree.name}',
                     style: const TextStyle(
-                      color: Color(0xFFFFD700),
+                      color: ZaWolfColors.perfGold,
                       fontSize: 12,
                       fontWeight: FontWeight.w600,
                     ),
@@ -1842,13 +1843,13 @@ class _SnapshotVisualMap extends StatelessWidget {
           ),
           const SizedBox(height: 6),
           // Vertical Line
-          Container(width: 2, height: 24, color: const Color(0xFF00E5FF)),
+          Container(width: 2, height: 24, color: ZaWolfColors.primaryCyan),
           // Horizontal Connector Bar
           Container(
             height: 2,
             width: double.infinity,
             margin: const EdgeInsets.symmetric(horizontal: 40),
-            color: const Color(0xFF00E5FF),
+            color: ZaWolfColors.primaryCyan,
           ),
           const SizedBox(height: 16),
           // Sectors Columns
@@ -1862,9 +1863,9 @@ class _SnapshotVisualMap extends StatelessWidget {
                     width: 280,
                     margin: const EdgeInsets.symmetric(horizontal: 10),
                     decoration: BoxDecoration(
-                      color: const Color(0xFF0F2B33),
+                      color: ZaWolfColors.surface01,
                       borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: Colors.white12),
+                      border: Border.all(color: ZaWolfColors.surface03),
                     ),
                     child: Column(
                       children: [
@@ -1873,7 +1874,7 @@ class _SnapshotVisualMap extends StatelessWidget {
                           width: double.infinity,
                           padding: const EdgeInsets.all(12),
                           decoration: const BoxDecoration(
-                            color: Color(0xFF163E4A),
+                            color: ZaWolfColors.surface02,
                             borderRadius: BorderRadius.vertical(
                               top: Radius.circular(12),
                             ),
@@ -1886,7 +1887,7 @@ class _SnapshotVisualMap extends StatelessWidget {
                                 sector.name,
                                 textAlign: TextAlign.center,
                                 style: const TextStyle(
-                                  color: Color(0xFF00E5FF),
+                                  color: ZaWolfColors.primaryCyan,
                                   fontWeight: FontWeight.bold,
                                   fontSize: 16,
                                 ),
@@ -1906,12 +1907,10 @@ class _SnapshotVisualMap extends StatelessWidget {
                             ),
                             padding: const EdgeInsets.all(12),
                             decoration: BoxDecoration(
-                              color: const Color(0xFF08181E),
+                              color: ZaWolfColors.background,
                               borderRadius: BorderRadius.circular(10),
                               border: Border.all(
-                                color: const Color(
-                                  0xFF00E5FF,
-                                ).withValues(alpha: 0.3),
+                                color: ZaWolfColors.primaryCyan.withValues(alpha: 0.3),
                               ),
                             ),
                             child: Column(
@@ -1923,7 +1922,7 @@ class _SnapshotVisualMap extends StatelessWidget {
                                       child: Text(
                                         dept.name,
                                         style: const TextStyle(
-                                          color: Colors.white,
+                                          color: ZaWolfColors.textPrimary,
                                           fontWeight: FontWeight.bold,
                                           fontSize: 14,
                                         ),
@@ -1935,15 +1934,13 @@ class _SnapshotVisualMap extends StatelessWidget {
                                         vertical: 2,
                                       ),
                                       decoration: BoxDecoration(
-                                        color: const Color(
-                                          0xFF00E5FF,
-                                        ).withValues(alpha: 0.15),
+                                        color: ZaWolfColors.primaryCyan.withValues(alpha: 0.15),
                                         borderRadius: BorderRadius.circular(8),
                                       ),
                                       child: Text(
                                         '${snapshot.memberships.where((m) => m.departmentUnitId == dept.id).length}',
                                         style: const TextStyle(
-                                          color: Color(0xFF00E5FF),
+                                          color: ZaWolfColors.primaryCyan,
                                           fontSize: 12,
                                           fontWeight: FontWeight.bold,
                                         ),
@@ -1955,7 +1952,7 @@ class _SnapshotVisualMap extends StatelessWidget {
                                 const Text(
                                   'أعضاء الفريق:',
                                   style: TextStyle(
-                                    color: Colors.white54,
+                                    color: ZaWolfColors.textMuted,
                                     fontSize: 11,
                                   ),
                                 ),
@@ -1972,7 +1969,7 @@ class _SnapshotVisualMap extends StatelessWidget {
                                         const Icon(
                                           Icons.person_outline,
                                           size: 14,
-                                          color: Color(0xFF00E5FF),
+                                          color: ZaWolfColors.primaryCyan,
                                         ),
                                         const SizedBox(width: 6),
                                         Expanded(
@@ -1981,7 +1978,7 @@ class _SnapshotVisualMap extends StatelessWidget {
                                                 ? member.employeeName
                                                 : member.employeeUid,
                                             style: const TextStyle(
-                                              color: Colors.white70,
+                                              color: ZaWolfColors.textSecondary,
                                               fontSize: 12,
                                             ),
                                             overflow: TextOverflow.ellipsis,

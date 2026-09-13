@@ -19,7 +19,7 @@ final class PerformanceBadgesOverviewScreen extends StatelessWidget {
     showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
-      backgroundColor: const Color(0xFF0F172A),
+      backgroundColor: ZaWolfColors.surface01,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
@@ -37,7 +37,7 @@ final class PerformanceBadgesOverviewScreen extends StatelessWidget {
                   title: cb.title,
                   description: cb.description,
                   icon: Icons.emoji_events_rounded,
-                  color: const Color(0xFFFFD700),
+                  color: ZaWolfColors.perfGold,
                 )),
               ];
 
@@ -50,7 +50,7 @@ final class PerformanceBadgesOverviewScreen extends StatelessWidget {
                     Text(
                       'إدارة شارات الموظف (${recipient.displayName})',
                       style: const TextStyle(
-                        color: Colors.white,
+                        color: ZaWolfColors.textPrimary,
                         fontSize: 16,
                         fontWeight: FontWeight.bold,
                       ),
@@ -74,10 +74,10 @@ final class PerformanceBadgesOverviewScreen extends StatelessWidget {
                             decoration: BoxDecoration(
                               color: isAwarded
                                   ? badge.color.withValues(alpha: 0.15)
-                                  : Colors.white.withValues(alpha: 0.03),
+                                  : ZaWolfColors.surface02,
                               borderRadius: BorderRadius.circular(12),
                               border: Border.all(
-                                color: isAwarded ? badge.color : Colors.white12,
+                                color: isAwarded ? badge.color : ZaWolfColors.surface03,
                               ),
                             ),
                             child: ListTile(
@@ -85,7 +85,7 @@ final class PerformanceBadgesOverviewScreen extends StatelessWidget {
                               title: Text(
                                 badge.title,
                                 style: const TextStyle(
-                                  color: Colors.white,
+                                  color: ZaWolfColors.textPrimary,
                                   fontWeight: FontWeight.bold,
                                 ),
                               ),
@@ -99,7 +99,7 @@ final class PerformanceBadgesOverviewScreen extends StatelessWidget {
                               trailing: ElevatedButton(
                                 style: ElevatedButton.styleFrom(
                                   backgroundColor: isAwarded ? ZaWolfColors.error : badge.color,
-                                  foregroundColor: Colors.black,
+                                  foregroundColor: ZaWolfColors.background,
                                 ),
                                 onPressed: () async {
                                   if (isAwarded) {
@@ -183,7 +183,7 @@ final class PerformanceBadgesOverviewScreen extends StatelessWidget {
                         Text(
                           recipient.displayName,
                           style: const TextStyle(
-                            color: Colors.white,
+                            color: ZaWolfColors.textPrimary,
                             fontWeight: FontWeight.bold,
                             fontSize: 15,
                           ),

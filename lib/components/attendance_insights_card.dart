@@ -49,14 +49,16 @@ class AttendanceInsightsCard extends StatelessWidget {
                         ? 'حالة حضور الفريق اليوم'
                         : 'حالة حضور الشركة اليوم',
                     style: theme.textTheme.titleLarge?.copyWith(
-                      color: Colors.white,
+                      color: ZaWolfColors.textPrimary,
                       fontWeight: FontWeight.bold,
                     ),
                     textDirection: TextDirection.rtl,
                   ),
                   Text(
                     '$dateLabel · ${summary.totalEmployees} موظف',
-                    style: theme.textTheme.bodySmall,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: ZaWolfColors.textSecondary,
+                    ),
                     textDirection: TextDirection.rtl,
                   ),
                 ],
@@ -101,7 +103,7 @@ class AttendanceInsightsCard extends StatelessWidget {
                   ),
                   _BarSegment(
                     flex: summary.fieldMission,
-                    color: Colors.amber,
+                    color: ZaWolfColors.warning,
                   ),
                   _BarSegment(
                     flex: summary.notAttended,
@@ -199,7 +201,7 @@ class AttendanceInsightsCard extends StatelessWidget {
                   label: 'مأمورية ميدانية',
                   value: summary.fieldMission,
                   percent: summary.percentOf(summary.fieldMission),
-                  color: Colors.amber,
+                  color: ZaWolfColors.warning,
                   icon: Icons.badge_outlined,
                   onTap: () => onCategoryTap?.call('field_mission'),
                 ),
@@ -308,7 +310,7 @@ class _InsightTile extends StatelessWidget {
                   Text(
                     '$value',
                     style: const TextStyle(
-                      color: Colors.white,
+                      color: ZaWolfColors.textPrimary,
                       fontSize: 18,
                       fontWeight: FontWeight.bold,
                       fontFamily: 'JetBrains Mono',

@@ -209,6 +209,7 @@ class _WebManagementShellState extends State<WebManagementShell> {
                                           const Icon(
                                             Icons.person_outline,
                                             size: 19,
+                                            color: ZaWolfColors.textSecondary,
                                           ),
                                           const SizedBox(width: DsSpacing.sm),
                                           Text(
@@ -395,7 +396,7 @@ class _WebManagementShellState extends State<WebManagementShell> {
                     const Text(
                       'ZaWolf HR',
                       style: TextStyle(
-                        color: Colors.white,
+                        color: ZaWolfColors.textPrimary,
                         fontSize: DsType.h2,
                         fontWeight: FontWeight.w700,
                       ),
@@ -444,7 +445,7 @@ class _WebManagementShellState extends State<WebManagementShell> {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: theme.textTheme.titleSmall?.copyWith(
-                        color: Colors.white,
+                        color: ZaWolfColors.textPrimary,
                       ),
                     ),
                     Text(
@@ -564,7 +565,7 @@ class _WebManagementShellState extends State<WebManagementShell> {
                       style: TextStyle(
                         color:
                             groupActive
-                                ? Colors.white
+                                ? ZaWolfColors.textPrimary
                                 : ZaWolfColors.textSecondary,
                         fontWeight: FontWeight.w600,
                         fontSize: DsType.secondary,
@@ -663,7 +664,9 @@ class _SidebarItem extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       color:
-                          selected ? Colors.white : ZaWolfColors.textSecondary,
+                          selected
+                              ? ZaWolfColors.textPrimary
+                              : ZaWolfColors.textSecondary,
                       fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
                       fontSize: DsType.secondary,
                     ),

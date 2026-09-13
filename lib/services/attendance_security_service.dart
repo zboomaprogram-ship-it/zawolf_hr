@@ -47,6 +47,17 @@ class AttendanceSecurityService {
     bool requireBiometric = true,
     bool blockAndroidDeveloperOptions = true,
   }) async {
+    // A server-authorized web attendance grant is the only path that reaches
+    // this branch on web. Browsers cannot provide native biometric evidence;
+    // location, schedule, leave/day-off and server grant checks still apply.
+    if (kIsWeb) {
+      final installId = await _attendanceInstallDeviceId();
+      return AttendanceSecurityResult(
+        deviceId: 'web-install-$installId',
+        deviceLabel: 'Web browser',
+        biometricVerified: false,
+      );
+    }
     final device = await _readDevice();
     await _assertTrustedDevice();
     if (blockAndroidDeveloperOptions) {

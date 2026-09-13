@@ -539,6 +539,11 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       await batch.commit();
       if (unread.docs.length < 400) break;
     }
+    await db
+        .collection('users')
+        .doc(userId)
+        .update({'unreadNotifications': 0})
+        .catchError((_) {});
     if (!mounted) return;
     setState(() => _locallyRead.addAll(_notifications.map((item) => item.id)));
     final auth = context.read<AuthService>();

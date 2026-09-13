@@ -4,6 +4,7 @@
 // HTTP host before this module is reached.
 
 const { checkoutDisabledResult, loadCheckoutPolicy } = require('./checkout-policy');
+const { assertWebAttendanceAccess } = require('./web-attendance-access');
 const {
   loadMultiLocationFlag,
   validateAssignedLocation,
@@ -183,6 +184,12 @@ function actionData({ admin, action, user, receivedAt, locationEvidence = null }
 async function submitAttendanceAction({ admin, actor, rawAction }) {
   const db = admin.firestore();
   const action = parseAction(rawAction, actor);
+  // Web attendance is an explicit, employee-specific exception. This lookup is
+  // intentionally in the write gateway so a stale or altered browser cannot
+  // authorize an action after a grant expires or is revoked.
+  if (action.raw.clientPlatform === 'web') {
+    await assertWebAttendanceAccess({ admin, actor });
+  }
   // Keep this guard in the write gateway itself.  HTTP handlers, workers, or
   // future API routes must not be able to bypass the company check-out policy.
   // This happens before device binding or attendance mutation.

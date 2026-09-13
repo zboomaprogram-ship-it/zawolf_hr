@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart' hide TextDirection;
+import '../theme/theme.dart';
 
 final class AttendanceHeatmapCard extends StatefulWidget {
   const AttendanceHeatmapCard({super.key});
@@ -59,12 +60,12 @@ class _AttendanceHeatmapCardState extends State<AttendanceHeatmapCard> {
     final l = _dailyLateCounts[dateKey] ?? 0;
     final total = p + l;
 
-    if (total == 0) return Colors.white10;
+    if (total == 0) return ZaWolfColors.surface03;
     final ratio = p / total;
 
-    if (ratio >= 0.85) return const Color(0xFF10B981); // Green
-    if (ratio >= 0.65) return const Color(0xFFF59E0B); // Amber
-    return const Color(0xEFEF4444); // Red
+    if (ratio >= 0.85) return ZaWolfColors.success;
+    if (ratio >= 0.65) return ZaWolfColors.warning;
+    return ZaWolfColors.error;
   }
 
   @override
@@ -82,10 +83,10 @@ class _AttendanceHeatmapCardState extends State<AttendanceHeatmapCard> {
         margin: const EdgeInsets.symmetric(vertical: 12),
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: const Color(0xFF1E293B),
+          color: ZaWolfColors.surface01,
           borderRadius: BorderRadius.circular(18),
           border: Border.all(
-            color: const Color(0xFF10B981).withValues(alpha: 0.3),
+            color: ZaWolfColors.surface03,
           ),
         ),
         child: Column(
@@ -96,12 +97,12 @@ class _AttendanceHeatmapCardState extends State<AttendanceHeatmapCard> {
                 Container(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
-                    color: const Color(0xFF10B981).withValues(alpha: 0.15),
+                    color: ZaWolfColors.success.withValues(alpha: 0.15),
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: const Icon(
                     Icons.grid_on_rounded,
-                    color: Color(0xFF10B981),
+                    color: ZaWolfColors.success,
                     size: 20,
                   ),
                 ),
@@ -110,7 +111,7 @@ class _AttendanceHeatmapCardState extends State<AttendanceHeatmapCard> {
                   child: Text(
                     'الخريطة الحرارية للحضور ($monthLabel)',
                     style: const TextStyle(
-                      color: Colors.white,
+                      color: ZaWolfColors.textPrimary,
                       fontSize: 15,
                       fontWeight: FontWeight.bold,
                     ),
@@ -120,7 +121,10 @@ class _AttendanceHeatmapCardState extends State<AttendanceHeatmapCard> {
                   children: [
                     IconButton(
                       tooltip: 'الشهر السابق',
-                      icon: const Icon(Icons.chevron_right, color: Colors.white70),
+                      icon: const Icon(
+                        Icons.chevron_right,
+                        color: ZaWolfColors.textSecondary,
+                      ),
                       onPressed: () {
                         setState(() {
                           _currentMonth = DateTime(
@@ -133,7 +137,10 @@ class _AttendanceHeatmapCardState extends State<AttendanceHeatmapCard> {
                     ),
                     IconButton(
                       tooltip: 'الشهر التالي',
-                      icon: const Icon(Icons.chevron_left, color: Colors.white70),
+                      icon: const Icon(
+                        Icons.chevron_left,
+                        color: ZaWolfColors.textSecondary,
+                      ),
                       onPressed: () {
                         setState(() {
                           _currentMonth = DateTime(
@@ -153,7 +160,7 @@ class _AttendanceHeatmapCardState extends State<AttendanceHeatmapCard> {
               const Padding(
                 padding: EdgeInsets.all(24),
                 child: Center(
-                  child: CircularProgressIndicator(color: Color(0xFF10B981)),
+                  child: CircularProgressIndicator(color: ZaWolfColors.success),
                 ),
               )
             else ...[
@@ -189,9 +196,9 @@ class _AttendanceHeatmapCardState extends State<AttendanceHeatmapCard> {
                         child: Text(
                           '$dayNum',
                           style: TextStyle(
-                            color: color == Colors.white10
-                                ? Colors.white38
-                                : Colors.white,
+                            color: color == ZaWolfColors.surface03
+                                ? ZaWolfColors.textMuted
+                                : ZaWolfColors.textPrimary,
                             fontSize: 12,
                             fontWeight: FontWeight.bold,
                           ),
@@ -205,11 +212,11 @@ class _AttendanceHeatmapCardState extends State<AttendanceHeatmapCard> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: const [
-                  _LegendDot(color: Color(0xFF10B981), label: 'ممتاز (>85%)'),
+                  _LegendDot(color: ZaWolfColors.success, label: 'ممتاز (>85%)'),
                   SizedBox(width: 12),
-                  _LegendDot(color: Color(0xFFF59E0B), label: 'متوسط (65-85%)'),
+                  _LegendDot(color: ZaWolfColors.warning, label: 'متوسط (65-85%)'),
                   SizedBox(width: 12),
-                  _LegendDot(color: Color(0xEFEF4444), label: 'منخفض (<65%)'),
+                  _LegendDot(color: ZaWolfColors.error, label: 'منخفض (<65%)'),
                 ],
               ),
             ],
@@ -230,13 +237,13 @@ class _AttendanceHeatmapCardState extends State<AttendanceHeatmapCard> {
       builder: (_) => Directionality(
         textDirection: TextDirection.rtl,
         child: AlertDialog(
-          backgroundColor: const Color(0xFF1E293B),
+          backgroundColor: ZaWolfColors.surface02,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
           ),
           title: Text(
             'تفاصيل يوم $dateKey',
-            style: const TextStyle(color: Colors.white),
+            style: const TextStyle(color: ZaWolfColors.textPrimary),
           ),
           content: Column(
             mainAxisSize: MainAxisSize.min,
@@ -244,29 +251,29 @@ class _AttendanceHeatmapCardState extends State<AttendanceHeatmapCard> {
               ListTile(
                 leading: const Icon(
                   Icons.check_circle,
-                  color: Color(0xFF10B981),
+                  color: ZaWolfColors.success,
                 ),
                 title: const Text(
                   'حاضر في الموعد',
-                  style: TextStyle(color: Colors.white),
+                  style: TextStyle(color: ZaWolfColors.textPrimary),
                 ),
                 trailing: Text(
                   '$present موظف',
-                  style: const TextStyle(color: Colors.white70),
+                  style: const TextStyle(color: ZaWolfColors.textSecondary),
                 ),
               ),
               ListTile(
                 leading: const Icon(
                   Icons.access_time_filled,
-                  color: Color(0xFFF59E0B),
+                  color: ZaWolfColors.warning,
                 ),
                 title: const Text(
                   'حاضر متأخر',
-                  style: TextStyle(color: Colors.white),
+                  style: TextStyle(color: ZaWolfColors.textPrimary),
                 ),
                 trailing: Text(
                   '$late موظف',
-                  style: const TextStyle(color: Colors.white70),
+                  style: const TextStyle(color: ZaWolfColors.textSecondary),
                 ),
               ),
             ],
@@ -301,7 +308,7 @@ class _LegendDot extends StatelessWidget {
         const SizedBox(width: 4),
         Text(
           label,
-          style: const TextStyle(color: Colors.white54, fontSize: 10),
+          style: const TextStyle(color: ZaWolfColors.textMuted, fontSize: 10),
         ),
       ],
     );

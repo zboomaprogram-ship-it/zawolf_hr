@@ -22,6 +22,7 @@ class _EmployeeSuggestionsScreenState extends State<EmployeeSuggestionsScreen> {
   final _bodyController = TextEditingController();
   final _service = SuggestionService();
   bool _isSubmitting = false;
+  bool _autoValidate = false;
 
   @override
   void dispose() {
@@ -31,7 +32,17 @@ class _EmployeeSuggestionsScreenState extends State<EmployeeSuggestionsScreen> {
   }
 
   Future<void> _submit() async {
-    if (!_formKey.currentState!.validate()) return;
+    if (!_formKey.currentState!.validate()) {
+      setState(() => _autoValidate = true);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          backgroundColor: ZaWolfColors.error,
+          behavior: SnackBarBehavior.floating,
+          content: Text('يرجى استكمال البيانات المطلوبة وتصحيح الأخطاء المحددة.'),
+        ),
+      );
+      return;
+    }
 
     final user = Provider.of<AuthService>(context, listen: false).currentUser;
     if (user == null) return;
@@ -90,13 +101,16 @@ class _EmployeeSuggestionsScreenState extends State<EmployeeSuggestionsScreen> {
             WolfCard(
               child: Form(
                 key: _formKey,
+                autovalidateMode: _autoValidate
+                    ? AutovalidateMode.onUserInteraction
+                    : AutovalidateMode.disabled,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     Text(
                       'إرسال مقترح جديد',
                       style: theme.textTheme.titleMedium?.copyWith(
-                        color: Colors.white,
+                        color: ZaWolfColors.textPrimary,
                         fontWeight: FontWeight.bold,
                       ),
                       textDirection: TextDirection.rtl,
@@ -153,7 +167,7 @@ class _EmployeeSuggestionsScreenState extends State<EmployeeSuggestionsScreen> {
             Text(
               'مقترحاتي',
               style: theme.textTheme.titleMedium?.copyWith(
-                color: Colors.white,
+                color: ZaWolfColors.textPrimary,
                 fontWeight: FontWeight.bold,
               ),
               textDirection: TextDirection.rtl,
@@ -226,7 +240,7 @@ class _SuggestionTile extends StatelessWidget {
                 child: Text(
                   suggestion.title,
                   style: theme.textTheme.titleSmall?.copyWith(
-                    color: Colors.white,
+                    color: ZaWolfColors.textPrimary,
                     fontWeight: FontWeight.bold,
                   ),
                   textDirection: TextDirection.rtl,

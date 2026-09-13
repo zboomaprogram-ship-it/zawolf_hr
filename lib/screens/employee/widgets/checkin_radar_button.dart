@@ -54,7 +54,7 @@ class CheckInRadarButton extends StatelessWidget {
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 border: Border.all(
-                  color: Colors.white.withValues(alpha: 0.12),
+                  color: ZaWolfColors.textPrimary.withValues(alpha: 0.12),
                 ),
                 gradient: disabled && !active
                     ? const LinearGradient(
@@ -87,26 +87,42 @@ class CheckInRadarButton extends StatelessWidget {
               ),
               child: loading
                   ? const Center(
-                      child: CircularProgressIndicator(color: Colors.white),
+                      child: CircularProgressIndicator(
+                        color: ZaWolfColors.textPrimary,
+                      ),
                     )
                   : Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Icon(icon, size: 44, color: Colors.white),
+                        Icon(icon, size: 44, color: ZaWolfColors.textPrimary),
                         const SizedBox(height: DsSpacing.sm),
                         Text(
                           title,
                           style: theme.textTheme.titleMedium?.copyWith(
-                            color: Colors.white,
+                            color: ZaWolfColors.textPrimary,
                             fontWeight: FontWeight.bold,
+                            shadows: const [
+                              Shadow(
+                                color: Color(0x99000000),
+                                blurRadius: 4,
+                                offset: Offset(0, 1),
+                              ),
+                            ],
                           ),
                         ),
                         Text(
                           subtitle,
                           style: theme.textTheme.bodySmall?.copyWith(
-                            color: Colors.white70,
+                            color: ZaWolfColors.textPrimary.withValues(alpha: 0.85),
                             fontSize: 9,
                             fontWeight: FontWeight.bold,
+                            shadows: const [
+                              Shadow(
+                                color: Color(0x99000000),
+                                blurRadius: 3,
+                                offset: Offset(0, 1),
+                              ),
+                            ],
                           ),
                         ),
                       ],

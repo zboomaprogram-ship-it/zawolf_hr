@@ -148,7 +148,7 @@ class _WebChatNotificationOverlayState
                                     child: Text(
                                       toast.title,
                                       style: const TextStyle(
-                                        color: Colors.white,
+                                        color: ZaWolfColors.textPrimary,
                                         fontWeight: FontWeight.bold,
                                         fontSize: 14,
                                       ),
@@ -174,7 +174,7 @@ class _WebChatNotificationOverlayState
                               Text(
                                 toast.body,
                                 style: TextStyle(
-                                  color: Colors.white.withValues(alpha: 0.85),
+                                  color: ZaWolfColors.textPrimary.withValues(alpha: 0.85),
                                   fontSize: 12,
                                   height: 1.3,
                                 ),

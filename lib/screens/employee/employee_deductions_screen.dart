@@ -290,7 +290,7 @@ class _DeductionTile extends StatelessWidget {
               Text(
                 entry.deductionTitle,
                 style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  color: Colors.white,
+                  color: ZaWolfColors.textPrimary,
                   fontWeight: FontWeight.bold,
                 ),
               ),

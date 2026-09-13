@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../../theme/theme.dart';
 import '../../domain/entities/organization_unit.dart';
 
 final class OrganizationUnitCard extends StatelessWidget {
@@ -52,7 +53,7 @@ final class OrganizationUnitCard extends StatelessWidget {
         subtitle: unit.hasVacantManager
             ? const Text(
                 'لا يوجد مدير حاليًا',
-                style: TextStyle(color: Colors.amber),
+                style: TextStyle(color: ZaWolfColors.warning),
               )
             : null,
         trailing: canManage

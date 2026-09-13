@@ -17,6 +17,8 @@ class AttendanceGatewayException implements Exception {
       'تسجيل الانصراف غير مفعّل حالياً، ولا يلزم اتخاذ إجراء إضافي.',
     'already_recorded' => 'تم تسجيل حضورك مسبقاً لهذا اليوم.',
     'unauthenticated' => 'انتهت جلسة الدخول. سجل الدخول مرة أخرى.',
+    'web_attendance_not_authorized' =>
+      'لا يوجد تصريح نشط لتسجيل الحضور عبر الويب. استخدم تطبيق الجوال أو تواصل مع HR.',
     'permission_denied' ||
     'forbidden' => 'لا تملك صلاحية تنفيذ هذا الإجراء. راجع مسؤول النظام.',
     'no_assignment' => 'لا يوجد موقع حضور نشط مسند إلى حسابك. تواصل مع HR.',

@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import '../../../../theme/theme.dart';
 import '../../domain/entities/rich_chat.dart';
 import '../../domain/repositories/chat_media_gateway.dart';
 import '../cubit/chat_media_cubit.dart';
@@ -114,13 +115,13 @@ class _RichAttachmentViewState extends State<RichAttachmentView> {
       return Container(
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: Colors.red.withAlpha(20),
+          color: ZaWolfColors.error.withValues(alpha: 0.1),
           borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: Colors.red.withAlpha(60)),
+          border: Border.all(color: ZaWolfColors.error.withValues(alpha: 0.3)),
         ),
         child: Row(
           children: [
-            const Icon(Icons.picture_as_pdf, color: Colors.red, size: 36),
+            const Icon(Icons.picture_as_pdf, color: ZaWolfColors.error, size: 36),
             const SizedBox(width: 10),
             Expanded(
               child: Column(

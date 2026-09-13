@@ -132,7 +132,7 @@ class _BadgeCelebrationDialogState extends State<BadgeCelebrationDialog>
               width: 320,
               padding: const EdgeInsets.all(24),
               decoration: BoxDecoration(
-                color: const Color(0xFF0F172A),
+                color: ZaWolfColors.surface01,
                 borderRadius: BorderRadius.circular(24),
                 border: Border.all(
                   color: widget.color.withValues(alpha: 0.6),
@@ -185,7 +185,7 @@ class _BadgeCelebrationDialogState extends State<BadgeCelebrationDialog>
                   const Text(
                     '🎉 مبروك! إنجاز جديد',
                     style: TextStyle(
-                      color: Color(0xFFFFD700),
+                      color: ZaWolfColors.perfGold,
                       fontSize: 14,
                       fontWeight: FontWeight.bold,
                     ),
@@ -195,7 +195,7 @@ class _BadgeCelebrationDialogState extends State<BadgeCelebrationDialog>
                   Text(
                     widget.badgeTitle,
                     style: const TextStyle(
-                      color: Colors.white,
+                      color: ZaWolfColors.textPrimary,
                       fontSize: 20,
                       fontWeight: FontWeight.bold,
                     ),
@@ -220,7 +220,7 @@ class _BadgeCelebrationDialogState extends State<BadgeCelebrationDialog>
                     child: ElevatedButton.icon(
                       style: ElevatedButton.styleFrom(
                         backgroundColor: widget.color,
-                        foregroundColor: Colors.black,
+                        foregroundColor: ZaWolfColors.background,
                         padding: const EdgeInsets.symmetric(vertical: 13),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(12),
@@ -235,7 +235,7 @@ class _BadgeCelebrationDialogState extends State<BadgeCelebrationDialog>
                                 height: 18,
                                 child: CircularProgressIndicator(
                                   strokeWidth: 2,
-                                  color: Colors.black,
+                                  color: ZaWolfColors.background,
                                 ),
                               )
                               : Icon(
@@ -258,7 +258,7 @@ class _BadgeCelebrationDialogState extends State<BadgeCelebrationDialog>
                     onPressed: () => Navigator.of(context).pop(),
                     child: const Text(
                       'إغلاق',
-                      style: TextStyle(color: Colors.white60, fontSize: 13),
+                      style: TextStyle(color: ZaWolfColors.textMuted, fontSize: 13),
                     ),
                   ),
                 ],
@@ -279,11 +279,11 @@ class _ConfettiPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final rand = math.Random(42);
     final colors = [
-      const Color(0xFFFFD700),
-      const Color(0xFF38BDF8),
-      const Color(0xFFA78BFA),
-      const Color(0xFF10B981),
-      const Color(0xFFFB7185),
+      ZaWolfColors.perfGold,
+      ZaWolfColors.primaryCyan,
+      ZaWolfColors.dayoffPurple,
+      ZaWolfColors.wolfGreen,
+      ZaWolfColors.warning,
     ];
 
     for (var i = 0; i < 36; i++) {

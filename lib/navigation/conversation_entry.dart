@@ -7,6 +7,7 @@ import '../core/sync/authenticated_operation_client.dart';
 import '../features/conversations/data/conversation_repository_impl.dart';
 import '../features/conversations/domain/entities/conversation.dart';
 import '../features/conversations/presentation/pages/department_chat_channel_page.dart';
+import '../theme/theme.dart';
 
 final class ConversationEntry extends StatefulWidget {
   const ConversationEntry({
@@ -97,7 +98,11 @@ final class _ConversationEntryState extends State<ConversationEntry> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(Icons.forum_outlined, size: 48),
+                    const Icon(
+                      Icons.forum_outlined,
+                      size: 48,
+                      color: ZaWolfColors.textSecondary,
+                    ),
                     const SizedBox(height: 12),
                     const Text(
                       'تعذر فتح قناة القسم. تأكد من ربط حسابك بقسم نشط.',

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../services/payroll_pre_audit_service.dart';
+import '../../../theme/theme.dart';
 
 final class PayrollPreAuditDialog extends StatefulWidget {
   const PayrollPreAuditDialog({super.key});
@@ -50,15 +51,15 @@ class _PayrollPreAuditDialogState extends State<PayrollPreAuditDialog> {
     return Directionality(
       textDirection: TextDirection.rtl,
       child: AlertDialog(
-        backgroundColor: const Color(0xFF1E293B),
+        backgroundColor: ZaWolfColors.surface01,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: Row(
           children: const [
-            Icon(Icons.fact_check_outlined, color: Color(0xFF38BDF8), size: 26),
+            Icon(Icons.fact_check_outlined, color: ZaWolfColors.primaryCyan, size: 26),
             SizedBox(width: 10),
             Text(
               'التدقيق المالي قبل الاعتماد',
-              style: TextStyle(color: Colors.white, fontSize: 18),
+              style: TextStyle(color: ZaWolfColors.textPrimary, fontSize: 18),
             ),
           ],
         ),
@@ -68,7 +69,7 @@ class _PayrollPreAuditDialogState extends State<PayrollPreAuditDialog> {
               ? const Padding(
                   padding: EdgeInsets.all(32),
                   child: Center(
-                    child: CircularProgressIndicator(color: Color(0xFF38BDF8)),
+                    child: CircularProgressIndicator(color: ZaWolfColors.primaryCyan),
                   ),
                 )
               : Column(
@@ -78,13 +79,13 @@ class _PayrollPreAuditDialogState extends State<PayrollPreAuditDialog> {
                       padding: const EdgeInsets.all(14),
                       decoration: BoxDecoration(
                         color: hasIssues
-                            ? Colors.amber.withValues(alpha: 0.15)
-                            : const Color(0xFF10B981).withValues(alpha: 0.15),
+                            ? ZaWolfColors.warning.withValues(alpha: 0.15)
+                            : ZaWolfColors.success.withValues(alpha: 0.15),
                         borderRadius: BorderRadius.circular(14),
                         border: Border.all(
                           color: hasIssues
-                              ? Colors.amber.withValues(alpha: 0.4)
-                              : const Color(0xFF10B981).withValues(alpha: 0.4),
+                              ? ZaWolfColors.warning.withValues(alpha: 0.4)
+                              : ZaWolfColors.success.withValues(alpha: 0.4),
                         ),
                       ),
                       child: Row(
@@ -94,8 +95,8 @@ class _PayrollPreAuditDialogState extends State<PayrollPreAuditDialog> {
                                 ? Icons.warning_amber_rounded
                                 : Icons.check_circle_outline_rounded,
                             color: hasIssues
-                                ? Colors.amber
-                                : const Color(0xFF10B981),
+                                ? ZaWolfColors.warning
+                                : ZaWolfColors.success,
                             size: 24,
                           ),
                           const SizedBox(width: 10),
@@ -106,8 +107,8 @@ class _PayrollPreAuditDialogState extends State<PayrollPreAuditDialog> {
                                   : 'جاهز للاحتساب: جميع البيانات مكتملة ولا توجد طلبات معلقة.',
                               style: TextStyle(
                                 color: hasIssues
-                                    ? Colors.amber
-                                    : const Color(0xFF10B981),
+                                    ? ZaWolfColors.warning
+                                    : ZaWolfColors.success,
                                 fontSize: 13,
                                 fontWeight: FontWeight.bold,
                               ),
@@ -142,11 +143,12 @@ class _PayrollPreAuditDialogState extends State<PayrollPreAuditDialog> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('إغلاق', style: TextStyle(color: Colors.white70)),
+            child: const Text('إغلاق', style: TextStyle(color: ZaWolfColors.textSecondary)),
           ),
           FilledButton.icon(
             style: FilledButton.styleFrom(
-              backgroundColor: const Color(0xFF0EA5E9),
+              backgroundColor: ZaWolfColors.primaryCyan,
+              foregroundColor: ZaWolfColors.background,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(10),
               ),
@@ -173,35 +175,35 @@ class _AuditCheckRow extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.04),
+        color: ZaWolfColors.surface02,
         borderRadius: BorderRadius.circular(10),
       ),
       child: Row(
         children: [
           Icon(
             isClear ? Icons.check_rounded : Icons.priority_high_rounded,
-            color: isClear ? const Color(0xFF10B981) : Colors.amber,
+            color: isClear ? ZaWolfColors.success : ZaWolfColors.warning,
             size: 18,
           ),
           const SizedBox(width: 10),
           Expanded(
             child: Text(
               label,
-              style: const TextStyle(color: Colors.white, fontSize: 13),
+              style: const TextStyle(color: ZaWolfColors.textPrimary, fontSize: 13),
             ),
           ),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
             decoration: BoxDecoration(
               color: isClear
-                  ? const Color(0xFF10B981).withValues(alpha: 0.2)
-                  : Colors.amber.withValues(alpha: 0.2),
+                  ? ZaWolfColors.success.withValues(alpha: 0.2)
+                  : ZaWolfColors.warning.withValues(alpha: 0.2),
               borderRadius: BorderRadius.circular(8),
             ),
             child: Text(
               '$count',
               style: TextStyle(
-                color: isClear ? const Color(0xFF10B981) : Colors.amber,
+                color: isClear ? ZaWolfColors.success : ZaWolfColors.warning,
                 fontWeight: FontWeight.bold,
                 fontSize: 12,
               ),

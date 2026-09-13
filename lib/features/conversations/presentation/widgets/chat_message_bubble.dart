@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../../theme/theme.dart';
 import '../../domain/entities/rich_chat.dart';
 import 'chat_feedback.dart';
 import 'chat_stickers.dart';
@@ -34,13 +35,13 @@ class ChatMessageBubble extends StatelessWidget {
       reactions[emoji] = (reactions[emoji] ?? 0) + 1;
     }
     final bubbleColor =
-        mine ? const Color(0xFF80DEEA) : scheme.surfaceContainerLow;
-    final textColor = mine ? Colors.black : Colors.white;
-    final senderColor = mine ? const Color(0xFF0F3E48) : scheme.primary;
-    final metaColor = mine ? const Color(0xFF1E293B) : scheme.onSurfaceVariant;
+        mine ? ZaWolfColors.primaryCyan : scheme.surfaceContainerLow;
+    final textColor = mine ? ZaWolfColors.background : ZaWolfColors.textPrimary;
+    final senderColor = mine ? ZaWolfColors.primaryBlue : scheme.primary;
+    final metaColor = mine ? ZaWolfColors.surface03 : scheme.onSurfaceVariant;
     final actionIconColor =
-        mine ? const Color(0xFF0F3E48) : scheme.onSurfaceVariant;
-    final errorColor = mine ? const Color(0xFFB91C1C) : scheme.error;
+        mine ? ZaWolfColors.primaryBlue : scheme.onSurfaceVariant;
+    final errorColor = mine ? ZaWolfColors.error : scheme.error;
 
     return Align(
       alignment:
@@ -108,7 +109,7 @@ class ChatMessageBubble extends StatelessWidget {
                             color:
                                 mine
                                     ? Colors.black.withValues(alpha: 0.06)
-                                    : Colors.white.withValues(alpha: 0.05),
+                                    : ZaWolfColors.textPrimary.withValues(alpha: 0.05),
                             borderRadius: BorderRadius.circular(6),
                             border: BorderDirectional(
                               start: BorderSide(color: senderColor, width: 3),
@@ -123,7 +124,7 @@ class ChatMessageBubble extends StatelessWidget {
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
-                              color: mine ? Colors.black87 : Colors.white70,
+                              color: mine ? Colors.black87 : ZaWolfColors.textSecondary,
                               fontSize: 13,
                             ),
                           ),

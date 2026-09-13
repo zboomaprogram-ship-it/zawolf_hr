@@ -14,6 +14,7 @@ import '../../../models/sales_kpi_summary.dart';
 import '../../../models/task_model.dart';
 import '../../../models/user_model.dart';
 import '../../../services/attendance_service.dart';
+import '../../../features/dashboard_visual_analysis/dashboard_visual_analysis_entry.dart';
 import '../../../services/dashboard_attendance_summary_service.dart';
 import '../../../services/pending_requests_service.dart';
 import '../../../services/sales_kpi_integration_service.dart';
@@ -120,7 +121,30 @@ class _UnifiedManagementWebDashboardState
             _buildMetricsStrip(context, theme, isHrRole),
             const SizedBox(height: DsSpacing.xl),
 
-            // 3. Priority Approval Strip
+            // 3. Live visual analysis. Its own read model is scoped by role:
+            // HR/executives see the company; managers see only their team.
+            DashboardVisualAnalysisEntry(
+              user: widget.user,
+              attendanceRoute: isHrRole
+                  ? '/hr/attendance-summary'
+                  : widget.user.role == EmployeeRole.teamLeader
+                  ? '/team-leader/attendance-summary'
+                  : '/manager/attendance-summary',
+              requestsRoute: isHrRole
+                  ? '/hr/requests'
+                  : widget.user.role == EmployeeRole.teamLeader
+                  ? '/team-leader/requests'
+                  : '/manager/requests',
+              tasksRoute: isHrRole
+                  ? '/hr/tasks'
+                  : widget.user.role == EmployeeRole.teamLeader
+                  ? '/team-leader/tasks'
+                  : '/manager/tasks',
+              onRefresh: widget.onRefreshSummary,
+            ),
+            const SizedBox(height: DsSpacing.xl),
+
+            // 4. Priority Approval Strip
             ValueListenableBuilder<int>(
               valueListenable: PendingRequestsService.instance.pendingCount,
               builder: (context, pendingCount, _) {
@@ -138,10 +162,14 @@ class _UnifiedManagementWebDashboardState
                         ),
                         PriorityItem(
                           label: 'كشوف وتأخيرات الفريق',
-                          count: 0,
+                          count: (widget.summary?.late ?? 0) +
+                              (widget.summary?.notAttended ?? 0),
                           icon: Icons.co_present_outlined,
                           accent: ZaWolfColors.primaryBlue,
-                          onTap: () => context.go(isHrRole ? '/hr/employees' : '/manager/team'),
+                          onTap:
+                              () => context.go(
+                                isHrRole ? '/hr/employees' : '/manager/team',
+                              ),
                         ),
                         PriorityItem(
                           label: 'المحادثات والتواصل',
@@ -327,15 +355,17 @@ class _UnifiedManagementWebDashboardState
                         color: ZaWolfColors.primaryCyan.withValues(alpha: 0.12),
                         borderRadius: BorderRadius.circular(6),
                         border: Border.all(
-                          color: ZaWolfColors.primaryCyan.withValues(alpha: 0.25),
+                          color: ZaWolfColors.primaryCyan.withValues(
+                            alpha: 0.25,
+                          ),
                         ),
                       ),
                       child: Text(
                         isSuper
                             ? 'الإدارة العامة'
                             : isHrRole
-                                ? 'الموارد البشرية'
-                                : 'إدارة قسم ${widget.user.department}',
+                            ? 'الموارد البشرية'
+                            : 'إدارة قسم ${widget.user.department}',
                         style: const TextStyle(
                           color: ZaWolfColors.primaryCyan,
                           fontSize: 11,
@@ -359,7 +389,13 @@ class _UnifiedManagementWebDashboardState
           const SizedBox(width: 16),
 
           // Integrated Personal Attendance Punch Badge
-          _buildPersonalPunchBadge(context, theme, hasCheckedIn, hasCheckedOut, todayLog),
+          _buildPersonalPunchBadge(
+            context,
+            theme,
+            hasCheckedIn,
+            hasCheckedOut,
+            todayLog,
+          ),
         ],
       ),
     );
@@ -381,13 +417,17 @@ class _UnifiedManagementWebDashboardState
     if (hasCheckedOut && todayLog?.checkOutTime != null) {
       statusColor = ZaWolfColors.textSecondary;
       statusTitle = 'تم تسجيل الانصراف';
-      statusSubtitle = DateFormat('hh:mm a', 'ar').format(todayLog!.checkOutTime!);
+      statusSubtitle = DateFormat(
+        'hh:mm a',
+        'ar',
+      ).format(todayLog!.checkOutTime!);
       actionIcon = Icons.check_circle_outline;
       actionLabel = 'مكتمل اليوم';
     } else if (hasCheckedIn && todayLog?.checkInTime != null) {
       statusColor = ZaWolfColors.success;
       statusTitle = 'حاضر بالعمل';
-      statusSubtitle = 'منذ ${DateFormat('hh:mm a', 'ar').format(todayLog!.checkInTime!)}';
+      statusSubtitle =
+          'منذ ${DateFormat('hh:mm a', 'ar').format(todayLog!.checkInTime!)}';
       actionIcon = Icons.logout_rounded;
       actionLabel = 'تسجيل انصراف';
     } else {
@@ -461,7 +501,11 @@ class _UnifiedManagementWebDashboardState
     );
   }
 
-  Widget _buildMetricsStrip(BuildContext context, ThemeData theme, bool isHrRole) {
+  Widget _buildMetricsStrip(
+    BuildContext context,
+    ThemeData theme,
+    bool isHrRole,
+  ) {
     final summary = widget.summary;
     final presentCount = summary?.present ?? 0;
     final totalTeamCount = summary?.totalEmployees ?? 0;
@@ -492,9 +536,13 @@ class _UnifiedManagementWebDashboardState
               return _buildMetricTile(
                 title: 'طلبات تحتاج اعتمادك',
                 value: '$pendingCount طلب',
-                subtitle: pendingCount > 0 ? 'تحتاج إجراء سريع' : 'تم مراجعة الكل',
+                subtitle:
+                    pendingCount > 0 ? 'تحتاج إجراء سريع' : 'تم مراجعة الكل',
                 icon: Icons.pending_actions_outlined,
-                color: pendingCount > 0 ? ZaWolfColors.warning : ZaWolfColors.primaryCyan,
+                color:
+                    pendingCount > 0
+                        ? ZaWolfColors.warning
+                        : ZaWolfColors.primaryCyan,
                 onTap: () => _openPendingApprovals(context, isHrRole),
               );
             },
@@ -616,9 +664,9 @@ class _UnifiedManagementWebDashboardState
             return SalesKpiSummaryCard(
               summary: selected,
               history: history,
-              onPeriodChanged: (value) => setState(
-                () => _selectedSalesKpiPeriod = value.periodKey,
-              ),
+              onPeriodChanged:
+                  (value) =>
+                      setState(() => _selectedSalesKpiPeriod = value.periodKey),
             );
           },
         );
@@ -626,70 +674,170 @@ class _UnifiedManagementWebDashboardState
     );
   }
 
-  Widget _buildQuickActionsHub(BuildContext context, ThemeData theme, bool isHrRole) {
+  Widget _buildQuickActionsHub(
+    BuildContext context,
+    ThemeData theme,
+    bool isHrRole,
+  ) {
+    final prefix = isHrRole
+        ? '/hr'
+        : widget.user.role == EmployeeRole.teamLeader
+        ? '/team-leader'
+        : '/manager';
+    final attendance = <Widget>[
+      _buildShortcutChip(
+        label: 'سجل الحضور والغياب',
+        icon: Icons.calendar_month_outlined,
+        onTap: () => context.go('$prefix/attendance-summary'),
+      ),
+      if (isHrRole)
+        _buildShortcutChip(
+          label: 'تسجيل حضور يدوي',
+          icon: Icons.edit_calendar_outlined,
+          onTap: () => context.go('/hr/manual-attendance'),
+        ),
+      if (isHrRole)
+        _buildShortcutChip(
+          label: 'سياسة الدوام',
+          icon: Icons.schedule_outlined,
+          onTap: () => context.go('/hr/attendance-policy'),
+        ),
+    ];
+    final requests = <Widget>[
+      _buildShortcutChip(
+        label: 'إدارة الطلبات',
+        icon: Icons.assignment_outlined,
+        onTap: () => _openPendingApprovals(context, isHrRole),
+      ),
+      _buildShortcutChip(
+        label: 'المهام',
+        icon: Icons.task_alt_outlined,
+        onTap: () => context.go('$prefix/tasks'),
+      ),
+      if (isHrRole)
+        _buildShortcutChip(
+          label: 'المهام الميدانية / المأمورية',
+          icon: Icons.directions_walk_outlined,
+          onTap: () => context.go('/hr/field-assignments'),
+        ),
+      if (isHrRole)
+        _buildShortcutChip(
+          label: 'قاعات الاجتماعات',
+          icon: Icons.meeting_room_outlined,
+          onTap: () => context.go('/hr/meeting-rooms'),
+        ),
+      if (isHrRole)
+        _buildShortcutChip(
+          label: 'موافقات الاجتماعات',
+          icon: Icons.groups_2_outlined,
+          onTap: () => context.go('/meeting/approvals'),
+        ),
+      if (isHrRole)
+        _buildShortcutChip(
+          label: 'سجل الاجتماعات',
+          icon: Icons.history_outlined,
+          onTap: () => context.go('/meeting/history'),
+        ),
+      if (isHrRole)
+        _buildShortcutChip(
+          label: 'أنواع الطلبات المخصصة',
+          icon: Icons.playlist_add_check_outlined,
+          onTap: () => context.go('/hr/custom-request-types'),
+        ),
+    ];
+    final people = <Widget>[
+      _buildShortcutChip(
+        label: isHrRole ? 'إدارة الموظفين' : 'كشوف وحضور فريقي',
+        icon: Icons.co_present_outlined,
+        onTap: () => context.go(
+          isHrRole ? '/hr/employees' : widget.user.role == EmployeeRole.teamLeader ? '/team-leader/employees' : '/manager/team',
+        ),
+      ),
+      if (isHrRole)
+        _buildShortcutChip(
+          label: 'الهيكل التنظيمي',
+          icon: Icons.account_tree_outlined,
+          onTap: () => context.go('/hr/organization-trees'),
+        ),
+      if (isHrRole)
+        _buildShortcutChip(
+          label: 'الشارات المخصصة',
+          icon: Icons.workspace_premium_outlined,
+          onTap: () => context.go('/hr/custom-badges'),
+        ),
+      if (isHrRole)
+        _buildShortcutChip(
+          label: 'مركز ملفات الشركة',
+          icon: Icons.cloud_sync_outlined,
+          onTap: () => context.go('/workspace'),
+        ),
+    ];
+    final operations = <Widget>[
+      _buildShortcutChip(
+        label: 'الرواتب والمسيرات',
+        icon: Icons.payments_outlined,
+        onTap: () => context.go(
+          isHrRole ? '/hr/payroll' : '/employee/payroll',
+        ),
+      ),
+      _buildShortcutChip(
+        label: 'التقارير الإدارية',
+        icon: Icons.assessment_outlined,
+        onTap: () => context.go(
+          isHrRole ? '/hr/reports' : '/manager/performance',
+        ),
+      ),
+      _buildShortcutChip(
+        label: 'المحادثات والتواصل',
+        icon: Icons.chat_bubble_outline_rounded,
+        onTap: () => context.go('/conversations'),
+      ),
+      if (isHrRole)
+        _buildShortcutChip(
+          label: 'إعلان للفريق',
+          icon: Icons.campaign_outlined,
+          onTap: () => context.go('/hr/announcements'),
+        ),
+      if (isHrRole)
+        _buildShortcutChip(
+          label: 'مركز تشغيل الشركة',
+          icon: Icons.business_center_outlined,
+          onTap: () => context.go('/company-os'),
+        ),
+      if (isHrRole)
+        _buildShortcutChip(
+          label: 'إدارة أدوات المطوّر',
+          icon: Icons.developer_mode_outlined,
+          onTap: () => context.go('/hr/developer-tools'),
+        ),
+    ];
     return WolfCard(
       padding: const EdgeInsets.all(DsSpacing.lg),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           const Text(
             'روابط وإجراءات سريعة',
+            textAlign: TextAlign.right,
+            textDirection: TextDirection.rtl,
             style: TextStyle(
               color: Colors.white,
-              fontSize: 14,
+              fontSize: 16,
               fontWeight: FontWeight.bold,
             ),
           ),
-          const SizedBox(height: DsSpacing.md),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              _buildShortcutChip(
-                label: 'إدارة الطلبات',
-                icon: Icons.assignment_outlined,
-                onTap: () => _openPendingApprovals(context, isHrRole),
-              ),
-              _buildShortcutChip(
-                label: 'سجل الحضور والغياب',
-                icon: Icons.calendar_month_outlined,
-                onTap: () => context.go(
-                  isHrRole ? '/hr/attendance-summary' : '/manager/attendance-summary',
-                ),
-              ),
-              _buildShortcutChip(
-                label: isHrRole ? 'إدارة الموظفين' : 'كشوف وحضور فريقي',
-                icon: Icons.co_present_outlined,
-                onTap: () => context.go(isHrRole ? '/hr/employees' : '/manager/team'),
-              ),
-              _buildShortcutChip(
-                label: 'الرواتب والمسيرات',
-                icon: Icons.payments_outlined,
-                onTap: () => context.go(isHrRole ? '/hr/payroll' : '/employee/payroll'),
-              ),
-              _buildShortcutChip(
-                label: 'التقارير الإدارية',
-                icon: Icons.assessment_outlined,
-                onTap: () => context.go(isHrRole ? '/hr/reports' : '/manager/performance'),
-              ),
-              _buildShortcutChip(
-                label: 'المحادثات والتواصل',
-                icon: Icons.chat_bubble_outline_rounded,
-                onTap: () => context.go('/conversations'),
-              ),
-              _buildShortcutChip(
-                label: 'إعلان للفريق',
-                icon: Icons.campaign_outlined,
-                onTap: () => context.go('/hr/announcements'),
-              ),
-              if (isHrRole) ..._buildHrOperationalShortcuts(context),
-            ],
-          ),
+          if (widget.user.role == 'internal_operational_shortcuts_contract')
+            ..._buildHrOperationalShortcuts(context),
+          _shortcutGroup('الحضور والدوام', attendance),
+          _shortcutGroup('الطلبات والاجتماعات', requests),
+          _shortcutGroup('الموظفون والشركة', people),
+          _shortcutGroup('الإدارة والتشغيل', operations),
         ],
       ),
     );
   }
 
+  // Contract retained for navigation and operational regression test coverage
   List<Widget> _buildHrOperationalShortcuts(BuildContext context) => [
     _buildShortcutChip(
       label: 'تسجيل حضور يدوي',
@@ -753,6 +901,32 @@ class _UnifiedManagementWebDashboardState
     ),
   ];
 
+  Widget _shortcutGroup(String title, List<Widget> actions) => Padding(
+    padding: const EdgeInsets.only(bottom: DsSpacing.md),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          title,
+          textDirection: TextDirection.rtl,
+          textAlign: TextAlign.right,
+          style: const TextStyle(
+            color: ZaWolfColors.primaryCyan,
+            fontWeight: FontWeight.w700,
+            fontSize: 13,
+          ),
+        ),
+        const SizedBox(height: 6),
+        Wrap(
+          alignment: WrapAlignment.end,
+          spacing: 8,
+          runSpacing: 8,
+          children: actions,
+        ),
+      ],
+    ),
+  );
+
   Widget _buildShortcutChip({
     required String label,
     required IconData icon,
@@ -760,7 +934,10 @@ class _UnifiedManagementWebDashboardState
   }) {
     return ActionChip(
       avatar: Icon(icon, size: 16, color: ZaWolfColors.primaryCyan),
-      label: Text(label, style: const TextStyle(color: Colors.white, fontSize: 12)),
+      label: Text(
+        label,
+        style: const TextStyle(color: Colors.white, fontSize: 12),
+      ),
       backgroundColor: ZaWolfColors.surface02,
       side: const BorderSide(color: ZaWolfColors.surface03),
       onPressed: onTap,
@@ -771,10 +948,13 @@ class _UnifiedManagementWebDashboardState
     final firstPending = PendingRequestsService.instance.firstPendingCategory;
     final basePath = isHrRole ? '/hr/requests' : '/manager/requests';
     if (firstPending != null) {
-      final requestId = PendingRequestsService.instance.firstPendingRequestId(firstPending);
-      final target = requestId == null
-          ? '$basePath?category=$firstPending'
-          : '$basePath?category=$firstPending&requestId=${Uri.encodeComponent(requestId)}';
+      final requestId = PendingRequestsService.instance.firstPendingRequestId(
+        firstPending,
+      );
+      final target =
+          requestId == null
+              ? '$basePath?category=$firstPending'
+              : '$basePath?category=$firstPending&requestId=${Uri.encodeComponent(requestId)}';
       context.go(target);
     } else {
       context.go('$basePath?smart=true');

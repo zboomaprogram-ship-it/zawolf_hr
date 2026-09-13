@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../../theme/theme.dart';
 import '../../domain/entities/company_announcement.dart';
 import '../../domain/repositories/company_announcement_repository.dart';
 
@@ -14,10 +15,10 @@ final class AnnouncementsFeedCard extends StatelessWidget {
       margin: const EdgeInsets.symmetric(vertical: 12),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: const Color(0xFF1E293B),
+        color: ZaWolfColors.surface01,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: const Color(0xFF818CF8).withValues(alpha: 0.25),
+          color: ZaWolfColors.surface03,
         ),
       ),
       child: Column(
@@ -28,12 +29,12 @@ final class AnnouncementsFeedCard extends StatelessWidget {
               Container(
                 padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF818CF8).withValues(alpha: 0.15),
+                  color: ZaWolfColors.primaryCyan.withValues(alpha: 0.15),
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: const Icon(
                   Icons.campaign_rounded,
-                  color: Color(0xFF818CF8),
+                  color: ZaWolfColors.primaryCyan,
                   size: 20,
                 ),
               ),
@@ -41,7 +42,7 @@ final class AnnouncementsFeedCard extends StatelessWidget {
               const Text(
                 'إعلانات وتنويهات الشركة الرسمية',
                 style: TextStyle(
-                  color: Colors.white,
+                  color: ZaWolfColors.textPrimary,
                   fontSize: 15,
                   fontWeight: FontWeight.bold,
                 ),
@@ -114,11 +115,11 @@ class _AnnouncementTile extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.04),
+        color: ZaWolfColors.surface02,
         borderRadius: BorderRadius.circular(12),
         border: isPinned
-            ? Border.all(color: const Color(0xFFF59E0B).withValues(alpha: 0.4))
-            : null,
+            ? Border.all(color: ZaWolfColors.warning.withValues(alpha: 0.4))
+            : Border.all(color: ZaWolfColors.surface03),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -128,7 +129,7 @@ class _AnnouncementTile extends StatelessWidget {
               if (isPinned) ...[
                 const Icon(
                   Icons.push_pin_rounded,
-                  color: Color(0xFFF59E0B),
+                  color: ZaWolfColors.warning,
                   size: 14,
                 ),
                 const SizedBox(width: 4),
@@ -137,16 +138,16 @@ class _AnnouncementTile extends StatelessWidget {
                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                 decoration: BoxDecoration(
                   color: isPinned
-                      ? const Color(0xFFF59E0B).withValues(alpha: 0.2)
-                      : const Color(0xFF818CF8).withValues(alpha: 0.2),
+                      ? ZaWolfColors.warning.withValues(alpha: 0.2)
+                      : ZaWolfColors.dayoffPurple.withValues(alpha: 0.2),
                   borderRadius: BorderRadius.circular(6),
                 ),
                 child: Text(
                   category,
                   style: TextStyle(
                     color: isPinned
-                        ? const Color(0xFFF59E0B)
-                        : const Color(0xFF818CF8),
+                        ? ZaWolfColors.warning
+                        : ZaWolfColors.dayoffPurple,
                     fontSize: 10,
                     fontWeight: FontWeight.bold,
                   ),
@@ -157,7 +158,7 @@ class _AnnouncementTile extends StatelessWidget {
                 child: Text(
                   title,
                   style: const TextStyle(
-                    color: Colors.white,
+                    color: ZaWolfColors.textPrimary,
                     fontSize: 13,
                     fontWeight: FontWeight.w600,
                   ),
@@ -169,7 +170,7 @@ class _AnnouncementTile extends StatelessWidget {
             const SizedBox(height: 6),
             Text(
               body,
-              style: const TextStyle(color: Colors.white70, fontSize: 12),
+              style: const TextStyle(color: ZaWolfColors.textSecondary, fontSize: 12),
             ),
           ],
         ],

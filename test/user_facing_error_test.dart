@@ -35,4 +35,15 @@ void main() {
       'هذا الحساب مربوط بجهاز حضور آخر.',
     );
   });
+
+  test('maps missing account profile to clear HR guidance', () {
+    final message = userFacingError(Exception('Account profile not found'));
+    expect(message, contains('ملف وظيفي نشط'));
+    expect(message, contains('الموارد البشرية'));
+  });
+
+  test('maps web XMLHttpRequest error to connectivity guidance', () {
+    final message = userFacingError(Exception('XMLHttpRequest error'));
+    expect(message, contains('تحقق من الإنترنت'));
+  });
 }

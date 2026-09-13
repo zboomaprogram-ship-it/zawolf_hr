@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../../theme/theme.dart';
 import '../../domain/entities/unified_operational_request.dart';
 
 class ApprovalJourney extends StatelessWidget {
@@ -26,10 +27,10 @@ class ApprovalJourney extends StatelessWidget {
                       ? Icons.check_circle_outline
                       : Icons.schedule,
                   color: rejected
-                      ? Colors.red
+                      ? ZaWolfColors.error
                       : approved
-                      ? Colors.green
-                      : Colors.amber,
+                      ? ZaWolfColors.success
+                      : ZaWolfColors.warning,
                 ),
                 label: Text('${_label(stage.type)} · ${_status(stage.status)}'),
               );

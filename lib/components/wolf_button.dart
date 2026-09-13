@@ -40,12 +40,26 @@ class WolfButton extends StatelessWidget {
     // Determine decoration
     BoxDecoration decoration;
     TextStyle textStyle = theme.textTheme.titleMedium!.copyWith(
-      color: Colors.white,
+      color: ZaWolfColors.textPrimary,
       fontWeight: FontWeight.bold,
+      shadows: const [
+        Shadow(
+          color: Color(0x99000000),
+          blurRadius: 4,
+          offset: Offset(0, 1),
+        ),
+      ],
     );
     TextStyle? subStyle = theme.textTheme.bodySmall!.copyWith(
-      color: Colors.white.withValues(alpha: 0.8),
+      color: ZaWolfColors.textPrimary.withValues(alpha: 0.9),
       fontSize: 10,
+      shadows: const [
+        Shadow(
+          color: Color(0x99000000),
+          blurRadius: 3,
+          offset: Offset(0, 1),
+        ),
+      ],
     );
 
     switch (variant) {
@@ -156,7 +170,7 @@ class WolfButton extends StatelessWidget {
                       width: 24,
                       height: 24,
                       child: CircularProgressIndicator(
-                        color: Colors.white,
+                        color: ZaWolfColors.textPrimary,
                         strokeWidth: 2.5,
                       ),
                     )

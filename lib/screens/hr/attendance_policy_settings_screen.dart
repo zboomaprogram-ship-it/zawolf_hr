@@ -314,7 +314,7 @@ class _AttendancePolicySettingsScreenState
                   )
                 : Icon(
                     enabled ? Icons.logout : Icons.login,
-                    color: enabled ? Colors.amber : ZaWolfColors.primaryCyan,
+                    color: enabled ? ZaWolfColors.warning : ZaWolfColors.primaryCyan,
                   ),
             title: const Text('تسجيل الانصراف'),
             subtitle: Text(

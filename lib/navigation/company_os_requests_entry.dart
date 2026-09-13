@@ -22,11 +22,15 @@ final class CompanyOsRequestsEntry extends StatefulWidget {
     this.requestId,
     this.canDecide = false,
     this.initialCategory,
+    this.isEmbedded = false,
+    this.onSubmitted,
   });
   final CompanyOsRequestSurface surface;
   final String? requestId;
   final bool canDecide;
   final OperationalRequestCategory? initialCategory;
+  final bool isEmbedded;
+  final VoidCallback? onSubmitted;
 
   @override
   State<CompanyOsRequestsEntry> createState() => _CompanyOsRequestsEntryState();
@@ -67,6 +71,14 @@ final class _CompanyOsRequestsEntryState extends State<CompanyOsRequestsEntry> {
       (flags) => flags.isReady,
     );
     if (!ready) {
+      if (widget.isEmbedded) {
+        return const Center(
+          child: Padding(
+            padding: EdgeInsets.all(24.0),
+            child: CircularProgressIndicator(),
+          ),
+        );
+      }
       return const Directionality(
         textDirection: TextDirection.rtl,
         child: Scaffold(body: Center(child: CircularProgressIndicator())),
@@ -77,6 +89,8 @@ final class _CompanyOsRequestsEntryState extends State<CompanyOsRequestsEntry> {
         repository: _requests,
         attachmentRepository: _attachments,
         initialCategory: widget.initialCategory,
+        isEmbedded: widget.isEmbedded,
+        onSubmitted: widget.onSubmitted,
       ),
       CompanyOsRequestSurface.detail => OperationalRequestDetailPage(
         repository: _requests,

@@ -35,4 +35,13 @@ void main() {
 
     expect(failure.canRetrySafely, isTrue);
   });
+  test('capacity quota gives the company storage recovery instruction', () {
+    final failure = WorkspaceUserFacingError.fromHttpStatus(
+      429,
+      writeMayHaveStarted: false,
+    );
+    final message = WorkspaceUserFacingError.messageFor(failure);
+    expect(message.title, 'مساحة تخزين ملفات الشركة ممتلئة');
+    expect(message.body, contains('Google Drive'));
+  });
 }

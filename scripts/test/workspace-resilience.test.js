@@ -35,3 +35,14 @@ test('a completed operation replays its previous receipt after reconnect', async
   assert.equal(retry.kind, 'replay');
   assert.deepEqual(retry.receipt.state, 'acknowledged');
 });
+
+test('Drive storage quota is classified before the generic 403 access error', () => {
+  const safe = workspaceSafeError(
+    { status: 403, message: "The user's Drive storage quota has been exceeded." },
+    { writeMayHaveStarted: true },
+  );
+  assert.equal(safe.statusCode, 429);
+  assert.equal(safe.code, 'drive_storage_quota');
+  assert.equal(safe.retry, 'contact_responsible');
+  assert.match(safe.error, /مساحة تخزين/);
+});

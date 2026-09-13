@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../../theme/theme.dart';
 import '../domain/meeting_repository.dart';
 
 class MeetingRoomsManagementScreen extends StatefulWidget {
@@ -128,7 +129,7 @@ class _MeetingRoomsManagementScreenState
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(text),
-        backgroundColor: error ? Colors.red : Colors.green,
+        backgroundColor: error ? ZaWolfColors.error : ZaWolfColors.success,
       ),
     );
   }

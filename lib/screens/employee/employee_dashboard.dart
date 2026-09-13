@@ -26,8 +26,11 @@ import '../../models/company_day_off_status.dart';
 import '../../models/user_model.dart';
 import '../../utils/payroll_cycle.dart';
 import '../../features/attendance_checkin/attendance_checkin.dart';
-import '../../features/attendance_checkin/presentation/attendance_outcome_mapper.dart';
+import '../../features/attendance_checkin/presentation/attendance_failure_diagnostic.dart';
+import '../../services/audit_log_service.dart';
+import 'package:geolocator/geolocator.dart';
 import '../../navigation/developer_tools_entry.dart';
+import '../../features/web_attendance_access/data/web_attendance_access_repository_impl.dart';
 import '../../design_system/components/app_logo.dart';
 import '../../design_system/components/stat_card.dart';
 import '../../design_system/tokens.dart';
@@ -73,6 +76,8 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
   String? _pendingRequestCategory;
   bool _developerAttendanceAccess = false;
   String? _developerAttendanceAccessUserId;
+  bool _webAttendanceAccess = false;
+  String? _webAttendanceAccessUserId;
   AttendancePeriodSummary? _periodSummary;
   String? _periodSummaryScope;
   String? _periodSummaryLoadingScope;
@@ -133,6 +138,8 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
         _preparedUserId = null;
         _developerAttendanceAccess = false;
         _developerAttendanceAccessUserId = null;
+        _webAttendanceAccess = false;
+        _webAttendanceAccessUserId = null;
         _periodSummary = null;
         _periodSummaryScope = null;
         _periodSummaryLoadingScope = null;
@@ -178,12 +185,27 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
       _developerAttendanceAccessUserId = user.uid;
       unawaited(_loadDeveloperAttendanceAccess(user.uid));
     }
+    if (_webAttendanceAccessUserId != user.uid) {
+      _webAttendanceAccessUserId = user.uid;
+      unawaited(_loadWebAttendanceAccess(user.uid));
+    }
   }
 
   Future<void> _loadDeveloperAttendanceAccess(String userId) async {
     final enabled = await DeveloperToolsAccess.isAvailableForCurrentUser();
     if (!mounted || _developerAttendanceAccessUserId != userId) return;
     setState(() => _developerAttendanceAccess = enabled);
+  }
+
+  Future<void> _loadWebAttendanceAccess(String userId) async {
+    try {
+      final grant = await createWebAttendanceAccessRepository().myActiveGrant();
+      if (!mounted || _webAttendanceAccessUserId != userId) return;
+      setState(() => _webAttendanceAccess = grant != null);
+    } catch (_) {
+      if (!mounted || _webAttendanceAccessUserId != userId) return;
+      setState(() => _webAttendanceAccess = false);
+    }
   }
 
   Future<void> _checkCurrentGeofence() async {
@@ -332,8 +354,27 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
       unawaited(_refreshAttendanceAfterAction(employee));
       unawaited(_showAttendanceConfirmation(attendanceResult));
     } catch (e) {
+      final diagnostic = AttendanceFailureDiagnostic.fromError(e);
+      final failureMessage = _friendlyAttendanceError(e);
+      unawaited(
+        AuditLogService.instance.record(
+          actorId: employee.uid,
+          action: 'attendance_action_failed',
+          targetCollection: 'attendance',
+          targetId:
+              '${employee.uid}_${DateFormat('yyyy-MM-dd').format(DateTime.now())}',
+          metadata: {
+            'employeeName': employee.displayName,
+            'employeeId': employee.employeeId,
+            'intendedAction': expectedAction.name,
+            'errorCode': diagnostic.code,
+            'diagnosticTitle': diagnostic.title,
+            'diagnosticMessage': failureMessage,
+            'rawError': e.toString(),
+          },
+        ),
+      );
       if (mounted) {
-        final message = _friendlyAttendanceError(e);
         showDialog(
           context: context,
           builder:
@@ -341,37 +382,139 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
                 textDirection: TextDirection.rtl,
                 child: AlertDialog(
                   backgroundColor: ZaWolfColors.surface01,
-                  title: const Row(
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                    side: const BorderSide(color: ZaWolfColors.surface03),
+                  ),
+                  title: Row(
                     children: [
-                      Icon(
+                      const Icon(
                         Icons.warning_amber_rounded,
                         color: ZaWolfColors.warning,
+                        size: 24,
                       ),
-                      SizedBox(width: 8),
+                      const SizedBox(width: 10),
                       Expanded(
                         child: Text(
-                          'لم يكتمل تسجيل الحضور',
+                          diagnostic.title,
                           textAlign: TextAlign.right,
-                          style: TextStyle(color: Colors.white),
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 16,
+                          ),
                         ),
                       ),
                     ],
                   ),
-                  content: Text(
-                    message,
-                    textAlign: TextAlign.right,
-                    style: const TextStyle(
-                      color: ZaWolfColors.textSecondary,
-                      height: 1.7,
-                    ),
+                  content: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Text(
+                        failureMessage,
+                        textAlign: TextAlign.right,
+                        style: const TextStyle(
+                          color: ZaWolfColors.textSecondary,
+                          height: 1.6,
+                          fontSize: 14,
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 6,
+                        ),
+                        decoration: BoxDecoration(
+                          color: ZaWolfColors.surface02,
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(color: ZaWolfColors.surface03),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(
+                              Icons.info_outline,
+                              size: 14,
+                              color: ZaWolfColors.textSecondary,
+                            ),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Text(
+                                'رمز التشخيص: ${diagnostic.code}',
+                                style: const TextStyle(
+                                  color: ZaWolfColors.textSecondary,
+                                  fontSize: 11,
+                                  fontFamily: 'monospace',
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                   ),
                   actionsAlignment: MainAxisAlignment.start,
                   actions: [
+                    if (diagnostic.actionType ==
+                            AttendanceFailureActionType.openLocationSettings &&
+                        !kIsWeb)
+                      TextButton.icon(
+                        onPressed: () async {
+                          Navigator.pop(dialogContext);
+                          await Geolocator.openLocationSettings();
+                        },
+                        icon: const Icon(
+                          Icons.location_on,
+                          size: 16,
+                          color: ZaWolfColors.primaryCyan,
+                        ),
+                        label: const Text(
+                          'فتح إعدادات الموقع',
+                          style: TextStyle(color: ZaWolfColors.primaryCyan),
+                        ),
+                      ),
+                    if (diagnostic.actionType ==
+                            AttendanceFailureActionType.openAppSettings &&
+                        !kIsWeb)
+                      TextButton.icon(
+                        onPressed: () async {
+                          Navigator.pop(dialogContext);
+                          await Geolocator.openAppSettings();
+                        },
+                        icon: const Icon(
+                          Icons.settings,
+                          size: 16,
+                          color: ZaWolfColors.primaryCyan,
+                        ),
+                        label: const Text(
+                          'فتح إعدادات التطبيق',
+                          style: TextStyle(color: ZaWolfColors.primaryCyan),
+                        ),
+                      ),
+                    if (diagnostic.actionType ==
+                        AttendanceFailureActionType.retry)
+                      TextButton.icon(
+                        onPressed: () {
+                          Navigator.pop(dialogContext);
+                          _handleCheckInCheckOut(employee, expectedAction);
+                        },
+                        icon: const Icon(
+                          Icons.refresh,
+                          size: 16,
+                          color: ZaWolfColors.primaryCyan,
+                        ),
+                        label: const Text(
+                          'إعادة المحاولة',
+                          style: TextStyle(color: ZaWolfColors.primaryCyan),
+                        ),
+                      ),
                     TextButton(
                       onPressed: () => Navigator.pop(dialogContext),
                       child: const Text(
                         'حسنًا',
-                        style: TextStyle(color: ZaWolfColors.primaryCyan),
+                        style: TextStyle(color: ZaWolfColors.textSecondary),
                       ),
                     ),
                   ],
@@ -486,91 +629,14 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
   }
 
   String _friendlyAttendanceError(Object error) {
-    // The authenticated gateway exposes a fixed, safe business outcome. Keep
-    // that outcome intact so HR and the employee can distinguish an inactive
-    // account from a device conflict instead of seeing a generic denial.
-    if (error is AttendanceGatewayException) return error.userMessage;
-
-    final raw = error.toString().replaceAll('Exception: ', '').trim();
-    if (kDebugMode) debugPrint('Attendance action failure detail: $error');
-
-    if (raw.contains('INTERNAL ASSERTION') ||
-        raw.contains('Unexpected state') ||
-        raw.contains('firebase-firestore') ||
-        raw.contains('ASSERTION') ||
-        raw.contains('gstatic') ||
-        raw.contains('b815') ||
-        raw.contains('ca9') ||
-        raw.contains('__PRIVATE__') ||
-        raw.contains('WatchChangeAggregator')) {
-      return 'تم تحديث اتصال شبكة البيانات تلقائياً. يمكنك إجراء المحاولة الآن أو إعادة تنشيط الصفحة.';
+    if (error is AttendanceGatewayException) {
+      return error.userMessage;
     }
-
-    if (raw.contains('resource-exhausted') ||
-        raw.contains('resource_exhausted') ||
-        raw.contains('quota') ||
-        raw.contains('RESOURCE_EXHAUSTED')) {
-      return 'تم حفظ حضورك محلياً على الجهاز بنجاح لتجاوز الحد اليومي لقواعد البيانات، وستتم المزامنة تلقائياً عند تجديد الحد.';
+    final diagnostic = AttendanceFailureDiagnostic.fromError(error);
+    if (diagnostic.code == 'ERR_ATTENDANCE_UNKNOWN') {
+      return 'لم يتم حفظ تسجيل الحضور لهذه المحاولة، ولن يُسجَّل حضور مكرر. تأكد من تشغيل الإنترنت والموقع الدقيق ثم أعد المحاولة. إذا تكرر الأمر، يراجع HR حالة الحساب.';
     }
-
-    if (raw.contains('cloud_firestore/unavailable') ||
-        raw.contains('service is currently unavailable') ||
-        raw.contains('deadline-exceeded') ||
-        raw.contains('aborted') ||
-        raw.contains('network') ||
-        raw.contains('SocketException')) {
-      return 'خدمة الحضور مشغولة مؤقتاً أو يتعذر الاتصال بالشبكة. أعدنا المحاولة تلقائياً، وسيحفظ النظام حضورك للمزامنة فور توفر الإنترنت.';
-    }
-
-    if (raw.contains('TimeoutException') ||
-        raw.contains('Future not completed') ||
-        raw.contains('timeout')) {
-      return 'استغرقت عملية تحديد الموقع وقتاً أطول من المعتاد. يرجى التأكد من تشغيل الـ GPS والإنترنت، والانتقال لمكان مكشوف ثم أعد المحاولة.';
-    }
-
-    if (raw.contains('permission-denied') ||
-        raw.contains('SecurityException')) {
-      return 'تعذر حفظ الحضور بسبب إعداد أمان الحساب أو ربط الجهاز. لم يتم تسجيل العملية. أعد فتح التطبيق مرة واحدة؛ وإذا تكرر الخطأ، يراجع HR حالة الحساب وجهاز الحضور من شاشة الموظف.';
-    }
-
-    if (raw.contains('Mock GPS') ||
-        raw.contains('mock') ||
-        raw.contains('تزييف')) {
-      return 'تم الكشف عن استخدام تطبيق لتزييف الموقع الجغرافي (Mock GPS). لا يمكن تسجيل الحضور أثناء تفعيل التزييف.';
-    }
-
-    if (raw.contains('خارج نطاق') ||
-        raw.contains('outside_geofence') ||
-        raw.contains('outside')) {
-      return 'أنت حالياً خارج نطاق التغطية الجغرافية لفرع العمل الخاص بك. يرجى الاقتراب من الفرع أو التأكد من تفعيل خدمة الموقع الدقيق (GPS).';
-    }
-
-    if (raw.contains('location') &&
-        (raw.contains('empty') ||
-            raw.contains('null') ||
-            raw.contains('missing') ||
-            raw.contains('تعيين'))) {
-      return 'لم يتم تعيين موقع أو فرع عمل لحسابك بعد. يرجى التواصل مع إدارة الموارد البشرية لربط حسابك بفرع العمل الخاص بك.';
-    }
-
-    if (raw.contains('دقة') || raw.contains('accuracy')) {
-      return 'إشارة موقع GPS ضعيفة جداً. يرجى التواجد في مكان مكشوف والتأكد من تفعيل إذن الموقع الدقيق (High Accuracy) ثم إعادة المحاولة.';
-    }
-
-    const outcomes = AttendanceOutcomeMapper();
-    if (raw.contains('مسجل') ||
-        raw.contains('مكرر') ||
-        raw.contains('already_recorded')) {
-      return outcomes.messageFor('already_recorded');
-    }
-    if (raw.contains('انصراف') && raw.contains('مفع')) {
-      return outcomes.messageFor('checkout_disabled');
-    }
-    if (raw.contains('مزامنة')) return outcomes.messageFor('pending_sync');
-
-    return 'لم يتم حفظ تسجيل الحضور لهذه المحاولة، ولن يُسجَّل حضور مكرر. '
-        'تأكد من تشغيل الإنترنت والموقع الدقيق، ثم أغلق التطبيق وافتحه وأعد المحاولة. '
-        'إذا تكرر الأمر، يراجع HR حالة الحساب وموقع الحضور والجهاز المسجل من شاشة الموظف.';
+    return diagnostic.message;
   }
 
   bool _checkedCelebrations = false;
@@ -597,7 +663,7 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
                 title: performanceBadgeTitle(badgeId),
                 description: 'تهانينا! حصلت على شارة تميز جديدة من الشركة 🏆',
                 icon: Icons.emoji_events_rounded,
-                color: const Color(0xFFFFD700),
+                color: ZaWolfColors.perfGold,
               ),
         );
         WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -881,7 +947,7 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
                       const SizedBox(height: 16),
                     ],
 
-                    if (kIsWeb) ...[
+                    if (kIsWeb && !_webAttendanceAccess) ...[
                       WolfCard(
                         padding: const EdgeInsets.all(16),
                         child: Row(
@@ -943,7 +1009,7 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
                               child: Text(
                                 'غير مطبق عليك تسجيل الحضور/الانصراف (مستثنى من التقرير اليومي بقرار إداري). يمكنك استخدام جميع خدمات التطبيق والطلبات والمحادثات بشكل طبيعي.',
                                 style: TextStyle(
-                                  color: Colors.white,
+                                  color: ZaWolfColors.textPrimary,
                                   fontWeight: FontWeight.bold,
                                   fontSize: 13,
                                 ),
@@ -1110,7 +1176,7 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
                               icon: Icons.chat_bubble_outline_rounded,
                               label: 'شات القسم',
                               subtitle: 'Department Chat',
-                              color: Colors.purpleAccent,
+                              color: ZaWolfColors.dayoffPurple,
                               onTap: () => context.go('/conversations'),
                             ),
                           ],

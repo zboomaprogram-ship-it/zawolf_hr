@@ -129,7 +129,7 @@ class _SalesKpiMetricsContent extends StatelessWidget {
                     style: Theme.of(
                       context,
                     ).textTheme.titleLarge?.copyWith(
-                      color: Colors.white,
+                      color: ZaWolfColors.textPrimary,
                       fontWeight: FontWeight.bold,
                     ),
                   ),
@@ -314,7 +314,7 @@ class _ProviderMetricTile extends StatelessWidget {
               child: Text(
                 metric.value,
                 style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                  color: Colors.white,
+                  color: ZaWolfColors.textPrimary,
                   fontWeight: FontWeight.w700,
                 ),
               ),

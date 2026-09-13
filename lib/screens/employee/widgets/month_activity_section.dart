@@ -29,7 +29,7 @@ class MonthActivitySection extends StatelessWidget {
         Text(
           'النشاط الأخير (هذا الشهر)',
           style: theme.textTheme.titleMedium?.copyWith(
-            color: Colors.white,
+            color: ZaWolfColors.textPrimary,
             fontWeight: FontWeight.bold,
           ),
         ),
@@ -92,7 +92,7 @@ class MonthActivitySection extends StatelessWidget {
                           Text(
                             formatDay,
                             style: theme.textTheme.bodyMedium?.copyWith(
-                              color: Colors.white,
+                              color: ZaWolfColors.textPrimary,
                               fontWeight: FontWeight.bold,
                             ),
                           ),
@@ -139,7 +139,7 @@ class MonthActivitySection extends StatelessWidget {
                         Text(
                           DateFormat('EEEE dd MMM', 'ar').format(date),
                           style: theme.textTheme.bodyMedium?.copyWith(
-                            color: Colors.white,
+                            color: ZaWolfColors.textPrimary,
                             fontWeight: FontWeight.bold,
                           ),
                         ),

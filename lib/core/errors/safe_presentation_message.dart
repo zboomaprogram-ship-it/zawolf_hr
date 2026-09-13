@@ -4,7 +4,10 @@
 /// keeps Arabic guidance that our application deliberately throws while
 /// rejecting Firebase/network/stack details that must never be displayed.
 String? safeArabicBusinessMessage(Object error) {
-  final message = error.toString().replaceFirst('Exception: ', '').trim();
+  final message = error
+      .toString()
+      .replaceFirst(RegExp(r'^(?:Exception|Bad state|StateError):\s*'), '')
+      .trim();
   if (message.isEmpty || !RegExp(r'[\u0600-\u06FF]').hasMatch(message)) {
     return null;
   }

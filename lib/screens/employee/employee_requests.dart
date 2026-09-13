@@ -47,6 +47,8 @@ import '../shared/requests_log_screen.dart';
 import '../../utils/payroll_cycle.dart';
 import '../../utils/permission_cycle_accounting.dart';
 import '../../core/feature_flags/company_os_feature_flags.dart';
+import '../../features/company_os/domain/entities/operational_request_category.dart';
+import '../../navigation/company_os_requests_entry.dart';
 import 'widgets/virtual_office_game_widget.dart';
 
 enum _RequestAttachmentSource { gallery, files }
@@ -129,6 +131,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
   TimeOfDay? _requestedCorrectionTime;
 
   bool _loading = false;
+  String? _formErrorMessage;
   // The request centre intentionally keeps creation and history in one
   // surface.  This replaces the old two-tab design while retaining the
   // existing forms and history streams during the gradual migration.
@@ -138,6 +141,8 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
   int _requestTypeIndex = 0;
   String _historyStatusFilter = 'all';
   final Map<String, Stream<dynamic>> _streamCache = {};
+  final ScrollController _submitScrollController = ScrollController();
+  bool _autoValidate = false;
 
   @override
   void initState() {
@@ -192,6 +197,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
     _fieldMissionSiteController.dispose();
     _fieldMissionReasonController.dispose();
     _attendanceCorrectionReasonController.dispose();
+    _submitScrollController.dispose();
     super.dispose();
   }
 
@@ -528,20 +534,114 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
     });
   }
 
+  void _onValidationFailed({String? customMessage}) {
+    final message = customMessage ??
+        'يرجى استكمال الحقول الإلزامية وتصحيح الأخطاء المحددة باللون الأحمر أدناه.';
+    setState(() {
+      _autoValidate = true;
+      _formErrorMessage = message;
+    });
+    if (_submitScrollController.hasClients) {
+      _submitScrollController.animateTo(
+        0,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeOut,
+      );
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        backgroundColor: ZaWolfColors.error,
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 4),
+        content: Row(
+          children: [
+            const Icon(Icons.error_outline, color: Colors.white, size: 20),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                message,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                ),
+                textDirection: TextDirection.rtl,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSubmitButtonArea({
+    required VoidCallback onPressed,
+    required String text,
+    required String secondaryText,
+    WolfButtonVariant variant = WolfButtonVariant.primary,
+    bool loading = false,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (_formErrorMessage != null) ...[
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            margin: const EdgeInsets.only(bottom: 12),
+            decoration: BoxDecoration(
+              color: ZaWolfColors.error.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: ZaWolfColors.error.withValues(alpha: 0.45),
+              ),
+            ),
+            child: Row(
+              children: [
+                const Icon(
+                  Icons.error_outline,
+                  color: ZaWolfColors.error,
+                  size: 20,
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    _formErrorMessage!,
+                    style: const TextStyle(
+                      color: ZaWolfColors.error,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      height: 1.3,
+                    ),
+                    textDirection: TextDirection.rtl,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+        WolfButton(
+          onPressed: onPressed,
+          text: text,
+          secondaryText: secondaryText,
+          variant: variant,
+          loading: loading,
+        ),
+      ],
+    );
+  }
+
   // Submission handlers
   Future<void> _submitPermission(
     UserModel employee,
     PermissionCycleUsage cycleUsage,
   ) async {
-    if (!_formKeyPermission.currentState!.validate()) return;
+    if (!_formKeyPermission.currentState!.validate()) {
+      _onValidationFailed();
+      return;
+    }
     final timingError = _permissionTimeError(employee);
     if (timingError != null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          backgroundColor: ZaWolfColors.error,
-          content: Text(timingError),
-        ),
-      );
+      _onValidationFailed(customMessage: timingError);
       return;
     }
 
@@ -594,15 +694,18 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
         setState(() {
           _permissionDate = DateTime.now();
           _isDeductiblePermission = false;
+          _formErrorMessage = null;
+          _requestCentreView = 1;
         });
-        setState(() => _requestCentreView = 1);
       }
     } catch (e) {
       if (mounted) {
+        final message = 'فشل الإرسال: ${userFacingError(e)}';
+        setState(() => _formErrorMessage = message);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             backgroundColor: ZaWolfColors.error,
-            content: Text('فشل الإرسال: ${userFacingError(e)}'),
+            content: Text(message),
           ),
         );
       }
@@ -612,7 +715,10 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
   }
 
   Future<void> _submitAdministrativeRequest(UserModel employee) async {
-    if (!_formKeyAdministrative.currentState!.validate()) return;
+    if (!_formKeyAdministrative.currentState!.validate()) {
+      _onValidationFailed();
+      return;
+    }
     setState(() => _loading = true);
     try {
       final service = AdministrativeRequestService();
@@ -650,14 +756,19 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
             content: Text('تم إرسال الطلب الإداري بنجاح'),
           ),
         );
-        setState(() => _requestCentreView = 1);
+        setState(() {
+          _formErrorMessage = null;
+          _requestCentreView = 1;
+        });
       }
     } catch (error) {
       if (mounted) {
+        final message = 'تعذر الإرسال: ${userFacingError(error)}';
+        setState(() => _formErrorMessage = message);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             backgroundColor: ZaWolfColors.error,
-            content: Text('تعذر الإرسال: ${userFacingError(error)}'),
+            content: Text(message),
           ),
         );
       }
@@ -667,7 +778,10 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
   }
 
   Future<void> _submitFieldMissionDirect(UserModel employee) async {
-    if (!_formKeyFieldMission.currentState!.validate()) return;
+    if (!_formKeyFieldMission.currentState!.validate()) {
+      _onValidationFailed();
+      return;
+    }
     setState(() => _loading = true);
     try {
       final service = AdministrativeRequestService();
@@ -692,14 +806,19 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
             content: Text('تم إرسال طلب المهمة الميدانية بنجاح'),
           ),
         );
-        setState(() => _requestCentreView = 1);
+        setState(() {
+          _formErrorMessage = null;
+          _requestCentreView = 1;
+        });
       }
     } catch (error) {
       if (mounted) {
+        final message = 'تعذر الإرسال: ${userFacingError(error)}';
+        setState(() => _formErrorMessage = message);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             backgroundColor: ZaWolfColors.error,
-            content: Text('تعذر الإرسال: ${userFacingError(error)}'),
+            content: Text(message),
           ),
         );
       }
@@ -709,13 +828,14 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
   }
 
   Future<void> _submitAttendanceCorrection(UserModel employee) async {
-    if (!_formKeyAttendanceCorrection.currentState!.validate()) return;
+    if (!_formKeyAttendanceCorrection.currentState!.validate()) {
+      _onValidationFailed();
+      return;
+    }
     final attendance = _selectedCorrectionAttendance;
     final selectedTime = _requestedCorrectionTime;
     if (attendance == null || selectedTime == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('اختر يوم الحضور والوقت الصحيح.')),
-      );
+      _onValidationFailed(customMessage: 'اختر يوم الحضور والوقت الصحيح.');
       return;
     }
 
@@ -746,14 +866,19 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
             content: Text('تم إرسال طلب تصحيح الوقت إلى HR.'),
           ),
         );
-        setState(() => _requestCentreView = 1);
+        setState(() {
+          _formErrorMessage = null;
+          _requestCentreView = 1;
+        });
       }
     } catch (error) {
       if (mounted) {
+        final message = userFacingError(error);
+        setState(() => _formErrorMessage = message);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             backgroundColor: ZaWolfColors.error,
-            content: Text(userFacingError(error)),
+            content: Text(message),
           ),
         );
       }
@@ -763,22 +888,39 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
   }
 
   Future<void> _submitLeave(UserModel employee) async {
-    if (!_formKeyLeave.currentState!.validate()) return;
+    if (!_formKeyLeave.currentState!.validate()) {
+      _onValidationFailed();
+      return;
+    }
+
+    final days = _leaveEnd.difference(_leaveStart).inDays + 1;
+    final leaveType =
+        LeaveEntitlementPolicy.isOnProbation(
+              employee.hiringDate,
+              onDate: _leaveStart,
+            )
+            ? LeaveTypePolicy.unpaid
+            : _leaveType;
+
+    if (leaveType == LeaveTypePolicy.exam &&
+        (_attachmentUrl == null || _attachmentUrl!.trim().isEmpty)) {
+      _onValidationFailed(
+        customMessage: 'يجب إرفاق جدول الامتحان أو ما يفيد دخول الامتحان فعلياً.',
+      );
+      return;
+    }
+    if (leaveType == LeaveTypePolicy.paternity && days != 1) {
+      _onValidationFailed(
+        customMessage: 'إجازة المولود تكون ليوم واحد فقط.',
+      );
+      return;
+    }
 
     setState(() => _loading = true);
     final service = LeaveService();
     final authService = Provider.of<AuthService>(context, listen: false);
 
     try {
-      final days = _leaveEnd.difference(_leaveStart).inDays + 1;
-      final leaveType =
-          LeaveEntitlementPolicy.isOnProbation(
-                employee.hiringDate,
-                onDate: _leaveStart,
-              )
-              ? LeaveTypePolicy.unpaid
-              : _leaveType;
-
       final req = LeaveModel(
         leaveId: '',
         userId: employee.uid,
@@ -822,15 +964,18 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
           _convertSickToAnnual = false;
           _leaveStart = nextStart;
           _leaveEnd = nextStart;
+          _formErrorMessage = null;
+          _requestCentreView = 1;
         });
-        setState(() => _requestCentreView = 1);
       }
     } catch (e) {
       if (mounted) {
+        final message = 'فشل التقديم: ${userFacingError(e)}';
+        setState(() => _formErrorMessage = message);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             backgroundColor: ZaWolfColors.error,
-            content: Text('فشل التقديم: ${userFacingError(e)}'),
+            content: Text(message),
           ),
         );
       }
@@ -840,13 +985,33 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
   }
 
   Future<void> _submitAdvance(UserModel employee) async {
-    if (!_formKeyAdvance.currentState!.validate()) return;
+    if (!_formKeyAdvance.currentState!.validate()) {
+      _onValidationFailed();
+      return;
+    }
+
+    final now = DateTime.now();
+    final tenureEligible =
+        employee.hiringDate != null &&
+        now.difference(employee.hiringDate!).inDays >= 90;
+    final dateEligible = now.day >= 15;
+    if (!tenureEligible) {
+      _onValidationFailed(
+        customMessage: 'لا يمكن طلب سلفة قبل إتمام 3 أشهر من تاريخ التعيين.',
+      );
+      return;
+    }
+    if (!dateEligible) {
+      _onValidationFailed(
+        customMessage: 'طلب السلفة متاح فقط من يوم 15 إلى نهاية الشهر.',
+      );
+      return;
+    }
 
     setState(() => _loading = true);
     final service = AdvanceService();
 
     try {
-      final now = DateTime.now();
       final monthKey = PayrollCycle.keyFor(now);
 
       final req = AdvanceModel(
@@ -874,14 +1039,19 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
         );
         _advanceAmountController.clear();
         _advanceReasonController.clear();
-        setState(() => _requestCentreView = 1);
+        setState(() {
+          _formErrorMessage = null;
+          _requestCentreView = 1;
+        });
       }
     } catch (e) {
       if (mounted) {
+        final message = 'فشل التقديم: ${userFacingError(e)}';
+        setState(() => _formErrorMessage = message);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             backgroundColor: ZaWolfColors.error,
-            content: Text('فشل التقديم: ${userFacingError(e)}'),
+            content: Text(message),
           ),
         );
       }
@@ -891,7 +1061,10 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
   }
 
   Future<void> _submitComplaint(UserModel employee) async {
-    if (!_formKeyComplaint.currentState!.validate()) return;
+    if (!_formKeyComplaint.currentState!.validate()) {
+      _onValidationFailed();
+      return;
+    }
 
     setState(() => _loading = true);
     try {
@@ -916,15 +1089,18 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
         setState(() {
           _submitComplaintAnonymously = false;
           _complaintAttachmentUrl = null;
+          _formErrorMessage = null;
+          _requestCentreView = 1;
         });
-        setState(() => _requestCentreView = 1);
       }
     } catch (e) {
       if (mounted) {
+        final message = 'فشل إرسال الشكوى: ${userFacingError(e)}';
+        setState(() => _formErrorMessage = message);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             backgroundColor: ZaWolfColors.error,
-            content: Text('فشل إرسال الشكوى: ${userFacingError(e)}'),
+            content: Text(message),
           ),
         );
       }
@@ -934,7 +1110,10 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
   }
 
   Future<void> _submitResignation(UserModel employee) async {
-    if (!_formKeyResignation.currentState!.validate()) return;
+    if (!_formKeyResignation.currentState!.validate()) {
+      _onValidationFailed();
+      return;
+    }
     setState(() => _loading = true);
     try {
       await ResignationService().submit(
@@ -947,13 +1126,18 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('تم إرسال طلب الاستقالة بنجاح')),
       );
-      setState(() => _requestCentreView = 1);
+      setState(() {
+        _formErrorMessage = null;
+        _requestCentreView = 1;
+      });
     } catch (error) {
       if (!mounted) return;
+      final message = 'فشل الإرسال: ${userFacingError(error)}';
+      setState(() => _formErrorMessage = message);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           backgroundColor: ZaWolfColors.error,
-          content: Text('فشل الإرسال: ${userFacingError(error)}'),
+          content: Text(message),
         ),
       );
     } finally {
@@ -1243,6 +1427,8 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
   void _openDirectRequest(int requestTypeIndex) {
     setState(() {
       _requestTypeIndex = requestTypeIndex;
+      _formErrorMessage = null;
+      _autoValidate = false;
       _requestCentreView = 1;
     });
   }
@@ -1263,8 +1449,19 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
       );
       return;
     }
-    setState(() => _requestCentreView = 1);
-    context.push('/employee/requests/operational/new?category=$category');
+    final types = _requestTypes(context);
+    final targetId = category == 'financial'
+        ? 'operational_financial'
+        : 'operational_technical';
+    final targetIndex = types.indexWhere((t) => t.id == targetId);
+    setState(() {
+      _requestCentreView = 1;
+      if (targetIndex >= 0) {
+        _requestTypeIndex = targetIndex;
+      }
+      _formErrorMessage = null;
+      _autoValidate = false;
+    });
   }
 
   void _showGateClockInModal(UserModel user, ThemeData theme) {
@@ -1283,13 +1480,13 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
                 const Icon(
                   Icons.sensor_door,
                   size: 48,
-                  color: Colors.greenAccent,
+                  color: ZaWolfColors.wolfGreen,
                 ),
                 const SizedBox(height: 12),
                 const Text(
                   '🚪 بوابة الشركة الرئيسية',
                   style: TextStyle(
-                    color: Colors.white,
+                    color: ZaWolfColors.textPrimary,
                     fontSize: 18,
                     fontWeight: FontWeight.bold,
                   ),
@@ -1297,7 +1494,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
                 const SizedBox(height: 8),
                 const Text(
                   'يمكنك تسجيل الحضور (Check-In) عند وصولك للبوابة الرئيسية.',
-                  style: TextStyle(color: Colors.white70),
+                  style: TextStyle(color: ZaWolfColors.textSecondary),
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 20),
@@ -1318,7 +1515,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      backgroundColor: theme.scaffoldBackgroundColor,
+      backgroundColor: ZaWolfColors.surface01,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
@@ -1337,13 +1534,13 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
                       const Icon(
                         Icons.badge_outlined,
                         size: 42,
-                        color: Colors.cyanAccent,
+                        color: ZaWolfColors.primaryCyan,
                       ),
                       const SizedBox(height: 8),
                       const Text(
                         '📄 مكتب الموارد البشرية (HR)',
                         style: TextStyle(
-                          color: Colors.white,
+                          color: ZaWolfColors.textPrimary,
                           fontSize: 18,
                           fontWeight: FontWeight.bold,
                         ),
@@ -1358,7 +1555,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
                         ),
                         title: const Text(
                           'طلب إجازة (Leave Request)',
-                          style: TextStyle(color: Colors.white),
+                          style: TextStyle(color: ZaWolfColors.textPrimary),
                         ),
                         onTap: () {
                           Navigator.pop(context);
@@ -1372,7 +1569,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
                         ),
                         title: const Text(
                           'طلب استئذان (Time Permission)',
-                          style: TextStyle(color: Colors.white),
+                          style: TextStyle(color: ZaWolfColors.textPrimary),
                         ),
                         onTap: () {
                           Navigator.pop(context);
@@ -1386,7 +1583,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
                         ),
                         title: const Text(
                           'تصحيح بصمة / حضور',
-                          style: TextStyle(color: Colors.white),
+                          style: TextStyle(color: ZaWolfColors.textPrimary),
                         ),
                         onTap: () {
                           Navigator.pop(context);
@@ -1396,11 +1593,11 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
                       ListTile(
                         leading: const Icon(
                           Icons.receipt_long,
-                          color: Colors.amberAccent,
+                          color: ZaWolfColors.perfGold,
                         ),
                         title: const Text(
                           'تفاصيل الخصومات وسجل الحضور',
-                          style: TextStyle(color: Colors.white),
+                          style: TextStyle(color: ZaWolfColors.textPrimary),
                         ),
                         onTap: () {
                           Navigator.pop(context);
@@ -1417,7 +1614,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
   void _showITDeskModal(UserModel user, ThemeData theme) {
     showModalBottomSheet(
       context: context,
-      backgroundColor: theme.scaffoldBackgroundColor,
+      backgroundColor: ZaWolfColors.surface01,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
@@ -1430,13 +1627,13 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
                 const Icon(
                   Icons.computer,
                   size: 42,
-                  color: Colors.purpleAccent,
+                  color: ZaWolfColors.dayoffPurple,
                 ),
                 const SizedBox(height: 8),
                 const Text(
                   '💻 مكتب الدعم التقني والتشغيل',
                   style: TextStyle(
-                    color: Colors.white,
+                    color: ZaWolfColors.textPrimary,
                     fontSize: 18,
                     fontWeight: FontWeight.bold,
                   ),
@@ -1445,11 +1642,11 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
                 ListTile(
                   leading: const Icon(
                     Icons.support_agent,
-                    color: Colors.purpleAccent,
+                    color: ZaWolfColors.dayoffPurple,
                   ),
                   title: const Text(
                     'طلب دعم تقني / اشتراك برامج',
-                    style: TextStyle(color: Colors.white),
+                    style: TextStyle(color: ZaWolfColors.textPrimary),
                   ),
                   onTap: () {
                     Navigator.pop(context);
@@ -1459,11 +1656,11 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
                 ListTile(
                   leading: const Icon(
                     Icons.devices,
-                    color: Colors.purpleAccent,
+                    color: ZaWolfColors.dayoffPurple,
                   ),
                   title: const Text(
                     'طلب عهدة / أجهزة ومعدات',
-                    style: TextStyle(color: Colors.white),
+                    style: TextStyle(color: ZaWolfColors.textPrimary),
                   ),
                   onTap: () {
                     Navigator.pop(context);
@@ -1478,11 +1675,11 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
                     ),
                     title: const Text(
                       'بوابة مستندات الشركة (Google Workspace)',
-                      style: TextStyle(color: Colors.white),
+                      style: TextStyle(color: ZaWolfColors.textPrimary),
                     ),
                     subtitle: const Text(
                       'متاحة عبر المتصفح ومساحة العمل الرسمية',
-                      style: TextStyle(color: Colors.white54, fontSize: 11),
+                      style: TextStyle(color: ZaWolfColors.textMuted, fontSize: 11),
                     ),
                     onTap: () {
                       Navigator.pop(context);
@@ -1498,7 +1695,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
   void _showFinanceOfficeModal(UserModel user, ThemeData theme) {
     showModalBottomSheet(
       context: context,
-      backgroundColor: theme.scaffoldBackgroundColor,
+      backgroundColor: ZaWolfColors.surface01,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
@@ -1511,13 +1708,13 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
                 const Icon(
                   Icons.account_balance_wallet_outlined,
                   size: 42,
-                  color: Colors.amberAccent,
+                  color: ZaWolfColors.perfGold,
                 ),
                 const SizedBox(height: 8),
                 const Text(
                   '💰 المكتب المالي',
                   style: TextStyle(
-                    color: Colors.white,
+                    color: ZaWolfColors.textPrimary,
                     fontSize: 18,
                     fontWeight: FontWeight.bold,
                   ),
@@ -1526,11 +1723,11 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
                 ListTile(
                   leading: const Icon(
                     Icons.payments,
-                    color: Colors.amberAccent,
+                    color: ZaWolfColors.perfGold,
                   ),
                   title: const Text(
                     'طلب سلفة مالية (Salary Advance)',
-                    style: TextStyle(color: Colors.white),
+                    style: TextStyle(color: ZaWolfColors.textPrimary),
                   ),
                   onTap: () {
                     Navigator.pop(context);
@@ -1540,11 +1737,11 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
                 ListTile(
                   leading: const Icon(
                     Icons.description,
-                    color: Colors.amberAccent,
+                    color: ZaWolfColors.perfGold,
                   ),
                   title: const Text(
                     'تقديم اعتراض / تسوية خصم',
-                    style: TextStyle(color: Colors.white),
+                    style: TextStyle(color: ZaWolfColors.textPrimary),
                   ),
                   onTap: () {
                     Navigator.pop(context);
@@ -1560,7 +1757,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
   void _showManagerOfficeModal(UserModel user, ThemeData theme) {
     showModalBottomSheet(
       context: context,
-      backgroundColor: theme.scaffoldBackgroundColor,
+      backgroundColor: ZaWolfColors.surface01,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
@@ -1573,13 +1770,13 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
                 const Icon(
                   Icons.business_center_outlined,
                   size: 42,
-                  color: Colors.blueAccent,
+                  color: ZaWolfColors.primaryBlue,
                 ),
                 const SizedBox(height: 8),
                 const Text(
                   '👔 مكتب الإدارة والمهمات',
                   style: TextStyle(
-                    color: Colors.white,
+                    color: ZaWolfColors.textPrimary,
                     fontSize: 18,
                     fontWeight: FontWeight.bold,
                   ),
@@ -1588,11 +1785,11 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
                 ListTile(
                   leading: const Icon(
                     Icons.alt_route,
-                    color: Colors.blueAccent,
+                    color: ZaWolfColors.primaryBlue,
                   ),
                   title: const Text(
                     'طلب مهمة ميدانية (Field Mission)',
-                    style: TextStyle(color: Colors.white),
+                    style: TextStyle(color: ZaWolfColors.textPrimary),
                   ),
                   onTap: () {
                     Navigator.pop(context);
@@ -1610,15 +1807,15 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
                   ListTile(
                     leading: const Icon(
                       Icons.forum_outlined,
-                      color: Colors.cyanAccent,
+                      color: ZaWolfColors.primaryCyan,
                     ),
                     title: const Text(
                       'قناة المديرين',
-                      style: TextStyle(color: Colors.white),
+                      style: TextStyle(color: ZaWolfColors.textPrimary),
                     ),
                     subtitle: const Text(
                       'محادثة الإدارة والمنسقين',
-                      style: TextStyle(color: Colors.white60),
+                      style: TextStyle(color: ZaWolfColors.textMuted),
                     ),
                     onTap: () {
                       Navigator.pop(context);
@@ -1632,7 +1829,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
                   ),
                   title: const Text(
                     'تقديم استقالة (Resignation Notice)',
-                    style: TextStyle(color: Colors.white),
+                    style: TextStyle(color: ZaWolfColors.textPrimary),
                   ),
                   onTap: () {
                     Navigator.pop(context);
@@ -1645,8 +1842,62 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
     );
   }
 
+  Widget _buildFormErrorBanner(ThemeData theme) {
+    if (_formErrorMessage == null) return const SizedBox.shrink();
+    return Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: 14,
+        vertical: 10,
+      ),
+      decoration: BoxDecoration(
+        color: ZaWolfColors.error.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: ZaWolfColors.error.withValues(alpha: 0.45),
+        ),
+      ),
+      child: Row(
+        children: [
+          const Icon(
+            Icons.error_outline,
+            color: ZaWolfColors.error,
+            size: 22,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              _formErrorMessage!,
+              style: theme.textTheme.bodyMedium!.copyWith(
+                color: ZaWolfColors.error,
+                height: 1.4,
+              ),
+              textDirection: TextDirection.rtl,
+            ),
+          ),
+          IconButton(
+            icon: const Icon(
+              Icons.close,
+              size: 18,
+              color: ZaWolfColors.error,
+            ),
+            tooltip: 'إغلاق',
+            visualDensity: VisualDensity.compact,
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(),
+            onPressed: () {
+              setState(() {
+                _formErrorMessage = null;
+              });
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildSubmitConsole(UserModel user, ThemeData theme) {
     return SingleChildScrollView(
+      controller: _submitScrollController,
       padding: const EdgeInsets.all(16.0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1668,20 +1919,15 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
           const SizedBox(height: 16),
           _buildLeaveBalanceSummary(user, theme),
           const SizedBox(height: 18),
+          if (_formErrorMessage != null) ...[
+            _buildFormErrorBanner(theme),
+            const SizedBox(height: 16),
+          ],
           AnimatedSwitcher(
             duration: const Duration(milliseconds: 180),
             child: KeyedSubtree(
               key: ValueKey(_requestTypeIndex),
-              child: switch (_requestTypeIndex) {
-                0 => _buildPermissionForm(user, theme),
-                1 => _buildLeaveForm(user, theme),
-                2 => _buildAdvanceForm(user, theme),
-                3 => _buildComplaintForm(user, theme),
-                4 => _buildResignationForm(user, theme),
-                5 => _buildAdministrativeRequestForm(user, theme),
-                6 => _buildFieldMissionForm(user, theme),
-                _ => _buildAttendanceCorrectionForm(user, theme),
-              },
+              child: _buildFormForIndex(user, theme, _requestTypes(context)),
             ),
           ),
         ],
@@ -1689,61 +1935,71 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
     );
   }
 
-  Widget _buildRequestTypeSelector(ThemeData theme) {
+  List<({String id, String label, IconData icon, Color color, String? route})>
+  _requestTypes(BuildContext context) {
     final actorId = context.read<AuthService>().currentUser?.uid ?? '';
     final operationalEnabled = context
         .read<CompanyOsFeatureFlags>()
         .isEnabledFor(feature: CompanyOsFeature.requests, actorId: actorId);
-    final types = <({String label, IconData icon, Color color, String? route})>[
+    return <({String id, String label, IconData icon, Color color, String? route})>[
       (
+        id: 'permission',
         label: 'إذن',
         icon: Icons.schedule_outlined,
         color: ZaWolfColors.permissionTeal,
         route: null,
       ),
       (
+        id: 'leave',
         label: 'إجازة',
         icon: Icons.event_available_outlined,
         color: ZaWolfColors.dayoffPurple,
         route: null,
       ),
       (
+        id: 'advance',
         label: 'سلفة',
         icon: Icons.account_balance_wallet_outlined,
         color: ZaWolfColors.warning,
         route: null,
       ),
       (
+        id: 'complaint',
         label: 'شكوى',
         icon: Icons.feedback_outlined,
         color: ZaWolfColors.error,
         route: null,
       ),
       (
+        id: 'resignation',
         label: 'استقالة',
         icon: Icons.meeting_room_outlined,
         color: ZaWolfColors.error,
         route: null,
       ),
       (
+        id: 'administrative',
         label: 'خدمات الموظف والشؤون الإدارية',
         icon: Icons.assignment_outlined,
         color: ZaWolfColors.primaryBlue,
         route: null,
       ),
       (
+        id: 'field_mission',
         label: 'مهمة ميدانية',
         icon: Icons.explore_outlined,
         color: ZaWolfColors.primaryCyan,
         route: null,
       ),
       (
+        id: 'attendance_correction',
         label: 'تصحيح حضور',
         icon: Icons.edit_calendar_outlined,
         color: ZaWolfColors.success,
         route: null,
       ),
       (
+        id: 'meeting',
         label: 'طلب اجتماع',
         icon: Icons.groups_2_outlined,
         color: ZaWolfColors.primaryCyan,
@@ -1751,19 +2007,64 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
       ),
       if (operationalEnabled)
         (
+          id: 'operational_technical',
           label: 'خدمات تقنية وتشغيلية',
           icon: Icons.computer_outlined,
           color: ZaWolfColors.primaryCyan,
-          route: '/employee/requests/operational/new?category=technical',
+          route: null,
         ),
       if (operationalEnabled)
         (
+          id: 'operational_financial',
           label: 'مصروفات ومدفوعات الشركة',
           icon: Icons.payments_outlined,
           color: ZaWolfColors.warning,
-          route: '/employee/requests/operational/new?category=financial',
+          route: null,
         ),
     ];
+  }
+
+  Widget _buildFormForIndex(
+    UserModel user,
+    ThemeData theme,
+    List<({String id, String label, IconData icon, Color color, String? route})>
+    types,
+  ) {
+    final typeId =
+        (_requestTypeIndex >= 0 && _requestTypeIndex < types.length)
+            ? types[_requestTypeIndex].id
+            : 'permission';
+    return switch (typeId) {
+      'permission' => _buildPermissionForm(user, theme),
+      'leave' => _buildLeaveForm(user, theme),
+      'advance' => _buildAdvanceForm(user, theme),
+      'complaint' => _buildComplaintForm(user, theme),
+      'resignation' => _buildResignationForm(user, theme),
+      'administrative' => _buildAdministrativeRequestForm(user, theme),
+      'field_mission' => _buildFieldMissionForm(user, theme),
+      'attendance_correction' => _buildAttendanceCorrectionForm(user, theme),
+      'operational_technical' => CompanyOsRequestsEntry(
+        surface: CompanyOsRequestSurface.create,
+        initialCategory: OperationalRequestCategory.technical,
+        isEmbedded: true,
+        onSubmitted: () {
+          if (mounted) setState(() => _requestCentreView = 1);
+        },
+      ),
+      'operational_financial' => CompanyOsRequestsEntry(
+        surface: CompanyOsRequestSurface.create,
+        initialCategory: OperationalRequestCategory.financial,
+        isEmbedded: true,
+        onSubmitted: () {
+          if (mounted) setState(() => _requestCentreView = 1);
+        },
+      ),
+      _ => _buildPermissionForm(user, theme),
+    };
+  }
+
+  Widget _buildRequestTypeSelector(ThemeData theme) {
+    final types = _requestTypes(context);
     return LayoutBuilder(
       builder: (context, constraints) {
         final itemWidth = (constraints.maxWidth - 10) / 2;
@@ -1785,7 +2086,11 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
                         context.push(route);
                         return;
                       }
-                      setState(() => _requestTypeIndex = index);
+                      setState(() {
+                        _requestTypeIndex = index;
+                        _formErrorMessage = null;
+                        _autoValidate = false;
+                      });
                     },
                     borderRadius: BorderRadius.circular(8),
                     child: AnimatedContainer(
@@ -1973,10 +2278,13 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
 
     return Form(
       key: _formKeyPermission,
-      child: SingleChildScrollView(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
+      autovalidateMode:
+          _autoValidate
+              ? AutovalidateMode.onUserInteraction
+              : AutovalidateMode.disabled,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
             // Balance Info Alert
             Container(
               padding: const EdgeInsets.all(12),
@@ -2063,7 +2371,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
                     if (val) setState(() => _permissionType = 'early_leave');
                   },
                   selectedColor: ZaWolfColors.permissionTeal,
-                  checkmarkColor: Colors.white,
+                  checkmarkColor: ZaWolfColors.textPrimary,
                 ),
                 ChoiceChip(
                   label: const Center(child: Text('مغادرة والعودة')),
@@ -2078,7 +2386,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
                     }
                   },
                   selectedColor: ZaWolfColors.permissionTeal,
-                  checkmarkColor: Colors.white,
+                  checkmarkColor: ZaWolfColors.textPrimary,
                 ),
                 ChoiceChip(
                   label: const Center(child: Text('تأخير حضور')),
@@ -2087,7 +2395,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
                     if (val) setState(() => _permissionType = 'late_arrival');
                   },
                   selectedColor: ZaWolfColors.permissionTeal,
-                  checkmarkColor: Colors.white,
+                  checkmarkColor: ZaWolfColors.textPrimary,
                 ),
               ],
             ),
@@ -2293,7 +2601,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
                     label: Text('$hours ساعة'),
                     selected: _permissionDurationHours == hours,
                     selectedColor: ZaWolfColors.permissionTeal,
-                    checkmarkColor: Colors.white,
+                    checkmarkColor: ZaWolfColors.textPrimary,
                     onSelected: (selected) {
                       if (selected) {
                         setState(() => _permissionDurationHours = hours);
@@ -2337,7 +2645,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
               ),
             ],
 
-            WolfButton(
+            _buildSubmitButtonArea(
               onPressed: () => _submitPermission(user, usage),
               text: 'تقديم طلب الإذن',
               secondaryText: 'SUBMIT PERMISSION',
@@ -2346,7 +2654,6 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
             ),
           ],
         ),
-      ),
     );
   }
 
@@ -2361,10 +2668,13 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
 
     return Form(
       key: _formKeyLeave,
-      child: SingleChildScrollView(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
+      autovalidateMode:
+          _autoValidate
+              ? AutovalidateMode.onUserInteraction
+              : AutovalidateMode.disabled,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
             // Leave type selection row
             Wrap(
               spacing: 8,
@@ -2432,19 +2742,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
               ],
             ),
             const SizedBox(height: 8),
-            if (selectedLeaveType == LeaveTypePolicy.sick &&
-                user.leaveBalance.daysOff >= requestedDays)
-              CheckboxListTile(
-                contentPadding: EdgeInsets.zero,
-                value: _convertSickToAnnual,
-                onChanged:
-                    (value) =>
-                        setState(() => _convertSickToAnnual = value ?? false),
-                title: const Text(
-                  'تحويل الإجازة المرضية إلى إجازة سنوية مخصومة من الرصيد',
-                ),
-                subtitle: const Text('سيُخصم الرصيد فقط بعد اعتماد الطلب.'),
-              ),
+
             Text(
               isOnProbation
                   ? 'خلال أول 6 أشهر تكون الإجازة بدون راتب. تظل أذونات الوقت متاحة بصورة طبيعية.'
@@ -2509,14 +2807,35 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
                     ),
                   ],
                 );
-                final dateButton = TextButton.icon(
+                final dateButton = OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    backgroundColor:
+                        ZaWolfColors.primaryCyan.withValues(alpha: 0.12),
+                    foregroundColor: ZaWolfColors.primaryCyan,
+                    side: const BorderSide(
+                      color: ZaWolfColors.primaryCyan,
+                      width: 1.2,
+                    ),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 10,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
                   icon: const Icon(
-                    Icons.date_range,
+                    Icons.calendar_month,
                     color: ZaWolfColors.primaryCyan,
+                    size: 18,
                   ),
                   label: Text(
                     _leaveMultipleDays ? 'اختيار الفترة' : 'اختيار اليوم',
-                    style: TextStyle(color: ZaWolfColors.primaryCyan),
+                    style: const TextStyle(
+                      color: ZaWolfColors.primaryCyan,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 13,
+                    ),
                   ),
                   onPressed:
                       () => _selectLeaveDateRange(
@@ -2608,7 +2927,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
             ),
             const SizedBox(height: 16),
 
-            WolfButton(
+            _buildSubmitButtonArea(
               onPressed: () => _submitLeave(user),
               text: 'تقديم طلب إجازة',
               secondaryText: 'SUBMIT LEAVE REQUEST',
@@ -2616,7 +2935,6 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
             ),
           ],
         ),
-      ),
     );
   }
 
@@ -2629,74 +2947,76 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
     final dateEligible = now.day >= 15;
     return Form(
       key: _formKeyAdvance,
-      child: SingleChildScrollView(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: ZaWolfColors.warning.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color: ZaWolfColors.warning.withValues(alpha: 0.3),
-                ),
-              ),
-              child: Text(
-                'سيتم خصم مبلغ السلفة من راتب الشهر الحالي بعد موافقة الإدارة.',
-                style: theme.textTheme.bodySmall!.copyWith(
-                  color: ZaWolfColors.warning,
-                  fontWeight: FontWeight.bold,
-                ),
-                textDirection: TextDirection.rtl,
+      autovalidateMode:
+          _autoValidate
+              ? AutovalidateMode.onUserInteraction
+              : AutovalidateMode.disabled,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: ZaWolfColors.warning.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: ZaWolfColors.warning.withValues(alpha: 0.3),
               ),
             ),
-            const SizedBox(height: 16),
-            Text(
-              'الحد الأقصى: ${maximum.toStringAsFixed(0)} ${user.salaryCurrency} · ${tenureEligible ? 'مدة الخدمة مكتملة' : 'لم تكتمل 3 أشهر خدمة'} · ${dateEligible ? 'متاح هذا الشهر' : 'متاح بدءاً من يوم 15'}',
+            child: Text(
+              'سيتم خصم مبلغ السلفة من راتب الشهر الحالي بعد موافقة الإدارة.',
+              style: theme.textTheme.bodySmall!.copyWith(
+                color: ZaWolfColors.warning,
+                fontWeight: FontWeight.bold,
+              ),
               textDirection: TextDirection.rtl,
-              style: theme.textTheme.bodySmall?.copyWith(
-                color:
-                    tenureEligible && dateEligible
-                        ? ZaWolfColors.success
-                        : ZaWolfColors.warning,
-              ),
             ),
-            const SizedBox(height: 10),
-            WolfInputField(
-              controller: _advanceAmountController,
-              labelText: 'المبلغ المطلوب (${user.salaryCurrency})',
-              englishLabel: 'Amount',
-              hintText: 'مثال: 500',
-              keyboardType: TextInputType.number,
-              validator: (val) {
-                if (val == null || val.isEmpty) return 'المبلغ مطلوب';
-                final amt = double.tryParse(val);
-                if (amt == null || amt <= 0) return 'مبلغ غير صحيح';
-                if (amt > maximum) {
-                  return 'الحد الأقصى المتاح ${maximum.toStringAsFixed(0)} ${user.salaryCurrency}.';
-                }
-                return null;
-              },
+          ),
+          const SizedBox(height: 16),
+          Text(
+            'الحد الأقصى: ${maximum.toStringAsFixed(0)} ${user.salaryCurrency} · ${tenureEligible ? 'مدة الخدمة مكتملة' : 'لم تكتمل 3 أشهر خدمة'} · ${dateEligible ? 'متاح هذا الشهر' : 'متاح بدءاً من يوم 15'}',
+            textDirection: TextDirection.rtl,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color:
+                  tenureEligible && dateEligible
+                      ? ZaWolfColors.success
+                      : ZaWolfColors.warning,
             ),
-            const SizedBox(height: 16),
-            WolfInputField(
-              controller: _advanceReasonController,
-              labelText: 'سبب طلب السلفة (اختياري)',
-              englishLabel: 'Reason',
-              hintText: 'تفاصيل إضافية...',
-              maxLines: 2,
-            ),
-            const SizedBox(height: 20),
-            WolfButton(
-              onPressed: () => _submitAdvance(user),
-              text: 'تقديم طلب سلفة',
-              secondaryText: 'SUBMIT ADVANCE REQUEST',
-              variant: WolfButtonVariant.primary,
-              loading: _loading,
-            ),
-          ],
-        ),
+          ),
+          const SizedBox(height: 10),
+          WolfInputField(
+            controller: _advanceAmountController,
+            labelText: 'المبلغ المطلوب (${user.salaryCurrency})',
+            englishLabel: 'Amount',
+            hintText: 'مثال: 500',
+            keyboardType: TextInputType.number,
+            validator: (val) {
+              if (val == null || val.isEmpty) return 'المبلغ مطلوب';
+              final amt = double.tryParse(val);
+              if (amt == null || amt <= 0) return 'مبلغ غير صحيح';
+              if (amt > maximum) {
+                return 'الحد الأقصى المتاح ${maximum.toStringAsFixed(0)} ${user.salaryCurrency}.';
+              }
+              return null;
+            },
+          ),
+          const SizedBox(height: 16),
+          WolfInputField(
+            controller: _advanceReasonController,
+            labelText: 'سبب طلب السلفة (اختياري)',
+            englishLabel: 'Reason',
+            hintText: 'تفاصيل إضافية...',
+            maxLines: 2,
+          ),
+          const SizedBox(height: 20),
+          _buildSubmitButtonArea(
+            onPressed: () => _submitAdvance(user),
+            text: 'تقديم طلب سلفة',
+            secondaryText: 'SUBMIT ADVANCE REQUEST',
+            variant: WolfButtonVariant.primary,
+            loading: _loading,
+          ),
+        ],
       ),
     );
   }
@@ -2704,124 +3024,126 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
   Widget _buildComplaintForm(UserModel user, ThemeData theme) {
     return Form(
       key: _formKeyComplaint,
-      child: SingleChildScrollView(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: ZaWolfColors.warning.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color: ZaWolfColors.warning.withValues(alpha: 0.3),
-                ),
+      autovalidateMode:
+          _autoValidate
+              ? AutovalidateMode.onUserInteraction
+              : AutovalidateMode.disabled,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: ZaWolfColors.warning.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: ZaWolfColors.warning.withValues(alpha: 0.3),
               ),
-              child: Text(
-                'سيتم إرسال الشكوى إلى HR والإدارة العليا للمراجعة.',
-                style: theme.textTheme.bodySmall!.copyWith(
-                  color: ZaWolfColors.warning,
-                  fontWeight: FontWeight.bold,
-                ),
+            ),
+            child: Text(
+              'سيتم إرسال الشكوى إلى HR والإدارة العليا للمراجعة.',
+              style: theme.textTheme.bodySmall!.copyWith(
+                color: ZaWolfColors.warning,
+                fontWeight: FontWeight.bold,
+              ),
+              textDirection: TextDirection.rtl,
+            ),
+          ),
+          const SizedBox(height: 16),
+          Container(
+            decoration: BoxDecoration(
+              color:
+                  _submitComplaintAnonymously
+                      ? ZaWolfColors.primaryCyan.withValues(alpha: 0.08)
+                      : ZaWolfColors.surface01,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color:
+                    _submitComplaintAnonymously
+                        ? ZaWolfColors.primaryCyan.withValues(alpha: 0.55)
+                        : ZaWolfColors.surface02,
+              ),
+            ),
+            child: SwitchListTile.adaptive(
+              value: _submitComplaintAnonymously,
+              activeTrackColor: ZaWolfColors.primaryCyan,
+              onChanged:
+                  _loading
+                      ? null
+                      : (value) {
+                        setState(() => _submitComplaintAnonymously = value);
+                      },
+              secondary: Icon(
+                _submitComplaintAnonymously
+                    ? Icons.visibility_off_outlined
+                    : Icons.badge_outlined,
+                color:
+                    _submitComplaintAnonymously
+                        ? ZaWolfColors.primaryCyan
+                        : ZaWolfColors.textSecondary,
+              ),
+              title: const Text(
+                'إرسال الشكوى كمجهول',
+                textDirection: TextDirection.rtl,
+              ),
+              subtitle: const Text(
+                'لن يظهر اسمك أو كودك أو قسمك للمراجعين داخل التطبيق.',
                 textDirection: TextDirection.rtl,
               ),
             ),
-            const SizedBox(height: 16),
-            Container(
-              decoration: BoxDecoration(
-                color:
-                    _submitComplaintAnonymously
-                        ? ZaWolfColors.primaryCyan.withValues(alpha: 0.08)
-                        : ZaWolfColors.surface01,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(
-                  color:
-                      _submitComplaintAnonymously
-                          ? ZaWolfColors.primaryCyan.withValues(alpha: 0.55)
-                          : ZaWolfColors.surface02,
-                ),
-              ),
-              child: SwitchListTile.adaptive(
-                value: _submitComplaintAnonymously,
-                activeTrackColor: ZaWolfColors.primaryCyan,
-                onChanged:
-                    _loading
-                        ? null
-                        : (value) {
-                          setState(() => _submitComplaintAnonymously = value);
-                        },
-                secondary: Icon(
-                  _submitComplaintAnonymously
-                      ? Icons.visibility_off_outlined
-                      : Icons.badge_outlined,
-                  color:
-                      _submitComplaintAnonymously
-                          ? ZaWolfColors.primaryCyan
-                          : ZaWolfColors.textSecondary,
-                ),
-                title: const Text(
-                  'إرسال الشكوى كمجهول',
-                  textDirection: TextDirection.rtl,
-                ),
-                subtitle: const Text(
-                  'لن يظهر اسمك أو كودك أو قسمك للمراجعين داخل التطبيق.',
-                  textDirection: TextDirection.rtl,
-                ),
-              ),
+          ),
+          const SizedBox(height: 16),
+          WolfInputField(
+            controller: _complaintTitleController,
+            labelText: 'عنوان الشكوى',
+            englishLabel: 'Complaint Title',
+            hintText: 'اكتب عنواناً واضحاً للشكوى...',
+            validator:
+                (val) =>
+                    val == null || val.trim().length < 3
+                        ? 'العنوان مطلوب'
+                        : null,
+          ),
+          const SizedBox(height: 16),
+          WolfInputField(
+            controller: _complaintBodyController,
+            labelText: 'تفاصيل الشكوى',
+            englishLabel: 'Details',
+            hintText: 'اكتب تفاصيل الشكوى بوضوح...',
+            maxLines: 4,
+            validator:
+                (val) =>
+                    val == null || val.trim().length < 10
+                        ? 'يرجى كتابة تفاصيل كافية'
+                        : null,
+          ),
+          const SizedBox(height: 16),
+          OutlinedButton.icon(
+            icon: const Icon(Icons.attach_file_outlined),
+            label: Text(
+              _complaintAttachmentUrl == null
+                  ? 'إرفاق ملف للشكوى (اختياري)'
+                  : 'تم إرفاق ملف في ملفات الشركة',
             ),
-            const SizedBox(height: 16),
-            WolfInputField(
-              controller: _complaintTitleController,
-              labelText: 'عنوان الشكوى',
-              englishLabel: 'Complaint Title',
-              hintText: 'اكتب عنواناً واضحاً للشكوى...',
-              validator:
-                  (val) =>
-                      val == null || val.trim().length < 3
-                          ? 'العنوان مطلوب'
-                          : null,
-            ),
-            const SizedBox(height: 16),
-            WolfInputField(
-              controller: _complaintBodyController,
-              labelText: 'تفاصيل الشكوى',
-              englishLabel: 'Details',
-              hintText: 'اكتب تفاصيل الشكوى بوضوح...',
-              maxLines: 4,
-              validator:
-                  (val) =>
-                      val == null || val.trim().length < 10
-                          ? 'يرجى كتابة تفاصيل كافية'
-                          : null,
-            ),
-            const SizedBox(height: 16),
-            OutlinedButton.icon(
-              icon: const Icon(Icons.attach_file_outlined),
-              label: Text(
-                _complaintAttachmentUrl == null
-                    ? 'إرفاق ملف للشكوى (اختياري)'
-                    : 'تم إرفاق ملف في ملفات الشركة',
-              ),
-              onPressed:
-                  _loading
-                      ? null
-                      : () => _pickAndStoreAttachment(
-                        controller: _complaintAttachmentController,
-                        onStored:
-                            (uri) =>
-                                setState(() => _complaintAttachmentUrl = uri),
-                      ),
-            ),
-            const SizedBox(height: 20),
-            WolfButton(
-              onPressed: () => _submitComplaint(user),
-              text: 'إرسال الشكوى',
-              secondaryText: 'SUBMIT COMPLAINT',
-              variant: WolfButtonVariant.danger,
-              loading: _loading,
-            ),
-          ],
-        ),
+            onPressed:
+                _loading
+                    ? null
+                    : () => _pickAndStoreAttachment(
+                      controller: _complaintAttachmentController,
+                      onStored:
+                          (uri) =>
+                              setState(() => _complaintAttachmentUrl = uri),
+                    ),
+          ),
+          const SizedBox(height: 20),
+          _buildSubmitButtonArea(
+            onPressed: () => _submitComplaint(user),
+            text: 'إرسال الشكوى',
+            secondaryText: 'SUBMIT COMPLAINT',
+            variant: WolfButtonVariant.danger,
+            loading: _loading,
+          ),
+        ],
       ),
     );
   }
@@ -2830,6 +3152,10 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
     final service = AttendanceCorrectionRequestService();
     return Form(
       key: _formKeyAttendanceCorrection,
+      autovalidateMode:
+          _autoValidate
+              ? AutovalidateMode.onUserInteraction
+              : AutovalidateMode.disabled,
       child: StreamBuilder<List<AttendanceModel>>(
         stream: _cachedStream(
           'correction-eligible|${user.uid}',
@@ -2941,7 +3267,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
                             : null,
               ),
               const SizedBox(height: 20),
-              WolfButton(
+              _buildSubmitButtonArea(
                 onPressed: () => _submitAttendanceCorrection(user),
                 text: 'إرسال إلى HR',
                 secondaryText: 'SUBMIT CORRECTION',
@@ -3195,6 +3521,10 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
   Widget _buildAdministrativeRequestForm(UserModel user, ThemeData theme) {
     return Form(
       key: _formKeyAdministrative,
+      autovalidateMode:
+          _autoValidate
+              ? AutovalidateMode.onUserInteraction
+              : AutovalidateMode.disabled,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -3352,7 +3682,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
             ),
           ],
           const SizedBox(height: 20),
-          WolfButton(
+          _buildSubmitButtonArea(
             onPressed: () => _submitAdministrativeRequest(user),
             text:
                 _administrativeCategory ==
@@ -3374,6 +3704,10 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
   Widget _buildFieldMissionForm(UserModel user, ThemeData theme) {
     return Form(
       key: _formKeyFieldMission,
+      autovalidateMode:
+          _autoValidate
+              ? AutovalidateMode.onUserInteraction
+              : AutovalidateMode.disabled,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -3518,7 +3852,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
                         : null,
           ),
           const SizedBox(height: 20),
-          WolfButton(
+          _buildSubmitButtonArea(
             onPressed: () => _submitFieldMissionDirect(user),
             text: 'إرسال طلب المهمة الميدانية',
             secondaryText: 'SUBMIT FIELD MISSION',
@@ -3685,6 +4019,10 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
   Widget _buildResignationForm(UserModel user, ThemeData theme) {
     return Form(
       key: _formKeyResignation,
+      autovalidateMode:
+          _autoValidate
+              ? AutovalidateMode.onUserInteraction
+              : AutovalidateMode.disabled,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -3741,7 +4079,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
                         : null,
           ),
           const SizedBox(height: 20),
-          WolfButton(
+          _buildSubmitButtonArea(
             onPressed: () => _submitResignation(user),
             text: 'إرسال طلب الاستقالة',
             secondaryText: 'SUBMIT RESIGNATION',

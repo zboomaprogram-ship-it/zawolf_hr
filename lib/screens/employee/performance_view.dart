@@ -63,7 +63,7 @@ class _EmployeePerformanceViewScreenState
                   Text(
                     'لم يتم نشر أي تقييم أداء لك بعد',
                     style: theme.textTheme.titleLarge!.copyWith(
-                      color: Colors.white,
+                      color: ZaWolfColors.textPrimary,
                     ),
                   ),
                   const SizedBox(height: 8),
@@ -93,7 +93,7 @@ class _EmployeePerformanceViewScreenState
                 Text(
                   'تفاصيل مؤشرات الأداء (KPIs)',
                   style: theme.textTheme.titleLarge!.copyWith(
-                    color: Colors.white,
+                    color: ZaWolfColors.textPrimary,
                     fontWeight: FontWeight.bold,
                   ),
                   textDirection: TextDirection.rtl,
@@ -147,7 +147,7 @@ class _EmployeePerformanceViewScreenState
                   Text(
                     'تعليق وتوصيات المدير المباشر',
                     style: theme.textTheme.titleLarge!.copyWith(
-                      color: Colors.white,
+                      color: ZaWolfColors.textPrimary,
                       fontWeight: FontWeight.bold,
                     ),
                     textDirection: TextDirection.rtl,
@@ -157,7 +157,10 @@ class _EmployeePerformanceViewScreenState
                     hasBorderGlow: true,
                     child: Text(
                       latest.comments!,
-                      style: const TextStyle(color: Colors.white, height: 1.5),
+                      style: const TextStyle(
+                        color: ZaWolfColors.textPrimary,
+                        height: 1.5,
+                      ),
                       textDirection: TextDirection.rtl,
                     ),
                   ),
@@ -169,7 +172,7 @@ class _EmployeePerformanceViewScreenState
                   Text(
                     'سجل التقييمات السابقة',
                     style: theme.textTheme.titleLarge!.copyWith(
-                      color: Colors.white,
+                      color: ZaWolfColors.textPrimary,
                       fontWeight: FontWeight.bold,
                     ),
                     textDirection: TextDirection.rtl,
@@ -222,7 +225,7 @@ class _EmployeePerformanceViewScreenState
                                   Text(
                                     item.monthKey,
                                     style: const TextStyle(
-                                      color: Colors.white,
+                                      color: ZaWolfColors.textPrimary,
                                       fontWeight: FontWeight.bold,
                                     ),
                                   ),
@@ -303,7 +306,7 @@ class _EmployeePerformanceViewScreenState
           Text(
             'معدل التقدم العام: ${evaluation.overallScore.toStringAsFixed(1)}%',
             style: const TextStyle(
-              color: Colors.white,
+              color: ZaWolfColors.textPrimary,
               fontSize: 22,
               fontWeight: FontWeight.bold,
               fontFamily: 'JetBrains Mono',
@@ -336,7 +339,10 @@ class _EmployeePerformanceViewScreenState
             ),
             Text(
               title,
-              style: const TextStyle(color: Colors.white, fontSize: 13),
+              style: const TextStyle(
+                color: ZaWolfColors.textPrimary,
+                fontSize: 13,
+              ),
             ),
           ],
         ),
