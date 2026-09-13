@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:intl/intl.dart' hide TextDirection;
 
+import '../../../../theme/theme.dart';
 import '../domain/manual_attendance_repository.dart';
 import 'manual_attendance_cubit.dart';
 
@@ -27,7 +28,7 @@ class _ManualAttendanceView extends StatefulWidget {
 class _ManualAttendanceViewState extends State<_ManualAttendanceView> {
   final _search = TextEditingController();
   final _reason = TextEditingController();
-  ManualAttendanceEmployee? _employee;
+  final Set<String> _selectedEmployeeIds = <String>{};
   DateTime _effectiveAt = DateTime.now();
   String _eventType = 'checkIn';
   String _filterMode = 'all';
@@ -88,7 +89,9 @@ class _ManualAttendanceViewState extends State<_ManualAttendanceView> {
               SnackBar(
                 content: Text(message),
                 backgroundColor:
-                    state.error == null ? Colors.green : Colors.red,
+                    state.error == null
+                        ? ZaWolfColors.success
+                        : ZaWolfColors.error,
               ),
             );
           },
@@ -149,11 +152,16 @@ class _ManualAttendanceViewState extends State<_ManualAttendanceView> {
                       .map(
                         (employee) => Card(
                           child: ListTile(
-                            selected: _employee?.id == employee.id,
-                            leading: Icon(
-                              _employee?.id == employee.id
-                                  ? Icons.check_circle
-                                  : Icons.person_outline,
+                            selected: _selectedEmployeeIds.contains(
+                              employee.id,
+                            ),
+                            leading: Checkbox(
+                              value: _selectedEmployeeIds.contains(employee.id),
+                              onChanged:
+                                  (_) => setState(() {
+                                    if (!_selectedEmployeeIds.add(employee.id))
+                                      _selectedEmployeeIds.remove(employee.id);
+                                  }),
                             ),
                             title: Text(employee.name),
                             subtitle: Text(
@@ -167,15 +175,33 @@ class _ManualAttendanceViewState extends State<_ManualAttendanceView> {
                                   : Icons.person_off_outlined,
                               color:
                                   employee.isCheckedOut
-                                      ? Colors.blue
+                                      ? ZaWolfColors.primaryBlue
                                       : employee.isCheckedIn
-                                      ? Colors.green
-                                      : Colors.redAccent,
+                                      ? ZaWolfColors.success
+                                      : ZaWolfColors.error,
                             ),
-                            onTap: () => setState(() => _employee = employee),
+                            onTap:
+                                () => setState(() {
+                                  if (!_selectedEmployeeIds.add(employee.id))
+                                    _selectedEmployeeIds.remove(employee.id);
+                                }),
                           ),
                         ),
                       ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Text('تم اختيار ${_selectedEmployeeIds.length} موظفاً'),
+                      const Spacer(),
+                      TextButton(
+                        onPressed:
+                            _selectedEmployeeIds.isEmpty
+                                ? null
+                                : () => setState(_selectedEmployeeIds.clear),
+                        child: const Text('إلغاء التحديد'),
+                      ),
+                    ],
+                  ),
                   const SizedBox(height: 12),
                   SegmentedButton<String>(
                     segments: const [
@@ -224,12 +250,12 @@ class _ManualAttendanceViewState extends State<_ManualAttendanceView> {
                         state.submitting
                             ? null
                             : () {
-                              if (_employee == null ||
+                              if (_selectedEmployeeIds.isEmpty ||
                                   _reason.text.trim().isEmpty) {
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   const SnackBar(
                                     content: Text(
-                                      'اختر الموظف واكتب سبب التسجيل.',
+                                      'اختر موظفاً واحداً أو أكثر واكتب سبب التسجيل.',
                                     ),
                                   ),
                                 );
@@ -247,8 +273,15 @@ class _ManualAttendanceViewState extends State<_ManualAttendanceView> {
                                 );
                                 return;
                               }
-                              context.read<ManualAttendanceCubit>().submit(
-                                employee: _employee!,
+                              final selected =
+                                  state.employees
+                                      .where(
+                                        (employee) => _selectedEmployeeIds
+                                            .contains(employee.id),
+                                      )
+                                      .toList();
+                              context.read<ManualAttendanceCubit>().submitBatch(
+                                employees: selected,
                                 eventType: _eventType,
                                 effectiveAt: _effectiveAt,
                                 reason: _reason.text.trim(),
@@ -263,7 +296,9 @@ class _ManualAttendanceViewState extends State<_ManualAttendanceView> {
                             )
                             : const Icon(Icons.fact_check_outlined),
                     label: Text(
-                      state.submitting ? 'جارٍ الحفظ...' : 'تسجيل العملية',
+                      state.submitting
+                          ? 'جارٍ الحفظ...'
+                          : 'تسجيل العملية للمختارين',
                     ),
                   ),
                 ],

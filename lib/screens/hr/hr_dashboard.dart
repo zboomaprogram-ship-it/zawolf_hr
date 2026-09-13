@@ -16,6 +16,7 @@ import '../../components/sales_kpi_filter_sheet.dart';
 import '../../components/wolf_card.dart';
 import '../../design_system/tokens.dart';
 import '../../design_system/components/app_logo.dart';
+import '../../design_system/components/badge.dart';
 import '../../design_system/components/priority_strip.dart';
 import '../../design_system/components/section_header.dart';
 import '../../design_system/components/stat_card.dart';
@@ -162,6 +163,28 @@ class _HrDashboardScreenState extends State<HrDashboardScreen> {
         ),
         actions: [
           IconButton(
+            tooltip: 'الإشعارات',
+            icon: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                const Icon(
+                  Icons.notifications_outlined,
+                  color: ZaWolfColors.textSecondary,
+                ),
+                if (hrAdmin.unreadNotifications > 0)
+                  Positioned(
+                    top: -4,
+                    left: -6,
+                    child: DsBadge(
+                      count: hrAdmin.unreadNotifications,
+                      accent: ZaWolfColors.error,
+                    ),
+                  ),
+              ],
+            ),
+            onPressed: () => context.push('/notifications'),
+          ),
+          IconButton(
             tooltip: 'بصمتي الشخصية (تسجيل الحضور)',
             icon: const Icon(
               Icons.fingerprint,
@@ -279,7 +302,7 @@ class _HrDashboardScreenState extends State<HrDashboardScreen> {
                         label: 'إدارة كؤوس وشارات التميز',
                         count: 0,
                         icon: Icons.emoji_events,
-                        accent: const Color(0xFFFFD700),
+                        accent: ZaWolfColors.perfGold,
                         onTap: () => context.push('/hr/custom-badges'),
                       ),
                     ],
@@ -425,10 +448,24 @@ class _HrDashboardScreenState extends State<HrDashboardScreen> {
                   theme,
                 ),
                 _actionTile(
+                  'طلبات التعيين',
+                  'طلب تعيين يمر بالرئيس التنفيذي ثم تقنية المعلومات والحسابات',
+                  Icons.person_add_alt_1_outlined,
+                  () => context.go('/hiring-requests'),
+                  theme,
+                ),
+                _actionTile(
                   'تسجيل حضور يدوي',
                   'تسجيل حضور أو انصراف استثنائي لموظف مع سبب ومراجعة',
                   Icons.edit_calendar_outlined,
                   () => context.go('/hr/manual-attendance'),
+                  theme,
+                ),
+                _actionTile(
+                  'تصاريح الحضور عبر الويب',
+                  'منح أو إلغاء تصريح مؤقت أو دائم لتسجيل الحضور من الويب',
+                  Icons.language_rounded,
+                  () => context.go('/hr/web-attendance-access'),
                   theme,
                 ),
                 _actionTile(

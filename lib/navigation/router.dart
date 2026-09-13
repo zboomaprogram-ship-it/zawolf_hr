@@ -67,6 +67,9 @@ import '../screens/account_disabled_screen.dart';
 import '../screens/team_leader/team_leader_dashboard.dart';
 import 'company_workspace_v2_entry.dart';
 import 'developer_tools_entry.dart';
+import 'web_attendance_access_entry.dart';
+import '../features/hiring_request/data/hiring_request_repository_impl.dart';
+import '../features/hiring_request/presentation/hiring_request_screen.dart';
 import 'diagnostics_report_entry.dart';
 import 'employee_operations_entry.dart';
 import 'employee_assistant_entry.dart';
@@ -76,6 +79,7 @@ import 'company_os_it_entry.dart';
 import 'company_os_operations_entry.dart';
 import 'company_os_requests_entry.dart';
 import 'company_os_organization_entry.dart';
+import '../theme/theme.dart';
 
 class ZaWolfRouter {
   static GoRouter getRouter(BuildContext context) {
@@ -456,6 +460,10 @@ class ZaWolfRouter {
               builder: (context, state) => const DeveloperToolsAdminEntry(),
             ),
             GoRoute(
+              path: '/hr/web-attendance-access',
+              builder: (context, state) => const WebAttendanceAccessEntry(),
+            ),
+            GoRoute(
               path: '/hr/diagnostics',
               builder: (context, state) {
                 final actorId = authService.currentUser?.uid ?? '';
@@ -525,6 +533,10 @@ class ZaWolfRouter {
               builder:
                   (context, state) => AttendanceSummaryDetailsScreen(
                     initialStatus: state.uri.queryParameters['status'],
+                    initialDate: DateTime.tryParse(
+                      state.uri.queryParameters['date'] ?? '',
+                    ),
+                    initialDepartment: state.uri.queryParameters['department'],
                   ),
             ),
             GoRoute(
@@ -565,6 +577,10 @@ class ZaWolfRouter {
               builder:
                   (context, state) => AttendanceSummaryDetailsScreen(
                     initialStatus: state.uri.queryParameters['status'],
+                    initialDate: DateTime.tryParse(
+                      state.uri.queryParameters['date'] ?? '',
+                    ),
+                    initialDepartment: state.uri.queryParameters['department'],
                   ),
             ),
             GoRoute(
@@ -648,6 +664,17 @@ class ZaWolfRouter {
               builder:
                   (context, state) => AttendanceSummaryDetailsScreen(
                     initialStatus: state.uri.queryParameters['status'],
+                    initialDate: DateTime.tryParse(
+                      state.uri.queryParameters['date'] ?? '',
+                    ),
+                    initialDepartment: state.uri.queryParameters['department'],
+                  ),
+            ),
+            GoRoute(
+              path: '/hiring-requests',
+              builder:
+                  (context, state) => HiringRequestScreen(
+                    repository: HiringRequestRepositoryImpl(),
                   ),
             ),
             GoRoute(
@@ -860,7 +887,11 @@ class _WorkspaceWebOnlyPage extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.desktop_windows_outlined, size: 48),
+              Icon(
+                Icons.desktop_windows_outlined,
+                size: 48,
+                color: ZaWolfColors.textSecondary,
+              ),
               SizedBox(height: 16),
               Text(
                 'ملفات الشركة وGoogle Workspace متاحان من لوحة الويب فقط.',

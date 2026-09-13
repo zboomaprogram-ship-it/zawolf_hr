@@ -27,7 +27,14 @@ const {
   resetAttendanceDevice,
   resolveCheckInStatus,
 } = require('./attendance-gateway');
-const { recordManualAttendance, listManualAttendanceEmployees } = require('./manual-attendance');
+const {
+  getMyWebAttendanceAccess,
+  listWebAttendanceAccessGrants,
+  saveWebAttendanceAccessGrant,
+  revokeWebAttendanceAccessGrant,
+} = require('./web-attendance-access');
+const { recordManualAttendance, recordManualAttendanceBatch, listManualAttendanceEmployees } = require('./manual-attendance');
+const { createHiringRequest, decideHiringRequest, listHiringRequests } = require('./hiring-requests');
 const { overrideAutoApprovedCasualLeave, editCasualLeaveDates } = require('./casual-leave-override');
 const {
   listRooms,
@@ -4094,6 +4101,7 @@ const server = http.createServer(async (req, res) => {
     url.pathname.startsWith('/company-workspace/');
   const isAttendanceGatewayRoute =
     url.pathname === '/attendance/events' ||
+    url.pathname.startsWith('/attendance/web-access') ||
     url.pathname === '/attendance/status' ||
     url.pathname === '/attendance/checkout-policy' ||
     url.pathname === '/attendance/security-review' ||
@@ -4239,6 +4247,22 @@ const server = http.createServer(async (req, res) => {
         ok: false,
         code: 'manual_attendance_employees_failed',
         error: String(error.message || error),
+      });
+    }
+    return;
+  }
+
+  if (url.pathname === '/operations/manual-attendance/batch' && req.method === 'POST') {
+    const actor = await authorizeWorkspaceRequest(req);
+    if (!actor) { sendJson(res, 401, { ok: false, code: 'session_expired' }); return; }
+    try {
+      const result = await recordManualAttendanceBatch({
+        db: admin.firestore(initializeFirebase()), admin, actor, body: await readJsonBody(req),
+      });
+      sendJson(res, 200, { ok: true, ...result });
+    } catch (error) {
+      sendJson(res, /صلاحية/.test(String(error.message || error)) ? 403 : 400, {
+        ok: false, code: 'manual_attendance_batch_failed', error: String(error.message || error),
       });
     }
     return;
@@ -4489,6 +4513,26 @@ const server = http.createServer(async (req, res) => {
   if (url.pathname === '/operations/request-management/notify' && req.method === 'POST') {
     await handleRequestManagementNotification(req, res);
     return;
+  }
+
+  if (url.pathname === '/operations/hiring-requests' && req.method === 'GET') {
+    const actor = await authorizeWorkspaceRequest(req);
+    if (!actor) return sendJson(res, 401, { ok: false, code: 'session_expired' });
+    try { return sendJson(res, 200, { ok: true, requests: await listHiringRequests({ db: admin.firestore(initializeFirebase()), actor }) }); }
+    catch (error) { return sendJson(res, 400, { ok: false, code: 'hiring_requests_list_failed', error: String(error.message || error) }); }
+  }
+  if (url.pathname === '/operations/hiring-requests' && req.method === 'POST') {
+    const actor = await authorizeWorkspaceRequest(req);
+    if (!actor) return sendJson(res, 401, { ok: false, code: 'session_expired' });
+    try { return sendJson(res, 201, { ok: true, ...(await createHiringRequest({ db: admin.firestore(initializeFirebase()), admin, actor, body: await readJsonBody(req) })) }); }
+    catch (error) { return sendJson(res, /صلاحية/.test(String(error.message || error)) ? 403 : 400, { ok: false, code: 'hiring_request_create_failed', error: String(error.message || error) }); }
+  }
+  const hiringDecision = url.pathname.match(/^\/operations\/hiring-requests\/([A-Za-z0-9_-]{8,160})\/decision$/);
+  if (hiringDecision && req.method === 'POST') {
+    const actor = await authorizeWorkspaceRequest(req);
+    if (!actor) return sendJson(res, 401, { ok: false, code: 'session_expired' });
+    try { return sendJson(res, 200, { ok: true, ...(await decideHiringRequest({ db: admin.firestore(initializeFirebase()), admin, actor, requestId: hiringDecision[1], body: await readJsonBody(req) })) }); }
+    catch (error) { return sendJson(res, /انتظار قرارك|صلاحية/.test(String(error.message || error)) ? 403 : 400, { ok: false, code: 'hiring_request_decision_failed', error: String(error.message || error) }); }
   }
 
   if (url.pathname === '/operations/request-approval-routing/field-missions' && req.method === 'POST') {
@@ -5303,6 +5347,49 @@ const server = http.createServer(async (req, res) => {
   if (url.pathname === '/attendance/events' && req.method === 'POST') {
     await handleAttendanceGateway(req, res);
     return;
+  }
+
+  if (url.pathname === '/attendance/web-access/me' && req.method === 'GET') {
+    try {
+      const actor = await authorizeWorkspaceRequest(req);
+      if (!actor) return sendJson(res, 401, { ok: false, code: 'unauthenticated', error: 'يرجى تسجيل الدخول مرة أخرى.' });
+      return sendJson(res, 200, { ok: true, ...(await getMyWebAttendanceAccess({ admin, actor })) });
+    } catch (error) {
+      return sendJson(res, 400, { ok: false, code: String(error.code || 'web_access_unavailable'), error: error.message || 'تعذر التحقق من تصريح الحضور عبر الويب.' });
+    }
+  }
+
+  if (url.pathname === '/attendance/web-access/grants' && req.method === 'GET') {
+    try {
+      const actor = await authorizeWorkspaceRequest(req);
+      if (!actor) return sendJson(res, 401, { ok: false, code: 'unauthenticated', error: 'يرجى تسجيل الدخول مرة أخرى.' });
+      return sendJson(res, 200, { ok: true, ...(await listWebAttendanceAccessGrants({ admin, actor })) });
+    } catch (error) {
+      return sendJson(res, error.code === 'not_authorized' ? 403 : 400, { ok: false, code: String(error.code || 'web_access_unavailable'), error: error.message || 'تعذر تحميل التصاريح.' });
+    }
+  }
+
+  if (url.pathname === '/attendance/web-access/grants' && req.method === 'POST') {
+    try {
+      const actor = await authorizeWorkspaceRequest(req);
+      if (!actor) return sendJson(res, 401, { ok: false, code: 'unauthenticated', error: 'يرجى تسجيل الدخول مرة أخرى.' });
+      const body = await readJsonBody(req, 16 * 1024);
+      return sendJson(res, 200, { ok: true, ...(await saveWebAttendanceAccessGrant({ admin, actor, input: body, operationId: body.operationId || req.headers['x-operation-id'] })) });
+    } catch (error) {
+      return sendJson(res, error.code === 'not_authorized' ? 403 : 400, { ok: false, code: String(error.code || 'web_access_unavailable'), error: error.message || 'تعذر حفظ التصريح.' });
+    }
+  }
+
+  if (/^\/attendance\/web-access\/grants\/[A-Za-z0-9_-]{1,128}\/revoke$/.test(url.pathname) && req.method === 'POST') {
+    try {
+      const actor = await authorizeWorkspaceRequest(req);
+      if (!actor) return sendJson(res, 401, { ok: false, code: 'unauthenticated', error: 'يرجى تسجيل الدخول مرة أخرى.' });
+      const body = await readJsonBody(req, 16 * 1024);
+      const employeeId = decodeURIComponent(url.pathname.split('/')[4]);
+      return sendJson(res, 200, { ok: true, ...(await revokeWebAttendanceAccessGrant({ admin, actor, employeeId, operationId: body.operationId || req.headers['x-operation-id'], note: body.note })) });
+    } catch (error) {
+      return sendJson(res, error.code === 'not_authorized' ? 403 : 400, { ok: false, code: String(error.code || 'web_access_unavailable'), error: error.message || 'تعذر إلغاء التصريح.' });
+    }
   }
 
   if (url.pathname === '/attendance/status' && req.method === 'POST') {

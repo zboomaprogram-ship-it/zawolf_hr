@@ -155,6 +155,42 @@ async function recordManualAttendance({ db, admin, actor, body }) {
   return result;
 }
 
+async function recordManualAttendanceBatch({ db, admin, actor, body }) {
+  if (!canManageManualAttendance(actor)) {
+    throw new Error('لا تملك صلاحية تسجيل الحضور اليدوي.');
+  }
+  const operationId = clean(body?.operationId, 160);
+  const employeeIds = [...new Set((Array.isArray(body?.employeeIds) ? body.employeeIds : [])
+    .map((value) => clean(value, 160)).filter(Boolean))];
+  if (!safeId(operationId) || employeeIds.length < 1 || employeeIds.length > 50 ||
+      employeeIds.some((id) => !safeId(id))) {
+    throw new Error('اختر من موظف واحد إلى 50 موظفاً بصورة صحيحة.');
+  }
+  const shared = {
+    eventType: body?.eventType,
+    effectiveAt: body?.effectiveAt,
+    reason: body?.reason,
+  };
+  const results = [];
+  for (const employeeId of employeeIds) {
+    try {
+      const result = await recordManualAttendance({
+        db, admin, actor,
+        body: { ...shared, employeeId, operationId: `batch-${operationKey(operationId, employeeId)}` },
+      });
+      results.push({ employeeId, ok: true, ...result });
+    } catch (error) {
+      results.push({ employeeId, ok: false, error: String(error.message || error) });
+    }
+  }
+  return {
+    operationId,
+    recorded: results.filter((item) => item.ok).length,
+    failed: results.filter((item) => !item.ok).length,
+    results,
+  };
+}
+
 async function listManualAttendanceEmployees({ db, actor, query }) {
   if (!canManageManualAttendance(actor)) {
     throw new Error('لا تملك صلاحية عرض حالة الحضور اليدوي.');
@@ -198,6 +234,7 @@ async function listManualAttendanceEmployees({ db, actor, query }) {
 module.exports = {
   canManageManualAttendance,
   recordManualAttendance,
+  recordManualAttendanceBatch,
   listManualAttendanceEmployees,
   cairoParts,
 };

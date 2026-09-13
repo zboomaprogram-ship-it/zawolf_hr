@@ -65,6 +65,61 @@ class ManualAttendanceRepositoryImpl implements ManualAttendanceRepository {
   }
 
   @override
+  Future<ManualAttendanceBatchResult> recordBatch({
+    required List<String> employeeIds,
+    required String eventType,
+    required DateTime effectiveAt,
+    required String reason,
+  }) async {
+    final token = await _auth.currentUser?.getIdToken(true);
+    if (token == null || token.isEmpty)
+      throw StateError('انتهت الجلسة، سجل الدخول مرة أخرى.');
+    final response = await _client.post(
+      Uri.parse('$_baseUrl/operations/manual-attendance/batch'),
+      headers: {
+        'content-type': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+      body: jsonEncode({
+        'operationId': _operationId(),
+        'employeeIds': employeeIds,
+        'eventType': eventType,
+        'effectiveAt': effectiveAt.toUtc().toIso8601String(),
+        'reason': reason,
+      }),
+    );
+    final decoded =
+        response.body.isEmpty ? <String, dynamic>{} : jsonDecode(response.body);
+    final data =
+        decoded is Map<String, dynamic> ? decoded : <String, dynamic>{};
+    if (response.statusCode < 200 ||
+        response.statusCode >= 300 ||
+        data['ok'] != true) {
+      throw StateError('${data['error'] ?? 'تعذر تسجيل الحضور اليدوي.'}');
+    }
+    final results = (data['results'] as List? ?? const [])
+        .whereType<Map>()
+        .map((item) {
+          final raw = Map<String, dynamic>.from(item);
+          return ManualAttendanceBatchEmployeeResult(
+            employeeId: '${raw['employeeId'] ?? ''}',
+            ok: raw['ok'] == true,
+            error: raw['error']?.toString(),
+          );
+        })
+        .toList(growable: false);
+    return ManualAttendanceBatchResult(
+      recorded:
+          (data['recorded'] as num?)?.toInt() ??
+          results.where((item) => item.ok).length,
+      failed:
+          (data['failed'] as num?)?.toInt() ??
+          results.where((item) => !item.ok).length,
+      results: results,
+    );
+  }
+
+  @override
   Future<void> record({
     required String employeeId,
     required String eventType,

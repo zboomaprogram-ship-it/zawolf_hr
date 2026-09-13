@@ -61,6 +61,49 @@ class ManualAttendanceCubit extends Cubit<ManualAttendanceState> {
     }
   }
 
+  Future<void> submitBatch({
+    required List<ManualAttendanceEmployee> employees,
+    required String eventType,
+    required DateTime effectiveAt,
+    required String reason,
+  }) async {
+    emit(
+      state.copyWith(submitting: true, clearError: true, clearSuccess: true),
+    );
+    try {
+      final result = await _repository.recordBatch(
+        employeeIds: employees
+            .map((employee) => employee.id)
+            .toList(growable: false),
+        eventType: eventType,
+        effectiveAt: effectiveAt,
+        reason: reason,
+      );
+      final updatedEmployees = await _repository.findEmployees('');
+      final suffix =
+          result.failed == 0
+              ? 'وإشعار الموظفين.'
+              : ' وتعذر تسجيل ${result.failed} موظفاً؛ راجع حالتهم ثم أعد المحاولة.';
+      emit(
+        state.copyWith(
+          submitting: false,
+          employees: updatedEmployees,
+          success: 'تم تسجيل العملية لـ ${result.recorded} موظفاً $suffix',
+        ),
+      );
+    } catch (error) {
+      emit(
+        state.copyWith(
+          submitting: false,
+          error: userFacingError(
+            error,
+            fallback: 'تعذر تسجيل العملية اليدوية. أعد المحاولة.',
+          ),
+        ),
+      );
+    }
+  }
+
   Future<void> submit({
     required ManualAttendanceEmployee employee,
     required String eventType,
