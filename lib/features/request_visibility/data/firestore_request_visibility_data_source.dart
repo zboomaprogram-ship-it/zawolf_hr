@@ -48,20 +48,25 @@ final class FirestoreRequestVisibilityDataSource
     // them exactly like the current HR role so a valid HR reviewer does not
     // accidentally fall back to the manager-only query below.
     final role = query.actorScope.role.trim().toLowerCase();
+    // COO-1300 is an assigned workflow reviewer. It must not inherit the
+    // unrestricted read model used by the legacy super-admin account role.
+    final isRestrictedCoo =
+        query.actorScope.employeeCode?.trim().toUpperCase() == 'COO-1300';
     final isExecutive =
-        query.actorScope.isExecutive ||
+        (query.actorScope.isExecutive && !isRestrictedCoo) ||
         query.actorScope.employeeCode?.trim().toUpperCase() == 'CEO-100' ||
         role == 'ceo' ||
-        role == 'coo';
+        (role == 'coo' && !isRestrictedCoo);
     final isHrOrAdmin =
-        isExecutive ||
+        (isExecutive && !isRestrictedCoo) ||
         const <String>{
           'hr',
           'hr_admin',
           'hr_manager',
           'super_admin',
           'admin',
-        }.contains(role);
+        }.contains(role) &&
+            !isRestrictedCoo;
     try {
       // Legacy requests have one `managerId`; current sequential approvals
       // preserve the full chain in `managerIds`. Query both compatible shapes

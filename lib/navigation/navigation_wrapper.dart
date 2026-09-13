@@ -322,29 +322,17 @@ class _NavigationWrapperState extends State<NavigationWrapper>
       );
     }
 
-    final isManagementRole =
-        role == EmployeeRole.manager ||
-        role == EmployeeRole.hrAdmin ||
-        role == EmployeeRole.hrManager ||
-        role == EmployeeRole.superAdmin;
     final useDesktopWebShell =
         kIsWeb && MediaQuery.sizeOf(context).width >= 980;
     if (useDesktopWebShell) {
-      final desktopItems = isManagementRole
-          ? items
-              .where(
-                (item) =>
-                    !item.path.startsWith('/employee/') ||
-                    item.path == '/employee/profile' ||
-                    item.path == '/employee/dashboard' ||
-                    item.path == '/employee/requests',
-              )
-              .toList()
-          : items;
       return _withNotificationOperations(
         WebManagementShell(
           user: effectiveUser,
-          items: desktopItems,
+          // Management users retain their personal attendance, payroll,
+          // request, and performance tools alongside management tools.
+          // Filtering /employee routes here made valid drawer entries vanish
+          // only on the desktop dashboard.
+          items: items,
           matchedLocation: matchedLocation,
           canGoBack:
               _webRouteHistory.isNotEmpty ||

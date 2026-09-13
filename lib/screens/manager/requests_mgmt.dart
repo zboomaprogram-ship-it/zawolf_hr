@@ -3498,6 +3498,14 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
             ]);
           }).toList();
     }
+    // COO-1300 is an executive approver, not a company-wide request inbox.
+    // Older Firestore rules permit executive reads for compatibility, so keep
+    // the client list aligned with the actual current approval stage.
+    if (reviewer.isCompanyCoo) {
+      filtered = filtered
+          .where((doc) => _canActOnApproval(doc.data(), reviewer))
+          .toList(growable: false);
+    }
     return _newestFirst(filtered);
   }
 
@@ -3539,13 +3547,11 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
     final isCompanyCeo =
         reviewer.canReviewCeoStage || reviewerCode == 'CEO-100';
     final isCompanyCoo = reviewer.isCompanyCoo || reviewerCode == 'COO-1300';
-    final isSuperAdmin = reviewer.role == EmployeeRole.superAdmin;
-    final isExecutive =
-        reviewer.isExecutiveLeader ||
-        isCompanyCeo ||
-        isCompanyCoo ||
-        isSuperAdmin;
-
+    // This account historically carries the super-admin role for account
+    // maintenance, but request authority follows its assigned COO stage.
+    final isSuperAdmin =
+        reviewer.role == EmployeeRole.superAdmin && !isCompanyCoo;
+    final isHrReviewer = EmployeeRole.isHr(reviewer.role) && !isCompanyCoo;
     final currentApproverId =
         (data['currentApproverId'] ?? '').toString().trim().toUpperCase();
     final managerId = (data['managerId'] ?? '').toString().trim().toUpperCase();
@@ -3590,7 +3596,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
         return isCompanyCoo || isSuperAdmin;
       }
       if (status == 'pending_hr' || status == 'pending') {
-        return EmployeeRole.isHr(reviewer.role) || isExecutive;
+        return isHrReviewer || isSuperAdmin;
       }
       return false;
     }
@@ -3605,7 +3611,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
       if (status == 'pending_manager' ||
           status == 'pending_hr' ||
           status == 'pending') {
-        return isAssignedManager || EmployeeRole.isHr(reviewer.role);
+        return isAssignedManager || isHrReviewer;
       }
     }
 
@@ -3623,7 +3629,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
       }
     }
 
-    if (EmployeeRole.isHr(reviewer.role)) {
+    if (isHrReviewer) {
       if (status == 'pending_hr' || status == 'pending') return true;
       if (status == 'pending_manager' && isAssignedManager) return true;
       return false;
@@ -3652,11 +3658,15 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
     final isCoo = empCode == 'COO-1300' || role == 'coo';
     final isExecutive =
         reviewerIsCeo ||
-        isCoo ||
         role == 'super_admin' ||
         role == EmployeeRole.superAdmin;
     final isHr = EmployeeRole.isHr(role);
-    if (usesManagerChain && reviewerIsCeo) {
+    if (usesManagerChain && isCoo) {
+      query = query.where(
+        'status',
+        whereIn: const ['pending_manager', 'pending_coo'],
+      );
+    } else if (usesManagerChain && reviewerIsCeo) {
       query = query.where(
         'status',
         whereIn: ['pending_manager', 'pending_ceo'],
@@ -4261,9 +4271,14 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
         reviewer.isExecutiveLeader ||
         reviewer.canReviewCeoStage ||
         isCompanyCeo ||
-        reviewerCode == 'COO-1300' ||
         reviewer.role == EmployeeRole.superAdmin;
-    if (isExecutive || EmployeeRole.isHr(reviewer.role)) {
+    final isCompanyCoo = reviewerCode == 'COO-1300';
+    if (isCompanyCoo) {
+      query = query.where(
+        'status',
+        whereIn: const ['pending_manager', 'pending_coo'],
+      );
+    } else if (isExecutive || EmployeeRole.isHr(reviewer.role)) {
       query = query.where(
         'status',
         whereIn: const [

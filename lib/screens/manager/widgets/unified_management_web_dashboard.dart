@@ -176,16 +176,18 @@ class _UnifiedManagementWebDashboardState
                               AttendanceInsightsCard(
                                 summary: widget.summary!,
                                 onRefresh: widget.onRefreshSummary,
-                                onTap: () => context.go(
-                                  isHrRole
-                                      ? '/hr/dashboard'
-                                      : '/manager/attendance-summary',
-                                ),
-                                onCategoryTap: (status) => context.go(
-                                  isHrRole
-                                      ? '/hr/dashboard'
-                                      : '/manager/attendance-summary?status=$status',
-                                ),
+                                onTap:
+                                    () => context.go(
+                                      isHrRole
+                                          ? '/hr/attendance-summary'
+                                          : '/manager/attendance-summary',
+                                    ),
+                                onCategoryTap:
+                                    (status) => context.go(
+                                      isHrRole
+                                          ? '/hr/attendance-summary?status=$status'
+                                          : '/manager/attendance-summary?status=$status',
+                                    ),
                               )
                             else
                               const WolfCard(
@@ -234,16 +236,18 @@ class _UnifiedManagementWebDashboardState
                       AttendanceInsightsCard(
                         summary: widget.summary!,
                         onRefresh: widget.onRefreshSummary,
-                        onTap: () => context.go(
-                          isHrRole
-                              ? '/hr/dashboard'
-                              : '/manager/attendance-summary',
-                        ),
-                        onCategoryTap: (status) => context.go(
-                          isHrRole
-                              ? '/hr/dashboard'
-                              : '/manager/attendance-summary?status=$status',
-                        ),
+                        onTap:
+                            () => context.go(
+                              isHrRole
+                                  ? '/hr/attendance-summary'
+                                  : '/manager/attendance-summary',
+                            ),
+                        onCategoryTap:
+                            (status) => context.go(
+                              isHrRole
+                                  ? '/hr/attendance-summary?status=$status'
+                                  : '/manager/attendance-summary?status=$status',
+                            ),
                       ),
                     const SizedBox(height: DsSpacing.xl),
                     WebRecentChatsCard(user: widget.user),
@@ -467,11 +471,17 @@ class _UnifiedManagementWebDashboardState
         Expanded(
           child: _buildMetricTile(
             title: 'حضور الفريق اليوم',
-            value: totalTeamCount > 0 ? '$presentCount / $totalTeamCount' : '$presentCount حاضر',
+            value:
+                totalTeamCount > 0
+                    ? '$presentCount / $totalTeamCount'
+                    : '$presentCount حاضر',
             subtitle: 'محدث لحظياً',
             icon: Icons.people_alt_outlined,
             color: ZaWolfColors.success,
-            onTap: () => context.go(isHrRole ? '/hr/dashboard' : '/manager/team'),
+            onTap:
+                () => context.go(
+                  isHrRole ? '/hr/attendance-summary' : '/manager/team',
+                ),
           ),
         ),
         const SizedBox(width: DsSpacing.md),
