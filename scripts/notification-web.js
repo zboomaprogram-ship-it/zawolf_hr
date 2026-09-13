@@ -15,6 +15,7 @@ const { queueAttendanceReminders } = require('./attendance-reminders');
 const { processAutomaticAttendance } = require('./auto-attendance');
 const {
   processManagerLeavePermissionBypasses,
+  reconcileFinalizedPermissions,
 } = require('./manager-leave-permission-bypass');
 const { syncSalesKpis } = require('./sync-sales-kpis');
 const {
@@ -3930,9 +3931,16 @@ async function handleDispatch(req, res, url) {
   runningDispatch = withRuntimeLease('background_attendance', async () => {
     const managerLeaveBypasses =
       await processManagerLeavePermissionBypasses();
+    const attendancePermissionReconciliation =
+      await reconcileFinalizedPermissions(admin.firestore());
     const automaticAttendance = await processAutomaticAttendance();
     const push = await dispatchNotifications();
-    return { managerLeaveBypasses, automaticAttendance, ...push };
+    return {
+      managerLeaveBypasses,
+      attendancePermissionReconciliation,
+      automaticAttendance,
+      ...push,
+    };
   });
   try {
     const result = await runningDispatch;
@@ -3969,10 +3977,18 @@ async function handleAttendanceReminders(req, res, url) {
   runningDispatch = withRuntimeLease('background_attendance', async () => {
     const managerLeaveBypasses =
       await processManagerLeavePermissionBypasses();
+    const attendancePermissionReconciliation =
+      await reconcileFinalizedPermissions(admin.firestore());
     const automaticAttendance = await processAutomaticAttendance();
     const reminders = await queueAttendanceReminders();
     const push = await dispatchNotifications();
-    return { managerLeaveBypasses, automaticAttendance, reminders, push };
+    return {
+      managerLeaveBypasses,
+      attendancePermissionReconciliation,
+      automaticAttendance,
+      reminders,
+      push,
+    };
   });
   try {
     const result = await runningDispatch;
@@ -4001,9 +4017,12 @@ async function runBackgroundDispatch() {
     let reminders;
     let automaticAttendance;
     let managerLeaveBypasses;
+    let attendancePermissionReconciliation;
     try {
       managerLeaveBypasses =
         await processManagerLeavePermissionBypasses();
+      attendancePermissionReconciliation =
+        await reconcileFinalizedPermissions(admin.firestore());
       automaticAttendance = await processAutomaticAttendance();
       reminders = await queueAttendanceReminders();
     } catch (error) {
@@ -4024,7 +4043,12 @@ async function runBackgroundDispatch() {
     if (reminders?.queued > 0 || automaticAttendance?.found > 0) {
       schedulePushDispatch('scheduled_work');
     }
-    return { managerLeaveBypasses, automaticAttendance, reminders };
+    return {
+      managerLeaveBypasses,
+      attendancePermissionReconciliation,
+      automaticAttendance,
+      reminders,
+    };
   });
 
   try {

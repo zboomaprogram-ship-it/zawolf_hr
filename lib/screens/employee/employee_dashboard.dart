@@ -73,6 +73,9 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
   String? _pendingRequestCategory;
   bool _developerAttendanceAccess = false;
   String? _developerAttendanceAccessUserId;
+  AttendancePeriodSummary? _periodSummary;
+  String? _periodSummaryScope;
+  String? _periodSummaryLoadingScope;
 
   @override
   void initState() {
@@ -88,6 +91,7 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
       if (user != null && DateUtils.dateOnly(current) != previousDay) {
         unawaited(_checkCompanyDayOff());
         unawaited(_refreshAttendanceGate(user));
+        unawaited(_loadPeriodSummary(user, force: true));
       }
     });
   }
@@ -109,6 +113,7 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
     if (user != null) {
       unawaited(_checkCompanyDayOff());
       unawaited(_refreshAttendanceGate(user));
+      unawaited(_loadPeriodSummary(user, force: true));
     }
   }
 
@@ -128,6 +133,9 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
         _preparedUserId = null;
         _developerAttendanceAccess = false;
         _developerAttendanceAccessUserId = null;
+        _periodSummary = null;
+        _periodSummaryScope = null;
+        _periodSummaryLoadingScope = null;
       }
       return;
     }
@@ -156,6 +164,7 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
         }
         _checkCompanyDayOff();
         _refreshAttendanceGate(user);
+        _loadPeriodSummary(user);
         if (_isCheckInPilotEnabledFor(user)) {
           _checkInPilot ??= AttendanceCheckInPilot.create();
           _checkInPilot!.cubit.synchronizePending(user.uid).whenComplete(() {
@@ -254,6 +263,34 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
     } catch (_) {}
     if (mounted) {
       setState(() => _now = DateTime.now());
+    }
+  }
+
+  Future<void> _loadPeriodSummary(UserModel user, {bool force = false}) async {
+    final cycle = PayrollCycle.forDate(_now);
+    final scope =
+        '${user.uid}:${cycle.key}:${DateFormat('yyyy-MM-dd').format(_now)}';
+    if (!force && _periodSummaryScope == scope) return;
+    if (_periodSummaryLoadingScope == scope) return;
+    _periodSummaryLoadingScope = scope;
+    try {
+      final summary = await AttendancePeriodSummaryService().loadForUser(
+        user: user,
+        start: cycle.start,
+        end: _now,
+        now: _now,
+      );
+      if (mounted && _periodSummaryLoadingScope == scope) {
+        _periodSummaryScope = scope;
+        setState(() => _periodSummary = summary);
+      }
+    } catch (_) {
+      // Stored attendance remains visible while the richer leave/day-off
+      // reconciliation reloads on the next foreground refresh.
+    } finally {
+      if (_periodSummaryLoadingScope == scope) {
+        _periodSummaryLoadingScope = null;
+      }
     }
   }
 
@@ -716,15 +753,12 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
 
             // Quick stats calculation for current payroll cycle up to today
             final cycle = PayrollCycle.forDate(_now);
-            final periodSummary = AttendancePeriodSummaryService.buildSummary(
-              user: user,
-              start: cycle.start,
-              end: _now,
-              now: _now,
-              attendanceByDate: {for (final l in logs) l.date: l},
-              approvedLeaves: const [],
-              companyDaysOff: const {},
-            );
+            final summaryScope =
+                '${user.uid}:${cycle.key}:${DateFormat('yyyy-MM-dd').format(_now)}';
+            final periodSummary =
+                _periodSummaryScope == summaryScope && _periodSummary != null
+                    ? _periodSummary!
+                    : const AttendancePeriodSummary([]);
 
             final workedDays = periodSummary.presentDays;
             // Keep this percentage consistent with خصوماتي: a late label
@@ -747,6 +781,7 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
                   await Future.wait([
                     _checkCurrentGeofence(),
                     _checkCompanyDayOff(),
+                    _loadPeriodSummary(user, force: true),
                   ]);
                 },
               );
@@ -758,6 +793,7 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
                 await Future.wait([
                   _checkCurrentGeofence(),
                   _checkCompanyDayOff(),
+                  _loadPeriodSummary(user, force: true),
                 ]);
               },
               color: ZaWolfColors.primaryCyan,

@@ -8,11 +8,13 @@ const TIME_PERMISSION_TYPES = new Set([
   "late_arrival",
   "mid_shift_exit",
 ]);
+const ATTENDANCE_RECONCILIATION_LOOKBACK_DAYS = 35;
 
 // A manager's approved-leave state changes rarely. A one-hour cache cuts the
 // repeated history scan while still picking up a newly approved leave soon.
 const MANAGER_LEAVE_CACHE_MS = 60 * 60 * 1000;
 let managerLeaveCache = { dateKey: "", values: new Map() };
+let finalizedPermissionReconciliationCursor = null;
 
 function cairoDateKey(date = new Date()) {
   const parts = new Intl.DateTimeFormat("en-CA", {
@@ -213,6 +215,76 @@ async function reconcileApprovedPermission(db, permission) {
   }
 }
 
+// Approval is committed before client-side follow-up work.  Re-run the
+// deterministic attendance calculation from the server so an approval is not
+// lost when the approver closes the application or their network drops.
+// A bounded payroll-period lookback also repairs records produced by older
+// app versions without touching historical cycles indefinitely.
+async function reconcileFinalizedPermissions(db, now = new Date()) {
+  const today = cairoDateKey(now);
+  let snapshot;
+  let range;
+  if (finalizedPermissionReconciliationCursor) {
+    // After the bounded startup repair, only read decisions finalized since
+    // the previous server pass. This keeps the five-minute runtime loop from
+    // repeatedly scanning an entire payroll cycle.
+    snapshot = await db
+      .collection("permissions")
+      .where(
+        "finalApprovalAt",
+        ">=",
+        admin.firestore.Timestamp.fromDate(finalizedPermissionReconciliationCursor),
+      )
+      .limit(250)
+      .get();
+    range = "newly-finalized";
+  } else {
+    const from = new Date(
+      now.getTime() - ATTENDANCE_RECONCILIATION_LOOKBACK_DAYS * 24 * 60 * 60 * 1000,
+    );
+    const fromDate = cairoDateKey(from);
+    snapshot = await db
+      .collection("permissions")
+      .where("requestDate", ">=", fromDate)
+      .where("requestDate", "<=", today)
+      .limit(250)
+      .get();
+    range = `${fromDate}..${today}`;
+  }
+  finalizedPermissionReconciliationCursor = now;
+
+  let processed = 0;
+  let failed = 0;
+  for (const doc of snapshot.docs) {
+    const permission = doc.data();
+    if (
+      permission.status !== "approved" ||
+      !TIME_PERMISSION_TYPES.has(permission.permissionType)
+    ) {
+      continue;
+    }
+    try {
+      await reconcileApprovedPermission(db, {
+        ...permission,
+        permissionId: doc.id,
+      });
+      processed++;
+    } catch (error) {
+      failed++;
+      console.error(
+        `Attendance permission reconciliation failed for ${doc.id}:`,
+        error,
+      );
+    }
+  }
+  if (processed || failed) {
+    console.log(
+      `Attendance permission reconciliation: processed ${processed}, failed ${failed}, range ${range}.`,
+    );
+  }
+  return { found: snapshot.size, processed, failed, range, today };
+}
+
 async function processManagerLeavePermissionBypasses() {
   initializeFirebase();
   const db = admin.firestore();
@@ -408,5 +480,6 @@ module.exports = {
   nextApprovalStage,
   permissionCycleForRequestDate,
   processManagerLeavePermissionBypasses,
+  reconcileFinalizedPermissions,
   shouldUpdateActivePermissionBalance,
 };

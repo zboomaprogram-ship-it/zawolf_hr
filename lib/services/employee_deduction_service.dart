@@ -7,6 +7,7 @@ import '../models/attendance_model.dart';
 import '../models/attendance_policy.dart';
 import '../models/manual_deduction_model.dart';
 import '../models/permission_model.dart';
+import 'attendance_reconciliation_service.dart';
 import 'attendance_service.dart';
 
 class EmployeeDeductionEntry {
@@ -109,6 +110,7 @@ class EmployeeDeductionService {
 
   final FirebaseFirestore _db;
   final AttendanceService _attendanceService;
+  final Set<String> _reconciledPermissionIds = <String>{};
 
   Stream<List<EmployeeDeductionEntry>> watchForCycle({
     required String userId,
@@ -159,6 +161,7 @@ class EmployeeDeductionService {
           .listen((snapshot) {
             permissions =
                 snapshot.docs.map(PermissionModel.fromFirestore).toList();
+            _reconcileApprovedLatePermissions(permissions);
             emit();
           }, onError: controller.addError);
 
@@ -178,6 +181,22 @@ class EmployeeDeductionService {
         await manualSub.cancel();
       };
     });
+  }
+
+  void _reconcileApprovedLatePermissions(List<PermissionModel> permissions) {
+    for (final permission in permissions) {
+      if (permission.status != 'approved' ||
+          permission.permissionType != 'late_arrival' ||
+          !_reconciledPermissionIds.add(permission.permissionId)) {
+        continue;
+      }
+      // Recovery for records approved while the app was closed or while a
+      // previous reconciliation response was lost. The operation is
+      // deterministic for the permission and attendance date.
+      AttendanceReconciliationService()
+          .reconcileApprovedPermission(permission)
+          .catchError((_) {});
+    }
   }
 
   EmployeeDeductionEntry _fromAttendance(AttendanceModel item) {

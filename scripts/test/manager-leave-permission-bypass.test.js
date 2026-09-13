@@ -5,8 +5,44 @@ const {
   isEligiblePermissionCandidate,
   nextApprovalStage,
   permissionCycleForRequestDate,
+  reconcileFinalizedPermissions,
   shouldUpdateActivePermissionBalance,
 } = require("../manager-leave-permission-bypass");
+
+test("startup reconciliation has a bounded payroll-period permission scan", async () => {
+  const filters = [];
+  const db = {
+    collection() {
+      return {
+        where(field, operator, value) {
+          filters.push([field, operator, value]);
+          return this;
+        },
+        limit(value) {
+          assert.equal(value, 250);
+          return this;
+        },
+        async get() {
+          return { docs: [], size: 0 };
+        },
+      };
+    },
+  };
+
+  const result = await reconcileFinalizedPermissions(
+    db,
+    new Date("2026-09-13T12:00:00.000Z"),
+  );
+
+  assert.equal(result.found, 0);
+  assert.deepEqual(
+    filters.map(([field, operator]) => [field, operator]),
+    [
+      ["requestDate", ">="],
+      ["requestDate", "<="],
+    ],
+  );
+});
 
 test("manager leave bypass applies only to same-day time permissions", () => {
   const base = {
