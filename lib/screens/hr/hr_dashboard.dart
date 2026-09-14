@@ -7,6 +7,7 @@ import '../../services/auth_service.dart';
 import '../../services/dashboard_attendance_summary_service.dart';
 import '../../services/pending_requests_service.dart';
 import '../../models/employee_role.dart';
+import '../../models/user_model.dart';
 import '../../models/sales_kpi_summary.dart';
 import '../../theme/theme.dart';
 import '../../components/attendance_insights_card.dart';
@@ -74,6 +75,15 @@ class _HrDashboardScreenState extends State<HrDashboardScreen> {
         });
       }
     }
+  }
+
+  bool _canViewSalesIndicators(UserModel user) {
+    if (user.role == EmployeeRole.superAdmin) return true;
+    final scope = '${user.department} ${user.position}'.toLowerCase();
+    return scope.contains('head of sales') ||
+        scope.contains('sales manager') ||
+        scope.contains('مدير المبيعات') ||
+        scope.contains('رئيس المبيعات');
   }
 
   void _loadAttendanceSummary() {
@@ -377,8 +387,7 @@ class _HrDashboardScreenState extends State<HrDashboardScreen> {
             ),
             const SizedBox(height: 24),
 
-            if (EmployeeRole.isHrStaff(hrAdmin.role) ||
-                hrAdmin.role == EmployeeRole.superAdmin)
+            if (_canViewSalesIndicators(hrAdmin))
               StreamBuilder<SalesKpiSummary?>(
                 stream: SalesKpiIntegrationService().watchCurrentSummary(),
                 builder: (context, currentSnapshot) {
@@ -555,6 +564,14 @@ class _HrDashboardScreenState extends State<HrDashboardScreen> {
                   () => context.go('/hr/announcements'),
                   theme,
                 ),
+                if (canAccessReports)
+                  _actionTile(
+                    'تقرير الموظفين للفترة',
+                    'تحليل الحضور والتأخير والخصومات لكل الموظفين أو موظف واحد',
+                    Icons.insights_outlined,
+                    () => context.go('/hr/period-reports'),
+                    theme,
+                  ),
                 if (canAccessReports)
                   _actionTile(
                     'تصدير التقارير',

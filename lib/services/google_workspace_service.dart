@@ -127,6 +127,33 @@ class GoogleWorkspaceService {
     );
   }
 
+  Future<HrPeriodSheet> generateHrPeriodSheet({
+    required DateTime start,
+    required DateTime end,
+    String? employeeId,
+  }) async {
+    final response = await client.post(
+      Uri.parse('$baseUrl/company-workspace/v2/reports/hr'),
+      headers: await _headers(),
+      body: jsonEncode({
+        'startDate': _dateKey(start),
+        'endDate': _dateKey(end),
+        'reportType': 'attendance',
+        if (employeeId != null) 'employeeId': employeeId,
+      }),
+    );
+    final body = _decode(response) as Map<String, dynamic>;
+    final resource = body['resource'] as Map? ?? const {};
+    final resourceId = '${resource['id'] ?? ''}';
+    if (resourceId.isEmpty) {
+      throw const GoogleWorkspaceException(502, 'لم تُرجع خدمة التقارير ملفاً صالحاً.');
+    }
+    return HrPeriodSheet(
+      resourceId: resourceId,
+      rowCount: (body['rowCount'] as num?)?.toInt() ?? 0,
+    );
+  }
+
   Future<Map<String, dynamic>> updateTestRow(
     String recordId, {
     String? taskName,
@@ -716,4 +743,10 @@ class WorkspaceBootstrapResult {
     required this.grants,
     required this.skippedWithoutEmployeeId,
   });
+}
+
+class HrPeriodSheet {
+  const HrPeriodSheet({required this.resourceId, required this.rowCount});
+  final String resourceId;
+  final int rowCount;
 }

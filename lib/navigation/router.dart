@@ -54,6 +54,7 @@ import '../screens/hr/attendance_summary_details_screen.dart';
 import '../screens/hr/employee_mgmt.dart';
 import '../screens/hr/announcements.dart';
 import '../screens/hr/sheets_export_screen.dart';
+import '../features/hr_period_reports/hr_period_reports_entry.dart';
 import '../screens/hr/google_workspace_screen.dart';
 import '../screens/manager/rate_performance.dart';
 import '../screens/smart_assistant_screen.dart';
@@ -765,6 +766,10 @@ class ZaWolfRouter {
             GoRoute(
               path: '/hr/reports',
               builder: (context, state) => const SheetsExportScreen(),
+            ),
+            GoRoute(
+              path: '/hr/period-reports',
+              builder: (context, state) => HrPeriodReportsEntry(auth: authService),
             ),
             GoRoute(
               path: '/hr/google-workspace',

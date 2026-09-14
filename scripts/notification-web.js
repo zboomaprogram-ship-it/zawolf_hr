@@ -2656,8 +2656,14 @@ async function handleWorkspaceHrReport(req, res) {
       throw error;
     }
     const period = parseWorkspaceReportPeriod(body);
+    const employeeId = String(body.employeeId || '').trim();
+    if (employeeId && !/^[A-Za-z0-9_-]{1,128}$/.test(employeeId)) {
+      const error = new Error('معرّف الموظف غير صالح.');
+      error.code = 'validation';
+      throw error;
+    }
     const db = admin.firestore();
-    const key = reportKey({ type: `hr_${reportType}`, scopeId: 'company', ...period });
+    const key = reportKey({ type: `hr_${reportType}`, scopeId: employeeId || 'company', ...period });
     reservation = await reserveWorkspaceReport({ db, key, actorId: actor.uid });
     if (reservation.kind === 'replay') {
       sendJson(res, 200, { ok: true, ...reservation.result, replayed: true });
@@ -2676,22 +2682,26 @@ async function handleWorkspaceHrReport(req, res) {
         .where('requestDate', '<=', period.endDate).limit(5000).get(),
       db.collection('leaves').where('status', '==', 'approved').limit(5000).get(),
     ]);
+    const onlyEmployee = (doc) => !employeeId || String(doc.data().userId || '') === employeeId;
+    const attendanceDocs = attendanceSnap.docs.filter(onlyEmployee);
+    const permissionDocs = permissionsSnap.docs.filter(onlyEmployee);
+    const leaveDocs = leavesSnap.docs.filter(onlyEmployee);
     const userIds = new Set([
-      ...attendanceSnap.docs.map((doc) => String(doc.data().userId || '')),
-      ...permissionsSnap.docs.map((doc) => String(doc.data().userId || '')),
-      ...leavesSnap.docs.map((doc) => String(doc.data().userId || '')),
+      ...attendanceDocs.map((doc) => String(doc.data().userId || '')),
+      ...permissionDocs.map((doc) => String(doc.data().userId || '')),
+      ...leaveDocs.map((doc) => String(doc.data().userId || '')),
     ].filter(Boolean));
     const userDocs = await Promise.all([...userIds].map((id) => db.collection('users').doc(id).get()));
     const reportData = buildHrOperationalRows({
       reportType,
       period,
-      attendance: attendanceSnap.docs.map((doc) => doc.data()),
-      permissions: permissionsSnap.docs.map((doc) => doc.data()),
-      leaves: leavesSnap.docs.map((doc) => doc.data()),
+      attendance: attendanceDocs.map((doc) => doc.data()),
+      permissions: permissionDocs.map((doc) => doc.data()),
+      leaves: leaveDocs.map((doc) => doc.data()),
       users: userDocs.filter((doc) => doc.exists).map((doc) => ({ id: doc.id, ...doc.data() })),
     });
     const labels = { attendance: 'الحضور', requests: 'الطلبات', deductions: 'الخصومات' };
-    const reportName = `ZaWolf - تقرير ${labels[reportType]}`;
+    const reportName = `ZaWolf - تقرير ${labels[reportType]}${employeeId ? ' لموظف' : ''}`;
     const report = await getGoogleSheetsIntegration().writeWorkspaceAuditReport(
       reportData.headers,
       reportData.rows,
@@ -2703,7 +2713,7 @@ async function handleWorkspaceHrReport(req, res) {
     const resourceId = reportRunId(key);
     await db.collection('workspaceResources').doc(resourceId).set({
       name: reportName, type: 'sheet', department: 'الموارد البشرية',
-      description: `تقرير ${labels[reportType]} للفترة ${period.startDate} إلى ${period.endDate}`,
+      description: `تقرير ${labels[reportType]}${employeeId ? ' لموظف محدد' : ''} للفترة ${period.startDate} إلى ${period.endDate}`,
       hasExternalId: true, schemaProfileId: '', sheetTab: report.tabTitle,
       managerIds: [], isActive: true, syncStatus: 'connected',
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
