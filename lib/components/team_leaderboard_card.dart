@@ -217,7 +217,7 @@ class _TeamLeaderboardCardState extends State<TeamLeaderboardCard> {
                                     borderRadius: BorderRadius.circular(8),
                                   ),
                                   child: Text(
-                                    '${member.commitmentScore.toInt()}% التزام',
+                                    '${member.commitmentScore.round()}% التزام',
                                     style: TextStyle(
                                       color: medalColor,
                                       fontSize: 11,

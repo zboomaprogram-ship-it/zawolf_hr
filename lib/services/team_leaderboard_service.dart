@@ -26,7 +26,7 @@ final class TeamLeaderboardService {
     return _firestore
         .collection('productivityScores')
         .where('monthKey', isEqualTo: effectiveMonthKey)
-        .limit(20)
+        .limit(100)
         .snapshots()
         .map((scoresSnapshot) {
           if (scoresSnapshot.docs.isNotEmpty) {
