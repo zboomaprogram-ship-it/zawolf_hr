@@ -82,21 +82,26 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
   String? _periodSummaryScope;
   String? _periodSummaryLoadingScope;
 
+  late final EmployeeAttendanceGateCubit _gateCubit;
+
   @override
   void initState() {
     super.initState();
+    _gateCubit = EmployeeAttendanceGateCubit();
     WidgetsBinding.instance.addObserver(this);
     AttendanceService().syncPendingOfflineAttendance();
-    _clockTimer = Timer.periodic(const Duration(minutes: 1), (_) {
+    _clockTimer = Timer.periodic(const Duration(seconds: 30), (_) {
       if (!mounted) return;
       final previousDay = DateUtils.dateOnly(_now);
       final current = DateTime.now();
       setState(() => _now = current);
       final user = context.read<AuthService>().currentUser;
-      if (user != null && DateUtils.dateOnly(current) != previousDay) {
-        unawaited(_checkCompanyDayOff());
-        unawaited(_refreshAttendanceGate(user));
-        unawaited(_loadPeriodSummary(user, force: true));
+      if (user != null) {
+        if (DateUtils.dateOnly(current) != previousDay) {
+          unawaited(_checkCompanyDayOff());
+          unawaited(_loadPeriodSummary(user, force: true));
+        }
+        unawaited(_gateCubit.load(user));
       }
     });
   }
@@ -105,6 +110,7 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _clockTimer?.cancel();
+    _gateCubit.close();
     final pilot = _checkInPilot;
     if (pilot != null) unawaited(pilot.close());
     super.dispose();
@@ -114,8 +120,22 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state != AppLifecycleState.resumed || !mounted) return;
     final user = context.read<AuthService>().currentUser;
-    setState(() => _now = DateTime.now());
+    final currentMonthKey = PayrollCycle.keyFor(DateTime.now());
+    setState(() {
+      _now = DateTime.now();
+      if (user != null) {
+        _attendanceStream = AttendanceService().watchMonthlyAttendance(
+          user.uid,
+          currentMonthKey,
+        );
+        _attendanceStreamUserId = user.uid;
+        _attendanceStreamMonthKey = currentMonthKey;
+      }
+    });
     if (user != null) {
+      if (!kIsWeb) {
+        unawaited(_checkCurrentGeofence());
+      }
       unawaited(_checkCompanyDayOff());
       unawaited(_refreshAttendanceGate(user));
       unawaited(_loadPeriodSummary(user, force: true));
@@ -281,7 +301,7 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
 
   Future<void> _refreshAttendanceGate(UserModel user) async {
     try {
-      await context.read<EmployeeAttendanceGateCubit>().load(user);
+      await _gateCubit.load(user);
     } catch (_) {}
     if (mounted) {
       setState(() => _now = DateTime.now());
@@ -698,8 +718,8 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
 
     final todayStr = DateFormat('yyyy-MM-dd').format(DateTime.now());
 
-    return BlocProvider(
-      create: (_) => EmployeeAttendanceGateCubit()..load(user),
+    return BlocProvider.value(
+      value: _gateCubit,
       child: Scaffold(
         appBar: AppBar(
           actions: [
@@ -856,6 +876,7 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
                   await Future.wait([
                     _checkCurrentGeofence(),
                     _checkCompanyDayOff(),
+                    _refreshAttendanceGate(user),
                     _loadPeriodSummary(user, force: true),
                   ]);
                 },
@@ -868,6 +889,7 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
                 await Future.wait([
                   _checkCurrentGeofence(),
                   _checkCompanyDayOff(),
+                  _refreshAttendanceGate(user),
                   _loadPeriodSummary(user, force: true),
                 ]);
               },
