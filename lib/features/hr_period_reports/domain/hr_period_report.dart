@@ -23,11 +23,17 @@ class HrReportPeriod {
   final DateTime start;
   final DateTime end;
   int get days => end.difference(start).inDays + 1;
-  static DateTime _day(DateTime value) => DateTime(value.year, value.month, value.day);
+  static DateTime _day(DateTime value) =>
+      DateTime(value.year, value.month, value.day);
 }
 
 class HrReportEmployee {
-  const HrReportEmployee({required this.id, required this.name, required this.code, required this.department});
+  const HrReportEmployee({
+    required this.id,
+    required this.name,
+    required this.code,
+    required this.department,
+  });
   final String id;
   final String name;
   final String code;
@@ -58,12 +64,72 @@ class HrAttendanceRecord {
 }
 
 class HrPeriodReport {
-  const HrPeriodReport({required this.period, required this.records, required this.employees});
+  const HrPeriodReport({
+    required this.period,
+    required this.records,
+    required this.employees,
+    this.requests = const [],
+    this.deductions = const [],
+  });
   final HrReportPeriod period;
   final List<HrAttendanceRecord> records;
   final List<HrReportEmployee> employees;
+  final List<HrRequestRecord> requests;
+  final List<HrDeductionRecord> deductions;
 
-  List<HrAttendanceRecord> forEmployee(String? employeeId) => employeeId == null
-      ? records
-      : records.where((record) => record.employee.id == employeeId).toList();
+  List<HrAttendanceRecord> forEmployee(String? employeeId) =>
+      employeeId == null
+          ? records
+          : records
+              .where((record) => record.employee.id == employeeId)
+              .toList();
+  List<HrRequestRecord> requestsForEmployee(String? employeeId) =>
+      employeeId == null
+          ? requests
+          : requests
+              .where((record) => record.employee.id == employeeId)
+              .toList();
+  List<HrDeductionRecord> deductionsForEmployee(String? employeeId) =>
+      employeeId == null
+          ? deductions
+          : deductions
+              .where((record) => record.employee.id == employeeId)
+              .toList();
+}
+
+class HrRequestRecord {
+  const HrRequestRecord({
+    required this.employee,
+    required this.date,
+    required this.type,
+    required this.status,
+    this.reason,
+    this.endDate,
+  });
+  final HrReportEmployee employee;
+  final DateTime date;
+  final DateTime? endDate;
+  final String type;
+  final String status;
+  final String? reason;
+}
+
+class HrDeductionRecord {
+  const HrDeductionRecord({
+    required this.employee,
+    required this.date,
+    required this.reason,
+    required this.status,
+    this.amount = 0,
+    this.fraction = 0,
+    this.source = 'attendance',
+  });
+  final HrReportEmployee employee;
+  final DateTime date;
+  final String reason;
+  final String status;
+  final double amount;
+  final double fraction;
+  final String source;
+  bool get affectsDiscipline => status == 'approved';
 }

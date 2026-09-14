@@ -13,16 +13,35 @@ class HrPeriodReportsEntry extends StatefulWidget {
   @override
   State<HrPeriodReportsEntry> createState() => _HrPeriodReportsEntryState();
 }
+
 class _HrPeriodReportsEntryState extends State<HrPeriodReportsEntry> {
   HrPeriodReportCubit? _cubit;
   @override
-  void initState() { super.initState(); final user = widget.auth.currentUser; if (user != null) _cubit = HrPeriodReportCubit(repository: FirestoreHrPeriodReportRepository(), reviewer: user); }
+  void initState() {
+    super.initState();
+    final user = widget.auth.currentUser;
+    if (user != null) {
+      _cubit = HrPeriodReportCubit(
+        repository: FirestoreHrPeriodReportRepository(),
+        reviewer: user,
+      );
+    }
+  }
+
   @override
-  void dispose() { _cubit?.close(); super.dispose(); }
+  void dispose() {
+    _cubit?.close();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     final cubit = _cubit;
-    if (cubit == null) return const Scaffold(body: Center(child: Text('تعذر تحميل جلسة المستخدم.')));
+    if (cubit == null) {
+      return const Scaffold(
+        body: Center(child: Text('تعذر تحميل جلسة المستخدم.')),
+      );
+    }
     return BlocProvider.value(value: cubit, child: const HrPeriodReportPage());
   }
 }
