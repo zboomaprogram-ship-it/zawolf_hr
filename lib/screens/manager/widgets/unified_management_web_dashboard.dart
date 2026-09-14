@@ -719,6 +719,12 @@ class _UnifiedManagementWebDashboardState
           icon: Icons.schedule_outlined,
           onTap: () => context.go('/hr/attendance-policy'),
         ),
+      if (isHrRole)
+        _buildShortcutChip(
+          label: 'تصاريح الحضور عبر الويب',
+          icon: Icons.language_rounded,
+          onTap: () => context.go('/hr/web-attendance-access'),
+        ),
     ];
     final requests = <Widget>[
       _buildShortcutChip(
@@ -873,6 +879,11 @@ class _UnifiedManagementWebDashboardState
       label: 'سياسة الدوام',
       icon: Icons.schedule_outlined,
       onTap: () => context.go('/hr/attendance-policy'),
+    ),
+    _buildShortcutChip(
+      label: 'تصاريح الحضور عبر الويب',
+      icon: Icons.language_rounded,
+      onTap: () => context.go('/hr/web-attendance-access'),
     ),
     _buildShortcutChip(
       label: 'المهام الميدانية / المأمورية',

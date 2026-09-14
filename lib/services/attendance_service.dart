@@ -21,6 +21,7 @@ import 'attendance_gateway_service.dart';
 import 'role_notification_service.dart';
 import 'app_security_policy_service.dart';
 import 'safe_diagnostics_service.dart';
+import '../navigation/developer_tools_entry.dart';
 
 enum AttendanceActionIntent { checkIn, checkOut }
 
@@ -281,10 +282,19 @@ class AttendanceService {
       }
 
       diagnosticStage = 'device_security';
+      var blockDevOptions = securityPolicy.blockAndroidDeveloperOptions;
+      if (blockDevOptions) {
+        try {
+          final isDevAllowed =
+              await DeveloperToolsAccess.isAvailableForCurrentUser();
+          if (isDevAllowed) {
+            blockDevOptions = false;
+          }
+        } catch (_) {}
+      }
       final securityResult = await _securityService.verifyForAttendance(
         requireBiometric: policyConfig.requiresBiometric,
-        blockAndroidDeveloperOptions:
-            securityPolicy.blockAndroidDeveloperOptions,
+        blockAndroidDeveloperOptions: blockDevOptions,
       );
       final effectiveLocationRisk = locationRisk.withSecurityFallback(
         securityResult.deviceCredentialFallbackUsed,

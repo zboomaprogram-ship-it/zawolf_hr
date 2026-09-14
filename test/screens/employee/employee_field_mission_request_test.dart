@@ -13,7 +13,7 @@ void main() {
   test('Field Mission is exposed as a separate request container', () {
     // Check that 'مهمة ميدانية' is present in request type selector
     expect(requestScreen, contains("label: 'مهمة ميدانية'"));
-    expect(requestScreen, contains("6 => _buildFieldMissionForm(user, theme)"));
+    expect(requestScreen, contains("'field_mission' => _buildFieldMissionForm(user, theme)"));
     expect(
       requestScreen,
       contains("_buildFieldMissionForm(UserModel user, ThemeData theme)"),
@@ -35,13 +35,13 @@ void main() {
   });
 
   test('All primary request types are properly mapped in request centre', () {
-    expect(requestScreen, contains("0 => _buildPermissionForm"));
-    expect(requestScreen, contains("1 => _buildLeaveForm"));
-    expect(requestScreen, contains("2 => _buildAdvanceForm"));
-    expect(requestScreen, contains("3 => _buildComplaintForm"));
-    expect(requestScreen, contains("4 => _buildResignationForm"));
-    expect(requestScreen, contains("5 => _buildAdministrativeRequestForm"));
-    expect(requestScreen, contains("6 => _buildFieldMissionForm"));
-    expect(requestScreen, contains("_ => _buildAttendanceCorrectionForm"));
+    expect(requestScreen, contains("'permission' => _buildPermissionForm"));
+    expect(requestScreen, contains("'leave' => _buildLeaveForm"));
+    expect(requestScreen, contains("'advance' => _buildAdvanceForm"));
+    expect(requestScreen, contains("'complaint' => _buildComplaintForm"));
+    expect(requestScreen, contains("'resignation' => _buildResignationForm"));
+    expect(requestScreen, contains("'administrative' => _buildAdministrativeRequestForm"));
+    expect(requestScreen, contains("'field_mission' => _buildFieldMissionForm"));
+    expect(requestScreen, contains("'attendance_correction' => _buildAttendanceCorrectionForm"));
   });
 }

@@ -57,7 +57,7 @@ final class _DeveloperToolsAdminPageState
                 ),
                 const SizedBox(height: 12),
                 const Text(
-                  'تمنح أدوات التشخيص، وإعادة ربط جهاز الحضور المسجّل للحساب عند الحاجة. لا تتجاوز الموقع أو البصمة أو ربط جهاز مستخدم آخر.',
+                  'تمنح أدوات التشخيص، وتسمح بتسجيل الحضور مع تفعيل خيارات المطور على Android، وإعادة ربط جهاز الحضور المسجّل للحساب عند الحاجة. لا تتجاوز الموقع أو البصمة.',
                 ),
                 const SizedBox(height: 16),
                 if (state.status == DeveloperToolsAdminStatus.loading)

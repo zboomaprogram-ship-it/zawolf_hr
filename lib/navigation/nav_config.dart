@@ -347,6 +347,14 @@ List<NavigationItem> _operationalAdminItems() => [
     domain: NavDomain.time,
   ),
   NavigationItem(
+    icon: Icons.language_rounded,
+    activeIcon: Icons.language,
+    label: 'تصاريح الحضور عبر الويب',
+    englishLabel: 'Web Attendance Access',
+    path: '/hr/web-attendance-access',
+    domain: NavDomain.time,
+  ),
+  NavigationItem(
     icon: Icons.directions_walk_outlined,
     activeIcon: Icons.directions_walk,
     label: 'المهام الميدانية',

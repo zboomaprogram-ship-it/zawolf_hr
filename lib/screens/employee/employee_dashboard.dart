@@ -842,6 +842,15 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
                 disciplineScore: disciplineScore,
                 workedDays: workedDays,
                 pendingRequestsCount: _pendingRequestsCount,
+                webAttendanceAccess: _webAttendanceAccess,
+                actionLoading: _actionLoading,
+                attendanceActionLabel: gate.title,
+                attendanceActionEnabled: !gate.disabled,
+                onCheckInTap:
+                    () => _handleCheckInCheckOut(
+                      user,
+                      gate.expectedAction,
+                    ),
                 onRefresh: () async {
                   await attendanceService.syncPendingOfflineAttendance();
                   await Future.wait([

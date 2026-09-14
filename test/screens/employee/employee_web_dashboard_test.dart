@@ -137,5 +137,94 @@ void main() {
         expect(find.text('طلبات معلقة'), findsOneWidget);
       },
     );
+
+    testWidgets(
+      'EmployeeWebDashboardView renders web attendance button and triggers tap when authorized',
+      (tester) async {
+        tester.view.physicalSize = const Size(1280, 900);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(() {
+          tester.view.resetPhysicalSize();
+          tester.view.resetDevicePixelRatio();
+        });
+
+        final user = UserModel(
+          uid: 'emp-123',
+          email: 'employee@zawolf.ai',
+          displayName: 'أحمد محمود',
+          role: EmployeeRole.employee,
+          employeeId: 'EMP-101',
+          department: 'الهندسة البرمجية',
+          position: 'مهندس برمجيات',
+          organizationLevel: 'L2',
+          organizationOrder: 1,
+          locationId: 'loc-1',
+          locationName: 'المقر الرئيسي',
+          baseMonthlySalary: 12000,
+          salaryCurrency: 'EGP',
+          managerIds: const [],
+          managerNames: const [],
+          managerCodes: const [],
+          isActive: true,
+          workSchedule: WorkSchedule(),
+          leaveBalance: LeaveBalance(
+            annual: 18,
+            sick: 10,
+            casual: 4,
+            daysOff: 12,
+          ),
+          permissionBalance: PermissionBalance(
+            usedThisMonth: 1,
+            usedHoursThisMonth: 2.0,
+            lastResetMonth: '2026-09',
+          ),
+          notificationTokens: const [],
+          unreadNotifications: 2,
+          salesAnalyticsEnabled: false,
+          salesAnalyticsRole: '',
+          salesAnalyticsAgentKey: '',
+          salesAnalyticsCompany: '',
+          avatarGender: 'male',
+          avatarAccent: 'cyan',
+          preferredViewMode: 'grid',
+          seenCelebrationBadgeIds: const [],
+          excludeFromAttendanceReports: false,
+        );
+
+        var tapped = false;
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: EmployeeWebDashboardView(
+                user: user,
+                logs: const [],
+                todayLog: null,
+                disciplineScore: 95.0,
+                workedDays: 14,
+                pendingRequestsCount: 2,
+                onRefresh: () async {},
+                taskStream: const Stream.empty(),
+                webAttendanceAccess: true,
+                attendanceActionLabel: 'تسجيل حضور عبر الويب',
+                attendanceActionEnabled: true,
+                onCheckInTap: () => tapped = true,
+              ),
+            ),
+          ),
+        );
+
+        // Verify web check-in button is displayed
+        expect(find.text('تسجيل حضور عبر الويب'), findsOneWidget);
+        expect(
+          find.text('تسجيل الحضور والانصراف مفعّل عبر الويب وتطبيق الجوال.'),
+          findsOneWidget,
+        );
+
+        // Tap the check-in button
+        await tester.tap(find.text('تسجيل حضور عبر الويب'));
+        await tester.pump();
+        expect(tapped, isTrue);
+      },
+    );
   });
 }

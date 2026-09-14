@@ -28,6 +28,11 @@ class EmployeeWebDashboardView extends StatelessWidget {
   final int pendingRequestsCount;
   final Future<void> Function() onRefresh;
   final Stream<List<EmployeeTaskModel>>? taskStream;
+  final bool webAttendanceAccess;
+  final VoidCallback? onCheckInTap;
+  final bool actionLoading;
+  final String? attendanceActionLabel;
+  final bool attendanceActionEnabled;
 
   const EmployeeWebDashboardView({
     super.key,
@@ -39,6 +44,11 @@ class EmployeeWebDashboardView extends StatelessWidget {
     required this.pendingRequestsCount,
     required this.onRefresh,
     this.taskStream,
+    this.webAttendanceAccess = false,
+    this.onCheckInTap,
+    this.actionLoading = false,
+    this.attendanceActionLabel,
+    this.attendanceActionEnabled = true,
   });
 
   @override
@@ -83,6 +93,7 @@ class EmployeeWebDashboardView extends StatelessWidget {
                 disciplineScore: disciplineScore,
                 onOpenAttendance: () => context.go('/employee/attendance-history'),
                 onRefresh: onRefresh,
+                webAttendanceAccess: webAttendanceAccess,
               ),
               const SizedBox(height: DsSpacing.xl),
 
@@ -237,49 +248,52 @@ class EmployeeWebDashboardView extends StatelessWidget {
                   ],
                 ),
               ),
-              // Mobile Attendance Check-In Notice Pill
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 14,
-                  vertical: 8,
-                ),
-                decoration: BoxDecoration(
-                  color: ZaWolfColors.surface02,
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: ZaWolfColors.surface03),
-                ),
-                child: const Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      Icons.phone_android_rounded,
-                      color: ZaWolfColors.primaryCyan,
-                      size: 20,
-                    ),
-                    SizedBox(width: 8),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'تسجيل الحضور عبر تطبيق الجوال',
-                          style: TextStyle(
-                            color: ZaWolfColors.textPrimary,
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold,
+              // Mobile Attendance Check-In Notice Pill vs Web Attendance Check-In Button
+              if (webAttendanceAccess)
+                _buildWebAttendanceAction(context)
+              else
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 8,
+                  ),
+                  decoration: BoxDecoration(
+                    color: ZaWolfColors.surface02,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: ZaWolfColors.surface03),
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.phone_android_rounded,
+                        color: ZaWolfColors.primaryCyan,
+                        size: 20,
+                      ),
+                      SizedBox(width: 8),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'تسجيل الحضور عبر تطبيق الجوال',
+                            style: TextStyle(
+                              color: ZaWolfColors.textPrimary,
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
-                        ),
-                        Text(
-                          'متاح حصراً عبر تطبيق الهاتف لضمان التحقق البيومتري',
-                          style: TextStyle(
-                            color: ZaWolfColors.textMuted,
-                            fontSize: 10,
+                          Text(
+                            'متاح حصراً عبر تطبيق الهاتف لضمان التحقق البيومتري',
+                            style: TextStyle(
+                              color: ZaWolfColors.textMuted,
+                              fontSize: 10,
+                            ),
                           ),
-                        ),
-                      ],
-                    ),
-                  ],
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
-              ),
             ],
           ),
           const SizedBox(height: 16),
@@ -318,6 +332,79 @@ class EmployeeWebDashboardView extends StatelessWidget {
             ],
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildWebAttendanceAction(BuildContext context) {
+    final bool hasCheckedIn = todayLog?.checkInTime != null;
+    final bool hasCheckedOut = hasCheckedIn && todayLog?.checkOutTime != null;
+
+    if (hasCheckedOut) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        decoration: BoxDecoration(
+          color: ZaWolfColors.success.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: ZaWolfColors.success.withValues(alpha: 0.3),
+          ),
+        ),
+        child: const Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.check_circle_outline,
+              color: ZaWolfColors.success,
+              size: 20,
+            ),
+            SizedBox(width: 8),
+            Text(
+              'اكتمل الحضور والانصراف اليوم',
+              style: TextStyle(
+                color: ZaWolfColors.success,
+                fontSize: 12,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    final String label =
+        attendanceActionLabel ??
+        (!hasCheckedIn ? 'تسجيل حضور عبر الويب' : 'تسجيل انصراف عبر الويب');
+
+    return ElevatedButton.icon(
+      onPressed:
+          (attendanceActionEnabled && !actionLoading) ? onCheckInTap : null,
+      style: ElevatedButton.styleFrom(
+        backgroundColor:
+            !hasCheckedIn ? ZaWolfColors.primaryCyan : ZaWolfColors.warning,
+        foregroundColor: Colors.black,
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(10),
+        ),
+      ),
+      icon:
+          actionLoading
+              ? const SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: Colors.black,
+                ),
+              )
+              : Icon(
+                !hasCheckedIn ? Icons.login_rounded : Icons.logout_rounded,
+                size: 18,
+              ),
+      label: Text(
+        label,
+        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
       ),
     );
   }
@@ -531,11 +618,19 @@ class EmployeeWebDashboardView extends StatelessWidget {
 /// Personal read-only trend for web. Biometric check-in and check-out remain
 /// mobile-only; this card makes the resulting status and period clear.
 class EmployeePersonalAnalysisCard extends StatefulWidget {
-  const EmployeePersonalAnalysisCard({super.key, required this.logs, required this.disciplineScore, required this.onOpenAttendance, required this.onRefresh});
+  const EmployeePersonalAnalysisCard({
+    super.key,
+    required this.logs,
+    required this.disciplineScore,
+    required this.onOpenAttendance,
+    required this.onRefresh,
+    this.webAttendanceAccess = false,
+  });
   final List<AttendanceModel> logs;
   final double disciplineScore;
   final VoidCallback onOpenAttendance;
   final Future<void> Function() onRefresh;
+  final bool webAttendanceAccess;
 
   @override
   State<EmployeePersonalAnalysisCard> createState() => _EmployeePersonalAnalysisCardState();
@@ -584,7 +679,14 @@ class _EmployeePersonalAnalysisCardState extends State<EmployeePersonalAnalysisC
           Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
             const Text('تحليل حضوري الشخصي', textDirection: TextDirection.rtl, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
             const SizedBox(height: 2),
-            const Text('تسجيل الحضور والانصراف البيومتري يتم عبر تطبيق الجوال.', textDirection: TextDirection.rtl, textAlign: TextAlign.right, style: TextStyle(color: ZaWolfColors.textSecondary, fontSize: 12)),
+            Text(
+              widget.webAttendanceAccess
+                  ? 'تسجيل الحضور والانصراف مفعّل عبر الويب وتطبيق الجوال.'
+                  : 'تسجيل الحضور والانصراف البيومتري يتم عبر تطبيق الجوال.',
+              textDirection: TextDirection.rtl,
+              textAlign: TextAlign.right,
+              style: const TextStyle(color: ZaWolfColors.textSecondary, fontSize: 12),
+            ),
           ])),
           const Icon(Icons.insights_outlined, color: ZaWolfColors.primaryCyan),
         ]),

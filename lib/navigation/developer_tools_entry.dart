@@ -58,7 +58,31 @@ final class _DeveloperToolsEntryState extends State<DeveloperToolsEntry> {
 final class DeveloperToolsAccess {
   const DeveloperToolsAccess._();
 
-  static Future<bool> isAvailableForCurrentUser() async {
+  static String? _cachedUserId;
+  static bool? _cachedIsAvailable;
+  static DateTime? _cachedAt;
+
+  static void invalidateCache() {
+    _cachedUserId = null;
+    _cachedIsAvailable = null;
+    _cachedAt = null;
+  }
+
+  static Future<bool> isAvailableForCurrentUser({
+    bool forceRefresh = false,
+  }) async {
+    final currentUid = FirebaseAuth.instance.currentUser?.uid;
+    if (currentUid == null || currentUid.isEmpty) {
+      invalidateCache();
+      return false;
+    }
+    if (!forceRefresh &&
+        _cachedUserId == currentUid &&
+        _cachedIsAvailable != null &&
+        _cachedAt != null &&
+        DateTime.now().difference(_cachedAt!) < const Duration(minutes: 5)) {
+      return _cachedIsAvailable!;
+    }
     final client = http.Client();
     try {
       final repository = DeveloperToolsRepositoryImpl(
@@ -69,7 +93,16 @@ final class DeveloperToolsAccess {
         ),
         operationsBaseUri: Uri.parse(_developerToolsBaseUri),
       );
-      return (await repository.loadMyEntitlement())?.isActive == true;
+      final active = (await repository.loadMyEntitlement())?.isActive == true;
+      _cachedUserId = currentUid;
+      _cachedIsAvailable = active;
+      _cachedAt = DateTime.now();
+      return active;
+    } catch (_) {
+      if (_cachedUserId == currentUid && _cachedIsAvailable != null) {
+        return _cachedIsAvailable!;
+      }
+      return false;
     } finally {
       client.close();
     }
