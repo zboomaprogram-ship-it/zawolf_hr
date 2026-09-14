@@ -2,6 +2,7 @@
 const crypto=require('node:crypto');
 const {safeId}=require('../conversation-operations');
 const MAX_BYTES=25*1024*1024, CHUNK_BYTES=1024*1024;
+const VOICE_MIME_TYPES=new Set(['audio/wav','audio/webm','audio/mp4','audio/ogg','audio/mpeg']);
 function failure(code,status=400) { const e=new Error(code); e.code=code;e.status=status; return e; }
 function normalizeUpload(p={}) {
   const operationId=safeId(p.operationId);
@@ -32,6 +33,9 @@ function sniffMime(b,claimed) {
   if(claimed==='text/plain'&&!b.includes(0)) return 'text/plain';
   if(b[0]===80&&b[1]===75) return /^application\/(vnd\.openxmlformats-officedocument\.|zip)/.test(claimed)?claimed:'application/zip';
   return 'application/octet-stream';
+}
+function validateVoiceMime(kind,mimeType) {
+  if(kind==='voice'&&!VOICE_MIME_TYPES.has(mimeType)) throw failure('invalid_voice');
 }
 function descriptor(id,d) {
   const mime=d.validatedMimeType||d.mimeType||'application/octet-stream';
@@ -135,7 +139,7 @@ async function handleMedia({req,res,db,actor,channel,parts,payload,sendJson,prov
         if(requested!==offset) {await ref.update({offset});sendJson(res,409,{ok:false,code:'upload_offset_mismatch',offset});return;}
         if(offset===0) {
           const validatedMimeType=sniffMime(bytes,d.mimeType);
-          if(d.kind==='voice'&&validatedMimeType!=='audio/wav')throw failure('invalid_voice');
+          validateVoiceMime(d.kind,validatedMimeType);
           d={...d,validatedMimeType};await ref.update({validatedMimeType});
         }
         const state=await provider.chunk({sessionUri:secret.sessionUri,offset,bytes,sizeBytes:d.sizeBytes});
@@ -153,4 +157,4 @@ async function handleMedia({req,res,db,actor,channel,parts,payload,sendJson,prov
   });
   return true;
 }
-module.exports={handleMedia,normalizeUpload,validateChunk,sniffMime,descriptor};
+module.exports={handleMedia,normalizeUpload,validateChunk,sniffMime,validateVoiceMime,descriptor};

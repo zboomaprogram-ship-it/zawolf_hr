@@ -33,11 +33,15 @@ class HrReportEmployee {
     required this.name,
     required this.code,
     required this.department,
+    this.baseMonthlySalary = 0,
+    this.salaryCurrency = 'EGP',
   });
   final String id;
   final String name;
   final String code;
   final String department;
+  final double baseMonthlySalary;
+  final String salaryCurrency;
 }
 
 class HrAttendanceRecord {
@@ -50,6 +54,7 @@ class HrAttendanceRecord {
     this.lateMinutes = 0,
     this.deductionReason,
     this.deductionStatus,
+    this.statusDetail,
   });
   final HrReportEmployee employee;
   final DateTime date;
@@ -59,6 +64,7 @@ class HrAttendanceRecord {
   final int lateMinutes;
   final String? deductionReason;
   final String? deductionStatus;
+  final String? statusDetail;
 
   bool get approvedDeduction => deductionStatus == 'approved';
 }
@@ -123,6 +129,7 @@ class HrDeductionRecord {
     this.amount = 0,
     this.fraction = 0,
     this.source = 'attendance',
+    this.detail,
   });
   final HrReportEmployee employee;
   final DateTime date;
@@ -131,5 +138,62 @@ class HrDeductionRecord {
   final double amount;
   final double fraction;
   final String source;
+  final String? detail;
   bool get affectsDiscipline => status == 'approved';
+
+  double resolvedAmount({int payrollWorkDaysPerMonth = 26}) {
+    if (amount > 0) return amount;
+    if (fraction <= 0 || employee.baseMonthlySalary <= 0) return 0;
+    return employee.baseMonthlySalary / payrollWorkDaysPerMonth * fraction;
+  }
+}
+
+class HrAttendanceTrendPoint {
+  const HrAttendanceTrendPoint({
+    required this.date,
+    required this.scheduled,
+    required this.attended,
+    required this.late,
+  });
+
+  final DateTime date;
+  final int scheduled;
+  final int attended;
+  final int late;
+
+  double get attendanceRate => scheduled == 0 ? 0 : attended / scheduled;
+  double get lateRate => scheduled == 0 ? 0 : late / scheduled;
+}
+
+extension HrPeriodReportAnalysis on HrPeriodReport {
+  List<HrAttendanceTrendPoint> trendForEmployee(String? employeeId) {
+    final selected = forEmployee(employeeId);
+    return List.generate(period.days, (index) {
+      final date = period.start.add(Duration(days: index));
+      final day = selected.where(
+        (record) =>
+            record.date.year == date.year &&
+            record.date.month == date.month &&
+            record.date.day == date.day,
+      );
+      final scheduled =
+          day.where((record) => record.status != 'day_off').toList();
+      return HrAttendanceTrendPoint(
+        date: date,
+        scheduled: scheduled.length,
+        attended:
+            scheduled
+                .where(
+                  (record) => const {
+                    'present',
+                    'late',
+                    'permission',
+                    'field_mission',
+                  }.contains(record.status),
+                )
+                .length,
+        late: scheduled.where((record) => record.status == 'late').length,
+      );
+    });
+  }
 }

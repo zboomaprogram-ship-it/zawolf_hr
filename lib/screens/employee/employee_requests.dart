@@ -413,11 +413,27 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
     }
   }
 
+  Color _getLeaveTypeColor(String type) {
+    return switch (type) {
+      LeaveTypePolicy.sick => const Color(0xFF10B981), // Emerald Green
+      LeaveTypePolicy.casual => const Color(0xFFF59E0B), // Amber / Warm Orange
+      LeaveTypePolicy.paternity => const Color(0xFFEC4899), // Rose / Pink
+      'day_off' || LeaveTypePolicy.normal => const Color(0xFF8B5CF6), // Purple / Violet
+      LeaveTypePolicy.unpaid => const Color(0xFF64748B), // Slate Blue
+      LeaveTypePolicy.exam => const Color(0xFF3B82F6), // Blue
+      LeaveTypePolicy.remote => const Color(0xFF06B6D4), // Cyan
+      _ => const Color(0xFF8B5CF6),
+    };
+  }
+
   Future<void> _selectLeaveDateRange(
     BuildContext context,
     String leaveType,
     UserModel user,
   ) async {
+    final leaveColor = _getLeaveTypeColor(leaveType);
+    final onPrimary =
+        leaveColor.computeLuminance() > 0.45 ? Colors.black : Colors.white;
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
     final firstAllowed =
@@ -439,8 +455,8 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
           return Theme(
             data: Theme.of(context).copyWith(
               colorScheme: ColorScheme.dark(
-                primary: ZaWolfColors.primaryCyan,
-                onPrimary: Colors.black,
+                primary: leaveColor,
+                onPrimary: onPrimary,
                 surface: ZaWolfColors.surface01,
                 onSurface: Colors.white,
               ),
@@ -468,8 +484,8 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
         return Theme(
           data: Theme.of(context).copyWith(
             colorScheme: ColorScheme.dark(
-              primary: ZaWolfColors.primaryCyan,
-              onPrimary: Colors.black,
+              primary: leaveColor,
+              onPrimary: onPrimary,
               surface: ZaWolfColors.surface01,
               onSurface: Colors.white,
             ),
@@ -579,8 +595,37 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
     required String text,
     required String secondaryText,
     WolfButtonVariant variant = WolfButtonVariant.primary,
+    Color? accentColor,
+    Gradient? gradient,
     bool loading = false,
   }) {
+    final types = _requestTypes(context);
+    final selectedType =
+        (_requestTypeIndex >= 0 && _requestTypeIndex < types.length)
+            ? types[_requestTypeIndex]
+            : null;
+    final effectiveColor =
+        accentColor ?? selectedType?.color ?? ZaWolfColors.primaryCyan;
+
+    final effectiveGradient =
+        gradient ??
+        LinearGradient(
+          begin: AlignmentDirectional.centerStart,
+          end: AlignmentDirectional.centerEnd,
+          colors: [
+            effectiveColor,
+            Color.alphaBlend(
+              Colors.white.withValues(alpha: 0.18),
+              effectiveColor,
+            ),
+          ],
+        );
+
+    final textColor =
+        effectiveColor.computeLuminance() > 0.45
+            ? const Color(0xFF0F172A)
+            : Colors.white;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       mainAxisSize: MainAxisSize.min,
@@ -626,6 +671,10 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
           secondaryText: secondaryText,
           variant: variant,
           loading: loading,
+          gradient: effectiveGradient,
+          glowColor: effectiveColor,
+          textColor: textColor,
+          borderRadius: BorderRadius.circular(28),
         ),
       ],
     );
@@ -2104,31 +2153,21 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
                     duration: const Duration(milliseconds: 160),
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                     decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: AlignmentDirectional.topStart,
-                        end: AlignmentDirectional.bottomEnd,
-                        colors: selected
-                            ? [
-                                type.color.withValues(alpha: 0.28),
-                                type.color.withValues(alpha: 0.10),
-                              ]
-                            : [
-                                type.color.withValues(alpha: 0.08),
-                                ZaWolfColors.surface01,
-                              ],
-                      ),
+                      color: selected
+                          ? ZaWolfColors.surface02
+                          : ZaWolfColors.surface01,
                       borderRadius: BorderRadius.circular(10),
                       border: Border.all(
                         color: selected
                             ? type.color
-                            : type.color.withValues(alpha: 0.25),
-                        width: selected ? 1.5 : 1,
+                            : type.color.withValues(alpha: 0.35),
+                        width: selected ? 2.0 : 1.2,
                       ),
                       boxShadow: selected
                           ? [
                               BoxShadow(
-                                color: type.color.withValues(alpha: 0.18),
-                                blurRadius: 8,
+                                color: type.color.withValues(alpha: 0.22),
+                                blurRadius: 10,
                                 offset: const Offset(0, 2),
                               ),
                             ]
@@ -2140,13 +2179,17 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
                           width: 36,
                           height: 36,
                           decoration: BoxDecoration(
-                            color: type.color.withValues(alpha: selected ? 0.24 : 0.12),
+                            color: type.color.withValues(alpha: selected ? 0.20 : 0.10),
                             borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                              color: type.color.withValues(alpha: selected ? 0.6 : 0.25),
+                              width: 1,
+                            ),
                           ),
                           alignment: Alignment.center,
                           child: Icon(
                             type.icon,
-                            color: selected ? type.color : type.color.withValues(alpha: 0.9),
+                            color: type.color,
                             size: 20,
                           ),
                         ),
@@ -2679,11 +2722,81 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
               onPressed: () => _submitPermission(user, usage),
               text: 'تقديم طلب الإذن',
               secondaryText: 'SUBMIT PERMISSION',
-              variant: WolfButtonVariant.teal,
+              accentColor: const Color(0xFF00B4D8),
               loading: _loading,
             ),
           ],
         ),
+    );
+  }
+
+  Widget _buildLeaveChip({
+    required String typeKey,
+    required String label,
+    required bool isSelected,
+    required VoidCallback onSelected,
+  }) {
+    final typeColor = _getLeaveTypeColor(typeKey);
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onSelected,
+        borderRadius: BorderRadius.circular(20),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+          decoration: BoxDecoration(
+            color: isSelected
+                ? typeColor.withValues(alpha: 0.20)
+                : ZaWolfColors.surface01,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: isSelected ? typeColor : typeColor.withValues(alpha: 0.40),
+              width: isSelected ? 1.8 : 1.0,
+            ),
+            boxShadow: isSelected
+                ? [
+                    BoxShadow(
+                      color: typeColor.withValues(alpha: 0.25),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    ),
+                  ]
+                : null,
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (isSelected) ...[
+                Icon(
+                  Icons.check_circle,
+                  size: 15,
+                  color: typeColor,
+                ),
+                const SizedBox(width: 6),
+              ] else ...[
+                Container(
+                  width: 8,
+                  height: 8,
+                  decoration: BoxDecoration(
+                    color: typeColor,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+                const SizedBox(width: 6),
+              ],
+              Text(
+                label,
+                style: TextStyle(
+                  color: isSelected ? Colors.white : ZaWolfColors.textPrimary,
+                  fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                  fontSize: 12.5,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
@@ -2695,6 +2808,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
     );
     final selectedLeaveType =
         isOnProbation ? LeaveTypePolicy.unpaid : _leaveType;
+    final leaveColor = _getLeaveTypeColor(selectedLeaveType);
 
     return Form(
       key: _formKeyLeave,
@@ -2711,62 +2825,53 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
               runSpacing: 8,
               children: [
                 if (!isOnProbation) ...[
-                  ChoiceChip(
-                    label: const Center(child: Text('مرضية')),
-                    selected: selectedLeaveType == 'sick',
-                    onSelected: (val) {
-                      if (val) _setLeaveType(LeaveTypePolicy.sick);
-                    },
+                  _buildLeaveChip(
+                    typeKey: LeaveTypePolicy.sick,
+                    label: 'مرضية',
+                    isSelected: selectedLeaveType == 'sick',
+                    onSelected: () => _setLeaveType(LeaveTypePolicy.sick),
                   ),
-                  ChoiceChip(
-                    label: const Center(child: Text('عارضة')),
-                    selected: selectedLeaveType == 'casual',
-                    onSelected: (val) {
-                      if (val) _setLeaveType(LeaveTypePolicy.casual);
-                    },
+                  _buildLeaveChip(
+                    typeKey: LeaveTypePolicy.casual,
+                    label: 'عارضة',
+                    isSelected: selectedLeaveType == 'casual',
+                    onSelected: () => _setLeaveType(LeaveTypePolicy.casual),
                   ),
-                  ChoiceChip(
-                    label: const Center(child: Text('إجازة مولود')),
-                    selected: selectedLeaveType == LeaveTypePolicy.paternity,
-                    onSelected: (val) {
-                      if (val) _setLeaveType(LeaveTypePolicy.paternity);
-                    },
+                  _buildLeaveChip(
+                    typeKey: LeaveTypePolicy.paternity,
+                    label: 'إجازة مولود',
+                    isSelected: selectedLeaveType == LeaveTypePolicy.paternity,
+                    onSelected: () => _setLeaveType(LeaveTypePolicy.paternity),
                   ),
-                  ChoiceChip(
-                    label: const Center(child: Text('إجازة عادية')),
-                    selected: selectedLeaveType == 'day_off',
-                    onSelected: (val) {
-                      if (val) _setLeaveType(LeaveTypePolicy.normal);
-                    },
+                  _buildLeaveChip(
+                    typeKey: LeaveTypePolicy.normal,
+                    label: 'إجازة عادية',
+                    isSelected: selectedLeaveType == 'day_off',
+                    onSelected: () => _setLeaveType(LeaveTypePolicy.normal),
                   ),
                 ],
-                ChoiceChip(
-                  label: const Center(child: Text('بدون راتب')),
-                  selected: selectedLeaveType == LeaveTypePolicy.unpaid,
-                  onSelected: (val) {
-                    if (val && !isOnProbation) {
+                _buildLeaveChip(
+                  typeKey: LeaveTypePolicy.unpaid,
+                  label: 'بدون راتب',
+                  isSelected: selectedLeaveType == LeaveTypePolicy.unpaid,
+                  onSelected: () {
+                    if (!isOnProbation) {
                       _setLeaveType(LeaveTypePolicy.unpaid);
                     }
                   },
                 ),
                 if (!isOnProbation) ...[
-                  ChoiceChip(
-                    label: const Center(child: Text('امتحان')),
-                    selected: selectedLeaveType == LeaveTypePolicy.exam,
-                    onSelected: (val) {
-                      if (val) {
-                        _setLeaveType(LeaveTypePolicy.exam);
-                      }
-                    },
+                  _buildLeaveChip(
+                    typeKey: LeaveTypePolicy.exam,
+                    label: 'امتحان',
+                    isSelected: selectedLeaveType == LeaveTypePolicy.exam,
+                    onSelected: () => _setLeaveType(LeaveTypePolicy.exam),
                   ),
-                  ChoiceChip(
-                    label: const Center(child: Text('عمل عن بعد')),
-                    selected: selectedLeaveType == LeaveTypePolicy.remote,
-                    onSelected: (val) {
-                      if (val) {
-                        _setLeaveType(LeaveTypePolicy.remote);
-                      }
-                    },
+                  _buildLeaveChip(
+                    typeKey: LeaveTypePolicy.remote,
+                    label: 'عمل عن بعد',
+                    isSelected: selectedLeaveType == LeaveTypePolicy.remote,
+                    onSelected: () => _setLeaveType(LeaveTypePolicy.remote),
                   ),
                 ],
               ],
@@ -2785,8 +2890,11 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
             Container(
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
-                color: ZaWolfColors.primaryCyan.withValues(alpha: 0.08),
+                color: leaveColor.withValues(alpha: 0.08),
                 borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: leaveColor.withValues(alpha: 0.35),
+                ),
               ),
               child: Text(
                 'يمكنك إرسال أكثر من طلب إجازة لأيام مختلفة، ما دامت التواريخ غير متداخلة والرصيد كافياً.',
@@ -2840,10 +2948,10 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
                 final dateButton = OutlinedButton.icon(
                   style: OutlinedButton.styleFrom(
                     backgroundColor:
-                        ZaWolfColors.primaryCyan.withValues(alpha: 0.12),
-                    foregroundColor: ZaWolfColors.primaryCyan,
-                    side: const BorderSide(
-                      color: ZaWolfColors.primaryCyan,
+                        leaveColor.withValues(alpha: 0.12),
+                    foregroundColor: leaveColor,
+                    side: BorderSide(
+                      color: leaveColor,
                       width: 1.2,
                     ),
                     padding: const EdgeInsets.symmetric(
@@ -2851,18 +2959,18 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
                       vertical: 10,
                     ),
                     shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
+                      borderRadius: BorderRadius.circular(24),
                     ),
                   ),
-                  icon: const Icon(
+                  icon: Icon(
                     Icons.calendar_month,
-                    color: ZaWolfColors.primaryCyan,
+                    color: leaveColor,
                     size: 18,
                   ),
                   label: Text(
                     _leaveMultipleDays ? 'اختيار الفترة' : 'اختيار اليوم',
-                    style: const TextStyle(
-                      color: ZaWolfColors.primaryCyan,
+                    style: TextStyle(
+                      color: leaveColor,
                       fontWeight: FontWeight.bold,
                       fontSize: 13,
                     ),
@@ -2902,7 +3010,8 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
               Text(
                 'أيام العمل التي ستُحتسب: $_leaveWorkingDays (لا تشمل الجمعة أو عطلات الشركة).',
                 style: theme.textTheme.bodySmall?.copyWith(
-                  color: ZaWolfColors.primaryCyan,
+                  color: leaveColor,
+                  fontWeight: FontWeight.w600,
                 ),
                 textDirection: TextDirection.rtl,
               ),
@@ -2939,13 +3048,28 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
             const SizedBox(height: 12),
 
             OutlinedButton.icon(
-              icon: const Icon(Icons.attach_file_outlined),
+              icon: Icon(Icons.attach_file_outlined, color: leaveColor),
               label: Text(
                 _attachmentUrl == null
                     ? (selectedLeaveType == LeaveTypePolicy.exam
                         ? 'إرفاق جدول الامتحان أو إثبات الدخول (مطلوب)'
                         : 'إرفاق مستند للإجازة (اختياري)')
                     : 'تم إرفاق مستند في ملفات الشركة',
+                style: TextStyle(color: leaveColor),
+              ),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: leaveColor,
+                side: BorderSide(
+                  color: leaveColor.withValues(alpha: 0.6),
+                  width: 1.2,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(28),
+                ),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 12,
+                ),
               ),
               onPressed:
                   _loading
@@ -2961,6 +3085,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
               onPressed: () => _submitLeave(user),
               text: 'تقديم طلب إجازة',
               secondaryText: 'SUBMIT LEAVE REQUEST',
+              accentColor: leaveColor,
               loading: _loading,
             ),
           ],
@@ -3043,7 +3168,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
             onPressed: () => _submitAdvance(user),
             text: 'تقديم طلب سلفة',
             secondaryText: 'SUBMIT ADVANCE REQUEST',
-            variant: WolfButtonVariant.primary,
+            accentColor: const Color(0xFFF59E0B),
             loading: _loading,
           ),
         ],
@@ -3149,11 +3274,18 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
           ),
           const SizedBox(height: 16),
           OutlinedButton.icon(
-            icon: const Icon(Icons.attach_file_outlined),
+            icon: const Icon(Icons.attach_file_outlined, color: Color(0xFFEF4444)),
             label: Text(
               _complaintAttachmentUrl == null
                   ? 'إرفاق ملف للشكوى (اختياري)'
                   : 'تم إرفاق ملف في ملفات الشركة',
+              style: const TextStyle(color: Color(0xFFEF4444)),
+            ),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: const Color(0xFFEF4444),
+              side: const BorderSide(color: Color(0x99EF4444), width: 1.2),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             ),
             onPressed:
                 _loading
@@ -3170,7 +3302,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
             onPressed: () => _submitComplaint(user),
             text: 'إرسال الشكوى',
             secondaryText: 'SUBMIT COMPLAINT',
-            variant: WolfButtonVariant.danger,
+            accentColor: const Color(0xFFEF4444),
             loading: _loading,
           ),
         ],
@@ -3301,6 +3433,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
                 onPressed: () => _submitAttendanceCorrection(user),
                 text: 'إرسال إلى HR',
                 secondaryText: 'SUBMIT CORRECTION',
+                accentColor: const Color(0xFF10B981),
                 loading: _loading,
               ),
             ],
@@ -3693,11 +3826,18 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
               AdministrativeRequestCategory.fieldMission) ...[
             const SizedBox(height: 14),
             OutlinedButton.icon(
-              icon: const Icon(Icons.attach_file_outlined),
+              icon: const Icon(Icons.attach_file_outlined, color: Color(0xFF3B82F6)),
               label: Text(
                 _administrativeAttachmentUrl == null
                     ? 'إرفاق ملف داعم (اختياري)'
                     : 'تم إرفاق ملف في ملفات الشركة',
+                style: const TextStyle(color: Color(0xFF3B82F6)),
+              ),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: const Color(0xFF3B82F6),
+                side: const BorderSide(color: Color(0x993B82F6), width: 1.2),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               ),
               onPressed:
                   _loading
@@ -3724,6 +3864,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
                         AdministrativeRequestCategory.fieldMission
                     ? 'SUBMIT FIELD MISSION'
                     : 'SUBMIT ADMIN REQUEST',
+            accentColor: const Color(0xFF3B82F6),
             loading: _loading,
           ),
         ],
@@ -3886,6 +4027,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
             onPressed: () => _submitFieldMissionDirect(user),
             text: 'إرسال طلب المهمة الميدانية',
             secondaryText: 'SUBMIT FIELD MISSION',
+            accentColor: const Color(0xFF14B8A6),
             loading: _loading,
           ),
         ],
@@ -4113,7 +4255,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
             onPressed: () => _submitResignation(user),
             text: 'إرسال طلب الاستقالة',
             secondaryText: 'SUBMIT RESIGNATION',
-            variant: WolfButtonVariant.danger,
+            accentColor: const Color(0xFFF43F5E),
             loading: _loading,
           ),
         ],

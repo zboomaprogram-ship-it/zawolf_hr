@@ -27,7 +27,9 @@ class _RichAttachmentViewState extends State<RichAttachmentView> {
   @override
   void initState() {
     super.initState();
-    if (_available && widget.attachment.mimeType.startsWith('image/')) {
+    if (_available &&
+        (widget.attachment.mimeType.startsWith('image/') ||
+            widget.attachment.kind == 'voice')) {
       _cubit.load();
     }
   }
@@ -121,7 +123,11 @@ class _RichAttachmentViewState extends State<RichAttachmentView> {
         ),
         child: Row(
           children: [
-            const Icon(Icons.picture_as_pdf, color: ZaWolfColors.error, size: 36),
+            const Icon(
+              Icons.picture_as_pdf,
+              color: ZaWolfColors.error,
+              size: 36,
+            ),
             const SizedBox(width: 10),
             Expanded(
               child: Column(

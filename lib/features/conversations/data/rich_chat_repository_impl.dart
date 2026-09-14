@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:collection';
 import 'dart:typed_data';
 import '../domain/entities/rich_chat.dart';
 import '../domain/repositories/rich_chat_repository.dart';
@@ -24,6 +25,10 @@ class RichChatRepositoryImpl implements RichChatRepository {
   final Map<String, int> _failures = {};
   final Map<String, DateTime> _typed = {};
   final Map<String, StreamController<ChatPage<RichChannel>>> _inboxes = {};
+  final LinkedHashMap<String, ChatDraftFile> _attachmentCache = LinkedHashMap();
+  final Map<String, Future<ChatDraftFile>> _attachmentDownloads = {};
+  int _attachmentCacheBytes = 0;
+  static const int _maxAttachmentCacheBytes = 24 * 1024 * 1024;
   bool _foreground = true, _disposed = false;
   String _channel(String id) => '/channels/${Uri.encodeComponent(id)}';
   String _query(Map<String, String?> values) =>
@@ -761,15 +766,40 @@ class RichChatRepositoryImpl implements RichChatRepository {
     ),
   );
   @override
-  Future<ChatDraftFile> download(
-    String channelId,
-    String resourceId,
-  ) => transport.download(
-    '${_channel(channelId)}/attachments/${Uri.encodeComponent(resourceId)}/download',
-  );
+  Future<ChatDraftFile> download(String channelId, String resourceId) {
+    final key = '$channelId:$resourceId';
+    final cached = _attachmentCache.remove(key);
+    if (cached != null) {
+      _attachmentCache[key] = cached;
+      return Future.value(cached);
+    }
+    return _attachmentDownloads[key] ??= transport
+        .download(
+          '${_channel(channelId)}/attachments/${Uri.encodeComponent(resourceId)}/download',
+        )
+        .then((file) {
+          if (!_disposed && file.bytes.length <= _maxAttachmentCacheBytes) {
+            while (_attachmentCache.isNotEmpty &&
+                _attachmentCacheBytes + file.bytes.length >
+                    _maxAttachmentCacheBytes) {
+              final oldest = _attachmentCache.keys.first;
+              _attachmentCacheBytes -=
+                  _attachmentCache.remove(oldest)!.bytes.length;
+            }
+            _attachmentCache[key] = file;
+            _attachmentCacheBytes += file.bytes.length;
+          }
+          return file;
+        })
+        .whenComplete(() => _attachmentDownloads.remove(key));
+  }
+
   @override
   Future<void> dispose() async {
     _disposed = true;
+    _attachmentCache.clear();
+    _attachmentDownloads.clear();
+    _attachmentCacheBytes = 0;
     for (final timer in _timers.values) {
       timer.cancel();
     }

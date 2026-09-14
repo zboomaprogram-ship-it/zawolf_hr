@@ -66,4 +66,52 @@ void main() {
       expect(approved.affectsDiscipline, isTrue);
     },
   );
+
+  test('deduction amount is derived from salary and day fraction', () {
+    const employee = HrReportEmployee(
+      id: 'u3',
+      name: 'موظف',
+      code: 'E-3',
+      department: 'HR',
+      baseMonthlySalary: 26000,
+    );
+    final deduction = HrDeductionRecord(
+      employee: employee,
+      date: DateTime(2026, 9, 9),
+      reason: 'تأخير حضور',
+      status: 'approved',
+      fraction: .25,
+    );
+    expect(deduction.resolvedAmount(), 250);
+  });
+
+  test('trend excludes leave and rest days from scheduled denominator', () {
+    const employee = HrReportEmployee(
+      id: 'u4',
+      name: 'موظف',
+      code: 'E-4',
+      department: 'HR',
+    );
+    final report = HrPeriodReport(
+      period: HrReportPeriod.custom(DateTime(2026, 9, 1), DateTime(2026, 9, 2)),
+      employees: const [employee],
+      records: [
+        HrAttendanceRecord(
+          employee: employee,
+          date: DateTime(2026, 9, 1),
+          status: 'day_off',
+        ),
+        HrAttendanceRecord(
+          employee: employee,
+          date: DateTime(2026, 9, 2),
+          status: 'late',
+        ),
+      ],
+    );
+    final trend = report.trendForEmployee(null);
+    expect(trend.first.scheduled, 0);
+    expect(trend.last.scheduled, 1);
+    expect(trend.last.attendanceRate, 1);
+    expect(trend.last.lateRate, 1);
+  });
 }

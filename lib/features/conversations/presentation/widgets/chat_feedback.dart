@@ -16,6 +16,9 @@ String chatErrorText(String code) {
   if (code.contains('unsupported_media') || code.contains('http_415')) {
     return 'صيغة الملف المرفق غير مدعومة في المحادثة.';
   }
+  if (code.contains('invalid_voice')) {
+    return 'صيغة التسجيل الصوتي غير مدعومة. سجّل رسالة جديدة ثم أعد الإرسال.';
+  }
   if (code.contains('window_expired') || code.contains('window')) {
     return 'انتهت مهلة التعديل أو الحذف (15 دقيقة).';
   }

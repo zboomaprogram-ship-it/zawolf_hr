@@ -21,6 +21,7 @@ class VoiceNoteCubit extends Cubit<VoiceNoteState> {
   VoiceNoteCubit(this.recorder) : super(const VoiceNoteState());
   final ChatRecorder recorder;
   Timer? _timer;
+  Future<void>? _stopping;
   Future<void> start() async {
     if (state.busy || state.recording) return;
     emit(const VoiceNoteState(busy: true));
@@ -45,14 +46,18 @@ class VoiceNoteCubit extends Cubit<VoiceNoteState> {
       if (!isClosed) {
         emit(
           const VoiceNoteState(
-            error: 'تعذر بدء التسجيل. تحقق من إذن الميكروفون في المتصفح.',
+            error:
+                'تعذر بدء التسجيل. تحقق من إذن الميكروفون في إعدادات الجهاز أو المتصفح.',
           ),
         );
       }
     }
   }
 
-  Future<void> stop() async {
+  Future<void> stop() =>
+      _stopping ??= _stop().whenComplete(() => _stopping = null);
+
+  Future<void> _stop() async {
     if (!state.recording) return;
     _timer?.cancel();
     emit(VoiceNoteState(busy: true, seconds: state.seconds));
@@ -68,6 +73,7 @@ class VoiceNoteCubit extends Cubit<VoiceNoteState> {
 
   Future<void> cancel() async {
     _timer?.cancel();
+    await _stopping;
     await recorder.cancel();
     if (!isClosed) emit(const VoiceNoteState());
   }

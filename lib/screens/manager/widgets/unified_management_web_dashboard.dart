@@ -812,6 +812,12 @@ class _UnifiedManagementWebDashboardState
         icon: Icons.payments_outlined,
         onTap: () => context.go(isHrRole ? '/hr/payroll' : '/employee/payroll'),
       ),
+      if (isHrRole)
+        _buildShortcutChip(
+          label: 'تقرير الموظفين للفترة',
+          icon: Icons.insights_outlined,
+          onTap: () => context.go('/hr/period-reports'),
+        ),
       _buildShortcutChip(
         label: 'التقارير الإدارية',
         icon: Icons.assessment_outlined,

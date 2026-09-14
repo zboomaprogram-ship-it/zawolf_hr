@@ -1,7 +1,7 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { normalizeUpload, validateChunk, sniffMime } = require('../conversations/uploads');
+const { normalizeUpload, validateChunk, sniffMime, validateVoiceMime } = require('../conversations/uploads');
 const { createDriveMediaProvider } = require('../conversations/drive-media-provider');
 test('upload boundaries and unsafe metadata are rejected', () => {
   const input = {operationId:'upload-1',fileName:'صورة.png',mimeType:'image/png',sizeBytes:25*1024*1024};
@@ -17,6 +17,13 @@ test('chunk offsets and final length cannot exceed declared upload', () => {
   assert.throws(()=>validateChunk(1000,25,1024));
   assert.equal(sniffMime(Buffer.from([137,80,78,71,13,10,26,10]),'image/jpeg'),'image/png');
   assert.equal(sniffMime(Buffer.from('<script>bad</script>'),'image/png'),'application/octet-stream');
+});
+test('voice uploads accept formats produced by native and web recorders', () => {
+  for (const mime of ['audio/wav','audio/webm','audio/mp4','audio/ogg','audio/mpeg']) {
+    assert.doesNotThrow(()=>validateVoiceMime('voice',mime));
+  }
+  assert.throws(()=>validateVoiceMime('voice','application/octet-stream'), /invalid_voice/);
+  assert.doesNotThrow(()=>validateVoiceMime(null,'application/octet-stream'));
 });
 test('resumable Drive provider retains generated ID and never leaks session in result', async () => {
   const calls=[];

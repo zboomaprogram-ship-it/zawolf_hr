@@ -139,11 +139,26 @@ class HrPeriodReportPage extends StatelessWidget {
     final records = report.forEmployee(state.employeeId);
     int status(String value) =>
         records.where((item) => item.status == value).length;
-    final scheduled = records.length;
+    final scheduled = records.where((item) => item.status != 'day_off').length;
     final attended =
-        status('present') + status('late') + status('field_mission');
+        status('present') +
+        status('late') +
+        status('permission') +
+        status('field_mission');
+    final deductions = report.deductionsForEmployee(state.employeeId);
+    final requests = report.requestsForEmployee(state.employeeId);
     final approvedDeductions =
-        records.where((item) => item.approvedDeduction).length;
+        deductions.where((item) => item.affectsDiscipline).toList();
+    final leaveDays =
+        records
+            .where(
+              (item) =>
+                  item.status == 'day_off' &&
+                  (item.statusDetail?.startsWith('إجازة') == true ||
+                      item.statusDetail == 'عمل عن بعد'),
+            )
+            .length;
+    final restDays = status('day_off') - leaveDays;
     return [
       Text('ملخص تحليلي', style: Theme.of(context).textTheme.headlineSmall),
       const SizedBox(height: 8),
@@ -176,14 +191,26 @@ class HrPeriodReportPage extends StatelessWidget {
             ZaWolfColors.error,
           ),
           _metric(
-            'إجازة / راحة',
-            '${status('day_off')}',
+            'إجازة معتمدة',
+            '$leaveDays',
             Icons.event_available_outlined,
             ZaWolfColors.textSecondary,
           ),
           _metric(
-            'خصم معتمد',
-            '$approvedDeductions',
+            'راحة / يوم غير مجدول',
+            '$restDays',
+            Icons.weekend_outlined,
+            ZaWolfColors.textSecondary,
+          ),
+          _metric(
+            'كل الطلبات',
+            '${requests.length}',
+            Icons.description_outlined,
+            ZaWolfColors.primaryCyan,
+          ),
+          _metric(
+            'إجمالي الخصم المعتمد',
+            _deductionTotal(approvedDeductions),
             Icons.payments_outlined,
             ZaWolfColors.error,
           ),
@@ -204,11 +231,8 @@ class HrPeriodReportPage extends StatelessWidget {
               style: TextStyle(color: ZaWolfColors.textSecondary),
             ),
             const SizedBox(height: 16),
-            SizedBox(
-              height: 190,
-              child: CustomPaint(
-                painter: _ReportLineChart(_dailyRate(records, report.period)),
-              ),
+            _InteractiveReportTrend(
+              points: report.trendForEmployee(state.employeeId),
             ),
           ],
         ),
@@ -225,9 +249,9 @@ class HrPeriodReportPage extends StatelessWidget {
           ),
         ),
       const SizedBox(height: 18),
-      _requestsSection(report.requestsForEmployee(state.employeeId)),
+      _requestsSection(requests),
       const SizedBox(height: 18),
-      _deductionsSection(report.deductionsForEmployee(state.employeeId)),
+      _deductionsSection(deductions),
       const SizedBox(height: 28),
       BlocListener<HrPeriodReportCubit, HrPeriodReportState>(
         listenWhen:
@@ -286,7 +310,7 @@ class HrPeriodReportPage extends StatelessWidget {
         const WolfCard(
           child: Padding(
             padding: EdgeInsets.all(16),
-            child: Text('لا توجد إجازات أو أذونات ضمن الفترة.'),
+            child: Text('لا توجد طلبات ضمن الفترة المحددة.'),
           ),
         ),
       ...requests.map(
@@ -294,11 +318,7 @@ class HrPeriodReportPage extends StatelessWidget {
           padding: const EdgeInsets.only(bottom: 8),
           child: WolfCard(
             child: ListTile(
-              leading: Icon(
-                request.type == 'إجازة'
-                    ? Icons.event_available_outlined
-                    : Icons.schedule_outlined,
-              ),
+              leading: const Icon(Icons.description_outlined),
               title: Text('${request.type} · ${request.employee.name}'),
               subtitle: Text(
                 '${_date(request.date)}${request.endDate == null ? '' : ' إلى ${_date(request.endDate!)}'}${request.reason == null ? '' : ' · ${request.reason}'}',
@@ -329,20 +349,41 @@ class HrPeriodReportPage extends StatelessWidget {
         (deduction) => Padding(
           padding: const EdgeInsets.only(bottom: 8),
           child: WolfCard(
-            child: ListTile(
+            child: ExpansionTile(
               leading: const Icon(
                 Icons.payments_outlined,
                 color: ZaWolfColors.warning,
               ),
               title: Text('${deduction.reason} · ${deduction.employee.name}'),
               subtitle: Text(
-                '${_date(deduction.date)} · ${deduction.source}${deduction.amount > 0 ? ' · ${deduction.amount.toStringAsFixed(2)} EGP' : ''}${deduction.fraction > 0 ? ' · ${(deduction.fraction * 100).toStringAsFixed(0)}%' : ''}',
+                '${_date(deduction.date)} · ${deduction.source} · ${deduction.resolvedAmount().toStringAsFixed(2)} ${deduction.employee.salaryCurrency}${deduction.fraction > 0 ? ' · ${(deduction.fraction * 100).toStringAsFixed(0)}%' : ''}',
               ),
               trailing: Chip(
                 label: Text(
                   deduction.affectsDiscipline ? 'معتمد' : 'قيد المراجعة',
                 ),
               ),
+              childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+              children: [
+                _detail('سبب الخصم', deduction.reason),
+                if (deduction.detail?.isNotEmpty == true)
+                  _detail('تفاصيل الواقعة', deduction.detail!),
+                _detail(
+                  'القيمة',
+                  '${deduction.resolvedAmount().toStringAsFixed(2)} ${deduction.employee.salaryCurrency}',
+                ),
+                if (deduction.fraction > 0)
+                  _detail(
+                    'نسبة اليوم',
+                    '${(deduction.fraction * 100).toStringAsFixed(0)}%',
+                  ),
+                _detail(
+                  'الأثر على الانضباط',
+                  deduction.affectsDiscipline
+                      ? 'يؤثر لأنه معتمد'
+                      : 'لا يؤثر قبل اعتماد HR',
+                ),
+              ],
             ),
           ),
         ),
@@ -398,7 +439,9 @@ class HrPeriodReportPage extends StatelessWidget {
     padding: const EdgeInsets.only(bottom: 10),
     child: WolfCard(
       child: ExpansionTile(
-        title: Text('${_status(r.status)} · ${_date(r.date)}'),
+        title: Text(
+          '${r.statusDetail ?? _status(r.status)} · ${_date(r.date)}',
+        ),
         subtitle: Text(
           '${r.employee.name} · ${r.employee.code} · ${r.employee.department}',
         ),
@@ -445,24 +488,21 @@ class HrPeriodReportPage extends StatelessWidget {
   );
   Widget _statusPill(String status) =>
       Chip(label: Text(_status(status)), visualDensity: VisualDensity.compact);
-  List<double> _dailyRate(
-    List<HrAttendanceRecord> records,
-    HrReportPeriod period,
-  ) => List.generate(period.days, (index) {
-    final day = period.start.add(Duration(days: index));
-    final items =
-        records
-            .where((record) => DateUtils.isSameDay(record.date, day))
-            .toList();
-    if (items.isEmpty) return 0;
-    return items
-            .where(
-              (record) =>
-                  ['present', 'late', 'field_mission'].contains(record.status),
-            )
-            .length /
-        items.length;
-  });
+  String _deductionTotal(List<HrDeductionRecord> deductions) {
+    if (deductions.isEmpty) return '0.00 EGP';
+    final totals = <String, double>{};
+    for (final item in deductions) {
+      totals.update(
+        item.employee.salaryCurrency,
+        (value) => value + item.resolvedAmount(),
+        ifAbsent: item.resolvedAmount,
+      );
+    }
+    return totals.entries
+        .map((entry) => '${entry.value.toStringAsFixed(2)} ${entry.key}')
+        .join(' + ');
+  }
+
   static String _date(DateTime date) =>
       DateFormat('yyyy/MM/dd', 'ar').format(date);
   static String _status(String value) =>
@@ -470,7 +510,7 @@ class HrPeriodReportPage extends StatelessWidget {
         'present': 'حاضر',
         'late': 'متأخر',
         'permission': 'إذن معتمد',
-        'day_off': 'إجازة أو راحة',
+        'day_off': 'راحة أسبوعية / يوم غير مجدول',
         'field_mission': 'مهمة ميدانية',
         'not_attended': 'غياب دون تسجيل',
       }[value] ??
@@ -505,43 +545,214 @@ class _ErrorCard extends StatelessWidget {
   );
 }
 
-class _ReportLineChart extends CustomPainter {
-  _ReportLineChart(this.values);
-  final List<double> values;
+class _InteractiveReportTrend extends StatefulWidget {
+  const _InteractiveReportTrend({required this.points});
+  final List<HrAttendanceTrendPoint> points;
+
+  @override
+  State<_InteractiveReportTrend> createState() =>
+      _InteractiveReportTrendState();
+}
+
+class _InteractiveReportTrendState extends State<_InteractiveReportTrend> {
+  int? selected;
+
+  @override
+  Widget build(BuildContext context) {
+    final point = selected == null ? null : widget.points[selected!];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Wrap(
+          spacing: 16,
+          runSpacing: 6,
+          children: const [
+            _ChartLegend(color: ZaWolfColors.primaryCyan, label: 'نسبة الحضور'),
+            _ChartLegend(color: ZaWolfColors.warning, label: 'نسبة التأخير'),
+          ],
+        ),
+        const SizedBox(height: 10),
+        AnimatedSwitcher(
+          duration: const Duration(milliseconds: 180),
+          child:
+              point == null
+                  ? const Text(
+                    'مرر المؤشر أو اضغط على يوم لعرض تفاصيله.',
+                    key: ValueKey('hint'),
+                    style: TextStyle(color: ZaWolfColors.textSecondary),
+                  )
+                  : Container(
+                    key: ValueKey(point.date),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 9,
+                    ),
+                    decoration: BoxDecoration(
+                      color: ZaWolfColors.primaryCyan.withValues(alpha: .08),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(
+                      '${DateFormat('EEEE d MMMM', 'ar').format(point.date)} · '
+                      'الحضور ${(point.attendanceRate * 100).round()}% '
+                      '(${point.attended}/${point.scheduled}) · '
+                      'التأخير ${(point.lateRate * 100).round()}% (${point.late})',
+                    ),
+                  ),
+        ),
+        const SizedBox(height: 8),
+        SizedBox(
+          height: 235,
+          child: LayoutBuilder(
+            builder:
+                (context, constraints) => MouseRegion(
+                  onHover:
+                      (event) =>
+                          _select(event.localPosition.dx, constraints.maxWidth),
+                  onExit: (_) => setState(() => selected = null),
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTapDown:
+                        (event) => _select(
+                          event.localPosition.dx,
+                          constraints.maxWidth,
+                        ),
+                    child: CustomPaint(
+                      painter: _ReportTrendPainter(widget.points, selected),
+                      size: Size.infinite,
+                    ),
+                  ),
+                ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  void _select(double x, double width) {
+    if (widget.points.isEmpty || width <= 56) return;
+    final chartX = (x - 44).clamp(0.0, width - 56);
+    final index =
+        widget.points.length == 1
+            ? 0
+            : (chartX / (width - 56) * (widget.points.length - 1)).round();
+    if (selected != index) setState(() => selected = index);
+  }
+}
+
+class _ChartLegend extends StatelessWidget {
+  const _ChartLegend({required this.color, required this.label});
+  final Color color;
+  final String label;
+  @override
+  Widget build(BuildContext context) => Row(
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      Container(
+        width: 18,
+        height: 4,
+        decoration: BoxDecoration(
+          color: color,
+          borderRadius: BorderRadius.circular(4),
+        ),
+      ),
+      const SizedBox(width: 6),
+      Text(label, style: const TextStyle(color: ZaWolfColors.textSecondary)),
+    ],
+  );
+}
+
+class _ReportTrendPainter extends CustomPainter {
+  _ReportTrendPainter(this.points, this.selected);
+  final List<HrAttendanceTrendPoint> points;
+  final int? selected;
+
   @override
   void paint(Canvas canvas, Size size) {
-    final axis =
-        Paint()..color = ZaWolfColors.textSecondary.withValues(alpha: 0.35);
-    final line =
+    const left = 44.0;
+    const right = 12.0;
+    const top = 10.0;
+    const bottom = 34.0;
+    final width = size.width - left - right;
+    final height = size.height - top - bottom;
+    if (width <= 0 || height <= 0) return;
+    final grid =
+        Paint()..color = ZaWolfColors.textSecondary.withValues(alpha: .18);
+    for (var index = 0; index < 3; index++) {
+      final y = top + height * index / 2;
+      canvas.drawLine(Offset(left, y), Offset(left + width, y), grid);
+      _text(canvas, '${100 - index * 50}%', Offset(0, y - 8), 11);
+    }
+    if (points.isEmpty) return;
+    Offset offset(int index, double value) => Offset(
+      points.length == 1
+          ? left + width / 2
+          : left + width * index / (points.length - 1),
+      top + height * (1 - value.clamp(0, 1)),
+    );
+    void drawSeries(
+      double Function(HrAttendanceTrendPoint) value,
+      Color color,
+    ) {
+      final path = Path();
+      for (var index = 0; index < points.length; index++) {
+        final p = offset(index, value(points[index]));
+        index == 0 ? path.moveTo(p.dx, p.dy) : path.lineTo(p.dx, p.dy);
+      }
+      canvas.drawPath(
+        path,
         Paint()
-          ..color = ZaWolfColors.primaryCyan
+          ..color = color
           ..style = PaintingStyle.stroke
           ..strokeWidth = 3
-          ..strokeCap = StrokeCap.round;
-    for (var index = 0; index < 4; index++) {
-      canvas.drawLine(
-        Offset(0, size.height * index / 3),
-        Offset(size.width, size.height * index / 3),
-        axis,
+          ..strokeCap = StrokeCap.round
+          ..strokeJoin = StrokeJoin.round,
       );
-    }
-    if (values.isEmpty) return;
-    final path = Path();
-    for (var index = 0; index < values.length; index++) {
-      final x =
-          values.length == 1
-              ? size.width / 2
-              : size.width * index / (values.length - 1);
-      final y = size.height * (1 - values[index].clamp(0, 1));
-      if (index == 0) {
-        path.moveTo(x, y);
-      } else {
-        path.lineTo(x, y);
+      for (var index = 0; index < points.length; index++) {
+        if (points.length > 14 && index != selected && index % 3 != 0) continue;
+        canvas.drawCircle(
+          offset(index, value(points[index])),
+          index == selected ? 5 : 3,
+          Paint()..color = color,
+        );
       }
     }
-    canvas.drawPath(path, line);
+
+    drawSeries((point) => point.attendanceRate, ZaWolfColors.primaryCyan);
+    drawSeries((point) => point.lateRate, ZaWolfColors.warning);
+    if (selected != null && selected! < points.length) {
+      final x = offset(selected!, 0).dx;
+      canvas.drawLine(
+        Offset(x, top),
+        Offset(x, top + height),
+        Paint()
+          ..color = Colors.white.withValues(alpha: .35)
+          ..strokeWidth = 1,
+      );
+    }
+    final step = points.length <= 7 ? 1 : (points.length / 6).ceil();
+    for (var index = 0; index < points.length; index += step) {
+      final x = offset(index, 0).dx;
+      _text(
+        canvas,
+        DateFormat('d/M', 'ar').format(points[index].date),
+        Offset(x - 18, top + height + 9),
+        10,
+      );
+    }
+  }
+
+  void _text(Canvas canvas, String value, Offset offset, double size) {
+    final painter = TextPainter(
+      text: TextSpan(
+        text: value,
+        style: TextStyle(color: ZaWolfColors.textSecondary, fontSize: size),
+      ),
+      textDirection: TextDirection.rtl,
+    )..layout();
+    painter.paint(canvas, offset);
   }
 
   @override
-  bool shouldRepaint(covariant _ReportLineChart old) => old.values != values;
+  bool shouldRepaint(covariant _ReportTrendPainter old) =>
+      old.points != points || old.selected != selected;
 }

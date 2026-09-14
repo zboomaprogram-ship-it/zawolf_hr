@@ -15,6 +15,7 @@ class WebChatRecorder implements ChatRecorder {
   Completer<void>? _stopCompleter;
   DateTime? _startTime;
   ChatDraftFile? _completed;
+  Future<ChatDraftFile?>? _stopping;
 
   @override
   Future<bool> start() async {
@@ -22,12 +23,14 @@ class WebChatRecorder implements ChatRecorder {
     _completed = null;
     _chunks.clear();
     _stopCompleter = null;
+    _stopping = null;
 
     try {
       final mediaDevices = web.window.navigator.mediaDevices;
-      final stream = await mediaDevices.getUserMedia(
-        web.MediaStreamConstraints(audio: true.toJS),
-      ).toDart;
+      final stream =
+          await mediaDevices
+              .getUserMedia(web.MediaStreamConstraints(audio: true.toJS))
+              .toDart;
       _stream = stream;
 
       String mimeType = 'audio/webm;codecs=opus';
@@ -41,28 +44,35 @@ class WebChatRecorder implements ChatRecorder {
         }
       }
 
-      final recorder = mimeType.isNotEmpty
-          ? web.MediaRecorder(stream, web.MediaRecorderOptions(mimeType: mimeType))
-          : web.MediaRecorder(stream);
+      final recorder =
+          mimeType.isNotEmpty
+              ? web.MediaRecorder(
+                stream,
+                web.MediaRecorderOptions(mimeType: mimeType),
+              )
+              : web.MediaRecorder(stream);
       _recorder = recorder;
 
-      recorder.ondataavailable = ((web.BlobEvent event) {
-        if (event.data.size > 0) {
-          _chunks.add(event.data);
-        }
-      }).toJS;
+      recorder.ondataavailable =
+          ((web.BlobEvent event) {
+            if (event.data.size > 0) {
+              _chunks.add(event.data);
+            }
+          }).toJS;
 
-      recorder.onstop = ((web.Event _) {
-        if (_stopCompleter != null && !_stopCompleter!.isCompleted) {
-          _stopCompleter!.complete();
-        }
-      }).toJS;
+      recorder.onstop =
+          ((web.Event _) {
+            if (_stopCompleter != null && !_stopCompleter!.isCompleted) {
+              _stopCompleter!.complete();
+            }
+          }).toJS;
 
-      recorder.onerror = ((web.Event _) {
-        if (_stopCompleter != null && !_stopCompleter!.isCompleted) {
-          _stopCompleter!.complete();
-        }
-      }).toJS;
+      recorder.onerror =
+          ((web.Event _) {
+            if (_stopCompleter != null && !_stopCompleter!.isCompleted) {
+              _stopCompleter!.complete();
+            }
+          }).toJS;
 
       recorder.start(250);
       _recording = true;
@@ -77,7 +87,9 @@ class WebChatRecorder implements ChatRecorder {
   }
 
   @override
-  Future<ChatDraftFile?> stop() async {
+  Future<ChatDraftFile?> stop() => _stopping ??= _finish();
+
+  Future<ChatDraftFile?> _finish() async {
     if (!_recording && _completed != null) return _completed;
     if (!_recording || _recorder == null) return null;
 
@@ -107,23 +119,27 @@ class WebChatRecorder implements ChatRecorder {
     if (_chunks.isEmpty) return null;
 
     try {
-      final recordedMime = _recorder!.mimeType.isNotEmpty
-          ? _recorder!.mimeType
-          : 'audio/webm';
+      final recordedMime =
+          _recorder!.mimeType.isNotEmpty ? _recorder!.mimeType : 'audio/webm';
       final parts = <web.BlobPart>[for (final c in _chunks) c].toJS;
-      final combinedBlob = web.Blob(parts, web.BlobPropertyBag(type: recordedMime));
+      final combinedBlob = web.Blob(
+        parts,
+        web.BlobPropertyBag(type: recordedMime),
+      );
       final buffer = await combinedBlob.arrayBuffer().toDart;
       final bytes = buffer.toDart.asUint8List();
 
       if (bytes.length < 2) return null;
 
-      final elapsed = _startTime != null
-          ? DateTime.now().difference(_startTime!).inMilliseconds / 1000.0
-          : 0.0;
+      final elapsed =
+          _startTime != null
+              ? DateTime.now().difference(_startTime!).inMilliseconds / 1000.0
+              : 0.0;
       final cleanMime = recordedMime.split(';').first.trim();
-      final ext = cleanMime.contains('mp4')
-          ? 'mp4'
-          : (cleanMime.contains('ogg') ? 'ogg' : 'webm');
+      final ext =
+          cleanMime.contains('mp4')
+              ? 'mp4'
+              : (cleanMime.contains('ogg') ? 'ogg' : 'webm');
 
       return _completed = ChatDraftFile(
         fileName: 'voice-${DateTime.now().millisecondsSinceEpoch}.$ext',
@@ -151,16 +167,11 @@ class WebChatRecorder implements ChatRecorder {
 
   @override
   Future<void> cancel() async {
-    _recording = false;
-    _limit?.cancel();
-    if (_recorder != null && _recorder!.state != 'inactive') {
-      try {
-        _recorder!.stop();
-      } catch (_) {}
-    }
+    if (_recording || _stopping != null) await stop();
     _cleanupStream();
     _chunks.clear();
     _completed = null;
+    _stopping = null;
   }
 
   @override

@@ -20,6 +20,10 @@ class WolfButton extends StatelessWidget {
   final double height;
   final double? width;
   final bool loading;
+  final Gradient? gradient;
+  final Color? glowColor;
+  final Color? textColor;
+  final BorderRadiusGeometry? borderRadius;
 
   const WolfButton({
     super.key,
@@ -31,6 +35,10 @@ class WolfButton extends StatelessWidget {
     this.height = 56,
     this.width,
     this.loading = false,
+    this.gradient,
+    this.glowColor,
+    this.textColor,
+    this.borderRadius,
   });
 
   @override
@@ -62,93 +70,144 @@ class WolfButton extends StatelessWidget {
       ],
     );
 
-    switch (variant) {
-      case WolfButtonVariant.primary:
-        decoration = BoxDecoration(
-          gradient: ZaWolfColors.primaryGradient,
-          borderRadius: BorderRadius.circular(8),
-          boxShadow: loading
-              ? null
-              : [
-                  BoxShadow(
-                    color: ZaWolfColors.primaryCyan.withValues(alpha: 0.25),
-                    blurRadius: 10,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
-        );
-        break;
-      case WolfButtonVariant.teal:
-        decoration = BoxDecoration(
-          gradient: ZaWolfColors.permissionGradient,
-          borderRadius: BorderRadius.circular(8),
-          boxShadow: loading
-              ? null
-              : [
-                  BoxShadow(
-                    color: ZaWolfColors.permissionTeal.withValues(alpha: 0.25),
-                    blurRadius: 10,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
-        );
-        break;
-      case WolfButtonVariant.purple:
-        decoration = BoxDecoration(
-          gradient: ZaWolfColors.dayoffGradient,
-          borderRadius: BorderRadius.circular(8),
-          boxShadow: loading
-              ? null
-              : [
-                  BoxShadow(
-                    color: ZaWolfColors.dayoffPurple.withValues(alpha: 0.25),
-                    blurRadius: 10,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
-        );
-        break;
-      case WolfButtonVariant.danger:
-        decoration = BoxDecoration(
-          color: ZaWolfColors.error,
-          borderRadius: BorderRadius.circular(8),
-          boxShadow: loading
-              ? null
-              : [
-                  BoxShadow(
-                    color: ZaWolfColors.error.withValues(alpha: 0.25),
-                    blurRadius: 10,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
-        );
-        break;
-      case WolfButtonVariant.outline:
-        decoration = BoxDecoration(
-          color: Colors.transparent,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: ZaWolfColors.surface03, width: 1.2),
-        );
-        textStyle = textStyle.copyWith(color: ZaWolfColors.textSecondary);
-        subStyle = subStyle.copyWith(color: ZaWolfColors.textMuted);
-        break;
-      case WolfButtonVariant.secondary:
-        decoration = BoxDecoration(
-          color: ZaWolfColors.surface02,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: ZaWolfColors.surface03, width: 1),
-        );
-        textStyle = textStyle.copyWith(color: ZaWolfColors.textPrimary);
-        subStyle = subStyle.copyWith(color: ZaWolfColors.textMuted);
-        break;
-      case WolfButtonVariant.ghost:
-        decoration = const BoxDecoration(color: Colors.transparent);
-        textStyle =
-            textStyle.copyWith(color: ZaWolfColors.primaryCyan);
-        subStyle = subStyle.copyWith(
-          color: ZaWolfColors.primaryCyan.withValues(alpha: 0.7),
-        );
-        break;
+    final br = borderRadius ?? BorderRadius.circular(8);
+
+    if (gradient != null) {
+      final effectiveGlow = glowColor ?? ZaWolfColors.primaryCyan;
+      decoration = BoxDecoration(
+        gradient: gradient,
+        borderRadius: br,
+        boxShadow: loading
+            ? null
+            : [
+                BoxShadow(
+                  color: effectiveGlow.withValues(alpha: 0.35),
+                  blurRadius: 14,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+      );
+      final effectiveTextColor = textColor ??
+          (effectiveGlow.computeLuminance() > 0.45
+              ? const Color(0xFF0F172A)
+              : Colors.white);
+      final hasDarkShadow = effectiveTextColor == Colors.white;
+      textStyle = textStyle.copyWith(
+        color: effectiveTextColor,
+        shadows: hasDarkShadow
+            ? const [
+                Shadow(
+                  color: Color(0x99000000),
+                  blurRadius: 4,
+                  offset: Offset(0, 1),
+                ),
+              ]
+            : const [],
+      );
+      subStyle = subStyle.copyWith(
+        color: effectiveTextColor.withValues(alpha: 0.75),
+        shadows: hasDarkShadow
+            ? const [
+                Shadow(
+                  color: Color(0x99000000),
+                  blurRadius: 3,
+                  offset: Offset(0, 1),
+                ),
+              ]
+            : const [],
+      );
+    } else {
+      switch (variant) {
+        case WolfButtonVariant.primary:
+          decoration = BoxDecoration(
+            gradient: ZaWolfColors.primaryGradient,
+            borderRadius: BorderRadius.circular(8),
+            boxShadow: loading
+                ? null
+                : [
+                    BoxShadow(
+                      color: ZaWolfColors.primaryCyan.withValues(alpha: 0.25),
+                      blurRadius: 10,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+          );
+          break;
+        case WolfButtonVariant.teal:
+          decoration = BoxDecoration(
+            gradient: ZaWolfColors.permissionGradient,
+            borderRadius: BorderRadius.circular(8),
+            boxShadow: loading
+                ? null
+                : [
+                    BoxShadow(
+                      color: ZaWolfColors.permissionTeal.withValues(alpha: 0.25),
+                      blurRadius: 10,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+          );
+          break;
+        case WolfButtonVariant.purple:
+          decoration = BoxDecoration(
+            gradient: ZaWolfColors.dayoffGradient,
+            borderRadius: BorderRadius.circular(8),
+            boxShadow: loading
+                ? null
+                : [
+                    BoxShadow(
+                      color: ZaWolfColors.dayoffPurple.withValues(alpha: 0.25),
+                      blurRadius: 10,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+          );
+          break;
+        case WolfButtonVariant.danger:
+          decoration = BoxDecoration(
+            color: ZaWolfColors.error,
+            borderRadius: BorderRadius.circular(8),
+            boxShadow: loading
+                ? null
+                : [
+                    BoxShadow(
+                      color: ZaWolfColors.error.withValues(alpha: 0.25),
+                      blurRadius: 10,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+          );
+          break;
+        case WolfButtonVariant.outline:
+          decoration = BoxDecoration(
+            color: Colors.transparent,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: ZaWolfColors.surface03, width: 1.2),
+          );
+          textStyle = textStyle.copyWith(color: ZaWolfColors.textSecondary);
+          subStyle = subStyle.copyWith(color: ZaWolfColors.textMuted);
+          break;
+        case WolfButtonVariant.secondary:
+          decoration = BoxDecoration(
+            color: ZaWolfColors.surface02,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: ZaWolfColors.surface03, width: 1),
+          );
+          textStyle = textStyle.copyWith(color: ZaWolfColors.textPrimary);
+          subStyle = subStyle.copyWith(color: ZaWolfColors.textMuted);
+          break;
+        case WolfButtonVariant.ghost:
+          decoration = const BoxDecoration(color: Colors.transparent);
+          textStyle =
+              textStyle.copyWith(color: ZaWolfColors.primaryCyan);
+          subStyle = subStyle.copyWith(
+            color: ZaWolfColors.primaryCyan.withValues(alpha: 0.7),
+          );
+          break;
+      }
+      if (borderRadius != null) {
+        decoration = decoration.copyWith(borderRadius: borderRadius);
+      }
     }
 
     final enabled = !loading && onPressed != null;
@@ -156,21 +215,21 @@ class WolfButton extends StatelessWidget {
     return Opacity(
       opacity: enabled || loading ? 1.0 : 0.5,
       child: Container(
-      width: width ?? double.infinity,
-      height: height,
-      decoration: decoration,
+        width: width ?? double.infinity,
+        height: height,
+        decoration: decoration,
         child: Material(
           color: Colors.transparent,
           child: InkWell(
             onTap: loading ? null : onPressed,
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: br is BorderRadius ? br : BorderRadius.circular(8),
             child: Center(
               child: loading
-                  ? const SizedBox(
+                  ? SizedBox(
                       width: 24,
                       height: 24,
                       child: CircularProgressIndicator(
-                        color: ZaWolfColors.textPrimary,
+                        color: textStyle.color ?? ZaWolfColors.textPrimary,
                         strokeWidth: 2.5,
                       ),
                     )
