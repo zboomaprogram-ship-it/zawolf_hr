@@ -1797,7 +1797,7 @@ service cloud.firestore {
           || request.resource.data.startDate >= request.time + duration.value(24, 'h')
         )
         && request.resource.data.keys().hasOnly([
-          'userId', 'employeeId', 'employeeName', 'department', 'locationId',
+          'userId', 'employeeId', 'employeeName', 'department', 'locationId', 'jobTitle',
           'managerId', 'leaveType', 'startDate', 'endDate', 'numberOfDays',
           'reason', 'attachmentUrl', 'workHandoverTo', 'status', 'submittedAt', 'isRead',
           'managerIds', 'managerNames', 'managerApprovalIndex',
