@@ -60,6 +60,31 @@ class PendingRequestsService {
   int get resignationCount =>
       _combinedCount(_resignationLegacyIds, _resignationRouteIds);
 
+  Set<String> get pendingLeaveIds => {
+    ..._leavesLegacyIds,
+    ..._leavesRouteIds,
+    ..._leavesCeoIds,
+  };
+  Set<String> get pendingPermissionIds => {
+    ..._permissionsLegacyIds,
+    ..._permissionsRouteIds,
+    ..._permissionsCeoIds,
+  };
+  Set<String> get pendingAdvanceIds => {
+    ..._advancesLegacyIds,
+    ..._advancesRouteIds,
+    ..._advancesCeoIds,
+  };
+  Set<String> get pendingAdministrativeIds => {
+    ..._administrativeLegacyIds,
+    ..._administrativeRouteIds,
+    ..._administrativeCeoIds,
+  };
+  Set<String> get pendingResignationIds => {
+    ..._resignationLegacyIds,
+    ..._resignationRouteIds,
+  };
+
   String? get firstPendingCategory {
     // Use the largest outstanding queue. This avoids opening an arbitrary
     // first tab when several request types need attention at the same time.

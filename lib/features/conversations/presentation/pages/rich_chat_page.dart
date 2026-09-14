@@ -425,7 +425,12 @@ class _RichChatPageState extends State<RichChatPage>
       appBar: AppBar(
         leading: IconButton(
           tooltip: 'كل المحادثات',
-          icon: const Icon(Icons.arrow_forward),
+          icon: Icon(
+            Directionality.of(context) == TextDirection.rtl
+                ? Icons.arrow_forward
+                : Icons.arrow_back,
+            textDirection: TextDirection.ltr,
+          ),
           onPressed: () {
             if (Navigator.of(context).canPop()) {
               Navigator.of(context).pop();

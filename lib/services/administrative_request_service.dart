@@ -7,15 +7,19 @@ import '../models/employee_role.dart';
 import '../models/manager_approval_chain.dart';
 import '../models/user_model.dart';
 import '../features/request_approval_routing/data/request_approval_routing_gateway.dart';
+import 'attendance_reconciliation_service.dart';
 import 'role_notification_service.dart';
 
 class AdministrativeRequestService {
   AdministrativeRequestService({FirebaseFirestore? firestore})
-    : _db = firestore ?? FirebaseFirestore.instance;
+    : _db = firestore ?? FirebaseFirestore.instance,
+      _reconciliationService =
+          AttendanceReconciliationService(firestore: firestore);
 
   final FirebaseFirestore _db;
   final RequestApprovalRoutingGateway _routingGateway =
       RequestApprovalRoutingGateway();
+  final AttendanceReconciliationService _reconciliationService;
 
   Map<String, dynamic> _event({
     required String stage,
@@ -276,6 +280,22 @@ class AdministrativeRequestService {
         });
       }
       await batch.commit();
+      if (isFieldMission && data['userId'] != null && data['missionDate'] != null) {
+        try {
+          await _reconciliationService.reconcileApprovedFieldMission(
+            userId: data['userId'] as String,
+            dateKey: data['missionDate'] as String,
+            employeeId: data['employeeId'] as String?,
+            employeeName: data['employeeName'] as String?,
+            department: data['department'] as String?,
+            locationId: data['locationId'] as String?,
+            managerId: data['managerId'] as String?,
+            missionId: requestId,
+          );
+        } catch (e) {
+          debugPrint('Error reconciling field mission: $e');
+        }
+      }
       await _notify(
         data['userId'] as String,
         'تم قبول الطلب الإداري',

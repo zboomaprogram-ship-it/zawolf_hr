@@ -1,4 +1,6 @@
 import '../../../services/dashboard_attendance_summary_service.dart';
+export '../../../services/dashboard_attendance_summary_service.dart'
+    show DashboardAttendanceSummary;
 
 /// An inclusive dashboard range. Custom ranges are bounded to protect Firestore
 /// reads and are normalized to calendar days.

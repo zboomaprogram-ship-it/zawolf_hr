@@ -76,13 +76,13 @@ class _RichChatInboxPageState extends State<RichChatInboxPage>
           actions: [
             IconButton(
               tooltip: 'بدء محادثة خاصة',
-              icon: const Icon(Icons.edit_square),
+              icon: const Icon(Icons.edit_outlined),
               onPressed: _openDirectChat,
             ),
             IconButton(
               tooltip:
                   widget.canReview ? 'مراجعة طلبات الجروبات' : 'طلبات الجروبات',
-              icon: const Icon(Icons.group_add_outlined),
+              icon: const Icon(Icons.group_add),
               onPressed: _openRequests,
             ),
           ],
@@ -458,8 +458,11 @@ class _ConversationTile extends StatelessWidget {
                         ),
                       )
                     else
-                      const Icon(
-                        Icons.chevron_left,
+                      Icon(
+                        Directionality.of(context) == TextDirection.rtl
+                            ? Icons.chevron_left
+                            : Icons.chevron_right,
+                        textDirection: TextDirection.ltr,
                         color: ZaWolfColors.textMuted,
                       ),
                   ],

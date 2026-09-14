@@ -32,6 +32,7 @@ import '../../services/administrative_request_service.dart';
 import '../../services/pending_requests_service.dart';
 import '../../services/attendance_correction_request_service.dart';
 import '../../services/hr_direct_request_service.dart';
+import '../../models/manager_approval_chain.dart';
 import '../../models/request_approval_policy.dart';
 import '../../models/resignation_model.dart';
 import '../../models/administrative_request_model.dart';
@@ -831,6 +832,1070 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
     reasonController.dispose();
   }
 
+  Future<void> _showSendRequestForEmployeeDialog(UserModel manager) async {
+    final usersSnapshot =
+        await _db.collection('users').where('isActive', isEqualTo: true).get();
+    final employees =
+        usersSnapshot.docs
+            .map(UserModel.fromFirestore)
+            .toList()
+          ..sort((a, b) => a.displayName.compareTo(b.displayName));
+
+    if (!mounted) return;
+
+    UserModel? chosenEmployee;
+    String requestKind = 'leave';
+
+    // Leave fields
+    var leaveType = LeaveTypePolicy.normal;
+    var leaveStart = DateTime.now().add(const Duration(days: 1));
+    var leaveEnd = DateTime.now().add(const Duration(days: 1));
+    final leaveReasonCtrl = TextEditingController();
+    final leaveHandoverCtrl = TextEditingController();
+
+    // Permission fields
+    var permType = PermissionTypePolicy.earlyLeave;
+    var permDate = DateTime.now();
+    var permTime = const TimeOfDay(hour: 14, minute: 0);
+    var permDurationHours = 2;
+    final permReasonCtrl = TextEditingController();
+
+    // Advance fields
+    final advanceAmountCtrl = TextEditingController();
+    final advanceReasonCtrl = TextEditingController();
+
+    // Administrative fields
+    var adminCategory = AdministrativeRequestCategory.fieldMission;
+    final adminTitleCtrl = TextEditingController();
+    final adminNotesCtrl = TextEditingController();
+
+    // Attendance correction fields
+    var corrDate = DateTime.now().subtract(const Duration(days: 1));
+    var corrCheckIn = const TimeOfDay(hour: 9, minute: 0);
+    var corrCheckOut = const TimeOfDay(hour: 17, minute: 0);
+    var corrHasCheckIn = true;
+    var corrHasCheckOut = true;
+    final corrReasonCtrl = TextEditingController();
+
+    // Complaint fields
+    final complaintTitleCtrl = TextEditingController();
+    final complaintBodyCtrl = TextEditingController();
+
+    // Resignation fields
+    var resLastDay = DateTime.now().add(const Duration(days: 30));
+    final resReasonCtrl = TextEditingController();
+
+    var saving = false;
+
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder:
+          (dialogContext) => StatefulBuilder(
+            builder: (context, setDialogState) {
+              final chainIds = chosenEmployee != null
+                  ? ManagerApprovalChain.orderedIds(
+                    chosenEmployee!.managerIds,
+                    fallbackId: chosenEmployee!.managerId,
+                    teamLeaderId: chosenEmployee!.teamLeaderId,
+                  )
+                  : <String>[];
+              final chainNames = chosenEmployee != null
+                  ? ManagerApprovalChain.orderedNames(
+                    orderedIds: chainIds,
+                    managerIds: chosenEmployee!.managerIds,
+                    managerNames: chosenEmployee!.managerNames,
+                    teamLeaderId: chosenEmployee!.teamLeaderId,
+                    teamLeaderName: chosenEmployee!.teamLeaderName,
+                    fallbackManagerId: chosenEmployee!.managerId,
+                  )
+                  : <String>[];
+
+              return AlertDialog(
+                title: Row(
+                  children: const [
+                    Icon(
+                      Icons.post_add_rounded,
+                      color: ZaWolfColors.primaryCyan,
+                    ),
+                    SizedBox(width: 8),
+                    Text('إرسال طلب لموظف عبر مسار موافقاته'),
+                  ],
+                ),
+                content: SizedBox(
+                  width: 540,
+                  child: SingleChildScrollView(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        // Employee picker
+                        const Text(
+                          'الموظف المستهدف:',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 13,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        DropdownButtonFormField<UserModel>(
+                          initialValue: chosenEmployee,
+                          decoration: const InputDecoration(
+                            border: OutlineInputBorder(),
+                            prefixIcon: Icon(Icons.person_outline),
+                            isDense: true,
+                          ),
+                          hint: const Text('اختر الموظف المستهدف'),
+                          items: employees
+                              .map(
+                                (emp) => DropdownMenuItem(
+                                  value: emp,
+                                  child: Text(
+                                    '${emp.displayName} (${emp.department})',
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              )
+                              .toList(),
+                          onChanged: saving
+                              ? null
+                              : (selected) {
+                                setDialogState(() => chosenEmployee = selected);
+                              },
+                        ),
+                        if (chosenEmployee != null) ...[
+                          const SizedBox(height: 10),
+                          Container(
+                            padding: const EdgeInsets.all(10),
+                            decoration: BoxDecoration(
+                              color: ZaWolfColors.surface01,
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                color: ZaWolfColors.primaryCyan.withValues(alpha: 0.3),
+                              ),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    const Icon(
+                                      Icons.route_outlined,
+                                      size: 16,
+                                      color: ZaWolfColors.primaryCyan,
+                                    ),
+                                    const SizedBox(width: 6),
+                                    const Text(
+                                      'مسار الموافقات الخاص بهذا الموظف:',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.bold,
+                                        color: ZaWolfColors.primaryCyan,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  chainNames.where((n) => n.isNotEmpty).isNotEmpty
+                                      ? '${chainNames.where((n) => n.isNotEmpty).join('  ←  ')}  ←  الموارد البشرية (HR)'
+                                      : ((chosenEmployee!.managerId ?? '').isNotEmpty
+                                          ? 'المدير المباشر  ←  الموارد البشرية (HR)'
+                                          : 'الموارد البشرية (HR) مباشرة'),
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    color: ZaWolfColors.textPrimary,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                        const SizedBox(height: 16),
+                        // Request type picker
+                        const Text(
+                          'نوع الطلب المراد إرساله:',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 13,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        DropdownButtonFormField<String>(
+                          initialValue: requestKind,
+                          decoration: const InputDecoration(
+                            border: OutlineInputBorder(),
+                            prefixIcon: Icon(Icons.category_outlined),
+                            isDense: true,
+                          ),
+                          items: const [
+                            DropdownMenuItem(value: 'leave', child: Text('طلب إجازة')),
+                            DropdownMenuItem(value: 'permission', child: Text('طلب إذن')),
+                            DropdownMenuItem(value: 'advance', child: Text('طلب سلفة مالية')),
+                            DropdownMenuItem(value: 'administrative', child: Text('طلب إداري / مأمورية / تكليف')),
+                            DropdownMenuItem(value: 'attendanceCorrection', child: Text('طلب تصحيح حضور وانصراف')),
+                            DropdownMenuItem(value: 'complaint', child: Text('شكوى رسمية')),
+                            DropdownMenuItem(value: 'resignation', child: Text('طلب استقالة')),
+                          ],
+                          onChanged: saving
+                              ? null
+                              : (val) {
+                                if (val != null) {
+                                  setDialogState(() => requestKind = val);
+                                }
+                              },
+                        ),
+                        const SizedBox(height: 14),
+                        const Divider(color: ZaWolfColors.surface03),
+                        const SizedBox(height: 10),
+
+                        // Form fields per request type
+                        if (requestKind == 'leave') ...[
+                          DropdownButtonFormField<String>(
+                            initialValue: leaveType,
+                            decoration: const InputDecoration(
+                              labelText: 'نوع الإجازة',
+                              border: OutlineInputBorder(),
+                              isDense: true,
+                            ),
+                            items: [
+                              DropdownMenuItem(value: LeaveTypePolicy.normal, child: Text(LeaveTypePolicy.arabicLabel(LeaveTypePolicy.normal))),
+                              DropdownMenuItem(value: LeaveTypePolicy.casual, child: Text(LeaveTypePolicy.arabicLabel(LeaveTypePolicy.casual))),
+                              DropdownMenuItem(value: LeaveTypePolicy.sick, child: Text(LeaveTypePolicy.arabicLabel(LeaveTypePolicy.sick))),
+                              DropdownMenuItem(value: LeaveTypePolicy.unpaid, child: Text(LeaveTypePolicy.arabicLabel(LeaveTypePolicy.unpaid))),
+                              DropdownMenuItem(value: LeaveTypePolicy.exam, child: Text(LeaveTypePolicy.arabicLabel(LeaveTypePolicy.exam))),
+                              DropdownMenuItem(value: LeaveTypePolicy.paternity, child: Text(LeaveTypePolicy.arabicLabel(LeaveTypePolicy.paternity))),
+                            ],
+                            onChanged: saving ? null : (v) => setDialogState(() => leaveType = v ?? leaveType),
+                          ),
+                          const SizedBox(height: 12),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: OutlinedButton.icon(
+                                  icon: const Icon(Icons.calendar_today, size: 16),
+                                  label: Text('من: ${DateFormat('yyyy-MM-dd').format(leaveStart)}'),
+                                  onPressed: saving ? null : () async {
+                                    final picked = await showDatePicker(
+                                      context: context,
+                                      initialDate: leaveStart,
+                                      firstDate: DateTime.now().subtract(const Duration(days: 30)),
+                                      lastDate: DateTime.now().add(const Duration(days: 365)),
+                                      locale: const Locale('ar'),
+                                    );
+                                    if (picked != null) {
+                                      setDialogState(() {
+                                        leaveStart = picked;
+                                        if (leaveEnd.isBefore(leaveStart)) leaveEnd = leaveStart;
+                                      });
+                                    }
+                                  },
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: OutlinedButton.icon(
+                                  icon: const Icon(Icons.calendar_today, size: 16),
+                                  label: Text('إلى: ${DateFormat('yyyy-MM-dd').format(leaveEnd)}'),
+                                  onPressed: saving ? null : () async {
+                                    final picked = await showDatePicker(
+                                      context: context,
+                                      initialDate: leaveEnd.isBefore(leaveStart) ? leaveStart : leaveEnd,
+                                      firstDate: leaveStart,
+                                      lastDate: DateTime.now().add(const Duration(days: 365)),
+                                      locale: const Locale('ar'),
+                                    );
+                                    if (picked != null) {
+                                      setDialogState(() => leaveEnd = picked);
+                                    }
+                                  },
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+                          TextField(
+                            controller: leaveHandoverCtrl,
+                            decoration: const InputDecoration(
+                              labelText: 'القائم بالعمل أثناء الإجازة',
+                              border: OutlineInputBorder(),
+                              isDense: true,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          TextField(
+                            controller: leaveReasonCtrl,
+                            decoration: const InputDecoration(
+                              labelText: 'سبب الإجازة *',
+                              border: OutlineInputBorder(),
+                              isDense: true,
+                            ),
+                            maxLines: 2,
+                          ),
+                        ] else if (requestKind == 'permission') ...[
+                          DropdownButtonFormField<String>(
+                            initialValue: permType,
+                            decoration: const InputDecoration(
+                              labelText: 'نوع الإذن',
+                              border: OutlineInputBorder(),
+                              isDense: true,
+                            ),
+                            items: [
+                              DropdownMenuItem(
+                                value: PermissionTypePolicy.earlyLeave,
+                                child: Text(PermissionTypePolicy.arabicLabel(PermissionTypePolicy.earlyLeave)),
+                              ),
+                              DropdownMenuItem(
+                                value: PermissionTypePolicy.lateArrival,
+                                child: Text(PermissionTypePolicy.arabicLabel(PermissionTypePolicy.lateArrival)),
+                              ),
+                              DropdownMenuItem(
+                                value: PermissionTypePolicy.midShiftExit,
+                                child: Text(PermissionTypePolicy.arabicLabel(PermissionTypePolicy.midShiftExit)),
+                              ),
+                            ],
+                            onChanged: saving ? null : (v) => setDialogState(() => permType = v ?? permType),
+                          ),
+                          const SizedBox(height: 12),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: OutlinedButton.icon(
+                                  icon: const Icon(Icons.calendar_today, size: 16),
+                                  label: Text(DateFormat('yyyy-MM-dd').format(permDate)),
+                                  onPressed: saving ? null : () async {
+                                    final picked = await showDatePicker(
+                                      context: context,
+                                      initialDate: permDate,
+                                      firstDate: DateTime.now().subtract(const Duration(days: 15)),
+                                      lastDate: DateTime.now().add(const Duration(days: 60)),
+                                      locale: const Locale('ar'),
+                                    );
+                                    if (picked != null) {
+                                      setDialogState(() => permDate = picked);
+                                    }
+                                  },
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: OutlinedButton.icon(
+                                  icon: const Icon(Icons.access_time, size: 16),
+                                  label: Text(permTime.format(context)),
+                                  onPressed: saving ? null : () async {
+                                    final picked = await showTimePicker(
+                                      context: context,
+                                      initialTime: permTime,
+                                    );
+                                    if (picked != null) {
+                                      setDialogState(() => permTime = picked);
+                                    }
+                                  },
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+                          Row(
+                            children: [
+                              const Text('مدة الإذن: '),
+                              const SizedBox(width: 8),
+                              DropdownButton<int>(
+                                value: permDurationHours,
+                                items: [1, 2, 3, 4]
+                                    .map((h) => DropdownMenuItem(value: h, child: Text('$h ساعة')))
+                                    .toList(),
+                                onChanged: saving ? null : (v) => setDialogState(() => permDurationHours = v ?? permDurationHours),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+                          TextField(
+                            controller: permReasonCtrl,
+                            decoration: const InputDecoration(
+                              labelText: 'سبب الإذن *',
+                              border: OutlineInputBorder(),
+                              isDense: true,
+                            ),
+                            maxLines: 2,
+                          ),
+                        ] else if (requestKind == 'advance') ...[
+                          TextField(
+                            controller: advanceAmountCtrl,
+                            keyboardType: TextInputType.number,
+                            decoration: const InputDecoration(
+                              labelText: 'مبلغ السلفة المطلوب (ج.م) *',
+                              border: OutlineInputBorder(),
+                              isDense: true,
+                              prefixIcon: Icon(Icons.attach_money),
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          TextField(
+                            controller: advanceReasonCtrl,
+                            decoration: const InputDecoration(
+                              labelText: 'سبب طلب السلفة *',
+                              border: OutlineInputBorder(),
+                              isDense: true,
+                            ),
+                            maxLines: 2,
+                          ),
+                        ] else if (requestKind == 'administrative') ...[
+                          DropdownButtonFormField<String>(
+                            initialValue: adminCategory,
+                            decoration: const InputDecoration(
+                              labelText: 'فئة الطلب الإداري',
+                              border: OutlineInputBorder(),
+                              isDense: true,
+                            ),
+                            items: AdministrativeRequestCategory.values
+                                .map(
+                                  (cat) => DropdownMenuItem(
+                                    value: cat,
+                                    child: Text(
+                                      AdministrativeRequestCategory.arabicLabel(cat),
+                                    ),
+                                  ),
+                                )
+                                .toList(),
+                            onChanged: saving ? null : (v) => setDialogState(() => adminCategory = v ?? adminCategory),
+                          ),
+                          const SizedBox(height: 12),
+                          TextField(
+                            controller: adminTitleCtrl,
+                            decoration: const InputDecoration(
+                              labelText: 'عنوان الطلب أو المهمة',
+                              border: OutlineInputBorder(),
+                              isDense: true,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          TextField(
+                            controller: adminNotesCtrl,
+                            decoration: const InputDecoration(
+                              labelText: 'تفاصيل وملاحظات الطلب *',
+                              border: OutlineInputBorder(),
+                              isDense: true,
+                            ),
+                            maxLines: 3,
+                          ),
+                        ] else if (requestKind == 'attendanceCorrection') ...[
+                          OutlinedButton.icon(
+                            icon: const Icon(Icons.calendar_today, size: 16),
+                            label: Text('تاريخ اليوم المراد تصحيحه: ${DateFormat('yyyy-MM-dd').format(corrDate)}'),
+                            onPressed: saving ? null : () async {
+                              final picked = await showDatePicker(
+                                context: context,
+                                initialDate: corrDate,
+                                firstDate: DateTime.now().subtract(const Duration(days: 45)),
+                                lastDate: DateTime.now(),
+                                locale: const Locale('ar'),
+                              );
+                              if (picked != null) {
+                                setDialogState(() => corrDate = picked);
+                              }
+                            },
+                          ),
+                          const SizedBox(height: 12),
+                          CheckboxListTile(
+                            title: const Text('تصحيح وقت الحضور'),
+                            value: corrHasCheckIn,
+                            dense: true,
+                            contentPadding: EdgeInsets.zero,
+                            onChanged: saving ? null : (v) => setDialogState(() => corrHasCheckIn = v ?? true),
+                          ),
+                          if (corrHasCheckIn) ...[
+                            OutlinedButton.icon(
+                              icon: const Icon(Icons.access_time, size: 16),
+                              label: Text('وقت الحضور الصحيح: ${corrCheckIn.format(context)}'),
+                              onPressed: saving ? null : () async {
+                                final picked = await showTimePicker(context: context, initialTime: corrCheckIn);
+                                if (picked != null) setDialogState(() => corrCheckIn = picked);
+                              },
+                            ),
+                            const SizedBox(height: 8),
+                          ],
+                          CheckboxListTile(
+                            title: const Text('تصحيح وقت الانصراف'),
+                            value: corrHasCheckOut,
+                            dense: true,
+                            contentPadding: EdgeInsets.zero,
+                            onChanged: saving ? null : (v) => setDialogState(() => corrHasCheckOut = v ?? true),
+                          ),
+                          if (corrHasCheckOut) ...[
+                            OutlinedButton.icon(
+                              icon: const Icon(Icons.access_time, size: 16),
+                              label: Text('وقت الانصراف الصحيح: ${corrCheckOut.format(context)}'),
+                              onPressed: saving ? null : () async {
+                                final picked = await showTimePicker(context: context, initialTime: corrCheckOut);
+                                if (picked != null) setDialogState(() => corrCheckOut = picked);
+                              },
+                            ),
+                            const SizedBox(height: 8),
+                          ],
+                          TextField(
+                            controller: corrReasonCtrl,
+                            decoration: const InputDecoration(
+                              labelText: 'سبب عدم التسجيل أو التصحيح *',
+                              border: OutlineInputBorder(),
+                              isDense: true,
+                            ),
+                            maxLines: 2,
+                          ),
+                        ] else if (requestKind == 'complaint') ...[
+                          TextField(
+                            controller: complaintTitleCtrl,
+                            decoration: const InputDecoration(
+                              labelText: 'موضوع الشكوى *',
+                              border: OutlineInputBorder(),
+                              isDense: true,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          TextField(
+                            controller: complaintBodyCtrl,
+                            decoration: const InputDecoration(
+                              labelText: 'نص الشكوى والتفاصيل *',
+                              border: OutlineInputBorder(),
+                              isDense: true,
+                            ),
+                            maxLines: 3,
+                          ),
+                        ] else if (requestKind == 'resignation') ...[
+                          OutlinedButton.icon(
+                            icon: const Icon(Icons.calendar_today, size: 16),
+                            label: Text('تاريخ آخر يوم عمل متوقع: ${DateFormat('yyyy-MM-dd').format(resLastDay)}'),
+                            onPressed: saving ? null : () async {
+                              final picked = await showDatePicker(
+                                context: context,
+                                initialDate: resLastDay,
+                                firstDate: DateTime.now(),
+                                lastDate: DateTime.now().add(const Duration(days: 180)),
+                                locale: const Locale('ar'),
+                              );
+                              if (picked != null) {
+                                setDialogState(() => resLastDay = picked);
+                              }
+                            },
+                          ),
+                          const SizedBox(height: 12),
+                          TextField(
+                            controller: resReasonCtrl,
+                            decoration: const InputDecoration(
+                              labelText: 'أسباب الاستقالة *',
+                              border: OutlineInputBorder(),
+                              isDense: true,
+                            ),
+                            maxLines: 3,
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: saving ? null : () => Navigator.pop(dialogContext),
+                    child: const Text('إلغاء'),
+                  ),
+                  FilledButton.icon(
+                    icon: saving
+                        ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                        : const Icon(Icons.send_rounded, size: 18),
+                    label: const Text('إرسال عبر المسار'),
+                    onPressed: saving
+                        ? null
+                        : () async {
+                          final messenger = ScaffoldMessenger.of(context);
+                          if (chosenEmployee == null) {
+                            messenger.showSnackBar(
+                              const SnackBar(content: Text('يرجى اختيار الموظف أولاً.')),
+                            );
+                            return;
+                          }
+
+                          setDialogState(() => saving = true);
+                          try {
+                            switch (requestKind) {
+                              case 'leave':
+                                if (leaveReasonCtrl.text.trim().isEmpty) {
+                                  throw Exception('يجب كتابة سبب الإجازة.');
+                                }
+                                final numberOfDays = LeaveService.countChargeableDays(
+                                  start: leaveStart,
+                                  end: leaveEnd,
+                                  schedule: chosenEmployee!.workSchedule,
+                                );
+                                final req = LeaveModel(
+                                  leaveId: '',
+                                  userId: chosenEmployee!.uid,
+                                  employeeId: chosenEmployee!.employeeId,
+                                  employeeName: chosenEmployee!.displayName,
+                                  department: chosenEmployee!.department,
+                                  locationId: chosenEmployee!.locationId.isNotEmpty
+                                      ? chosenEmployee!.locationId
+                                      : 'default',
+                                  managerId: chosenEmployee!.managerId ?? '',
+                                  leaveType: leaveType,
+                                  startDate: leaveStart,
+                                  endDate: leaveEnd,
+                                  numberOfDays: numberOfDays > 0 ? numberOfDays : 1,
+                                  reason: leaveReasonCtrl.text.trim(),
+                                  workHandoverTo: leaveHandoverCtrl.text.trim().isNotEmpty
+                                      ? leaveHandoverCtrl.text.trim()
+                                      : 'الإدارة',
+                                  status: 'pending_manager',
+                                  submittedAt: DateTime.now(),
+                                );
+                                await _leaveService.submitLeaveRequest(req, chosenEmployee!);
+                                break;
+
+                              case 'permission':
+                                if (permReasonCtrl.text.trim().isEmpty) {
+                                  throw Exception('يجب كتابة سبب الإذن.');
+                                }
+                                final pDateStr = DateFormat('yyyy-MM-dd').format(permDate);
+                                final pTimeStr =
+                                    '${permTime.hour.toString().padLeft(2, '0')}:${permTime.minute.toString().padLeft(2, '0')}';
+                                final pMonthKey =
+                                    '${permDate.year}-${permDate.month.toString().padLeft(2, '0')}';
+                                final pReq = PermissionModel(
+                                  permissionId: '',
+                                  userId: chosenEmployee!.uid,
+                                  employeeId: chosenEmployee!.employeeId,
+                                  employeeName: chosenEmployee!.displayName,
+                                  department: chosenEmployee!.department,
+                                  permissionType: permType,
+                                  requestDate: pDateStr,
+                                  expectedTime: pTimeStr,
+                                  durationMinutes: permDurationHours * 60,
+                                  reason: permReasonCtrl.text.trim(),
+                                  status: 'pending_manager',
+                                  submittedAt: DateTime.now(),
+                                  locationId: chosenEmployee!.locationId.isNotEmpty
+                                      ? chosenEmployee!.locationId
+                                      : 'default',
+                                  managerId: chosenEmployee!.managerId ?? '',
+                                  monthKey: pMonthKey,
+                                  isExceedingQuota: false,
+                                  isSubmittedAfterWorkStart: false,
+                                );
+                                await _permissionService.submitPermission(pReq, chosenEmployee!);
+                                break;
+
+                              case 'advance':
+                                final amount = double.tryParse(advanceAmountCtrl.text.trim()) ?? 0;
+                                if (amount <= 0) throw Exception('أدخل مبلغ سلفة صحيحاً.');
+                                if (advanceReasonCtrl.text.trim().isEmpty) {
+                                  throw Exception('يجب كتابة سبب السلفة.');
+                                }
+                                final advNow = DateTime.now();
+                                final advReq = AdvanceModel(
+                                  advanceId: '',
+                                  userId: chosenEmployee!.uid,
+                                  employeeId: chosenEmployee!.employeeId,
+                                  employeeName: chosenEmployee!.displayName,
+                                  department: chosenEmployee!.department,
+                                  amount: amount,
+                                  reason: advanceReasonCtrl.text.trim(),
+                                  status: 'pending_manager',
+                                  submittedAt: advNow,
+                                  locationId: chosenEmployee!.locationId.isNotEmpty
+                                      ? chosenEmployee!.locationId
+                                      : 'default',
+                                  managerId: chosenEmployee!.managerId ?? '',
+                                  monthKey:
+                                      '${advNow.year}-${advNow.month.toString().padLeft(2, '0')}',
+                                );
+                                await _advanceService.submitAdvanceRequest(advReq, chosenEmployee!);
+                                break;
+
+                              case 'administrative':
+                                if (adminNotesCtrl.text.trim().isEmpty) {
+                                  throw Exception('يجب كتابة تفاصيل وملاحظات الطلب.');
+                                }
+                                await _administrativeRequestService.submit(
+                                  employee: chosenEmployee!,
+                                  category: adminCategory,
+                                  notes: adminNotesCtrl.text.trim(),
+                                );
+                                break;
+
+                              case 'attendanceCorrection':
+                                final cleanReason = corrReasonCtrl.text.trim();
+                                if (cleanReason.length < 5) {
+                                  throw Exception(
+                                    'يجب كتابة سبب التصحيح (5 أحرف على الأقل).',
+                                  );
+                                }
+                                final corrDateStr = DateFormat(
+                                  'yyyy-MM-dd',
+                                ).format(corrDate);
+                                final attSnap =
+                                    await _db
+                                        .collection('attendance')
+                                        .where(
+                                          'userId',
+                                          isEqualTo: chosenEmployee!.uid,
+                                        )
+                                        .where('date', isEqualTo: corrDateStr)
+                                        .limit(1)
+                                        .get();
+                                if (attSnap.docs.isEmpty) {
+                                  throw Exception(
+                                    'لا يوجد سجل حضور للموظف في تاريخ $corrDateStr لتصحيحه.',
+                                  );
+                                }
+                                final attDoc = attSnap.docs.first;
+                                final attData = attDoc.data();
+                                final origCheckInTs =
+                                    attData['checkInTime'] as Timestamp?;
+                                if (origCheckInTs == null) {
+                                  throw Exception(
+                                    'سجل الحضور لهذا اليوم لا يحتوي على وقت حضور أولي.',
+                                  );
+                                }
+                                final reqCheckIn = DateTime(
+                                  corrDate.year,
+                                  corrDate.month,
+                                  corrDate.day,
+                                  corrCheckIn.hour,
+                                  corrCheckIn.minute,
+                                );
+                                if (reqCheckIn.isAfter(
+                                  origCheckInTs.toDate(),
+                                )) {
+                                  throw Exception(
+                                    'وقت الحضور المقترح يجب ألا يكون بعد وقت الحضور المسجل.',
+                                  );
+                                }
+                                final ref =
+                                    _db
+                                        .collection(
+                                          'attendanceCorrectionRequests',
+                                        )
+                                        .doc();
+                                await ref.set({
+                                  'requestId': ref.id,
+                                  'userId': chosenEmployee!.uid,
+                                  'employeeId': chosenEmployee!.employeeId,
+                                  'employeeName': chosenEmployee!.displayName,
+                                  'department': chosenEmployee!.department,
+                                  'attendanceId': attDoc.id,
+                                  'attendanceDate': corrDateStr,
+                                  'originalCheckInTime': origCheckInTs,
+                                  'requestedCheckInTime': Timestamp.fromDate(
+                                    reqCheckIn,
+                                  ),
+                                  'reason': cleanReason,
+                                  'status': 'pending_hr',
+                                  'submittedAt': FieldValue.serverTimestamp(),
+                                  'isRead': false,
+                                });
+                                break;
+
+                              case 'complaint':
+                                if (complaintTitleCtrl.text.trim().isEmpty ||
+                                    complaintBodyCtrl.text.trim().isEmpty) {
+                                  throw Exception('يجب إدخال عنوان وتفاصيل الشكوى.');
+                                }
+                                await ComplaintService().submitComplaint(
+                                  employee: chosenEmployee!,
+                                  title: complaintTitleCtrl.text.trim(),
+                                  body: complaintBodyCtrl.text.trim(),
+                                );
+                                break;
+
+                              case 'resignation':
+                                if (resReasonCtrl.text.trim().isEmpty) {
+                                  throw Exception('يجب إدخال سبب الاستقالة.');
+                                }
+                                await _resignationService.submit(
+                                  employee: chosenEmployee!,
+                                  reason: resReasonCtrl.text.trim(),
+                                  resignationDate: resLastDay,
+                                );
+                                break;
+                            }
+
+                            if (!dialogContext.mounted || !mounted) return;
+                            Navigator.pop(dialogContext);
+                            messenger.showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                  'تم إرسال الطلب بنجاح إلى مسار موافقات ${chosenEmployee!.displayName}.',
+                                ),
+                                backgroundColor: ZaWolfColors.success,
+                              ),
+                            );
+                          } catch (error) {
+                            if (!dialogContext.mounted || !mounted) return;
+                            setDialogState(() => saving = false);
+                            messenger.showSnackBar(
+                              SnackBar(content: Text(userFacingError(error))),
+                            );
+                          }
+                        },
+                  ),
+                ],
+              );
+            },
+          ),
+    );
+
+    leaveReasonCtrl.dispose();
+    leaveHandoverCtrl.dispose();
+    permReasonCtrl.dispose();
+    advanceAmountCtrl.dispose();
+    advanceReasonCtrl.dispose();
+    adminTitleCtrl.dispose();
+    adminNotesCtrl.dispose();
+    corrReasonCtrl.dispose();
+    complaintTitleCtrl.dispose();
+    complaintBodyCtrl.dispose();
+    resReasonCtrl.dispose();
+  }
+
+  Future<void> _bulkReviewRequests(UserModel manager, {required bool approve}) async {
+    final leaveIds = PendingRequestsService.instance.pendingLeaveIds.toList();
+    final permIds = PendingRequestsService.instance.pendingPermissionIds.toList();
+    final advIds = PendingRequestsService.instance.pendingAdvanceIds.toList();
+    final adminIds = PendingRequestsService.instance.pendingAdministrativeIds.toList();
+    final resIds = PendingRequestsService.instance.pendingResignationIds.toList();
+
+    final totalCount =
+        leaveIds.length + permIds.length + advIds.length + adminIds.length + resIds.length;
+    if (totalCount == 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('لا توجد طلبات معلقة بانتظار موافقتك حالياً.'),
+        ),
+      );
+      return;
+    }
+
+    final reasonController = TextEditingController();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder:
+          (dialogCtx) => AlertDialog(
+            title: Row(
+              children: [
+                Icon(
+                  approve ? Icons.done_all : Icons.remove_done,
+                  color: approve ? ZaWolfColors.success : ZaWolfColors.error,
+                ),
+                const SizedBox(width: 8),
+                Text(approve ? 'اعتماد جميع الطلبات المعلقة' : 'رفض جميع الطلبات المعلقة'),
+              ],
+            ),
+            content: SizedBox(
+              width: 440,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'هل أنت متأكد من ${approve ? 'الموافقة على' : 'رفض'} جميع الطلبات المعلقة المؤهلة في مرحلتك؟',
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 12),
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: ZaWolfColors.surface01,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: ZaWolfColors.surface03),
+                    ),
+                    child: Column(
+                      children: [
+                        if (leaveIds.isNotEmpty) _bulkSummaryRow('طلبات الإجازات', leaveIds.length),
+                        if (permIds.isNotEmpty) _bulkSummaryRow('طلبات الأذونات', permIds.length),
+                        if (advIds.isNotEmpty) _bulkSummaryRow('طلبات السلف', advIds.length),
+                        if (adminIds.isNotEmpty) _bulkSummaryRow('الطلبات الإدارية', adminIds.length),
+                        if (resIds.isNotEmpty) _bulkSummaryRow('طلبات الاستقالة', resIds.length),
+                        const Divider(color: ZaWolfColors.surface03),
+                        _bulkSummaryRow('الإجمالي المطلوب معالجته', totalCount, isBold: true),
+                      ],
+                    ),
+                  ),
+                  if (!approve) ...[
+                    const SizedBox(height: 14),
+                    TextField(
+                      controller: reasonController,
+                      decoration: const InputDecoration(
+                        labelText: 'سبب الرفض الجماعي (اختياري)',
+                        border: OutlineInputBorder(),
+                        isDense: true,
+                      ),
+                      maxLines: 2,
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogCtx, false),
+                child: const Text('إلغاء'),
+              ),
+              FilledButton(
+                style: FilledButton.styleFrom(
+                  backgroundColor: approve ? ZaWolfColors.success : ZaWolfColors.error,
+                ),
+                onPressed: () => Navigator.pop(dialogCtx, true),
+                child: Text(approve ? 'اعتماد الكل ($totalCount)' : 'رفض الكل ($totalCount)'),
+              ),
+            ],
+          ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    final messenger = ScaffoldMessenger.of(context);
+    final reason = reasonController.text.trim().isNotEmpty
+        ? reasonController.text.trim()
+        : (approve ? 'موافقة جماعية' : 'رفض جماعي من الإدارة');
+
+    var successCount = 0;
+
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(
+        child: Card(
+          child: Padding(
+            padding: EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircularProgressIndicator(color: ZaWolfColors.primaryCyan),
+                SizedBox(height: 16),
+                Text('جارٍ معالجة الطلبات الجماعية...'),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+
+    try {
+      // Process leaves
+      for (final id in leaveIds) {
+        try {
+          if (approve) {
+            await _leaveService.approveLeave(id, manager.uid, manager.role);
+          } else {
+            await _leaveService.rejectLeave(id, manager.uid, reason);
+          }
+          successCount++;
+        } catch (_) {}
+      }
+
+      // Process permissions
+      for (final id in permIds) {
+        try {
+          if (approve) {
+            await _permissionService.approvePermission(id, manager.uid);
+          } else {
+            await _permissionService.rejectPermission(id, manager.uid, reason);
+          }
+          successCount++;
+        } catch (_) {}
+      }
+
+      // Process advances
+      for (final id in advIds) {
+        try {
+          if (approve) {
+            await _advanceService.approveAdvanceRequest(
+              advanceId: id,
+              reviewer: manager,
+            );
+          } else {
+            await _advanceService.updateAdvanceStatus(
+              advanceId: id,
+              status: 'rejected',
+              reviewerId: manager.uid,
+              comment: reason,
+            );
+          }
+          successCount++;
+        } catch (_) {}
+      }
+
+      // Process administrative
+      for (final id in adminIds) {
+        try {
+          if (approve) {
+            await _administrativeRequestService.approve(id, manager);
+          } else {
+            await _administrativeRequestService.reject(id, manager, reason);
+          }
+          successCount++;
+        } catch (_) {}
+      }
+
+      // Process resignations
+      for (final id in resIds) {
+        try {
+          await _resignationService.review(
+            resignationId: id,
+            reviewer: manager,
+            approve: approve,
+            comment: reason,
+          );
+          successCount++;
+        } catch (_) {}
+      }
+    } finally {
+      if (mounted && Navigator.canPop(context)) {
+        Navigator.pop(context); // dismiss progress dialog
+      }
+    }
+
+    if (!mounted) return;
+    setState(() {});
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(
+          'تمت معالجة $successCount من أصل $totalCount طلب بنجاح.',
+        ),
+        backgroundColor: approve ? ZaWolfColors.success : ZaWolfColors.error,
+      ),
+    );
+  }
+
+  Widget _bulkSummaryRow(String title, int count, {bool isBold = false}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            title,
+            style: TextStyle(
+              fontWeight: isBold ? FontWeight.bold : FontWeight.normal,
+              fontSize: 13,
+            ),
+          ),
+          Text(
+            '$count',
+            style: TextStyle(
+              fontWeight: isBold ? FontWeight.bold : FontWeight.w600,
+              fontSize: 13,
+              color: ZaWolfColors.primaryCyan,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _showRejectionDialog({
     required String requestId,
     required String type, // 'leave' | 'permission' | 'advance'
@@ -1550,6 +2615,61 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
     }
   }
 
+  static String _arabicRequestStatusLabel(String rawStatus) {
+    final s = rawStatus.trim().toLowerCase();
+    switch (s) {
+      case 'late_quarter_day':
+      case 'quarter_day':
+        return 'تأخير (خصم ربع يوم)';
+      case 'late_half_day':
+      case 'half_day':
+        return 'تأخير (خصم نصف يوم)';
+      case 'late_full_day':
+      case 'full_day':
+        return 'تأخير (خصم يوم كامل)';
+      case 'absence':
+      case 'absent':
+        return 'غياب';
+      case 'present':
+        return 'حاضر';
+      case 'pending':
+        return 'قيد المراجعة';
+      case 'pending_manager':
+        return 'بانتظار المدير المباشر';
+      case 'pending_hr':
+        return 'بانتظار الموارد البشرية (HR)';
+      case 'pending_ceo':
+        return 'بانتظار الإدارة التنفيذية (CEO)';
+      case 'pending_accounts':
+        return 'بانتظار الإدارة المالية';
+      case 'approved':
+        return 'معتمد';
+      case 'rejected':
+        return 'مرفوض';
+      case 'cancelled':
+      case 'canceled':
+        return 'ملغي';
+      case 'confirmed':
+        return 'مؤكد';
+      case 'completed':
+        return 'مكتمل';
+      case 'missed_checkout_quarter_day':
+        return 'خصم ربع يوم لعدم تسجيل الانصراف';
+      case 'early_checkout_quarter_day':
+        return 'خصم ربع يوم للانصراف المبكر';
+      case 'late_checkout_after_11_quarter_day':
+        return 'خصم ربع يوم لتأخر تسجيل الانصراف';
+      case 'field_mission':
+        return 'مأمورية ميدانية';
+      case 'on-leave':
+      case 'on_leave':
+        return 'في إجازة';
+      default:
+        if (rawStatus.trim().isEmpty) return 'قيد الانتظار';
+        return rawStatus;
+    }
+  }
+
   Widget _buildGenericRequestCard({
     required DocumentSnapshot<Map<String, dynamic>> doc,
     required RequestVisibilityRecord record,
@@ -1565,6 +2685,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
         (data['notes'] ?? data['reason'] ?? data['categoryLabel'] ?? '')
             .toString();
     final status = (data['status'] ?? '').toString();
+    final statusLabel = _arabicRequestStatusLabel(status);
 
     final collection = record.collection;
     final docId = record.documentId;
@@ -1590,7 +2711,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
               borderRadius: BorderRadius.circular(6),
             ),
             child: Text(
-              'الحالة: $status',
+              'الحالة: $statusLabel',
               style: TextStyle(
                 color: RequestTypeStyle.stateColor(record.lifecycleState),
                 fontSize: 12,
@@ -1662,8 +2783,8 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                   Expanded(
                     child: Text(
                       record.isHistorical
-                          ? 'هذا الطلب مكتمل ولا يتطلب إجراءً حالياً (${status.isNotEmpty ? status : "مكتمل"}).'
-                          : 'الطلب قيد المراجعة في مرحلة (${status.isNotEmpty ? status : "قيد الانتظار"}) ولا يتطلب إجراءً من حسابك حالياً.',
+                          ? 'هذا الطلب مكتمل ولا يتطلب إجراءً حالياً ($statusLabel).'
+                          : 'الطلب قيد المراجعة في مرحلة ($statusLabel) ولا يتطلب إجراءً من حسابك حالياً.',
                       style: const TextStyle(
                         color: ZaWolfColors.textSecondary,
                         fontSize: 12,
@@ -1896,6 +3017,14 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
             style: theme.textTheme.headlineMedium,
           ),
           actions: [
+            IconButton(
+              icon: const Icon(
+                Icons.post_add_rounded,
+                color: ZaWolfColors.primaryCyan,
+              ),
+              tooltip: 'إرسال طلب لموظف عبر المسار',
+              onPressed: () => _showSendRequestForEmployeeDialog(manager),
+            ),
             if (EmployeeRole.isHr(manager.role))
               IconButton(
                 icon: const Icon(
@@ -1927,18 +3056,78 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
             if (kIsWeb && manager.role == EmployeeRole.superAdmin)
               _buildApprovalPolicyControl(manager),
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              child: TextField(
-                decoration: const InputDecoration(
-                  prefixIcon: Icon(Icons.search),
-                  hintText: 'بحث باسم الموظف أو القسم',
-                  border: OutlineInputBorder(),
-                  isDense: true,
-                ),
-                onChanged:
-                    (value) => setState(
-                      () => _searchQuery = value.trim().toLowerCase(),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      decoration: const InputDecoration(
+                        prefixIcon: Icon(Icons.search),
+                        hintText: 'بحث باسم الموظف أو القسم',
+                        border: OutlineInputBorder(),
+                        isDense: true,
+                      ),
+                      onChanged:
+                          (value) => setState(
+                            () => _searchQuery = value.trim().toLowerCase(),
+                          ),
                     ),
+                  ),
+                  const SizedBox(width: 10),
+                  Tooltip(
+                    message: 'اعتماد جميع الطلبات المعلقة في مرحلتك الحالية',
+                    child: ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor:
+                            ZaWolfColors.success.withValues(alpha: 0.18),
+                        foregroundColor: ZaWolfColors.success,
+                        side: const BorderSide(color: ZaWolfColors.success),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 12,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                      ),
+                      onPressed: () => _bulkReviewRequests(manager, approve: true),
+                      icon: const Icon(Icons.done_all, size: 18),
+                      label: const Text(
+                        'موافقة على الكل',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Tooltip(
+                    message: 'رفض جميع الطلبات المعلقة في مرحلتك الحالية',
+                    child: OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: ZaWolfColors.error,
+                        side: const BorderSide(color: ZaWolfColors.error),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 12,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                      ),
+                      onPressed: () => _bulkReviewRequests(manager, approve: false),
+                      icon: const Icon(Icons.remove_done, size: 18),
+                      label: const Text(
+                        'رفض الكل',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
             _buildRequestCategoryPicker(tabs),
@@ -2853,7 +4042,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(
-                            'الطلب قيد المراجعة (${request.status})',
+                            'الطلب قيد المراجعة (${_arabicRequestStatusLabel(request.status)})',
                             style: const TextStyle(
                               color: ZaWolfColors.textSecondary,
                               fontSize: 12,
@@ -4142,8 +5331,21 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                   ? 'المرحلة الحالية: المراجعة النهائية لدى HR'
                   : (leave.status == 'approved'
                       ? 'تم اعتماد الإجازة'
-                      : 'المرحلة الحالية: موافقة المدير المسؤول'),
-              style: const TextStyle(color: ZaWolfColors.primaryCyan),
+                      : leave.status == 'rejected'
+                          ? 'الطلب مرفوض'
+                          : leave.status == 'cancelled'
+                              ? 'تم إلغاء الطلب'
+                              : 'المرحلة الحالية: موافقة المدير المسؤول'),
+              style: TextStyle(
+                color: leave.status == 'rejected' || leave.status == 'cancelled'
+                    ? ZaWolfColors.error
+                    : (leave.status == 'approved'
+                        ? ZaWolfColors.success
+                        : ZaWolfColors.primaryCyan),
+                fontWeight: leave.status == 'rejected' || leave.status == 'approved'
+                    ? FontWeight.bold
+                    : FontWeight.normal,
+              ),
             ),
           ],
         ),
@@ -4520,8 +5722,23 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
             Text(
               perm.status == 'pending_hr'
                   ? 'المرحلة الحالية: المراجعة النهائية لدى HR'
-                  : 'المرحلة الحالية: موافقة المدير المسؤول',
-              style: const TextStyle(color: ZaWolfColors.primaryCyan),
+                  : (perm.status == 'approved'
+                      ? 'تم اعتماد الإذن'
+                      : perm.status == 'rejected'
+                          ? 'الطلب مرفوض'
+                          : perm.status == 'cancelled'
+                              ? 'تم إلغاء الطلب'
+                              : 'المرحلة الحالية: موافقة المدير المسؤول'),
+              style: TextStyle(
+                color: perm.status == 'rejected' || perm.status == 'cancelled'
+                    ? ZaWolfColors.error
+                    : (perm.status == 'approved'
+                        ? ZaWolfColors.success
+                        : ZaWolfColors.primaryCyan),
+                fontWeight: perm.status == 'rejected' || perm.status == 'approved'
+                    ? FontWeight.bold
+                    : FontWeight.normal,
+              ),
             ),
             const SizedBox(height: 16),
 
@@ -4888,8 +6105,21 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
             ),
             const SizedBox(height: 8),
             Text(
-              'المرحلة الحالية: ${_advanceStageLabel(data)}',
-              style: const TextStyle(color: ZaWolfColors.primaryCyan),
+              advance.status == 'approved' ||
+                      advance.status == 'rejected' ||
+                      advance.status == 'cancelled'
+                  ? _advanceStageLabel(data)
+                  : 'المرحلة الحالية: ${_advanceStageLabel(data)}',
+              style: TextStyle(
+                color: advance.status == 'rejected' || advance.status == 'cancelled'
+                    ? ZaWolfColors.error
+                    : (advance.status == 'approved'
+                        ? ZaWolfColors.success
+                        : ZaWolfColors.primaryCyan),
+                fontWeight: advance.status == 'rejected' || advance.status == 'approved'
+                    ? FontWeight.bold
+                    : FontWeight.normal,
+              ),
             ),
           ],
         ),
@@ -4898,7 +6128,11 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
   }
 
   String _advanceStageLabel(Map<String, dynamic> data) {
-    if (data['status'] == 'pending_hr') return 'مراجعة HR';
+    final status = data['status'] as String? ?? '';
+    if (status == 'approved') return 'تم اعتماد السلفة نهائياً';
+    if (status == 'rejected') return 'الطلب مرفوض';
+    if (status == 'cancelled') return 'تم إلغاء الطلب';
+    if (status == 'pending_hr') return 'مراجعة HR';
     switch (data['advanceRouteStage']) {
       case 'ceo':
         return 'موافقة الرئيس التنفيذي';

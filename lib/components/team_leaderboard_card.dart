@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
-import '../design_system/components/rtl_navigation.dart';
 import '../services/team_leaderboard_service.dart';
 import '../theme/theme.dart';
 
@@ -89,9 +88,9 @@ class _TeamLeaderboardCardState extends State<TeamLeaderboardCard> {
                         Icon(
                           _showAll
                               ? Icons.keyboard_arrow_up_rounded
-                              : RtlNavigation.chevronEnd(context),
+                              : Icons.keyboard_arrow_down_rounded,
                           color: ZaWolfColors.primaryCyan,
-                          size: 14,
+                          size: 16,
                         ),
                       ],
                     ),
@@ -139,96 +138,98 @@ class _TeamLeaderboardCardState extends State<TeamLeaderboardCard> {
                 ];
 
                 return Column(
-                  children: displayMembers.asMap().entries.map((entry) {
-                    final index = entry.key;
-                    final member = entry.value;
-                    final name = member.name;
-                    final dept = member.department;
-                    final medalColor = medals[index % medals.length];
+                  children:
+                      displayMembers.asMap().entries.map((entry) {
+                        final index = entry.key;
+                        final member = entry.value;
+                        final name = member.name;
+                        final dept = member.department;
+                        final medalColor = medals[index % medals.length];
 
-                    return Padding(
-                      padding: const EdgeInsets.only(bottom: 8),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 10,
-                        ),
-                        decoration: BoxDecoration(
-                          color: ZaWolfColors.surface02,
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(
-                            color: ZaWolfColors.surface03.withValues(
-                              alpha: 0.5,
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 8),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 10,
+                            ),
+                            decoration: BoxDecoration(
+                              color: ZaWolfColors.surface02,
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                color: ZaWolfColors.surface03.withValues(
+                                  alpha: 0.5,
+                                ),
+                              ),
+                            ),
+                            child: Row(
+                              children: [
+                                Container(
+                                  width: 28,
+                                  height: 28,
+                                  decoration: BoxDecoration(
+                                    color: medalColor.withValues(alpha: 0.2),
+                                    shape: BoxShape.circle,
+                                    border: Border.all(color: medalColor),
+                                  ),
+                                  child: Center(
+                                    child: Text(
+                                      '${index + 1}',
+                                      style: TextStyle(
+                                        color: medalColor,
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        name,
+                                        style: const TextStyle(
+                                          color: ZaWolfColors.textPrimary,
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                      Text(
+                                        dept,
+                                        style: const TextStyle(
+                                          color: ZaWolfColors.textMuted,
+                                          fontSize: 10,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 3,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: medalColor.withValues(alpha: 0.15),
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Text(
+                                    '${member.commitmentScore.toInt()}% التزام',
+                                    style: TextStyle(
+                                      color: medalColor,
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
-                        ),
-                        child: Row(
-                          children: [
-                            Container(
-                              width: 28,
-                              height: 28,
-                              decoration: BoxDecoration(
-                                color: medalColor.withValues(alpha: 0.2),
-                                shape: BoxShape.circle,
-                                border: Border.all(color: medalColor),
-                              ),
-                              child: Center(
-                                child: Text(
-                                  '${index + 1}',
-                                  style: TextStyle(
-                                    color: medalColor,
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 12,
-                                  ),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    name,
-                                    style: const TextStyle(
-                                      color: ZaWolfColors.textPrimary,
-                                      fontSize: 13,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                  Text(
-                                    dept,
-                                    style: const TextStyle(
-                                      color: ZaWolfColors.textMuted,
-                                      fontSize: 10,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                                vertical: 3,
-                              ),
-                              decoration: BoxDecoration(
-                                color: medalColor.withValues(alpha: 0.15),
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: Text(
-                                '${member.commitmentScore.toInt()}% التزام',
-                                style: TextStyle(
-                                  color: medalColor,
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    );
-                  }).toList(),
+                        );
+                      }).toList(),
                 );
               },
             ),

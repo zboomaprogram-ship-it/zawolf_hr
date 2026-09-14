@@ -1,3 +1,4 @@
+import 'dart:ui' show PointerDeviceKind;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart' hide TextDirection;
@@ -108,6 +109,18 @@ class RequestApprovalTimeline extends StatelessWidget {
         data['requiresHrApproval'] == true ||
         (data['requiresHrApproval'] == null &&
             approvalPolicy.requireHrAfterManagerApproval);
+    final hasManagerRejected = managerTrail.any(
+      (m) => m['status'] == 'rejected' || m['action'] == 'rejected',
+    );
+    final hasHrRejected = hrEvent?['status'] == 'rejected';
+    final hasCeoRejected = _event('ceo')?['status'] == 'rejected';
+    final hasRecordedRejectionInStages =
+        hasManagerRejected || hasHrRejected || hasCeoRejected;
+
+    final managerStagesCount = hasManagerRejected
+        ? (managerTrail.indexWhere((m) => m['status'] == 'rejected' || m['action'] == 'rejected') + 1)
+        : managerNames.length;
+
     final stages = <_TimelineStage>[
       _TimelineStage(
         label: 'تم الإرسال',
@@ -118,13 +131,16 @@ class RequestApprovalTimeline extends StatelessWidget {
             _date(_event('submitted')?['timestamp']) ??
             _date(data['submittedAt']),
       ),
-      for (var i = 0; i < managerNames.length; i++)
+      for (var i = 0; i < managerStagesCount; i++)
         _TimelineStage(
           label:
               i < managerIds.length && managerIds[i] == assignedCeoId
                   ? 'CEO المعيّن'
                   : (i == 0 ? 'المدير المباشر' : 'المدير الأعلى'),
-          person: managerNames[i],
+          person: (i < managerTrail.length &&
+                  (managerTrail[i]['reviewerName'] as String?)?.trim().isNotEmpty == true)
+              ? (managerTrail[i]['reviewerName'] as String).trim()
+              : (i < managerNames.length ? managerNames[i] : ''),
           jobTitle:
               _roleLabel(
                 i < managerTrail.length
@@ -141,10 +157,10 @@ class RequestApprovalTimeline extends StatelessWidget {
           state: _managerState(status, managerTrail, i),
           timestamp:
               i < managerTrail.length
-                  ? _date(managerTrail[i]['timestamp'])
+                  ? _date(managerTrail[i]['timestamp'] ?? managerTrail[i]['reviewedAt'])
                   : null,
         ),
-      if (showHrStage && !requiresCeo)
+      if (!hasManagerRejected && showHrStage && !requiresCeo)
         _TimelineStage(
           label: 'الموارد البشرية',
           person:
@@ -158,7 +174,7 @@ class RequestApprovalTimeline extends StatelessWidget {
           timestamp:
               _date(hrEvent?['timestamp']) ?? _date(data['hrReviewedAt']),
         ),
-      if (standaloneCeo)
+      if (!hasManagerRejected && !hasHrRejected && standaloneCeo)
         _TimelineStage(
           label: 'اعتماد CEO',
           person:
@@ -170,7 +186,7 @@ class RequestApprovalTimeline extends StatelessWidget {
           state: _namedStageState(status, 'ceo', _event('ceo')),
           timestamp: _date(_event('ceo')?['timestamp']),
         ),
-      if (showHrStage && requiresCeo)
+      if (!hasManagerRejected && showHrStage && requiresCeo)
         _TimelineStage(
           label: 'الموارد البشرية',
           person:
@@ -184,32 +200,36 @@ class RequestApprovalTimeline extends StatelessWidget {
           timestamp:
               _date(hrEvent?['timestamp']) ?? _date(data['hrReviewedAt']),
         ),
-      _TimelineStage(
-        label:
-            status == 'rejected'
-                ? 'مرفوض'
-                : status == 'cancelled'
-                ? 'ملغي'
-                : 'مقبول نهائياً',
-        person:
-            data['finalApproverName'] as String? ??
-            data['reviewerName'] as String? ??
-            '',
-        jobTitle: _finalApproverRoleLabel(),
-        icon:
-            status == 'rejected'
-                ? Icons.cancel_outlined
-                : status == 'cancelled'
-                ? Icons.block_outlined
-                : Icons.verified_outlined,
-        state:
-            status == 'rejected' || status == 'cancelled'
-                ? _StageState.rejected
-                : status == 'approved'
-                ? _StageState.done
-                : _StageState.waiting,
-        timestamp: _date(data['finalApprovalAt']) ?? _date(data['reviewedAt']),
-      ),
+      if (status == 'approved' ||
+          status == 'cancelled' ||
+          (status == 'rejected' && !hasRecordedRejectionInStages) ||
+          (status != 'rejected' && status != 'cancelled' && status != 'approved'))
+        _TimelineStage(
+          label:
+              status == 'rejected'
+                  ? 'مرفوض'
+                  : status == 'cancelled'
+                  ? 'ملغي'
+                  : 'مقبول نهائياً',
+          person:
+              data['finalApproverName'] as String? ??
+              data['reviewerName'] as String? ??
+              '',
+          jobTitle: _finalApproverRoleLabel(),
+          icon:
+              status == 'rejected'
+                  ? Icons.cancel_outlined
+                  : status == 'cancelled'
+                  ? Icons.block_outlined
+                  : Icons.verified_outlined,
+          state:
+              status == 'rejected' || status == 'cancelled'
+                  ? _StageState.rejected
+                  : status == 'approved'
+                  ? _StageState.done
+                  : _StageState.waiting,
+          timestamp: _date(data['finalApprovalAt']) ?? _date(data['reviewedAt']),
+        ),
     ];
 
     return Column(
@@ -225,23 +245,7 @@ class RequestApprovalTimeline extends StatelessWidget {
           textDirection: TextDirection.rtl,
         ),
         const SizedBox(height: 10),
-        SizedBox(
-          height: compact ? 112 : 132,
-          child: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              textDirection: TextDirection.rtl,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                for (var index = 0; index < stages.length; index++) ...[
-                  _StageTile(stage: stages[index], compact: compact),
-                  if (index < stages.length - 1)
-                    _TimelineConnector(compact: compact),
-                ],
-              ],
-            ),
-          ),
-        ),
+        _ScrollableTimelineRow(stages: stages, compact: compact),
         if (status == 'rejected' &&
             (data['reviewerComment'] as String?)?.trim().isNotEmpty == true)
           Text(
@@ -259,6 +263,10 @@ class RequestApprovalTimeline extends StatelessWidget {
     List<Map<String, dynamic>> route,
   ) {
     final currentApproverId = '${data['currentApproverId'] ?? ''}';
+    final hasRouteRejected = route.any((r) => r['state'] == 'rejected');
+    final rejectedIndex = route.indexWhere((r) => r['state'] == 'rejected');
+    final count = hasRouteRejected ? (rejectedIndex + 1) : route.length;
+
     final stages = <_TimelineStage>[
       _TimelineStage(
         label: 'تم الإرسال',
@@ -268,7 +276,7 @@ class RequestApprovalTimeline extends StatelessWidget {
         timestamp:
             _date(_event('submitted')?['at']) ?? _date(data['submittedAt']),
       ),
-      for (var index = 0; index < route.length; index++)
+      for (var index = 0; index < count; index++)
         _TimelineStage(
           label: 'الموافقة ${index + 1}',
           person: '${route[index]['approverName'] ?? 'مسؤول الموافقة'}',
@@ -280,31 +288,35 @@ class RequestApprovalTimeline extends StatelessWidget {
           state: _customRouteState(route[index], currentApproverId),
           timestamp: _date(route[index]['actedAt']),
         ),
-      _TimelineStage(
-        label:
-            status == 'rejected'
-                ? 'مرفوض'
-                : status == 'cancelled'
-                ? 'ملغي'
-                : 'مقبول نهائياً',
-        person:
-            data['finalApproverName'] as String? ??
-            data['reviewerName'] as String? ??
-            '',
-        icon:
-            status == 'rejected'
-                ? Icons.cancel_outlined
-                : status == 'cancelled'
-                ? Icons.block_outlined
-                : Icons.verified_outlined,
-        state:
-            status == 'rejected' || status == 'cancelled'
-                ? _StageState.rejected
-                : status == 'approved'
-                ? _StageState.done
-                : _StageState.waiting,
-        timestamp: _date(data['finalApprovalAt']) ?? _date(data['reviewedAt']),
-      ),
+      if (status == 'approved' ||
+          status == 'cancelled' ||
+          (status == 'rejected' && !hasRouteRejected) ||
+          (status != 'rejected' && status != 'cancelled' && status != 'approved'))
+        _TimelineStage(
+          label:
+              status == 'rejected'
+                  ? 'مرفوض'
+                  : status == 'cancelled'
+                  ? 'ملغي'
+                  : 'مقبول نهائياً',
+          person:
+              data['finalApproverName'] as String? ??
+              data['reviewerName'] as String? ??
+              '',
+          icon:
+              status == 'rejected'
+                  ? Icons.cancel_outlined
+                  : status == 'cancelled'
+                  ? Icons.block_outlined
+                  : Icons.verified_outlined,
+          state:
+              status == 'rejected' || status == 'cancelled'
+                  ? _StageState.rejected
+                  : status == 'approved'
+                  ? _StageState.done
+                  : _StageState.waiting,
+          timestamp: _date(data['finalApprovalAt']) ?? _date(data['reviewedAt']),
+        ),
     ];
     return _renderStages(context, status, stages);
   }
@@ -312,6 +324,7 @@ class RequestApprovalTimeline extends StatelessWidget {
   Widget _buildAdvanceRouteTimeline(BuildContext context, String status) {
     final routeStage = '${data['advanceRouteStage'] ?? ''}';
     final currentName = '${data['managerName'] ?? ''}';
+    final hasAdvanceRejected = _history.any((e) => e['status'] == 'rejected');
     _TimelineStage stage(String key, String label, IconData icon) {
       final event = _event(key);
       final isCurrent =
@@ -350,28 +363,32 @@ class RequestApprovalTimeline extends StatelessWidget {
       stage('hr', 'الموارد البشرية', Icons.badge_outlined),
       stage('ceo', 'الرئيس التنفيذي', Icons.workspace_premium_outlined),
       stage('accounting', 'الحسابات', Icons.account_balance_outlined),
-      _TimelineStage(
-        label:
-            status == 'rejected'
-                ? 'مرفوض'
-                : status == 'cancelled'
-                ? 'ملغي'
-                : 'مقبول نهائياً',
-        person: data['reviewerName'] as String? ?? '',
-        icon:
-            status == 'rejected'
-                ? Icons.cancel_outlined
-                : status == 'cancelled'
-                ? Icons.block_outlined
-                : Icons.verified_outlined,
-        state:
-            status == 'rejected' || status == 'cancelled'
-                ? _StageState.rejected
-                : status == 'approved'
-                ? _StageState.done
-                : _StageState.waiting,
-        timestamp: _date(data['reviewedAt']),
-      ),
+      if (status == 'approved' ||
+          status == 'cancelled' ||
+          (status == 'rejected' && !hasAdvanceRejected) ||
+          (status != 'rejected' && status != 'cancelled' && status != 'approved'))
+        _TimelineStage(
+          label:
+              status == 'rejected'
+                  ? 'مرفوض'
+                  : status == 'cancelled'
+                  ? 'ملغي'
+                  : 'مقبول نهائياً',
+          person: data['reviewerName'] as String? ?? '',
+          icon:
+              status == 'rejected'
+                  ? Icons.cancel_outlined
+                  : status == 'cancelled'
+                  ? Icons.block_outlined
+                  : Icons.verified_outlined,
+          state:
+              status == 'rejected' || status == 'cancelled'
+                  ? _StageState.rejected
+                  : status == 'approved'
+                  ? _StageState.done
+                  : _StageState.waiting,
+          timestamp: _date(data['reviewedAt']),
+        ),
     ]);
   }
 
@@ -406,23 +423,7 @@ class RequestApprovalTimeline extends StatelessWidget {
           textDirection: TextDirection.rtl,
         ),
         const SizedBox(height: 10),
-        SizedBox(
-          height: compact ? 112 : 132,
-          child: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              textDirection: TextDirection.rtl,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                for (var index = 0; index < stages.length; index++) ...[
-                  _StageTile(stage: stages[index], compact: compact),
-                  if (index < stages.length - 1)
-                    _TimelineConnector(compact: compact),
-                ],
-              ],
-            ),
-          ),
-        ),
+        _ScrollableTimelineRow(stages: stages, compact: compact),
         if (status == 'rejected' &&
             (data['reviewerComment'] as String?)?.trim().isNotEmpty == true)
           Text(
@@ -617,3 +618,54 @@ class _StageTile extends StatelessWidget {
     );
   }
 }
+
+class _ScrollableTimelineRow extends StatelessWidget {
+  const _ScrollableTimelineRow({
+    required this.stages,
+    required this.compact,
+  });
+
+  final List<_TimelineStage> stages;
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    final height = compact ? 120.0 : 142.0;
+    return SizedBox(
+      height: height,
+      child: ScrollConfiguration(
+        behavior: const MaterialScrollBehavior().copyWith(
+          dragDevices: {
+            PointerDeviceKind.touch,
+            PointerDeviceKind.mouse,
+            PointerDeviceKind.trackpad,
+            PointerDeviceKind.stylus,
+          },
+        ),
+        child: Scrollbar(
+          thumbVisibility: false,
+          interactive: true,
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            physics: const BouncingScrollPhysics(
+              parent: AlwaysScrollableScrollPhysics(),
+            ),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+            child: Row(
+              textDirection: TextDirection.rtl,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                for (var index = 0; index < stages.length; index++) ...[
+                  _StageTile(stage: stages[index], compact: compact),
+                  if (index < stages.length - 1)
+                    _TimelineConnector(compact: compact),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+

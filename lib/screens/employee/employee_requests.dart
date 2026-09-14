@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../features/meeting_requests/data/meeting_repository_impl.dart';
+import '../../features/meeting_requests/presentation/meeting_request_screen.dart';
 import '../../features/meeting_requests/presentation/meeting_requests_list_screen.dart';
 import 'package:intl/intl.dart' hide TextDirection;
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -1946,71 +1947,71 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
         id: 'permission',
         label: 'إذن',
         icon: Icons.schedule_outlined,
-        color: ZaWolfColors.permissionTeal,
+        color: const Color(0xFF00B4D8),
         route: null,
       ),
       (
         id: 'leave',
         label: 'إجازة',
         icon: Icons.event_available_outlined,
-        color: ZaWolfColors.dayoffPurple,
+        color: const Color(0xFF8B5CF6),
         route: null,
       ),
       (
         id: 'advance',
         label: 'سلفة',
         icon: Icons.account_balance_wallet_outlined,
-        color: ZaWolfColors.warning,
+        color: const Color(0xFFF59E0B),
         route: null,
       ),
       (
         id: 'complaint',
         label: 'شكوى',
         icon: Icons.feedback_outlined,
-        color: ZaWolfColors.error,
+        color: const Color(0xFFEF4444),
         route: null,
       ),
       (
         id: 'resignation',
         label: 'استقالة',
         icon: Icons.meeting_room_outlined,
-        color: ZaWolfColors.error,
+        color: const Color(0xFFF43F5E),
         route: null,
       ),
       (
         id: 'administrative',
         label: 'خدمات الموظف والشؤون الإدارية',
         icon: Icons.assignment_outlined,
-        color: ZaWolfColors.primaryBlue,
+        color: const Color(0xFF3B82F6),
         route: null,
       ),
       (
         id: 'field_mission',
         label: 'مهمة ميدانية',
         icon: Icons.explore_outlined,
-        color: ZaWolfColors.primaryCyan,
+        color: const Color(0xFF14B8A6),
         route: null,
       ),
       (
         id: 'attendance_correction',
         label: 'تصحيح حضور',
         icon: Icons.edit_calendar_outlined,
-        color: ZaWolfColors.success,
+        color: const Color(0xFF10B981),
         route: null,
       ),
       (
         id: 'meeting',
         label: 'طلب اجتماع',
         icon: Icons.groups_2_outlined,
-        color: ZaWolfColors.primaryCyan,
-        route: '/employee/meeting-request',
+        color: const Color(0xFF6366F1),
+        route: null,
       ),
       if (operationalEnabled)
         (
           id: 'operational_technical',
           label: 'خدمات تقنية وتشغيلية',
           icon: Icons.computer_outlined,
-          color: ZaWolfColors.primaryCyan,
+          color: const Color(0xFF0EA5E9),
           route: null,
         ),
       if (operationalEnabled)
@@ -2018,7 +2019,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
           id: 'operational_financial',
           label: 'مصروفات ومدفوعات الشركة',
           icon: Icons.payments_outlined,
-          color: ZaWolfColors.warning,
+          color: const Color(0xFFEA580C),
           route: null,
         ),
     ];
@@ -2043,6 +2044,13 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
       'administrative' => _buildAdministrativeRequestForm(user, theme),
       'field_mission' => _buildFieldMissionForm(user, theme),
       'attendance_correction' => _buildAttendanceCorrectionForm(user, theme),
+      'meeting' => MeetingRequestScreen(
+        repository: MeetingRepositoryImpl(),
+        isEmbedded: true,
+        onSubmitted: () {
+          if (mounted) setState(() => _requestCentreView = 1);
+        },
+      ),
       'operational_technical' => CompanyOsRequestsEntry(
         surface: CompanyOsRequestSurface.create,
         initialCategory: OperationalRequestCategory.technical,
@@ -2076,75 +2084,97 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
             final selected = _requestTypeIndex == index;
             return SizedBox(
               width: itemWidth,
-              child: SizedBox(
-                height: 76,
-                child: Material(
-                  color: Colors.transparent,
-                  child: InkWell(
-                    onTap: () {
-                      if (type.route case final route?) {
-                        context.push(route);
-                        return;
-                      }
-                      setState(() {
-                        _requestTypeIndex = index;
-                        _formErrorMessage = null;
-                        _autoValidate = false;
-                      });
-                    },
-                    borderRadius: BorderRadius.circular(8),
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 160),
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                      decoration: BoxDecoration(
-                        color:
-                            selected
-                                ? type.color.withValues(alpha: 0.14)
-                                : ZaWolfColors.surface01,
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(
-                          color: selected ? type.color : ZaWolfColors.surface03,
-                          width: selected ? 1.4 : 1,
-                        ),
+              height: 74,
+              child: Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  onTap: () {
+                    if (type.route case final route?) {
+                      context.push(route);
+                      return;
+                    }
+                    setState(() {
+                      _requestTypeIndex = index;
+                      _formErrorMessage = null;
+                      _autoValidate = false;
+                    });
+                  },
+                  borderRadius: BorderRadius.circular(10),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 160),
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: AlignmentDirectional.topStart,
+                        end: AlignmentDirectional.bottomEnd,
+                        colors: selected
+                            ? [
+                                type.color.withValues(alpha: 0.28),
+                                type.color.withValues(alpha: 0.10),
+                              ]
+                            : [
+                                type.color.withValues(alpha: 0.08),
+                                ZaWolfColors.surface01,
+                              ],
                       ),
-                      child: Row(
-                        children: [
-                          Icon(
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                        color: selected
+                            ? type.color
+                            : type.color.withValues(alpha: 0.25),
+                        width: selected ? 1.5 : 1,
+                      ),
+                      boxShadow: selected
+                          ? [
+                              BoxShadow(
+                                color: type.color.withValues(alpha: 0.18),
+                                blurRadius: 8,
+                                offset: const Offset(0, 2),
+                              ),
+                            ]
+                          : null,
+                    ),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 36,
+                          height: 36,
+                          decoration: BoxDecoration(
+                            color: type.color.withValues(alpha: selected ? 0.24 : 0.12),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          alignment: Alignment.center,
+                          child: Icon(
                             type.icon,
-                            color:
-                                selected
-                                    ? type.color
-                                    : ZaWolfColors.textSecondary,
+                            color: selected ? type.color : type.color.withValues(alpha: 0.9),
+                            size: 20,
                           ),
-                          const SizedBox(width: 9),
-                          Expanded(
-                            child: Text(
-                              type.label,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              textAlign: TextAlign.end,
-                              style: theme.textTheme.titleMedium?.copyWith(
-                                color:
-                                    selected
-                                        ? Colors.white
-                                        : ZaWolfColors.textSecondary,
-                                fontWeight: FontWeight.bold,
-                              ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            type.label,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            textAlign: TextAlign.start,
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              color: selected ? Colors.white : ZaWolfColors.textSecondary,
+                              fontWeight: selected ? FontWeight.bold : FontWeight.w500,
+                              fontSize: 12.5,
+                              height: 1.2,
                             ),
                           ),
-                          if (selected)
-                            Padding(
-                              padding: const EdgeInsetsDirectional.only(
-                                start: 8,
-                              ),
-                              child: Icon(
-                                Icons.check_circle,
-                                color: type.color,
-                                size: 18,
-                              ),
+                        ),
+                        if (selected)
+                          Padding(
+                            padding: const EdgeInsetsDirectional.only(start: 4),
+                            child: Icon(
+                              Icons.check_circle,
+                              color: type.color,
+                              size: 16,
                             ),
-                        ],
-                      ),
+                          ),
+                      ],
                     ),
                   ),
                 ),

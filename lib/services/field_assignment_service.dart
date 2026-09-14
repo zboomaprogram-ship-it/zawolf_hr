@@ -3,13 +3,17 @@ import 'package:intl/intl.dart';
 
 import '../models/field_assignment_model.dart';
 import '../models/user_model.dart';
+import 'attendance_reconciliation_service.dart';
 import 'audit_log_service.dart';
 
 class FieldAssignmentService {
   FieldAssignmentService({FirebaseFirestore? firestore})
-    : _db = firestore ?? FirebaseFirestore.instance;
+    : _db = firestore ?? FirebaseFirestore.instance,
+      _reconciliationService =
+          AttendanceReconciliationService(firestore: firestore);
 
   final FirebaseFirestore _db;
+  final AttendanceReconciliationService _reconciliationService;
 
   Future<void> create({
     required UserModel employee,
@@ -41,6 +45,18 @@ class FieldAssignmentService {
       createdBy: createdBy,
     );
     await ref.set(assignment.toFirestore());
+    try {
+      await _reconciliationService.reconcileApprovedFieldMission(
+        userId: employee.uid,
+        dateKey: assignment.date,
+        employeeId: employee.employeeId,
+        employeeName: employee.displayName,
+        department: employee.department,
+        locationId: employee.locationId,
+        managerId: employee.managerId,
+        missionId: ref.id,
+      );
+    } catch (_) {}
     await AuditLogService.instance.record(
       actorId: createdBy,
       action: 'field_assignment_created',

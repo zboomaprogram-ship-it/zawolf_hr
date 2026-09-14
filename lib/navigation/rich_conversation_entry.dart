@@ -170,7 +170,7 @@ class _RichConversationEntryState extends State<RichConversationEntry> {
             : (_, __) => const SizedBox.shrink(),
     linkPreviewBuilder: (_, preview) => ChatLinkPreviewView(preview: preview),
   );
-  static const bool _voiceRecordingEnabled = false;
+  static const bool _voiceRecordingEnabled = true;
   @override
   void dispose() {
     _auth?.cancel();

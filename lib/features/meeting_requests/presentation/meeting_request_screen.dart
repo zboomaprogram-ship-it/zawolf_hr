@@ -5,8 +5,15 @@ import '../../../theme/theme.dart';
 import '../domain/meeting_repository.dart';
 
 class MeetingRequestScreen extends StatefulWidget {
-  const MeetingRequestScreen({required this.repository, super.key});
+  const MeetingRequestScreen({
+    required this.repository,
+    this.isEmbedded = false,
+    this.onSubmitted,
+    super.key,
+  });
   final MeetingRepository repository;
+  final bool isEmbedded;
+  final VoidCallback? onSubmitted;
 
   @override
   State<MeetingRequestScreen> createState() => _MeetingRequestScreenState();
@@ -179,6 +186,7 @@ class _MeetingRequestScreenState extends State<MeetingRequestScreen> {
           _purpose.clear();
           _available = null;
         });
+        widget.onSubmitted?.call();
       }
     } catch (error) {
       if (mounted) _message('$error', error: true);
@@ -196,36 +204,37 @@ class _MeetingRequestScreenState extends State<MeetingRequestScreen> {
       );
 
   @override
-  Widget build(BuildContext context) => Directionality(
-    textDirection: TextDirection.rtl,
-    child: Scaffold(
-      appBar: AppBar(title: const Text('طلب اجتماع')),
-      body:
-          _loading
-              ? const Center(child: CircularProgressIndicator())
-              : _loadError != null
-              ? Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(24),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(Icons.cloud_off_outlined, size: 42),
-                      const SizedBox(height: 12),
-                      Text(_loadError!, textAlign: TextAlign.center),
-                      const SizedBox(height: 12),
-                      FilledButton.icon(
-                        onPressed: _load,
-                        icon: const Icon(Icons.refresh),
-                        label: const Text('إعادة المحاولة'),
-                      ),
-                    ],
-                  ),
-                ),
-              )
-              : ListView(
-                padding: const EdgeInsets.all(16),
-                children: [
+  Widget build(BuildContext context) {
+    final Widget body;
+    if (_loading) {
+      body = const Center(
+        child: Padding(
+          padding: EdgeInsets.all(24),
+          child: CircularProgressIndicator(),
+        ),
+      );
+    } else if (_loadError != null) {
+      body = Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.cloud_off_outlined, size: 42),
+              const SizedBox(height: 12),
+              Text(_loadError!, textAlign: TextAlign.center),
+              const SizedBox(height: 12),
+              FilledButton.icon(
+                onPressed: _load,
+                icon: const Icon(Icons.refresh),
+                label: const Text('إعادة المحاولة'),
+              ),
+            ],
+          ),
+        ),
+      );
+    } else {
+      final formChildren = [
                   DropdownButtonFormField<String>(
                     initialValue:
                         _approvers.any((a) => a.id == _approver?.id)
@@ -351,8 +360,31 @@ class _MeetingRequestScreenState extends State<MeetingRequestScreen> {
                       _saving ? 'جارٍ الإرسال...' : 'إرسال طلب الاجتماع',
                     ),
                   ),
-                ],
+                ];
+      body = widget.isEmbedded
+          ? Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: formChildren,
               ),
-    ),
-  );
+            )
+          : ListView(
+              padding: const EdgeInsets.all(16),
+              children: formChildren,
+            );
+    }
+
+    final content = widget.isEmbedded
+        ? body
+        : Scaffold(
+            appBar: AppBar(title: const Text('طلب اجتماع')),
+            body: body,
+          );
+
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: content,
+    );
+  }
 }

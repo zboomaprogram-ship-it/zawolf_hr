@@ -133,41 +133,6 @@ class _RichChatComposerState extends State<RichChatComposer> {
                                 },
                         icon: const Icon(Icons.attach_file),
                       ),
-                      IconButton(
-                        tooltip: 'ملصقات',
-                        onPressed:
-                            state.loading || state.sending
-                                ? null
-                                : () async {
-                                  final selected =
-                                      await showModalBottomSheet<String>(
-                                        context: context,
-                                        builder:
-                                            (context) => SafeArea(
-                                              child: Wrap(
-                                                children: [
-                                                  for (final entry
-                                                      in chatStickers.entries)
-                                                    IconButton(
-                                                      tooltip: entry.key,
-                                                      iconSize: 34,
-                                                      onPressed:
-                                                          () => Navigator.pop(
-                                                            context,
-                                                            entry.key,
-                                                          ),
-                                                      icon: Text(entry.value),
-                                                    ),
-                                                ],
-                                              ),
-                                            ),
-                                      );
-                                  if (selected != null) {
-                                    widget.cubit.chooseSticker(selected);
-                                  }
-                                },
-                        icon: const Icon(Icons.emoji_emotions_outlined),
-                      ),
                       Expanded(
                         child: TextField(
                           key: const Key('chat-composer'),
@@ -177,6 +142,32 @@ class _RichChatComposerState extends State<RichChatComposer> {
                           minLines: 1,
                           maxLines: 5,
                           maxLength: 4000,
+                          keyboardType: TextInputType.multiline,
+                          contentInsertionConfiguration:
+                              ContentInsertionConfiguration(
+                                allowedMimeTypes: const [
+                                  'image/png',
+                                  'image/jpeg',
+                                  'image/gif',
+                                  'image/webp',
+                                ],
+                                onContentInserted: (data) {
+                                  final bytes = data.data;
+                                  if (bytes != null && bytes.isNotEmpty) {
+                                    final ext =
+                                        data.mimeType.split('/').last;
+                                    widget.cubit.addFiles([
+                                      ChatDraftFile(
+                                        fileName:
+                                            'sticker-${DateTime.now().millisecondsSinceEpoch}.$ext',
+                                        mimeType: data.mimeType,
+                                        kind: 'image',
+                                        bytes: bytes,
+                                      ),
+                                    ]);
+                                  }
+                                },
+                              ),
                           decoration: const InputDecoration(
                             hintText: 'اكتب رسالة…',
                             counterText: '',

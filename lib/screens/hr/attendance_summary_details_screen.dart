@@ -12,10 +12,16 @@ import '../../utils/user_facing_error.dart';
 import '../../core/feature_flags/phase007_feature_flags.dart';
 import '../../design_system/components/feedback_states.dart'
     show EmptyState, ErrorState;
+import '../../design_system/components/rtl_navigation.dart';
 import '../../design_system/components/skeletons.dart' show SkeletonList;
 
 class AttendanceSummaryDetailsScreen extends StatefulWidget {
-  const AttendanceSummaryDetailsScreen({super.key, this.initialStatus, this.initialDate, this.initialDepartment});
+  const AttendanceSummaryDetailsScreen({
+    super.key,
+    this.initialStatus,
+    this.initialDate,
+    this.initialDepartment,
+  });
 
   final String? initialStatus;
   final DateTime? initialDate;
@@ -52,76 +58,89 @@ class _AttendanceSummaryDetailsScreenState
     final user = context.watch<AuthService>().currentUser;
     final theme = Theme.of(context);
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('تفاصيل الحضور'),
-        actions: [
-          if (user != null)
-            IconButton(
-              tooltip: 'تحديث',
-              onPressed: () => _reload(user),
-              icon: const Icon(Icons.refresh, color: ZaWolfColors.primaryCyan),
-            ),
-        ],
-      ),
-      body: user == null
-          ? const Center(
-              child: CircularProgressIndicator(color: ZaWolfColors.primaryCyan),
-            )
-          : widget.initialStatus != null
-          ? _TodayCategoryDetails(
-              service: _service,
-              user: user,
-              status: widget.initialStatus!,
-              date: widget.initialDate,
-              department: widget.initialDepartment,
-            )
-          : FutureBuilder<List<DashboardAttendanceSummary>>(
-              future: _future,
-              builder: (context, snapshot) {
-                if (snapshot.hasError) {
-                  return ErrorState(
-                    message: userFacingError(
-                      snapshot.error!,
-                      fallback: 'تعذر تحميل تفاصيل الحضور.',
-                    ),
-                    onRetry: () => _reload(user),
-                  );
-                }
-                if (!snapshot.hasData) {
-                  return const Padding(
-                    padding: EdgeInsets.all(16),
-                    child: SkeletonList(itemCount: 5, itemHeight: 120),
-                  );
-                }
-
-                final summaries = snapshot.data!;
-                return ListView.separated(
-                  padding: const EdgeInsets.all(16),
-                  itemCount: summaries.length + 1,
-                  separatorBuilder: (_, __) => const SizedBox(height: 12),
-                  itemBuilder: (context, index) {
-                    if (index == 0) {
-                      return Text(
-                        (user.role == 'manager' || user.role == 'team_leader')
-                            ? 'آخر 30 يوم لفريقك'
-                            : 'آخر 30 يوم للشركة',
-                        style: theme.textTheme.titleLarge?.copyWith(
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('تفاصيل الحضور'),
+          actions: [
+            if (user != null)
+              IconButton(
+                tooltip: 'تحديث',
+                onPressed: () => _reload(user),
+                icon: const Icon(
+                  Icons.refresh,
+                  color: ZaWolfColors.primaryCyan,
+                ),
+              ),
+          ],
+        ),
+        body:
+            user == null
+                ? const Center(
+                  child: CircularProgressIndicator(
+                    color: ZaWolfColors.primaryCyan,
+                  ),
+                )
+                : widget.initialStatus != null
+                ? _TodayCategoryDetails(
+                  service: _service,
+                  user: user,
+                  status: widget.initialStatus!,
+                  date: widget.initialDate,
+                  department: widget.initialDepartment,
+                )
+                : FutureBuilder<List<DashboardAttendanceSummary>>(
+                  future: _future,
+                  builder: (context, snapshot) {
+                    if (snapshot.hasError) {
+                      return ErrorState(
+                        message: userFacingError(
+                          snapshot.error!,
+                          fallback: 'تعذر تحميل تفاصيل الحضور.',
                         ),
-                        textDirection: TextDirection.rtl,
+                        onRetry: () => _reload(user),
                       );
                     }
-                    return _DaySummaryCard(
-                      summary: summaries[index - 1],
-                      onTap: () =>
-                          _openDayDetails(user, summaries[index - 1].date),
+                    if (!snapshot.hasData) {
+                      return const Padding(
+                        padding: EdgeInsets.all(16),
+                        child: SkeletonList(itemCount: 5, itemHeight: 120),
+                      );
+                    }
+
+                    final summaries = snapshot.data!;
+                    return ListView.separated(
+                      padding: const EdgeInsets.all(16),
+                      itemCount: summaries.length + 1,
+                      separatorBuilder: (_, __) => const SizedBox(height: 12),
+                      itemBuilder: (context, index) {
+                        if (index == 0) {
+                          return Text(
+                            (user.role == 'manager' ||
+                                    user.role == 'team_leader')
+                                ? 'آخر 30 يوم لفريقك'
+                                : 'آخر 30 يوم للشركة',
+                            style: theme.textTheme.titleLarge?.copyWith(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                            ),
+                            textDirection: TextDirection.rtl,
+                          );
+                        }
+                        return _DaySummaryCard(
+                          summary: summaries[index - 1],
+                          onTap:
+                              () => _openDayDetails(
+                                user,
+                                summaries[index - 1].date,
+                              ),
+                        );
+                      },
                     );
                   },
-                );
-              },
-            ),
+                ),
+      ),
     );
   }
 
@@ -130,8 +149,8 @@ class _AttendanceSummaryDetailsScreenState
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) =>
-          _DayDetailsSheet(service: _service, user: user, date: date),
+      builder:
+          (_) => _DayDetailsSheet(service: _service, user: user, date: date),
     );
   }
 }
@@ -145,72 +164,81 @@ class _DaySummaryCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final dateLabel = DateFormat('EEEE، yyyy/MM/dd', 'ar').format(summary.date);
-    return WolfCard(
-      onTap: onTap,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            children: [
-              Text(
-                '${summary.totalEmployees} موظف',
-                style: const TextStyle(color: ZaWolfColors.textMuted),
-              ),
-              const Spacer(),
-              Text(
-                dateLabel,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.bold,
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: WolfCard(
+        onTap: onTap,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    dateLabel,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 15,
+                    ),
+                    textDirection: TextDirection.rtl,
+                  ),
                 ),
-                textDirection: TextDirection.rtl,
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: Icon(
-              Icons.chevron_left,
-              color: ZaWolfColors.primaryCyan,
+                Text(
+                  '${summary.totalEmployees} موظف',
+                  style: const TextStyle(color: ZaWolfColors.textMuted, fontSize: 13),
+                ),
+                const SizedBox(width: 8),
+                Icon(
+                  RtlNavigation.chevronEnd(context),
+                  color: ZaWolfColors.primaryCyan,
+                  size: 20,
+                ),
+              ],
             ),
-          ),
-          const SizedBox(height: 4),
-          _MiniBar(summary: summary),
-          const SizedBox(height: 12),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            alignment: WrapAlignment.end,
-            children: [
-              _ChipStat(
-                label: 'حاضر',
-                value: summary.present,
-                color: ZaWolfColors.success,
-              ),
-              _ChipStat(
-                label: 'متأخر',
-                value: summary.late,
-                color: ZaWolfColors.warning,
-              ),
-              _ChipStat(
-                label: 'إذن',
-                value: summary.permission,
-                color: ZaWolfColors.permissionTeal,
-              ),
-              _ChipStat(
-                label: 'إجازة',
-                value: summary.dayOff,
-                color: ZaWolfColors.dayoffPurple,
-              ),
-              _ChipStat(
-                label: 'لم يسجل',
-                value: summary.notAttended,
-                color: ZaWolfColors.error,
-              ),
-            ],
-          ),
-        ],
+            const SizedBox(height: 10),
+            _MiniBar(summary: summary),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              alignment: WrapAlignment.start,
+              textDirection: TextDirection.rtl,
+              children: [
+                _ChipStat(
+                  label: 'حاضر',
+                  value: summary.present,
+                  color: ZaWolfColors.success,
+                ),
+                _ChipStat(
+                  label: 'متأخر',
+                  value: summary.late,
+                  color: ZaWolfColors.warning,
+                ),
+                _ChipStat(
+                  label: 'مأمورية',
+                  value: summary.fieldMission,
+                  color: ZaWolfColors.primaryCyan,
+                ),
+                _ChipStat(
+                  label: 'إذن',
+                  value: summary.permission,
+                  color: ZaWolfColors.permissionTeal,
+                ),
+                _ChipStat(
+                  label: 'إجازة',
+                  value: summary.dayOff,
+                  color: ZaWolfColors.dayoffPurple,
+                ),
+                _ChipStat(
+                  label: 'لم يسجل',
+                  value: summary.notAttended,
+                  color: ZaWolfColors.error,
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -231,110 +259,118 @@ class _DayDetailsSheet extends StatelessWidget {
   Widget build(BuildContext context) {
     final dateLabel = DateFormat('EEEE، yyyy/MM/dd', 'ar').format(date);
     return DraggableScrollableSheet(
-      builder: (context, scrollController) => Container(
-        decoration: const BoxDecoration(
-          color: ZaWolfColors.surface01,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-        ),
-        child: SafeArea(
-          top: true,
-          bottom: false,
-          child: FutureBuilder<DashboardAttendanceDayDetails>(
-          future: service.loadDayDetails(user, date),
-          builder: (context, snapshot) {
-            if (snapshot.hasError) {
-              return const ErrorState(
-                message: 'تعذر تحميل تفاصيل هذا اليوم. حاول مرة أخرى.',
-              );
-            }
-            if (!snapshot.hasData) {
-              return const Padding(
-                padding: EdgeInsets.all(16),
-                child: SkeletonList(itemCount: 4, itemHeight: 96),
-              );
-            }
+      builder:
+          (context, scrollController) => Container(
+            decoration: const BoxDecoration(
+              color: ZaWolfColors.surface01,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+            ),
+            child: SafeArea(
+              top: true,
+              bottom: false,
+              child: FutureBuilder<DashboardAttendanceDayDetails>(
+                future: service.loadDayDetails(user, date),
+                builder: (context, snapshot) {
+                  if (snapshot.hasError) {
+                    return const ErrorState(
+                      message: 'تعذر تحميل تفاصيل هذا اليوم. حاول مرة أخرى.',
+                    );
+                  }
+                  if (!snapshot.hasData) {
+                    return const Padding(
+                      padding: EdgeInsets.all(16),
+                      child: SkeletonList(itemCount: 4, itemHeight: 96),
+                    );
+                  }
 
-            final people = snapshot.data!.people;
-            final groups = <_AttendanceGroup>[
-              _AttendanceGroup(
-                'حضر في الموعد',
-                'present',
-                ZaWolfColors.success,
-              ),
-              _AttendanceGroup('متأخر', 'late', ZaWolfColors.warning),
-              _AttendanceGroup(
-                'إذن معتمد',
-                'permission',
-                ZaWolfColors.permissionTeal,
-              ),
-              _AttendanceGroup(
-                'إجازة / يوم إجازة',
-                'day_off',
-                ZaWolfColors.dayoffPurple,
-              ),
-              _AttendanceGroup(
-                'لم يسجل حضوراً',
-                'not_attended',
-                ZaWolfColors.error,
-              ),
-            ];
-            final missingCheckout = people
-                .where((person) => person.needsCheckout)
-                .toList();
-
-            return ListView(
-              controller: scrollController,
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
-              children: [
-                Center(
-                  child: Container(
-                    width: 42,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: ZaWolfColors.textMuted,
-                      borderRadius: BorderRadius.circular(4),
+                  final people = snapshot.data!.people;
+                  final groups = <_AttendanceGroup>[
+                    _AttendanceGroup(
+                      'حضر في الموعد',
+                      'present',
+                      ZaWolfColors.success,
                     ),
-                  ),
-                ),
-                const SizedBox(height: 18),
-                Text(
-                  'تفاصيل الحضور',
-                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
-                  ),
-                  textAlign: TextAlign.right,
-                  textDirection: TextDirection.rtl,
-                ),
-                Text(
-                  dateLabel,
-                  style: const TextStyle(color: ZaWolfColors.textMuted),
-                  textAlign: TextAlign.right,
-                  textDirection: TextDirection.rtl,
-                ),
-                const SizedBox(height: 18),
-                if (missingCheckout.isNotEmpty)
-                  _AttendancePeopleSection(
-                    title: 'لم يسجل انصرافاً',
-                    color: ZaWolfColors.error,
-                    people: missingCheckout,
-                  ),
-                for (final group in groups) ...[
-                  _AttendancePeopleSection(
-                    title: group.title,
-                    color: group.color,
-                    people: people
-                        .where((person) => person.status == group.status)
-                        .toList(),
-                  ),
-                  const SizedBox(height: 12),
-                ],
-              ],
-            );
-          },
-        ),
-      ),
-      ),
+                    _AttendanceGroup('متأخر', 'late', ZaWolfColors.warning),
+                    _AttendanceGroup(
+                      'في مأمورية ميدانية',
+                      'field_mission',
+                      ZaWolfColors.primaryCyan,
+                    ),
+                    _AttendanceGroup(
+                      'إذن معتمد',
+                      'permission',
+                      ZaWolfColors.permissionTeal,
+                    ),
+                    _AttendanceGroup(
+                      'إجازة / يوم إجازة',
+                      'day_off',
+                      ZaWolfColors.dayoffPurple,
+                    ),
+                    _AttendanceGroup(
+                      'لم يسجل حضوراً',
+                      'not_attended',
+                      ZaWolfColors.error,
+                    ),
+                  ];
+                  final missingCheckout =
+                      people.where((person) => person.needsCheckout).toList();
+
+                  return ListView(
+                    controller: scrollController,
+                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
+                    children: [
+                      Center(
+                        child: Container(
+                          width: 42,
+                          height: 4,
+                          decoration: BoxDecoration(
+                            color: ZaWolfColors.textMuted,
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 18),
+                      Text(
+                        'تفاصيل الحضور',
+                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                        ),
+                        textAlign: TextAlign.right,
+                        textDirection: TextDirection.rtl,
+                      ),
+                      Text(
+                        dateLabel,
+                        style: const TextStyle(color: ZaWolfColors.textMuted),
+                        textAlign: TextAlign.right,
+                        textDirection: TextDirection.rtl,
+                      ),
+                      const SizedBox(height: 18),
+                      if (missingCheckout.isNotEmpty)
+                        _AttendancePeopleSection(
+                          title: 'لم يسجل انصرافاً',
+                          color: ZaWolfColors.error,
+                          people: missingCheckout,
+                        ),
+                      for (final group in groups) ...[
+                        _AttendancePeopleSection(
+                          title: group.title,
+                          color: group.color,
+                          people:
+                              people
+                                  .where(
+                                    (person) => person.status == group.status,
+                                  )
+                                  .toList(),
+                        ),
+                        const SizedBox(height: 12),
+                      ],
+                    ],
+                  );
+                },
+              ),
+            ),
+          ),
     );
   }
 }
@@ -377,64 +413,68 @@ class _AttendancePeopleSection extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 7),
               child: InkWell(
-                onTap: _timelineEnabled(context)
-                    ? () => context.go(
-                        '/operations/employee/${person.employee.uid}',
-                      )
-                    : null,
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    if (_timelineEnabled(context))
-                      const Padding(
-                        padding: EdgeInsets.only(top: 4),
-                        child: Icon(
-                          Icons.history,
-                          color: ZaWolfColors.primaryCyan,
+                onTap:
+                    _timelineEnabled(context)
+                        ? () => context.go(
+                          '/operations/employee/${person.employee.uid}',
+                        )
+                        : null,
+                child: Directionality(
+                  textDirection: TextDirection.rtl,
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              person.employee.displayName,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w600,
+                                fontSize: 14,
+                              ),
+                              textDirection: TextDirection.rtl,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              _metaText(person),
+                              style: const TextStyle(
+                                color: ZaWolfColors.textSecondary,
+                                fontSize: 11,
+                              ),
+                              textDirection: TextDirection.rtl,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              _timeText(person, timeFormat),
+                              style: const TextStyle(
+                                color: ZaWolfColors.textMuted,
+                                fontSize: 11,
+                              ),
+                              textDirection: TextDirection.rtl,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
                         ),
                       ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.end,
-                        children: [
-                          Text(
-                            person.employee.displayName,
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w600,
-                              fontSize: 14,
-                            ),
-                            textDirection: TextDirection.rtl,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
+                      if (_timelineEnabled(context))
+                        Padding(
+                          padding: const EdgeInsets.only(right: 8),
+                          child: Icon(
+                            RtlNavigation.chevronEnd(context),
+                            color: ZaWolfColors.primaryCyan,
+                            size: 18,
                           ),
-                          const SizedBox(height: 2),
-                          Text(
-                            _metaText(person),
-                            style: const TextStyle(
-                              color: ZaWolfColors.textSecondary,
-                              fontSize: 11,
-                            ),
-                            textDirection: TextDirection.rtl,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            _timeText(person, timeFormat),
-                            style: const TextStyle(
-                              color: ZaWolfColors.textMuted,
-                              fontSize: 11,
-                            ),
-                            textDirection: TextDirection.rtl,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
+                        ),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -522,19 +562,21 @@ class _TodayCategoryDetails extends StatelessWidget {
             child: SkeletonList(itemCount: 4, itemHeight: 84),
           );
         }
-        final people = snapshot.data!.people
-            .where(
-              (person) => (department == null ||
-                      person.employee.department == department) &&
-                  (status == 'all'
-                      ? true
-                      : status == 'attended'
-                      ? person.status == 'present' ||
-                          person.status == 'late' ||
-                          person.status == 'field_mission'
-                      : person.status == status),
-            )
-            .toList();
+        final people =
+            snapshot.data!.people
+                .where(
+                  (person) =>
+                      (department == null ||
+                          person.employee.department == department) &&
+                      (status == 'all'
+                          ? true
+                          : status == 'attended'
+                          ? person.status == 'present' ||
+                              person.status == 'late' ||
+                              person.status == 'field_mission'
+                          : person.status == status),
+                )
+                .toList();
         return ListView(
           padding: const EdgeInsets.all(16),
           children: [
@@ -578,6 +620,10 @@ class _MiniBar extends StatelessWidget {
             _Segment(flex: summary.present, color: ZaWolfColors.success),
             _Segment(flex: summary.late, color: ZaWolfColors.warning),
             _Segment(
+              flex: summary.fieldMission,
+              color: ZaWolfColors.primaryCyan,
+            ),
+            _Segment(
               flex: summary.permission,
               color: ZaWolfColors.permissionTeal,
             ),
@@ -601,10 +647,7 @@ class _Segment extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (flex <= 0) return const SizedBox.shrink();
-    return Expanded(
-      flex: flex,
-      child: ColoredBox(color: color),
-    );
+    return Expanded(flex: flex, child: ColoredBox(color: color));
   }
 }
 

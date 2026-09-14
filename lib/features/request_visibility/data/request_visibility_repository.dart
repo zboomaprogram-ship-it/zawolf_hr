@@ -34,6 +34,11 @@ final class RequestVisibilityRepositoryImpl
               .where((record) => _matchesSearch(record, query.searchTerm))
               .toList(growable: true)
             ..sort((a, b) {
+              final aPending = !a.isHistorical;
+              final bPending = !b.isHistorical;
+              if (aPending != bPending) {
+                return aPending ? -1 : 1;
+              }
               final byDate = b.occurredAt.compareTo(a.occurredAt);
               return byDate != 0 ? byDate : b.stableId.compareTo(a.stableId);
             });
@@ -93,7 +98,7 @@ final class RequestVisibilityRepositoryImpl
   }
 
   String _cursor(RequestVisibilityRecord record) =>
-      '${record.occurredAt.toIso8601String()}|${record.stableId}';
+      '${record.isHistorical ? 1 : 0}|${record.occurredAt.toIso8601String()}|${record.stableId}';
 }
 
 final class RequestVisibilityAccessDenied implements Exception {

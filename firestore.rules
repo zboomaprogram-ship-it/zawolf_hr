@@ -1580,7 +1580,11 @@ service cloud.firestore {
         isOwner(resource.data.userId) || isHR()
       );
       allow create: if isAuth() && isActive()
-        && request.resource.data.userId == uid()
+        && (
+          request.resource.data.userId == uid()
+          || isHR()
+          || isAssignedManagerForUser(request.resource.data.userId)
+        )
         && request.resource.data.requestId == requestId
         && request.resource.data.status == 'pending_hr'
         && request.resource.data.reason is string
@@ -1591,7 +1595,7 @@ service cloud.firestore {
         )
         && get(
           /databases/$(database)/documents/attendance/$(request.resource.data.attendanceId)
-        ).data.userId == uid()
+        ).data.userId == request.resource.data.userId
         && request.resource.data.requestedCheckInTime is timestamp
         && request.resource.data.originalCheckInTime is timestamp
         && request.resource.data.requestedCheckInTime
@@ -1676,7 +1680,11 @@ service cloud.firestore {
         isCompanyExecutive()
       );
       allow create: if isAuth() && isActive()
-        && isValidSelfCreate()
+        && (
+          isValidSelfCreate()
+          || isHR()
+          || isAssignedManagerForUser(request.resource.data.userId)
+        )
         && request.resource.data.status in [
           'pending_manager', 'pending_hr', 'pending_ceo', 'approved'
         ]
@@ -1687,7 +1695,7 @@ service cloud.firestore {
             && request.resource.data.status == 'approved'
             && request.resource.data.get('autoApproved', false) == true
           )
-          || hasValidAssignedApprovalManagers(uid())
+          || hasValidAssignedApprovalManagers(request.resource.data.userId)
         )
         && (
           (
@@ -1753,9 +1761,9 @@ service cloud.firestore {
               )
             )
             && request.resource.data.numberOfDays
-              <= recipientDoc(uid()).get('leaveBalance', {}).get('casual', 7)
+              <= recipientDoc(request.resource.data.userId).get('leaveBalance', {}).get('casual', 7)
             && request.resource.data.numberOfDays
-              <= recipientDoc(uid()).get('leaveBalance', {}).get('daysOff', 0)
+              <= recipientDoc(request.resource.data.userId).get('leaveBalance', {}).get('daysOff', 0)
           )
           || (
             request.resource.data.leaveType == 'day_off'
@@ -1771,7 +1779,7 @@ service cloud.firestore {
               )
             )
             && request.resource.data.numberOfDays
-              <= recipientDoc(uid()).get('leaveBalance', {}).get('daysOff', 0)
+              <= recipientDoc(request.resource.data.userId).get('leaveBalance', {}).get('daysOff', 0)
           )
           || (
             !(request.resource.data.leaveType in ['casual', 'day_off'])
@@ -1868,10 +1876,14 @@ service cloud.firestore {
         isCompanyExecutive()
       );
       allow create: if isAuth() && isActive()
-        && isValidSelfCreate()
+        && (
+          isValidSelfCreate()
+          || isHR()
+          || isAssignedManagerForUser(request.resource.data.userId)
+        )
         && request.resource.data.status in ['pending_manager', 'pending_hr']
         && request.resource.data.managerIds is list
-        && hasValidAssignedApprovalManagers(uid())
+        && hasValidAssignedApprovalManagers(request.resource.data.userId)
         && (
           (
             request.resource.data.status == 'pending_hr'
@@ -1955,7 +1967,11 @@ service cloud.firestore {
         || isCompanyExecutive()
       );
       allow create: if isAuth() && isActive()
-        && request.resource.data.userId == uid()
+        && (
+          request.resource.data.userId == uid()
+          || isHR()
+          || isAssignedManagerForUser(request.resource.data.userId)
+        )
         && request.resource.data.reason is string
         && request.resource.data.reason.size() > 0
         && request.resource.data.resignationDate is timestamp
@@ -2022,7 +2038,11 @@ service cloud.firestore {
         || isCompanyExecutive()
       );
       allow create: if isAuth() && isActive()
-        && request.resource.data.userId == uid()
+        && (
+          request.resource.data.userId == uid()
+          || isHR()
+          || isAssignedManagerForUser(request.resource.data.userId)
+        )
         && request.resource.data.category in [
           'personal_data', 'employment_status', 'software_subscription',
           'equipment', 'field_mission', 'other'
@@ -2030,7 +2050,7 @@ service cloud.firestore {
         && request.resource.data.notes is string
         && request.resource.data.notes.size() > 0
         && request.resource.data.managerIds is list
-        && hasValidAssignedApprovalManagers(uid())
+        && hasValidAssignedApprovalManagers(request.resource.data.userId)
         && request.resource.data.status in ['pending_manager', 'pending_hr']
         && (
           (
@@ -2146,7 +2166,11 @@ service cloud.firestore {
         isCompanyExecutive()
       );
       allow create: if isAuth() && isActive()
-        && isValidSelfCreate()
+        && (
+          isValidSelfCreate()
+          || isHR()
+          || isAssignedManagerForUser(request.resource.data.userId)
+        )
         && request.resource.data.status == 'pending_hr'
         && request.resource.data.amount > 0
         && request.resource.data.keys().hasOnly([
@@ -2213,7 +2237,11 @@ service cloud.firestore {
         isOwner(resource.data.userId) || isHR()
       );
       allow create: if isAuth() && isActive()
-        && request.resource.data.userId == uid()
+        && (
+          request.resource.data.userId == uid()
+          || isHR()
+          || isAssignedManagerForUser(request.resource.data.userId)
+        )
         && request.resource.data.status == 'new'
         && request.resource.data.title is string
         && request.resource.data.title.size() >= 1

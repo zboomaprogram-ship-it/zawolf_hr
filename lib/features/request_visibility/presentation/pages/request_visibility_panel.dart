@@ -28,6 +28,8 @@ final class RequestVisibilityPanel extends StatefulWidget {
 final class _RequestVisibilityPanelState extends State<RequestVisibilityPanel>
     with AutomaticKeepAliveClientMixin {
   RequestLifecycleState? _selectedLifecycle;
+  int _currentPage = 1;
+  static const int _pageSize = 15;
 
   @override
   bool get wantKeepAlive => true;
@@ -42,7 +44,10 @@ final class _RequestVisibilityPanelState extends State<RequestVisibilityPanel>
   void didUpdateWidget(covariant RequestVisibilityPanel oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (_queryIdentity(oldWidget.query) != _queryIdentity(widget.query)) {
+      _currentPage = 1;
       _load();
+    } else if (oldWidget.searchTerm != widget.searchTerm) {
+      _currentPage = 1;
     }
   }
 
@@ -70,7 +75,10 @@ final class _RequestVisibilityPanelState extends State<RequestVisibilityPanel>
               child: ChoiceChip(
                 label: Text(label),
                 selected: _selectedLifecycle == lifecycle,
-                onSelected: (_) => setState(() => _selectedLifecycle = lifecycle),
+                onSelected: (_) => setState(() {
+                  _selectedLifecycle = lifecycle;
+                  _currentPage = 1;
+                }),
                 selectedColor: ZaWolfColors.primaryCyan.withValues(alpha: 0.2),
                 labelStyle: TextStyle(
                   color: _selectedLifecycle == lifecycle
@@ -87,6 +95,168 @@ final class _RequestVisibilityPanelState extends State<RequestVisibilityPanel>
     );
   }
 
+  Widget _buildPaginationBar({
+    required int totalRecords,
+    required int totalPages,
+    required int currentPage,
+    required bool hasMore,
+    required bool isLoading,
+    required int startIndex,
+    required int endIndex,
+  }) {
+    final pagesToShow = <int>[];
+    if (totalPages <= 7) {
+      for (int i = 1; i <= totalPages; i++) {
+        pagesToShow.add(i);
+      }
+    } else {
+      pagesToShow.add(1);
+      final start = (currentPage - 2).clamp(2, totalPages - 3);
+      final end = (start + 4).clamp(3, totalPages - 1);
+      if (start > 2) {
+        pagesToShow.add(-1);
+      }
+      for (int i = start; i <= end; i++) {
+        pagesToShow.add(i);
+      }
+      if (end < totalPages - 1) {
+        pagesToShow.add(-2);
+      }
+      pagesToShow.add(totalPages);
+    }
+
+    final canGoPrev = currentPage > 1 && !isLoading;
+    final canGoNext = (currentPage < totalPages || hasMore) && !isLoading;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      decoration: BoxDecoration(
+        color: ZaWolfColors.surface01,
+        border: Border(
+          top: BorderSide(
+            color: ZaWolfColors.surface03.withValues(alpha: 0.8),
+            width: 1,
+          ),
+        ),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            'عرض ${totalRecords == 0 ? 0 : startIndex + 1}-$endIndex من $totalRecords طلب${hasMore ? ' +' : ''}',
+            style: const TextStyle(
+              fontSize: 12,
+              color: ZaWolfColors.textSecondary,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (isLoading)
+                const Padding(
+                  padding: EdgeInsetsDirectional.only(end: 8),
+                  child: SizedBox.square(
+                    dimension: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                ),
+              IconButton(
+                icon: const Icon(Icons.chevron_right, size: 20),
+                tooltip: 'الصفحة السابقة',
+                onPressed:
+                    canGoPrev ? () => setState(() => _currentPage--) : null,
+                color: ZaWolfColors.primaryCyan,
+                disabledColor: ZaWolfColors.textSecondary.withValues(
+                  alpha: 0.3,
+                ),
+              ),
+              const SizedBox(width: 4),
+              for (final p in pagesToShow)
+                if (p < 0)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 4),
+                    child: Text(
+                      '…',
+                      style: TextStyle(color: ZaWolfColors.textSecondary),
+                    ),
+                  )
+                else
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 2),
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(6),
+                      onTap:
+                          isLoading || p == currentPage
+                              ? null
+                              : () => setState(() => _currentPage = p),
+                      child: Container(
+                        constraints: const BoxConstraints(
+                          minWidth: 28,
+                          minHeight: 28,
+                        ),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 4,
+                        ),
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          color:
+                              p == currentPage
+                                  ? ZaWolfColors.primaryCyan
+                                  : Colors.transparent,
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(
+                            color:
+                                p == currentPage
+                                    ? ZaWolfColors.primaryCyan
+                                    : ZaWolfColors.surface03,
+                          ),
+                        ),
+                        child: Text(
+                          '$p',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight:
+                                p == currentPage
+                                    ? FontWeight.bold
+                                    : FontWeight.normal,
+                            color:
+                                p == currentPage
+                                    ? Colors.black
+                                    : ZaWolfColors.textPrimary,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+              const SizedBox(width: 4),
+              IconButton(
+                icon: const Icon(Icons.chevron_left, size: 20),
+                tooltip: 'الصفحة التالية',
+                onPressed:
+                    canGoNext
+                        ? () {
+                          if (currentPage < totalPages) {
+                            setState(() => _currentPage++);
+                          } else if (hasMore) {
+                            context.read<RequestVisibilityCubit>().loadMore();
+                            setState(() => _currentPage++);
+                          }
+                        }
+                        : null,
+                color: ZaWolfColors.primaryCyan,
+                disabledColor: ZaWolfColors.textSecondary.withValues(
+                  alpha: 0.3,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     super.build(context);
@@ -94,17 +264,20 @@ final class _RequestVisibilityPanelState extends State<RequestVisibilityPanel>
       textDirection: TextDirection.rtl,
       child: BlocBuilder<RequestVisibilityCubit, RequestVisibilityState>(
         builder: (context, state) {
-          final records = state.records
-              .where((record) => _matchesSearch(record, widget.searchTerm))
-              .where((record) {
-                if (_selectedLifecycle == null) return true;
-                if (_selectedLifecycle == RequestLifecycleState.approved) {
-                  return record.lifecycleState == RequestLifecycleState.approved ||
-                      record.lifecycleState == RequestLifecycleState.confirmed;
-                }
-                return record.lifecycleState == _selectedLifecycle;
-              })
-              .toList(growable: false);
+          final records =
+              state.records
+                  .where((record) => _matchesSearch(record, widget.searchTerm))
+                  .where((record) {
+                    if (_selectedLifecycle == null) return true;
+                    if (_selectedLifecycle == RequestLifecycleState.approved) {
+                      return record.lifecycleState ==
+                              RequestLifecycleState.approved ||
+                          record.lifecycleState ==
+                              RequestLifecycleState.confirmed;
+                    }
+                    return record.lifecycleState == _selectedLifecycle;
+                  })
+                  .toList(growable: false);
           if (state.loading && state.records.isEmpty) {
             return const _RequestState(
               icon: Icons.hourglass_top,
@@ -114,14 +287,16 @@ final class _RequestVisibilityPanelState extends State<RequestVisibilityPanel>
           }
           if (state.safeMessage != null && state.records.isEmpty) {
             return _RequestState(
-              icon: state.accessDenied
-                  ? Icons.lock_outline
-                  : Icons.cloud_off_outlined,
+              icon:
+                  state.accessDenied
+                      ? Icons.lock_outline
+                      : Icons.cloud_off_outlined,
               message: state.safeMessage!,
               actionLabel: state.accessDenied ? null : 'إعادة المحاولة',
-              onAction: state.accessDenied
-                  ? null
-                  : context.read<RequestVisibilityCubit>().retry,
+              onAction:
+                  state.accessDenied
+                      ? null
+                      : context.read<RequestVisibilityCubit>().retry,
             );
           }
           if (records.isEmpty) {
@@ -137,39 +312,46 @@ final class _RequestVisibilityPanelState extends State<RequestVisibilityPanel>
               ],
             );
           }
+
+          final totalRecords = records.length;
+          final totalPages = (totalRecords / _pageSize).ceil().clamp(1, 999999);
+          if (_currentPage > totalPages) {
+            _currentPage = totalPages;
+          }
+          final startIndex = (_currentPage - 1) * _pageSize;
+          final endIndex = (startIndex + _pageSize).clamp(0, totalRecords);
+          final pageRecords = records.sublist(startIndex, endIndex);
+
           return Column(
             children: [
               _buildFilterChips(),
               Expanded(
                 child: ListView.builder(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  itemCount: records.length + (state.hasMore ? 1 : 0),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 8,
+                  ),
+                  itemCount: pageRecords.length,
                   itemBuilder: (context, index) {
-                    if (index == records.length) {
-                      return Center(
-                        child: OutlinedButton.icon(
-                          onPressed: state.loading
-                              ? null
-                              : context.read<RequestVisibilityCubit>().loadMore,
-                          icon: state.loading
-                              ? const SizedBox.square(
-                                  dimension: 18,
-                                  child: CircularProgressIndicator(strokeWidth: 2),
-                                )
-                              : const Icon(Icons.expand_more),
-                          label: const Text('تحميل المزيد'),
-                        ),
-                      );
-                    }
-                    final record = records[index];
+                    final record = pageRecords[index];
                     return _RequestRecordCard(
                       record: record,
-                      onTap: widget.onSelectRecord != null
-                          ? () => widget.onSelectRecord!(record)
-                          : null,
+                      onTap:
+                          widget.onSelectRecord != null
+                              ? () => widget.onSelectRecord!(record)
+                              : null,
                     );
                   },
                 ),
+              ),
+              _buildPaginationBar(
+                totalRecords: totalRecords,
+                totalPages: totalPages,
+                currentPage: _currentPage,
+                hasMore: state.hasMore,
+                isLoading: state.loading,
+                startIndex: startIndex,
+                endIndex: endIndex,
               ),
             ],
           );
@@ -352,10 +534,13 @@ final class _RequestRecordCard extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(width: 2),
-                    Icon(
-                      Icons.chevron_left,
-                      size: 16,
-                      color: typeColor,
+                    Directionality(
+                      textDirection: TextDirection.ltr,
+                      child: Icon(
+                        Icons.chevron_left,
+                        size: 16,
+                        color: typeColor,
+                      ),
                     ),
                   ],
                 ),

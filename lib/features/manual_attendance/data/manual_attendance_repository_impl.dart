@@ -72,8 +72,9 @@ class ManualAttendanceRepositoryImpl implements ManualAttendanceRepository {
     required String reason,
   }) async {
     final token = await _auth.currentUser?.getIdToken(true);
-    if (token == null || token.isEmpty)
+    if (token == null || token.isEmpty) {
       throw StateError('انتهت الجلسة، سجل الدخول مرة أخرى.');
+    }
     final response = await _client.post(
       Uri.parse('$_baseUrl/operations/manual-attendance/batch'),
       headers: {

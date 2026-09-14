@@ -133,6 +133,21 @@ class DashboardAttendanceSummaryService {
                 ),
               ),
         ),
+        _bestEffortQueryResult(
+          _db
+              .collection('fieldAssignments')
+              .where('date', isGreaterThanOrEqualTo: firstKey)
+              .where('date', isLessThanOrEqualTo: lastKey)
+              .where('status', isEqualTo: 'active'),
+        ),
+        _bestEffortQueryResult(
+          _db
+              .collection('administrativeRequests')
+              .where('category', isEqualTo: 'field_mission')
+              .where('status', isEqualTo: 'approved')
+              .where('missionDate', isGreaterThanOrEqualTo: firstKey)
+              .where('missionDate', isLessThanOrEqualTo: lastKey),
+        ),
       ]);
       return Future.wait(
         dates.map((date) {
@@ -172,6 +187,12 @@ class DashboardAttendanceSummaryService {
                       !start.isAfter(endOfDay) &&
                       !end.isBefore(DateTime(date.year, date.month, date.day));
                 }).toList(),
+              ),
+              _SummaryQueryResult(
+                [
+                  ...all[3].docs.where((doc) => doc.data()?['date'] == key),
+                  ...all[4].docs.where((doc) => doc.data()?['missionDate'] == key),
+                ],
               ),
             ],
           ).then((details) => details.summary);
@@ -351,7 +372,8 @@ class DashboardAttendanceSummaryService {
       DateTime? checkOutTime;
       var lateMinutes = 0;
       bool? checkoutPolicyEnabled;
-      if (fieldMissionUsers.contains(employee.uid)) {
+      if (fieldMissionUsers.contains(employee.uid) ||
+          (attendance != null && attendance['status'] == 'field_mission')) {
         status = 'field_mission';
         checkInTime = (attendance?['checkInTime'] as Timestamp?)?.toDate();
         checkOutTime = (attendance?['checkOutTime'] as Timestamp?)?.toDate();
@@ -529,6 +551,33 @@ class DashboardAttendanceSummaryService {
         ),
       ),
     );
+    final assignmentSnaps = await Future.wait(
+      idBatches.map(
+        (userIds) => _bestEffortQueryResult(
+          _db
+              .collection('fieldAssignments')
+              .where('userId', whereIn: userIds)
+              .where('date', isEqualTo: dateKey)
+              .where('status', isEqualTo: 'active'),
+        ),
+      ),
+    );
+    final adminMissionSnaps = await Future.wait(
+      idBatches.map(
+        (userIds) => _bestEffortQueryResult(
+          _db
+              .collection('administrativeRequests')
+              .where('userId', whereIn: userIds)
+              .where('category', isEqualTo: 'field_mission')
+              .where('status', isEqualTo: 'approved')
+              .where('missionDate', isEqualTo: dateKey),
+        ),
+      ),
+    );
+    final allMissionDocs = [
+      ...assignmentSnaps.expand((snapshot) => snapshot.docs),
+      ...adminMissionSnaps.expand((snapshot) => snapshot.docs),
+    ];
 
     return [
       _SummaryQueryResult(
@@ -542,6 +591,11 @@ class DashboardAttendanceSummaryService {
       _SummaryQueryResult(
         leaveSnaps.expand((snapshot) => snapshot.docs).toList(),
         isComplete: leaveSnaps.every((snapshot) => snapshot.isComplete),
+      ),
+      _SummaryQueryResult(
+        allMissionDocs,
+        isComplete: assignmentSnaps.every((snapshot) => snapshot.isComplete) &&
+            adminMissionSnaps.every((snapshot) => snapshot.isComplete),
       ),
     ];
   }
@@ -578,8 +632,33 @@ class DashboardAttendanceSummaryService {
               ),
             ),
       ),
+      _bestEffortQueryResult(
+        _db
+            .collection('fieldAssignments')
+            .where('date', isEqualTo: dateKey)
+            .where('status', isEqualTo: 'active'),
+      ),
+      _bestEffortQueryResult(
+        _db
+            .collection('administrativeRequests')
+            .where('category', isEqualTo: 'field_mission')
+            .where('status', isEqualTo: 'approved')
+            .where('missionDate', isEqualTo: dateKey),
+      ),
     ]);
-    return results;
+    final missionDocs = [
+      ...results[3].docs,
+      ...results[4].docs,
+    ];
+    return [
+      results[0],
+      results[1],
+      results[2],
+      _SummaryQueryResult(
+        missionDocs,
+        isComplete: results[3].isComplete && results[4].isComplete,
+      ),
+    ];
   }
 
   Future<_SummaryQueryResult> _safeQueryResult(

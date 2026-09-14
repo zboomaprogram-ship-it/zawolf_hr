@@ -125,21 +125,24 @@ class _UnifiedManagementWebDashboardState
             // HR/executives see the company; managers see only their team.
             DashboardVisualAnalysisEntry(
               user: widget.user,
-              attendanceRoute: isHrRole
-                  ? '/hr/attendance-summary'
-                  : widget.user.role == EmployeeRole.teamLeader
-                  ? '/team-leader/attendance-summary'
-                  : '/manager/attendance-summary',
-              requestsRoute: isHrRole
-                  ? '/hr/requests'
-                  : widget.user.role == EmployeeRole.teamLeader
-                  ? '/team-leader/requests'
-                  : '/manager/requests',
-              tasksRoute: isHrRole
-                  ? '/hr/tasks'
-                  : widget.user.role == EmployeeRole.teamLeader
-                  ? '/team-leader/tasks'
-                  : '/manager/tasks',
+              attendanceRoute:
+                  isHrRole
+                      ? '/hr/attendance-summary'
+                      : widget.user.role == EmployeeRole.teamLeader
+                      ? '/team-leader/attendance-summary'
+                      : '/manager/attendance-summary',
+              requestsRoute:
+                  isHrRole
+                      ? '/hr/requests'
+                      : widget.user.role == EmployeeRole.teamLeader
+                      ? '/team-leader/requests'
+                      : '/manager/requests',
+              tasksRoute:
+                  isHrRole
+                      ? '/hr/tasks'
+                      : widget.user.role == EmployeeRole.teamLeader
+                      ? '/team-leader/tasks'
+                      : '/manager/tasks',
               onRefresh: widget.onRefreshSummary,
             ),
             const SizedBox(height: DsSpacing.xl),
@@ -162,13 +165,16 @@ class _UnifiedManagementWebDashboardState
                         ),
                         PriorityItem(
                           label: 'كشوف وتأخيرات الفريق',
-                          count: (widget.summary?.late ?? 0) +
+                          count:
+                              (widget.summary?.late ?? 0) +
                               (widget.summary?.notAttended ?? 0),
                           icon: Icons.co_present_outlined,
                           accent: ZaWolfColors.primaryBlue,
                           onTap:
                               () => context.go(
-                                isHrRole ? '/hr/employees' : '/manager/team',
+                                isHrRole
+                                    ? '/hr/attendance-summary?status=late'
+                                    : '/manager/team',
                               ),
                         ),
                         PriorityItem(
@@ -641,6 +647,7 @@ class _UnifiedManagementWebDashboardState
   }
 
   Widget _buildSalesKpiSection(ThemeData theme) {
+    if (!_canViewSalesIndicators(widget.user)) return const SizedBox.shrink();
     return StreamBuilder<SalesKpiSummary?>(
       stream: SalesKpiIntegrationService().watchCurrentSummary(),
       builder: (context, currentSnapshot) {
@@ -674,16 +681,26 @@ class _UnifiedManagementWebDashboardState
     );
   }
 
+  bool _canViewSalesIndicators(UserModel user) {
+    if (EmployeeRole.isSuperAdmin(user.role)) return true;
+    final scope = '${user.department} ${user.position}'.toLowerCase();
+    return scope.contains('head of sales') ||
+        scope.contains('sales manager') ||
+        scope.contains('مدير المبيعات') ||
+        scope.contains('رئيس المبيعات');
+  }
+
   Widget _buildQuickActionsHub(
     BuildContext context,
     ThemeData theme,
     bool isHrRole,
   ) {
-    final prefix = isHrRole
-        ? '/hr'
-        : widget.user.role == EmployeeRole.teamLeader
-        ? '/team-leader'
-        : '/manager';
+    final prefix =
+        isHrRole
+            ? '/hr'
+            : widget.user.role == EmployeeRole.teamLeader
+            ? '/team-leader'
+            : '/manager';
     final attendance = <Widget>[
       _buildShortcutChip(
         label: 'سجل الحضور والغياب',
@@ -714,6 +731,12 @@ class _UnifiedManagementWebDashboardState
         icon: Icons.task_alt_outlined,
         onTap: () => context.go('$prefix/tasks'),
       ),
+      if (isHrRole)
+        _buildShortcutChip(
+          label: 'طلبات التوظيف والتعيين',
+          icon: Icons.person_add_alt_1_outlined,
+          onTap: () => context.go('/hiring-requests'),
+        ),
       if (isHrRole)
         _buildShortcutChip(
           label: 'المهام الميدانية / المأمورية',
@@ -749,9 +772,14 @@ class _UnifiedManagementWebDashboardState
       _buildShortcutChip(
         label: isHrRole ? 'إدارة الموظفين' : 'كشوف وحضور فريقي',
         icon: Icons.co_present_outlined,
-        onTap: () => context.go(
-          isHrRole ? '/hr/employees' : widget.user.role == EmployeeRole.teamLeader ? '/team-leader/employees' : '/manager/team',
-        ),
+        onTap:
+            () => context.go(
+              isHrRole
+                  ? '/hr/employees'
+                  : widget.user.role == EmployeeRole.teamLeader
+                  ? '/team-leader/employees'
+                  : '/manager/team',
+            ),
       ),
       if (isHrRole)
         _buildShortcutChip(
@@ -776,16 +804,13 @@ class _UnifiedManagementWebDashboardState
       _buildShortcutChip(
         label: 'الرواتب والمسيرات',
         icon: Icons.payments_outlined,
-        onTap: () => context.go(
-          isHrRole ? '/hr/payroll' : '/employee/payroll',
-        ),
+        onTap: () => context.go(isHrRole ? '/hr/payroll' : '/employee/payroll'),
       ),
       _buildShortcutChip(
         label: 'التقارير الإدارية',
         icon: Icons.assessment_outlined,
-        onTap: () => context.go(
-          isHrRole ? '/hr/reports' : '/manager/performance',
-        ),
+        onTap:
+            () => context.go(isHrRole ? '/hr/reports' : '/manager/performance'),
       ),
       _buildShortcutChip(
         label: 'المحادثات والتواصل',
@@ -918,7 +943,8 @@ class _UnifiedManagementWebDashboardState
         ),
         const SizedBox(height: 6),
         Wrap(
-          alignment: WrapAlignment.end,
+          textDirection: TextDirection.rtl,
+          alignment: WrapAlignment.start,
           spacing: 8,
           runSpacing: 8,
           children: actions,

@@ -366,6 +366,20 @@ class EmployeeWebDashboardView extends StatelessWidget {
         route: '/employee/payroll',
       ),
       (
+        title: 'تقديم ومتابعة الطلبات',
+        subtitle: 'إجازات، أذونات، سلف، وتصحيح حضور',
+        icon: Icons.assignment_outlined,
+        color: ZaWolfColors.warning,
+        route: '/employee/requests',
+      ),
+      (
+        title: 'حجز قاعة / طلب اجتماع',
+        subtitle: 'جدولة الاجتماعات والقاعات المتاحة',
+        icon: Icons.meeting_room_outlined,
+        color: ZaWolfColors.primaryCyan,
+        route: '/employee/meeting-request',
+      ),
+      (
         title: 'تقييم الأداء والـ KPI',
         subtitle: 'متابعة أهدافك وتقييمات الإدارة',
         icon: Icons.bar_chart_rounded,
@@ -373,10 +387,24 @@ class EmployeeWebDashboardView extends StatelessWidget {
         route: '/employee/performance',
       ),
       (
+        title: 'الطلبات المخصصة',
+        subtitle: 'تقديم طلبات النماذج المخصصة',
+        icon: Icons.playlist_add_check_outlined,
+        color: ZaWolfColors.permissionTeal,
+        route: '/employee/custom-requests',
+      ),
+      (
+        title: 'المحادثات والتواصل',
+        subtitle: 'التواصل الداخلي وغرف العمل',
+        icon: Icons.chat_bubble_outline_rounded,
+        color: ZaWolfColors.success,
+        route: '/conversations',
+      ),
+      (
         title: 'صندوق المقترحات',
         subtitle: 'شارك أفكارك ومقترحات التطوير',
         icon: Icons.lightbulb_outline_rounded,
-        color: ZaWolfColors.permissionTeal,
+        color: ZaWolfColors.warning,
         route: '/employee/suggestions',
       ),
       (

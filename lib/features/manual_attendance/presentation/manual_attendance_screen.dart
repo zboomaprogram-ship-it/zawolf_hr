@@ -159,8 +159,11 @@ class _ManualAttendanceViewState extends State<_ManualAttendanceView> {
                               value: _selectedEmployeeIds.contains(employee.id),
                               onChanged:
                                   (_) => setState(() {
-                                    if (!_selectedEmployeeIds.add(employee.id))
+                                    if (!_selectedEmployeeIds.add(
+                                      employee.id,
+                                    )) {
                                       _selectedEmployeeIds.remove(employee.id);
+                                    }
                                   }),
                             ),
                             title: Text(employee.name),
@@ -182,8 +185,9 @@ class _ManualAttendanceViewState extends State<_ManualAttendanceView> {
                             ),
                             onTap:
                                 () => setState(() {
-                                  if (!_selectedEmployeeIds.add(employee.id))
+                                  if (!_selectedEmployeeIds.add(employee.id)) {
                                     _selectedEmployeeIds.remove(employee.id);
+                                  }
                                 }),
                           ),
                         ),

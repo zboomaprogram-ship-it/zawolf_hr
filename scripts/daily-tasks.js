@@ -326,6 +326,35 @@ async function runDailyTasks() {
     approvedPermsByUserId[perm.userId][perm.permissionType] = perm;
   });
 
+  // Fetch all approved field missions for today
+  const activeMissionsByUserId = {};
+  try {
+    const adminMissionsSnap = await db.collection('administrativeRequests')
+      .where('category', '==', 'field_mission')
+      .where('status', '==', 'approved')
+      .where('missionDate', '==', todayStr)
+      .get();
+    adminMissionsSnap.docs.forEach(doc => {
+      const data = doc.data();
+      if (data && data.userId) activeMissionsByUserId[data.userId] = { ...data, requestId: doc.id };
+    });
+  } catch (e) {
+    console.warn('Could not query administrativeRequests for field missions:', e);
+  }
+
+  try {
+    const fieldAssignSnap = await db.collection('fieldAssignments')
+      .where('date', '==', todayStr)
+      .where('status', '==', 'active')
+      .get();
+    fieldAssignSnap.docs.forEach(doc => {
+      const data = doc.data();
+      if (data && data.userId) activeMissionsByUserId[data.userId] = { ...data, assignmentId: doc.id };
+    });
+  } catch (e) {
+    console.warn('Could not query fieldAssignments:', e);
+  }
+
   // Fetch all active employees
   const usersSnapshot = await db.collection('users').get();
   const activeUsers = usersSnapshot.docs.filter((doc) => isActiveUser(doc.data()));
@@ -489,7 +518,32 @@ async function runDailyTasks() {
         continue;
       }
 
-      if (activeLeavesByUserId[userId]) {
+      if (activeMissionsByUserId[userId]) {
+        // Create field_mission record with NO deduction
+        batch.set(attendanceRef, {
+          userId: userId,
+          employeeId: user.employeeId || '',
+          employeeName: user.displayName || '',
+          locationId: user.locationId || '',
+          locationName: user.locationName || '',
+          managerId: user.managerId || '',
+          date: todayStr,
+          checkInTime: null,
+          checkInLocation: new admin.firestore.GeoPoint(0, 0),
+          isWithinGeofence: true,
+          isLate: false,
+          lateMinutes: 0,
+          salaryDeductionFraction: 0,
+          salaryDeductionAmount: 0,
+          salaryCurrency: user.salaryCurrency || 'EGP',
+          salaryDeductionCode: 'none',
+          salaryDeductionLabel: 'لا يوجد خصم - مأمورية ميدانية',
+          salaryDeductionApprovalStatus: 'none',
+          biometricVerified: false,
+          status: 'field_mission',
+        });
+        batchOps++;
+      } else if (activeLeavesByUserId[userId]) {
         const activeLeave = activeLeavesByUserId[userId];
         const requiresFullDaySalaryDeduction =
           activeLeave.leaveType === 'unpaid' ||
@@ -583,9 +637,23 @@ async function runDailyTasks() {
     } else {
       const log = attendanceSnap.data();
       const updates = {};
+      const isFieldMission = log.status === 'field_mission' || Boolean(activeMissionsByUserId[userId]);
+
+      if (isFieldMission && (log.status === 'absent' || log.salaryDeductionCode === 'absent')) {
+        Object.assign(updates, {
+          isLate: false,
+          lateMinutes: 0,
+          salaryDeductionFraction: 0,
+          salaryDeductionAmount: 0,
+          salaryDeductionCode: 'none',
+          salaryDeductionLabel: 'لا يوجد خصم - مأمورية ميدانية',
+          salaryDeductionApprovalStatus: 'none',
+          status: 'field_mission',
+        });
+      }
       
       // 1. Recalculate late arrival against approved late-arrival permission.
-      if (log.checkInTime && log.salaryDeductionCode !== 'absent') {
+      if (log.checkInTime && log.salaryDeductionCode !== 'absent' && !isFieldMission) {
         const latePerm = approvedPermsByUserId[userId]?.['late_arrival'];
         const baseStart = user.workSchedule?.startTime || policy.defaultStartTime || '09:00';
         const startMinutes = parseMinutes(baseStart, 9 * 60) + (latePerm?.durationMinutes || 0);
@@ -628,7 +696,7 @@ async function runDailyTasks() {
 
       // 2. Check if they forgot to checkout. The job runs after the completed day,
       // so employees had until 11 PM to check out from the location.
-      if (attendanceCheckoutPolicy.enabled && log.checkInTime && !log.checkOutTime) {
+      if (attendanceCheckoutPolicy.enabled && log.checkInTime && !log.checkOutTime && !isFieldMission) {
         const wasAlreadyDetected = Boolean(log.salaryDeductionDetectedAt);
         const currentFraction = updates.salaryDeductionFraction !== undefined ? updates.salaryDeductionFraction : log.salaryDeductionFraction;
 

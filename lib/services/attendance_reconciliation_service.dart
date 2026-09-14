@@ -132,6 +132,74 @@ class AttendanceReconciliationService {
     };
   }
 
+  Future<void> reconcileApprovedFieldMission({
+    required String userId,
+    required String dateKey,
+    String? employeeId,
+    String? employeeName,
+    String? department,
+    String? locationId,
+    String? locationName,
+    String? managerId,
+    String? missionId,
+  }) async {
+    final ref = _db.collection('attendance').doc('${userId}_$dateKey');
+    final doc = await ref.get();
+    if (doc.exists) {
+      final data = doc.data() ?? const <String, dynamic>{};
+      final hasRealCheckIn = data['checkInTime'] is Timestamp;
+      await ref.update({
+        ..._noDeductionPatch(),
+        'salaryDeductionLabel': 'لا يوجد خصم - مأمورية ميدانية',
+        if (!hasRealCheckIn) 'status': 'field_mission',
+        if (missionId != null) 'reconciledMissionId': missionId,
+        'deductionReconciledAt': FieldValue.serverTimestamp(),
+      });
+    } else {
+      var empId = employeeId ?? '';
+      var empName = employeeName ?? '';
+      var dept = department ?? '';
+      var locId = locationId ?? '';
+      var locName = locationName ?? '';
+      var mgrId = managerId ?? '';
+      if (empName.isEmpty) {
+        try {
+          final userSnap = await _db.collection('users').doc(userId).get();
+          if (userSnap.exists) {
+            final uData = userSnap.data() ?? const <String, dynamic>{};
+            empId = uData['employeeId'] as String? ?? empId;
+            empName = uData['displayName'] as String? ?? empName;
+            dept = uData['department'] as String? ?? dept;
+            locId = uData['locationId'] as String? ?? locId;
+            locName = uData['locationName'] as String? ?? locName;
+            mgrId = uData['managerId'] as String? ?? mgrId;
+          }
+        } catch (_) {}
+      }
+      await ref.set({
+        'userId': userId,
+        'employeeId': empId,
+        'employeeName': empName,
+        'department': dept,
+        'locationId': locId,
+        'locationName': locName,
+        'managerId': mgrId,
+        'date': dateKey,
+        'checkInTime': null,
+        'checkInLocation': const GeoPoint(0, 0),
+        'isWithinGeofence': true,
+        'status': 'field_mission',
+        ..._noDeductionPatch(),
+        'salaryDeductionLabel': 'لا يوجد خصم - مأمورية ميدانية',
+        'checkInMethod': 'field_mission_auto',
+        'checkoutPolicyEnabled': false,
+        if (missionId != null) 'reconciledMissionId': missionId,
+        'createdAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+    }
+  }
+
   Map<String, dynamic> _noDeductionPatch() => const {
     'isLate': false,
     'lateMinutes': 0,
