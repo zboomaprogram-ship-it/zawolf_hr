@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart' hide TextDirection;
 import '../../../theme/theme.dart';
+import '../../../components/wolf_button.dart';
 
 import '../domain/meeting_repository.dart';
 
@@ -300,10 +301,25 @@ class _MeetingRequestScreenState extends State<MeetingRequestScreen> {
                   ),
                   const SizedBox(height: 12),
                   OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: const Color(0xFF6366F1),
+                      side: BorderSide(
+                        color: const Color(0xFF6366F1).withValues(alpha: 0.6),
+                        width: 1.2,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(24),
+                      ),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 12,
+                      ),
+                    ),
                     onPressed: _pickDate,
-                    icon: const Icon(Icons.calendar_month),
+                    icon: const Icon(Icons.calendar_month, color: Color(0xFF6366F1)),
                     label: Text(
                       DateFormat('EEEE yyyy/MM/dd', 'ar').format(_date),
+                      style: const TextStyle(color: Color(0xFF6366F1), fontWeight: FontWeight.bold),
                     ),
                   ),
                   const SizedBox(height: 12),
@@ -311,15 +327,49 @@ class _MeetingRequestScreenState extends State<MeetingRequestScreen> {
                     children: [
                       Expanded(
                         child: OutlinedButton(
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: const Color(0xFF6366F1),
+                            side: BorderSide(
+                              color: const Color(0xFF6366F1).withValues(alpha: 0.6),
+                              width: 1.2,
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(24),
+                            ),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 14,
+                              vertical: 12,
+                            ),
+                          ),
                           onPressed: () => _pickTime(true),
-                          child: Text('من ${_from.format(context)}'),
+                          child: Text(
+                            'من ${_from.format(context)}',
+                            style: const TextStyle(color: Color(0xFF6366F1), fontWeight: FontWeight.bold),
+                          ),
                         ),
                       ),
                       const SizedBox(width: 8),
                       Expanded(
                         child: OutlinedButton(
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: const Color(0xFF6366F1),
+                            side: BorderSide(
+                              color: const Color(0xFF6366F1).withValues(alpha: 0.6),
+                              width: 1.2,
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(24),
+                            ),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 14,
+                              vertical: 12,
+                            ),
+                          ),
                           onPressed: () => _pickTime(false),
-                          child: Text('إلى ${_to.format(context)}'),
+                          child: Text(
+                            'إلى ${_to.format(context)}',
+                            style: const TextStyle(color: Color(0xFF6366F1), fontWeight: FontWeight.bold),
+                          ),
                         ),
                       ),
                     ],
@@ -346,19 +396,25 @@ class _MeetingRequestScreenState extends State<MeetingRequestScreen> {
                     ),
                   ),
                   const SizedBox(height: 16),
-                  FilledButton.icon(
+                  WolfButton(
                     onPressed: _saving ? null : _submit,
-                    icon:
-                        _saving
-                            ? const SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                            : const Icon(Icons.send),
-                    label: Text(
-                      _saving ? 'جارٍ الإرسال...' : 'إرسال طلب الاجتماع',
+                    text: _saving ? 'جارٍ الإرسال...' : 'إرسال طلب الاجتماع',
+                    secondaryText: 'SUBMIT MEETING REQUEST',
+                    gradient: LinearGradient(
+                      begin: AlignmentDirectional.centerStart,
+                      end: AlignmentDirectional.centerEnd,
+                      colors: [
+                        const Color(0xFF6366F1),
+                        Color.alphaBlend(
+                          Colors.white.withValues(alpha: 0.18),
+                          const Color(0xFF6366F1),
+                        ),
+                      ],
                     ),
+                    glowColor: const Color(0xFF6366F1),
+                    textColor: Colors.white,
+                    borderRadius: BorderRadius.circular(28),
+                    loading: _saving,
                   ),
                 ];
       body = widget.isEmbedded

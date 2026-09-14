@@ -10,6 +10,7 @@ import '../../domain/repositories/operational_request_repository.dart';
 import '../cubit/operational_request_detail_cubit.dart';
 import '../cubit/operational_request_submit_cubit.dart';
 import '../widgets/approval_journey.dart';
+import '../../../../components/wolf_button.dart';
 
 class OperationalRequestFormPage extends StatefulWidget {
   const OperationalRequestFormPage({
@@ -269,22 +270,48 @@ class _OperationalRequestFormPageState
         const SizedBox(height: 8),
       ],
       const SizedBox(height: 8),
-      OutlinedButton.icon(
-        onPressed:
-            _uploadingAttachment || widget.attachmentRepository == null
-            ? null
-            : _addAttachments,
-        icon: _uploadingAttachment
-            ? const SizedBox.square(
-                dimension: 18,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              )
-            : const Icon(Icons.attach_file_outlined),
-        label: Text(
-          _uploadingAttachment
-              ? 'جارٍ رفع المرفقات…'
-              : 'إرفاق ملفات داعمة',
-        ),
+      Builder(
+        builder: (context) {
+          final categoryColor =
+              _selectedCategory == OperationalRequestCategory.financial
+                  ? const Color(0xFFEA580C)
+                  : const Color(0xFF0EA5E9);
+          return OutlinedButton.icon(
+            style: OutlinedButton.styleFrom(
+              foregroundColor: categoryColor,
+              side: BorderSide(
+                color: categoryColor.withValues(alpha: 0.6),
+                width: 1.2,
+              ),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(28),
+              ),
+              padding: const EdgeInsets.symmetric(
+                horizontal: 16,
+                vertical: 12,
+              ),
+            ),
+            onPressed:
+                _uploadingAttachment || widget.attachmentRepository == null
+                ? null
+                : _addAttachments,
+            icon: _uploadingAttachment
+                ? SizedBox.square(
+                    dimension: 18,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: categoryColor,
+                    ),
+                  )
+                : Icon(Icons.attach_file_outlined, color: categoryColor),
+            label: Text(
+              _uploadingAttachment
+                  ? 'جارٍ رفع المرفقات…'
+                  : 'إرفاق ملفات داعمة',
+              style: TextStyle(color: categoryColor),
+            ),
+          );
+        },
       ),
       if (_attachments.isNotEmpty) ...[
         const SizedBox(height: 8),
@@ -325,38 +352,65 @@ class _OperationalRequestFormPageState
             widget.onSubmitted?.call();
           }
         },
-        builder: (context, state) => FilledButton(
-          onPressed:
-              state is OperationalRequestSubmitting ||
-                  _uploadingAttachment
-              ? null
-              : () {
-                  final requestedAmount = num.tryParse(amount.text);
-                  if (_requiresAmount && requestedAmount == null) {
-                    ScaffoldMessenger.of(context)
-                      ..hideCurrentSnackBar()
-                      ..showSnackBar(
-                        const SnackBar(
-                          content: Text('أدخل مبلغاً صحيحاً للطلب.'),
-                        ),
-                      );
-                    return;
-                  }
-                  context.read<OperationalRequestSubmitCubit>().submit(
-                    requestType: type,
-                    businessReason: reason.text,
-                    executionDate: DateTime.now(),
-                    amount: _requiresAmount ? requestedAmount : null,
-                    currency: _requiresAmount ? 'EGP' : null,
-                    attachments: _attachments,
-                  );
-                },
-          child: Text(
-            state is OperationalRequestSubmitting
-                ? 'جارٍ الحفظ…'
-                : 'إرسال الطلب',
-          ),
-        ),
+        builder: (context, state) {
+          final isSubmitting = state is OperationalRequestSubmitting;
+          final categoryColor =
+              _selectedCategory == OperationalRequestCategory.financial
+                  ? const Color(0xFFEA580C)
+                  : const Color(0xFF0EA5E9);
+          final effectiveGradient = LinearGradient(
+            begin: AlignmentDirectional.centerStart,
+            end: AlignmentDirectional.centerEnd,
+            colors: [
+              categoryColor,
+              Color.alphaBlend(
+                Colors.white.withValues(alpha: 0.18),
+                categoryColor,
+              ),
+            ],
+          );
+          final textColor =
+              categoryColor.computeLuminance() > 0.45
+                  ? const Color(0xFF0F172A)
+                  : Colors.white;
+
+          return WolfButton(
+            onPressed:
+                isSubmitting || _uploadingAttachment
+                    ? null
+                    : () {
+                        final requestedAmount = num.tryParse(amount.text);
+                        if (_requiresAmount && requestedAmount == null) {
+                          ScaffoldMessenger.of(context)
+                            ..hideCurrentSnackBar()
+                            ..showSnackBar(
+                              const SnackBar(
+                                content: Text('أدخل مبلغاً صحيحاً للطلب.'),
+                              ),
+                            );
+                          return;
+                        }
+                        context.read<OperationalRequestSubmitCubit>().submit(
+                          requestType: type,
+                          businessReason: reason.text,
+                          executionDate: DateTime.now(),
+                          amount: _requiresAmount ? requestedAmount : null,
+                          currency: _requiresAmount ? 'EGP' : null,
+                          attachments: _attachments,
+                        );
+                      },
+            text: isSubmitting ? 'جارٍ الحفظ…' : 'إرسال الطلب',
+            secondaryText:
+                _selectedCategory == OperationalRequestCategory.financial
+                    ? 'SUBMIT FINANCIAL REQUEST'
+                    : 'SUBMIT OPERATIONAL REQUEST',
+            gradient: effectiveGradient,
+            glowColor: categoryColor,
+            textColor: textColor,
+            borderRadius: BorderRadius.circular(28),
+            loading: isSubmitting,
+          );
+        },
       ),
     ];
 
