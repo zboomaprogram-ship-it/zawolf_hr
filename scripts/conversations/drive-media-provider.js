@@ -20,8 +20,6 @@ function progress(response, total) {
 function createDriveMediaProvider({request}) {
   const send = (options) => request({timeout:30000,maxRedirects:0,retry:false,...options});
   return {
-    name: 'google_workspace',
-    providerFor: () => 'google_workspace',
     async allocateId() {
       const r=await send({method:'GET',url:`${API}/files/generateIds`,params:{count:1,space:'drive',type:'files'}});
       const id=r.data?.ids?.[0];

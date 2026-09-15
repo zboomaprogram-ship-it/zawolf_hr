@@ -185,7 +185,27 @@ function createGoogleSheetsIntegration({
     const client = typeof selectedAuth.getClient === 'function'
       ? await selectedAuth.getClient()
       : selectedAuth;
-    return client.request(options);
+    try {
+      return await client.request(options);
+    } catch (error) {
+      const oauthError = String(
+        error?.response?.data?.error || error?.code || error?.message || '',
+      ).toLowerCase();
+      if (!useDriveUploadOAuth || !driveUploadAuth ||
+          !oauthError.includes('invalid_grant')) {
+        throw error;
+      }
+      // A revoked personal OAuth token must not break a Shared Drive that is
+      // already assigned to the service account. This remains Google Drive;
+      // it only changes which server credential performs the same operation.
+      console.warn(
+        'Google Drive OAuth grant is invalid; retrying with the configured service account.',
+      );
+      const fallbackClient = typeof auth.getClient === 'function'
+        ? await auth.getClient()
+        : auth;
+      return fallbackClient.request(options);
+    }
   }
 
   async function readRows({ force = false } = {}) {

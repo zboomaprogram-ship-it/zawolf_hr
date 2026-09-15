@@ -160,6 +160,36 @@ test('uses the Drive OAuth account only for governed attachment uploads', async 
   assert.equal(driveOAuthRequests.length, 1);
 });
 
+test('revoked Drive OAuth falls back to the Shared Drive service account', async () => {
+  const serviceRequests = [];
+  const integration = createGoogleSheetsIntegration({
+    env: {},
+    authClient: {
+      async request(options) {
+        serviceRequests.push(options);
+        return {data: {id: 'service-account-drive-file'}};
+      },
+    },
+    driveUploadAuthClient: {
+      async request() {
+        const error = new Error('invalid_grant');
+        error.response = {data: {error: 'invalid_grant'}};
+        throw error;
+      },
+    },
+  });
+
+  const uploaded = await integration.uploadWorkspaceDriveFile({
+    parentFolderId: '1dhO2ORwDH5Ue9FAMfo3LLer_Dgj70ck_',
+    name: 'chat-proof.txt',
+    mimeType: 'text/plain',
+    contentsBase64: 'c2FmZQ==',
+    useDriveUploadOAuth: true,
+  });
+  assert.equal(uploaded.id, 'service-account-drive-file');
+  assert.equal(serviceRequests.length, 1);
+});
+
 test('downloads only files inside the configured Drive folder', async () => {
   const requests = [];
   const authClient = {

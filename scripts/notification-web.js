@@ -176,7 +176,7 @@ const {
 } = require('./request-approval-routing');
 
 const port = Number(process.env.PORT || 3000);
-const notificationRuntimeRelease = '2026-09-15-chat-storage-permission-fix-1';
+const notificationRuntimeRelease = '2026-09-15-chat-google-drive-fix-1';
 const dispatchSecret = process.env.NOTIFICATION_DISPATCH_SECRET || '';
 const defaultGoogleWorkspaceOrigins = [
   'https://zawolf-hr-system-60317.web.app',
@@ -253,7 +253,6 @@ let notificationListenerOwner = false;
 let conversationOutboxUnsubscribe = null;
 let runtimeLease = null;
 let googleSheetsIntegration = null;
-let conversationMediaProvider = null;
 const googleSheetsRoleCache = new Map();
 const GOOGLE_SHEETS_ALLOWED_ROLES = new Set([
   'hr',
@@ -2845,22 +2844,6 @@ async function ensureConversationAttachmentsFolder(db) {
   return String(attachments.id || '');
 }
 
-function getConversationMediaProvider() {
-  if (conversationMediaProvider) return conversationMediaProvider;
-  const drive = getGoogleSheetsIntegration().createConversationMediaProvider();
-  if (String(process.env.CONVERSATION_MEDIA_PROVIDER || 'firebase_storage') === 'google_drive') {
-    conversationMediaProvider = drive;
-    return conversationMediaProvider;
-  }
-  const firebase = require('./conversations/firebase-storage-media-provider')
-    .createFirebaseStorageMediaProvider({
-      bucket: admin.storage(initializeFirebase()).bucket(),
-    });
-  conversationMediaProvider = require('./conversations/hybrid-media-provider')
-    .createHybridMediaProvider({primary: firebase, legacy: drive});
-  return conversationMediaProvider;
-}
-
 // Request files are deliberately separated from chat files.  The app only
 // receives an opaque attachment id; the Drive id stays server-side in the
 // workspaceResourceSecrets collection.
@@ -2968,7 +2951,7 @@ async function handleConversationRequest(req, res, url) {
     return require('./conversations/router').handleRichConversationRequest({
       req, res, url, actor, db, admin, readJsonBody, sendJson,
       enabled: Boolean(actor && isPhase007FlagEnabled('conversations_rich_chat_v1', phase007FlagConfig, actor.uid)),
-      getMediaProvider: () => getConversationMediaProvider(),
+      getMediaProvider: () => getGoogleSheetsIntegration().createConversationMediaProvider(),
       ensureFolder: () => ensureConversationAttachmentsFolder(db),
       triggerPushDispatch: () => schedulePushDispatch('conversation_message', 0),
     });
@@ -4203,15 +4186,6 @@ const server = http.createServer(async (req, res) => {
             process.env.GOOGLE_DRIVE_OAUTH_REFRESH_TOKEN,
           ),
         },
-      },
-      conversationMedia: {
-        provider: String(
-          process.env.CONVERSATION_MEDIA_PROVIDER || 'firebase_storage',
-        ),
-        firebaseStorageBucket: String(
-          process.env.FIREBASE_STORAGE_BUCKET ||
-          initializeFirebase().options.storageBucket || '',
-        ),
       },
       salesAnalytics: salesAnalyticsHealth(),
       googleWorkspace: {

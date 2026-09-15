@@ -48,9 +48,6 @@ but causes Company Files requests to fail with a module-not-found error.
 - `ONESIGNAL_REST_API_KEY`: OneSignal REST API key
 - `NOTIFICATION_DISPATCH_SECRET`: a long private value used by protected routes
 - `SALES_API_KEY`: Sales Analytics API bearer key
-- `FIREBASE_STORAGE_BUCKET`: optional Firebase Storage bucket override. Chat
-  attachments default to the bucket configured for `FIREBASE_SERVICE_ACCOUNT`
-  (normally `<project-id>.firebasestorage.app`).
 
 For the optional private Google Sheets test, also set:
 
@@ -100,6 +97,12 @@ of, the attachment folder and grant the Google Drive scope. Keep the OAuth
 consent screen in Production before going live: a Testing consent screen issues
 refresh tokens that expire after seven days. Enter the three values directly in
 Hostinger and never add them to a ZIP file, source code, or chat message.
+
+If Hostinger logs `invalid_grant`, generate a new refresh token and replace
+`GOOGLE_DRIVE_OAUTH_REFRESH_TOKEN`. The client ID and client secret normally
+remain unchanged. When the configured attachment folder is in a Google Shared
+Drive and the service account is a Content manager, the runtime automatically
+falls back to that service account if the personal OAuth grant is revoked.
 
 For uploads, the root and attachment folders must be inside a **Google Shared
 Drive**, not a personal "My Drive" folder shared with the service account. A
@@ -151,10 +154,6 @@ either credential in Flutter, Git, or a downloadable ZIP. See
 
 ## Optional environment variables
 
-- `CONVERSATION_MEDIA_PROVIDER=firebase_storage` (default). New chat images,
-  files, and voice notes use Firebase Storage so Google Drive quota cannot stop
-  chat delivery. Existing Drive attachments remain readable. For immediate
-  rollback, set this value to `google_drive` and restart Hostinger.
 - `NOTIFICATION_DISPATCH_BATCH_SIZE=100`
 - `NOTIFICATION_DISPATCH_PER_USER_LIMIT=20`
 - `NOTIFICATION_DISPATCH_MAX_ATTEMPTS=5`

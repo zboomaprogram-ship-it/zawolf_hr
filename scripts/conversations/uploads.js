@@ -111,10 +111,10 @@ async function handleMedia({req,res,db,actor,channel,parts,payload,sendJson,prov
     }
     let secret=(await secretRef.get()).data();
     if(!secret) {
-      const folderId=provider.containerId||await ensureFolder();
+      const folderId=await ensureFolder();
       if(!folderId)throw failure('drive_upload_not_ready',503);
       const fileId=await provider.allocateId();
-      secret={externalId:fileId,parentExternalId:folderId,provider:provider.providerFor?.(fileId)||provider.name||'google_workspace'};
+      secret={externalId:fileId,parentExternalId:folderId,provider:'google_workspace'};
       await secretRef.set(secret);
     }
     // Resolve provider-success / response-loss before creating any new session.

@@ -47,8 +47,6 @@ function initializeFirebase() {
 
   const app = admin.initializeApp({
     credential: admin.cert(serviceAccount),
-    storageBucket: process.env.FIREBASE_STORAGE_BUCKET ||
-      `${serviceAccount.project_id}.firebasestorage.app`,
   });
 
   console.log(`Using Firebase service account: ${serviceAccount.client_email}`);
