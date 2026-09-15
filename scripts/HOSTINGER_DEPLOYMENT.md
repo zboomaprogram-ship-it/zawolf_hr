@@ -48,6 +48,9 @@ but causes Company Files requests to fail with a module-not-found error.
 - `ONESIGNAL_REST_API_KEY`: OneSignal REST API key
 - `NOTIFICATION_DISPATCH_SECRET`: a long private value used by protected routes
 - `SALES_API_KEY`: Sales Analytics API bearer key
+- `FIREBASE_STORAGE_BUCKET`: optional Firebase Storage bucket override. Chat
+  attachments default to the bucket configured for `FIREBASE_SERVICE_ACCOUNT`
+  (normally `<project-id>.firebasestorage.app`).
 
 For the optional private Google Sheets test, also set:
 
@@ -148,6 +151,10 @@ either credential in Flutter, Git, or a downloadable ZIP. See
 
 ## Optional environment variables
 
+- `CONVERSATION_MEDIA_PROVIDER=firebase_storage` (default). New chat images,
+  files, and voice notes use Firebase Storage so Google Drive quota cannot stop
+  chat delivery. Existing Drive attachments remain readable. For immediate
+  rollback, set this value to `google_drive` and restart Hostinger.
 - `NOTIFICATION_DISPATCH_BATCH_SIZE=100`
 - `NOTIFICATION_DISPATCH_PER_USER_LIMIT=20`
 - `NOTIFICATION_DISPATCH_MAX_ATTEMPTS=5`
