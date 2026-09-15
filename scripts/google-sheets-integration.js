@@ -1,4 +1,4 @@
-const { GoogleAuth, OAuth2Client } = require('google-auth-library');
+const { GoogleAuth, JWT, OAuth2Client } = require('google-auth-library');
 const crypto = require('node:crypto');
 
 const SHEETS_SCOPE = 'https://www.googleapis.com/auth/spreadsheets';
@@ -150,21 +150,30 @@ function createGoogleSheetsIntegration({
   env = process.env,
   authClient,
   driveUploadAuthClient,
+  delegatedDriveAuthClient,
 } = {}) {
   const config = integrationConfig(env);
   const oauthClientId = String(env.GOOGLE_DRIVE_OAUTH_CLIENT_ID || '').trim();
   const oauthClientSecret = String(env.GOOGLE_DRIVE_OAUTH_CLIENT_SECRET || '').trim();
   const oauthRefreshToken = String(env.GOOGLE_DRIVE_OAUTH_REFRESH_TOKEN || '').trim();
+  const delegatedUserEmail = String(
+    env.GOOGLE_DRIVE_DELEGATED_USER_EMAIL || '',
+  ).trim().toLowerCase();
+  if (delegatedUserEmail &&
+      !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(delegatedUserEmail)) {
+    throw new Error('GOOGLE_DRIVE_DELEGATED_USER_EMAIL is invalid.');
+  }
 
   // Reports and Sheets continue to use the restricted service account.  A
   // personal Google Drive can instead provide an OAuth account only for file
   // uploads/downloads, so its storage quota is used without granting it
   // access to HR Sheets APIs.
   let auth;
+  let credentials = null;
   if (authClient) {
     auth = authClient;
   } else {
-    const credentials = parseServiceAccount(env.GOOGLE_SHEETS_SERVICE_ACCOUNT || '');
+    credentials = parseServiceAccount(env.GOOGLE_SHEETS_SERVICE_ACCOUNT || '');
     auth = new GoogleAuth({
       credentials,
       scopes: [SHEETS_SCOPE, DRIVE_SCOPE],
@@ -174,6 +183,24 @@ function createGoogleSheetsIntegration({
   if (!driveUploadAuth && oauthClientId && oauthClientSecret && oauthRefreshToken) {
     driveUploadAuth = new OAuth2Client(oauthClientId, oauthClientSecret);
     driveUploadAuth.setCredentials({ refresh_token: oauthRefreshToken });
+  }
+  let delegatedDriveAuth = delegatedDriveAuthClient || null;
+  if (!delegatedDriveAuth && delegatedUserEmail) {
+    credentials = credentials || parseServiceAccount(
+      env.GOOGLE_SHEETS_SERVICE_ACCOUNT || '',
+    );
+    delegatedDriveAuth = new JWT({
+      email: credentials.client_email,
+      key: credentials.private_key,
+      scopes: [DRIVE_SCOPE],
+      subject: delegatedUserEmail,
+    });
+  }
+  // Domain delegation is a valid primary Drive identity too. It lets a
+  // Workspace user own files without relying on a personal OAuth refresh
+  // token or on the quota-less service-account identity.
+  if (!driveUploadAuth && delegatedDriveAuth) {
+    driveUploadAuth = delegatedDriveAuth;
   }
   let cachedRows = null;
   let cacheExpiresAt = 0;
@@ -195,16 +222,35 @@ function createGoogleSheetsIntegration({
           !oauthError.includes('invalid_grant')) {
         throw error;
       }
-      // A revoked personal OAuth token must not break a Shared Drive that is
-      // already assigned to the service account. This remains Google Drive;
-      // it only changes which server credential performs the same operation.
+      // Prefer an impersonated Workspace user when configured. Otherwise a
+      // service account can only create files in an actual Shared Drive.
       console.warn(
-        'Google Drive OAuth grant is invalid; retrying with the configured service account.',
+        delegatedDriveAuth
+          ? 'Google Drive OAuth grant is invalid; retrying as the delegated Workspace user.'
+          : 'Google Drive OAuth grant is invalid; retrying with the configured service account for Shared Drive access.',
       );
-      const fallbackClient = typeof auth.getClient === 'function'
-        ? await auth.getClient()
-        : auth;
-      return fallbackClient.request(options);
+      const fallbackAuth = delegatedDriveAuth || auth;
+      const fallbackClient = typeof fallbackAuth.getClient === 'function'
+        ? await fallbackAuth.getClient()
+        : fallbackAuth;
+      try {
+        return await fallbackClient.request(options);
+      } catch (fallbackError) {
+        const message = String(
+          fallbackError?.response?.data?.error?.message ||
+          fallbackError?.response?.data?.error ||
+          fallbackError?.message || '',
+        );
+        if (/service accounts do not have storage quota/i.test(message)) {
+          const configurationError = new Error(
+            'Google Drive upload identity has no storage quota. Renew GOOGLE_DRIVE_OAUTH_REFRESH_TOKEN, configure GOOGLE_DRIVE_DELEGATED_USER_EMAIL with domain-wide delegation, or move the attachment folder to a Shared Drive.',
+          );
+          configurationError.code = 'drive_storage_quota_unavailable';
+          configurationError.cause = fallbackError;
+          throw configurationError;
+        }
+        throw fallbackError;
+      }
     }
   }
 

@@ -176,7 +176,7 @@ const {
 } = require('./request-approval-routing');
 
 const port = Number(process.env.PORT || 3000);
-const notificationRuntimeRelease = '2026-09-15-chat-google-drive-fix-1';
+const notificationRuntimeRelease = '2026-09-15-chat-google-drive-auth-fix-2';
 const dispatchSecret = process.env.NOTIFICATION_DISPATCH_SECRET || '';
 const defaultGoogleWorkspaceOrigins = [
   'https://zawolf-hr-system-60317.web.app',
@@ -4184,6 +4184,9 @@ const server = http.createServer(async (req, res) => {
             process.env.GOOGLE_DRIVE_OAUTH_CLIENT_ID &&
             process.env.GOOGLE_DRIVE_OAUTH_CLIENT_SECRET &&
             process.env.GOOGLE_DRIVE_OAUTH_REFRESH_TOKEN,
+          ),
+          delegatedUserConfigured: Boolean(
+            process.env.GOOGLE_DRIVE_DELEGATED_USER_EMAIL,
           ),
         },
       },

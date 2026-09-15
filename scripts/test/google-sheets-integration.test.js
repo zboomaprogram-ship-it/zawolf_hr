@@ -190,6 +190,73 @@ test('revoked Drive OAuth falls back to the Shared Drive service account', async
   assert.equal(serviceRequests.length, 1);
 });
 
+test('revoked Drive OAuth prefers a delegated Workspace user', async () => {
+  const serviceRequests = [];
+  const delegatedRequests = [];
+  const integration = createGoogleSheetsIntegration({
+    env: {},
+    authClient: {
+      async request(options) {
+        serviceRequests.push(options);
+        return {data: {id: 'service-account-file'}};
+      },
+    },
+    driveUploadAuthClient: {
+      async request() {
+        const error = new Error('invalid_grant');
+        error.response = {data: {error: 'invalid_grant'}};
+        throw error;
+      },
+    },
+    delegatedDriveAuthClient: {
+      async request(options) {
+        delegatedRequests.push(options);
+        return {data: {id: 'delegated-user-file'}};
+      },
+    },
+  });
+
+  const uploaded = await integration.uploadWorkspaceDriveFile({
+    parentFolderId: '1dhO2ORwDH5Ue9FAMfo3LLer_Dgj70ck_',
+    name: 'voice.wav',
+    mimeType: 'audio/wav',
+    contentsBase64: 'UklGRg==',
+    useDriveUploadOAuth: true,
+  });
+  assert.equal(uploaded.id, 'delegated-user-file');
+  assert.equal(delegatedRequests.length, 1);
+  assert.equal(serviceRequests.length, 0);
+});
+
+test('Drive quota failure reports the required Google configuration', async () => {
+  const integration = createGoogleSheetsIntegration({
+    env: {},
+    authClient: {
+      async request() {
+        throw new Error('Service Accounts do not have storage quota.');
+      },
+    },
+    driveUploadAuthClient: {
+      async request() {
+        const error = new Error('invalid_grant');
+        error.response = {data: {error: 'invalid_grant'}};
+        throw error;
+      },
+    },
+  });
+
+  await assert.rejects(
+    integration.uploadWorkspaceDriveFile({
+      parentFolderId: '1dhO2ORwDH5Ue9FAMfo3LLer_Dgj70ck_',
+      name: 'voice.wav',
+      mimeType: 'audio/wav',
+      contentsBase64: 'UklGRg==',
+      useDriveUploadOAuth: true,
+    }),
+    (error) => error.code === 'drive_storage_quota_unavailable',
+  );
+});
+
 test('downloads only files inside the configured Drive folder', async () => {
   const requests = [];
   const authClient = {

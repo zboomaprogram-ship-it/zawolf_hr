@@ -104,6 +104,17 @@ remain unchanged. When the configured attachment folder is in a Google Shared
 Drive and the service account is a Content manager, the runtime automatically
 falls back to that service account if the personal OAuth grant is revoked.
 
+Google Workspace administrators may avoid personal refresh tokens by enabling
+domain-wide delegation on the service account, authorizing the Drive scope
+`https://www.googleapis.com/auth/drive` in the Admin console, and setting:
+
+- `GOOGLE_DRIVE_DELEGATED_USER_EMAIL`: an active Workspace user that owns or
+  can edit the attachment folder and has available Drive storage.
+
+The runtime then performs attachment operations as that user. Do not set this
+value until domain-wide delegation and the Drive scope are authorized; merely
+adding the email does not grant impersonation.
+
 For uploads, the root and attachment folders must be inside a **Google Shared
 Drive**, not a personal "My Drive" folder shared with the service account. A
 service account can read a personal shared folder but has no personal Drive
