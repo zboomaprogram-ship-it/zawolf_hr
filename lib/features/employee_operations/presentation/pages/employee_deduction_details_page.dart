@@ -205,7 +205,7 @@ final class _EmployeeDeductionDetailsPageState
         requestedCheckIn: requested,
         reason: reasonController.text,
         operationId:
-            'attendance-correction:${item.attendanceId}:${requested.toUtc().millisecondsSinceEpoch}',
+            'attendance-correction_${item.attendanceId}_${requested.toUtc().millisecondsSinceEpoch}',
       );
       await _correctionCubit.submit(
         employeeUserId: widget.employeeUserId,

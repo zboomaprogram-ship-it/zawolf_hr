@@ -89,6 +89,7 @@ class AttendanceCorrectionRequestService {
     final duplicate =
         await _db
             .collection('attendanceCorrectionRequests')
+            .where('userId', isEqualTo: employee.uid)
             .where('attendanceId', isEqualTo: attendance.attendanceId)
             .get();
     if (duplicate.docs.any((doc) => doc.data()['status'] == 'pending_hr')) {

@@ -25,4 +25,17 @@ void main() {
       throwsArgumentError,
     );
   });
+
+  test('correction rejects operation ids the backend cannot accept', () {
+    expect(
+      () => AttendanceCorrectionDraft.create(
+        attendanceId: 'user-1_2026-08-20',
+        originalCheckIn: DateTime(2026, 8, 20, 9, 40),
+        requestedCheckIn: DateTime(2026, 8, 20, 9),
+        reason: 'ازدحام مروري شديد',
+        operationId: 'attendance-correction:user-1:2026-08-20',
+      ),
+      throwsArgumentError,
+    );
+  });
 }

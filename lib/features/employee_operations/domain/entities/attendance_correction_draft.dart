@@ -9,7 +9,8 @@ final class AttendanceCorrectionDraft {
     required String operationId,
   }) {
     final cleanReason = reason.trim();
-    if (attendanceId.trim().isEmpty || operationId.trim().isEmpty) {
+    if (!RegExp(r'^[A-Za-z0-9_-]{3,180}$').hasMatch(attendanceId.trim()) ||
+        !RegExp(r'^[A-Za-z0-9_-]{8,180}$').hasMatch(operationId.trim())) {
       throw ArgumentError('سجل الحضور أو معرّف العملية غير صالح.');
     }
     if (cleanReason.length < 5) {

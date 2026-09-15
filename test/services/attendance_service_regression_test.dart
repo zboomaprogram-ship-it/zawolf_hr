@@ -74,6 +74,30 @@ void main() {
   );
 
   test(
+    'attendance correction duplicate lookup stays scoped to the employee',
+    () {
+      final source = File(
+        'lib/services/attendance_correction_request_service.dart',
+      ).readAsStringSync();
+      final duplicateLookup = source.substring(
+        source.indexOf('final duplicate ='),
+        source.indexOf("final ref = _db.collection('attendanceCorrectionRequests')"),
+      );
+
+      // Firestore owner rules cannot authorize a collection query unless the
+      // query itself constrains userId to the authenticated employee.
+      expect(
+        duplicateLookup,
+        contains(".where('userId', isEqualTo: employee.uid)"),
+      );
+      expect(
+        duplicateLookup,
+        contains(".where('attendanceId', isEqualTo: attendance.attendanceId)"),
+      );
+    },
+  );
+
+  test(
     'security plug-in outages do not lock out a valid attendance account',
     () {
       final source =
