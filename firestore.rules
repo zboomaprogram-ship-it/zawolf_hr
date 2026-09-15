@@ -184,14 +184,19 @@ service cloud.firestore {
       let managerIds = resource.data.get('managerIds', []);
       let currentIndex = resource.data.get('managerApprovalIndex', 0);
       let nextIndex = currentIndex + 1;
-      return managerIds.size() == 0
+      return (managerIds.size() == 0
+          && (resource.data.get('managerId', '') == uid()
+            || resource.data.get('managerId', '') == employeeCode())
+          && request.resource.data.status in ['approved', 'pending_hr', 'rejected'])
         || (
           currentIndex >= 0
           && currentIndex < managerIds.size()
+          && resource.data.get('managerId', '') == managerIds[currentIndex]
+          && managerIds.removeAll([managerIds[currentIndex]]).size()
+            == managerIds.size() - 1
           && (
             managerIds[currentIndex] == uid()
             || managerIds[currentIndex] == employeeCode()
-            || isSuperAdmin()
           )
           && (
             request.resource.data.status == 'rejected'
@@ -928,6 +933,7 @@ service cloud.firestore {
     function leaveHrReview() {
       return isHR()
         && uid() != resource.data.userId
+        && resource.data.get('reviewedBy', '') != uid()
         && (
           recipientDoc(resource.data.userId).get('role', '') != 'super_admin'
           || isHR()
@@ -947,14 +953,15 @@ service cloud.firestore {
     }
     function leaveManagerReview() {
       return canActAsApprovalManager()
-        && (isCurrentApprovalManager() || isSuperAdmin())
+        && isCurrentApprovalManager()
         && sequentialManagerDecision()
         && resource.data.status == 'pending_manager'
         && request.resource.data.diff(resource.data).affectedKeys()
           .hasOnly([
             'status', 'reviewedBy', 'reviewedAt', 'reviewerComment', 'reviewerName', 'isRead',
             'managerId', 'managerName', 'managerApprovalIndex',
-            'managerApprovalTrail', 'approvalHistory'
+            'managerApprovalTrail', 'approvalHistory',
+            'finalApproverId', 'finalApproverName', 'finalApprovalAt'
           ])
         && request.resource.data.status in ['pending_manager', 'pending_hr', 'approved', 'rejected']
         && request.resource.data.reviewedBy == uid();
@@ -1015,6 +1022,7 @@ service cloud.firestore {
     function permissionHrReview() {
       return isHR()
         && uid() != resource.data.userId
+        && resource.data.get('reviewedBy', '') != uid()
         && (
           recipientDoc(resource.data.userId).get('role', '') != 'super_admin'
           || isHR()
@@ -1026,7 +1034,9 @@ service cloud.firestore {
             'hrReviewedBy', 'hrReviewedAt', 'hrReviewerComment',
             'managerId', 'managerName', 'managerApprovalIndex',
             'salaryDeductionApprovalStatus', 'approvalHistory',
-            'finalApproverId', 'finalApproverName', 'finalApprovalAt'
+            'finalApproverId', 'finalApproverName', 'finalApprovalAt',
+            'checkoutPolicyEnabled', 'checkoutPolicyRevision',
+            'checkoutPolicyEvaluatedAt', 'checkoutPolicyDecisionPoint'
           ])
         && request.resource.data.status in ['pending_manager', 'approved', 'rejected']
         && request.resource.data.reviewedBy == uid()
@@ -1039,7 +1049,7 @@ service cloud.firestore {
     }
     function permissionManagerReview() {
       return canActAsApprovalManager()
-        && (isCurrentApprovalManager() || isSuperAdmin())
+        && isCurrentApprovalManager()
         && sequentialManagerDecision()
         && resource.data.status == 'pending_manager'
         && request.resource.data.diff(resource.data).affectedKeys()
@@ -1047,7 +1057,9 @@ service cloud.firestore {
             'status', 'reviewedBy', 'reviewedAt', 'reviewerComment', 'reviewerName', 'isRead',
             'managerReviewedBy', 'managerReviewedAt', 'managerReviewerComment',
             'managerId', 'managerName', 'managerApprovalIndex', 'managerApprovalTrail',
-            'approvalHistory', 'finalApproverId', 'finalApproverName', 'finalApprovalAt'
+            'approvalHistory', 'finalApproverId', 'finalApproverName', 'finalApprovalAt',
+            'checkoutPolicyEnabled', 'checkoutPolicyRevision',
+            'checkoutPolicyEvaluatedAt', 'checkoutPolicyDecisionPoint'
           ])
         && request.resource.data.status in ['pending_manager', 'pending_hr', 'approved', 'rejected']
         && request.resource.data.reviewedBy == uid()
@@ -1857,8 +1869,7 @@ service cloud.firestore {
         ) ||
         leaveHrReview() ||
         leaveManagerReview() ||
-        leaveCeoReview() ||
-        (isHR() || isCurrentApprovalManager())
+        leaveCeoReview()
       );
       allow delete: if isAuth() && isActive() && (isHR() || canActAsApprovalManager());
     }
@@ -1954,8 +1965,7 @@ service cloud.firestore {
           && request.resource.data.cancelledBy == uid()
         ) ||
         permissionHrReview() ||
-        permissionManagerReview() ||
-        (isHR() || isCurrentApprovalManager())
+        permissionManagerReview()
       );
       allow delete: if isAuth() && isActive() && (isHR() || canActAsApprovalManager());
     }

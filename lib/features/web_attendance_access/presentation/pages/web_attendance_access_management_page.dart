@@ -30,7 +30,7 @@ class WebAttendanceAccessManagementPage extends StatelessWidget {
                 padding: const EdgeInsets.all(16),
                 children: [
                   const Text(
-                    'يسمح التصريح بتسجيل الحضور والانصراف من الويب فقط. لا يلغي الموقع أو الإجازات أو أيام العطلات أو أوقات الدوام.',
+                    'يسمح التصريح بتسجيل الحضور والانصراف من الويب. خيار «دون موقع» يلغي طلب GPS ونطاق الفرع لهذا الموظف على الويب فقط؛ تبقى الإجازات والعطلات وأوقات الدوام سارية.',
                     style: TextStyle(color: ZaWolfColors.textSecondary),
                   ),
                   if (state.error != null)
@@ -97,14 +97,15 @@ class WebAttendanceAccessManagementPage extends StatelessWidget {
 
   static String _details(WebAttendanceAccessGrant grant) =>
       grant.permanent
-          ? 'تصريح دائم • ${grant.employeeCode}'
-          : 'من ${grant.startDate ?? ''} إلى ${grant.endDate ?? ''} • ${grant.employeeCode}';
+          ? 'تصريح دائم • ${grant.employeeCode}${grant.allowAnyLocation ? ' • دون موقع' : ''}'
+          : 'من ${grant.startDate ?? ''} إلى ${grant.endDate ?? ''} • ${grant.employeeCode}${grant.allowAnyLocation ? ' • دون موقع' : ''}';
 
   static Future<void> _editGrant(BuildContext context) async {
     final cubit = context.read<WebAttendanceAccessCubit>();
     final state = cubit.state;
     WebAttendanceEmployee? selected;
     var permanent = false;
+    var allowAnyLocation = false;
     var start = DateTime.now();
     var end = DateTime.now().add(const Duration(days: 30));
 
@@ -146,6 +147,18 @@ class WebAttendanceAccessManagementPage extends StatelessWidget {
                             title: const Text('تصريح دائم'),
                             onChanged:
                                 (value) => setModal(() => permanent = value),
+                          ),
+                          SwitchListTile(
+                            value: allowAnyLocation,
+                            title: const Text(
+                              'السماح بالحضور دون موقع على الويب',
+                            ),
+                            subtitle: const Text(
+                              'لا يُطلب GPS ولا يُطبّق نطاق الفرع. لا يؤثر على حضور الجوال.',
+                            ),
+                            onChanged:
+                                (value) =>
+                                    setModal(() => allowAnyLocation = value),
                           ),
                           if (!permanent) ...[
                             ListTile(
@@ -203,6 +216,7 @@ class WebAttendanceAccessManagementPage extends StatelessWidget {
                                 final ok = await cubit.save(
                                   employeeId: selected!.id,
                                   scope: permanent ? 'permanent' : 'period',
+                                  allowAnyLocation: allowAnyLocation,
                                   startDate: permanent ? null : _date(start),
                                   endDate: permanent ? null : _date(end),
                                 );

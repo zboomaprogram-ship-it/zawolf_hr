@@ -3,7 +3,14 @@ const assert = require('node:assert/strict');
 const {
   effective,
   assertWebAttendanceAccess,
+  validateGrantInput,
 } = require('../web-attendance-access');
+
+test('web attendance anywhere requires an explicit grant flag', () => {
+  assert.equal(validateGrantInput({ employeeId: 'u1', scope: 'permanent' }).allowAnyLocation, false);
+  assert.equal(validateGrantInput({ employeeId: 'u1', scope: 'permanent', allowAnyLocation: true }).allowAnyLocation, true);
+  assert.equal(validateGrantInput({ employeeId: 'u1', scope: 'permanent', allowAnyLocation: 'true' }).allowAnyLocation, false);
+});
 
 test('web attendance access: period boundaries are inclusive in Cairo date', () => {
   const grant = { status: 'active', scope: 'period', startDate: '2026-09-13', endDate: '2026-09-15' };

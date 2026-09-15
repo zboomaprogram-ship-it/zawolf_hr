@@ -7,7 +7,7 @@
 
 ## Purpose
 
-Attendance is normally recorded through the mobile application. This feature creates a narrowly scoped, auditable exception for an individual employee to check in and check out from the web application. It does not change attendance, leave, schedule, payroll, discipline, location, or approval rules.
+Attendance is normally recorded through the mobile application. This feature creates an auditable exception for an individual employee to check in and check out from the web application. HR may additionally choose an explicit web-only exemption from browser GPS and branch geofence. It does not change mobile attendance, leave, schedule, payroll, discipline, or approval rules.
 
 ## User Scenarios & Testing
 
@@ -40,7 +40,8 @@ The attendance gateway verifies an active web-access grant before accepting a we
 
 1. **Given** a valid authenticated web action from an employee without an active grant, **when** it reaches the gateway, **then** the gateway rejects it without creating or changing an attendance record.
 2. **Given** an active grant that was revoked or expired, **when** a previously open browser submits an action, **then** the gateway rejects it immediately.
-3. **Given** an active grant and a normal attendance restriction such as an approved leave, day off, invalid location, invalid time window, or already-completed action, **when** the employee submits web attendance, **then** the existing restriction still decides the outcome.
+3. **Given** an active grant without the location exemption and a normal attendance restriction such as an approved leave, day off, invalid location, invalid time window, or already-completed action, **when** the employee submits web attendance, **then** the existing restriction still decides the outcome.
+4. **Given** an active grant with `allowAnyLocation`, **when** the employee records attendance on the web, **then** browser GPS and branch geofence are not required; the gateway marks the record as location-exempt and omits coordinates while retaining all non-location attendance restrictions.
 
 ---
 
@@ -67,7 +68,8 @@ Authorized administrators can see each employee's current web-attendance grant, 
 - **FR-005**: A permanent grant has no end date and remains active until an authorized administrator revokes it or the employee becomes inactive.
 - **FR-006**: There is at most one active grant per employee. Changing its scope or dates replaces the current active grant and records the change in the audit trail.
 - **FR-007**: The attendance gateway, not the client, must determine whether the employee currently has an active grant before it accepts a web-originated action.
-- **FR-008**: A web grant does not bypass any existing attendance validation, including authentication, deterministic action identity, duplicate protection, attendance schedule, approved leave/day-off handling, location policy, time window, and check-in/check-out state.
+- **FR-008**: A web grant does not bypass authentication, deterministic action identity, duplicate protection, attendance schedule, approved leave/day-off handling, time window, or check-in/check-out state. Only a grant with `allowAnyLocation: true` bypasses browser GPS and branch geofence on web actions.
+- **FR-015**: A location-exempt web attendance record must contain an explicit exemption marker and grant revision, and must not persist a fabricated GPS coordinate. Mobile actions never use this exemption.
 - **FR-009**: The web attendance screen must show an active grant's status and expiry in Arabic, or state that it is permanent. It must keep the existing mobile-only guidance when no grant is active.
 - **FR-010**: An unauthorized or expired web action must receive a clear Arabic error and must not be queued for later offline replay.
 - **FR-011**: Every creation, change, and revocation must record the target employee, scope, dates, actor, timestamp, action type, and optional administrative note in an immutable audit history.

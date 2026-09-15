@@ -79,6 +79,7 @@ final class WebAttendanceAccessRepositoryImpl
   Future<void> saveGrant({
     required String employeeId,
     required String scope,
+    bool allowAnyLocation = false,
     String? startDate,
     String? endDate,
     String? note,
@@ -89,6 +90,7 @@ final class WebAttendanceAccessRepositoryImpl
       body: {
         'employeeId': employeeId,
         'scope': scope,
+        'allowAnyLocation': allowAnyLocation,
         if (startDate != null) 'startDate': startDate,
         if (endDate != null) 'endDate': endDate,
         if (note?.trim().isNotEmpty == true) 'note': note!.trim(),

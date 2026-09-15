@@ -6,12 +6,14 @@ class WebAttendanceAccessGrant {
     required this.scope,
     required this.status,
     required this.revision,
+    this.allowAnyLocation = false,
     this.startDate,
     this.endDate,
     this.note,
   });
   final String employeeId, employeeName, employeeCode, scope, status;
   final int revision;
+  final bool allowAnyLocation;
   final String? startDate, endDate, note;
   bool get permanent => scope == 'permanent';
   bool get active => status == 'active';
@@ -23,6 +25,7 @@ class WebAttendanceAccessGrant {
         scope: '${json['scope'] ?? 'period'}',
         status: '${json['status'] ?? ''}',
         revision: (json['revision'] as num?)?.toInt() ?? 0,
+        allowAnyLocation: json['allowAnyLocation'] == true,
         startDate: json['startDate'] as String?,
         endDate: json['endDate'] as String?,
         note: json['note'] as String?,

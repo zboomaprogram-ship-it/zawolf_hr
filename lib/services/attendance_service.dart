@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:developer' as developer;
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:intl/intl.dart' hide TextDirection;
 import '../utils/payroll_cycle.dart';
 import '../models/user_model.dart';
@@ -22,6 +23,7 @@ import 'role_notification_service.dart';
 import 'app_security_policy_service.dart';
 import 'safe_diagnostics_service.dart';
 import '../navigation/developer_tools_entry.dart';
+import '../features/web_attendance_access/data/web_attendance_access_repository_impl.dart';
 
 enum AttendanceActionIntent { checkIn, checkOut }
 
@@ -81,6 +83,15 @@ class AttendanceService {
       final now = DateTime.now();
       final todayStr = DateFormat('yyyy-MM-dd').format(now);
       final online = await _offlineQueue.isOnline();
+      final webAnywhereGrant =
+          kIsWeb && online
+              ? (await createWebAttendanceAccessRepository().myActiveGrant())
+                      ?.allowAnyLocation ==
+                  true
+              : false;
+      if (kIsWeb && !online) {
+        throw Exception('الحضور عبر الويب يحتاج اتصالاً مباشراً بالإنترنت.');
+      }
       final policyConfig = await _policyService.getPolicyConfig();
       final requiresLiveConnection = !policyConfig.requiresBiometric;
 
@@ -218,10 +229,13 @@ class AttendanceService {
       late final GeofenceResult geoResult;
       try {
         diagnosticStage = 'geofence';
-        geoResult = await _geofenceService.validateCheckIn(
-          employee,
-          strictLocationOnly: requiresLiveConnection,
-        );
+        geoResult =
+            webAnywhereGrant
+                ? _geofenceService.withoutBrowserLocation()
+                : await _geofenceService.validateCheckIn(
+                  employee,
+                  strictLocationOnly: requiresLiveConnection,
+                );
       } catch (error) {
         await _recordLocationDiagnostic(
           employee: employee,
@@ -265,7 +279,8 @@ class AttendanceService {
       final allowsExternalWork =
           hasWfhToday ||
           activeFieldAssignment != null ||
-          employee.isExecutiveLeader;
+          employee.isExecutiveLeader ||
+          webAnywhereGrant;
       if (!geoResult.isWithinZone && !allowsExternalWork) {
         await _recordLocationDiagnostic(
           employee: employee,

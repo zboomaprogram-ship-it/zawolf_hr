@@ -64,6 +64,31 @@ class GeofenceService {
            assignmentRepository ?? AttendanceLocationAssignmentRepositoryImpl(),
        _matcher = matcher;
 
+  /// Internal action placeholder for an HR-approved web grant that explicitly
+  /// requires no browser GPS. The gateway omits coordinates from the record.
+  GeofenceResult withoutBrowserLocation() => GeofenceResult(
+    isWithinZone: true,
+    distanceMeters: 0,
+    locationName: 'حضور ويب دون موقع',
+    locationId: '',
+    configuredRadius: 0,
+    allowedRadius: 0,
+    accuracyToleranceMeters: 0,
+    accuracyMeters: 0,
+    position: Position(
+      latitude: 0,
+      longitude: 0,
+      timestamp: DateTime.now(),
+      accuracy: 0,
+      altitude: 0,
+      altitudeAccuracy: 0,
+      heading: 0,
+      headingAccuracy: 0,
+      speed: 0,
+      speedAccuracy: 0,
+    ),
+  );
+
   // Request location permissions if not already granted
   Future<bool> handleLocationPermission() async {
     bool serviceEnabled;

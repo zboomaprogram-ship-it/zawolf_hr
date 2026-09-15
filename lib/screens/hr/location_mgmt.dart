@@ -10,6 +10,7 @@ import '../../services/google_maps_loader_stub.dart'
 import '../../models/location_model.dart';
 import '../../models/user_model.dart';
 import '../../features/attendance_locations/data/attendance_location_administration_repository_impl.dart';
+import '../../features/attendance_locations/domain/entities/attendance_location_assignment.dart';
 import '../../features/attendance_locations/domain/entities/attendance_assignment_option.dart';
 import '../../features/attendance_locations/presentation/pages/attendance_location_assignment_page.dart';
 import '../../theme/theme.dart';
@@ -30,6 +31,43 @@ class _LocationManagementScreenState extends State<LocationManagementScreen> {
   final LocationService _locationService = LocationService();
   List<LocationModel> _visibleLocations = const [];
   String _visibleLocationsFingerprint = '';
+  late Future<Map<String, int>> _assignedEmployeeCounts;
+
+  @override
+  void initState() {
+    super.initState();
+    _assignedEmployeeCounts = _loadAssignedEmployeeCounts();
+  }
+
+  Future<Map<String, int>> _loadAssignedEmployeeCounts() async {
+    final results = await Future.wait([
+      FirebaseFirestore.instance
+          .collection('users')
+          .where('isActive', isEqualTo: true)
+          .limit(5000)
+          .get(),
+      AttendanceLocationAdministrationRepositoryImpl().listAllAssignments(),
+    ]);
+    final employees = results[0] as QuerySnapshot<Map<String, dynamic>>;
+    final assignments = results[1] as List<AttendanceLocationAssignment>;
+    final employeeIdsByLocation = <String, Set<String>>{};
+    for (final employee in employees.docs) {
+      final locationId = '${employee.data()['locationId'] ?? ''}'.trim();
+      if (locationId.isNotEmpty) {
+        employeeIdsByLocation
+            .putIfAbsent(locationId, () => <String>{})
+            .add(employee.id);
+      }
+    }
+    for (final assignment in assignments.where((value) => value.isActive)) {
+      employeeIdsByLocation
+          .putIfAbsent(assignment.locationId, () => <String>{})
+          .add(assignment.employeeUid);
+    }
+    return employeeIdsByLocation.map(
+      (locationId, employeeIds) => MapEntry(locationId, employeeIds.length),
+    );
+  }
 
   String _locationFingerprint(Iterable<LocationModel> locations) => locations
       .map(
@@ -106,6 +144,11 @@ class _LocationManagementScreenState extends State<LocationManagementScreen> {
           ),
         ),
       );
+      if (mounted) {
+        setState(() {
+          _assignedEmployeeCounts = _loadAssignedEmployeeCounts();
+        });
+      }
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -379,10 +422,17 @@ class _LocationManagementScreenState extends State<LocationManagementScreen> {
                             Row(
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
-                                Text(
-                                  'الموظفون المسجلون بالفرع: ${loc.employeeCount}',
-                                  style: theme.textTheme.bodySmall!.copyWith(
-                                    color: ZaWolfColors.textSecondary,
+                                FutureBuilder<int>(
+                                  future: _assignedEmployeeCounts.then(
+                                    (counts) => counts[loc.locationId] ?? 0,
+                                  ),
+                                  builder: (context, countSnapshot) => Text(
+                                    countSnapshot.hasError
+                                        ? 'تعذر تحميل عدد الموظفين'
+                                        : 'الموظفون المسجلون بالفرع: ${countSnapshot.data ?? '…'}',
+                                    style: theme.textTheme.bodySmall!.copyWith(
+                                      color: ZaWolfColors.textSecondary,
+                                    ),
                                   ),
                                 ),
                                 Text(

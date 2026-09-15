@@ -61,6 +61,7 @@ class WebAttendanceAccessCubit extends Cubit<WebAttendanceAccessState> {
   Future<bool> save({
     required String employeeId,
     required String scope,
+    bool allowAnyLocation = false,
     String? startDate,
     String? endDate,
     String? note,
@@ -70,6 +71,7 @@ class WebAttendanceAccessCubit extends Cubit<WebAttendanceAccessState> {
       await _repository.saveGrant(
         employeeId: employeeId,
         scope: scope,
+        allowAnyLocation: allowAnyLocation,
         startDate: startDate,
         endDate: endDate,
         note: note,

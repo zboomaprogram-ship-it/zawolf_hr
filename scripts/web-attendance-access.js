@@ -21,6 +21,7 @@ function safeGrant(data = {}) {
     scope: data.scope === 'permanent' ? 'permanent' : 'period',
     startDate: text(data.startDate), endDate: data.endDate == null ? null : text(data.endDate),
     status: text(data.status), revision: Number(data.revision || 0), note: text(data.note) || null,
+    allowAnyLocation: data.allowAnyLocation === true,
     grantedById: text(data.grantedById), grantedByName: text(data.grantedByName),
     grantedAt: data.grantedAt || null, revokedAt: data.revokedAt || null,
   };
@@ -30,13 +31,14 @@ function validateGrantInput(input) {
   const scope = input.scope === 'permanent' ? 'permanent' : input.scope === 'period' ? 'period' : '';
   if (!employeeId || !scope) throw error('بيانات تصريح الحضور عبر الويب غير مكتملة.');
   const note = text(input.note);
+  const allowAnyLocation = input.allowAnyLocation === true;
   if (note.length > 500) throw error('ملاحظة التصريح طويلة جداً.');
-  if (scope === 'permanent') return { employeeId, scope, startDate: null, endDate: null, note: note || null };
+  if (scope === 'permanent') return { employeeId, scope, startDate: null, endDate: null, note: note || null, allowAnyLocation };
   const startDate = text(input.startDate); const endDate = text(input.endDate);
   if (!isIsoDate(startDate) || !isIsoDate(endDate) || endDate < startDate) throw error('حدد فترة صحيحة لتصريح الحضور عبر الويب.');
   const days = Math.round((Date.parse(`${endDate}T00:00:00Z`) - Date.parse(`${startDate}T00:00:00Z`)) / 86400000) + 1;
   if (days > 366) throw error('الحد الأقصى لفترة التصريح هو 366 يوماً.');
-  return { employeeId, scope, startDate, endDate, note: note || null };
+  return { employeeId, scope, startDate, endDate, note: note || null, allowAnyLocation };
 }
 function effective(data, today = cairoDateKey()) {
   if (!data || data.status !== 'active') return false;
@@ -82,6 +84,7 @@ async function saveWebAttendanceAccessGrant({ admin, actor, input, operationId }
       employeeName: text(employee.displayName || employee.name),
       employeeCode: text(employee.employeeId || employee.employeeCode),
       scope: grantInput.scope, startDate: grantInput.startDate, endDate: grantInput.endDate,
+      allowAnyLocation: grantInput.allowAnyLocation,
       status: 'active', note: grantInput.note,
       revision: Number(previous?.revision || 0) + 1,
       grantedById: actor.uid, grantedByName: text(actor.displayName || actor.name),
@@ -93,7 +96,7 @@ async function saveWebAttendanceAccessGrant({ admin, actor, input, operationId }
     transaction.set(auditRef, { eventType: previous ? 'updated' : 'granted', employeeId: grantInput.employeeId, actorId: actor.uid, operationId: text(operationId), before: previous, after: safeGrant(next), createdAt: admin.firestore.FieldValue.serverTimestamp() });
     transaction.set(opRef, { result, createdAt: admin.firestore.FieldValue.serverTimestamp() });
   });
-  console.info('Web attendance access grant saved:', { actorId: actor.uid, employeeId: grantInput.employeeId, scope: grantInput.scope });
+  console.info('Web attendance access grant saved:', { actorId: actor.uid, employeeId: grantInput.employeeId, scope: grantInput.scope, allowAnyLocation: grantInput.allowAnyLocation });
   return result;
 }
 
@@ -120,4 +123,4 @@ async function assertWebAttendanceAccess({ admin, actor }) {
   if (!result.eligible) throw error('لا يوجد تصريح نشط لتسجيل الحضور عبر الويب. استخدم تطبيق الجوال أو تواصل مع HR.', 'web_attendance_not_authorized');
   return result.grant;
 }
-module.exports = { getMyWebAttendanceAccess, listWebAttendanceAccessGrants, saveWebAttendanceAccessGrant, revokeWebAttendanceAccessGrant, assertWebAttendanceAccess, isHrOrSuperAdmin, effective };
+module.exports = { getMyWebAttendanceAccess, listWebAttendanceAccessGrants, saveWebAttendanceAccessGrant, revokeWebAttendanceAccessGrant, assertWebAttendanceAccess, isHrOrSuperAdmin, effective, validateGrantInput };

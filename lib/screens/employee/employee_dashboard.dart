@@ -24,6 +24,8 @@ import '../../services/geofence_service.dart';
 import '../../models/attendance_model.dart';
 import '../../models/company_day_off_status.dart';
 import '../../models/user_model.dart';
+import '../../models/task_model.dart';
+import '../../services/task_service.dart';
 import '../../utils/payroll_cycle.dart';
 import '../../features/attendance_checkin/attendance_checkin.dart';
 import '../../features/attendance_checkin/presentation/attendance_failure_diagnostic.dart';
@@ -68,6 +70,8 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
   Stream<List<AttendanceModel>> _attendanceStream = const Stream.empty();
   String? _attendanceStreamUserId;
   String? _attendanceStreamMonthKey;
+  Stream<List<EmployeeTaskModel>>? _webTaskStream;
+  String? _webTaskStreamUserId;
   String? _preparedUserId;
   Timer? _clockTimer;
   DateTime _now = DateTime.now();
@@ -155,6 +159,8 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
         _attendanceStream = const Stream.empty();
         _attendanceStreamUserId = null;
         _attendanceStreamMonthKey = null;
+        _webTaskStream = null;
+        _webTaskStreamUserId = null;
         _preparedUserId = null;
         _developerAttendanceAccess = false;
         _developerAttendanceAccessUserId = null;
@@ -175,6 +181,10 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
       );
       _attendanceStreamUserId = user.uid;
       _attendanceStreamMonthKey = currentMonthKey;
+    }
+    if (kIsWeb && _webTaskStreamUserId != user.uid) {
+      _webTaskStream = TaskService().watchMyTasks(user.uid).asBroadcastStream();
+      _webTaskStreamUserId = user.uid;
     }
 
     if (_preparedUserId != user.uid) {
@@ -862,15 +872,13 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
                 disciplineScore: disciplineScore,
                 workedDays: workedDays,
                 pendingRequestsCount: _pendingRequestsCount,
+                taskStream: _webTaskStream,
                 webAttendanceAccess: _webAttendanceAccess,
                 actionLoading: _actionLoading,
                 attendanceActionLabel: gate.title,
                 attendanceActionEnabled: !gate.disabled,
                 onCheckInTap:
-                    () => _handleCheckInCheckOut(
-                      user,
-                      gate.expectedAction,
-                    ),
+                    () => _handleCheckInCheckOut(user, gate.expectedAction),
                 onRefresh: () async {
                   await attendanceService.syncPendingOfflineAttendance();
                   await Future.wait([

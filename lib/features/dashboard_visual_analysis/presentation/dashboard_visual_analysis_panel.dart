@@ -5,7 +5,6 @@ import 'package:intl/intl.dart' hide TextDirection;
 
 import '../../../components/attendance_insights_card.dart';
 import '../../../components/wolf_card.dart';
-import '../../../design_system/components/rtl_navigation.dart';
 import '../../../design_system/tokens.dart';
 import '../../../theme/theme.dart';
 import '../domain/dashboard_visual_analysis.dart';
@@ -337,7 +336,7 @@ class DashboardVisualAnalysisPanel extends StatelessWidget {
           ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
         ),
         const SizedBox(height: 10),
-        for (final department in analysis.departments.take(8))
+        for (final department in analysis.departments)
           ListTile(
             onTap:
                 () => context.go(
@@ -361,7 +360,7 @@ class DashboardVisualAnalysisPanel extends StatelessWidget {
               ),
             ),
             trailing: Icon(
-              RtlNavigation.chevronEnd(context),
+              Icons.chevron_left,
               color: ZaWolfColors.primaryCyan,
             ),
           ),

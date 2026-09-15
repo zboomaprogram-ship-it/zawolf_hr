@@ -7,6 +7,7 @@ abstract interface class WebAttendanceAccessRepository {
   Future<void> saveGrant({
     required String employeeId,
     required String scope,
+    bool allowAnyLocation = false,
     String? startDate,
     String? endDate,
     String? note,

@@ -110,7 +110,7 @@ async function hasDeveloperDeviceOverride(db, userId) {
   return expiresAt instanceof Date && expiresAt.getTime() > Date.now();
 }
 
-function actionData({ admin, action, user, receivedAt, locationEvidence = null }) {
+function actionData({ admin, action, user, receivedAt, locationEvidence = null, webLocationExempt = false, webGrantRevision = null }) {
   const raw = action.raw;
   const delayed = receivedAt.getTime() - action.eventTime.getTime() > 2 * 60 * 1000;
   const review = delayed || raw.securityReviewStatus === 'pending_hr';
@@ -118,8 +118,9 @@ function actionData({ admin, action, user, receivedAt, locationEvidence = null }
     userId: action.actor.uid,
     employeeId: asString(user.employeeId),
     employeeName: asString(user.displayName),
-    locationId: locationEvidence?.locationId || asString(user.locationId),
-    locationName: locationEvidence?.locationName || asString(user.locationName),
+    locationId: webLocationExempt ? '' : locationEvidence?.locationId || asString(user.locationId),
+    locationName: webLocationExempt ? 'حضور ويب دون موقع' : locationEvidence?.locationName || asString(user.locationName),
+    ...(webLocationExempt ? { webLocationExempt: true, webAttendanceGrantRevision: webGrantRevision } : {}),
     managerId: asString(user.managerId),
     date: action.date,
     securityProtocolVersion: 2,
@@ -128,7 +129,7 @@ function actionData({ admin, action, user, receivedAt, locationEvidence = null }
     return {
       ...base,
       checkInTime: admin.firestore.Timestamp.fromDate(action.eventTime),
-      checkInLocation: new admin.firestore.GeoPoint(action.latitude, action.longitude),
+      ...(webLocationExempt ? {} : { checkInLocation: new admin.firestore.GeoPoint(action.latitude, action.longitude) }),
       localCheckInTime: admin.firestore.Timestamp.fromDate(action.eventTime),
       isWithinGeofence: true,
       isLate: raw.isLate === true,
@@ -144,7 +145,7 @@ function actionData({ admin, action, user, receivedAt, locationEvidence = null }
       biometricVerified: raw.biometricVerified === true,
       securityReviewStatus: review ? 'pending_hr' : 'none',
       locationRiskLevel: review ? 'high' : asString(raw.locationRiskLevel, 'low'),
-      locationRiskReasons: Array.isArray(raw.locationRiskReasons) ? raw.locationRiskReasons.slice(0, 10) : [],
+      locationRiskReasons: webLocationExempt ? ['web_location_exempt'] : Array.isArray(raw.locationRiskReasons) ? raw.locationRiskReasons.slice(0, 10) : [],
       locationRiskMessage: delayed ? 'تمت مزامنة الحضور بعد انقطاع مؤقت وسيتم مراجعته.' : asString(raw.locationRiskMessage),
       locationAccuracyMeters: locationEvidence?.accuracyMeters ?? Math.max(0, asNumber(raw.accuracyMeters)),
       locationDistanceMeters: locationEvidence?.distanceMeters ?? Math.max(0, asNumber(raw.distanceMeters)),
@@ -162,7 +163,8 @@ function actionData({ admin, action, user, receivedAt, locationEvidence = null }
   }
   return {
     checkOutTime: admin.firestore.Timestamp.fromDate(action.eventTime),
-    checkOutLocation: new admin.firestore.GeoPoint(action.latitude, action.longitude),
+    ...(webLocationExempt ? {} : { checkOutLocation: new admin.firestore.GeoPoint(action.latitude, action.longitude) }),
+    ...(webLocationExempt ? { webCheckoutLocationExempt: true, webAttendanceGrantRevision: webGrantRevision } : {}),
     localCheckOutTime: admin.firestore.Timestamp.fromDate(action.eventTime),
     totalWorkHours: Math.max(0, asNumber(raw.totalWorkHours)),
     checkOutDeviceId: action.deviceId,
@@ -187,9 +189,10 @@ async function submitAttendanceAction({ admin, actor, rawAction }) {
   // Web attendance is an explicit, employee-specific exception. This lookup is
   // intentionally in the write gateway so a stale or altered browser cannot
   // authorize an action after a grant expires or is revoked.
-  if (action.raw.clientPlatform === 'web') {
-    await assertWebAttendanceAccess({ admin, actor });
-  }
+  const webGrant = action.raw.clientPlatform === 'web'
+    ? await assertWebAttendanceAccess({ admin, actor })
+    : null;
+  const webLocationExempt = webGrant?.allowAnyLocation === true;
   // Keep this guard in the write gateway itself.  HTTP handlers, workers, or
   // future API routes must not be able to bypass the company check-out policy.
   // This happens before device binding or attendance mutation.
@@ -219,7 +222,7 @@ async function submitAttendanceAction({ admin, actor, rawAction }) {
       return { action: 'check_in', status: 'already_recorded', attendanceId: expectedId };
     }
     const multiLocationEnabled = await loadMultiLocationFlag(db, actor.uid);
-    const locationEvidence = multiLocationEnabled
+    const locationEvidence = multiLocationEnabled && !webLocationExempt
       ? await validateAssignedLocation({
         db, actorUid: actor.uid, rawAction, eventTime: action.eventTime,
       })
@@ -235,6 +238,7 @@ async function submitAttendanceAction({ admin, actor, rawAction }) {
       }
       transaction.set(ref, actionData({
         admin, action, user, receivedAt, locationEvidence,
+        webLocationExempt, webGrantRevision: webGrant?.revision ?? null,
       }), {
         merge: false,
       });
@@ -246,7 +250,8 @@ async function submitAttendanceAction({ admin, actor, rawAction }) {
   const existing = await ref.get();
   if (!existing.exists || !existing.data()?.checkInTime) throw gatewayError('سجل الحضور غير موجود بعد.', 'checkin_missing');
   if (existing.data()?.checkOutTime) return { action: 'check_out', status: 'already_recorded', attendanceId: expectedId };
-  await ref.update(actionData({ admin, action, user, receivedAt }));
+  await ref.update(actionData({ admin, action, user, receivedAt,
+    webLocationExempt, webGrantRevision: webGrant?.revision ?? null }));
   return { action: 'check_out', status: 'recorded', attendanceId: expectedId };
 }
 

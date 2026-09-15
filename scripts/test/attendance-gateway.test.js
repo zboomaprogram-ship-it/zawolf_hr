@@ -103,6 +103,24 @@ test('check-in returns recorded then already_recorded for the same deterministic
   });
 });
 
+test('explicit web-anywhere grant saves no fabricated GPS coordinate', async () => {
+  const actor = { uid: 'web-anywhere' };
+  const admin = fakeAdmin({
+    'webAttendanceAccessGrants/web-anywhere': {
+      employeeId: actor.uid, scope: 'permanent', status: 'active',
+      allowAnyLocation: true, revision: 3,
+    },
+  });
+  const action = { ...actionFor(actor.uid), clientPlatform: 'web', latitude: 0, longitude: 0 };
+  const result = await submitAttendanceAction({ admin, actor, rawAction: action });
+  const saved = admin.__testDocs.get(`attendance/${action.attendanceId}`);
+  assert.equal(result.status, 'recorded');
+  assert.equal(saved.webLocationExempt, true);
+  assert.equal(saved.webAttendanceGrantRevision, 3);
+  assert.equal(saved.checkInLocation, undefined);
+  assert.equal(saved.locationName, 'حضور ويب دون موقع');
+});
+
 test('an attendance event older than 24 hours is rejected with a terminal stale_event code', async () => {
   const admin = fakeAdmin();
   const actor = { uid: 'employee-expired-event' };

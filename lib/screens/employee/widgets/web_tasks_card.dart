@@ -21,11 +21,29 @@ class WebTasksCard extends StatefulWidget {
 
 class _WebTasksCardState extends State<WebTasksCard> {
   String _statusFilter = 'all'; // all, in_progress, done, late
+  Stream<List<EmployeeTaskModel>>? _ownedTaskStream;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.taskStream == null) {
+      _ownedTaskStream = TaskService().watchMyTasks(widget.userId);
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant WebTasksCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.taskStream == null &&
+        (oldWidget.userId != widget.userId || oldWidget.taskStream != null)) {
+      _ownedTaskStream = TaskService().watchMyTasks(widget.userId);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<List<EmployeeTaskModel>>(
-      stream: widget.taskStream ?? TaskService().watchMyTasks(widget.userId),
+      stream: widget.taskStream ?? _ownedTaskStream!,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const WolfCard(
@@ -243,7 +261,10 @@ class _WebTasksCardState extends State<WebTasksCard> {
         child: Text(
           label,
           style: TextStyle(
-            color: isSelected ? ZaWolfColors.textPrimary : ZaWolfColors.textSecondary,
+            color:
+                isSelected
+                    ? ZaWolfColors.textPrimary
+                    : ZaWolfColors.textSecondary,
             fontSize: 12,
             fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
           ),
