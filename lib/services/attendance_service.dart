@@ -27,6 +27,27 @@ import '../features/web_attendance_access/data/web_attendance_access_repository_
 
 enum AttendanceActionIntent { checkIn, checkOut }
 
+/// Resolves the earliest valid checkout time from approved early-leave
+/// permissions for one employee/day. Multiple final approvals are handled
+/// deterministically by using the largest approved duration.
+DateTime resolveCheckoutAllowedFromForPermissions(
+  DateTime baseEnd,
+  Iterable<Map<String, dynamic>> permissions,
+) {
+  var allowedFrom = baseEnd;
+  for (final permission in permissions) {
+    if (permission['status'] != 'approved' ||
+        permission['permissionType'] != 'early_leave') {
+      continue;
+    }
+    final minutes = (permission['durationMinutes'] as num?)?.toInt() ?? 0;
+    if (minutes <= 0) continue;
+    final candidate = baseEnd.subtract(Duration(minutes: minutes));
+    if (candidate.isBefore(allowedFrom)) allowedFrom = candidate;
+  }
+  return allowedFrom;
+}
+
 /// Receives an already validated legacy check-in action at the migration seam.
 /// Returning true means the canonical server receipt was confirmed; false means
 /// the pilot retained the action locally and the legacy offline queue must not
@@ -800,6 +821,33 @@ class AttendanceService {
     );
   }
 
+  /// Keeps the employee dashboard gate synchronized with final approval of an
+  /// early-leave permission. Filtering the bounded day query locally avoids a
+  /// four-field composite-index dependency on the employee device.
+  Stream<DateTime> watchCheckoutAllowedFromForDisplay(
+    UserModel employee, {
+    DateTime? now,
+  }) async* {
+    final currentTime = now ?? DateTime.now();
+    final policyConfig = await _policyService.getPolicyConfig();
+    final dateKey = DateFormat('yyyy-MM-dd').format(currentTime);
+    final baseEnd = AttendancePolicy.parseTimeOnDate(
+      currentTime,
+      employee.workSchedule.endTime ?? policyConfig.defaultEndTime,
+    );
+    yield* _db
+        .collection('permissions')
+        .where('userId', isEqualTo: employee.uid)
+        .where('requestDate', isEqualTo: dateKey)
+        .snapshots()
+        .map(
+          (snapshot) => resolveCheckoutAllowedFromForPermissions(
+            baseEnd,
+            snapshot.docs.map((doc) => doc.data()),
+          ),
+        );
+  }
+
   _LocationRiskAssessment _assessLocationRisk(
     GeofenceResult geoResult, {
     required bool capturedOffline,
@@ -1134,15 +1182,24 @@ class AttendanceService {
       now,
       employee.workSchedule.endTime ?? policyConfig.defaultEndTime,
     );
-    final permission = await _approvedPermissionForDate(
+    final permissions = await _permissionsForDate(
       userId: employee.uid,
       dateKey: dateKey,
-      type: 'early_leave',
     );
-    if (permission == null) return baseEnd;
-    final minutes = permission['durationMinutes'] as int? ?? 0;
-    if (minutes <= 0) return baseEnd;
-    return baseEnd.subtract(Duration(minutes: minutes));
+    return resolveCheckoutAllowedFromForPermissions(baseEnd, permissions);
+  }
+
+  Future<List<Map<String, dynamic>>> _permissionsForDate({
+    required String userId,
+    required String dateKey,
+  }) async {
+    final snap =
+        await _db
+            .collection('permissions')
+            .where('userId', isEqualTo: userId)
+            .where('requestDate', isEqualTo: dateKey)
+            .get();
+    return snap.docs.map((doc) => doc.data()).toList(growable: false);
   }
 
   Future<Map<String, dynamic>?> _approvedPermissionForDate({
@@ -1150,21 +1207,17 @@ class AttendanceService {
     required String dateKey,
     required String type,
   }) async {
-    try {
-      final snap =
-          await _db
-              .collection('permissions')
-              .where('userId', isEqualTo: userId)
-              .where('requestDate', isEqualTo: dateKey)
-              .where('permissionType', isEqualTo: type)
-              .where('status', isEqualTo: 'approved')
-              .limit(1)
-              .get();
-      if (snap.docs.isEmpty) return null;
-      return snap.docs.first.data();
-    } catch (_) {
-      return null;
+    final permissions = await _permissionsForDate(
+      userId: userId,
+      dateKey: dateKey,
+    );
+    for (final permission in permissions) {
+      if (permission['permissionType'] == type &&
+          permission['status'] == 'approved') {
+        return permission;
+      }
     }
+    return null;
   }
 
   String _formatTime(DateTime value) {

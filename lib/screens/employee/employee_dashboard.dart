@@ -94,19 +94,33 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
     _gateCubit = EmployeeAttendanceGateCubit();
     WidgetsBinding.instance.addObserver(this);
     AttendanceService().syncPendingOfflineAttendance();
-    _clockTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+    _scheduleClockTick();
+  }
+
+  void _scheduleClockTick() {
+    _clockTimer?.cancel();
+    final current = DateTime.now();
+    final nextMinute = DateTime(
+      current.year,
+      current.month,
+      current.day,
+      current.hour,
+      current.minute + 1,
+    );
+    _clockTimer = Timer(nextMinute.difference(current), () {
       if (!mounted) return;
       final previousDay = DateUtils.dateOnly(_now);
-      final current = DateTime.now();
-      setState(() => _now = current);
+      final updatedNow = DateTime.now();
+      setState(() => _now = updatedNow);
       final user = context.read<AuthService>().currentUser;
       if (user != null) {
-        if (DateUtils.dateOnly(current) != previousDay) {
+        if (DateUtils.dateOnly(updatedNow) != previousDay) {
           unawaited(_checkCompanyDayOff());
           unawaited(_loadPeriodSummary(user, force: true));
         }
-        unawaited(_gateCubit.load(user));
+        unawaited(_refreshAttendanceGate(user));
       }
+      _scheduleClockTick();
     });
   }
 
@@ -311,6 +325,7 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
 
   Future<void> _refreshAttendanceGate(UserModel user) async {
     try {
+      await _gateCubit.watch(user);
       await _gateCubit.load(user);
     } catch (_) {}
     if (mounted) {

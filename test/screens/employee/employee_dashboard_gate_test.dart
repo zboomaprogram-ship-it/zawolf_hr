@@ -6,7 +6,7 @@ import 'package:zawolf_hr/models/attendance_policy.dart';
 import 'package:zawolf_hr/models/company_day_off_status.dart';
 import 'package:zawolf_hr/screens/employee/widgets/checkin_action_state.dart';
 import 'package:zawolf_hr/services/attendance_service.dart'
-    show AttendanceActionIntent;
+    show AttendanceActionIntent, resolveCheckoutAllowedFromForPermissions;
 
 CheckInGateInputs _inputs({
   DateTime? now,
@@ -99,6 +99,61 @@ void main() {
     expect(state.title, 'تسجيل انصراف');
     expect(state.subtitle, 'CHECK OUT');
     expect(state.expectedAction, AttendanceActionIntent.checkOut);
+  });
+
+  test(
+    'approved early-leave permission opens checkout at its effective time',
+    () {
+      final baseEnd = DateTime(2026, 8, 23, 17);
+      final allowedFrom = resolveCheckoutAllowedFromForPermissions(baseEnd, [
+        {
+          'status': 'pending_manager',
+          'permissionType': 'early_leave',
+          'durationMinutes': 240,
+        },
+        {
+          'status': 'approved',
+          'permissionType': 'late_arrival',
+          'durationMinutes': 180,
+        },
+        {
+          'status': 'approved',
+          'permissionType': 'early_leave',
+          'durationMinutes': 120,
+        },
+      ]);
+
+      expect(allowedFrom, DateTime(2026, 8, 23, 15));
+      final state = computeCheckInAction(
+        _inputs(
+          now: DateTime(2026, 8, 23, 15),
+          hasCheckedIn: true,
+          scheduleEnd: '17:00',
+          checkoutAllowedFromOverride: allowedFrom,
+        ),
+      );
+      expect(state.disabled, isFalse);
+      expect(state.title, 'تسجيل انصراف');
+    },
+  );
+
+  test('earliest approved early-leave allowance wins deterministically', () {
+    final allowedFrom = resolveCheckoutAllowedFromForPermissions(
+      DateTime(2026, 8, 23, 17),
+      [
+        {
+          'status': 'approved',
+          'permissionType': 'early_leave',
+          'durationMinutes': 60,
+        },
+        {
+          'status': 'approved',
+          'permissionType': 'early_leave',
+          'durationMinutes': 180.0,
+        },
+      ],
+    );
+    expect(allowedFrom, DateTime(2026, 8, 23, 14));
   });
 
   test('checkout policy disabled hides checkout but keeps record', () {
