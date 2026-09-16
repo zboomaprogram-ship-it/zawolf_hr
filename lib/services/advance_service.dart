@@ -24,11 +24,16 @@ class AdvanceService {
         'يُتاح تقديم طلب السلفة فقط بدءاً من يوم 15 في الشهر الميلادي.',
       );
     }
-    final maximum = employee.baseMonthlySalary * .5;
-    if (maximum <= 0 || amount > maximum) {
-      throw Exception(
-        'قيمة السلفة لا يمكن أن تتجاوز 50% من الراتب الشهري (الحد الأقصى المتاح لك: ${maximum.toStringAsFixed(0)} ${employee.salaryCurrency}).',
-      );
+    if (amount <= 0) {
+      throw Exception('قيمة السلفة يجب أن تكون أكبر من الصفر.');
+    }
+    if (employee.baseMonthlySalary > 0) {
+      final maximum = employee.baseMonthlySalary * .5;
+      if (amount > maximum) {
+        throw Exception(
+          'قيمة السلفة لا يمكن أن تتجاوز 50% من الراتب الشهري (الحد الأقصى المتاح لك: ${maximum.toStringAsFixed(0)} ${employee.salaryCurrency}).',
+        );
+      }
     }
   }
 

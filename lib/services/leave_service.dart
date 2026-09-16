@@ -73,10 +73,6 @@ class LeaveService {
         );
       }
     }
-    if (request.leaveType == LeaveTypePolicy.paternity &&
-        request.numberOfDays != 1) {
-      throw Exception('إجازة المولود تكون ليوم واحد فقط.');
-    }
   }
 
   static void validateBalance(LeaveModel request, LeaveBalance balance) {
@@ -367,30 +363,6 @@ class LeaveService {
       convertToAnnual: req.convertToAnnual,
     );
     req = normalizedRequest;
-    if (req.leaveType == LeaveTypePolicy.paternity) {
-      final prior =
-          await _db
-              .collection('leaves')
-              .where('userId', isEqualTo: req.userId)
-              .where('leaveType', isEqualTo: LeaveTypePolicy.paternity)
-              .where(
-                'status',
-                whereIn: const [
-                  'approved',
-                  'pending',
-                  'pending_manager',
-                  'pending_hr',
-                  'pending_ceo',
-                ],
-              )
-              .limit(3)
-              .get();
-      if (prior.docs.length >= 3) {
-        throw Exception(
-          'تم استنفاد الحد الأقصى لإجازة المولود (3 مرات طوال مدة الخدمة).',
-        );
-      }
-    }
     final approvalPolicy = await _approvalPolicyService.getPolicy();
     if (req.leaveType != LeaveTypePolicy.unpaid &&
         employee.hiringDate == null) {

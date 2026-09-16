@@ -14,6 +14,8 @@ class _MediaGateway implements ChatMediaGateway {
   @override
   Future<List<ChatDraftFile>> pickFiles() async => [];
   @override
+  Future<List<ChatDraftFile>> pickImages({bool fromCamera = false}) async => [];
+  @override
   Future<ChatDraftFile?> recordVideo() async => null;
   @override
   Future<void> release(String url) async {}

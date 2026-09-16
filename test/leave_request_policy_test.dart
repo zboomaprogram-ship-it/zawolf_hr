@@ -9,6 +9,7 @@ LeaveModel request({
   required String type,
   required DateTime start,
   String reason = 'سبب واضح',
+  int days = 1,
 }) {
   return LeaveModel(
     leaveId: '',
@@ -20,8 +21,8 @@ LeaveModel request({
     managerId: 'manager',
     leaveType: type,
     startDate: start,
-    endDate: start,
-    numberOfDays: 1,
+    endDate: start.add(Duration(days: days - 1)),
+    numberOfDays: days,
     reason: reason,
     workHandoverTo: 'زميل العمل',
     status: 'pending',
@@ -86,10 +87,16 @@ void main() {
       throwsException,
     );
     expect(LeaveTypePolicy.supportedTypes, contains(LeaveTypePolicy.paternity));
-    expect(LeaveTypePolicy.balanceKey(LeaveTypePolicy.paternity), isNull);
+    expect(LeaveTypePolicy.supportedTypes, contains(LeaveTypePolicy.special));
+    expect(LeaveTypePolicy.arabicLabel(LeaveTypePolicy.special), 'إجازة خاصة');
+    expect(LeaveTypePolicy.balanceKey(LeaveTypePolicy.special), isNull);
     expect(
       () => LeaveService.validateRequest(
-        request(type: LeaveTypePolicy.paternity, start: DateTime(2026, 7, 20)),
+        request(
+          type: LeaveTypePolicy.special,
+          start: DateTime(2026, 7, 20),
+          days: 3,
+        ),
         now: now,
       ),
       returnsNormally,

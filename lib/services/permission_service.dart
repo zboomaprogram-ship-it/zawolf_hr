@@ -42,15 +42,6 @@ class PermissionService {
     required String scheduledStartTime,
     required bool hasCheckedIn,
   }) {
-    if (lateArrivalSubmittedAfterStart(
-      now: now,
-      requestDay: requestDay,
-      scheduledStartTime: scheduledStartTime,
-    )) {
-      throw Exception(
-        'يجب تقديم إذن تأخير الحضور قبل بداية مواعيد العمل الرسمية.',
-      );
-    }
     if (hasCheckedIn) {
       throw Exception('لا يمكن تقديم إذن تأخير حضور بعد تسجيل الحضور الفعلي.');
     }
@@ -324,8 +315,8 @@ class PermissionService {
       );
     }
 
-    // A late-arrival request must be approved before the scheduled start and
-    // cannot amend a day that already has an actual check-in.
+    // A late-arrival request can be submitted before or after the scheduled start,
+    // but cannot amend a day that already has an actual check-in.
     var isLateSubmission = false;
     if (req.permissionType == 'late_arrival') {
       final workStartStr =
@@ -662,6 +653,7 @@ class PermissionService {
         } catch (_) {}
       } else {
         await _reconciliationService.reconcileApprovedPermission(perm);
+        await _reconcileEarlyLeaveDecision(perm);
         try {
           await _createNotification(
             recipientId: perm.userId,
@@ -775,6 +767,7 @@ class PermissionService {
 
     // 3. Notify employee
     await _reconciliationService.reconcileApprovedPermission(perm);
+    await _reconcileEarlyLeaveDecision(perm);
     try {
       await _createNotification(
         recipientId: perm.userId,
@@ -888,6 +881,8 @@ class PermissionService {
         'managerReviewerComment': comment,
     });
 
+    await _reconcileEarlyLeaveDecision(perm);
+
     await AuditLogService.instance.record(
       actorId: reviewerId,
       action: 'permission_rejected',
@@ -929,5 +924,16 @@ class PermissionService {
       body: body,
       data: data,
     );
+  }
+
+  Future<void> _reconcileEarlyLeaveDecision(PermissionModel permission) async {
+    if (permission.permissionType != PermissionTypePolicy.earlyLeave) return;
+    try {
+      await _attendanceGateway.reconcileEarlyLeave(permission.permissionId);
+    } catch (_) {
+      // The server-side bounded recovery worker processes the pending marker.
+      // A completed reviewer decision must not be rolled back by a temporary
+      // integration outage.
+    }
   }
 }

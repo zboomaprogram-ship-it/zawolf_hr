@@ -251,6 +251,45 @@ void main() {
     },
   );
 
+  test('Pending early leave preserves domain/data/presentation boundaries', () {
+    final domainViolations = <String>[];
+    final dataViolations = <String>[];
+    final presentationViolations = <String>[];
+
+    for (final file in _dartFiles('lib/features/pending_early_leave/domain')) {
+      final source = file.readAsStringSync();
+      if (RegExp(
+        r'''package:(?:flutter|firebase_|cloud_firestore|http|drift)/''',
+      ).hasMatch(source)) {
+        domainViolations.add(_repoPath(file));
+      }
+    }
+
+    for (final file in _dartFiles('lib/features/pending_early_leave/data')) {
+      final source = file.readAsStringSync();
+      if (source.contains('/presentation/')) {
+        dataViolations.add(_repoPath(file));
+      }
+    }
+
+    for (final file in _dartFiles('lib/features/pending_early_leave/presentation')) {
+      final source = file.readAsStringSync();
+      if (source.contains('FirebaseFirestore') ||
+          source.contains('cloud_firestore') ||
+          source.contains('/data/')) {
+        presentationViolations.add(_repoPath(file));
+      }
+      if (file.path.endsWith('_cubit.dart') &&
+          file.readAsLinesSync().length > 300) {
+        presentationViolations.add('${_repoPath(file)} exceeds 300 lines');
+      }
+    }
+
+    expect(domainViolations, isEmpty);
+    expect(dataViolations, isEmpty);
+    expect(presentationViolations, isEmpty);
+  });
+
   test('every migrated feature has a specification directory', () {
     final featuresRoot = Directory('lib/features');
     if (!featuresRoot.existsSync()) return;

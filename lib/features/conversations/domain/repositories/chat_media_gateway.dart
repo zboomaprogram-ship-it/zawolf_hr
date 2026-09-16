@@ -3,6 +3,7 @@ import '../entities/rich_chat.dart';
 
 abstract interface class ChatMediaGateway {
   Future<List<ChatDraftFile>> pickFiles();
+  Future<List<ChatDraftFile>> pickImages({bool fromCamera = false});
   Future<ChatDraftFile?> recordVideo();
   Future<void> save(ChatDraftFile file);
   Future<void> share(ChatDraftFile file, {double? x, double? y});

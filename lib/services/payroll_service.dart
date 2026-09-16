@@ -70,18 +70,20 @@ class PayrollService {
     final permissionSnap = results[3] as QuerySnapshot<Map<String, dynamic>>;
     final attendancePolicy = results[4] as AttendancePolicyConfig;
 
-    final attendance = attendanceSnap.docs
-        .map((doc) => AttendanceModel.fromFirestore(doc))
-        .toList();
-    final rewards = rewardSnap.docs
-        .map((doc) => WarningRewardModel.fromFirestore(doc))
-        .toList();
-    final advanceRecords = advanceSnap.docs
-        .map((doc) => AdvanceModel.fromFirestore(doc))
-        .toList();
-    final permissions = permissionSnap.docs
-        .map((doc) => PermissionModel.fromFirestore(doc))
-        .toList();
+    final attendance =
+        attendanceSnap.docs
+            .map((doc) => AttendanceModel.fromFirestore(doc))
+            .toList();
+    final rewards =
+        rewardSnap.docs
+            .map((doc) => WarningRewardModel.fromFirestore(doc))
+            .toList();
+    final advanceRecords =
+        advanceSnap.docs.map((doc) => AdvanceModel.fromFirestore(doc)).toList();
+    final permissions =
+        permissionSnap.docs
+            .map((doc) => PermissionModel.fromFirestore(doc))
+            .toList();
 
     final approvedDeductions = attendance.where(
       (log) =>
@@ -108,7 +110,29 @@ class PayrollService {
             dayFraction: permission.salaryDeductionFraction,
           ),
     );
-    final deductionTotal = attendanceDeductionTotal + permissionDeductionTotal;
+    final approvedEarlyLeaveRejectionConsequences = permissions.where((
+      permission,
+    ) {
+      final consequence = permission.rejectionConsequence;
+      return consequence?['status'] == 'approved' &&
+          ((consequence?['dayFraction'] as num?)?.toDouble() ?? 0) > 0;
+    });
+    final earlyLeaveRejectionTotal = approvedEarlyLeaveRejectionConsequences
+        .fold<double>(
+          0,
+          (total, permission) =>
+              total +
+              attendancePolicy.calculateSalaryDeductionAmount(
+                monthlySalary: employee.baseMonthlySalary,
+                dayFraction:
+                    (permission.rejectionConsequence!['dayFraction'] as num)
+                        .toDouble(),
+              ),
+        );
+    final deductionTotal =
+        attendanceDeductionTotal +
+        permissionDeductionTotal +
+        earlyLeaveRejectionTotal;
 
     final issuedBonusRecords = rewards.where((record) {
       final isBonusType =
@@ -154,7 +178,9 @@ class PayrollService {
       advances: advanceTotal,
       netSalary: netSalary,
       approvedDeductionCount:
-          approvedDeductions.length + approvedPermissionDeductions.length,
+          approvedDeductions.length +
+          approvedPermissionDeductions.length +
+          approvedEarlyLeaveRejectionConsequences.length,
       bonusRecordCount: issuedBonusRecords.length,
       advanceRecordCount: approvedAdvances.length,
       status: PayrollStatus.draft,
@@ -197,9 +223,10 @@ class PayrollService {
         .collection('users')
         .where('isActive', isEqualTo: true);
     final usersSnap = await query.get();
-    final users = usersSnap.docs.map(UserModel.fromFirestore).where((user) {
-      return user.role != EmployeeRole.superAdmin;
-    }).toList();
+    final users =
+        usersSnap.docs.map(UserModel.fromFirestore).where((user) {
+          return user.role != EmployeeRole.superAdmin;
+        }).toList();
 
     for (final user in users) {
       await calculateAndCacheForUser(

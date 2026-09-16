@@ -152,24 +152,66 @@ class _RichConversationEntryState extends State<RichConversationEntry> {
     channel: channel,
     canReview: canReview,
     attachmentBuilder:
-        (_, attachment) => RichAttachmentView(
+        (_, attachment, [mine = false]) => RichAttachmentView(
           key: ValueKey('${channel.id}:${attachment.resourceId}'),
           attachment: attachment,
           gateway: _media,
+          isMine: mine,
           download:
               () => _repository!.download(channel.id, attachment.resourceId),
         ),
-    pickAttachments: (_) => _media.pickFiles(),
+    pickAttachments: (context) => _pickAttachments(context, _media),
     voiceBuilder:
         _voiceRecordingEnabled
-            ? (_, attach) => VoiceNoteButton(
+            ? (context, attach, {onSend, onRecordingChanged}) => VoiceNoteButton(
               recorder: ChatRecorderImpl(),
               gateway: _media,
               onAttach: attach,
+              onSend: onSend,
+              onRecordingChanged: onRecordingChanged,
             )
-            : (_, __) => const SizedBox.shrink(),
+            : (_, __, {onSend, onRecordingChanged}) => const SizedBox.shrink(),
     linkPreviewBuilder: (_, preview) => ChatLinkPreviewView(preview: preview),
   );
+  static Future<List<ChatDraftFile>> _pickAttachments(
+    BuildContext context,
+    ChatMediaGatewayImpl media,
+  ) async {
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      builder:
+          (sheetCtx) => SafeArea(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ListTile(
+                  leading: const Icon(Icons.camera_alt_outlined),
+                  title: const Text('الكاميرا'),
+                  onTap: () => Navigator.of(sheetCtx).pop('camera'),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.photo_library_outlined),
+                  title: const Text('الصور والمعرض'),
+                  onTap: () => Navigator.of(sheetCtx).pop('gallery'),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.attach_file),
+                  title: const Text('المستندات والملفات'),
+                  onTap: () => Navigator.of(sheetCtx).pop('files'),
+                ),
+              ],
+            ),
+          ),
+    );
+    if (choice == 'camera') {
+      return media.pickImages(fromCamera: true);
+    } else if (choice == 'gallery') {
+      return media.pickImages(fromCamera: false);
+    } else if (choice == 'files') {
+      return media.pickFiles();
+    }
+    return const [];
+  }
   static const bool _voiceRecordingEnabled = true;
   @override
   void dispose() {

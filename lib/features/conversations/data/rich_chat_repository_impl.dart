@@ -433,9 +433,13 @@ class RichChatRepositoryImpl implements RichChatRepository {
     }, '${file['operationId']}');
     final resourceId = '${created['resourceId']}';
     final uploadPath = '$path/${Uri.encodeComponent(resourceId)}';
-    var state = await _get(uploadPath);
-    final bytes = await store.bytes('${file['blobId']}');
+    var state = created;
     var offset = (state['offset'] as num?)?.toInt() ?? 0;
+    if (offset > 0 && state['status'] != 'uploaded') {
+      state = await _get(uploadPath);
+      offset = (state['offset'] as num?)?.toInt() ?? 0;
+    }
+    final bytes = await store.bytes('${file['blobId']}');
     while (offset < bytes.length) {
       final end = (offset + 1024 * 1024).clamp(0, bytes.length);
       state = await transport.json(
@@ -453,6 +457,9 @@ class RichChatRepositoryImpl implements RichChatRepository {
       }
       offset = next;
       await onProgress(offset / bytes.length);
+    }
+    if (state['attachment'] != null) {
+      return objectMap(state['attachment']);
     }
     final finalized = await _post(
       '$uploadPath/finalize',

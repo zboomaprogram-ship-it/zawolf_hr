@@ -28,6 +28,11 @@ const {
   resolveCheckInStatus,
 } = require('./attendance-gateway');
 const {
+  reconcileEarlyLeave,
+  reviewEarlyLeaveConsequence,
+  reconcilePendingEarlyLeaves,
+} = require('./early-leave-reconciliation');
+const {
   getMyWebAttendanceAccess,
   listWebAttendanceAccessGrants,
   saveWebAttendanceAccessGrant,
@@ -698,6 +703,9 @@ async function authorizeCheckoutPolicyRequest(req) {
   return {
     uid: decoded.uid,
     role: String(data.role || ''),
+    department: String(data.department || ''),
+    position: String(data.position || ''),
+    jobTitle: String(data.jobTitle || ''),
     capabilities: Array.isArray(data.capabilities)
       ? data.capabilities.map(String)
       : [],
@@ -775,7 +783,9 @@ async function handleAttendanceGateway(req, res) {
     if (['stale_event', 'invalid_request', 'checkin_missing', 'outside_range',
       'inactive_location', 'assignment_changed', 'device_conflict',
       'device_mismatch', 'account_inactive', 'unauthenticated',
-      'not_authorized'].includes(code)) {
+      'not_authorized', 'invalid_early_leave_request',
+      'early_leave_not_owned', 'early_checkout_too_early',
+      'checkout_already_bound'].includes(code)) {
       console.info('Attendance gateway rejected:', {
         actorId: actorId || 'unauthenticated',
         code,
@@ -794,6 +804,10 @@ async function handleAttendanceGateway(req, res) {
       device_conflict: 'هذا الجهاز مرتبط بحساب حضور آخر.',
       device_mismatch: 'جهاز الحضور المسجل لا يطابق هذا الجهاز.',
       account_inactive: 'حساب الموظف غير نشط.',
+      invalid_early_leave_request: 'تعذر التحقق من طلب المغادرة المبكرة.',
+      early_leave_not_owned: 'طلب المغادرة المبكرة لا يخص هذا الحساب.',
+      early_checkout_too_early: 'لم يحن وقت المغادرة المبكرة المطلوب بعد.',
+      checkout_already_bound: 'تم تسجيل الانصراف وربطه بطلب آخر بالفعل.',
     };
     sendJson(res, status, {
       ok: false,
@@ -843,6 +857,37 @@ async function handleCheckoutPolicy(req, res) {
       ok: false,
       code,
       error: String(error.message || 'تعذر تحديث حالة تسجيل الانصراف.'),
+    });
+  }
+}
+
+async function handleEarlyLeaveReconciliation(req, res, { review = false } = {}) {
+  try {
+    const actor = await authorizeCheckoutPolicyRequest(req);
+    if (!actor) {
+      sendJson(res, 401, { ok: false, code: 'unauthenticated', error: 'يرجى تسجيل الدخول مرة أخرى.' });
+      return;
+    }
+    const body = await readJsonBody(req, 8 * 1024);
+    const permissionId = String(body.permissionId || '').trim();
+    if (!permissionId || permissionId.length > 256) {
+      sendJson(res, 400, { ok: false, code: 'invalid_request', error: 'معرف طلب الإذن غير صالح.' });
+      return;
+    }
+    const result = review
+      ? await reviewEarlyLeaveConsequence({
+        admin, actor, permissionId, decision: String(body.decision || ''),
+      })
+      : await reconcileEarlyLeave({ admin, permissionId });
+    sendJson(res, 200, { ok: true, ...result });
+  } catch (error) {
+    const code = String(error.code || 'early_leave_reconciliation_unavailable');
+    const status = code === 'not_authorized' ? 403
+      : code === 'invalid_state' ? 409 : 400;
+    sendJson(res, status, {
+      ok: false,
+      code,
+      error: String(error.message || 'تعذر تسوية إذن المغادرة المبكرة.'),
     });
   }
 }
@@ -3950,11 +3995,14 @@ async function handleDispatch(req, res, url) {
       await processManagerLeavePermissionBypasses();
     const attendancePermissionReconciliation =
       await reconcileFinalizedPermissions(admin.firestore());
+    const earlyLeaveReconciliation =
+      await reconcilePendingEarlyLeaves({ admin });
     const automaticAttendance = await processAutomaticAttendance();
     const push = await dispatchNotifications();
     return {
       managerLeaveBypasses,
       attendancePermissionReconciliation,
+      earlyLeaveReconciliation,
       automaticAttendance,
       ...push,
     };
@@ -4035,11 +4083,14 @@ async function runBackgroundDispatch() {
     let automaticAttendance;
     let managerLeaveBypasses;
     let attendancePermissionReconciliation;
+    let earlyLeaveReconciliation;
     try {
       managerLeaveBypasses =
         await processManagerLeavePermissionBypasses();
       attendancePermissionReconciliation =
         await reconcileFinalizedPermissions(admin.firestore());
+      earlyLeaveReconciliation =
+        await reconcilePendingEarlyLeaves({ admin });
       automaticAttendance = await processAutomaticAttendance();
       reminders = await queueAttendanceReminders();
     } catch (error) {
@@ -4063,6 +4114,7 @@ async function runBackgroundDispatch() {
     return {
       managerLeaveBypasses,
       attendancePermissionReconciliation,
+      earlyLeaveReconciliation,
       automaticAttendance,
       reminders,
     };
@@ -4111,6 +4163,8 @@ const server = http.createServer(async (req, res) => {
     url.pathname.startsWith('/company-workspace/');
   const isAttendanceGatewayRoute =
     url.pathname === '/attendance/events' ||
+    url.pathname === '/attendance/early-leave/reconcile' ||
+    url.pathname === '/attendance/early-leave/review' ||
     url.pathname.startsWith('/attendance/web-access') ||
     url.pathname === '/attendance/status' ||
     url.pathname === '/attendance/checkout-policy' ||
@@ -5359,6 +5413,16 @@ const server = http.createServer(async (req, res) => {
 
   if (url.pathname === '/attendance/events' && req.method === 'POST') {
     await handleAttendanceGateway(req, res);
+    return;
+  }
+
+  if (url.pathname === '/attendance/early-leave/reconcile' && req.method === 'POST') {
+    await handleEarlyLeaveReconciliation(req, res);
+    return;
+  }
+
+  if (url.pathname === '/attendance/early-leave/review' && req.method === 'POST') {
+    await handleEarlyLeaveReconciliation(req, res, { review: true });
     return;
   }
 

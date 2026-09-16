@@ -13,10 +13,12 @@ class RichAttachmentView extends StatefulWidget {
     required this.attachment,
     required this.download,
     required this.gateway,
+    this.isMine = false,
   });
   final RichAttachment attachment;
   final Future<ChatDraftFile> Function() download;
   final ChatMediaGateway gateway;
+  final bool isMine;
   @override
   State<RichAttachmentView> createState() => _RichAttachmentViewState();
 }
@@ -54,54 +56,67 @@ class _RichAttachmentViewState extends State<RichAttachmentView> {
     }
   }
 
-  Widget _actions(ChatDraftFile file) => Wrap(
-    children: [
-      IconButton(
-        tooltip: 'حفظ المرفق',
-        icon: const Icon(Icons.download),
-        onPressed: () => _action(() => widget.gateway.save(file)),
-      ),
-      IconButton(
-        tooltip: 'مشاركة',
-        icon: const Icon(Icons.share),
-        onPressed: () => _action(() => widget.gateway.share(file)),
-      ),
-    ],
-  );
+  Widget _actions(ChatDraftFile file) {
+    final iconColor =
+        widget.isMine ? const Color(0xFF0F172A) : Theme.of(context).colorScheme.onSurfaceVariant;
+    return Wrap(
+      children: [
+        IconButton(
+          tooltip: 'حفظ المرفق',
+          icon: Icon(Icons.download, color: iconColor),
+          onPressed: () => _action(() => widget.gateway.save(file)),
+        ),
+        IconButton(
+          tooltip: 'مشاركة',
+          icon: Icon(Icons.share, color: iconColor),
+          onPressed: () => _action(() => widget.gateway.share(file)),
+        ),
+      ],
+    );
+  }
   Widget _content(ChatDraftFile file) {
+    final isVoice =
+        widget.attachment.kind == 'voice' ||
+        file.mimeType.startsWith('audio/');
     if (file.mimeType.startsWith('image/')) {
-      return InkWell(
-        onTap:
-            () => showDialog<void>(
-              context: context,
-              builder:
-                  (_) => Dialog.fullscreen(
-                    child: Scaffold(
-                      appBar: AppBar(
-                        title: Text(file.fileName),
-                        actions: [_actions(file)],
-                      ),
-                      body: Center(
-                        child: InteractiveViewer(
-                          minScale: 0.5,
-                          maxScale: 8,
-                          child: Image.memory(
-                            file.bytes,
-                            fit: BoxFit.contain,
-                            errorBuilder:
-                                (_, _, _) => const Text('الصورة غير مدعومة'),
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(12),
+        child: InkWell(
+          onTap:
+              () => showDialog<void>(
+                context: context,
+                builder:
+                    (_) => Dialog.fullscreen(
+                      child: Scaffold(
+                        appBar: AppBar(
+                          title: Text(file.fileName),
+                          actions: [_actions(file)],
+                        ),
+                        body: Center(
+                          child: InteractiveViewer(
+                            minScale: 0.5,
+                            maxScale: 8,
+                            child: Image.memory(
+                              file.bytes,
+                              fit: BoxFit.contain,
+                              errorBuilder:
+                                  (_, _, _) => const Text('الصورة غير مدعومة'),
+                            ),
                           ),
                         ),
                       ),
                     ),
-                  ),
+              ),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxHeight: 280),
+            child: Image.memory(
+              file.bytes,
+              fit: BoxFit.cover,
+              gaplessPlayback: true,
+              errorBuilder:
+                  (_, _, _) => const Text('تعذر عرض الصورة. يمكنك حفظها.'),
             ),
-        child: Image.memory(
-          file.bytes,
-          fit: BoxFit.contain,
-          gaplessPlayback: true,
-          errorBuilder:
-              (_, _, _) => const Text('تعذر عرض الصورة. يمكنك حفظها.'),
+          ),
         ),
       );
     }
@@ -111,15 +126,43 @@ class _RichAttachmentViewState extends State<RichAttachmentView> {
         file: file,
         gateway: widget.gateway,
         video: file.mimeType.startsWith('video/'),
+        isMine: widget.isMine,
+        isVoice: isVoice,
       );
     }
+
+    final cardBg =
+        widget.isMine
+            ? Colors.black.withValues(alpha: 0.08)
+            : Theme.of(context).colorScheme.surfaceContainerHighest;
+    final cardBorder =
+        widget.isMine
+            ? Border.all(color: Colors.black.withValues(alpha: 0.12))
+            : null;
+    final titleStyle = TextStyle(
+      color: widget.isMine ? const Color(0xFF0F172A) : Colors.white,
+      fontWeight: FontWeight.bold,
+      fontSize: 13,
+    );
+    final subtitleStyle = TextStyle(
+      color:
+          widget.isMine ? const Color(0xFF334155) : ZaWolfColors.textSecondary,
+      fontSize: 11,
+    );
+
     if (file.mimeType == 'application/pdf') {
       return Container(
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: ZaWolfColors.error.withValues(alpha: 0.1),
+          color:
+              widget.isMine
+                  ? Colors.black.withValues(alpha: 0.08)
+                  : ZaWolfColors.error.withValues(alpha: 0.1),
           borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: ZaWolfColors.error.withValues(alpha: 0.3)),
+          border:
+              widget.isMine
+                  ? Border.all(color: Colors.black.withValues(alpha: 0.15))
+                  : Border.all(color: ZaWolfColors.error.withValues(alpha: 0.3)),
         ),
         child: Row(
           children: [
@@ -138,15 +181,12 @@ class _RichAttachmentViewState extends State<RichAttachmentView> {
                     file.fileName,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 13,
-                    ),
+                    style: titleStyle,
                   ),
                   const SizedBox(height: 2),
                   Text(
                     '${(file.bytes.length / 1024).toStringAsFixed(1)} KB',
-                    style: Theme.of(context).textTheme.bodySmall,
+                    style: subtitleStyle,
                   ),
                 ],
               ),
@@ -156,11 +196,21 @@ class _RichAttachmentViewState extends State<RichAttachmentView> {
       );
     }
     if (file.mimeType == 'text/plain') {
-      return SizedBox(
-        height: 180,
+      return Container(
+        height: 160,
+        padding: const EdgeInsets.all(8),
+        decoration: BoxDecoration(
+          color: cardBg,
+          borderRadius: BorderRadius.circular(8),
+          border: cardBorder,
+        ),
         child: SingleChildScrollView(
           child: SelectableText(
             utf8.decode(file.bytes.take(100000).toList(), allowMalformed: true),
+            style: TextStyle(
+              color: widget.isMine ? const Color(0xFF0F172A) : Colors.white,
+              fontSize: 12,
+            ),
           ),
         ),
       );
@@ -179,8 +229,9 @@ class _RichAttachmentViewState extends State<RichAttachmentView> {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+        color: cardBg,
         borderRadius: BorderRadius.circular(12),
+        border: cardBorder,
       ),
       child: Row(
         children: [
@@ -193,6 +244,7 @@ class _RichAttachmentViewState extends State<RichAttachmentView> {
                 ? Icons.folder_zip_outlined
                 : Icons.insert_drive_file_outlined,
             size: 36,
+            color: widget.isMine ? const Color(0xFF166C8C) : null,
           ),
           const SizedBox(width: 10),
           Expanded(
@@ -204,7 +256,7 @@ class _RichAttachmentViewState extends State<RichAttachmentView> {
                   file.fileName,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontWeight: FontWeight.bold),
+                  style: titleStyle,
                 ),
                 Text(
                   spreadsheet
@@ -214,7 +266,7 @@ class _RichAttachmentViewState extends State<RichAttachmentView> {
                       : archive
                       ? 'ملف مضغوط'
                       : 'ملف',
-                  style: Theme.of(context).textTheme.bodySmall,
+                  style: subtitleStyle,
                 ),
                 const Text('احفظ أو شارك لفتحه في التطبيق المناسب.'),
               ],
@@ -226,45 +278,95 @@ class _RichAttachmentViewState extends State<RichAttachmentView> {
   }
 
   @override
-  Widget build(
-    BuildContext context,
-  ) => BlocBuilder<ChatMediaCubit, ChatMediaState>(
-    bloc: _cubit,
-    builder:
-        (_, state) => Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              widget.attachment.fileName,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-            ),
-            Text(
-              '${(widget.attachment.sizeBytes / 1024).toStringAsFixed(0)} KB',
-              style: Theme.of(context).textTheme.labelSmall,
-            ),
-            if (state.loading) const LinearProgressIndicator(),
-            if (state.error != null) Text(state.error!),
-            if (!_available)
-              const Padding(
-                padding: EdgeInsets.only(top: 6),
-                child: Text('جارٍ رفع المرفق…'),
-              )
-            else if (state.file != null) ...[
-              _content(state.file!),
-              _actions(state.file!),
-            ] else if (!state.loading)
-              TextButton.icon(
-                onPressed: _cubit.load,
-                icon: const Icon(Icons.download),
-                label: Text(
-                  state.error == null
-                      ? 'تحميل ومعاينة المرفق'
-                      : 'إعادة المحاولة',
+  Widget build(BuildContext context) {
+    final isVoice =
+        widget.attachment.kind == 'voice' ||
+        widget.attachment.mimeType.startsWith('audio/');
+    final isImage = widget.attachment.mimeType.startsWith('image/');
+    final isMine = widget.isMine;
+    final primaryTextColor = isMine ? const Color(0xFF0F172A) : Colors.white;
+    final secondaryTextColor =
+        isMine ? const Color(0xFF334155) : ZaWolfColors.textSecondary;
+
+    return BlocBuilder<ChatMediaCubit, ChatMediaState>(
+      bloc: _cubit,
+      builder:
+          (_, state) => Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (!isVoice && !isImage) ...[
+                Text(
+                  widget.attachment.fileName,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: primaryTextColor,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 13,
+                  ),
                 ),
-              ),
-          ],
-        ),
-  );
+                Text(
+                  '${(widget.attachment.sizeBytes / 1024).toStringAsFixed(0)} KB',
+                  style: TextStyle(
+                    color: secondaryTextColor,
+                    fontSize: 11,
+                  ),
+                ),
+              ],
+              if (state.loading)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  child: LinearProgressIndicator(
+                    color:
+                        isMine
+                            ? const Color(0xFF166C8C)
+                            : ZaWolfColors.primaryCyan,
+                    backgroundColor:
+                        isMine
+                            ? Colors.black.withValues(alpha: 0.1)
+                            : Colors.white.withValues(alpha: 0.1),
+                  ),
+                ),
+              if (state.error != null)
+                Text(
+                  state.error!,
+                  style: TextStyle(
+                    color: isMine ? const Color(0xFF991B1B) : Colors.redAccent,
+                    fontSize: 12,
+                  ),
+                ),
+              if (!_available)
+                Padding(
+                  padding: const EdgeInsets.only(top: 6),
+                  child: Text(
+                    'جارٍ رفع المرفق…',
+                    style: TextStyle(color: secondaryTextColor, fontSize: 12),
+                  ),
+                )
+              else if (state.file != null) ...[
+                _content(state.file!),
+                if (!isVoice && !isImage) _actions(state.file!),
+              ] else if (!state.loading)
+                TextButton.icon(
+                  style: TextButton.styleFrom(
+                    foregroundColor:
+                        isMine
+                            ? const Color(0xFF0F172A)
+                            : ZaWolfColors.primaryCyan,
+                  ),
+                  onPressed: _cubit.load,
+                  icon: const Icon(Icons.download),
+                  label: Text(
+                    state.error == null
+                        ? (isVoice
+                            ? 'تشغيل الرسالة الصوتية'
+                            : 'تحميل ومعاينة المرفق')
+                        : 'إعادة المحاولة',
+                  ),
+                ),
+            ],
+          ),
+    );
+  }
 }

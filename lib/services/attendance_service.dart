@@ -95,6 +95,8 @@ class AttendanceService {
     UserModel employee, {
     AttendanceActionIntent? expectedAction,
     ReliableCheckInSubmitter? reliableCheckInSubmitter,
+    String? earlyLeavePermissionId,
+    DateTime? earlyLeaveCheckoutAllowedFrom,
   }) async {
     var diagnosticStage = 'security_policy';
     try {
@@ -196,12 +198,16 @@ class AttendanceService {
           throw Exception('لقد قمت بتسجيل الانصراف بالفعل لهذا اليوم.');
         }
 
-        final allowedCheckoutFrom = await _effectiveCheckoutAllowedFrom(
-          employee: employee,
-          dateKey: todayStr,
-          policyConfig: policyConfig,
-          now: now,
-        );
+        final allowedCheckoutFrom =
+            earlyLeavePermissionId != null &&
+                    earlyLeaveCheckoutAllowedFrom != null
+                ? earlyLeaveCheckoutAllowedFrom
+                : await _effectiveCheckoutAllowedFrom(
+                  employee: employee,
+                  dateKey: todayStr,
+                  policyConfig: policyConfig,
+                  now: now,
+                );
         final latestCheckoutAt = AttendancePolicy.parseTimeOnDate(
           now,
           policyConfig.latestCheckoutTime,
@@ -462,12 +468,16 @@ class AttendanceService {
 
         final checkInTime = checkInLog.checkInTime ?? now;
         final totalWorkHours = now.difference(checkInTime).inMinutes / 60.0;
-        final allowedCheckoutFrom = await _effectiveCheckoutAllowedFrom(
-          employee: employee,
-          dateKey: todayStr,
-          policyConfig: policyConfig,
-          now: now,
-        );
+        final allowedCheckoutFrom =
+            earlyLeavePermissionId != null &&
+                    earlyLeaveCheckoutAllowedFrom != null
+                ? earlyLeaveCheckoutAllowedFrom
+                : await _effectiveCheckoutAllowedFrom(
+                  employee: employee,
+                  dateKey: todayStr,
+                  policyConfig: policyConfig,
+                  now: now,
+                );
         final latestCheckoutWithoutDeduction = AttendancePolicy.parseTimeOnDate(
           now,
           policyConfig.latestCheckoutTime,
@@ -544,6 +554,7 @@ class AttendanceService {
           locationRiskReasons: effectiveLocationRisk.reasons,
           locationRiskMessage: effectiveLocationRisk.message,
           status: checkInLog.status,
+          earlyLeavePermissionId: earlyLeavePermissionId,
         );
 
         var savedOnline = online && checkInDoc != null;

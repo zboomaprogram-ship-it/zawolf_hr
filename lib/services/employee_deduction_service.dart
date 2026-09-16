@@ -136,8 +136,11 @@ class EmployeeDeductionService {
               .where(
                 (item) =>
                     item.monthKey == monthKey &&
-                    item.isDeductible &&
-                    item.salaryDeductionFraction > 0,
+                    ((item.isDeductible && item.salaryDeductionFraction > 0) ||
+                        ((item.rejectionConsequence?['dayFraction'] as num?)
+                                    ?.toDouble() ??
+                                0) >
+                            0),
               )
               .map(_fromPermission),
           ...manualDeductions
@@ -253,6 +256,34 @@ class EmployeeDeductionService {
   }
 
   EmployeeDeductionEntry _fromPermission(PermissionModel item) {
+    final consequence = item.rejectionConsequence;
+    if (consequence != null &&
+        ((consequence['dayFraction'] as num?)?.toDouble() ?? 0) > 0) {
+      final requestedHours =
+          ((consequence['requestedMinutes'] as num?)?.toInt() ??
+              item.durationMinutes) ~/
+          60;
+      final checkout = consequence['actualCheckoutAt'];
+      return EmployeeDeductionEntry(
+        id: '${item.permissionId}:early_leave_rejection',
+        date: item.requestDate,
+        sourceLabel: 'إذن مغادرة مبكرة مرفوض',
+        reasonLabel:
+            '${consequence['reasonLabel'] ?? 'استخدام مغادرة مبكرة بعد رفض الإذن'} · المطلوب $requestedHours ساعة${(consequence['rejectionReason'] as String?)?.trim().isNotEmpty == true ? ' · سبب الرفض: ${consequence['rejectionReason']}' : ''}',
+        dayFraction: (consequence['dayFraction'] as num?)?.toDouble() ?? 0,
+        approvalStatus: _normalizedStatus(
+          '${consequence['status'] ?? 'pending_hr'}',
+        ),
+        amount: (consequence['amount'] as num?)?.toDouble(),
+        currency: consequence['currency'] as String? ?? item.salaryCurrency,
+        checkOutTime:
+            checkout is Timestamp
+                ? checkout.toDate()
+                : checkout is DateTime
+                ? checkout
+                : null,
+      );
+    }
     final status =
         item.status == 'rejected' || item.status == 'cancelled'
             ? 'rejected'

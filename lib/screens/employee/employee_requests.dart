@@ -959,12 +959,6 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
       );
       return;
     }
-    if (leaveType == LeaveTypePolicy.paternity && days != 1) {
-      _onValidationFailed(
-        customMessage: 'إجازة المولود تكون ليوم واحد فقط.',
-      );
-      return;
-    }
 
     setState(() => _loading = true);
     final service = LeaveService();
@@ -2527,7 +2521,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        'يجب تقديم إذن التأخير قبل بداية الدوام الرسمية وقبل تسجيل الحضور الفعلي.',
+                        'يمكن تقديم إذن التأخير حتى بعد بداية مواعيد العمل، ولكن يجب تقديمه قبل تسجيل الحضور الفعلي.',
                         style: theme.textTheme.bodySmall!.copyWith(
                           color: ZaWolfColors.warning,
                           fontSize: 10,
@@ -2839,7 +2833,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
                   ),
                   _buildLeaveChip(
                     typeKey: LeaveTypePolicy.paternity,
-                    label: 'إجازة مولود',
+                    label: 'إجازة خاصة',
                     isSelected: selectedLeaveType == LeaveTypePolicy.paternity,
                     onSelected: () => _setLeaveType(LeaveTypePolicy.paternity),
                   ),
@@ -3095,7 +3089,11 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
 
   Widget _buildAdvanceForm(UserModel user, ThemeData theme) {
     final now = DateTime.now();
+    final hasConfiguredSalary = user.baseMonthlySalary > 0;
     final maximum = user.baseMonthlySalary * .5;
+    final maxLabel = hasConfiguredSalary
+        ? '${maximum.toStringAsFixed(0)} ${user.salaryCurrency}'
+        : 'يخضع لتقدير الإدارة (الراتب غير مسجل)';
     final tenureEligible =
         user.hiringDate != null &&
         now.difference(user.hiringDate!).inDays >= 90;
@@ -3129,7 +3127,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
           ),
           const SizedBox(height: 16),
           Text(
-            'الحد الأقصى: ${maximum.toStringAsFixed(0)} ${user.salaryCurrency} · ${tenureEligible ? 'مدة الخدمة مكتملة' : 'لم تكتمل 3 أشهر خدمة'} · ${dateEligible ? 'متاح هذا الشهر' : 'متاح بدءاً من يوم 15'}',
+            'الحد الأقصى: $maxLabel · ${tenureEligible ? 'مدة الخدمة مكتملة' : 'لم تكتمل 3 أشهر خدمة'} · ${dateEligible ? 'متاح هذا الشهر' : 'متاح بدءاً من يوم 15'}',
             textDirection: TextDirection.rtl,
             style: theme.textTheme.bodySmall?.copyWith(
               color:
@@ -3149,7 +3147,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
               if (val == null || val.isEmpty) return 'المبلغ مطلوب';
               final amt = double.tryParse(val);
               if (amt == null || amt <= 0) return 'مبلغ غير صحيح';
-              if (amt > maximum) {
+              if (hasConfiguredSalary && amt > maximum) {
                 return 'الحد الأقصى المتاح ${maximum.toStringAsFixed(0)} ${user.salaryCurrency}.';
               }
               return null;

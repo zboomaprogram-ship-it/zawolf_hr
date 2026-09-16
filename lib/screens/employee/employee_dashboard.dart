@@ -33,6 +33,7 @@ import '../../services/audit_log_service.dart';
 import 'package:geolocator/geolocator.dart';
 import '../../navigation/developer_tools_entry.dart';
 import '../../features/web_attendance_access/data/web_attendance_access_repository_impl.dart';
+import '../../features/pending_early_leave/pending_early_leave.dart';
 import '../../design_system/components/app_logo.dart';
 import '../../design_system/components/stat_card.dart';
 import '../../design_system/tokens.dart';
@@ -87,11 +88,15 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
   String? _periodSummaryLoadingScope;
 
   late final EmployeeAttendanceGateCubit _gateCubit;
+  late final EarlyLeaveCheckoutCubit _earlyLeaveCubit;
 
   @override
   void initState() {
     super.initState();
     _gateCubit = EmployeeAttendanceGateCubit();
+    _earlyLeaveCubit = EarlyLeaveCheckoutCubit(
+      FirestoreEarlyLeaveCheckoutRepository(),
+    );
     WidgetsBinding.instance.addObserver(this);
     AttendanceService().syncPendingOfflineAttendance();
     _scheduleClockTick();
@@ -129,6 +134,7 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
     WidgetsBinding.instance.removeObserver(this);
     _clockTimer?.cancel();
     _gateCubit.close();
+    _earlyLeaveCubit.close();
     final pilot = _checkInPilot;
     if (pilot != null) unawaited(pilot.close());
     super.dispose();
@@ -327,6 +333,7 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
     try {
       await _gateCubit.watch(user);
       await _gateCubit.load(user);
+      await _earlyLeaveCubit.watch(user);
     } catch (_) {}
     if (mounted) {
       setState(() => _now = DateTime.now());
@@ -365,6 +372,14 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
     UserModel employee,
     AttendanceActionIntent expectedAction,
   ) async {
+    final earlyLeave = _earlyLeaveCubit.state.eligibility;
+    final usesEarlyLeave =
+        expectedAction == AttendanceActionIntent.checkOut &&
+        earlyLeave?.canCheckoutAt(DateTime.now()) == true;
+    if (usesEarlyLeave) {
+      final confirmed = await _confirmEarlyLeaveCheckout(earlyLeave!);
+      if (!confirmed || !mounted) return;
+    }
     setState(() {
       _actionLoading = true;
     });
@@ -380,6 +395,10 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
       final attendanceResult = await attendanceService.handleCheckInOrCheckOut(
         employee,
         expectedAction: expectedAction,
+        earlyLeavePermissionId:
+            usesEarlyLeave ? earlyLeave!.permissionId : null,
+        earlyLeaveCheckoutAllowedFrom:
+            usesEarlyLeave ? earlyLeave!.requestedCheckoutAt : null,
         reliableCheckInSubmitter:
             useCheckInPilot
                 ? (verifiedAction) => _submitReliableCheckIn(verifiedAction)
@@ -576,6 +595,34 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
     }
   }
 
+  Future<bool> _confirmEarlyLeaveCheckout(
+    EarlyLeaveCheckoutEligibility eligibility,
+  ) async {
+    return await showDialog<bool>(
+          context: context,
+          builder:
+              (dialogContext) => Directionality(
+                textDirection: TextDirection.rtl,
+                child: AlertDialog(
+                  backgroundColor: ZaWolfColors.surface01,
+                  title: const Text('تأكيد تسجيل الانصراف'),
+                  content: EarlyLeaveCheckoutHint(eligibility: eligibility),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(dialogContext, false),
+                      child: const Text('إلغاء'),
+                    ),
+                    TextButton(
+                      onPressed: () => Navigator.pop(dialogContext, true),
+                      child: const Text('تسجيل الانصراف'),
+                    ),
+                  ],
+                ),
+              ),
+        ) ??
+        false;
+  }
+
   Future<void> _refreshAttendanceAfterAction(UserModel employee) async {
     // None of these probes affect whether the completed action is shown.
     // Isolate failures so a temporary geolocation or policy outage cannot
@@ -743,8 +790,11 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
 
     final todayStr = DateFormat('yyyy-MM-dd').format(DateTime.now());
 
-    return BlocProvider.value(
-      value: _gateCubit,
+    return MultiBlocProvider(
+      providers: [
+        BlocProvider.value(value: _gateCubit),
+        BlocProvider.value(value: _earlyLeaveCubit),
+      ],
       child: Scaffold(
         appBar: AppBar(
           actions: [
@@ -845,6 +895,9 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
                 pilotState?.status == CheckInViewStatus.submitting;
             final gateState =
                 context.watch<EmployeeAttendanceGateCubit>().state;
+            final earlyLeaveState =
+                context.watch<EarlyLeaveCheckoutCubit>().state;
+            final earlyLeave = earlyLeaveState.eligibility;
             final gate = computeCheckInAction(
               CheckInGateInputs(
                 now: _now,
@@ -854,7 +907,9 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
                 policyConfig: gateState.policyConfig,
                 scheduleStartTime: user.workSchedule.startTime,
                 scheduleEndTime: user.workSchedule.endTime,
-                checkoutAllowedFromOverride: gateState.checkoutAllowedFrom,
+                checkoutAllowedFromOverride:
+                    earlyLeave?.requestedCheckoutAt ??
+                    gateState.checkoutAllowedFrom,
                 checkoutEnabled: gateState.checkoutEnabled,
                 dayOffStatus: _dayOffStatus,
                 actionLoading: _actionLoading,

@@ -222,6 +222,46 @@ test('legacy gateway records a checkout only after the employee has checked in',
   });
 });
 
+test('early checkout stores immutable request evidence and converges on retry', async () => {
+  const actor = { uid: 'employee-early' };
+  const now = new Date();
+  const cairo = Object.fromEntries(new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Africa/Cairo', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+  }).formatToParts(now).map((part) => [part.type, part.value]));
+  const endMinutes = (Number(cairo.hour) * 60 + Number(cairo.minute) + 30) % (24 * 60);
+  const endTime = `${String(Math.floor(endMinutes / 60)).padStart(2, '0')}:${String(endMinutes % 60).padStart(2, '0')}`;
+  const date = actionFor(actor.uid).date;
+  const admin = fakeAdmin({
+    'publicConfig/checkoutPolicy': { enabled: true, revision: 1 },
+    'publicConfig/appSecurity': {
+      pending_early_leave_checkout_v1: { enabled: true, everyone: true },
+    },
+    'users/employee-early': { workSchedule: { endTime } },
+    'permissions/perm-early': {
+      userId: actor.uid, permissionType: 'early_leave', requestDate: date,
+      durationMinutes: 60, status: 'pending_manager',
+    },
+  });
+  const checkIn = actionFor(actor.uid);
+  await submitAttendanceAction({ admin, actor, rawAction: checkIn });
+  const checkOut = {
+    ...checkIn, type: 'checkOut', eventTime: now.getTime(),
+    id: 'checkout-event-1', earlyLeavePermissionId: 'perm-early',
+  };
+  const first = await submitAttendanceAction({ admin, actor, rawAction: checkOut });
+  const second = await submitAttendanceAction({ admin, actor, rawAction: checkOut });
+  assert.equal(first.status, 'recorded');
+  assert.equal(second.status, 'already_recorded');
+  const evidence = admin.__testDocs.get(`attendance/${checkIn.attendanceId}`).earlyLeaveCheckoutEvidence;
+  assert.equal(evidence.permissionId, 'perm-early');
+  assert.equal(evidence.checkoutEventId, 'checkout-event-1');
+  assert.equal(evidence.potentialDayFraction, 0.25);
+  assert.equal(
+    admin.__testDocs.get('permissions/perm-early').rejectionConsequence.reconciliationState,
+    'pending',
+  );
+});
+
 test('checkout policy is enforced by the gateway before any attendance write', async () => {
   const admin = fakeAdmin();
   const actor = { uid: 'employee-policy-disabled' };

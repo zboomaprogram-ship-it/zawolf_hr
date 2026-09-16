@@ -37,6 +37,7 @@ class PermissionModel {
   final String? managerReviewedBy;
   final String? managerReviewerComment;
   final bool isRead;
+  final Map<String, dynamic>? rejectionConsequence;
 
   PermissionModel({
     required this.permissionId,
@@ -74,6 +75,7 @@ class PermissionModel {
     this.managerReviewedBy,
     this.managerReviewerComment,
     this.isRead = false,
+    this.rejectionConsequence,
   });
 
   factory PermissionModel.fromFirestore(DocumentSnapshot doc) {
@@ -119,6 +121,12 @@ class PermissionModel {
       managerReviewedBy: data['managerReviewedBy'] as String?,
       managerReviewerComment: data['managerReviewerComment'] as String?,
       isRead: data['isRead'] as bool? ?? false,
+      rejectionConsequence:
+          data['rejectionConsequence'] is Map
+              ? Map<String, dynamic>.from(
+                data['rejectionConsequence'] as Map<dynamic, dynamic>,
+              )
+              : null,
     );
   }
 
@@ -146,9 +154,10 @@ class PermissionModel {
       'salaryDeductionLabel': salaryDeductionLabel,
       'salaryDeductionApprovalStatus': salaryDeductionApprovalStatus,
       'monthKey': monthKey,
-      'submittedAt': submittedAt != null
-          ? Timestamp.fromDate(submittedAt!)
-          : FieldValue.serverTimestamp(),
+      'submittedAt':
+          submittedAt != null
+              ? Timestamp.fromDate(submittedAt!)
+              : FieldValue.serverTimestamp(),
       if (reviewedAt != null) 'reviewedAt': Timestamp.fromDate(reviewedAt!),
       if (reviewedBy != null) 'reviewedBy': reviewedBy,
       if (reviewerComment != null) 'reviewerComment': reviewerComment,
@@ -163,6 +172,8 @@ class PermissionModel {
       if (managerReviewerComment != null)
         'managerReviewerComment': managerReviewerComment,
       'isRead': isRead,
+      if (rejectionConsequence != null)
+        'rejectionConsequence': rejectionConsequence,
     };
   }
 }

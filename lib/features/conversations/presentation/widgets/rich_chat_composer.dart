@@ -5,6 +5,13 @@ import '../cubit/chat_composer_cubit.dart';
 import 'chat_feedback.dart';
 import 'chat_stickers.dart';
 
+typedef ChatVoiceBuilder = Widget Function(
+  BuildContext context,
+  Future<void> Function(ChatDraftFile) onAttach, {
+  Future<void> Function(ChatDraftFile)? onSend,
+  void Function(bool isRecording)? onRecordingChanged,
+});
+
 class RichChatComposer extends StatefulWidget {
   const RichChatComposer({
     super.key,
@@ -14,14 +21,14 @@ class RichChatComposer extends StatefulWidget {
   });
   final ChatComposerCubit cubit;
   final Future<List<ChatDraftFile>> Function(BuildContext) pickAttachments;
-  final Widget Function(BuildContext, Future<void> Function(ChatDraftFile))
-  voiceBuilder;
+  final ChatVoiceBuilder voiceBuilder;
   @override
   State<RichChatComposer> createState() => _RichChatComposerState();
 }
 
 class _RichChatComposerState extends State<RichChatComposer> {
   late final TextEditingController _text;
+  bool _isVoiceRecording = false;
   @override
   void initState() {
     super.initState();
@@ -104,104 +111,131 @@ class _RichChatComposerState extends State<RichChatComposer> {
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
-                      IconButton(
-                        tooltip: 'إرفاق صور أو فيديو أو ملف',
-                        onPressed:
-                            state.loading || state.sending
-                                ? null
-                                : () async {
-                                  try {
-                                    final files = await widget.pickAttachments(
-                                      context,
-                                    );
-                                    if (mounted) {
-                                      await widget.cubit.addFiles(files);
-                                    }
-                                  } catch (error) {
-                                    if (context.mounted) {
-                                      ScaffoldMessenger.of(
+                      if (_isVoiceRecording)
+                        Expanded(
+                          child: widget.voiceBuilder(
+                            context,
+                            (file) => widget.cubit.addFiles([file]),
+                            onSend: (file) async {
+                              await widget.cubit.addFiles([file]);
+                              await widget.cubit.send();
+                            },
+                            onRecordingChanged: (rec) {
+                              if (mounted) {
+                                setState(() => _isVoiceRecording = rec);
+                              }
+                            },
+                          ),
+                        )
+                      else ...[
+                        IconButton(
+                          tooltip: 'إرفاق صور أو فيديو أو ملف',
+                          onPressed:
+                              state.loading || state.sending
+                                  ? null
+                                  : () async {
+                                    try {
+                                      final files = await widget.pickAttachments(
                                         context,
-                                      ).showSnackBar(
-                                        SnackBar(
-                                          content: Text(
-                                            chatErrorText(error.toString()),
-                                          ),
-                                        ),
                                       );
+                                      if (mounted && files.isNotEmpty) {
+                                        await widget.cubit.addFiles(files);
+                                      }
+                                    } catch (error) {
+                                      if (context.mounted) {
+                                        ScaffoldMessenger.of(
+                                          context,
+                                        ).showSnackBar(
+                                          SnackBar(
+                                            content: Text(
+                                              chatErrorText(error.toString()),
+                                            ),
+                                          ),
+                                        );
+                                      }
                                     }
-                                  }
-                                },
-                        icon: const Icon(Icons.attach_file),
-                      ),
-                      Expanded(
-                        child: TextField(
-                          key: const Key('chat-composer'),
-                          controller: _text,
-                          enabled: !state.loading && !state.sending,
-                          onChanged: widget.cubit.changeBody,
-                          minLines: 1,
-                          maxLines: 5,
-                          maxLength: 4000,
-                          keyboardType: TextInputType.multiline,
-                          contentInsertionConfiguration:
-                              ContentInsertionConfiguration(
-                                allowedMimeTypes: const [
-                                  'image/png',
-                                  'image/jpeg',
-                                  'image/gif',
-                                  'image/webp',
-                                ],
-                                onContentInserted: (data) {
-                                  final bytes = data.data;
-                                  if (bytes != null && bytes.isNotEmpty) {
-                                    final ext =
-                                        data.mimeType.split('/').last;
-                                    widget.cubit.addFiles([
-                                      ChatDraftFile(
-                                        fileName:
-                                            'sticker-${DateTime.now().millisecondsSinceEpoch}.$ext',
-                                        mimeType: data.mimeType,
-                                        kind: 'image',
-                                        bytes: bytes,
-                                      ),
-                                    ]);
-                                  }
-                                },
-                              ),
-                          decoration: const InputDecoration(
-                            hintText: 'اكتب رسالة…',
-                            counterText: '',
-                            border: OutlineInputBorder(),
+                                  },
+                          icon: const Icon(Icons.attach_file),
+                        ),
+                        Expanded(
+                          child: TextField(
+                            key: const Key('chat-composer'),
+                            controller: _text,
+                            enabled: !state.loading && !state.sending,
+                            onChanged: widget.cubit.changeBody,
+                            minLines: 1,
+                            maxLines: 5,
+                            maxLength: 4000,
+                            keyboardType: TextInputType.multiline,
+                            contentInsertionConfiguration:
+                                ContentInsertionConfiguration(
+                                  allowedMimeTypes: const [
+                                    'image/png',
+                                    'image/jpeg',
+                                    'image/gif',
+                                    'image/webp',
+                                  ],
+                                  onContentInserted: (data) {
+                                    final bytes = data.data;
+                                    if (bytes != null && bytes.isNotEmpty) {
+                                      final ext =
+                                          data.mimeType.split('/').last;
+                                      widget.cubit.addFiles([
+                                        ChatDraftFile(
+                                          fileName:
+                                              'sticker-${DateTime.now().millisecondsSinceEpoch}.$ext',
+                                          mimeType: data.mimeType,
+                                          kind: 'image',
+                                          bytes: bytes,
+                                        ),
+                                      ]);
+                                    }
+                                  },
+                                ),
+                            decoration: const InputDecoration(
+                              hintText: 'اكتب رسالة…',
+                              counterText: '',
+                              border: OutlineInputBorder(),
+                            ),
                           ),
                         ),
-                      ),
-                      if (!state.loading && !state.sending)
-                        widget.voiceBuilder(
-                          context,
-                          (file) => widget.cubit.addFiles([file]),
+                        if (!state.loading && !state.sending)
+                          widget.voiceBuilder(
+                            context,
+                            (file) => widget.cubit.addFiles([file]),
+                            onSend: (file) async {
+                              await widget.cubit.addFiles([file]);
+                              await widget.cubit.send();
+                            },
+                            onRecordingChanged: (rec) {
+                              if (mounted) {
+                                setState(() => _isVoiceRecording = rec);
+                              }
+                            },
+                          ),
+                        IconButton(
+                          key: const Key('chat-send'),
+                          tooltip: 'إرسال',
+                          onPressed:
+                              state.loading ||
+                                      state.sending ||
+                                      (state.body.trim().isEmpty &&
+                                          state.files.isEmpty &&
+                                          state.stickerId == null)
+                                  ? null
+                                  : widget.cubit.send,
+                          icon:
+                              state.sending
+                                  ? const SizedBox(
+                                    width: 22,
+                                    height: 22,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                  : const Icon(Icons.send),
                         ),
-                      IconButton(
-                        key: const Key('chat-send'),
-                        tooltip: 'إرسال',
-                        onPressed:
-                            state.loading ||
-                                    state.sending ||
-                                    (state.body.trim().isEmpty &&
-                                        state.files.isEmpty &&
-                                        state.stickerId == null)
-                                ? null
-                                : widget.cubit.send,
-                        icon:
-                            state.sending
-                                ? const SizedBox(
-                                  width: 22,
-                                  height: 22,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                  ),
-                                )
-                                : const Icon(Icons.send),
-                      ),
+                      ],
                     ],
                   ),
                 ],

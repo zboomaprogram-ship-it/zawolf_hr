@@ -20,6 +20,42 @@ class ChatMediaGatewayImpl implements ChatMediaGateway {
     }).toList();
   }
   @override
+  Future<List<ChatDraftFile>> pickImages({bool fromCamera = false}) async {
+    final picker = ImagePicker();
+    if (fromCamera) {
+      final file = await picker.pickImage(
+        source: ImageSource.camera,
+        maxWidth: 1920,
+        maxHeight: 1920,
+        imageQuality: 85,
+      );
+      if (file == null) return [];
+      final bytes = await file.readAsBytes();
+      if (bytes.isEmpty) return [];
+      if (bytes.length > 25 * 1024 * 1024) throw const ChatFailure('attachment_size');
+      final name = file.name.isNotEmpty ? file.name : 'camera_${DateTime.now().millisecondsSinceEpoch}.jpg';
+      final mime = file.mimeType ?? lookupMimeType(name, headerBytes: bytes.take(64).toList()) ?? 'image/jpeg';
+      return [ChatDraftFile(fileName: name, mimeType: mime, bytes: bytes, kind: 'image')];
+    } else {
+      final files = await picker.pickMultiImage(
+        maxWidth: 1920,
+        maxHeight: 1920,
+        imageQuality: 85,
+      );
+      if (files.isEmpty) return [];
+      if (files.length > 10) throw const ChatFailure('too_many_attachments');
+      final result = <ChatDraftFile>[];
+      for (final f in files) {
+        final bytes = await f.readAsBytes();
+        if (bytes.isEmpty || bytes.length > 25 * 1024 * 1024) continue;
+        final name = f.name.isNotEmpty ? f.name : 'image_${DateTime.now().millisecondsSinceEpoch}.jpg';
+        final mime = f.mimeType ?? lookupMimeType(name, headerBytes: bytes.take(64).toList()) ?? 'image/jpeg';
+        result.add(ChatDraftFile(fileName: name, mimeType: mime, bytes: bytes, kind: 'image'));
+      }
+      return result;
+    }
+  }
+  @override
   Future<ChatDraftFile?> recordVideo() async {
     try {
       final picker = ImagePicker();

@@ -60,9 +60,11 @@ sick leave continues without annual-balance deduction.
    scheduled work-start time, defaulting to 09:00 when no schedule exists.
 2. A late-arrival request must be rejected if the employee already has a
    non-null check-in for the requested date.
-3. A salary advance requires at least 90 calendar days of service, calendar
-   day 15 or later, and an amount no greater than 50% of base monthly salary.
-   Missing hiring date or salary fails closed with a clear Arabic message.
+3. A salary advance requires at least 90 calendar days of service and calendar
+   day 15 or later. When base monthly salary is greater than zero, the requested
+   amount cannot exceed 50% of base monthly salary. When base monthly salary is
+   zero (unconfigured), positive amounts are permitted for administrative review.
+   Missing hiring date fails closed with a clear Arabic message.
 4. A casual leave request may contain at most two chargeable workdays. The
    existing seven-day annual casual balance remains a separate rule.
 5. Birth leave is one chargeable calendar/work day only, requires a reason,

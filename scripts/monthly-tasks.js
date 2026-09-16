@@ -7,18 +7,21 @@ const {
   datePartsInCairo,
 } = require('./payroll-cycle');
 
-installFirestoreCompatibility(admin);
+let db;
 
-let serviceAccount;
-try {
-  serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
-} catch (_) {
-  console.error('FIREBASE_SERVICE_ACCOUNT is missing or invalid.');
-  process.exit(1);
+function initializeRuntime() {
+  installFirestoreCompatibility(admin);
+  let serviceAccount;
+  try {
+    serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+  } catch (_) {
+    throw new Error('FIREBASE_SERVICE_ACCOUNT is missing or invalid.');
+  }
+  if (admin.apps.length === 0) {
+    admin.initializeApp({ credential: admin.cert(serviceAccount) });
+  }
+  db = admin.firestore();
 }
-
-admin.initializeApp({ credential: admin.cert(serviceAccount) });
-const db = admin.firestore();
 
 function previousDay(date) {
   return new Date(date.getTime() - (24 * 60 * 60 * 1000));
@@ -147,13 +150,22 @@ async function runMonthlyTasks() {
       item.salaryDeductionApprovalStatus === 'approved' &&
       Number(item.salaryDeductionFraction || 0) > 0,
     );
+    const approvedEarlyLeaveRejectionConsequences = permissions.filter((item) =>
+      approvedEarlyLeaveConsequenceFraction(item) > 0,
+    );
     const baseSalary = Number(user.baseMonthlySalary || 0);
     const attendanceDeductions = sum(approvedDeductions, (item) => item.salaryDeductionAmount);
     const permissionDeductions = sum(
       approvedPermissionDeductions,
       (item) => (baseSalary / payrollWorkDaysPerMonth) * Number(item.salaryDeductionFraction || 0),
     );
-    const deductions = attendanceDeductions + permissionDeductions;
+    const earlyLeaveRejectionDeductions = sum(
+      approvedEarlyLeaveRejectionConsequences,
+      (item) => (baseSalary / payrollWorkDaysPerMonth) *
+        approvedEarlyLeaveConsequenceFraction(item),
+    );
+    const deductions = attendanceDeductions + permissionDeductions +
+      earlyLeaveRejectionDeductions;
     const bonuses = sum(issuedBonuses, (item) => item.amount);
     const advanceTotal = sum(approvedAdvances, (item) => item.amount);
     const netSalary = Math.max(0, baseSalary - deductions + bonuses - advanceTotal);
@@ -178,7 +190,9 @@ async function runMonthlyTasks() {
       rewardsBonus: bonuses,
       advances: advanceTotal,
       netSalary,
-      approvedDeductionCount: approvedDeductions.length + approvedPermissionDeductions.length,
+      approvedDeductionCount: approvedDeductions.length +
+        approvedPermissionDeductions.length +
+        approvedEarlyLeaveRejectionConsequences.length,
       bonusRecordCount: issuedBonuses.length,
       advanceRecordCount: approvedAdvances.length,
       status: 'draft',
@@ -187,9 +201,10 @@ async function runMonthlyTasks() {
     }, { merge: true }));
   }
 
-  const pendingDeductions = attendanceSnap.docs.filter((doc) =>
-    doc.data().salaryDeductionApprovalStatus === 'pending_hr',
-  ).length;
+  const pendingDeductions = pendingDeductionCount(
+    attendanceSnap.docs,
+    permissionsSnap.docs,
+  );
   const pendingPermissions = permissionsSnap.docs.filter((doc) =>
     String(doc.data().status || '').startsWith('pending_'),
   ).length;
@@ -242,9 +257,35 @@ async function runMonthlyTasks() {
   }));
 }
 
-runMonthlyTasks()
-  .then(() => process.exit(0))
-  .catch((error) => {
-    console.error('Error running monthly tasks:', error);
+if (require.main === module) {
+  try {
+    initializeRuntime();
+  } catch (error) {
+    console.error(error.message);
     process.exit(1);
-  });
+  }
+  runMonthlyTasks()
+    .then(() => process.exit(0))
+    .catch((error) => {
+      console.error('Error running monthly tasks:', error);
+      process.exit(1);
+    });
+}
+
+module.exports = {
+  approvedEarlyLeaveConsequenceFraction,
+  pendingDeductionCount,
+};
+function approvedEarlyLeaveConsequenceFraction(permission = {}) {
+  const consequence = permission.rejectionConsequence;
+  if (consequence?.status !== 'approved') return 0;
+  return Math.max(0, Number(consequence.dayFraction || 0));
+}
+
+function pendingDeductionCount(attendanceDocs, permissionDocs) {
+  return attendanceDocs.filter((doc) =>
+    doc.data().salaryDeductionApprovalStatus === 'pending_hr',
+  ).length + permissionDocs.filter((doc) =>
+    doc.data().rejectionConsequence?.status === 'pending_hr',
+  ).length;
+}

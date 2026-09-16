@@ -22,10 +22,14 @@ class _PickerRepository implements RichChatRepository {
     String? section,
     String? cursor,
   }) async {
-    if (department != 'sales') return const ChatPage([]);
-    return const ChatPage([
+    const all = [
       ChatUser(id: 'peer', name: 'زميلة المبيعات', department: 'المبيعات'),
-    ]);
+      ChatUser(id: 'developer', name: 'أحمد المطور', department: 'تقنية المعلومات'),
+    ];
+    if (department == null) return const ChatPage(all);
+    return ChatPage(
+      all.where((u) => u.department == department || (department == 'sales' && u.id == 'peer')).toList(),
+    );
   }
 
   @override
@@ -34,10 +38,12 @@ class _PickerRepository implements RichChatRepository {
     String? operationId,
   }) async {
     startedTarget = targetUserId;
-    if (targetUserId != 'peer') throw const ChatFailure('access_denied');
-    return const RichChannel(
-      id: 'direct:employee:peer',
-      name: 'زميلة المبيعات',
+    if (targetUserId != 'peer' && targetUserId != 'developer') {
+      throw const ChatFailure('access_denied');
+    }
+    return RichChannel(
+      id: 'direct:employee:$targetUserId',
+      name: targetUserId,
       kind: 'direct',
     );
   }
@@ -65,6 +71,29 @@ void main() {
       await tester.tap(find.text('زميلة المبيعات'));
       await tester.pumpAndSettle();
       expect(repository.startedTarget, 'peer');
+    },
+  );
+
+  testWidgets(
+    'searching filters contacts across eligible employees directly',
+    (tester) async {
+      final repository = _PickerRepository();
+      await tester.pumpWidget(
+        MaterialApp(home: DirectChatPickerPage(repository: repository)),
+      );
+      await tester.pumpAndSettle();
+
+      // Enter search text
+      await tester.enterText(find.byType(TextField), 'أحمد');
+      await tester.pumpAndSettle();
+
+      expect(find.text('أحمد المطور'), findsOneWidget);
+      expect(find.text('زميلة المبيعات'), findsNothing);
+
+      // Start chat from search
+      await tester.tap(find.text('أحمد المطور'));
+      await tester.pumpAndSettle();
+      expect(repository.startedTarget, 'developer');
     },
   );
 }

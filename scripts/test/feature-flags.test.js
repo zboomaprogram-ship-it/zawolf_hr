@@ -17,3 +17,17 @@ test('attendance multi-location flag fails closed and supports a pilot audience'
     attendance_multi_location_v1: { enabled: true, actorIds: ['u1'] },
   }, 'u2'), false);
 });
+
+test('pending early-leave checkout fails closed and supports pilot or broad rollout', () => {
+  const name = 'pending_early_leave_checkout_v1';
+  assert.equal(isAttendanceFlagEnabled(name, {}, 'u1'), false);
+  assert.equal(isAttendanceFlagEnabled(name, {
+    [name]: { enabled: true, actorIds: ['u1'] },
+  }, 'u1'), true);
+  assert.equal(isAttendanceFlagEnabled(name, {
+    [name]: { enabled: true, actorIds: ['u1'] },
+  }, 'u2'), false);
+  assert.equal(isAttendanceFlagEnabled(name, {
+    [name]: { enabled: true, everyone: true },
+  }, 'u2'), true);
+});

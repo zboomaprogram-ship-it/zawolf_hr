@@ -29,10 +29,9 @@ class RichChatPage extends StatefulWidget {
   final RichChatRepository repository;
   final RichChannel channel;
   final bool canReview;
-  final Widget Function(BuildContext, RichAttachment) attachmentBuilder;
+  final Widget Function(BuildContext, RichAttachment, [bool isMine]) attachmentBuilder;
   final Future<List<ChatDraftFile>> Function(BuildContext) pickAttachments;
-  final Widget Function(BuildContext, Future<void> Function(ChatDraftFile))
-  voiceBuilder;
+  final ChatVoiceBuilder voiceBuilder;
   final Widget Function(BuildContext, ChatLinkPreview)? linkPreviewBuilder;
   @override
   State<RichChatPage> createState() => _RichChatPageState();

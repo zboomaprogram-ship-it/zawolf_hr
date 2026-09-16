@@ -60,7 +60,11 @@ class AttendanceReconciliationService {
       final allowedCheckout = baseEnd.subtract(
         Duration(minutes: permission.durationMinutes),
       );
-      if (!checkOut.isBefore(allowedCheckout)) {
+      if (!checkOut.isBefore(allowedCheckout) &&
+          shouldClearLegacyEarlyCheckoutDeduction(
+            attendanceData,
+            permission.permissionId,
+          )) {
         patch = _noDeductionPatch();
       }
     }
@@ -126,9 +130,8 @@ class AttendanceReconciliationService {
       'salaryCurrency': employee.salaryCurrency,
       'salaryDeductionCode': deduction.code,
       'salaryDeductionLabel': deduction.arabicLabel,
-      'salaryDeductionApprovalStatus': deduction.dayFraction > 0
-          ? 'pending_hr'
-          : 'none',
+      'salaryDeductionApprovalStatus':
+          deduction.dayFraction > 0 ? 'pending_hr' : 'none',
     };
   }
 
@@ -209,4 +212,20 @@ class AttendanceReconciliationService {
     'salaryDeductionLabel': 'لا يوجد خصم',
     'salaryDeductionApprovalStatus': 'none',
   };
+}
+
+/// The legacy permission reconciler may clear only the early-checkout
+/// deduction that the approved permission authorizes. Lateness, absence, and
+/// missed-checkout consequences are independent and must survive approval.
+bool shouldClearLegacyEarlyCheckoutDeduction(
+  Map<String, dynamic> attendance,
+  String permissionId,
+) {
+  if (attendance['salaryDeductionCode'] != 'early_checkout_quarter_day') {
+    return false;
+  }
+  final evidence = attendance['earlyLeaveCheckoutEvidence'];
+  if (evidence is! Map) return true;
+  final linkedPermissionId = evidence['permissionId']?.toString().trim() ?? '';
+  return linkedPermissionId.isEmpty || linkedPermissionId == permissionId;
 }

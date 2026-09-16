@@ -40,8 +40,12 @@ class AttendancePeriodDay {
 
 class AttendancePeriodSummary {
   final List<AttendancePeriodDay> days;
+  final double approvedPermissionConsequenceFractions;
 
-  const AttendancePeriodSummary(this.days);
+  const AttendancePeriodSummary(
+    this.days, {
+    this.approvedPermissionConsequenceFractions = 0,
+  });
 
   int get expectedDays => days.where((day) => day.isExpectedWorkDay).length;
   int get presentDays => days.where((day) => day.isPresent).length;
@@ -51,26 +55,28 @@ class AttendancePeriodSummary {
   /// Discipline follows a final HR decision. A pending deduction is visible
   /// to the employee, but must never lower their score while an approved
   /// permission, correction, or HR review can still clear it.
-  double get disciplineImpactDayFractions => days.fold<double>(0, (total, day) {
-    if (day.isAbsent) {
-      final attendance = day.attendance;
-      if (attendance != null &&
-          attendance.salaryDeductionApprovalStatus == 'rejected') {
-        return total;
-      }
-      final fraction = attendance?.salaryDeductionFraction;
-      return total + (fraction != null && fraction > 0 ? fraction : 1.0);
-    }
-    final attendance = day.attendance;
-    if (attendance == null ||
-        !const {
-          'approved',
-        }.contains(attendance.salaryDeductionApprovalStatus) ||
-        attendance.salaryDeductionFraction <= 0) {
-      return total;
-    }
-    return total + attendance.salaryDeductionFraction;
-  });
+  double get disciplineImpactDayFractions =>
+      approvedPermissionConsequenceFractions +
+      days.fold<double>(0, (total, day) {
+        if (day.isAbsent) {
+          final attendance = day.attendance;
+          if (attendance != null &&
+              attendance.salaryDeductionApprovalStatus == 'rejected') {
+            return total;
+          }
+          final fraction = attendance?.salaryDeductionFraction;
+          return total + (fraction != null && fraction > 0 ? fraction : 1.0);
+        }
+        final attendance = day.attendance;
+        if (attendance == null ||
+            !const {
+              'approved',
+            }.contains(attendance.salaryDeductionApprovalStatus) ||
+            attendance.salaryDeductionFraction <= 0) {
+          return total;
+        }
+        return total + attendance.salaryDeductionFraction;
+      });
 
   /// Employee dashboard discipline percentage for the selected period.
   ///
@@ -127,7 +133,6 @@ class AttendancePeriodSummaryService {
       _db
           .collection('permissions')
           .where('userId', isEqualTo: user.uid)
-          .where('status', isEqualTo: 'approved')
           .where('requestDate', isGreaterThanOrEqualTo: startKey)
           .where('requestDate', isLessThan: endExclusiveKey)
           .get(),
@@ -146,6 +151,7 @@ class AttendancePeriodSummaryService {
             .toList();
     final approvedPermissionDates =
         snapshots[2].docs
+            .where((doc) => doc.data()['status'] == 'approved')
             .map((doc) => doc.data()['requestDate'] as String? ?? '')
             .where((date) => date.isNotEmpty)
             .toSet();
@@ -155,7 +161,16 @@ class AttendancePeriodSummaryService {
             .map((doc) => doc.data()['date'] as String? ?? doc.id)
             .toSet();
 
-    return buildSummary(
+    final approvedPermissionConsequenceFractions = snapshots[2].docs
+        .fold<double>(0, (total, doc) {
+          final consequence = doc.data()['rejectionConsequence'];
+          if (consequence is! Map || consequence['status'] != 'approved') {
+            return total;
+          }
+          return total +
+              ((consequence['dayFraction'] as num?)?.toDouble() ?? 0);
+        });
+    final summary = buildSummary(
       user: user,
       start: startDay,
       end: effectiveEnd,
@@ -164,6 +179,11 @@ class AttendancePeriodSummaryService {
       approvedLeaves: approvedLeaves,
       approvedPermissionDates: approvedPermissionDates,
       companyDaysOff: companyDaysOff,
+    );
+    return AttendancePeriodSummary(
+      summary.days,
+      approvedPermissionConsequenceFractions:
+          approvedPermissionConsequenceFractions,
     );
   }
 

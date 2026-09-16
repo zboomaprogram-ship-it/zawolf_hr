@@ -176,6 +176,32 @@ either credential in Flutter, Git, or a downloadable ZIP. See
 - `COMPANY_OS_FEATURE_FLAGS_JSON={}` (optional Company OS rollback/override;
   all approved Company OS slices are enabled by the production defaults)
 
+## Pending early-leave checkout rollout
+
+The Hostinger runtime owns validation, immutable checkout evidence,
+reconciliation, HR-review notifications, and the bounded repair worker for
+`pending_early_leave_checkout_v1`. The mobile/web client reads the matching
+field from `publicConfig/appSecurity`; missing or invalid configuration fails
+closed and retains the normal checkout time.
+
+Deploy the server files before enabling a pilot. Use a Firebase UID:
+
+```json
+{
+  "pending_early_leave_checkout_v1": {
+    "enabled": true,
+    "everyone": false,
+    "actorIds": ["FIREBASE_UID_OF_PILOT"]
+  }
+}
+```
+
+Rollback is immediate: set `enabled` to `false`. Retain checkout evidence and
+reviewed consequences for audit; do not delete them or reopen finalized payroll
+cycles. The recovery scan is bounded to 100 permission documents per run and is
+executed by the existing Hostinger scheduler, so no second scheduler should be
+enabled.
+
 ## Company OS scheduler ownership and recovery
 
 Company OS portal, IT, request, dashboard, report, export, and audit operations

@@ -18,7 +18,7 @@ class ChatMessageBubble extends StatelessWidget {
   final RichMessage message;
   final RichMessage? reply;
   final bool mine, seen;
-  final Widget Function(BuildContext, RichAttachment) attachmentBuilder;
+  final Widget Function(BuildContext, RichAttachment, [bool isMine]) attachmentBuilder;
   final VoidCallback onActions, onRetry;
   @override
   Widget build(BuildContext context) {
@@ -155,7 +155,7 @@ class ChatMessageBubble extends StatelessWidget {
                         for (final attachment in message.attachments)
                           Padding(
                             padding: const EdgeInsets.only(top: 8),
-                            child: attachmentBuilder(context, attachment),
+                            child: attachmentBuilder(context, attachment, mine),
                           ),
                         if (message.attachmentResourceIds.isNotEmpty &&
                             message.attachments.isEmpty)

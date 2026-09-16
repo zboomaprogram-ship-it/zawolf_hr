@@ -39,6 +39,12 @@ class AttendanceGatewayException implements Exception {
     'inactive_location' => 'موقع الحضور غير نشط حالياً. اختر موقعاً آخر.',
     'outside_range' =>
       'أنت خارج نطاق مواقع الحضور المسندة إليك. اقترب من الموقع ثم أعد المحاولة.',
+    'invalid_early_leave_request' =>
+      'تعذر التحقق من طلب المغادرة المبكرة. حدّث الطلب ثم حاول مرة أخرى.',
+    'early_leave_not_owned' => 'طلب المغادرة المبكرة لا يخص هذا الحساب.',
+    'early_checkout_too_early' => 'لم يحن وقت المغادرة المبكرة المطلوب بعد.',
+    'checkout_already_bound' =>
+      'تم تسجيل الانصراف وربطه بطلب مغادرة آخر بالفعل.',
     'network' || 'timeout' || 'server_unavailable' || 'unavailable' =>
       'تعذر التأكيد الآن. تم حفظ العملية للمزامنة عند توفر الإنترنت.',
     _ => 'تعذر إتمام الطلب الآن. تحقق من حالة الطلب قبل إعادة الإرسال.',
@@ -78,6 +84,22 @@ class AttendanceGatewayService {
   /// This is deliberately event-driven; it is never used as a polling API.
   Future<Map<String, dynamic>> checkInStatus(String attendanceId) {
     return _post({'attendanceId': attendanceId}, path: '/attendance/status');
+  }
+
+  Future<Map<String, dynamic>> reconcileEarlyLeave(String permissionId) {
+    return _post({
+      'permissionId': permissionId,
+    }, path: '/attendance/early-leave/reconcile');
+  }
+
+  Future<Map<String, dynamic>> reviewEarlyLeaveConsequence({
+    required String permissionId,
+    required String decision,
+  }) {
+    return _post({
+      'permissionId': permissionId,
+      'decision': decision,
+    }, path: '/attendance/early-leave/review');
   }
 
   /// Reads the server-owned check-out policy. If this request is unavailable,

@@ -42,5 +42,24 @@ void main() {
       expect(entry.detailLines, contains('القيمة: غير مسجلة'));
       expect(entry.hasCompleteDetails, isFalse);
     });
+
+    test('maps early-leave rejection consequence with requested hours and reviewer reason', () {
+      const entry = EmployeeDeductionEntry(
+        id: 'perm-1:early_leave_rejection',
+        date: '2026-09-16',
+        sourceLabel: 'إذن مغادرة مبكرة مرفوض',
+        reasonLabel: 'استخدام مغادرة مبكرة بعد رفض الإذن · المطلوب 2 ساعة · سبب الرفض: ضغط عمل',
+        dayFraction: 0.50,
+        approvalStatus: 'pending_hr',
+        amount: 500,
+        currency: 'EGP',
+      );
+
+      expect(entry.detailLines, contains('المصدر: إذن مغادرة مبكرة مرفوض'));
+      expect(entry.detailLines, contains('الخصم: نصف يوم'));
+      expect(entry.detailLines, contains('حالة المراجعة: بانتظار مراجعة HR'));
+      expect(entry.detailLines, contains('القيمة: 500.00 EGP'));
+      expect(entry.hasCompleteDetails, isTrue);
+    });
   });
 }

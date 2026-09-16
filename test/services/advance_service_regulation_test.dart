@@ -67,6 +67,36 @@ void main() {
     );
   });
 
+  test('advance rule accepts positive advance when salary is zero or unconfigured', () {
+    expect(
+      () => AdvanceService.validateSubmissionEligibility(
+        employee: employee(joined: DateTime(2025, 1, 1), salary: 0),
+        amount: 2000,
+        now: eligibleAt,
+      ),
+      returnsNormally,
+    );
+  });
+
+  test('advance rule denies non-positive amount regardless of salary', () {
+    expect(
+      () => AdvanceService.validateSubmissionEligibility(
+        employee: employee(joined: DateTime(2025, 1, 1), salary: 0),
+        amount: 0,
+        now: eligibleAt,
+      ),
+      throwsException,
+    );
+    expect(
+      () => AdvanceService.validateSubmissionEligibility(
+        employee: employee(joined: DateTime(2025, 1, 1), salary: 10000),
+        amount: -100,
+        now: eligibleAt,
+      ),
+      throwsException,
+    );
+  });
+
   test('submission validates before allocating a Firestore request document', () {
     final source = File('lib/services/advance_service.dart').readAsStringSync();
     final submitStart = source.indexOf('Future<void> submitAdvanceRequest');

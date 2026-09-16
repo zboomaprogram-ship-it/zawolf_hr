@@ -55,6 +55,7 @@ class OfflineAttendanceAction {
   final List<String> locationRiskReasons;
   final String? locationRiskMessage;
   final String status;
+  final String? earlyLeavePermissionId;
 
   const OfflineAttendanceAction({
     required this.id,
@@ -92,6 +93,7 @@ class OfflineAttendanceAction {
     this.locationRiskReasons = const [],
     this.locationRiskMessage,
     required this.status,
+    this.earlyLeavePermissionId,
   });
 
   factory OfflineAttendanceAction.fromJson(Map<String, dynamic> json) {
@@ -142,6 +144,7 @@ class OfflineAttendanceAction {
           const [],
       locationRiskMessage: json['locationRiskMessage'] as String?,
       status: json['status'] as String? ?? 'present',
+      earlyLeavePermissionId: json['earlyLeavePermissionId'] as String?,
     );
   }
 
@@ -185,6 +188,8 @@ class OfflineAttendanceAction {
       if (locationRiskMessage != null)
         'locationRiskMessage': locationRiskMessage,
       'status': status,
+      if (earlyLeavePermissionId != null)
+        'earlyLeavePermissionId': earlyLeavePermissionId,
     };
   }
 

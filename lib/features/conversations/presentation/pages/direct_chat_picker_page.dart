@@ -5,18 +5,33 @@ import '../../domain/repositories/rich_chat_repository.dart';
 import '../cubit/chat_direct_picker_cubit.dart';
 import '../widgets/chat_feedback.dart';
 
-class DirectChatPickerPage extends StatelessWidget {
+class DirectChatPickerPage extends StatefulWidget {
   const DirectChatPickerPage({super.key, required this.repository});
   final RichChatRepository repository;
 
   @override
+  State<DirectChatPickerPage> createState() => _DirectChatPickerPageState();
+}
+
+class _DirectChatPickerPageState extends State<DirectChatPickerPage> {
+  final _searchController = TextEditingController();
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) => BlocProvider(
-    create: (_) => ChatDirectPickerCubit(repository)..loadDepartments(),
+    create: (_) => ChatDirectPickerCubit(widget.repository)..loadDepartments(),
     child: Directionality(
       textDirection: TextDirection.rtl,
       child: BlocBuilder<ChatDirectPickerCubit, ChatDirectPickerState>(
         builder: (context, state) {
           final cubit = context.read<ChatDirectPickerCubit>();
+          final isSearching = state.searchQuery.isNotEmpty;
+
           return Scaffold(
             appBar: AppBar(title: const Text('محادثة خاصة')),
             body: Center(
@@ -24,18 +39,79 @@ class DirectChatPickerPage extends StatelessWidget {
                 constraints: const BoxConstraints(maxWidth: 720),
                 child: Column(
                   children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                      child: TextField(
+                        controller: _searchController,
+                        onChanged: cubit.search,
+                        decoration: InputDecoration(
+                          hintText: 'بحث بالاسم أو القسم...',
+                          prefixIcon: const Icon(Icons.search),
+                          suffixIcon: _searchController.text.isNotEmpty
+                              ? IconButton(
+                                  icon: const Icon(Icons.close),
+                                  onPressed: () {
+                                    _searchController.clear();
+                                    cubit.search('');
+                                  },
+                                )
+                              : null,
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 10,
+                          ),
+                        ),
+                      ),
+                    ),
                     if (state.loading) const LinearProgressIndicator(),
                     if (state.error != null)
                       ChatFeedback(
                         text: chatErrorText(state.error!),
-                        onRetry:
-                            state.selectedDepartment == null
+                        onRetry: isSearching
+                            ? () => cubit.search(_searchController.text)
+                            : state.selectedDepartment == null
                                 ? cubit.loadDepartments
                                 : () => cubit.chooseDepartment(
-                                  state.selectedDepartment!,
-                                ),
+                                      state.selectedDepartment!,
+                                    ),
                       ),
-                    if (state.selectedDepartment == null)
+                    if (isSearching) ...[
+                      if (!state.loading && state.contacts.isEmpty && state.error == null)
+                        const Expanded(
+                          child: Center(
+                            child: Padding(
+                              padding: EdgeInsets.all(24),
+                              child: Text(
+                                'لا يوجد موظفون مطابقون أو مسموح بمراسلتهم وفق سياسة التواصل.',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(color: Colors.grey),
+                              ),
+                            ),
+                          ),
+                        )
+                      else
+                        Expanded(
+                          child: ListView.builder(
+                            itemCount: state.contacts.length,
+                            itemBuilder: (context, index) {
+                              final user = state.contacts[index];
+                              return ListTile(
+                                leading: const CircleAvatar(
+                                  child: Icon(Icons.person_outline),
+                                ),
+                                title: Text(user.name),
+                                subtitle: Text(
+                                  user.department.isEmpty ? 'موظف' : user.department,
+                                ),
+                                onTap: () => _start(context, user),
+                              );
+                            },
+                          ),
+                        ),
+                    ] else if (state.selectedDepartment == null) ...[
                       Expanded(
                         child: ListView(
                           children: [
@@ -44,17 +120,19 @@ class DirectChatPickerPage extends StatelessWidget {
                                 leading: const Icon(Icons.business_outlined),
                                 title: Text(department.name),
                                 trailing: Text('${department.eligibleCount}'),
-                                onTap:
-                                    () => cubit.chooseDepartment(department.id),
+                                onTap: () => cubit.chooseDepartment(department.id),
                               ),
                           ],
                         ),
-                      )
-                    else ...[
+                      ),
+                    ] else ...[
                       Padding(
                         padding: const EdgeInsets.all(8),
                         child: TextButton.icon(
-                          onPressed: cubit.loadDepartments,
+                          onPressed: () {
+                            _searchController.clear();
+                            cubit.loadDepartments();
+                          },
                           icon: const Icon(Icons.arrow_back),
                           label: const Text('تغيير القسم'),
                         ),
@@ -87,7 +165,7 @@ class DirectChatPickerPage extends StatelessWidget {
 
   Future<void> _start(BuildContext context, ChatUser user) async {
     try {
-      final channel = await repository.startDirect(user.id);
+      final channel = await widget.repository.startDirect(user.id);
       if (context.mounted) Navigator.pop(context, channel);
     } catch (error) {
       if (context.mounted) {

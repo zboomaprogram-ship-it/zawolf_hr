@@ -9,6 +9,13 @@ const {
   loadMultiLocationFlag,
   validateAssignedLocation,
 } = require('./attendance-location-assignments');
+const { isAttendanceFlagEnabled } = require('./feature-flags');
+const {
+  validateEarlyLeaveForCheckout,
+  buildCheckoutEvidence,
+  consequenceFrom,
+  notifyHrReviewers,
+} = require('./early-leave-reconciliation');
 
 const CAIRO_FORMATTER = new Intl.DateTimeFormat('en-CA', {
   timeZone: 'Africa/Cairo', year: 'numeric', month: '2-digit', day: '2-digit',
@@ -247,12 +254,101 @@ async function submitAttendanceAction({ admin, actor, rawAction }) {
     return { action: 'check_in', status, attendanceId: expectedId };
   }
   await bindTrustedDevice({ db, admin, actor, action, userRef, user, developerDeviceOverride });
-  const existing = await ref.get();
-  if (!existing.exists || !existing.data()?.checkInTime) throw gatewayError('سجل الحضور غير موجود بعد.', 'checkin_missing');
-  if (existing.data()?.checkOutTime) return { action: 'check_out', status: 'already_recorded', attendanceId: expectedId };
-  await ref.update(actionData({ admin, action, user, receivedAt,
-    webLocationExempt, webGrantRevision: webGrant?.revision ?? null }));
-  return { action: 'check_out', status: 'recorded', attendanceId: expectedId };
+
+  let earlyLeave = null;
+  let permissionRef = null;
+  let permission = null;
+  const permissionId = asString(rawAction.earlyLeavePermissionId);
+  if (permissionId) {
+    const securitySnap = await db.collection('publicConfig').doc('appSecurity').get();
+    const enabled = isAttendanceFlagEnabled(
+      'pending_early_leave_checkout_v1', securitySnap.data() || {}, actor.uid,
+    );
+    if (!enabled) {
+      throw gatewayError('Early-leave checkout is not enabled.', 'invalid_early_leave_request');
+    }
+    permissionRef = db.collection('permissions').doc(permissionId);
+    const permissionSnap = await permissionRef.get();
+    permission = permissionSnap.exists ? permissionSnap.data() : null;
+    earlyLeave = validateEarlyLeaveForCheckout({
+      permissionId,
+      permission,
+      actorUid: actor.uid,
+      dateKey: action.date,
+      eventTime: action.eventTime,
+      normalEndTime: user.workSchedule?.endTime || '17:00',
+    });
+  }
+
+  const result = await db.runTransaction(async (transaction) => {
+    const existing = await transaction.get(ref);
+    if (!existing.exists || !existing.data()?.checkInTime) {
+      throw gatewayError('سجل الحضور غير موجود بعد.', 'checkin_missing');
+    }
+    if (existing.data()?.checkOutTime) {
+      const boundPermission = existing.data()?.earlyLeaveCheckoutEvidence?.permissionId;
+      if (permissionId && boundPermission && boundPermission !== permissionId) {
+        throw gatewayError('Checkout is already bound to another request.', 'checkout_already_bound');
+      }
+      return { status: 'already_recorded', evidence: existing.data()?.earlyLeaveCheckoutEvidence };
+    }
+    const patch = actionData({ admin, action, user, receivedAt,
+      webLocationExempt, webGrantRevision: webGrant?.revision ?? null });
+    let evidence = null;
+    if (earlyLeave?.isEarly) {
+      evidence = buildCheckoutEvidence({
+        validation: earlyLeave,
+        eventTime: action.eventTime,
+        eventId: rawAction.id,
+        admin,
+      });
+      patch.earlyLeaveCheckoutEvidence = evidence;
+    }
+    transaction.set(ref, patch, { merge: true });
+    if (evidence && permission?.status === 'rejected') {
+      const consequence = consequenceFrom({
+        permissionId,
+        permission,
+        attendanceId: expectedId,
+        evidence,
+        user,
+        admin,
+      });
+      transaction.set(permissionRef, { rejectionConsequence: consequence }, { merge: true });
+    } else if (evidence && permissionRef) {
+      transaction.set(permissionRef, {
+        rejectionConsequence: {
+          reconciliationState: 'pending',
+          attendanceId: expectedId,
+          consequenceId: `early_leave_rejection:${permissionId}`,
+        },
+      }, { merge: true });
+    }
+    return { status: 'recorded', evidence };
+  });
+  if (result.evidence && permission?.status === 'rejected') {
+    await notifyHrReviewers({
+      admin,
+      permissionId,
+      result: {
+        status: 'consequence_pending_hr',
+        dayFraction: result.evidence.potentialDayFraction,
+      },
+    });
+  }
+  return {
+    action: 'check_out',
+    status: result.status,
+    attendanceId: expectedId,
+    ...(result.evidence ? {
+      earlyLeave: {
+        permissionId,
+        requestStatus: earlyLeave?.requestStatus || result.evidence.permissionStatusAtCheckout,
+        potentialDayFraction: earlyLeave?.potentialDayFraction || result.evidence.potentialDayFraction,
+        consequenceStatus: permission?.status === 'rejected' ? 'pending_hr' : 'pending_decision',
+      },
+    } : {}),
+  };
 }
 
 async function bindAttendanceDevice({ admin, actor, rawAction }) {

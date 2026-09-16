@@ -14,7 +14,7 @@ class ChatSearchPage extends StatelessWidget {
   });
   final RichChatRepository repository;
   final String channelId;
-  final Widget Function(BuildContext, RichAttachment) attachmentBuilder;
+  final Widget Function(BuildContext, RichAttachment, [bool isMine]) attachmentBuilder;
   @override
   Widget build(BuildContext context) => BlocProvider(
     create: (_) => ChatSearchCubit(repository, channelId),

@@ -5,7 +5,10 @@ const PHASE007_FLAGS = new Set([
   'conversations_rich_chat_v1',
 ]);
 const { COMPANY_OS_FLAGS, evaluateCompanyOsFlag } = require('./company-os/feature-flags');
-const ATTENDANCE_FLAGS = new Set(['attendance_multi_location_v1']);
+const ATTENDANCE_FLAGS = new Set([
+  'attendance_multi_location_v1',
+  'pending_early_leave_checkout_v1',
+]);
 
 function isPhase007FlagEnabled(name, config = {}, actorId = '') {
   if (!PHASE007_FLAGS.has(name)) return false;
