@@ -160,9 +160,9 @@ observability, and reversible production rollout.
 
 - [x] T048 [P] Add architecture/query guard fixtures for the feature slice and bounded Firestore watch in `test/architecture_guard_test.dart` and `test/firestore_query_guard_test.dart`
 - [x] T049 [P] Add Arabic employee-guide text explaining pending checkout, rejection consequences, and HR review in `docs/employee_guide_ar.md`
-- [x] T050 Run every manual scenario and record results in `specs/015-pending-early-leave/quickstart.md`
+- [ ] T050 Run every manual scenario and record results in `specs/015-pending-early-leave/quickstart.md`
 - [x] T051 Run `dart format`, `flutter analyze`, architecture/query guards, the full Flutter suite, and `(cd scripts && npm test)`, fixing only failures caused by this feature
-- [ ] T052 Build the Hostinger deployment ZIP with server support disabled and document checksum/release contents in `scripts/HOSTINGER_DEPLOYMENT.md`
+- [x] T052 Build the Hostinger deployment ZIP with server support disabled and document checksum/release contents in `scripts/HOSTINGER_DEPLOYMENT.md`
 - [ ] T053 Deploy server support before the mobile flag, enable a pilot audience, verify safe counters and rollback, then record production evidence in `specs/015-pending-early-leave/quickstart.md`
 
 ---

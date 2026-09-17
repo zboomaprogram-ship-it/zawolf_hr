@@ -35,6 +35,16 @@ void main() {
       expect(diag.actionType, AttendanceFailureActionType.openAppSettings);
     });
 
+    test('identifies a missing fresh GPS reading with retry guidance', () {
+      final diag = AttendanceFailureDiagnostic.fromError(
+        Exception('تعذر الحصول على قراءة GPS حديثة. فعّل الموقع الدقيق وميزة تحسين دقة الموقع من Google، ثم انتقل قرب نافذة واضغط تحديث.'),
+      );
+
+      expect(diag.code, 'ERR_GPS_UNAVAILABLE');
+      expect(diag.title, contains('GPS'));
+      expect(diag.actionType, AttendanceFailureActionType.retry);
+    });
+
     test('identifies outside geofence with detailed distance info', () {
       final diag = AttendanceFailureDiagnostic.fromError(
         Exception('أنت خارج نطاق العمل المسموح به لفرع (المعادي).\nالمسافة الحالية: 320 متر.\nنطاق الفرع: 50 متر.'),

@@ -202,6 +202,23 @@ cycles. The recovery scan is bounded to 100 permission documents per run and is
 executed by the existing Hostinger scheduler, so no second scheduler should be
 enabled.
 
+### Server release packages — 2026-09-16
+
+#### Version 2 (Attendance Security Patch & Pending Early Leave)
+- File: `build/releases/zawolf-hostinger-pending-early-leave-2026-09-16-v2.zip`
+- SHA-256: See `build/releases/zawolf-hostinger-pending-early-leave-2026-09-16-v2.zip.sha256`
+- Includes the attendance gateway with strict check-in event staleness verification (rejects offline/delayed check-in events older than 3 minutes), early-leave reconciliation and recovery worker, notification routes, payroll-cycle handling, and all existing runtime modules required by `notification-web.js`.
+- Excludes environment files, credentials, tests, logs, and `node_modules`.
+
+#### Version 1 (Initial)
+- File: `build/releases/zawolf-hostinger-pending-early-leave-2026-09-16-v1.zip`
+- SHA-256: `cb27a647487b257944accbee3274ffee987a5a682162d62f99753674a2d201aa`
+
+Uploading this package does not enable pending/rejected early checkout. Keep
+`publicConfig/appSecurity.pending_early_leave_checkout_v1.enabled` set to
+`false` until the pilot scenarios in
+`specs/015-pending-early-leave/quickstart.md` pass.
+
 ## Company OS scheduler ownership and recovery
 
 Company OS portal, IT, request, dashboard, report, export, and audit operations

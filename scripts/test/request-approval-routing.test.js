@@ -5,6 +5,7 @@ const test = require('node:test');
 
 const {
   validateRoute,
+  collapseGeneratedApprovers,
   notificationEventId,
 } = require('../request-approval-routing');
 
@@ -18,6 +19,17 @@ test('field-mission approval route accepts one to four distinct user IDs', () =>
   );
   assert.throws(() => validateRoute([]), /واحد/);
   assert.throws(() => validateRoute(Array.from({ length: 5 }, (_, i) => ({ id: `approver_000${i}` }))), /أربعة/);
+});
+
+test('generated mission route collapses a manager who is also the accounting approver', () => {
+  assert.deepEqual(collapseGeneratedApprovers([
+    { id: 'accounting_manager_1', labelAr: 'المدير المباشر' },
+    { id: 'chief_executive_1', labelAr: 'CEO-100' },
+    { id: 'accounting_manager_1', labelAr: 'الحسابات' },
+  ]), [
+    { id: 'accounting_manager_1', labelAr: 'المدير المباشر / الحسابات' },
+    { id: 'chief_executive_1', labelAr: 'CEO-100' },
+  ]);
 });
 
 test('route notification IDs are deterministic and recipient specific', () => {

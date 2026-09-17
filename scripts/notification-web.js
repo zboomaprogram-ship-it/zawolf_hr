@@ -181,7 +181,7 @@ const {
 } = require('./request-approval-routing');
 
 const port = Number(process.env.PORT || 3000);
-const notificationRuntimeRelease = '2026-09-15-chat-google-drive-auth-fix-2';
+const notificationRuntimeRelease = '2026-09-17-attendance-clock-field-mission-fix-2';
 const dispatchSecret = process.env.NOTIFICATION_DISPATCH_SECRET || '';
 const defaultGoogleWorkspaceOrigins = [
   'https://zawolf-hr-system-60317.web.app',
@@ -715,6 +715,7 @@ async function authorizeCheckoutPolicyRequest(req) {
 async function handleAttendanceGateway(req, res) {
   let actorId = '';
   let actionType = 'unknown';
+  let actionEventTime = NaN;
   try {
     const actor = await authorizeAttendanceRequest(req);
     if (!actor) {
@@ -724,6 +725,7 @@ async function handleAttendanceGateway(req, res) {
     actorId = actor.uid;
     const body = await readJsonBody(req, 16 * 1024);
     actionType = String(body.action?.type || 'unknown');
+    actionEventTime = Number(body.action?.eventTime);
     console.info('Attendance gateway accepted request:', {
       actorId,
       action: actionType,
@@ -790,6 +792,9 @@ async function handleAttendanceGateway(req, res) {
         actorId: actorId || 'unauthenticated',
         code,
         action: actionType,
+        eventAgeSeconds: Number.isFinite(actionEventTime)
+          ? Math.round((Date.now() - actionEventTime) / 1000)
+          : null,
       });
     } else {
       console.error('Attendance gateway failed:', code, error.message || error);

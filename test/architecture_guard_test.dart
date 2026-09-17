@@ -3,7 +3,6 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 final _legacyUiInfrastructureAllowlist = <String>{
-  'lib/components/attendance_heatmap_card.dart',
   'lib/components/employee_request_history_section.dart',
   'lib/components/request_approval_timeline.dart',
   'lib/screens/employee/employee_dashboard.dart',

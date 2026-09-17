@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
 import '../models/user_model.dart';
 import '../models/permission_model.dart';
 import '../models/attendance_policy.dart';
@@ -254,6 +255,12 @@ class PermissionService {
 
   // Submit permission request with rule audits
   Future<void> submitPermission(PermissionModel req, UserModel employee) async {
+    final connectivity = await Connectivity().checkConnectivity();
+    if (connectivity.contains(ConnectivityResult.none) || connectivity.isEmpty) {
+      throw Exception(
+        'لا يمكن تقديم طلب الإذن في وضع عدم الاتصال بالإنترنت. يرجى التأكد من اتصال الهاتف بالإنترنت والمحاولة مجدداً.',
+      );
+    }
     final now = DateTime.now();
     final requestDay = DateTime.parse(req.requestDate);
     final monthKey = PayrollCycle.keyFor(requestDay);

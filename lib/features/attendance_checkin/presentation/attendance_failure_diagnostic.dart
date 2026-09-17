@@ -35,7 +35,14 @@ class AttendanceFailureDiagnostic {
       } catch (_) {}
     }
 
-    final raw = error.toString().replaceFirst(RegExp(r'^(?:Exception|Bad state|StateError):\s*'), '').trim();
+    final raw =
+        error
+            .toString()
+            .replaceFirst(
+              RegExp(r'^(?:Exception|Bad state|StateError):\s*'),
+              '',
+            )
+            .trim();
 
     // 1. Location Service Disabled
     if (raw.contains('خدمة الموقع مغلقة') ||
@@ -43,7 +50,8 @@ class AttendanceFailureDiagnostic {
         raw.contains('LocationServiceDisabledException')) {
       return const AttendanceFailureDiagnostic(
         title: 'خدمة الموقع الجغرافي مغلقة',
-        message: 'خدمة تحديد الموقع (GPS) مغلقة على هاتفك أو المتصفح. يرجى تفعيل الـ GPS ثم إعادة المحاولة.',
+        message:
+            'خدمة تحديد الموقع (GPS) مغلقة على هاتفك أو المتصفح. يرجى تفعيل الـ GPS ثم إعادة المحاولة.',
         code: 'ERR_GPS_DISABLED',
         actionType: AttendanceFailureActionType.openLocationSettings,
       );
@@ -56,7 +64,8 @@ class AttendanceFailureDiagnostic {
         raw.contains('deniedForever')) {
       return const AttendanceFailureDiagnostic(
         title: 'إذن الموقع محظور',
-        message: 'تم حظر إذن الموقع للتطبيق. يرجى فتح إعدادات الهاتف ومنح التطبيق صلاحية الموقع.',
+        message:
+            'تم حظر إذن الموقع للتطبيق. يرجى فتح إعدادات الهاتف ومنح التطبيق صلاحية الموقع.',
         code: 'ERR_PERMISSION_BLOCKED',
         actionType: AttendanceFailureActionType.openAppSettings,
       );
@@ -68,7 +77,8 @@ class AttendanceFailureDiagnostic {
         raw.contains('PermissionDeniedException')) {
       return const AttendanceFailureDiagnostic(
         title: 'صلاحية الموقع مطلوبة',
-        message: 'تم رفض إذن الوصول إلى الموقع. اسمح للتطبيق باستخدام الموقع لتتمكن من تسجيل الحضور.',
+        message:
+            'تم رفض إذن الوصول إلى الموقع. اسمح للتطبيق باستخدام الموقع لتتمكن من تسجيل الحضور.',
         code: 'ERR_PERMISSION_DENIED',
         actionType: AttendanceFailureActionType.openAppSettings,
       );
@@ -78,13 +88,26 @@ class AttendanceFailureDiagnostic {
     if (raw.contains('الموقع التقريبي') || raw.contains('reduced')) {
       return const AttendanceFailureDiagnostic(
         title: 'الموقع الدقيق مطلوب',
-        message: 'الموقع التقريبي مفعّل حالياً. افتح إعدادات التطبيق وفعّل خيار "الموقع الدقيق" (Precise location) للتحقق من نطاق الفرع.',
+        message:
+            'الموقع التقريبي مفعّل حالياً. افتح إعدادات التطبيق وفعّل خيار "الموقع الدقيق" (Precise location) للتحقق من نطاق الفرع.',
         code: 'ERR_APPROXIMATE_LOCATION',
         actionType: AttendanceFailureActionType.openAppSettings,
       );
     }
 
-    // 5. Poor Accuracy / Weak GPS
+    // 5. Fresh GPS reading unavailable
+    if (raw.toLowerCase().contains('تعذر الحصول على قراءة gps حديثة') ||
+        raw.contains('تعذر الحصول على قراءة موقع حديثة')) {
+      return const AttendanceFailureDiagnostic(
+        title: 'تعذر تحديد موقع GPS حديث',
+        message:
+            'لم يرسل الهاتف قراءة GPS حديثة بعد. فعّل الموقع الدقيق وتحسين دقة الموقع من Google، واضغط إعادة المحاولة.',
+        code: 'ERR_GPS_UNAVAILABLE',
+        actionType: AttendanceFailureActionType.retry,
+      );
+    }
+
+    // 6. Poor Accuracy / Weak GPS
     if (raw.contains('دقة القراءة') ||
         raw.contains('دقة الموقع') ||
         raw.contains('ضعف إشارة') ||
@@ -92,7 +115,8 @@ class AttendanceFailureDiagnostic {
         raw.contains('إشارة موقع GPS ضعيفة')) {
       return const AttendanceFailureDiagnostic(
         title: 'إشارة الـ GPS ضعيفة',
-        message: 'إشارة موقعك غير دقيقة حالياً (> 25 متراً). يرجى التواجد في مكان مكشوف والتأكد من تفعيل الموقع عالي الدقة.',
+        message:
+            'إشارة موقعك غير دقيقة حالياً (> 25 متراً). يرجى التواجد في مكان مكشوف والتأكد من تفعيل الموقع عالي الدقة.',
         code: 'ERR_POOR_GPS_ACCURACY',
         actionType: AttendanceFailureActionType.retry,
       );
@@ -104,9 +128,10 @@ class AttendanceFailureDiagnostic {
         raw.contains('outside')) {
       return AttendanceFailureDiagnostic(
         title: 'خارج نطاق فرع العمل',
-        message: raw.contains('المسافة الحالية') || raw.contains('نطاق الفرع')
-            ? raw
-            : 'أنت حالياً خارج النطاق الجغرافي المسموح به لمقر عملك. يرجى الاقتراب من مقر الفرع ثم إعادة المحاولة.',
+        message:
+            raw.contains('المسافة الحالية') || raw.contains('نطاق الفرع')
+                ? raw
+                : 'أنت حالياً خارج النطاق الجغرافي المسموح به لمقر عملك. يرجى الاقتراب من مقر الفرع ثم إعادة المحاولة.',
         code: 'ERR_OUTSIDE_GEOFENCE',
         actionType: AttendanceFailureActionType.retry,
       );
@@ -116,40 +141,53 @@ class AttendanceFailureDiagnostic {
     if (raw.contains('لم يتم تعيين موقع') ||
         raw.contains('لا يوجد موقع حضور نشط مسند') ||
         raw.contains('لم يتم العثور على الفرع المسند') ||
-        (raw.contains('location') && (raw.contains('empty') || raw.contains('missing') || raw.contains('تعيين')))) {
+        (raw.contains('location') &&
+            (raw.contains('empty') ||
+                raw.contains('missing') ||
+                raw.contains('تعيين')))) {
       return const AttendanceFailureDiagnostic(
         title: 'لم يُعيّن فرع عمل لحسابك',
-        message: 'لم يتم ربط حسابك بفرع أو موقع عمل نشط في النظام. يرجى التواصل مع إدارة الموارد البشرية لربط فرعك.',
+        message:
+            'لم يتم ربط حسابك بفرع أو موقع عمل نشط في النظام. يرجى التواصل مع إدارة الموارد البشرية لربط فرعك.',
         code: 'ERR_NO_LOCATION_ASSIGNED',
         actionType: AttendanceFailureActionType.none,
       );
     }
 
     // 8. Mock GPS / Spoofing
-    if (raw.contains('Mock GPS') || raw.contains('mock') || raw.contains('تزييف')) {
+    if (raw.contains('Mock GPS') ||
+        raw.contains('mock') ||
+        raw.contains('تزييف')) {
       return const AttendanceFailureDiagnostic(
         title: 'تم رصد موقع وهمي (Mock GPS)',
-        message: 'تم الكشف عن استخدام تطبيق لتزييف الموقع الجغرافي. لا يمكن تسجيل الحضور أثناء تشغيل برامج التزييف.',
+        message:
+            'تم الكشف عن استخدام تطبيق لتزييف الموقع الجغرافي. لا يمكن تسجيل الحضور أثناء تشغيل برامج التزييف.',
         code: 'ERR_MOCK_LOCATION_DETECTED',
         actionType: AttendanceFailureActionType.none,
       );
     }
 
     // 9. Developer Options / USB Debugging
-    if (raw.contains('خيارات المطور') || raw.contains('developerOptions') || raw.contains('debugging')) {
+    if (raw.contains('خيارات المطور') ||
+        raw.contains('developerOptions') ||
+        raw.contains('debugging')) {
       return const AttendanceFailureDiagnostic(
         title: 'خيارات المطور مفعلة',
-        message: 'لأمان تسجيل الحضور، يرجى إيقاف خيارات المطور (Developer Options) وتصحيح USB من إعدادات الهاتف.',
+        message:
+            'لأمان تسجيل الحضور، يرجى إيقاف خيارات المطور (Developer Options) وتصحيح USB من إعدادات الهاتف.',
         code: 'ERR_DEV_OPTIONS_ENABLED',
         actionType: AttendanceFailureActionType.none,
       );
     }
 
     // 10. Device Lock Missing
-    if (raw.contains('قفل آمن للجهاز') || raw.contains('NotEnrolled') || raw.contains('noCredentialsSet')) {
+    if (raw.contains('قفل آمن للجهاز') ||
+        raw.contains('NotEnrolled') ||
+        raw.contains('noCredentialsSet')) {
       return const AttendanceFailureDiagnostic(
         title: 'وسيلة قفل آمنة مطلوبة',
-        message: 'يجب تفعيل وسيلة قفل شاشة آمنة (بصمة أو رمز PIN) في إعدادات هاتفك قبل تسجيل الحضور.',
+        message:
+            'يجب تفعيل وسيلة قفل شاشة آمنة (بصمة أو رمز PIN) في إعدادات هاتفك قبل تسجيل الحضور.',
         code: 'ERR_NO_DEVICE_LOCK',
         actionType: AttendanceFailureActionType.none,
       );
@@ -162,7 +200,8 @@ class AttendanceFailureDiagnostic {
         raw.contains('auth_in_progress')) {
       return const AttendanceFailureDiagnostic(
         title: 'تم إلغاء تأكيد البصمة',
-        message: 'تم إلغاء التحقق من البصمة أو الوجه. اضغط على الزر مجدداً لإتمام تسجيل الحضور.',
+        message:
+            'تم إلغاء التحقق من البصمة أو الوجه. اضغط على الزر مجدداً لإتمام تسجيل الحضور.',
         code: 'ERR_BIOMETRIC_CANCELLED',
         actionType: AttendanceFailureActionType.retry,
       );
@@ -170,7 +209,8 @@ class AttendanceFailureDiagnostic {
     if (raw.contains('LockedOut') || raw.contains('permanently_locked_out')) {
       return const AttendanceFailureDiagnostic(
         title: 'البصمة مقفلة مؤقتاً',
-        message: 'تم إيقاف البصمة مؤقتاً بسبب تكرار المحاولات الخاطئة. افتح قفل الهاتف برمز PIN ثم أعد المحاولة.',
+        message:
+            'تم إيقاف البصمة مؤقتاً بسبب تكرار المحاولات الخاطئة. افتح قفل الهاتف برمز PIN ثم أعد المحاولة.',
         code: 'ERR_BIOMETRIC_LOCKED',
         actionType: AttendanceFailureActionType.retry,
       );
@@ -180,7 +220,8 @@ class AttendanceFailureDiagnostic {
     if (raw.contains('اليوم ليس ضمن أيام عملك')) {
       return const AttendanceFailureDiagnostic(
         title: 'يوم عطلة أسبوعية',
-        message: 'اليوم ليس ضمن أيام عملك المسجلة في النظام. لن يتم احتسابه غياباً أو خصماً.',
+        message:
+            'اليوم ليس ضمن أيام عملك المسجلة في النظام. لن يتم احتسابه غياباً أو خصماً.',
         code: 'ERR_SCHEDULE_OFF_DAY',
         actionType: AttendanceFailureActionType.none,
       );
@@ -197,7 +238,8 @@ class AttendanceFailureDiagnostic {
     }
 
     // 14. Company Day Off
-    if (raw.contains('تسجيل الحضور غير متاح اليوم') || raw.contains('العطلات')) {
+    if (raw.contains('تسجيل الحضور غير متاح اليوم') ||
+        raw.contains('العطلات')) {
       return AttendanceFailureDiagnostic(
         title: 'عطلة رسمية للشركة',
         message: raw,
@@ -242,7 +284,8 @@ class AttendanceFailureDiagnostic {
         raw.contains('تم تسجيل حضورك مسبقاً')) {
       return const AttendanceFailureDiagnostic(
         title: 'حضور مسجل مسبقاً',
-        message: 'تم تسجيل حضورك بالفعل لهذا اليوم. قم بتحديث الصفحة وسيظهر زر الانصراف في موعده.',
+        message:
+            'تم تسجيل حضورك بالفعل لهذا اليوم. قم بتحديث الصفحة وسيظهر زر الانصراف في موعده.',
         code: 'ERR_ALREADY_CHECKED_IN',
         actionType: AttendanceFailureActionType.none,
       );
@@ -257,10 +300,12 @@ class AttendanceFailureDiagnostic {
     }
 
     // 19. Location Timeout
-    if (raw.contains('TimeoutException') || raw.contains('استغرقت عملية تحديد الموقع')) {
+    if (raw.contains('TimeoutException') ||
+        raw.contains('استغرقت عملية تحديد الموقع')) {
       return const AttendanceFailureDiagnostic(
         title: 'مهلة تحديد الموقع انتهت',
-        message: 'استغرقت عملية التقاط إحداثيات الـ GPS وقتاً أطول من المعتاد. تأكد من تشغيل الموقع والإنترنت وجرّب في مكان مكشوف.',
+        message:
+            'استغرقت عملية التقاط إحداثيات الـ GPS وقتاً أطول من المعتاد. تأكد من تشغيل الموقع والإنترنت وجرّب في مكان مكشوف.',
         code: 'ERR_LOCATION_TIMEOUT',
         actionType: AttendanceFailureActionType.retry,
       );
@@ -270,7 +315,8 @@ class AttendanceFailureDiagnostic {
     if (raw.contains('resource-exhausted') || raw.contains('quota')) {
       return const AttendanceFailureDiagnostic(
         title: 'حفظ محلي مؤقت (الحصة مكتملة)',
-        message: 'تم حفظ حضورك محلياً على الجهاز بنجاح لتجاوز حد الاستخدام اليومي، وستتم المزامنة تلقائياً.',
+        message:
+            'تم حفظ حضورك محلياً على الجهاز بنجاح لتجاوز حد الاستخدام اليومي، وستتم المزامنة تلقائياً.',
         code: 'ERR_STORAGE_QUOTA',
         actionType: AttendanceFailureActionType.none,
       );
@@ -281,7 +327,8 @@ class AttendanceFailureDiagnostic {
         raw.contains('deadline-exceeded')) {
       return const AttendanceFailureDiagnostic(
         title: 'تعذر الاتصال بالخادم مؤقتاً',
-        message: 'خدمة الحضور مشغولة أو يتعذر الاتصال بالشبكة حالياً. تم حفظ حضورك محلياً وستتم المزامنة فور توفر الإنترنت.',
+        message:
+            'خدمة الحضور مشغولة أو يتعذر الاتصال بالشبكة حالياً. تم حفظ حضورك محلياً وستتم المزامنة فور توفر الإنترنت.',
         code: 'ERR_NETWORK_UNAVAILABLE',
         actionType: AttendanceFailureActionType.retry,
       );
@@ -301,13 +348,17 @@ class AttendanceFailureDiagnostic {
     // 22. Generic Fallback
     return const AttendanceFailureDiagnostic(
       title: 'لم يكتمل تسجيل الحضور',
-      message: 'لم يتم حفظ تسجيل الحضور لهذه المحاولة، ولن يُسجَّل حضور مكرر. تأكد من تشغيل الإنترنت والموقع الدقيق ثم أعد المحاولة. إذا تكرر الأمر، يراجع HR حالة الحساب.',
+      message:
+          'لم يتم حفظ تسجيل الحضور لهذه المحاولة، ولن يُسجَّل حضور مكرر. تأكد من تشغيل الإنترنت والموقع الدقيق ثم أعد المحاولة. إذا تكرر الأمر، يراجع HR حالة الحساب.',
       code: 'ERR_ATTENDANCE_UNKNOWN',
       actionType: AttendanceFailureActionType.retry,
     );
   }
 
-  static AttendanceFailureDiagnostic _fromGatewayException(String code, String userMessage) {
+  static AttendanceFailureDiagnostic _fromGatewayException(
+    String code,
+    String userMessage,
+  ) {
     final title = switch (code) {
       'checkout_disabled' => 'تسجيل الانصراف غير مفعّل',
       'already_recorded' => 'حضور مسجل مسبقاً',
@@ -323,12 +374,19 @@ class AttendanceFailureDiagnostic {
       'checkin_missing' => 'لم يتم تسجيل الحضور أولاً',
       'inactive_location' => 'موقع الحضور غير نشط',
       'outside_range' => 'خارج نطاق الفرع',
-      'network' || 'timeout' || 'server_unavailable' || 'unavailable' => 'تعذر تأكيد الحضور مؤقتاً',
+      'network' ||
+      'timeout' ||
+      'server_unavailable' ||
+      'unavailable' => 'تعذر تأكيد الحضور مؤقتاً',
       _ => 'لم يكتمل تسجيل الحضور',
     };
 
     final actionType = switch (code) {
-      'outside_range' || 'network' || 'timeout' || 'server_unavailable' || 'unavailable' => AttendanceFailureActionType.retry,
+      'outside_range' ||
+      'network' ||
+      'timeout' ||
+      'server_unavailable' ||
+      'unavailable' => AttendanceFailureActionType.retry,
       _ => AttendanceFailureActionType.none,
     };
 

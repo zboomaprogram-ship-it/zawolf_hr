@@ -56,10 +56,19 @@ function parseAction(raw, actor) {
   const date = asString(raw.date);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw gatewayError('Attendance date is invalid.');
   const now = new Date();
-  const eventTime = new Date(Number(raw.eventTime));
-  if (Number.isNaN(eventTime.getTime()) || Math.abs(now.getTime() - eventTime.getTime()) > 24 * 60 * 60 * 1000) {
+  const clientEventTime = new Date(Number(raw.eventTime));
+  if (Number.isNaN(clientEventTime.getTime()) || Math.abs(now.getTime() - clientEventTime.getTime()) > 24 * 60 * 60 * 1000) {
     throw gatewayError('Attendance time is outside the allowed window.', 'stale_event');
   }
+  const clockSkewMs = clientEventTime.getTime() - now.getTime();
+  if (clockSkewMs > 15 * 60 * 1000) {
+    throw gatewayError('وقت تسجيل الحضور يتجاوز وقت الخادم.', 'stale_event');
+  }
+  // Mobile clocks can drift even when the device has connectivity. For a
+  // bounded future skew, use the server receipt time as business evidence and
+  // retain the submitted time for audit instead of blocking the employee.
+  const eventTimeNormalized = clockSkewMs > 60 * 1000;
+  const eventTime = eventTimeNormalized ? now : clientEventTime;
   const latitude = asNumber(raw.latitude, NaN);
   const longitude = asNumber(raw.longitude, NaN);
   if (!Number.isFinite(latitude) || !Number.isFinite(longitude) || Math.abs(latitude) > 90 || Math.abs(longitude) > 180) {
@@ -67,7 +76,11 @@ function parseAction(raw, actor) {
   }
   const deviceId = asString(raw.deviceId);
   if (!deviceId || deviceId.length > 256) throw gatewayError('Attendance device is invalid.');
-  return { type, date, eventTime, latitude, longitude, deviceId, raw, actor };
+  return {
+    type, date, eventTime, clientEventTime, eventTimeNormalized,
+    clientClockSkewSeconds: Math.round(clockSkewMs / 1000),
+    latitude, longitude, deviceId, raw, actor,
+  };
 }
 
 async function bindTrustedDevice({ db, admin, actor, action, userRef, user, developerDeviceOverride = false }) {
@@ -120,7 +133,7 @@ async function hasDeveloperDeviceOverride(db, userId) {
 function actionData({ admin, action, user, receivedAt, locationEvidence = null, webLocationExempt = false, webGrantRevision = null }) {
   const raw = action.raw;
   const delayed = receivedAt.getTime() - action.eventTime.getTime() > 2 * 60 * 1000;
-  const review = delayed || raw.securityReviewStatus === 'pending_hr';
+  const review = delayed || action.eventTimeNormalized || raw.securityReviewStatus === 'pending_hr';
   const base = {
     userId: action.actor.uid,
     employeeId: asString(user.employeeId),
@@ -131,6 +144,11 @@ function actionData({ admin, action, user, receivedAt, locationEvidence = null, 
     managerId: asString(user.managerId),
     date: action.date,
     securityProtocolVersion: 2,
+    ...(action.eventTimeNormalized ? {
+      clientSubmittedEventTime: admin.firestore.Timestamp.fromDate(action.clientEventTime),
+      clientClockSkewSeconds: action.clientClockSkewSeconds,
+      eventTimeNormalizedToServer: true,
+    } : {}),
   };
   if (action.type === 'checkIn') {
     return {
@@ -152,8 +170,13 @@ function actionData({ admin, action, user, receivedAt, locationEvidence = null, 
       biometricVerified: raw.biometricVerified === true,
       securityReviewStatus: review ? 'pending_hr' : 'none',
       locationRiskLevel: review ? 'high' : asString(raw.locationRiskLevel, 'low'),
-      locationRiskReasons: webLocationExempt ? ['web_location_exempt'] : Array.isArray(raw.locationRiskReasons) ? raw.locationRiskReasons.slice(0, 10) : [],
-      locationRiskMessage: delayed ? 'تمت مزامنة الحضور بعد انقطاع مؤقت وسيتم مراجعته.' : asString(raw.locationRiskMessage),
+      locationRiskReasons: [
+        ...(webLocationExempt ? ['web_location_exempt'] : Array.isArray(raw.locationRiskReasons) ? raw.locationRiskReasons.slice(0, 10) : []),
+        ...(action.eventTimeNormalized ? ['client_clock_ahead'] : []),
+      ],
+      locationRiskMessage: action.eventTimeNormalized
+        ? 'تم ضبط وقت الحضور حسب وقت الخادم بسبب اختلاف ساعة الجهاز، وسيتم مراجعته.'
+        : delayed ? 'تمت مزامنة الحضور بعد انقطاع مؤقت وسيتم مراجعته.' : asString(raw.locationRiskMessage),
       locationAccuracyMeters: locationEvidence?.accuracyMeters ?? Math.max(0, asNumber(raw.accuracyMeters)),
       locationDistanceMeters: locationEvidence?.distanceMeters ?? Math.max(0, asNumber(raw.distanceMeters)),
       locationConfiguredRadiusMeters: locationEvidence?.configuredRadiusMeters ?? Math.max(0, asNumber(raw.allowedRadius)),
@@ -179,8 +202,13 @@ function actionData({ admin, action, user, receivedAt, locationEvidence = null, 
     checkOutBiometricVerified: raw.biometricVerified === true,
     checkoutSecurityReviewStatus: review ? 'pending_hr' : 'none',
     checkoutLocationRiskLevel: review ? 'high' : asString(raw.locationRiskLevel, 'low'),
-    checkoutLocationRiskReasons: Array.isArray(raw.locationRiskReasons) ? raw.locationRiskReasons.slice(0, 10) : [],
-    checkoutLocationRiskMessage: delayed ? 'تمت مزامنة الانصراف بعد انقطاع مؤقت وسيتم مراجعته.' : asString(raw.locationRiskMessage),
+    checkoutLocationRiskReasons: [
+      ...(Array.isArray(raw.locationRiskReasons) ? raw.locationRiskReasons.slice(0, 10) : []),
+      ...(action.eventTimeNormalized ? ['client_clock_ahead'] : []),
+    ],
+    checkoutLocationRiskMessage: action.eventTimeNormalized
+      ? 'تم ضبط وقت الانصراف حسب وقت الخادم بسبب اختلاف ساعة الجهاز، وسيتم مراجعته.'
+      : delayed ? 'تمت مزامنة الانصراف بعد انقطاع مؤقت وسيتم مراجعته.' : asString(raw.locationRiskMessage),
     checkoutLocationAccuracyMeters: Math.max(0, asNumber(raw.accuracyMeters)),
     checkoutLocationDistanceMeters: Math.max(0, asNumber(raw.distanceMeters)),
     checkoutLocationAllowedRadiusMeters: Math.max(0, asNumber(raw.allowedRadius)),
@@ -192,7 +220,28 @@ function actionData({ admin, action, user, receivedAt, locationEvidence = null, 
 
 async function submitAttendanceAction({ admin, actor, rawAction }) {
   const db = admin.firestore();
-  const action = parseAction(rawAction, actor);
+  let action;
+  try {
+    action = parseAction(rawAction, actor);
+  } catch (error) {
+    // A delayed queue can replay after its original check-in already succeeded.
+    // Return the deterministic receipt instead of turning a successful action
+    // into a stale-event error. This path is actor-owned and performs no write.
+    const rawDate = asString(rawAction?.date);
+    const expectedId = `${actor.uid}_${rawDate}`;
+    if (error?.code === 'stale_event' && rawAction?.type === 'checkIn' &&
+        /^\d{4}-\d{2}-\d{2}$/.test(rawDate) && asString(rawAction?.attendanceId) === expectedId) {
+      const [userSnap, attendanceSnap] = await Promise.all([
+        db.collection('users').doc(actor.uid).get(),
+        db.collection('attendance').doc(expectedId).get(),
+      ]);
+      if (userSnap.exists && userSnap.data()?.isActive !== false &&
+          attendanceSnap.exists && attendanceSnap.data()?.checkInTime) {
+        return { action: 'check_in', status: 'already_recorded', attendanceId: expectedId };
+      }
+    }
+    throw error;
+  }
   // Web attendance is an explicit, employee-specific exception. This lookup is
   // intentionally in the write gateway so a stale or altered browser cannot
   // authorize an action after a grant expires or is revoked.

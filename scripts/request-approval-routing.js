@@ -52,6 +52,31 @@ function validateRoute(approvers) {
   return ids;
 }
 
+// A generated route can legitimately resolve two business stages to the same
+// person (for example, an Accounting employee's direct manager is also the
+// Accounting approver). Requiring that person to approve twice is misleading
+// and is rejected by validateRoute. Collapse only server-generated stages and
+// retain every responsibility in the stage label. HR-selected routes continue
+// to reject duplicates through validateRoute.
+function collapseGeneratedApprovers(approvers) {
+  const unique = [];
+  const indexes = new Map();
+  for (const item of approvers) {
+    const id = clean(item?.id || item?.uid, 128);
+    if (!safeId(id)) continue;
+    const existingIndex = indexes.get(id);
+    if (existingIndex == null) {
+      indexes.set(id, unique.length);
+      unique.push({ ...item, id });
+      continue;
+    }
+    const existing = unique[existingIndex];
+    const labels = [existing.labelAr, item.labelAr].map((value) => clean(value, 120)).filter(Boolean);
+    unique[existingIndex] = { ...existing, labelAr: [...new Set(labels)].join(' / ') };
+  }
+  return unique;
+}
+
 async function createFieldMission({ db, admin, actor, body, employeeInitiated = false }) {
   if (!employeeInitiated && !isHr(actor)) throw new Error('لا تتوفر لك صلاحية إنشاء مأمورية.');
   const operationId = clean(body.operationId, 160);
@@ -140,9 +165,11 @@ async function createEmployeeFieldMission({ db, admin, actor, body }) {
     db.collection('users').where('isActive', '==', true).limit(500).get(),
   ]);
   const ceoSnap = ceoById.docs[0] || ceoByCode.docs[0];
-  const accountantSnap = activeUsers.docs
-    .filter((doc) => doc.data().isAdvanceAccountsApprover === true)
-    .sort((a, b) => clean(a.data().employeeId, 80).localeCompare(clean(b.data().employeeId, 80)))[0];
+  const accountantCandidates = activeUsers.docs
+    .filter((doc) => doc.data().isAdvanceAccountsApprover === true && doc.id !== actor.uid)
+    .sort((a, b) => clean(a.data().employeeId, 80).localeCompare(clean(b.data().employeeId, 80)));
+  const accountantSnap = accountantCandidates
+    .find((doc) => doc.id !== managerId && doc.id !== ceoSnap?.id) || accountantCandidates[0];
   if (!managerSnap.exists || !isActiveUser(managerSnap.data()) || !ceoSnap || !isActiveUser(ceoSnap.data())) {
     throw new Error('تعذر تحديد المدير أو حساب CEO-100 النشط لمسار المأمورية.');
   }
@@ -151,11 +178,11 @@ async function createEmployeeFieldMission({ db, admin, actor, body }) {
   return createFieldMission({ db, admin, actor, employeeInitiated: true, body: {
     ...body,
     employeeUids: [actor.uid],
-    approvers: [
+    approvers: collapseGeneratedApprovers([
       approver(managerSnap, 'المدير المباشر'),
       approver(ceoSnap, 'CEO-100'),
       approver(accountantSnap, 'الحسابات'),
-    ],
+    ]),
   }});
 }
 
@@ -217,5 +244,6 @@ module.exports = {
   // Exported as pure seams for the small Node contract suite.  All mutations
   // remain private to the transaction functions above.
   validateRoute,
+  collapseGeneratedApprovers,
   notificationEventId: eventId,
 };

@@ -327,7 +327,7 @@ class GeofenceService {
       try {
         final retry = await _getCurrentPosition(
           desiredAccuracy: LocationAccuracy.best,
-          timeLimit: const Duration(seconds: 8),
+          timeLimit: const Duration(seconds: 10),
         );
         _throwIfMocked(retry);
         final retryMatch = _matcher.nearestMatch(
@@ -396,33 +396,34 @@ class GeofenceService {
         desiredAccuracy: kIsWeb
             ? LocationAccuracy.medium
             : LocationAccuracy.high,
-        // Desktop browsers commonly need longer than a phone for the first
-        // Wi-Fi/GPS fix. An eight-second limit made valid web attendance fail
-        // before the browser had a chance to provide its first reading.
-        timeLimit: Duration(seconds: kIsWeb ? 22 : 8),
+        // Mobile GPS hardware and fused location providers inside office
+        // buildings require adequate time to acquire satellite fixes or
+        // Wi-Fi assisted coordinates without cutting off prematurely.
+        timeLimit: Duration(seconds: kIsWeb ? 22 : 15),
       );
       _throwIfMocked(first);
       if (_isFresh(first)) samples.add(first);
       if (_isFresh(first) && first.accuracy <= 25) return first;
-
-      try {
-        final second = await _getCurrentPosition(
-          desiredAccuracy: LocationAccuracy.best,
-          timeLimit: Duration(seconds: kIsWeb ? 16 : 6),
-        );
-        _throwIfMocked(second);
-        if (_isFresh(second)) samples.add(second);
-      } catch (error) {
-        if (kIsWeb) webLocationError ??= error;
-      }
-
-      if (samples.isNotEmpty) {
-        samples.sort((a, b) => a.accuracy.compareTo(b.accuracy));
-        return samples.first;
-      }
     } catch (error) {
       if (_isMockLocationError(error)) rethrow;
       if (kIsWeb) webLocationError ??= error;
+    }
+
+    try {
+      final second = await _getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.best,
+        timeLimit: Duration(seconds: kIsWeb ? 16 : 10),
+      );
+      _throwIfMocked(second);
+      if (_isFresh(second)) samples.add(second);
+    } catch (error) {
+      if (_isMockLocationError(error)) rethrow;
+      if (kIsWeb) webLocationError ??= error;
+    }
+
+    if (samples.isNotEmpty) {
+      samples.sort((a, b) => a.accuracy.compareTo(b.accuracy));
+      return samples.first;
     }
 
     if (webWatch != null) {
@@ -465,7 +466,7 @@ class GeofenceService {
     try {
       final fallback = await _getCurrentPosition(
         desiredAccuracy: LocationAccuracy.medium,
-        timeLimit: Duration(seconds: kIsWeb ? 15 : 6),
+        timeLimit: Duration(seconds: kIsWeb ? 15 : 10),
       );
       _throwIfMocked(fallback);
       if (_isFresh(fallback)) return fallback;
@@ -584,7 +585,7 @@ class GeofenceService {
       try {
         final candidate = await _getCurrentPosition(
           desiredAccuracy: LocationAccuracy.best,
-          timeLimit: const Duration(seconds: 8),
+          timeLimit: const Duration(seconds: 10),
         );
         _throwIfMocked(candidate);
         if (_isFresh(candidate)) candidates.add(candidate);
@@ -622,8 +623,8 @@ class GeofenceService {
     Position position, {
     required bool strictLocationOnly,
   }) {
-    final maxAgeMinutes = strictLocationOnly ? 2 : 5;
-    final maxAccuracyMeters = strictLocationOnly ? 25 : 50;
+    final maxAgeMinutes = strictLocationOnly ? 3 : 5;
+    final maxAccuracyMeters = strictLocationOnly ? 35 : 50;
     return _isFresh(position, maxAgeMinutes: maxAgeMinutes) &&
         position.accuracy <= maxAccuracyMeters;
   }

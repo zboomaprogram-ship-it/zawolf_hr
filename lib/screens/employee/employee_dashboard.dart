@@ -559,19 +559,28 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
                       ),
                     if (diagnostic.actionType ==
                         AttendanceFailureActionType.retry)
-                      TextButton.icon(
+                      FilledButton.icon(
                         onPressed: () {
                           Navigator.pop(dialogContext);
                           _handleCheckInCheckOut(employee, expectedAction);
                         },
                         icon: const Icon(
-                          Icons.refresh,
-                          size: 16,
-                          color: ZaWolfColors.primaryCyan,
+                          Icons.refresh_rounded,
+                          size: 18,
                         ),
                         label: const Text(
                           'إعادة المحاولة',
-                          style: TextStyle(color: ZaWolfColors.primaryCyan),
+                        ),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: ZaWolfColors.primaryCyan,
+                          foregroundColor: ZaWolfColors.background,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 10,
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
                         ),
                       ),
                     TextButton(

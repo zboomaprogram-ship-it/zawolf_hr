@@ -2,8 +2,8 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
 import 'package:zawolf_hr/models/employee_role.dart';
@@ -14,6 +14,7 @@ import '../models/leave_entitlement_policy.dart';
 import '../models/manager_approval_chain.dart';
 import '../utils/payroll_cycle.dart';
 import 'audit_log_service.dart';
+import 'governed_drive_attachment_service.dart';
 import 'request_approval_policy_service.dart';
 import 'role_notification_service.dart';
 import 'attendance_reconciliation_service.dart';
@@ -21,7 +22,8 @@ import '../features/request_staffing_alerts/data/request_staffing_conflict_servi
 
 class LeaveService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
-  final FirebaseStorage _storage = FirebaseStorage.instance;
+  final GovernedDriveAttachmentService _driveAttachmentService =
+      GovernedDriveAttachmentService();
   final RequestApprovalPolicyService _approvalPolicyService =
       RequestApprovalPolicyService();
   final AttendanceReconciliationService _reconciliationService =
@@ -306,14 +308,12 @@ class LeaveService {
     required Uint8List fileBytes,
     required String fileExtension,
   }) async {
-    final ref = _storage.ref().child(
-      'leaves/$userId/${leaveId}_cert.$fileExtension',
+    final result = await _driveAttachmentService.upload(
+      fileName: '${leaveId}_cert.$fileExtension',
+      contentType: _attachmentContentType(fileExtension),
+      bytes: fileBytes,
     );
-    final uploadTask = await ref.putData(
-      fileBytes,
-      SettableMetadata(contentType: _attachmentContentType(fileExtension)),
-    );
-    return await uploadTask.ref.getDownloadURL();
+    return result.opaqueUri;
   }
 
   // Upload certificate from local file path (mobile fallback)
@@ -324,18 +324,23 @@ class LeaveService {
   }) async {
     final file = File(filePath);
     final fileExtension = filePath.split('.').last;
-    final ref = _storage.ref().child(
-      'leaves/$userId/${leaveId}_cert.$fileExtension',
+    final bytes = await file.readAsBytes();
+    final result = await _driveAttachmentService.upload(
+      fileName: '${leaveId}_cert.$fileExtension',
+      contentType: _attachmentContentType(fileExtension),
+      bytes: bytes,
     );
-    final uploadTask = await ref.putFile(
-      file,
-      SettableMetadata(contentType: _attachmentContentType(fileExtension)),
-    );
-    return await uploadTask.ref.getDownloadURL();
+    return result.opaqueUri;
   }
 
   // Submit leave request
   Future<void> submitLeaveRequest(LeaveModel req, UserModel employee) async {
+    final connectivity = await Connectivity().checkConnectivity();
+    if (connectivity.contains(ConnectivityResult.none) || connectivity.isEmpty) {
+      throw Exception(
+        'لا يمكن تقديم طلب الإجازة في وضع عدم الاتصال بالإنترنت. يرجى التأكد من اتصال الهاتف بالإنترنت والمحاولة مجدداً.',
+      );
+    }
     validateRequest(req);
     final chargedDays = await _chargeableDays(req, employee);
     if (chargedDays == 0) {

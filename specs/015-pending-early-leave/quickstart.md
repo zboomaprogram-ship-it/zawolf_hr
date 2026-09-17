@@ -25,6 +25,18 @@ flutter test
 Expected: all checks pass; the new Cubit is below 300 lines; presentation has no
 Firebase/data imports; Node tests prove gateway and projector idempotency.
 
+### Automated result — 2026-09-16
+
+- `flutter analyze`: passed with no issues.
+- Architecture and Firestore query guards: passed.
+- Full Flutter suite: 618 tests passed.
+- Full Hostinger Node suite: 343 tests passed.
+- Deployment-package install, build, archive integrity, and Node syntax checks:
+  passed.
+
+The manual emulator/device scenarios below still require a named pilot account.
+The production feature flag remains disabled.
+
 ## Scenario 1: Pending request exposes checkout and warning
 
 1. Keep the two-hour request in `pending_manager` or `pending_hr`.

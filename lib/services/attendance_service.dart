@@ -106,6 +106,12 @@ class AttendanceService {
       final now = DateTime.now();
       final todayStr = DateFormat('yyyy-MM-dd').format(now);
       final online = await _offlineQueue.isOnline();
+      if (!online) {
+        throw const AttendanceGatewayException(
+          'network',
+          'لا يمكن تسجيل الحضور أثناء عدم الاتصال بالإنترنت. يرجى الاتصال بالإنترنت والمحاولة مجدداً.',
+        );
+      }
       final webAnywhereGrant =
           kIsWeb && online
               ? (await createWebAttendanceAccessRepository().myActiveGrant())
@@ -418,12 +424,16 @@ class AttendanceService {
             if (error is AttendanceGatewayException && !error.isTemporary) {
               rethrow;
             }
-            savedOnline = false;
-            await _offlineQueue.queue(offlineAction);
+            throw const AttendanceGatewayException(
+              'network',
+              'تعذر تسجيل الحضور بسبب انقطاع الاتصال بالسيرفر. يرجى التأكد من اتصال الإنترنت والمحاولة مجدداً.',
+            );
           }
         } else {
-          savedOnline = false;
-          await _offlineQueue.queue(offlineAction);
+          throw const AttendanceGatewayException(
+            'network',
+            'لا يمكن تسجيل الحضور أثناء عدم الاتصال بالإنترنت. يرجى الاتصال بالإنترنت والمحاولة مجدداً.',
+          );
         }
         if (savedOnline && deduction.dayFraction > 0) {
           await _notifyRole(
@@ -453,6 +463,12 @@ class AttendanceService {
         );
       } else {
         // ── CHECK-OUT LOGIC ──
+        if (!online) {
+          throw const AttendanceGatewayException(
+            'network',
+            'لا يمكن تسجيل الانصراف أثناء عدم الاتصال بالإنترنت. يرجى الاتصال بالإنترنت والمحاولة مجدداً.',
+          );
+        }
         final checkInDoc = todayLookup.doc;
         final checkInLog = todayLookup.log!;
 
@@ -570,11 +586,16 @@ class AttendanceService {
             if (error is AttendanceGatewayException && !error.isTemporary) {
               rethrow;
             }
-            savedOnline = false;
-            await _offlineQueue.queue(offlineAction);
+            throw const AttendanceGatewayException(
+              'network',
+              'تعذر تسجيل الانصراف بسبب انقطاع الاتصال بالسيرفر. يرجى التأكد من اتصال الإنترنت والمحاولة مجدداً.',
+            );
           }
         } else {
-          await _offlineQueue.queue(offlineAction);
+          throw const AttendanceGatewayException(
+            'network',
+            'لا يمكن تسجيل الانصراف أثناء عدم الاتصال بالإنترنت. يرجى الاتصال بالإنترنت والمحاولة مجدداً.',
+          );
         }
 
         if (savedOnline && earlyCheckoutDeduction.shouldNotify) {
@@ -584,13 +605,13 @@ class AttendanceService {
             title: '${earlyCheckoutDeduction.label} بانتظار مراجعة HR',
             body:
                 '${employee.displayName}: ${earlyCheckoutDeduction.label} (${earlyCheckoutDeduction.amount.toStringAsFixed(2)} ${employee.salaryCurrency}).',
-            data: {'attendanceId': checkInDoc?.id ?? checkInLog.attendanceId},
+            data: {'attendanceId': checkInDoc.id},
           );
         }
         if (savedOnline && effectiveLocationRisk.requiresReview) {
           await _notifyLocationSecurityReview(
             employee: employee,
-            attendanceId: checkInDoc?.id ?? checkInLog.attendanceId,
+            attendanceId: checkInDoc.id,
             risk: effectiveLocationRisk,
             isCheckOut: true,
           );

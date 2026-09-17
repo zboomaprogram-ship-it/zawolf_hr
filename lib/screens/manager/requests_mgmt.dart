@@ -97,6 +97,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
   final AdministrativeRequestService _administrativeRequestService =
       AdministrativeRequestService();
   bool _isSavingApprovalPolicy = false;
+  bool _isBulkReviewing = false;
   String _salaryDeductionFilter = 'all';
   String _searchQuery = '';
   final Set<String> _busyRequestIds = {};
@@ -1934,6 +1935,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
     UserModel manager, {
     required bool approve,
   }) async {
+    if (_isBulkReviewing) return;
     final leaveIds = PendingRequestsService.instance.pendingLeaveIds.toList();
     final permIds =
         PendingRequestsService.instance.pendingPermissionIds.toList();
@@ -2061,100 +2063,148 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
             : (approve ? 'موافقة جماعية' : 'رفض جماعي من الإدارة');
 
     var successCount = 0;
+    var failedCount = 0;
+    var completedCount = 0;
+    final progress = ValueNotifier<int>(0);
 
     showDialog<void>(
       context: context,
+      useRootNavigator: true,
       barrierDismissible: false,
       builder:
-          (_) => const Center(
-            child: Card(
-              child: Padding(
-                padding: EdgeInsets.all(24),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    CircularProgressIndicator(color: ZaWolfColors.primaryCyan),
-                    SizedBox(height: 16),
-                    Text('جارٍ معالجة الطلبات الجماعية...'),
-                  ],
+          (_) => PopScope(
+            canPop: false,
+            child: Center(
+              child: Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const CircularProgressIndicator(
+                        color: ZaWolfColors.primaryCyan,
+                      ),
+                      const SizedBox(height: 16),
+                      ValueListenableBuilder<int>(
+                        valueListenable: progress,
+                        builder:
+                            (_, value, _) => Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  'جارٍ معالجة الطلبات: $value من $totalCount',
+                                ),
+                                const SizedBox(height: 8),
+                                SizedBox(
+                                  width: 220,
+                                  child: LinearProgressIndicator(
+                                    value:
+                                        totalCount == 0
+                                            ? 0
+                                            : value / totalCount,
+                                    color: ZaWolfColors.primaryCyan,
+                                  ),
+                                ),
+                              ],
+                            ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
           ),
     );
 
-    try {
-      // Process leaves
-      for (final id in leaveIds) {
-        try {
-          if (approve) {
-            await _leaveService.approveLeave(id, manager.uid, manager.role);
-          } else {
-            await _leaveService.rejectLeave(id, manager.uid, reason);
-          }
-          successCount++;
-        } catch (_) {}
-      }
+    if (mounted) setState(() => _isBulkReviewing = true);
 
-      // Process permissions
-      for (final id in permIds) {
-        try {
-          if (approve) {
-            await _permissionService.approvePermission(id, manager.uid);
-          } else {
-            await _permissionService.rejectPermission(id, manager.uid, reason);
-          }
-          successCount++;
-        } catch (_) {}
+    Future<void> process(Future<void> Function() operation) async {
+      try {
+        await operation();
+        successCount++;
+      } catch (error) {
+        failedCount++;
+        // A request can leave the listener snapshot while the reviewer is
+        // deciding. Keep processing the rest, but record the first failure so
+        // the runtime log identifies the actual decision path.
+        if (failedCount == 1) {
+          _recordRequestDecisionFailure(error, operation: 'bulk_decision');
+        }
+      } finally {
+        completedCount++;
+        progress.value = completedCount;
       }
+    }
 
-      // Process advances
-      for (final id in advIds) {
-        try {
-          if (approve) {
-            await _advanceService.approveAdvanceRequest(
-              advanceId: id,
+    final operations = <Future<void> Function()>[
+      ...leaveIds.map(
+        (id) =>
+            () =>
+                approve
+                    ? _leaveService.approveLeave(id, manager.uid, manager.role)
+                    : _leaveService.rejectLeave(id, manager.uid, reason),
+      ),
+      ...permIds.map(
+        (id) =>
+            () =>
+                approve
+                    ? _permissionService.approvePermission(id, manager.uid)
+                    : _permissionService.rejectPermission(
+                      id,
+                      manager.uid,
+                      reason,
+                    ),
+      ),
+      ...advIds.map(
+        (id) =>
+            () =>
+                approve
+                    ? _advanceService.approveAdvanceRequest(
+                      advanceId: id,
+                      reviewer: manager,
+                    )
+                    : _advanceService.updateAdvanceStatus(
+                      advanceId: id,
+                      status: 'rejected',
+                      reviewerId: manager.uid,
+                      comment: reason,
+                    ),
+      ),
+      ...adminIds.map(
+        (id) =>
+            () =>
+                approve
+                    ? _administrativeRequestService.approve(id, manager)
+                    : _administrativeRequestService.reject(id, manager, reason),
+      ),
+      ...resIds.map(
+        (id) =>
+            () => _resignationService.review(
+              resignationId: id,
               reviewer: manager,
-            );
-          } else {
-            await _advanceService.updateAdvanceStatus(
-              advanceId: id,
-              status: 'rejected',
-              reviewerId: manager.uid,
+              approve: approve,
               comment: reason,
-            );
-          }
-          successCount++;
-        } catch (_) {}
-      }
+            ),
+      ),
+    ];
 
-      // Process administrative
-      for (final id in adminIds) {
-        try {
-          if (approve) {
-            await _administrativeRequestService.approve(id, manager);
-          } else {
-            await _administrativeRequestService.reject(id, manager, reason);
-          }
-          successCount++;
-        } catch (_) {}
-      }
-
-      // Process resignations
-      for (final id in resIds) {
-        try {
-          await _resignationService.review(
-            resignationId: id,
-            reviewer: manager,
-            approve: approve,
-            comment: reason,
-          );
-          successCount++;
-        } catch (_) {}
+    try {
+      // Keep the batch small: requests are independent but each action can
+      // run a Firestore transaction and create a notification. This removes
+      // the long serial wait without producing a write burst.
+      const batchSize = 3;
+      for (var start = 0; start < operations.length; start += batchSize) {
+        final end =
+            start + batchSize > operations.length
+                ? operations.length
+                : start + batchSize;
+        await Future.wait(operations.sublist(start, end).map(process));
       }
     } finally {
-      if (mounted && Navigator.canPop(context)) {
-        Navigator.pop(context); // dismiss progress dialog
+      progress.dispose();
+      if (mounted) {
+        Navigator.of(context, rootNavigator: true).pop();
+        setState(() => _isBulkReviewing = false);
       }
     }
 
@@ -2162,8 +2212,15 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
     setState(() {});
     messenger.showSnackBar(
       SnackBar(
-        content: Text('تمت معالجة $successCount من أصل $totalCount طلب بنجاح.'),
-        backgroundColor: approve ? ZaWolfColors.success : ZaWolfColors.error,
+        content: Text(
+          failedCount == 0
+              ? 'تمت معالجة $successCount من أصل $totalCount طلب بنجاح.'
+              : 'تمت معالجة $successCount من أصل $totalCount. تعذر تنفيذ $failedCount لأن حالتها تغيرت أو ليست في مرحلتك.',
+        ),
+        backgroundColor:
+            failedCount == 0
+                ? (approve ? ZaWolfColors.success : ZaWolfColors.error)
+                : ZaWolfColors.warning,
       ),
     );
   }
@@ -2267,13 +2324,22 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
     });
   }
 
-  void _recordRequestDecisionFailure(Object error) {
+  void _recordRequestDecisionFailure(
+    Object error, {
+    String operation = 'request_decision',
+  }) {
     final raw = error.toString().toLowerCase();
     final safeCode =
         raw.contains('permission-denied') ||
                 raw.contains('not allowed') ||
                 raw.contains('غير مسموح')
             ? 'access_denied'
+            : raw.contains('تمت مراجعته بالفعل') ||
+                raw.contains('لم تعد البيانات') ||
+                raw.contains('غير موجود')
+            ? 'stale_request'
+            : raw.contains('hr فقط') || raw.contains('لا يمكنك مراجعة')
+            ? 'reviewer_not_eligible'
             : raw.contains('timeout') || raw.contains('unavailable')
             ? 'temporarily_unavailable'
             : 'unexpected';
@@ -2281,7 +2347,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
       SafeDiagnosticsService.instance.capture(
         feature: 'request_visibility',
         safeCode: safeCode,
-        operation: 'request_decision',
+        operation: operation,
         state: 'management',
       ),
     );
@@ -3390,7 +3456,10 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                         ),
                       ),
                       onPressed:
-                          () => _bulkReviewRequests(manager, approve: true),
+                          _isBulkReviewing
+                              ? null
+                              : () =>
+                                  _bulkReviewRequests(manager, approve: true),
                       icon: const Icon(Icons.done_all, size: 18),
                       label: const Text(
                         'موافقة على الكل',
@@ -3417,7 +3486,10 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                         ),
                       ),
                       onPressed:
-                          () => _bulkReviewRequests(manager, approve: false),
+                          _isBulkReviewing
+                              ? null
+                              : () =>
+                                  _bulkReviewRequests(manager, approve: false),
                       icon: const Icon(Icons.remove_done, size: 18),
                       label: const Text(
                         'رفض الكل',
@@ -3747,7 +3819,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
             }).toList();
 
         return ListView(
-          padding: const EdgeInsets.all(16),
+          padding: _requestListPadding(context),
           children: [
             Align(
               alignment: AlignmentDirectional.centerStart,
@@ -4193,7 +4265,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
           return _buildEmptyState('لا توجد طلبات إدارية معلقة');
         }
         return ListView.builder(
-          padding: const EdgeInsets.all(16),
+          padding: _requestListPadding(context),
           itemCount: docs.length + (targetMissing ? 1 : 0),
           itemBuilder: (context, index) {
             if (targetMissing && index == 0) {
@@ -4449,7 +4521,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
         }
 
         return ListView.builder(
-          padding: const EdgeInsets.all(16),
+          padding: _requestListPadding(context),
           itemCount: docs.length,
           itemBuilder: (context, index) {
             final doc = docs[index];
@@ -4628,7 +4700,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
         if (filteredDocs.isEmpty) return _buildEmptyState(emptyMessage);
 
         return ListView.builder(
-          padding: const EdgeInsets.all(16),
+          padding: _requestListPadding(context),
           itemCount: filteredDocs.length,
           itemBuilder: (context, index) {
             final doc = filteredDocs[index];
@@ -5291,7 +5363,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
           builder: (context, constraints) {
             if (!_requestMasterDetailEnabled || constraints.maxWidth < 980) {
               return ListView.builder(
-                padding: const EdgeInsets.all(16),
+                padding: _requestListPadding(context),
                 itemCount: docs.length,
                 itemBuilder:
                     (context, index) => _buildLeaveRequestCard(
@@ -5893,7 +5965,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
           builder: (context, constraints) {
             if (!_requestMasterDetailEnabled || constraints.maxWidth < 980) {
               return ListView.builder(
-                padding: const EdgeInsets.all(16),
+                padding: _requestListPadding(context),
                 itemCount: docs.length,
                 itemBuilder:
                     (context, index) => _buildPermissionRequestCard(
@@ -6215,7 +6287,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
           builder: (context, constraints) {
             if (!_requestMasterDetailEnabled || constraints.maxWidth < 980) {
               return ListView.builder(
-                padding: const EdgeInsets.all(16),
+                padding: _requestListPadding(context),
                 itemCount: docs.length,
                 itemBuilder:
                     (context, index) => _buildAdvanceRequestCard(
@@ -6489,7 +6561,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
         }
 
         return ListView.builder(
-          padding: const EdgeInsets.all(16),
+          padding: _requestListPadding(context),
           itemCount: docs.length,
           itemBuilder: (context, index) {
             final complaint = ComplaintModel.fromFirestore(docs[index]);
@@ -7435,6 +7507,10 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
     final original = data['originalCheckInTime'] as Timestamp?;
     final requested = data['requestedCheckInTime'] as Timestamp?;
     final status = (data['status'] ?? 'pending').toString();
+    final canReview =
+        EmployeeRole.isHr(reviewer.role) &&
+        reviewer.uid != (data['userId'] ?? '').toString() &&
+        status == 'pending_hr';
     return WolfCard(
       hasBorderGlow: true,
       borderColor: RequestTypeStyle.attendanceCorrection.borderColor,
@@ -7515,7 +7591,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                 ),
               ),
             )
-          else
+          else if (canReview)
             _buildApprovalActions(
               disabled: _isRequestBusy(doc.id),
               onDelete:
@@ -7536,6 +7612,21 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                     reviewer: reviewer,
                     approve: false,
                   ),
+            )
+          else
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: ZaWolfColors.surface02,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Text(
+                'هذا الطلب ظاهر للمتابعة، لكنه ليس بانتظار قرارك حالياً.',
+                textDirection: TextDirection.rtl,
+                textAlign: TextAlign.center,
+                style: TextStyle(color: ZaWolfColors.textSecondary),
+              ),
             ),
           _buildArchiveRequestAction(
             reviewer: reviewer,
@@ -7567,41 +7658,45 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
       requireComment: !approve,
       commentController: commentController,
     );
-    if (!confirmed) {
-      commentController.dispose();
-      return;
-    }
-    await _withRequestGuard(requestId, () async {
-      try {
+    try {
+      if (!confirmed || !mounted) return;
+      await _withRequestGuard(requestId, () async {
         await AttendanceCorrectionRequestService().review(
           requestId: requestId,
           reviewer: reviewer,
           approve: approve,
           comment: commentController.text,
         );
-        if (mounted) {
-          setState(() => _resolvedRequestIds.add(requestId));
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                approve
-                    ? 'تم تصحيح الوقت وإعادة حساب الخصم.'
-                    : 'تم رفض طلب التصحيح.',
-              ),
-            ),
-          );
-        }
-      } catch (error) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('تعذر مراجعة الطلب: ${userFacingError(error)}'),
-            ),
-          );
-        }
+      });
+      if (!mounted) return;
+      setState(() => _resolvedRequestIds.add(requestId));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            approve
+                ? 'تم تصحيح الوقت وإعادة حساب الخصم.'
+                : 'تم رفض طلب التصحيح.',
+          ),
+        ),
+      );
+    } catch (error) {
+      _recordRequestDecisionFailure(
+        error,
+        operation:
+            approve
+                ? 'attendance_correction_approve'
+                : 'attendance_correction_reject',
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('تعذر مراجعة الطلب: ${userFacingError(error)}'),
+          ),
+        );
       }
-    });
-    commentController.dispose();
+    } finally {
+      commentController.dispose();
+    }
   }
 
   Future<void> _correctArrivalTime(
@@ -8065,7 +8160,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                 if (!_requestMasterDetailEnabled ||
                     constraints.maxWidth < 980) {
                   return ListView.builder(
-                    padding: const EdgeInsets.all(16),
+                    padding: _requestListPadding(context),
                     itemCount: items.length,
                     itemBuilder:
                         (context, index) => _buildSecurityReviewCard(
@@ -8277,45 +8372,65 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
     return Directionality(
       textDirection: TextDirection.rtl,
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Row(
-            children: [
-              CircleAvatar(
-                radius: 18,
-                backgroundColor: ZaWolfColors.surface02,
-                child: Text(
-                  name.isNotEmpty ? name.substring(0, 1) : 'م',
-                  style: const TextStyle(color: ZaWolfColors.primaryCyan),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    name,
-                    style: theme.textTheme.titleMedium!.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
-                    textAlign: TextAlign.right,
+          Expanded(
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircleAvatar(
+                  radius: 18,
+                  backgroundColor: ZaWolfColors.surface02,
+                  child: Text(
+                    name.isNotEmpty ? name.substring(0, 1) : 'م',
+                    style: const TextStyle(color: ZaWolfColors.primaryCyan),
                   ),
-                  Text('كود: $code', style: theme.textTheme.bodySmall),
-                ],
-              ),
-            ],
-          ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-            decoration: BoxDecoration(
-              color: ZaWolfColors.surface02,
-              borderRadius: BorderRadius.circular(6),
-              border: Border.all(color: ZaWolfColors.surface03),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.titleMedium!.copyWith(
+                          fontWeight: FontWeight.bold,
+                        ),
+                        textAlign: TextAlign.right,
+                      ),
+                      Text(
+                        'كود: $code',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.bodySmall,
+                        textDirection: TextDirection.ltr,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
-            child: Text(
-              'القسم: $dept',
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: ZaWolfColors.textSecondary,
+          ),
+          const SizedBox(width: 8),
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 136),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                color: ZaWolfColors.surface02,
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(color: ZaWolfColors.surface03),
+              ),
+              child: Text(
+                'القسم: $dept',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: ZaWolfColors.textSecondary,
+                ),
+                textDirection: TextDirection.rtl,
               ),
             ),
           ),
@@ -8517,6 +8632,17 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
     } catch (_) {
       return null;
     }
+  }
+
+  /// Keeps the final request card and its decision controls above the fixed
+  /// mobile navigation bar, including devices with a gesture-area inset.
+  EdgeInsets _requestListPadding(BuildContext context) {
+    return EdgeInsets.fromLTRB(
+      16,
+      16,
+      16,
+      144 + MediaQuery.paddingOf(context).bottom,
+    );
   }
 
   Widget _buildEmptyState(String text) {

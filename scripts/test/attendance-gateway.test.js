@@ -135,6 +135,84 @@ test('an attendance event older than 24 hours is rejected with a terminal stale_
   );
 });
 
+test('a stale replay converges when its deterministic check-in already exists', async () => {
+  const actor = { uid: 'employee-stale-replay' };
+  const action = {
+    ...actionFor(actor.uid),
+    eventTime: Date.now() - 25 * 60 * 60 * 1000,
+  };
+  const admin = fakeAdmin({
+    [`attendance/${action.attendanceId}`]: { checkInTime: new Date() },
+  });
+
+  const result = await submitAttendanceAction({ admin, actor, rawAction: action });
+
+  assert.deepEqual(result, {
+    action: 'check_in', status: 'already_recorded', attendanceId: action.attendanceId,
+  });
+});
+
+test('a delayed check-in inside the 24-hour window is accepted for HR security review', async () => {
+  const admin = fakeAdmin();
+  const actor = { uid: 'employee-delayed-checkin' };
+  const action = {
+    ...actionFor(actor.uid),
+    eventTime: Date.now() - 4 * 60 * 1000,
+  };
+
+  const result = await submitAttendanceAction({ admin, actor, rawAction: action });
+  const saved = admin.__testDocs.get(`attendance/${action.attendanceId}`);
+  assert.equal(result.status, 'recorded');
+  assert.equal(saved.securityReviewStatus, 'pending_hr');
+  assert.equal(saved.locationCapturedOffline, true);
+});
+
+test('a check-in event within 2 minutes is accepted normally', async () => {
+  const admin = fakeAdmin();
+  const actor = { uid: 'employee-valid-checkin' };
+  const action = {
+    ...actionFor(actor.uid),
+    eventTime: Date.now() - 90 * 1000,
+  };
+
+  const result = await submitAttendanceAction({ admin, actor, rawAction: action });
+  assert.equal(result.status, 'recorded');
+});
+
+test('a device clock seven minutes ahead is normalized to server time and reviewed', async () => {
+  const admin = fakeAdmin();
+  const actor = { uid: 'employee-clock-ahead' };
+  const submittedAt = Date.now() + 7 * 60 * 1000;
+  const action = { ...actionFor(actor.uid), eventTime: submittedAt };
+
+  const before = Date.now();
+  const result = await submitAttendanceAction({ admin, actor, rawAction: action });
+  const after = Date.now();
+  const saved = admin.__testDocs.get(`attendance/${action.attendanceId}`);
+
+  assert.equal(result.status, 'recorded');
+  assert.equal(saved.securityReviewStatus, 'pending_hr');
+  assert.equal(saved.eventTimeNormalizedToServer, true);
+  assert.ok(saved.checkInTime.getTime() >= before && saved.checkInTime.getTime() <= after);
+  assert.equal(saved.clientSubmittedEventTime.getTime(), submittedAt);
+  assert.ok(saved.clientClockSkewSeconds >= 419 && saved.clientClockSkewSeconds <= 421);
+  assert.ok(saved.locationRiskReasons.includes('client_clock_ahead'));
+});
+
+test('a device clock more than fifteen minutes ahead remains rejected', async () => {
+  const admin = fakeAdmin();
+  const actor = { uid: 'employee-clock-invalid' };
+  const action = {
+    ...actionFor(actor.uid),
+    eventTime: Date.now() + 16 * 60 * 1000,
+  };
+
+  await assert.rejects(
+    submitAttendanceAction({ admin, actor, rawAction: action }),
+    (error) => error.code === 'stale_event',
+  );
+});
+
 test('HR can reset a bound attendance device only with an audit reason', async () => {
   const admin = fakeAdmin({
     'users/employee-reset': {
