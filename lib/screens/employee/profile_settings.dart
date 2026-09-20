@@ -4,6 +4,7 @@ import 'package:intl/intl.dart' hide TextDirection;
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:convert';
+import 'dart:ui' as ui;
 import '../../theme/theme.dart';
 import '../../components/wolf_card.dart';
 import '../../components/wolf_button.dart';
@@ -229,13 +230,47 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
     try {
       final file = await ImagePicker().pickImage(
         source: source,
-        maxWidth: 640,
-        maxHeight: 640,
-        imageQuality: 68,
+        maxWidth: 512,
+        maxHeight: 512,
+        imageQuality: 75,
       );
       if (file == null) return;
-      final bytes = await file.readAsBytes();
-      final mimeType = file.mimeType ?? 'image/jpeg';
+      var bytes = await file.readAsBytes();
+      var mimeType = file.mimeType ?? 'image/jpeg';
+      if (bytes.length > 200 * 1024) {
+        try {
+          final codec = await ui.instantiateImageCodec(
+            bytes,
+            targetWidth: 320,
+            targetHeight: 320,
+          );
+          final frame = await codec.getNextFrame();
+          final byteData = await frame.image.toByteData(
+            format: ui.ImageByteFormat.png,
+          );
+          if (byteData != null) {
+            bytes = byteData.buffer.asUint8List();
+            mimeType = 'image/png';
+          }
+        } catch (_) {}
+      }
+      if (bytes.length > 200 * 1024) {
+        try {
+          final codec = await ui.instantiateImageCodec(
+            bytes,
+            targetWidth: 240,
+            targetHeight: 240,
+          );
+          final frame = await codec.getNextFrame();
+          final byteData = await frame.image.toByteData(
+            format: ui.ImageByteFormat.png,
+          );
+          if (byteData != null) {
+            bytes = byteData.buffer.asUint8List();
+            mimeType = 'image/png';
+          }
+        } catch (_) {}
+      }
       final encoded = 'data:$mimeType;base64,${base64Encode(bytes)}';
       if (encoded.length > 300000) {
         throw ArgumentError('profile_image_too_large');

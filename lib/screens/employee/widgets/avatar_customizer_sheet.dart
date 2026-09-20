@@ -1,4 +1,6 @@
 import 'dart:convert';
+import 'dart:typed_data';
+import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:file_picker/file_picker.dart';
@@ -65,9 +67,9 @@ class _AvatarCustomizerSheetState extends State<AvatarCustomizerSheet> {
     if (source == _AvatarImageSource.gallery) {
       final image = await ImagePicker().pickImage(
         source: ImageSource.gallery,
-        maxWidth: 960,
-        maxHeight: 960,
-        imageQuality: 72,
+        maxWidth: 512,
+        maxHeight: 512,
+        imageQuality: 75,
       );
       bytes = await image?.readAsBytes();
     } else {
@@ -78,7 +80,24 @@ class _AvatarCustomizerSheetState extends State<AvatarCustomizerSheet> {
       bytes = result?.files.singleOrNull?.bytes;
     }
     if (bytes == null || bytes.isEmpty) return;
-    if (bytes.length > 220 * 1024) {
+    var safeBytes = bytes;
+    if (safeBytes.length > 200 * 1024) {
+      try {
+        final codec = await ui.instantiateImageCodec(
+          Uint8List.fromList(safeBytes),
+          targetWidth: 280,
+          targetHeight: 280,
+        );
+        final frame = await codec.getNextFrame();
+        final byteData = await frame.image.toByteData(
+          format: ui.ImageByteFormat.png,
+        );
+        if (byteData != null) {
+          safeBytes = byteData.buffer.asUint8List();
+        }
+      } catch (_) {}
+    }
+    if (safeBytes.length > 220 * 1024) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('اختر صورة أصغر من 220 كيلوبايت.')),
@@ -86,7 +105,7 @@ class _AvatarCustomizerSheetState extends State<AvatarCustomizerSheet> {
       }
       return;
     }
-    setState(() => _faceUrl = 'data:image/jpeg;base64,${base64Encode(bytes!)}');
+    setState(() => _faceUrl = 'data:image/jpeg;base64,${base64Encode(safeBytes)}');
   }
 
   Future<void> _saveAvatar() async {
