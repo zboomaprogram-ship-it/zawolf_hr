@@ -24,6 +24,7 @@ class PermissionModel {
   final String salaryDeductionCode;
   final String salaryDeductionLabel;
   final String salaryDeductionApprovalStatus;
+  final String? salaryDeductionReversalReason;
   final String monthKey; // YYYY-MM
   final DateTime? submittedAt;
   final DateTime? reviewedAt;
@@ -62,6 +63,7 @@ class PermissionModel {
     this.salaryDeductionCode = 'none',
     this.salaryDeductionLabel = 'لا يوجد خصم',
     this.salaryDeductionApprovalStatus = 'none',
+    this.salaryDeductionReversalReason,
     required this.monthKey,
     this.submittedAt,
     this.reviewedAt,
@@ -108,6 +110,8 @@ class PermissionModel {
           data['salaryDeductionLabel'] as String? ?? 'لا يوجد خصم',
       salaryDeductionApprovalStatus:
           data['salaryDeductionApprovalStatus'] as String? ?? 'none',
+      salaryDeductionReversalReason:
+          data['salaryDeductionReversalReason'] as String?,
       monthKey: data['monthKey'] as String? ?? '',
       submittedAt: (data['submittedAt'] as Timestamp?)?.toDate(),
       reviewedAt: (data['reviewedAt'] as Timestamp?)?.toDate(),
@@ -153,6 +157,8 @@ class PermissionModel {
       'salaryDeductionCode': salaryDeductionCode,
       'salaryDeductionLabel': salaryDeductionLabel,
       'salaryDeductionApprovalStatus': salaryDeductionApprovalStatus,
+      if (salaryDeductionReversalReason != null)
+        'salaryDeductionReversalReason': salaryDeductionReversalReason,
       'monthKey': monthKey,
       'submittedAt':
           submittedAt != null

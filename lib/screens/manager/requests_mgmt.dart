@@ -2969,7 +2969,24 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
           reviewer: reviewer,
           theme: theme,
         );
+      case RequestSourceType.salaryDeduction:
+      case RequestSourceType.lateArrivalDeduction:
+        return _buildDeductionInPlaceCard(
+          doc: doc,
+          record: record,
+          reviewer: reviewer,
+          theme: theme,
+        );
       default:
+        if (record.collection == 'attendance' ||
+            record.collection == 'manual_deductions') {
+          return _buildDeductionInPlaceCard(
+            doc: doc,
+            record: record,
+            reviewer: reviewer,
+            theme: theme,
+          );
+        }
         return _buildGenericRequestCard(
           doc: doc,
           record: record,
@@ -3164,6 +3181,264 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
     );
   }
 
+  Widget _buildDeductionInPlaceCard({
+    required DocumentSnapshot<Map<String, dynamic>> doc,
+    required RequestVisibilityRecord record,
+    required UserModel reviewer,
+    required ThemeData theme,
+  }) {
+    final data = doc.data() ?? <String, dynamic>{};
+    final collection = record.collection;
+    final isAttendance = collection == 'attendance';
+    final isManual = collection == 'manual_deductions';
+    final isPermission = collection == 'permissions';
+
+    final title = record.employeeName ??
+        (data['employeeName'] ?? data['userName'] ?? record.employeeId).toString();
+    final empId = (data['employeeId'] ?? record.employeeCode ?? record.employeeId).toString();
+    final dept = (data['department'] ?? data['locationName'] ?? '').toString();
+    final date = (data['date'] ?? data['dateKey'] ?? data['requestDate'] ?? '').toString();
+
+    final isHr = EmployeeRole.isHr(reviewer.role);
+    final isSuperAdmin = reviewer.role == EmployeeRole.superAdmin;
+    final canManageDeductions = isHr || isSuperAdmin;
+
+    double fraction = 0.0;
+    double amount = 0.0;
+    String currency = 'EGP';
+    String reason = '';
+    String approvalStatus = '';
+    String reversalReason = '';
+
+    if (isAttendance) {
+      fraction = (data['salaryDeductionFraction'] as num?)?.toDouble() ?? 0.0;
+      amount = (data['salaryDeductionAmount'] as num?)?.toDouble() ?? 0.0;
+      currency = (data['salaryCurrency'] ?? 'EGP').toString();
+      final code = (data['salaryDeductionCode'] ?? '').toString();
+      reason = AttendancePolicy.arabicDeductionLabel(
+        code,
+        fallback: (data['salaryDeductionLabel'] ?? code).toString(),
+      );
+      approvalStatus = (data['salaryDeductionApprovalStatus'] ?? 'none').toString();
+      reversalReason = (data['salaryDeductionReversalReason'] ?? '').toString();
+    } else if (isManual) {
+      fraction = (data['dayFraction'] as num?)?.toDouble() ?? 0.0;
+      reason = (data['reason'] ?? '').toString();
+      approvalStatus = (data['status'] ?? 'pending_hr').toString();
+      reversalReason = (data['reversalReason'] ?? '').toString();
+    } else if (isPermission) {
+      fraction = (data['salaryDeductionFraction'] as num?)?.toDouble() ?? 0.0;
+      amount = (data['salaryDeductionAmount'] as num?)?.toDouble() ?? 0.0;
+      currency = (data['salaryCurrency'] ?? 'EGP').toString();
+      reason = (data['reason'] ?? '').toString();
+      approvalStatus = (data['salaryDeductionApprovalStatus'] ?? 'none').toString();
+      reversalReason = (data['salaryDeductionReversalReason'] ?? '').toString();
+    } else {
+      approvalStatus = (data['status'] ?? '').toString();
+      reason = (data['reason'] ?? '').toString();
+    }
+
+    final isApproved = approvalStatus == 'approved';
+    final isReversed = approvalStatus == 'reversed' || approvalStatus == 'cancelled';
+    final isPending = approvalStatus == 'pending_hr' || approvalStatus == 'pending_manager' || approvalStatus == 'pending';
+
+    final style = RequestTypeStyle.fromSourceType(record.sourceType);
+
+    return WolfCard(
+      borderColor: isReversed
+          ? ZaWolfColors.surface03
+          : (isApproved ? ZaWolfColors.warning : style.borderColor),
+      shadowColor: style.shadowColor,
+      borderWidth: 1.5,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildEmployeeHeader(title, empId, dept, theme),
+          const SizedBox(height: 12),
+          Text(
+            isAttendance
+                ? 'خصم دوام وحضور'
+                : (isManual ? 'خصم راتب إداري' : 'خصم إذن استقطاعي'),
+            style: const TextStyle(
+              color: ZaWolfColors.primaryCyan,
+              fontWeight: FontWeight.bold,
+              fontSize: 14,
+            ),
+          ),
+          const SizedBox(height: 6),
+          if (date.isNotEmpty)
+            Text(
+              'تاريخ الخصم: $date',
+              style: const TextStyle(color: ZaWolfColors.textSecondary, fontSize: 13),
+            ),
+          if (reason.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text(
+              'السبب: $reason',
+              style: const TextStyle(color: Colors.white, fontSize: 14),
+            ),
+          ],
+          const SizedBox(height: 8),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: ZaWolfColors.surface02,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: ZaWolfColors.surface03),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'قيمة الخصم: ${fraction > 0 ? '${fraction.toStringAsFixed(2)} يوم' : 'غير محدد'}',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                if (amount > 0)
+                  Text(
+                    '${amount.toStringAsFixed(2)} $currency',
+                    style: const TextStyle(
+                      color: ZaWolfColors.error,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 15,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: isApproved
+                      ? ZaWolfColors.success.withValues(alpha: 0.15)
+                      : (isReversed
+                          ? ZaWolfColors.error.withValues(alpha: 0.15)
+                          : ZaWolfColors.warning.withValues(alpha: 0.15)),
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(
+                    color: isApproved
+                        ? ZaWolfColors.success.withValues(alpha: 0.4)
+                        : (isReversed
+                            ? ZaWolfColors.error.withValues(alpha: 0.4)
+                            : ZaWolfColors.warning.withValues(alpha: 0.4)),
+                  ),
+                ),
+                child: Text(
+                  isApproved
+                      ? 'خصم معتمد ومُدرج بالراتب'
+                      : (isReversed
+                          ? 'ملغى (تم التراجع عن الخصم)'
+                          : 'قيد مراجعة الاعتماد'),
+                  style: TextStyle(
+                    color: isApproved
+                        ? ZaWolfColors.success
+                        : (isReversed ? ZaWolfColors.error : ZaWolfColors.warning),
+                    fontWeight: FontWeight.bold,
+                    fontSize: 12,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          if (isReversed && reversalReason.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: ZaWolfColors.error.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: ZaWolfColors.error.withValues(alpha: 0.25)),
+              ),
+              child: Text(
+                'سبب الإلغاء: $reversalReason',
+                style: const TextStyle(color: ZaWolfColors.error, fontSize: 13),
+              ),
+            ),
+          ],
+          const SizedBox(height: 16),
+          if (isApproved && canManageDeductions) ...[
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: ZaWolfColors.error,
+                  side: const BorderSide(color: ZaWolfColors.error, width: 1.5),
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                ),
+                onPressed: () async {
+                  if (isAttendance) {
+                    final att = AttendanceModel.fromFirestore(doc);
+                    await _reverseSalaryDeduction(attendance: att, reviewer: reviewer);
+                  } else if (isManual) {
+                    final manualItem = ManualDeductionModel.fromFirestore(doc);
+                    await _reverseManualDeduction(deduction: manualItem, reviewer: reviewer);
+                  } else if (isPermission) {
+                    final perm = PermissionModel.fromFirestore(doc);
+                    await _reversePermissionSalaryDeduction(permission: perm, reviewer: reviewer);
+                  }
+                },
+                icon: const Icon(Icons.undo, color: ZaWolfColors.error),
+                label: const Text(
+                  'إلغاء الخصم المعتمد',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                ),
+              ),
+            ),
+          ] else if (isPending && canManageDeductions) ...[
+            if (isAttendance)
+              _buildApprovalActions(
+                disabled: _isRequestBusy(doc.id),
+                onApprove: () => _confirmAndRun(
+                  requestId: doc.id,
+                  title: 'اعتماد الخصم',
+                  confirmLabel: 'اعتماد',
+                  run: () => _attendanceService.approveSalaryDeduction(doc.id, reviewer.uid),
+                ),
+                onReject: () => _confirmAndRun(
+                  requestId: doc.id,
+                  title: 'رفض الخصم',
+                  confirmLabel: 'رفض',
+                  destructive: true,
+                  run: () => _attendanceService.rejectSalaryDeduction(doc.id, reviewer.uid),
+                ),
+              )
+            else if (isManual)
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  OutlinedButton.icon(
+                    onPressed: () => ManualDeductionService().rejectDeduction(
+                      deductionId: doc.id,
+                      reviewer: reviewer,
+                      reason: 'تم الرفض بواسطة ${reviewer.displayName}',
+                    ),
+                    icon: const Icon(Icons.close, color: ZaWolfColors.error),
+                    label: const Text('رفض', style: TextStyle(color: ZaWolfColors.error)),
+                  ),
+                  const SizedBox(width: 10),
+                  FilledButton.icon(
+                    onPressed: () => ManualDeductionService().approveDeduction(
+                      deductionId: doc.id,
+                      reviewer: reviewer,
+                    ),
+                    icon: const Icon(Icons.check),
+                    label: const Text('اعتماد الخصم'),
+                    style: FilledButton.styleFrom(backgroundColor: ZaWolfColors.error),
+                  ),
+                ],
+              ),
+          ],
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final authService = Provider.of<AuthService>(context);
@@ -3265,10 +3540,20 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
           absenceOnly: true,
         ),
       if (canReviewSalaryDeductions)
-        RequestVisibilityEntry(
-          key: const ValueKey('unified-deductions'),
-          query: deductionQuery,
-          searchTerm: _searchQuery,
+        Builder(
+          builder:
+              (tabContext) => RequestVisibilityEntry(
+                key: const ValueKey('unified-deductions'),
+                query: deductionQuery,
+                searchTerm: _searchQuery,
+                onSelectRecord:
+                    (record) => _showInPlaceRequestAction(
+                      tabContext,
+                      record,
+                      manager,
+                      tabs,
+                    ),
+              ),
         ),
       _buildManualDeductionsTab(manager, theme),
       if (canReviewTimeCorrections)
@@ -3277,10 +3562,20 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
       _buildComplaintsTab(manager, theme),
       _buildResignationsTab(manager, theme),
       _buildAdministrativeRequestsTab(manager, theme, widget.initialRequestId),
-      RequestVisibilityEntry(
-        key: const ValueKey('unified-request-history'),
-        query: historyQuery,
-        searchTerm: _searchQuery,
+      Builder(
+        builder:
+            (tabContext) => RequestVisibilityEntry(
+              key: const ValueKey('unified-request-history'),
+              query: historyQuery,
+              searchTerm: _searchQuery,
+              onSelectRecord:
+                  (record) => _showInPlaceRequestAction(
+                    tabContext,
+                    record,
+                    manager,
+                    tabs,
+                  ),
+            ),
       ),
     ];
 
@@ -3351,6 +3646,14 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
           cat.contains('خصومات إدارية')) {
         final found = tabs.indexWhere(
           (t) => (t.text ?? '').contains('خصومات إدارية'),
+        );
+        if (found >= 0) initialTabIndex = found;
+      } else if (cat.contains('confirmed_deduction') ||
+          cat.contains('approved_deduction') ||
+          cat.contains('unified-deductions') ||
+          cat.contains('الخصومات المعتمدة')) {
+        final found = tabs.indexWhere(
+          (t) => (t.text ?? '').contains('الخصومات المعتمدة'),
         );
         if (found >= 0) initialTabIndex = found;
       } else if (cat.contains('salary_deduction') ||
@@ -4029,6 +4332,30 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                     ),
                   ),
                 ],
+              ),
+            ],
+            if (item.status == 'approved' && (isSuperAdmin || isHr)) ...[
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed:
+                      () => _reverseManualDeduction(
+                        deduction: item,
+                        reviewer: reviewer,
+                      ),
+                  icon: const Icon(Icons.undo, color: ZaWolfColors.error),
+                  label: const Text(
+                    'إلغاء الخصم المعتمد',
+                    style: TextStyle(
+                      color: ZaWolfColors.error,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  style: OutlinedButton.styleFrom(
+                    side: const BorderSide(color: ZaWolfColors.error),
+                  ),
+                ),
               ),
             ],
           ],
@@ -6230,6 +6557,49 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                   ),
                 ),
               ),
+            if (perm.isDeductible &&
+                perm.salaryDeductionApprovalStatus == 'approved' &&
+                (reviewer.role == EmployeeRole.superAdmin ||
+                    EmployeeRole.isHr(reviewer.role))) ...[
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed:
+                      () => _reversePermissionSalaryDeduction(
+                        permission: perm,
+                        reviewer: reviewer,
+                      ),
+                  icon: const Icon(Icons.undo, color: ZaWolfColors.error),
+                  label: const Text(
+                    'إلغاء خصم الإذن المعتمد',
+                    style: TextStyle(
+                      color: ZaWolfColors.error,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  style: OutlinedButton.styleFrom(
+                    side: const BorderSide(color: ZaWolfColors.error),
+                  ),
+                ),
+              ),
+            ],
+            if (perm.salaryDeductionApprovalStatus == 'reversed') ...[
+              const SizedBox(height: 8),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: ZaWolfColors.error.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: ZaWolfColors.error.withValues(alpha: 0.25)),
+                ),
+                child: Text(
+                  'تم إلغاء أثر الخصم: ${perm.salaryDeductionReversalReason}',
+                  style: const TextStyle(color: ZaWolfColors.error, fontSize: 13),
+                ),
+              ),
+            ],
             _buildArchiveRequestAction(
               reviewer: reviewer,
               collection: 'permissions',
@@ -8053,6 +8423,192 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('تعذر إلغاء الخصم: ${userFacingError(error)}')),
+      );
+    }
+  }
+
+  Future<void> _reverseManualDeduction({
+    required ManualDeductionModel deduction,
+    required UserModel reviewer,
+  }) async {
+    final reasonController = TextEditingController();
+    final formKey = GlobalKey<FormState>();
+    var saving = false;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder:
+          (dialogContext) => StatefulBuilder(
+            builder:
+                (context, setDialogState) => AlertDialog(
+                  title: const Text(
+                    'إلغاء خصم إداري معتمد',
+                    textDirection: TextDirection.rtl,
+                  ),
+                  content: Form(
+                    key: formKey,
+                    child: TextFormField(
+                      controller: reasonController,
+                      minLines: 2,
+                      maxLines: 4,
+                      autofocus: true,
+                      textDirection: TextDirection.rtl,
+                      decoration: const InputDecoration(
+                        labelText: 'سبب الإلغاء',
+                        hintText: 'اكتب سبباً واضحاً من 5 أحرف على الأقل',
+                      ),
+                      validator:
+                          (value) =>
+                              (value ?? '').trim().length < 5
+                                  ? 'سبب الإلغاء يجب أن يكون 5 أحرف على الأقل.'
+                                  : null,
+                    ),
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed:
+                          saving
+                              ? null
+                              : () => Navigator.pop(dialogContext, false),
+                      child: const Text('تراجع'),
+                    ),
+                    FilledButton(
+                      onPressed:
+                          saving
+                              ? null
+                              : () {
+                                if (!(formKey.currentState?.validate() ??
+                                    false)) {
+                                  return;
+                                }
+                                setDialogState(() => saving = true);
+                                Navigator.pop(dialogContext, true);
+                              },
+                      child:
+                          saving
+                              ? const SizedBox.square(
+                                dimension: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                              : const Text('إلغاء الخصم'),
+                    ),
+                  ],
+                ),
+          ),
+    );
+    final reason = reasonController.text.trim();
+    reasonController.dispose();
+    if (confirmed != true || reason.length < 5) return;
+    try {
+      await ManualDeductionService().reverseDeduction(
+        deductionId: deduction.id,
+        reviewer: reviewer,
+        reason: reason,
+      );
+      if (!mounted) return;
+      setState(() => _resolvedRequestIds.add(deduction.id));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('تم إلغاء الخصم الإداري وتسجيل السبب.')),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('تعذر إلغاء الخصم: ${userFacingError(error)}')),
+      );
+    }
+  }
+
+  Future<void> _reversePermissionSalaryDeduction({
+    required PermissionModel permission,
+    required UserModel reviewer,
+  }) async {
+    final reasonController = TextEditingController();
+    final formKey = GlobalKey<FormState>();
+    var saving = false;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder:
+          (dialogContext) => StatefulBuilder(
+            builder:
+                (context, setDialogState) => AlertDialog(
+                  title: const Text(
+                    'إلغاء خصم الإذن المعتمد',
+                    textDirection: TextDirection.rtl,
+                  ),
+                  content: Form(
+                    key: formKey,
+                    child: TextFormField(
+                      controller: reasonController,
+                      minLines: 2,
+                      maxLines: 4,
+                      autofocus: true,
+                      textDirection: TextDirection.rtl,
+                      decoration: const InputDecoration(
+                        labelText: 'سبب الإلغاء',
+                        hintText: 'اكتب سبباً واضحاً من 5 أحرف على الأقل',
+                      ),
+                      validator:
+                          (value) =>
+                              (value ?? '').trim().length < 5
+                                  ? 'سبب الإلغاء يجب أن يكون 5 أحرف على الأقل.'
+                                  : null,
+                    ),
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed:
+                          saving
+                              ? null
+                              : () => Navigator.pop(dialogContext, false),
+                      child: const Text('تراجع'),
+                    ),
+                    FilledButton(
+                      onPressed:
+                          saving
+                              ? null
+                              : () {
+                                if (!(formKey.currentState?.validate() ??
+                                    false)) {
+                                  return;
+                                }
+                                setDialogState(() => saving = true);
+                                Navigator.pop(dialogContext, true);
+                              },
+                      child:
+                          saving
+                              ? const SizedBox.square(
+                                dimension: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                              : const Text('إلغاء الخصم'),
+                    ),
+                  ],
+                ),
+          ),
+    );
+    final reason = reasonController.text.trim();
+    reasonController.dispose();
+    if (confirmed != true || reason.length < 5) return;
+    try {
+      await _permissionService.reverseSalaryDeduction(
+        permissionId: permission.permissionId,
+        reviewerId: reviewer.uid,
+        reason: reason,
+      );
+      if (!mounted) return;
+      setState(() => _resolvedRequestIds.add(permission.permissionId));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('تم إلغاء خصم الإذن المعتمد بنجاح.')),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('تعذر إلغاء خصم الإذن: ${userFacingError(error)}')),
       );
     }
   }

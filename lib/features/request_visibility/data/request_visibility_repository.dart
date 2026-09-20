@@ -205,7 +205,7 @@ abstract final class RequestVisibilityNormalizer {
     if (state.contains('reject')) {
       return RequestLifecycleState.rejected;
     }
-    if (state.contains('cancel')) {
+    if (state.contains('cancel') || state.contains('revers')) {
       return RequestLifecycleState.cancelled;
     }
     if (state.contains('pending') || state.contains('review')) {

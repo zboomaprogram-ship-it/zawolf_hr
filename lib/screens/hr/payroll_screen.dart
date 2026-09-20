@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart' hide TextDirection;
 import 'package:provider/provider.dart';
 
@@ -221,6 +222,23 @@ class _PayrollScreenState extends State<PayrollScreen> {
                     value: '-${run.attendanceDeductions.toStringAsFixed(2)} ${run.currency}',
                     color: run.attendanceDeductions > 0 ? ZaWolfColors.error : ZaWolfColors.textMuted,
                   ),
+                  if (run.approvedDeductionCount > 0 || run.attendanceDeductions > 0) ...[
+                    const SizedBox(height: 6),
+                    Align(
+                      alignment: AlignmentDirectional.centerEnd,
+                      child: TextButton.icon(
+                        onPressed: () {
+                          Navigator.pop(context);
+                          context.go('/hr/requests?tab=unified-deductions');
+                        },
+                        icon: const Icon(Icons.open_in_new, size: 16),
+                        label: const Text(
+                          'مراجعة أو إلغاء الخصومات في السجل',
+                          style: TextStyle(fontSize: 12),
+                        ),
+                      ),
+                    ),
+                  ],
                   const Divider(color: ZaWolfColors.surface03),
                   _DetailRow(
                     label: 'السلف المستقطعة (${run.advanceRecordCount} سلفة)',

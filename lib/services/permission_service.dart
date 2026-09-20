@@ -943,4 +943,56 @@ class PermissionService {
       // integration outage.
     }
   }
+
+  Future<void> reverseSalaryDeduction({
+    required String permissionId,
+    required String reviewerId,
+    required String reason,
+  }) async {
+    final normalizedReason = reason.trim();
+    if (normalizedReason.length < 5) {
+      throw Exception('اكتب سبب إلغاء الخصم بوضوح (5 أحرف على الأقل).');
+    }
+    final ref = _db.collection('permissions').doc(permissionId);
+    String userId = '';
+    await _db.runTransaction((transaction) async {
+      final snap = await transaction.get(ref);
+      if (!snap.exists) throw Exception('طلب الإذن غير موجود.');
+      final data = snap.data()!;
+      if (data['salaryDeductionApprovalStatus'] != 'approved') {
+        throw Exception('يمكن إلغاء الخصم المعتمد فقط.');
+      }
+      userId = data['userId'] as String? ?? '';
+      transaction.update(ref, {
+        'salaryDeductionApprovalStatus': 'reversed',
+        'salaryDeductionReversedBy': reviewerId,
+        'salaryDeductionReversedAt': FieldValue.serverTimestamp(),
+        'salaryDeductionReversalReason': normalizedReason,
+      });
+    });
+
+    try {
+      await AuditLogService.instance.record(
+        actorId: reviewerId,
+        action: 'permission_salary_deduction_reversed',
+        targetCollection: 'permissions',
+        targetId: permissionId,
+        metadata: {'reason': normalizedReason},
+      );
+    } catch (_) {}
+
+    if (userId.isEmpty) return;
+    try {
+      await RoleNotificationService.instance.createNotification(
+        recipientId: userId,
+        type: 'salary_deduction_reversed',
+        title: 'تم إلغاء خصم الإذن المعتمد',
+        body: 'ألغت الموارد البشرية خصم راتب الإذن. السبب: $normalizedReason',
+        data: {
+          'permissionId': permissionId,
+          'route': '/employee/deductions',
+        },
+      );
+    } catch (_) {}
+  }
 }

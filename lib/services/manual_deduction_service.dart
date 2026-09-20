@@ -222,6 +222,54 @@ class ManualDeductionService {
     );
   }
 
+  Future<void> reverseDeduction({
+    required String deductionId,
+    required UserModel reviewer,
+    required String reason,
+  }) async {
+    final normalizedReason = reason.trim();
+    if (normalizedReason.length < 5) {
+      throw Exception('اكتب سبب إلغاء الخصم بوضوح (5 أحرف على الأقل).');
+    }
+
+    final ref = _db.collection('manual_deductions').doc(deductionId);
+    final doc = await ref.get();
+    if (!doc.exists) throw Exception('سجل الخصم غير موجود.');
+    final deduction = ManualDeductionModel.fromFirestore(doc);
+    if (deduction.status != 'approved') {
+      throw Exception('يمكن إلغاء الخصم المعتمد فقط.');
+    }
+
+    await ref.update({
+      'status': 'reversed',
+      'reversedBy': reviewer.uid,
+      'reversedByName': reviewer.displayName,
+      'reversedAt': FieldValue.serverTimestamp(),
+      'reversalReason': normalizedReason,
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+
+    try {
+      await AuditLogService.instance.record(
+        actorId: reviewer.uid,
+        action: 'manual_deduction_reversed',
+        targetCollection: 'manual_deductions',
+        targetId: deductionId,
+        metadata: {'userId': deduction.userId, 'reason': normalizedReason},
+      );
+    } catch (_) {}
+
+    await _sendNotification(
+      recipientId: deduction.userId,
+      type: 'salary_deduction_reversed',
+      title: 'تم إلغاء الخصم الإداري',
+      body:
+          'تم إلغاء خصم الراتب الإداري (${deduction.fractionLabel}) بتاريخ ${deduction.dateKey} - السبب: $normalizedReason',
+      route: '/employee/deductions',
+      data: {'deductionId': deductionId},
+    );
+  }
+
   Future<void> _sendNotification({
     required String recipientId,
     required String type,
