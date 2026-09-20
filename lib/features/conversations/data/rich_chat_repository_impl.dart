@@ -29,6 +29,7 @@ class RichChatRepositoryImpl implements RichChatRepository {
   final Map<String, Future<ChatDraftFile>> _attachmentDownloads = {};
   int _attachmentCacheBytes = 0;
   static const int _maxAttachmentCacheBytes = 24 * 1024 * 1024;
+  static const int _maxPersistentMediaBytes = 64 * 1024 * 1024;
   bool _foreground = true, _disposed = false;
   String _channel(String id) => '/channels/${Uri.encodeComponent(id)}';
   String _query(Map<String, String?> values) =>
@@ -158,6 +159,10 @@ class RichChatRepositoryImpl implements RichChatRepository {
                 if (meta != null || messages.isNotEmpty || outbox.isNotEmpty) {
                   await _emit(channelId);
                 }
+                // Delivery state is durable.  A message that was being
+                // uploaded when the user left this page resumes from the
+                // saved upload offset when the conversation is opened again.
+                unawaited(_resumeOutbox(channelId));
                 await _poll(channelId);
               },
               onCancel: () => _timers.remove(channelId)?.cancel(),
@@ -371,15 +376,20 @@ class RichChatRepositoryImpl implements RichChatRepository {
       row['errorCode'] = null;
       await store.put(channelId, 'outbox', id, row);
       await _emit(channelId);
-      final attachments = <Map<String, Object?>>[];
-      for (final file in objectList(row['files'])) {
-        final a = await _upload(channelId, file, (progress) async {
-          row['uploadProgress'] = progress;
+      final files = objectList(row['files']);
+      final progress = List<double>.filled(files.length, 0);
+      final attachments = await _boundedUploads(
+        files,
+        (index, file) => _upload(channelId, file, (value) async {
+          progress[index] = value;
+          row['uploadProgress'] =
+              progress.isEmpty
+                  ? 1
+                  : progress.reduce((a, b) => a + b) / progress.length;
           await store.put(channelId, 'outbox', id, row);
           await _emit(channelId);
-        });
-        attachments.add(a);
-      }
+        }),
+      );
       final d = await _post('${_channel(channelId)}/messages', {
         'body': row['body'],
         'attachmentResourceIds':
@@ -415,6 +425,34 @@ class RichChatRepositoryImpl implements RichChatRepository {
       await store.put(channelId, 'outbox', id, row);
     }
     await _emit(channelId);
+  }
+
+  Future<List<Map<String, Object?>>> _boundedUploads(
+    List<Map<String, Object?>> files,
+    Future<Map<String, Object?>> Function(int index, Map<String, Object?> file)
+    upload,
+  ) async {
+    final results = List<Map<String, Object?>?>.filled(files.length, null);
+    var next = 0;
+    Future<void> worker() async {
+      while (next < files.length) {
+        final index = next++;
+        results[index] = await upload(index, files[index]);
+      }
+    }
+
+    await Future.wait(
+      List.generate(files.length < 3 ? files.length : 3, (_) => worker()),
+    );
+    return results.cast<Map<String, Object?>>();
+  }
+
+  Future<void> _resumeOutbox(String channelId) async {
+    if (_disposed || !_foreground) return;
+    for (final row in await store.rows(channelId, 'outbox')) {
+      final id = '${row['id'] ?? ''}';
+      if (id.isNotEmpty) unawaited(retry(channelId, id).catchError((_) {}));
+    }
   }
 
   Future<Map<String, Object?>> _upload(
@@ -704,6 +742,17 @@ class RichChatRepositoryImpl implements RichChatRepository {
   }
 
   @override
+  Future<bool> isArchived(String channelId) async =>
+      (await store.get(channelId, 'preference', 'archive'))?['archived'] ==
+      true;
+
+  @override
+  Future<void> setArchived(String channelId, bool archived) async {
+    await store.put(channelId, 'preference', 'archive', {'archived': archived});
+    if (archived) await setChannelNotificationsEnabled(channelId, false);
+  }
+
+  @override
   Future<ChatPage<ChannelRequest>> requests({String? cursor}) async {
     final d = await _get('/requests${_query({'cursor': cursor})}');
     return ChatPage(
@@ -780,11 +829,12 @@ class RichChatRepositoryImpl implements RichChatRepository {
       _attachmentCache[key] = cached;
       return Future.value(cached);
     }
-    return _attachmentDownloads[key] ??= transport
-        .download(
-          '${_channel(channelId)}/attachments/${Uri.encodeComponent(resourceId)}/download',
+    return _attachmentDownloads[key] ??= _downloadWithCache(
+          channelId,
+          resourceId,
         )
-        .then((file) {
+        .then((file) async {
+          await _putPersistentMedia(channelId, resourceId, file);
           if (!_disposed && file.bytes.length <= _maxAttachmentCacheBytes) {
             while (_attachmentCache.isNotEmpty &&
                 _attachmentCacheBytes + file.bytes.length >
@@ -799,6 +849,82 @@ class RichChatRepositoryImpl implements RichChatRepository {
           return file;
         })
         .whenComplete(() => _attachmentDownloads.remove(key));
+  }
+
+  Future<ChatDraftFile> _downloadWithCache(
+    String channelId,
+    String resourceId,
+  ) async {
+    final cached = await _persistentMedia(channelId, resourceId);
+    return cached ??
+        transport.download(
+          '${_channel(channelId)}/attachments/${Uri.encodeComponent(resourceId)}/download',
+        );
+  }
+
+  Future<ChatDraftFile?> _persistentMedia(
+    String channelId,
+    String resourceId,
+  ) async {
+    final meta = await store.get(channelId, 'media', resourceId);
+    if (meta == null) return null;
+    try {
+      final bytes = await store.bytes('${meta['blobId']}');
+      await store.put(channelId, 'media', resourceId, {
+        ...meta,
+        'lastAccessedAt': DateTime.now().toUtc().toIso8601String(),
+      });
+      return ChatDraftFile(
+        fileName: '${meta['fileName']}',
+        mimeType: '${meta['mimeType']}',
+        kind: '${meta['kind'] ?? 'file'}',
+        durationSeconds: (meta['durationSeconds'] as num?)?.toDouble(),
+        bytes: bytes,
+      );
+    } catch (_) {
+      await store.remove(channelId, 'media', resourceId);
+      return null;
+    }
+  }
+
+  Future<void> _putPersistentMedia(
+    String channelId,
+    String resourceId,
+    ChatDraftFile file,
+  ) async {
+    if (file.bytes.length > _maxPersistentMediaBytes) return;
+    final blobId = 'media:$channelId:$resourceId';
+    await store.transaction(() async {
+      await store.blob(blobId, file.bytes);
+      await store.put(channelId, 'media', resourceId, {
+        'resourceId': resourceId,
+        'blobId': blobId,
+        'fileName': file.fileName,
+        'mimeType': file.mimeType,
+        'kind': file.kind,
+        'durationSeconds': file.durationSeconds,
+        'sizeBytes': file.bytes.length,
+        'lastAccessedAt': DateTime.now().toUtc().toIso8601String(),
+      });
+      final entries = await store.rows(channelId, 'media');
+      var total = entries.fold<int>(
+        0,
+        (sum, value) => sum + ((value['sizeBytes'] as num?)?.toInt() ?? 0),
+      );
+      final oldest = [...entries]..sort(
+        (a, b) => '${a['lastAccessedAt']}'.compareTo('${b['lastAccessedAt']}'),
+      );
+      for (final entry in oldest) {
+        if (total <= _maxPersistentMediaBytes) break;
+        total -= (entry['sizeBytes'] as num?)?.toInt() ?? 0;
+        await store.removeBlob('${entry['blobId']}');
+        await store.remove(
+          channelId,
+          'media',
+          '${entry['resourceId'] ?? entry['id'] ?? ''}',
+        );
+      }
+    });
   }
 
   @override

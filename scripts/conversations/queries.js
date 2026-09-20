@@ -148,7 +148,15 @@ async function channelSummary({db, actor, channel}) {
 }
 function userDto(doc, eligibilityReason) {
   const data = doc.data();
-  return { id: doc.id, name: data.displayName || data.name || data.employeeName || doc.id, department: P.department(data), eligibilityReason };
+  return {
+    id: doc.id,
+    name: data.displayName || data.name || data.employeeName || doc.id,
+    department: P.department(data),
+    // The current user profile is authoritative. It is never copied into a
+    // message record, so replacement/deletion applies across chat instantly.
+    photoUrl: typeof data.photoURL === 'string' ? data.photoURL : null,
+    eligibilityReason,
+  };
 }
 async function eligibleUsers(dbOrContext, actorArg, paramsArg) {
   const db = (dbOrContext && dbOrContext.db) || dbOrContext;
@@ -206,7 +214,15 @@ async function users({db, params}) {
   const q = (params.get('q') || '').trim().toLocaleLowerCase();
   if (q.length > 120) C.fail('validation_failed');
   const docs = await pageById(db.collection('users').where('isActive', '==', true), params.get('cursor'), 100).get();
-  return { users: docs.docs.map(doc => ({ id: doc.id, name: doc.data().displayName || doc.data().name || '', department: doc.data().department || '' })).filter(user => !q || `${user.name} ${user.department}`.toLocaleLowerCase().includes(q)), nextCursor: docs.size === 100 ? docs.docs.at(-1).id : null };
+  return {
+    users: docs.docs.map(doc => ({
+      id: doc.id,
+      name: doc.data().displayName || doc.data().name || '',
+      department: doc.data().department || '',
+      photoUrl: typeof doc.data().photoURL === 'string' ? doc.data().photoURL : null,
+    })).filter(user => !q || `${user.name} ${user.department}`.toLocaleLowerCase().includes(q)),
+    nextCursor: docs.size === 100 ? docs.docs.at(-1).id : null,
+  };
 }
 async function requests({db, actor, params}) {
   let query = db.collection('conversationRequests');

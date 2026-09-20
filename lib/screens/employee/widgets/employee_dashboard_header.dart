@@ -142,7 +142,11 @@ class EmployeeDashboardHeader extends StatelessWidget {
               children: [
                 Row(
                   children: [
-                    DsAvatar(name: user.displayName, size: 40),
+                    DsAvatar(
+                      name: user.displayName,
+                      imageUrl: user.photoURL,
+                      size: 40,
+                    ),
                     const SizedBox(width: 12),
                     Expanded(child: identity),
                   ],
@@ -157,7 +161,11 @@ class EmployeeDashboardHeader extends StatelessWidget {
               locationChip,
               const SizedBox(width: 12),
               Expanded(child: identity),
-              DsAvatar(name: user.displayName, size: 40),
+              DsAvatar(
+                name: user.displayName,
+                imageUrl: user.photoURL,
+                size: 40,
+              ),
             ],
           );
         },

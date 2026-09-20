@@ -12,6 +12,7 @@ import '../../design_system/components/rtl_navigation.dart';
 import '../../design_system/components/feedback_states.dart'
     show EmptyState, ErrorState;
 import '../../design_system/components/skeletons.dart' show SkeletonList;
+import '../../features/profile_images/presentation/employee_avatar.dart';
 
 class TeamMembersScreen extends StatefulWidget {
   const TeamMembersScreen({super.key});
@@ -33,10 +34,11 @@ class _TeamMembersScreenState extends State<TeamMembersScreen> {
 
   Future<List<UserModel>> _loadTeam(UserModel reviewer) async {
     if (reviewer.role == EmployeeRole.teamLeader) {
-      final snapshot = await _db
-          .collection('users')
-          .where('teamLeaderId', isEqualTo: reviewer.uid)
-          .get();
+      final snapshot =
+          await _db
+              .collection('users')
+              .where('teamLeaderId', isEqualTo: reviewer.uid)
+              .get();
       final team =
           snapshot.docs
               .map(UserModel.fromFirestore)
@@ -60,8 +62,9 @@ class _TeamMembersScreenState extends State<TeamMembersScreen> {
         byId[employee.uid] = employee;
       }
     }
-    final team = byId.values.toList()
-      ..sort((a, b) => a.displayName.compareTo(b.displayName));
+    final team =
+        byId.values.toList()
+          ..sort((a, b) => a.displayName.compareTo(b.displayName));
     return team;
   }
 
@@ -90,18 +93,22 @@ class _TeamMembersScreenState extends State<TeamMembersScreen> {
 
           return Scaffold(
             appBar: AppBar(
-              leading: Navigator.canPop(context)
-                  ? IconButton(
-                      icon: Icon(RtlNavigation.backIcon(context)),
-                      tooltip: 'رجوع',
-                      onPressed: () => Navigator.pop(context),
-                    )
-                  : null,
+              leading:
+                  Navigator.canPop(context)
+                      ? IconButton(
+                        icon: Icon(RtlNavigation.backIcon(context)),
+                        tooltip: 'رجوع',
+                        onPressed: () => Navigator.pop(context),
+                      )
+                      : null,
               title: Text('ملفات فريقي', style: theme.textTheme.headlineMedium),
               actions: [
                 IconButton(
                   tooltip: 'تحديث',
-                  icon: const Icon(Icons.refresh, color: ZaWolfColors.primaryCyan),
+                  icon: const Icon(
+                    Icons.refresh,
+                    color: ZaWolfColors.primaryCyan,
+                  ),
                   onPressed: () => _refresh(manager),
                 ),
               ],
@@ -111,7 +118,8 @@ class _TeamMembersScreenState extends State<TeamMembersScreen> {
               builder: (context, snapshot) {
                 if (snapshot.hasError) {
                   return ErrorState(
-                    message: 'تعذر تحميل أعضاء الفريق. تحقق من الصلاحيات أو الاتصال.',
+                    message:
+                        'تعذر تحميل أعضاء الفريق. تحقق من الصلاحيات أو الاتصال.',
                     onRetry: () => _refresh(manager),
                   );
                 }
@@ -130,13 +138,14 @@ class _TeamMembersScreenState extends State<TeamMembersScreen> {
                 }
 
                 final query = _searchController.text.trim().toLowerCase();
-                final members = allMembers.where((emp) {
-                  if (query.isEmpty) return true;
-                  return emp.displayName.toLowerCase().contains(query) ||
-                      emp.employeeId.toLowerCase().contains(query) ||
-                      emp.department.toLowerCase().contains(query) ||
-                      emp.position.toLowerCase().contains(query);
-                }).toList();
+                final members =
+                    allMembers.where((emp) {
+                      if (query.isEmpty) return true;
+                      return emp.displayName.toLowerCase().contains(query) ||
+                          emp.employeeId.toLowerCase().contains(query) ||
+                          emp.department.toLowerCase().contains(query) ||
+                          emp.position.toLowerCase().contains(query);
+                    }).toList();
 
                 return RefreshIndicator(
                   onRefresh: () async => _refresh(manager),
@@ -165,7 +174,8 @@ class _TeamMembersScreenState extends State<TeamMembersScreen> {
                                   onChanged: (_) => setState(() {}),
                                   decoration: const InputDecoration(
                                     prefixIcon: Icon(Icons.search, size: 20),
-                                    hintText: 'ابحث بالاسم، كود الموظف، أو القسم...',
+                                    hintText:
+                                        'ابحث بالاسم، كود الموظف، أو القسم...',
                                     border: OutlineInputBorder(),
                                     isDense: true,
                                     contentPadding: EdgeInsets.symmetric(
@@ -182,10 +192,14 @@ class _TeamMembersScreenState extends State<TeamMembersScreen> {
                                   vertical: 8,
                                 ),
                                 decoration: BoxDecoration(
-                                  color: ZaWolfColors.primaryCyan.withValues(alpha: 0.1),
+                                  color: ZaWolfColors.primaryCyan.withValues(
+                                    alpha: 0.1,
+                                  ),
                                   borderRadius: BorderRadius.circular(8),
                                   border: Border.all(
-                                    color: ZaWolfColors.primaryCyan.withValues(alpha: 0.35),
+                                    color: ZaWolfColors.primaryCyan.withValues(
+                                      alpha: 0.35,
+                                    ),
                                   ),
                                 ),
                                 child: Row(
@@ -233,7 +247,9 @@ class _TeamMembersScreenState extends State<TeamMembersScreen> {
                               decoration: BoxDecoration(
                                 color: ZaWolfColors.surface01,
                                 borderRadius: BorderRadius.circular(8),
-                                border: Border.all(color: ZaWolfColors.surface03),
+                                border: Border.all(
+                                  color: ZaWolfColors.surface03,
+                                ),
                               ),
                               child: Text(
                                 '${members.length}',
@@ -271,7 +287,12 @@ class _TeamMembersScreenState extends State<TeamMembersScreen> {
                           ),
                         )
                       else if (isDesktop)
-                        _buildDesktopMembersGrid(context, manager, members, constraints.maxWidth)
+                        _buildDesktopMembersGrid(
+                          context,
+                          manager,
+                          members,
+                          constraints.maxWidth,
+                        )
                       else
                         ...members.map(
                           (employee) => Padding(
@@ -309,14 +330,15 @@ class _TeamMembersScreenState extends State<TeamMembersScreen> {
           if (i > 0) const SizedBox(width: 14),
           Expanded(
             child: Column(
-              children: columns[i]
-                  .map(
-                    (emp) => Padding(
-                      padding: const EdgeInsets.only(bottom: 14),
-                      child: _buildMemberCard(context, manager, emp),
-                    ),
-                  )
-                  .toList(),
+              children:
+                  columns[i]
+                      .map(
+                        (emp) => Padding(
+                          padding: const EdgeInsets.only(bottom: 14),
+                          child: _buildMemberCard(context, manager, emp),
+                        ),
+                      )
+                      .toList(),
             ),
           ),
         ],
@@ -332,24 +354,19 @@ class _TeamMembersScreenState extends State<TeamMembersScreen> {
     final theme = Theme.of(context);
 
     return WolfCard(
-      onTap: () => context.go(
-        manager.role == EmployeeRole.teamLeader
-            ? '/team-leader/employee/${employee.uid}'
-            : '/manager/employee/${employee.uid}',
-      ),
+      onTap:
+          () => context.go(
+            manager.role == EmployeeRole.teamLeader
+                ? '/team-leader/employee/${employee.uid}'
+                : '/manager/employee/${employee.uid}',
+          ),
       child: Row(
         children: [
-          CircleAvatar(
-            radius: 22,
-            backgroundColor: ZaWolfColors.primaryCyan.withValues(alpha: .15),
-            child: Text(
-              employee.displayName.isEmpty ? '?' : employee.displayName[0],
-              style: const TextStyle(
-                color: ZaWolfColors.primaryCyan,
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
+          EmployeeAvatar(
+            name: employee.displayName,
+            photoUrl: employee.photoURL,
+            size: 44,
+            ringColor: ZaWolfColors.primaryCyan,
           ),
           const SizedBox(width: 14),
           Expanded(
@@ -371,7 +388,10 @@ class _TeamMembersScreenState extends State<TeamMembersScreen> {
                     ),
                     if (employee.employeeId.isNotEmpty)
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 2,
+                        ),
                         decoration: BoxDecoration(
                           color: ZaWolfColors.surface02,
                           borderRadius: BorderRadius.circular(4),

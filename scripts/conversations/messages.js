@@ -2,6 +2,17 @@
 const { normalizeMessageInput, safeId } = require('../conversation-operations');
 const C = require('./common');
 const displayName = actor => actor.displayName || actor.name || actor.employeeId || '';
+function notificationTitle(channel, actor) {
+  // Direct conversations identify the sender; group notifications identify
+  // the group, while their body retains the sender name for context.
+  return channel.data.kind === 'direct'
+    ? (displayName(actor) || 'رسالة جديدة')
+    : (channel.data.name || channel.data.purposeAr || channel.data.departmentName || 'رسالة جديدة');
+}
+function notificationBody(channel, actor, body) {
+  const preview = body || 'مرفق جديد';
+  return channel.data.kind === 'direct' ? preview : `${displayName(actor) || 'عضو'}: ${preview}`;
+}
 async function sendMessage({ db, admin, actor, channelId, payload, legacy = false, now = new Date() }) {
   const input = normalizeMessageInput(payload);
   if (!input || (payload.replyToMessageId && !safeId(payload.replyToMessageId))) C.fail('validation_failed');
@@ -36,7 +47,7 @@ async function sendMessage({ db, admin, actor, channelId, payload, legacy = fals
     tx.create(ref, message);
     C.change(tx, channel, 'message', { messageId }, now);
     C.audit(tx, db, channelId, input.operationId, actor, 'send', { messageId, revision: 1, message: C.messageDto(messageId, message) }, now);
-    C.notifyChannel(tx, db, channel, actor.uid, `send:${channelId}:${messageId}`, 'رسالة جديدة', input.body || 'مرفق جديد', { conversationId: channelId, messageId, route: `/conversations/channel/${encodeURIComponent(channelId)}` }, now, admin);
+    C.notifyChannel(tx, db, channel, actor.uid, `send:${channelId}:${messageId}`, notificationTitle(channel, actor), notificationBody(channel, actor, input.body), { conversationId: channelId, messageId, route: `/conversations/channel/${encodeURIComponent(channelId)}` }, now, admin);
     return C.receipt(tx, op, { message: C.messageDto(messageId, message) }, now);
   });
 }
@@ -92,7 +103,7 @@ async function messageAction({ db, admin, actor, channelId, messageId, payload, 
     tx.set(target, next);
     C.change(tx, channel, 'message', { messageId: id }, now);
     C.audit(tx, db, channel.id, payload.operationId, actor, payload.action, { messageId: id, revision: next.revision, previous: C.messageDto(messageId, old), message: C.messageDto(id, next) }, now);
-    if (payload.action === 'forward') C.notifyChannel(tx, db, channel, actor.uid, `forward:${id}`, 'رسالة جديدة', next.body || 'مرفق جديد', { conversationId: channel.id, messageId: id, route: `/conversations/channel/${encodeURIComponent(channel.id)}` }, now, admin);
+    if (payload.action === 'forward') C.notifyChannel(tx, db, channel, actor.uid, `forward:${id}`, notificationTitle(channel, actor), notificationBody(channel, actor, next.body), { conversationId: channel.id, messageId: id, route: `/conversations/channel/${encodeURIComponent(channel.id)}` }, now, admin);
     return C.receipt(tx, op, { message: C.messageDto(id, next) }, now);
   });
 }
@@ -124,4 +135,4 @@ async function presence({ db, actor, channelId, payload, typing = false, now = n
     return C.receipt(tx, op, { readers }, now);
   });
 }
-module.exports = { sendMessage, messageAction, presence, validateSenderAction };
+module.exports = { sendMessage, messageAction, presence, validateSenderAction, notificationTitle, notificationBody };

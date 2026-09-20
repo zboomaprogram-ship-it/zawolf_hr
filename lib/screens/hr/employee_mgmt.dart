@@ -32,6 +32,7 @@ import '../../models/employee_deletion_request.dart';
 import '../../services/employee_deletion_request_service.dart';
 import '../../design_system/components/feedback_states.dart' show EmptyState;
 import '../../design_system/components/skeletons.dart' show SkeletonList;
+import '../../features/profile_images/presentation/employee_avatar.dart';
 
 List<DropdownMenuItem<String>> _roleMenuItems({
   required bool canUseSuperAdmin,
@@ -1220,21 +1221,11 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
                                 ),
                                 const SizedBox(width: 10),
                                 // Avatar (far right)
-                                CircleAvatar(
-                                  radius: 22,
-                                  backgroundColor: roleColor.withValues(
-                                    alpha: 0.15,
-                                  ),
-                                  child: Text(
-                                    emp.displayName.isNotEmpty
-                                        ? emp.displayName[0].toUpperCase()
-                                        : '?',
-                                    style: TextStyle(
-                                      color: roleColor,
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 18,
-                                    ),
-                                  ),
+                                EmployeeAvatar(
+                                  name: emp.displayName,
+                                  photoUrl: emp.photoURL,
+                                  size: 44,
+                                  ringColor: roleColor,
                                 ),
                               ],
                             ),

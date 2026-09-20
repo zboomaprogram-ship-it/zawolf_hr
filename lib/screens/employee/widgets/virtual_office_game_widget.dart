@@ -1238,7 +1238,7 @@ class _VirtualOfficeGameWidgetState extends State<VirtualOfficeGameWidget>
     ),
     OfficeDepartmentHotspot.chatRoom => (
       title: '💬 قاعة المحادثات',
-      subtitle: 'شات القسم',
+      subtitle: 'المحادثات',
       icon: Icons.chat_bubble_outline_rounded,
       color: ZaWolfColors.dayoffPurple,
       assetPath: 'assets/images/iso_chat_lounge.png',

@@ -246,7 +246,7 @@ class _BadgeCelebrationDialogState extends State<BadgeCelebrationDialog>
                       label: Text(
                         _shared
                             ? 'تمت المشاركة في الشات! ✓'
-                            : 'مشاركة الإنجاز في شات القسم',
+                            : 'مشاركة الإنجاز في المحادثات',
                         style: const TextStyle(fontWeight: FontWeight.bold),
                       ),
                     ),

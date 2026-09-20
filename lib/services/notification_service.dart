@@ -17,6 +17,7 @@ class NotificationService implements InAppNotificationAlerts {
   final FlutterLocalNotificationsPlugin _localNotificationsPlugin =
       FlutterLocalNotificationsPlugin();
   final Set<String> _notifiedIds = {};
+  String? _activeConversationId;
   StreamSubscription? _notifSubscription;
 
   // Stream for handling notification taps
@@ -49,6 +50,35 @@ class NotificationService implements InAppNotificationAlerts {
       return fallback;
     }
     return candidate;
+  }
+
+  /// The visible chat owns delivery of its own messages.  Suppress both the
+  /// in-app banner and local notification for that exact conversation, then
+  /// mark the notification read so it cannot return after navigation.
+  void setActiveConversation(String? conversationId) {
+    _activeConversationId =
+        conversationId?.trim().isEmpty ?? true ? null : conversationId!.trim();
+  }
+
+  void clearActiveConversation(String conversationId) {
+    if (_activeConversationId == conversationId.trim()) {
+      _activeConversationId = null;
+    }
+  }
+
+  String? _conversationIdFromNotification(Map<String, dynamic> data) {
+    final nested = data['data'];
+    if (nested is Map && nested['conversationId'] is String) {
+      return (nested['conversationId'] as String).trim();
+    }
+    final route = nested is Map ? nested['route'] as String? : null;
+    final uri = route == null ? null : Uri.tryParse(route);
+    if (uri == null || uri.pathSegments.length < 3) return null;
+    if (uri.pathSegments[0] != 'conversations' ||
+        uri.pathSegments[1] != 'channel') {
+      return null;
+    }
+    return Uri.decodeComponent(uri.pathSegments[2]);
   }
 
   static const Set<String> _supportedNotificationPaths = {
@@ -362,6 +392,11 @@ class NotificationService implements InAppNotificationAlerts {
                   final docId = change.doc.id;
                   if (!_notifiedIds.contains(docId)) {
                     _notifiedIds.add(docId);
+                    final activeId = _conversationIdFromNotification(data);
+                    if (activeId != null && activeId == _activeConversationId) {
+                      unawaited(markAsRead(userId, docId));
+                      continue;
+                    }
                     final title = data['title'] as String? ?? 'تنبيه جديد';
                     final body = data['body'] as String? ?? '';
                     final type = data['type'] as String? ?? '';

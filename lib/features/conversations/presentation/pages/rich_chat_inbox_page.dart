@@ -232,7 +232,10 @@ class _SectionButton extends StatelessWidget {
                 Text(
                   label,
                   style: TextStyle(
-                    color: selected ? ZaWolfColors.textPrimary : ZaWolfColors.textSecondary,
+                    color:
+                        selected
+                            ? ZaWolfColors.textPrimary
+                            : ZaWolfColors.textSecondary,
                     fontWeight: FontWeight.w700,
                   ),
                 ),
@@ -314,14 +317,73 @@ class _InboxSection extends StatelessWidget {
                                         label: const Text('تحميل محادثات أقدم'),
                                       );
                                     }
-                                    return _ConversationTile(
-                                      channel: state.channels[index],
+                                    final channel = state.channels[index];
+                                    final tile = _ConversationTile(
+                                      channel: channel,
                                       direct: section == 'direct',
                                       onTap:
-                                          () => openChannel(
-                                            context,
-                                            state.channels[index],
+                                          () => openChannel(context, channel),
+                                    );
+                                    if (section != 'direct') return tile;
+                                    return Dismissible(
+                                      key: ValueKey('archive-${channel.id}'),
+                                      direction: DismissDirection.horizontal,
+                                      background: Container(
+                                        alignment:
+                                            AlignmentDirectional.centerStart,
+                                        padding:
+                                            const EdgeInsetsDirectional.only(
+                                              start: 24,
+                                            ),
+                                        decoration: BoxDecoration(
+                                          color: ZaWolfColors.primaryBlue,
+                                          borderRadius: BorderRadius.circular(
+                                            18,
                                           ),
+                                        ),
+                                        child: const Icon(
+                                          Icons.archive_outlined,
+                                        ),
+                                      ),
+                                      secondaryBackground: Container(
+                                        alignment:
+                                            AlignmentDirectional.centerEnd,
+                                        padding:
+                                            const EdgeInsetsDirectional.only(
+                                              end: 24,
+                                            ),
+                                        decoration: BoxDecoration(
+                                          color: ZaWolfColors.primaryBlue,
+                                          borderRadius: BorderRadius.circular(
+                                            18,
+                                          ),
+                                        ),
+                                        child: const Icon(
+                                          Icons.archive_outlined,
+                                        ),
+                                      ),
+                                      confirmDismiss: (_) async {
+                                        await cubit.archive(channel);
+                                        if (context.mounted) {
+                                          ScaffoldMessenger.of(
+                                            context,
+                                          ).showSnackBar(
+                                            SnackBar(
+                                              content: const Text(
+                                                'تمت أرشفة المحادثة وكتم إشعاراتها.',
+                                              ),
+                                              action: SnackBarAction(
+                                                label: 'تراجع',
+                                                onPressed:
+                                                    () =>
+                                                        cubit.restore(channel),
+                                              ),
+                                            ),
+                                          );
+                                        }
+                                        return true;
+                                      },
+                                      child: tile,
                                     );
                                   },
                                 ),

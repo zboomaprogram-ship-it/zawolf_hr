@@ -101,8 +101,14 @@ class RichChannel {
 }
 
 class ChatUser {
-  const ChatUser({required this.id, required this.name, this.department = ''});
+  const ChatUser({
+    required this.id,
+    required this.name,
+    this.department = '',
+    this.photoUrl,
+  });
   final String id, name, department;
+  final String? photoUrl;
 }
 
 class ChatDepartment {

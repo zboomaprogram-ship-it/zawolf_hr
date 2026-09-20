@@ -1292,7 +1292,7 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
                             ),
                             EmployeeQuickAction(
                               icon: Icons.chat_bubble_outline_rounded,
-                              label: 'شات القسم',
+                              label: 'المحادثات',
                               subtitle: 'Department Chat',
                               color: ZaWolfColors.dayoffPurple,
                               onTap: () => context.go('/conversations'),

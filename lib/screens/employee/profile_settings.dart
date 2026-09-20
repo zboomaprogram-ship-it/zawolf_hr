@@ -2,12 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart' hide TextDirection;
 import 'package:go_router/go_router.dart';
+import 'package:image_picker/image_picker.dart';
+import 'dart:convert';
 import '../../theme/theme.dart';
 import '../../components/wolf_card.dart';
 import '../../components/wolf_button.dart';
 import '../../components/wolf_input_field.dart';
 import '../../components/performance_badges_widget.dart';
-import '../../design_system/components/app_logo.dart';
 import '../../services/auth_service.dart';
 import '../../models/employee_role.dart';
 import '../../models/user_model.dart';
@@ -18,6 +19,7 @@ import '../../services/performance_badge_service.dart';
 import '../../utils/user_facing_error.dart';
 import '../../navigation/developer_tools_entry.dart';
 import '../shared/performance_badges_overview_screen.dart';
+import '../../features/profile_images/presentation/employee_avatar.dart';
 
 class ProfileSettingsScreen extends StatefulWidget {
   const ProfileSettingsScreen({super.key});
@@ -33,6 +35,7 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
   final _confirmPasswordController = TextEditingController();
 
   bool _loading = false;
+  bool _profilePhotoBusy = false;
   bool _showPasswordForm = false;
   String _passwordStrength =
       'ضعيف'; // ضعيف (Weak) | متوسط (Medium) | قوي (Strong)
@@ -193,6 +196,98 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
     });
   }
 
+  Future<void> _changeProfilePhoto() async {
+    final source = await showModalBottomSheet<ImageSource>(
+      context: context,
+      builder:
+          (sheetContext) => Directionality(
+            textDirection: TextDirection.rtl,
+            child: SafeArea(
+              child: Wrap(
+                children: [
+                  ListTile(
+                    leading: const Icon(Icons.photo_library_outlined),
+                    title: const Text('اختيار من الصور'),
+                    onTap:
+                        () =>
+                            Navigator.of(sheetContext).pop(ImageSource.gallery),
+                  ),
+                  ListTile(
+                    leading: const Icon(Icons.camera_alt_outlined),
+                    title: const Text('التقاط صورة'),
+                    onTap:
+                        () =>
+                            Navigator.of(sheetContext).pop(ImageSource.camera),
+                  ),
+                ],
+              ),
+            ),
+          ),
+    );
+    if (source == null || !mounted) return;
+    setState(() => _profilePhotoBusy = true);
+    try {
+      final file = await ImagePicker().pickImage(
+        source: source,
+        maxWidth: 640,
+        maxHeight: 640,
+        imageQuality: 68,
+      );
+      if (file == null) return;
+      final bytes = await file.readAsBytes();
+      final mimeType = file.mimeType ?? 'image/jpeg';
+      final encoded = 'data:$mimeType;base64,${base64Encode(bytes)}';
+      if (encoded.length > 300000) {
+        throw ArgumentError('profile_image_too_large');
+      }
+      if (!mounted) return;
+      await context.read<AuthService>().updateProfilePhoto(encoded);
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('تم تحديث الصورة الشخصية.')));
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            userFacingError(
+              error,
+              fallback: 'تعذر تحديث الصورة. حاول بصورة أصغر.',
+            ),
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _profilePhotoBusy = false);
+    }
+  }
+
+  Future<void> _removeProfilePhoto() async {
+    setState(() => _profilePhotoBusy = true);
+    try {
+      await context.read<AuthService>().updateProfilePhoto(null);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('تمت إزالة الصورة الشخصية.')),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            userFacingError(
+              error,
+              fallback: 'تعذر إزالة الصورة. حاول مرة أخرى.',
+            ),
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _profilePhotoBusy = false);
+    }
+  }
+
   Future<void> _changePassword() async {
     if (!_formKeyPassword.currentState!.validate()) return;
 
@@ -234,8 +329,6 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
       if (mounted) setState(() => _loading = false);
     }
   }
-
-
 
   Future<void> _loadPersonalAlarm(String userId) async {
     _personalAlarmUserId = userId;
@@ -428,26 +521,65 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
               Center(
                 child: Column(
                   children: [
-                    Container(
-                      width: 100,
-                      height: 100,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                          color: ZaWolfColors.primaryCyan,
-                          width: 3,
+                    Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        const SizedBox(width: 100, height: 100),
+                        Positioned.fill(
+                          child: DecoratedBox(
+                            decoration: const BoxDecoration(
+                              shape: BoxShape.circle,
+                              boxShadow: [ZaWolfColors.wolfGlow],
+                            ),
+                            child: EmployeeAvatar(
+                              name: user.displayName,
+                              photoUrl: user.photoURL,
+                              size: 100,
+                              ringColor: ZaWolfColors.primaryCyan,
+                            ),
+                          ),
                         ),
-                        boxShadow: const [ZaWolfColors.wolfGlow],
-                      ),
-                      child: ClipOval(
-                        child:
-                            user.photoURL != null && user.photoURL!.isNotEmpty
-                                ? Image.network(
-                                  user.photoURL!,
-                                  fit: BoxFit.cover,
-                                )
-                                : const AppLogo(size: 94),
-                      ),
+                        PositionedDirectional(
+                          end: -4,
+                          bottom: -4,
+                          child: PopupMenuButton<String>(
+                            tooltip: 'تغيير الصورة الشخصية',
+                            onSelected: (value) {
+                              if (value == 'change') {
+                                _changeProfilePhoto();
+                              } else {
+                                _removeProfilePhoto();
+                              }
+                            },
+                            itemBuilder:
+                                (_) => [
+                                  const PopupMenuItem(
+                                    value: 'change',
+                                    child: Text('تغيير الصورة'),
+                                  ),
+                                  if ((user.photoURL ?? '').isNotEmpty)
+                                    const PopupMenuItem(
+                                      value: 'remove',
+                                      child: Text('إزالة الصورة'),
+                                    ),
+                                ],
+                            child: CircleAvatar(
+                              radius: 18,
+                              backgroundColor: ZaWolfColors.primaryBlue,
+                              child:
+                                  _profilePhotoBusy
+                                      ? const SizedBox(
+                                        width: 16,
+                                        height: 16,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                        ),
+                                      )
+                                      : const Icon(Icons.camera_alt_outlined),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                     const SizedBox(height: 16),
                     Text(

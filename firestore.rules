@@ -439,7 +439,11 @@ service cloud.firestore {
     }
     function ownerProfileUpdate() {
       return request.resource.data.diff(resource.data).affectedKeys()
-        .hasOnly(['passwordChangedAt', 'photoURL', 'notificationTokens', 'updatedAt']);
+        .hasOnly(['passwordChangedAt', 'photoURL', 'notificationTokens', 'updatedAt'])
+        && (!('photoURL' in request.resource.data)
+          || request.resource.data.photoURL == null
+          || (request.resource.data.photoURL is string
+            && request.resource.data.photoURL.size() <= 300000));
     }
     function ownerAvatarCustomization() {
       return request.resource.data.diff(resource.data).affectedKeys()

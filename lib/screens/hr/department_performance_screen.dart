@@ -15,6 +15,7 @@ import '../../services/managed_employee_service.dart';
 import '../../services/organization_structure_service.dart';
 import '../../services/productivity_service.dart';
 import '../../theme/theme.dart';
+import '../../features/profile_images/presentation/employee_avatar.dart';
 import '../../utils/payroll_cycle.dart';
 import '../shared/productivity_score_details_sheet.dart';
 import '../../design_system/components/rtl_navigation.dart';
@@ -205,13 +206,14 @@ class _DepartmentPerformanceScreenState
       textDirection: TextDirection.rtl,
       child: Scaffold(
         appBar: AppBar(
-          leading: Navigator.canPop(context)
-              ? IconButton(
-                  icon: Icon(RtlNavigation.backIcon(context)),
-                  tooltip: 'رجوع',
-                  onPressed: () => Navigator.pop(context),
-                )
-              : null,
+          leading:
+              Navigator.canPop(context)
+                  ? IconButton(
+                    icon: Icon(RtlNavigation.backIcon(context)),
+                    tooltip: 'رجوع',
+                    onPressed: () => Navigator.pop(context),
+                  )
+                  : null,
           title: Text(
             'الأقسام والهيكل الوظيفي',
             style: theme.textTheme.headlineMedium,
@@ -326,10 +328,8 @@ class _DepartmentPerformanceScreenState
         final needsFollowUp = [...departments]
           ..sort((a, b) => a.averageScore.compareTo(b.averageScore));
         final worst = needsFollowUp.first;
-        final overallAverage = departments.fold<double>(
-              0,
-              (acc, d) => acc + d.averageScore,
-            ) /
+        final overallAverage =
+            departments.fold<double>(0, (acc, d) => acc + d.averageScore) /
             departments.length;
         final totalEmployees = departments.fold<int>(
           0,
@@ -342,101 +342,104 @@ class _DepartmentPerformanceScreenState
             final colCount =
                 constraints.maxWidth >= 1350 ? 3 : (isDesktop ? 2 : 1);
 
-            final deptCards = departments.asMap().entries.map((entry) {
-              final rank = entry.key + 1;
-              final dept = entry.value;
-              return WolfCard(
-                onTap: () => showDepartmentProductivityDetails(
-                  context,
-                  department: dept.departmentName,
-                  scores: scores
-                      .where(
-                        (score) =>
-                            (score.department.trim().isEmpty
-                                ? 'غير محدد'
-                                : score.department) ==
-                            dept.departmentName,
-                      )
-                      .toList(),
-                  onUpdateBehavior: (score, value, reason) async {
-                    await _service.updateBehaviorScore(
-                      employeeUserId: score.userId,
-                      reviewer: reviewer,
-                      monthKey: score.monthKey,
-                      behaviorScore: value,
-                      reason: reason,
-                    );
-                  },
-                ),
-                child: Row(
-                  children: [
-                    _RankBadge(rank: rank),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.end,
-                        children: [
-                          Text(
-                            dept.departmentName,
-                            style: theme.textTheme.titleMedium?.copyWith(
-                              color: Colors.white,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          Text(
-                            'عدد الموظفين: ${dept.employeeCount}',
-                            style: theme.textTheme.bodySmall,
-                          ),
-                          if (scores
-                              .where(
-                                (score) =>
-                                    (score.department.trim().isEmpty
-                                        ? 'غير محدد'
-                                        : score.department) ==
-                                    dept.departmentName,
-                              )
-                              .any(
-                                (score) =>
-                                    score.inputState !=
-                                    ProductivityInputState.complete,
-                              ))
-                            const Text(
-                              'يتضمن بيانات جزئية',
-                              style: TextStyle(
-                                color: ZaWolfColors.warning,
-                                fontSize: 12,
+            final deptCards =
+                departments.asMap().entries.map((entry) {
+                  final rank = entry.key + 1;
+                  final dept = entry.value;
+                  return WolfCard(
+                    onTap:
+                        () => showDepartmentProductivityDetails(
+                          context,
+                          department: dept.departmentName,
+                          scores:
+                              scores
+                                  .where(
+                                    (score) =>
+                                        (score.department.trim().isEmpty
+                                            ? 'غير محدد'
+                                            : score.department) ==
+                                        dept.departmentName,
+                                  )
+                                  .toList(),
+                          onUpdateBehavior: (score, value, reason) async {
+                            await _service.updateBehaviorScore(
+                              employeeUserId: score.userId,
+                              reviewer: reviewer,
+                              monthKey: score.monthKey,
+                              behaviorScore: value,
+                              reason: reason,
+                            );
+                          },
+                        ),
+                    child: Row(
+                      children: [
+                        _RankBadge(rank: rank),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              Text(
+                                dept.departmentName,
+                                style: theme.textTheme.titleMedium?.copyWith(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                ),
                               ),
-                            ),
-                          const SizedBox(height: 8),
-                          LinearProgressIndicator(
-                            value: (dept.averageScore / 100).clamp(0, 1),
-                            minHeight: 7,
-                            borderRadius: BorderRadius.circular(8),
-                            color: _scoreColor(dept.averageScore),
-                            backgroundColor: ZaWolfColors.surface03,
+                              Text(
+                                'عدد الموظفين: ${dept.employeeCount}',
+                                style: theme.textTheme.bodySmall,
+                              ),
+                              if (scores
+                                  .where(
+                                    (score) =>
+                                        (score.department.trim().isEmpty
+                                            ? 'غير محدد'
+                                            : score.department) ==
+                                        dept.departmentName,
+                                  )
+                                  .any(
+                                    (score) =>
+                                        score.inputState !=
+                                        ProductivityInputState.complete,
+                                  ))
+                                const Text(
+                                  'يتضمن بيانات جزئية',
+                                  style: TextStyle(
+                                    color: ZaWolfColors.warning,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              const SizedBox(height: 8),
+                              LinearProgressIndicator(
+                                value: (dept.averageScore / 100).clamp(0, 1),
+                                minHeight: 7,
+                                borderRadius: BorderRadius.circular(8),
+                                color: _scoreColor(dept.averageScore),
+                                backgroundColor: ZaWolfColors.surface03,
+                              ),
+                            ],
                           ),
-                        ],
-                      ),
+                        ),
+                        const SizedBox(width: 12),
+                        Text(
+                          '${dept.averageScore.toStringAsFixed(1)}%',
+                          style: TextStyle(
+                            color: _scoreColor(dept.averageScore),
+                            fontWeight: FontWeight.bold,
+                            fontSize: 18,
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        Icon(
+                          RtlNavigation.chevronEnd(context),
+                          color: ZaWolfColors.textMuted,
+                          size: 20,
+                        ),
+                      ],
                     ),
-                    const SizedBox(width: 12),
-                    Text(
-                      '${dept.averageScore.toStringAsFixed(1)}%',
-                      style: TextStyle(
-                        color: _scoreColor(dept.averageScore),
-                        fontWeight: FontWeight.bold,
-                        fontSize: 18,
-                      ),
-                    ),
-                    const SizedBox(width: 4),
-                    Icon(
-                      RtlNavigation.chevronEnd(context),
-                      color: ZaWolfColors.textMuted,
-                      size: 20,
-                    ),
-                  ],
-                ),
-              );
-            }).toList();
+                  );
+                }).toList();
 
             return ListView(
               padding: EdgeInsets.symmetric(
@@ -480,8 +483,7 @@ class _DepartmentPerformanceScreenState
                         Expanded(
                           child: _HighlightCard(
                             title: 'متوسط أداء المنشأة',
-                            value:
-                                '${overallAverage.toStringAsFixed(1)}%',
+                            value: '${overallAverage.toStringAsFixed(1)}%',
                             subtitle: 'لشهر $_monthKey',
                             color: ZaWolfColors.perfGold,
                           ),
@@ -544,14 +546,15 @@ class _DepartmentPerformanceScreenState
           if (i > 0) const SizedBox(width: 14),
           Expanded(
             child: Column(
-              children: columns[i]
-                  .map(
-                    (c) => Padding(
-                      padding: const EdgeInsets.only(bottom: 14),
-                      child: c,
-                    ),
-                  )
-                  .toList(),
+              children:
+                  columns[i]
+                      .map(
+                        (c) => Padding(
+                          padding: const EdgeInsets.only(bottom: 14),
+                          child: c,
+                        ),
+                      )
+                      .toList(),
             ),
           ),
         ],
@@ -1012,7 +1015,10 @@ class _OrganizationChartBodyState extends State<_OrganizationChartBody> {
           final selector = Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(Icons.account_tree_outlined, color: ZaWolfColors.primaryCyan),
+              const Icon(
+                Icons.account_tree_outlined,
+                color: ZaWolfColors.primaryCyan,
+              ),
               const SizedBox(width: 10),
               if (!compact) ...[
                 const Text(
@@ -2372,17 +2378,11 @@ class _OrganizationPerson extends StatelessWidget {
       ),
       child: Row(
         children: [
-          CircleAvatar(
-            radius: 19,
-            backgroundColor: accent.withValues(alpha: 0.13),
-            foregroundImage:
-                (user.photoURL ?? '').isNotEmpty
-                    ? NetworkImage(user.photoURL!)
-                    : null,
-            child:
-                (user.photoURL ?? '').isEmpty
-                    ? Icon(icon, color: accent, size: 20)
-                    : null,
+          EmployeeAvatar(
+            name: user.displayName,
+            photoUrl: user.photoURL,
+            size: 38,
+            ringColor: accent,
           ),
           const SizedBox(width: 10),
           Expanded(

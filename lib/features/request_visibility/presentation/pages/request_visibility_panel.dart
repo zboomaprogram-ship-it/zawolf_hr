@@ -53,7 +53,8 @@ final class _RequestVisibilityPanelState extends State<RequestVisibilityPanel>
 
   String _queryIdentity(RequestViewQuery value) =>
       '${value.actorScope.actorId}|${value.actorScope.role}|${value.tab.name}|'
-      '${value.fromDate.toIso8601String()}|${value.toDate.toIso8601String()}';
+      '${value.fromDate.toIso8601String()}|${value.toDate.toIso8601String()}|'
+      '${value.searchTerm.trim().toLowerCase()}';
 
   void _load() => context.read<RequestVisibilityCubit>().load(widget.query);
 
@@ -75,18 +76,21 @@ final class _RequestVisibilityPanelState extends State<RequestVisibilityPanel>
               child: ChoiceChip(
                 label: Text(label),
                 selected: _selectedLifecycle == lifecycle,
-                onSelected: (_) => setState(() {
-                  _selectedLifecycle = lifecycle;
-                  _currentPage = 1;
-                }),
+                onSelected:
+                    (_) => setState(() {
+                      _selectedLifecycle = lifecycle;
+                      _currentPage = 1;
+                    }),
                 selectedColor: ZaWolfColors.primaryCyan.withValues(alpha: 0.2),
                 labelStyle: TextStyle(
-                  color: _selectedLifecycle == lifecycle
-                      ? ZaWolfColors.primaryCyan
-                      : ZaWolfColors.textSecondary,
-                  fontWeight: _selectedLifecycle == lifecycle
-                      ? FontWeight.bold
-                      : FontWeight.normal,
+                  color:
+                      _selectedLifecycle == lifecycle
+                          ? ZaWolfColors.primaryCyan
+                          : ZaWolfColors.textSecondary,
+                  fontWeight:
+                      _selectedLifecycle == lifecycle
+                          ? FontWeight.bold
+                          : FontWeight.normal,
                 ),
               ),
             ),
@@ -264,20 +268,18 @@ final class _RequestVisibilityPanelState extends State<RequestVisibilityPanel>
       textDirection: TextDirection.rtl,
       child: BlocBuilder<RequestVisibilityCubit, RequestVisibilityState>(
         builder: (context, state) {
-          final records =
-              state.records
-                  .where((record) => _matchesSearch(record, widget.searchTerm))
-                  .where((record) {
-                    if (_selectedLifecycle == null) return true;
-                    if (_selectedLifecycle == RequestLifecycleState.approved) {
-                      return record.lifecycleState ==
-                              RequestLifecycleState.approved ||
-                          record.lifecycleState ==
-                              RequestLifecycleState.confirmed;
-                    }
-                    return record.lifecycleState == _selectedLifecycle;
-                  })
-                  .toList(growable: false);
+          final records = state.records
+              .where((record) => _matchesSearch(record, widget.searchTerm))
+              .where((record) {
+                if (_selectedLifecycle == null) return true;
+                if (_selectedLifecycle == RequestLifecycleState.approved) {
+                  return record.lifecycleState ==
+                          RequestLifecycleState.approved ||
+                      record.lifecycleState == RequestLifecycleState.confirmed;
+                }
+                return record.lifecycleState == _selectedLifecycle;
+              })
+              .toList(growable: false);
           if (state.loading && state.records.isEmpty) {
             return const _RequestState(
               icon: Icons.hourglass_top,
@@ -374,10 +376,7 @@ final class _RequestVisibilityPanelState extends State<RequestVisibilityPanel>
 }
 
 final class _RequestRecordCard extends StatelessWidget {
-  const _RequestRecordCard({
-    required this.record,
-    this.onTap,
-  });
+  const _RequestRecordCard({required this.record, this.onTap});
 
   final RequestVisibilityRecord record;
   final VoidCallback? onTap;
@@ -412,11 +411,7 @@ final class _RequestRecordCard extends StatelessWidget {
                     width: 1.2,
                   ),
                 ),
-                child: Icon(
-                  style.icon,
-                  color: typeColor,
-                  size: 22,
-                ),
+                child: Icon(style.icon, color: typeColor, size: 22),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -436,7 +431,9 @@ final class _RequestRecordCard extends StatelessWidget {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      DateFormat('yyyy/MM/dd – HH:mm').format(record.occurredAt.toLocal()),
+                      DateFormat(
+                        'yyyy/MM/dd – HH:mm',
+                      ).format(record.occurredAt.toLocal()),
                       style: const TextStyle(
                         color: ZaWolfColors.textSecondary,
                         fontSize: 12,
@@ -446,13 +443,14 @@ final class _RequestRecordCard extends StatelessWidget {
                 ),
               ),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 4,
+                ),
                 decoration: BoxDecoration(
                   color: typeColor.withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(
-                    color: typeColor.withValues(alpha: 0.45),
-                  ),
+                  border: Border.all(color: typeColor.withValues(alpha: 0.45)),
                 ),
                 child: Text(
                   style.label,
@@ -489,11 +487,16 @@ final class _RequestRecordCard extends StatelessWidget {
               Row(
                 children: [
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 3,
+                    ),
                     decoration: BoxDecoration(
                       color: stateColor.withValues(alpha: 0.14),
                       borderRadius: BorderRadius.circular(6),
-                      border: Border.all(color: stateColor.withValues(alpha: 0.35)),
+                      border: Border.all(
+                        color: stateColor.withValues(alpha: 0.35),
+                      ),
                     ),
                     child: Text(
                       RequestTypeStyle.stateLabel(record.lifecycleState),
@@ -506,7 +509,10 @@ final class _RequestRecordCard extends StatelessWidget {
                   ),
                   const SizedBox(width: 8),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 3,
+                    ),
                     decoration: BoxDecoration(
                       color: ZaWolfColors.surface02,
                       borderRadius: BorderRadius.circular(6),

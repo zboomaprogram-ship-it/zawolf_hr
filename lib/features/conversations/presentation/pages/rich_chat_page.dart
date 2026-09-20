@@ -1,6 +1,9 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:intl/intl.dart' hide TextDirection;
+import '../../../../theme/theme.dart';
+import '../../../profile_images/presentation/employee_avatar.dart';
 import '../../domain/entities/rich_chat.dart';
 import '../../domain/repositories/rich_chat_repository.dart';
 import '../cubit/chat_action_cubit.dart';
@@ -25,14 +28,19 @@ class RichChatPage extends StatefulWidget {
     required this.pickAttachments,
     required this.voiceBuilder,
     this.linkPreviewBuilder,
+    this.onConversationActive,
+    this.onConversationInactive,
   });
   final RichChatRepository repository;
   final RichChannel channel;
   final bool canReview;
-  final Widget Function(BuildContext, RichAttachment, [bool isMine]) attachmentBuilder;
+  final Widget Function(BuildContext, RichAttachment, [bool isMine])
+  attachmentBuilder;
   final Future<List<ChatDraftFile>> Function(BuildContext) pickAttachments;
   final ChatVoiceBuilder voiceBuilder;
   final Widget Function(BuildContext, ChatLinkPreview)? linkPreviewBuilder;
+  final ValueChanged<String>? onConversationActive;
+  final ValueChanged<String>? onConversationInactive;
   @override
   State<RichChatPage> createState() => _RichChatPageState();
 }
@@ -57,6 +65,7 @@ class _RichChatPageState extends State<RichChatPage>
         WidgetsBinding.instance.lifecycleState == null ||
         WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed;
     widget.repository.setForeground(_foreground);
+    widget.onConversationActive?.call(widget.channel.id);
     WidgetsBinding.instance.addObserver(this);
     _scroll.addListener(_scheduleVisibility);
     _scheduleVisibility();
@@ -224,8 +233,9 @@ class _RichChatPageState extends State<RichChatPage>
                                     itemBuilder: (_, index) {
                                       final user = users[index];
                                       return ListTile(
-                                        leading: const CircleAvatar(
-                                          child: Icon(Icons.person),
+                                        leading: EmployeeAvatar(
+                                          name: user.name,
+                                          photoUrl: user.photoUrl,
                                         ),
                                         title: Text(user.name),
                                         subtitle:
@@ -279,16 +289,29 @@ class _RichChatPageState extends State<RichChatPage>
                     return ListView(
                       padding: const EdgeInsets.all(20),
                       children: [
-                        Center(
-                          child: CircleAvatar(
-                            radius: 38,
-                            child: Icon(
-                              direct
-                                  ? Icons.person_outline
-                                  : Icons.groups_outlined,
-                              size: 42,
-                            ),
+                        Align(
+                          alignment: AlignmentDirectional.centerStart,
+                          child: IconButton(
+                            tooltip: 'إغلاق',
+                            icon: const Icon(Icons.close),
+                            onPressed: () => Navigator.of(context).pop(),
                           ),
+                        ),
+                        Center(
+                          child:
+                              direct && members.isNotEmpty
+                                  ? EmployeeAvatar(
+                                    name: members.first.name,
+                                    photoUrl: members.first.photoUrl,
+                                    size: 76,
+                                  )
+                                  : const CircleAvatar(
+                                    radius: 38,
+                                    child: Icon(
+                                      Icons.groups_outlined,
+                                      size: 42,
+                                    ),
+                                  ),
                         ),
                         const SizedBox(height: 12),
                         Text(
@@ -394,12 +417,9 @@ class _RichChatPageState extends State<RichChatPage>
                           ),
                         for (final user in members)
                           ListTile(
-                            leading: CircleAvatar(
-                              child: Text(
-                                user.name.isEmpty
-                                    ? '?'
-                                    : user.name.characters.first,
-                              ),
+                            leading: EmployeeAvatar(
+                              name: user.name,
+                              photoUrl: user.photoUrl,
                             ),
                             title: Text(user.name),
                             subtitle:
@@ -454,6 +474,10 @@ class _RichChatPageState extends State<RichChatPage>
                                       voiceBuilder: widget.voiceBuilder,
                                       linkPreviewBuilder:
                                           widget.linkPreviewBuilder,
+                                      onConversationActive:
+                                          widget.onConversationActive,
+                                      onConversationInactive:
+                                          widget.onConversationInactive,
                                     ),
                               ),
                             ),
@@ -489,6 +513,10 @@ class _RichChatPageState extends State<RichChatPage>
                                         voiceBuilder: widget.voiceBuilder,
                                         linkPreviewBuilder:
                                             widget.linkPreviewBuilder,
+                                        onConversationActive:
+                                            widget.onConversationActive,
+                                        onConversationInactive:
+                                            widget.onConversationInactive,
                                       ),
                                 ),
                               ),
@@ -620,6 +648,12 @@ class _RichChatPageState extends State<RichChatPage>
                                           );
                                         }
                                         final message = messages[index];
+                                        final startsOlderDateGroup =
+                                            index == messages.length - 1 ||
+                                            !_sameDay(
+                                              message.sentAt,
+                                              messages[index + 1].sentAt,
+                                            );
                                         final seen = state.snapshot.readers.any(
                                           (reader) =>
                                               reader.userId !=
@@ -630,27 +664,38 @@ class _RichChatPageState extends State<RichChatPage>
                                                         message.sentAt,
                                                       ))),
                                         );
-                                        return KeyedSubtree(
-                                          key: _messageKeys.putIfAbsent(
-                                            message.id,
-                                            GlobalKey.new,
-                                          ),
-                                          child: ChatMessageBubble(
-                                            message: message,
-                                            mine:
-                                                message.senderUserId ==
-                                                widget.repository.actorId,
-                                            seen: seen,
-                                            reply:
-                                                byId[message.replyToMessageId],
-                                            attachmentBuilder:
-                                                widget.attachmentBuilder,
-                                            onActions:
-                                                () => _actionsFor(message),
-                                            onRetry:
-                                                () =>
-                                                    _timeline.retry(message.id),
-                                          ),
+                                        return Column(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            if (startsOlderDateGroup)
+                                              _ChatDateSeparator(
+                                                date: message.sentAt,
+                                              ),
+                                            KeyedSubtree(
+                                              key: _messageKeys.putIfAbsent(
+                                                message.id,
+                                                GlobalKey.new,
+                                              ),
+                                              child: ChatMessageBubble(
+                                                message: message,
+                                                mine:
+                                                    message.senderUserId ==
+                                                    widget.repository.actorId,
+                                                seen: seen,
+                                                reply:
+                                                    byId[message
+                                                        .replyToMessageId],
+                                                attachmentBuilder:
+                                                    widget.attachmentBuilder,
+                                                onActions:
+                                                    () => _actionsFor(message),
+                                                onRetry:
+                                                    () => _timeline.retry(
+                                                      message.id,
+                                                    ),
+                                              ),
+                                            ),
+                                          ],
                                         );
                                       },
                                     ),
@@ -693,10 +738,56 @@ class _RichChatPageState extends State<RichChatPage>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    _scroll.dispose();
+    _scroll
+      ..removeListener(_scheduleVisibility)
+      ..dispose();
+    widget.onConversationInactive?.call(widget.channel.id);
     unawaited(_timeline.close());
     unawaited(_composer.close());
     unawaited(_actions.close());
     super.dispose();
+  }
+}
+
+bool _sameDay(DateTime first, DateTime second) {
+  final a = first.toLocal();
+  final b = second.toLocal();
+  return a.year == b.year && a.month == b.month && a.day == b.day;
+}
+
+class _ChatDateSeparator extends StatelessWidget {
+  const _ChatDateSeparator({required this.date});
+  final DateTime date;
+
+  @override
+  Widget build(BuildContext context) {
+    final now = DateTime.now();
+    final local = date.toLocal();
+    final label =
+        _sameDay(local, now)
+            ? 'اليوم'
+            : _sameDay(local, now.subtract(const Duration(days: 1)))
+            ? 'أمس'
+            : DateFormat('EEEE، d MMMM y', 'ar').format(local);
+    return Semantics(
+      label: 'تاريخ المحادثة: $label',
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.surfaceContainerHighest,
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Text(
+            label,
+            style: Theme.of(context).textTheme.labelMedium?.copyWith(
+              color: ZaWolfColors.textSecondary,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }

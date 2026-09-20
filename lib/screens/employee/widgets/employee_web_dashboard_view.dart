@@ -7,6 +7,7 @@ import 'package:intl/intl.dart' hide TextDirection;
 import '../../../components/wolf_card.dart';
 import '../../../design_system/tokens.dart';
 import '../../../design_system/components/rtl_navigation.dart';
+import '../../../features/profile_images/presentation/employee_avatar.dart';
 import '../../../models/attendance_model.dart';
 import '../../../models/employee_role.dart';
 import '../../../models/task_model.dart';
@@ -91,7 +92,8 @@ class EmployeeWebDashboardView extends StatelessWidget {
               EmployeePersonalAnalysisCard(
                 logs: logs,
                 disciplineScore: disciplineScore,
-                onOpenAttendance: () => context.go('/employee/attendance-history'),
+                onOpenAttendance:
+                    () => context.go('/employee/attendance-history'),
                 onRefresh: onRefresh,
                 webAttendanceAccess: webAttendanceAccess,
               ),
@@ -175,22 +177,11 @@ class EmployeeWebDashboardView extends StatelessWidget {
         children: [
           Row(
             children: [
-              // User Avatar
-              CircleAvatar(
-                radius: 28,
-                backgroundColor: ZaWolfColors.primaryCyan.withValues(
-                  alpha: 0.15,
-                ),
-                child: Text(
-                  user.displayName.isNotEmpty
-                      ? user.displayName.characters.first
-                      : 'Z',
-                  style: const TextStyle(
-                    color: ZaWolfColors.primaryCyan,
-                    fontSize: 22,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
+              EmployeeAvatar(
+                name: user.displayName,
+                photoUrl: user.photoURL,
+                size: 56,
+                ringColor: ZaWolfColors.primaryCyan,
               ),
               const SizedBox(width: 16),
               Expanded(
@@ -384,9 +375,7 @@ class EmployeeWebDashboardView extends StatelessWidget {
             !hasCheckedIn ? ZaWolfColors.primaryCyan : ZaWolfColors.warning,
         foregroundColor: Colors.black,
         padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(10),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
       ),
       icon:
           actionLoading
@@ -614,7 +603,6 @@ class EmployeeWebDashboardView extends StatelessWidget {
   }
 }
 
-
 /// Personal read-only trend for web. Biometric check-in and check-out remain
 /// mobile-only; this card makes the resulting status and period clear.
 class EmployeePersonalAnalysisCard extends StatefulWidget {
@@ -633,10 +621,13 @@ class EmployeePersonalAnalysisCard extends StatefulWidget {
   final bool webAttendanceAccess;
 
   @override
-  State<EmployeePersonalAnalysisCard> createState() => _EmployeePersonalAnalysisCardState();
+  State<EmployeePersonalAnalysisCard> createState() =>
+      _EmployeePersonalAnalysisCardState();
 }
 
-class _EmployeePersonalAnalysisCardState extends State<EmployeePersonalAnalysisCard> with WidgetsBindingObserver {
+class _EmployeePersonalAnalysisCardState
+    extends State<EmployeePersonalAnalysisCard>
+    with WidgetsBindingObserver {
   int _days = 7;
   DateTimeRange? _custom;
   Timer? _timer;
@@ -645,7 +636,10 @@ class _EmployeePersonalAnalysisCardState extends State<EmployeePersonalAnalysisC
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _timer = Timer.periodic(const Duration(minutes: 5), (_) => widget.onRefresh());
+    _timer = Timer.periodic(
+      const Duration(minutes: 5),
+      (_) => widget.onRefresh(),
+    );
   }
 
   @override
@@ -666,58 +660,155 @@ class _EmployeePersonalAnalysisCardState extends State<EmployeePersonalAnalysisC
     final end = DateTime(now.year, now.month, now.day);
     final start = _custom?.start ?? end.subtract(Duration(days: _days - 1));
     final finish = _custom?.end ?? end;
-    final visible = widget.logs.where((log) {
-      final date = DateTime.tryParse(log.date);
-      return date != null && !date.isBefore(start) && !date.isAfter(finish);
-    }).toList();
-    final late = visible.where((log) => log.isLate || log.status == 'late').length;
+    final visible =
+        widget.logs.where((log) {
+          final date = DateTime.tryParse(log.date);
+          return date != null && !date.isBefore(start) && !date.isAfter(finish);
+        }).toList();
+    final late =
+        visible.where((log) => log.isLate || log.status == 'late').length;
     final attended = visible.where((log) => log.checkInTime != null).length;
     return WolfCard(
       padding: const EdgeInsets.all(DsSpacing.lg),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        Row(children: [
-          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
-            const Text('تحليل حضوري الشخصي', textDirection: TextDirection.rtl, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
-            const SizedBox(height: 2),
-            Text(
-              widget.webAttendanceAccess
-                  ? 'تسجيل الحضور والانصراف مفعّل عبر الويب وتطبيق الجوال.'
-                  : 'تسجيل الحضور والانصراف البيومتري يتم عبر تطبيق الجوال.',
-              textDirection: TextDirection.rtl,
-              textAlign: TextAlign.right,
-              style: const TextStyle(color: ZaWolfColors.textSecondary, fontSize: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    const Text(
+                      'تحليل حضوري الشخصي',
+                      textDirection: TextDirection.rtl,
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 18,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      widget.webAttendanceAccess
+                          ? 'تسجيل الحضور والانصراف مفعّل عبر الويب وتطبيق الجوال.'
+                          : 'تسجيل الحضور والانصراف البيومتري يتم عبر تطبيق الجوال.',
+                      textDirection: TextDirection.rtl,
+                      textAlign: TextAlign.right,
+                      style: const TextStyle(
+                        color: ZaWolfColors.textSecondary,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Icon(
+                Icons.insights_outlined,
+                color: ZaWolfColors.primaryCyan,
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            alignment: WrapAlignment.end,
+            spacing: 8,
+            children: [
+              ChoiceChip(
+                label: const Text('7 أيام'),
+                selected: _days == 7 && _custom == null,
+                onSelected:
+                    (_) => setState(() {
+                      _days = 7;
+                      _custom = null;
+                    }),
+              ),
+              ChoiceChip(
+                label: const Text('30 يوم'),
+                selected: _days == 30 && _custom == null,
+                onSelected:
+                    (_) => setState(() {
+                      _days = 30;
+                      _custom = null;
+                    }),
+              ),
+              ActionChip(
+                label: const Text('تاريخ مخصص'),
+                avatar: const Icon(Icons.date_range_outlined, size: 18),
+                onPressed: _selectRange,
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              _stat('أيام حضور', '$attended', ZaWolfColors.success),
+              const SizedBox(width: 10),
+              _stat('تأخير', '$late', ZaWolfColors.warning),
+              const SizedBox(width: 10),
+              _stat(
+                'الانضباط',
+                '${widget.disciplineScore.round()}%',
+                ZaWolfColors.primaryCyan,
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton.icon(
+              onPressed: widget.onOpenAttendance,
+              icon: Icon(RtlNavigation.chevronEnd(context)),
+              label: const Text('عرض تفاصيل الحضور'),
             ),
-          ])),
-          const Icon(Icons.insights_outlined, color: ZaWolfColors.primaryCyan),
-        ]),
-        const SizedBox(height: 12),
-        Wrap(alignment: WrapAlignment.end, spacing: 8, children: [
-          ChoiceChip(label: const Text('7 أيام'), selected: _days == 7 && _custom == null, onSelected: (_) => setState(() {_days = 7; _custom = null;})),
-          ChoiceChip(label: const Text('30 يوم'), selected: _days == 30 && _custom == null, onSelected: (_) => setState(() {_days = 30; _custom = null;})),
-          ActionChip(label: const Text('تاريخ مخصص'), avatar: const Icon(Icons.date_range_outlined, size: 18), onPressed: _selectRange),
-        ]),
-        const SizedBox(height: 14),
-        Row(children: [
-          _stat('أيام حضور', '$attended', ZaWolfColors.success),
-          const SizedBox(width: 10),
-          _stat('تأخير', '$late', ZaWolfColors.warning),
-          const SizedBox(width: 10),
-          _stat('الانضباط', '${widget.disciplineScore.round()}%', ZaWolfColors.primaryCyan),
-        ]),
-        const SizedBox(height: 12),
-        Align(alignment: Alignment.centerRight, child: TextButton.icon(onPressed: widget.onOpenAttendance, icon: Icon(RtlNavigation.chevronEnd(context)), label: const Text('عرض تفاصيل الحضور'))),
-      ]),
+          ),
+        ],
+      ),
     );
   }
 
-  Widget _stat(String label, String value, Color color) => Expanded(child: Container(padding: const EdgeInsets.all(10), decoration: BoxDecoration(color: color.withValues(alpha: .08), borderRadius: BorderRadius.circular(10)), child: Column(children: [Text(value, style: TextStyle(color: color, fontWeight: FontWeight.bold, fontSize: 20)), Text(label, textDirection: TextDirection.rtl, style: const TextStyle(fontSize: 11, color: ZaWolfColors.textSecondary))])));
+  Widget _stat(String label, String value, Color color) => Expanded(
+    child: Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: .08),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Column(
+        children: [
+          Text(
+            value,
+            style: TextStyle(
+              color: color,
+              fontWeight: FontWeight.bold,
+              fontSize: 20,
+            ),
+          ),
+          Text(
+            label,
+            textDirection: TextDirection.rtl,
+            style: const TextStyle(
+              fontSize: 11,
+              color: ZaWolfColors.textSecondary,
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
 
   Future<void> _selectRange() async {
     final now = DateTime.now();
-    final range = await showDateRangePicker(context: context, firstDate: DateTime(2024), lastDate: now, initialDateRange: _custom);
+    final range = await showDateRangePicker(
+      context: context,
+      firstDate: DateTime(2024),
+      lastDate: now,
+      initialDateRange: _custom,
+    );
     if (range == null || !mounted) return;
     if (range.end.difference(range.start).inDays + 1 > 31) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('الفترة المخصصة لا تتجاوز 31 يوماً.')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('الفترة المخصصة لا تتجاوز 31 يوماً.')),
+      );
       return;
     }
     setState(() => _custom = range);

@@ -340,6 +340,29 @@ class AuthService with ChangeNotifier {
     }
   }
 
+  /// Stores a bounded, client-normalized profile image.  This is deliberately
+  /// separate from the virtual-office character image and updates the shared
+  /// `photoURL` identity field consumed by profile and management surfaces.
+  Future<void> updateProfilePhoto(String? photoUrl) async {
+    final user = _auth.currentUser;
+    if (user == null) throw Exception('No user logged in');
+    final value = photoUrl?.trim();
+    if (value != null && value.isNotEmpty && value.length > 300000) {
+      throw ArgumentError('profile_image_too_large');
+    }
+    await _db.collection('users').doc(user.uid).update({
+      'photoURL': value?.isEmpty ?? true ? null : value,
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+    if (_currentUser != null) {
+      _currentUser = _currentUser!.copyWith(
+        photoURL: value,
+        clearPhotoURL: value == null || value.isEmpty,
+      );
+      notifyListeners();
+    }
+  }
+
   Future<void> updateAvatarCustomization({
     required String gender,
     String? faceUrl,
@@ -492,9 +515,10 @@ class AuthService with ChangeNotifier {
         ),
       );
 
-      final entitlementStart = startsOnProbation
-          ? LeaveEntitlementPolicy.eligibleFrom(hiringDate)!
-          : hiringDate;
+      final entitlementStart =
+          startsOnProbation
+              ? LeaveEntitlementPolicy.eligibleFrom(hiringDate)!
+              : hiringDate;
       await _db.collection('users').doc(uid).set({
         ...userModel.toFirestore(),
         'leaveEntitlementPeriodKey':

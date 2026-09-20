@@ -4,6 +4,7 @@ import '../../domain/entities/rich_chat.dart';
 import '../../domain/repositories/rich_chat_repository.dart';
 import '../cubit/chat_direct_picker_cubit.dart';
 import '../widgets/chat_feedback.dart';
+import '../../../profile_images/presentation/employee_avatar.dart';
 
 class DirectChatPickerPage extends StatefulWidget {
   const DirectChatPickerPage({super.key, required this.repository});
@@ -47,15 +48,16 @@ class _DirectChatPickerPageState extends State<DirectChatPickerPage> {
                         decoration: InputDecoration(
                           hintText: 'بحث بالاسم أو القسم...',
                           prefixIcon: const Icon(Icons.search),
-                          suffixIcon: _searchController.text.isNotEmpty
-                              ? IconButton(
-                                  icon: const Icon(Icons.close),
-                                  onPressed: () {
-                                    _searchController.clear();
-                                    cubit.search('');
-                                  },
-                                )
-                              : null,
+                          suffixIcon:
+                              _searchController.text.isNotEmpty
+                                  ? IconButton(
+                                    icon: const Icon(Icons.close),
+                                    onPressed: () {
+                                      _searchController.clear();
+                                      cubit.search('');
+                                    },
+                                  )
+                                  : null,
                           border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(12),
                           ),
@@ -70,16 +72,19 @@ class _DirectChatPickerPageState extends State<DirectChatPickerPage> {
                     if (state.error != null)
                       ChatFeedback(
                         text: chatErrorText(state.error!),
-                        onRetry: isSearching
-                            ? () => cubit.search(_searchController.text)
-                            : state.selectedDepartment == null
+                        onRetry:
+                            isSearching
+                                ? () => cubit.search(_searchController.text)
+                                : state.selectedDepartment == null
                                 ? cubit.loadDepartments
                                 : () => cubit.chooseDepartment(
-                                      state.selectedDepartment!,
-                                    ),
+                                  state.selectedDepartment!,
+                                ),
                       ),
                     if (isSearching) ...[
-                      if (!state.loading && state.contacts.isEmpty && state.error == null)
+                      if (!state.loading &&
+                          state.contacts.isEmpty &&
+                          state.error == null)
                         const Expanded(
                           child: Center(
                             child: Padding(
@@ -99,12 +104,15 @@ class _DirectChatPickerPageState extends State<DirectChatPickerPage> {
                             itemBuilder: (context, index) {
                               final user = state.contacts[index];
                               return ListTile(
-                                leading: const CircleAvatar(
-                                  child: Icon(Icons.person_outline),
+                                leading: EmployeeAvatar(
+                                  name: user.name,
+                                  photoUrl: user.photoUrl,
                                 ),
                                 title: Text(user.name),
                                 subtitle: Text(
-                                  user.department.isEmpty ? 'موظف' : user.department,
+                                  user.department.isEmpty
+                                      ? 'موظف'
+                                      : user.department,
                                 ),
                                 onTap: () => _start(context, user),
                               );
@@ -120,7 +128,8 @@ class _DirectChatPickerPageState extends State<DirectChatPickerPage> {
                                 leading: const Icon(Icons.business_outlined),
                                 title: Text(department.name),
                                 trailing: Text('${department.eligibleCount}'),
-                                onTap: () => cubit.chooseDepartment(department.id),
+                                onTap:
+                                    () => cubit.chooseDepartment(department.id),
                               ),
                           ],
                         ),
@@ -142,8 +151,9 @@ class _DirectChatPickerPageState extends State<DirectChatPickerPage> {
                           children: [
                             for (final user in state.contacts)
                               ListTile(
-                                leading: const CircleAvatar(
-                                  child: Icon(Icons.person_outline),
+                                leading: EmployeeAvatar(
+                                  name: user.name,
+                                  photoUrl: user.photoUrl,
                                 ),
                                 title: Text(user.name),
                                 subtitle: Text(user.department),

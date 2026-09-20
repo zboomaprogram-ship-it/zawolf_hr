@@ -36,11 +36,13 @@ class ChatInboxCubit extends Cubit<ChatInboxState> {
       _subscription = repository
           .watchInbox(section: section)
           .listen(
-            (page) {
+            (page) async {
               if (!isClosed) {
+                final visible = await _visible(page.items);
+                if (isClosed) return;
                 emit(
                   ChatInboxState(
-                    channels: _ordered(page.items),
+                    channels: _ordered(visible),
                     loading: false,
                     offline: page.offline,
                     cursor: page.nextCursor,
@@ -65,6 +67,41 @@ class ChatInboxCubit extends Cubit<ChatInboxState> {
   final RichChatRepository repository;
   final String? section;
   StreamSubscription<ChatPage<RichChannel>>? _subscription;
+  Future<List<RichChannel>> _visible(Iterable<RichChannel> channels) async {
+    final visible = <RichChannel>[];
+    for (final channel in channels) {
+      var archived = false;
+      try {
+        archived = await repository.isArchived(channel.id);
+      } on NoSuchMethodError {
+        // Compatibility with pre-archive repository doubles during the
+        // Strangler migration. Production implementations always persist it.
+      }
+      if (!archived) visible.add(channel);
+    }
+    return visible;
+  }
+
+  Future<void> archive(RichChannel channel) async {
+    await repository.setArchived(channel.id, true);
+    if (!isClosed) {
+      emit(
+        ChatInboxState(
+          channels:
+              state.channels.where((item) => item.id != channel.id).toList(),
+          loading: false,
+          offline: state.offline,
+          cursor: state.cursor,
+        ),
+      );
+    }
+  }
+
+  Future<void> restore(RichChannel channel) async {
+    await repository.setArchived(channel.id, false);
+    await load();
+  }
+
   Future<void> load({bool more = false}) async {
     final previous = more ? state.channels : <RichChannel>[];
     final cursor = more ? state.cursor : null;
@@ -72,10 +109,12 @@ class ChatInboxCubit extends Cubit<ChatInboxState> {
     try {
       final page = await repository.channels(cursor: cursor, section: section);
       final channels = _ordered(
-        {
-          ...{for (final channel in previous) channel.id: channel},
-          ...{for (final channel in page.items) channel.id: channel},
-        }.values,
+        await _visible(
+          {
+            ...{for (final channel in previous) channel.id: channel},
+            ...{for (final channel in page.items) channel.id: channel},
+          }.values,
+        ),
       );
       if (!isClosed) {
         emit(

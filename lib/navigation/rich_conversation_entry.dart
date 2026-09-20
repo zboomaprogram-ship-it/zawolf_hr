@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import '../core/sync/authenticated_operation_client.dart';
+import '../services/notification_service.dart';
 import '../features/conversations/data/chat_transport.dart';
 import '../features/conversations/data/conversation_repository_impl.dart';
 import '../features/conversations/data/local/chat_database.dart';
@@ -163,15 +164,19 @@ class _RichConversationEntryState extends State<RichConversationEntry> {
     pickAttachments: (context) => _pickAttachments(context, _media),
     voiceBuilder:
         _voiceRecordingEnabled
-            ? (context, attach, {onSend, onRecordingChanged}) => VoiceNoteButton(
-              recorder: ChatRecorderImpl(),
-              gateway: _media,
-              onAttach: attach,
-              onSend: onSend,
-              onRecordingChanged: onRecordingChanged,
-            )
+            ? (context, attach, {onSend, onRecordingChanged}) =>
+                VoiceNoteButton(
+                  recorder: ChatRecorderImpl(),
+                  gateway: _media,
+                  onAttach: attach,
+                  onSend: onSend,
+                  onRecordingChanged: onRecordingChanged,
+                )
             : (_, __, {onSend, onRecordingChanged}) => const SizedBox.shrink(),
     linkPreviewBuilder: (_, preview) => ChatLinkPreviewView(preview: preview),
+    onConversationActive: NotificationService.instance.setActiveConversation,
+    onConversationInactive:
+        NotificationService.instance.clearActiveConversation,
   );
   static Future<List<ChatDraftFile>> _pickAttachments(
     BuildContext context,
@@ -212,6 +217,7 @@ class _RichConversationEntryState extends State<RichConversationEntry> {
     }
     return const [];
   }
+
   static const bool _voiceRecordingEnabled = true;
   @override
   void dispose() {

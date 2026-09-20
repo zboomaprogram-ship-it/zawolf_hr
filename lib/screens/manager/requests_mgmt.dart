@@ -3191,18 +3191,21 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
       tab: RequestViewTab.all,
       fromDate: DateTime.utc(2020),
       toDate: DateTime.now().toUtc().add(const Duration(days: 366)),
+      searchTerm: _searchQuery,
     );
     final historyQuery = RequestViewQuery(
       actorScope: actorScope,
       tab: RequestViewTab.history,
       fromDate: DateTime.utc(2020),
       toDate: DateTime.now().toUtc().add(const Duration(days: 366)),
+      searchTerm: _searchQuery,
     );
     final deductionQuery = RequestViewQuery(
       actorScope: actorScope,
       tab: RequestViewTab.deductions,
       fromDate: historyQuery.fromDate,
       toDate: historyQuery.toDate,
+      searchTerm: _searchQuery,
     );
     final tabs = <Tab>[
       const Tab(text: 'الكل'),

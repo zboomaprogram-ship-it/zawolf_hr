@@ -89,23 +89,24 @@ class _TeamLeaderDashboardScreenState extends State<TeamLeaderDashboardScreen> {
             // 2. Priority strip — pending approvals first
             ValueListenableBuilder<int>(
               valueListenable: PendingRequestsService.instance.pendingCount,
-              builder: (context, pendingCount, _) => Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  PriorityStrip(
-                    items: [
-                      PriorityItem(
-                        label: 'طلب بانتظار موافقتك',
-                        count: pendingCount,
-                        icon: Icons.rule_outlined,
-                        accent: ZaWolfColors.warning,
-                        onTap: () => context.go('/team-leader/requests'),
+              builder:
+                  (context, pendingCount, _) => Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      PriorityStrip(
+                        items: [
+                          PriorityItem(
+                            label: 'طلب بانتظار موافقتك',
+                            count: pendingCount,
+                            icon: Icons.rule_outlined,
+                            accent: ZaWolfColors.warning,
+                            onTap: () => context.go('/team-leader/requests'),
+                          ),
+                        ],
                       ),
+                      const SizedBox(height: DsSpacing.md),
                     ],
                   ),
-                  const SizedBox(height: DsSpacing.md),
-                ],
-              ),
             ),
 
             // 3. Metrics row (max four)
@@ -148,9 +149,10 @@ class _TeamLeaderDashboardScreenState extends State<TeamLeaderDashboardScreen> {
                   summary: snapshot.data!,
                   onRefresh: () => _refresh(user),
                   onTap: () => context.go('/team-leader/attendance-summary'),
-                  onCategoryTap: (status) => context.go(
-                    '/team-leader/attendance-summary?status=$status',
-                  ),
+                  onCategoryTap:
+                      (status) => context.go(
+                        '/team-leader/attendance-summary?status=$status',
+                      ),
                 );
               },
             ),
@@ -221,8 +223,8 @@ class _TeamLeaderDashboardScreenState extends State<TeamLeaderDashboardScreen> {
                   child: _ActionTile(
                     icon: Icons.add_task_outlined,
                     title: 'طلب تقني أو مالي',
-                    onTap: () =>
-                        context.go('/employee/requests/operational/new'),
+                    onTap:
+                        () => context.go('/employee/requests/operational/new'),
                   ),
                 ),
               ],
@@ -245,7 +247,7 @@ class _TeamLeaderHeader extends StatelessWidget {
     return WolfCard(
       child: Row(
         children: [
-          DsAvatar(name: user.displayName, size: 46),
+          DsAvatar(name: user.displayName, imageUrl: user.photoURL, size: 46),
           const SizedBox(width: DsSpacing.md),
           Expanded(
             child: Column(
@@ -294,80 +296,89 @@ class _TeamLeaderMetricsRow extends StatelessWidget {
   Widget build(BuildContext context) {
     return ValueListenableBuilder<int>(
       valueListenable: PendingRequestsService.instance.pendingCount,
-      builder: (context, pendingCount, _) => StreamBuilder<List<EmployeeTaskModel>>(
-        stream: taskStream,
-        builder: (context, taskSnapshot) {
-          final loadingTasks = !taskSnapshot.hasData && !taskSnapshot.hasError;
-          final openTasks = (taskSnapshot.data ?? const <EmployeeTaskModel>[])
-              .where(
-                (task) =>
-                    task.status != TaskStatus.done &&
-                    task.status != TaskStatus.cancelled,
-              )
-              .length;
-          return FutureBuilder<DashboardAttendanceSummary>(
-            future: summaryFuture,
-            builder: (context, snapshot) {
-              final loadingSummary = !snapshot.hasData && !snapshot.hasError;
-              final summary = snapshot.data;
-              return Column(
-                children: [
-                  Row(
+      builder:
+          (context, pendingCount, _) => StreamBuilder<List<EmployeeTaskModel>>(
+            stream: taskStream,
+            builder: (context, taskSnapshot) {
+              final loadingTasks =
+                  !taskSnapshot.hasData && !taskSnapshot.hasError;
+              final openTasks =
+                  (taskSnapshot.data ?? const <EmployeeTaskModel>[])
+                      .where(
+                        (task) =>
+                            task.status != TaskStatus.done &&
+                            task.status != TaskStatus.cancelled,
+                      )
+                      .length;
+              return FutureBuilder<DashboardAttendanceSummary>(
+                future: summaryFuture,
+                builder: (context, snapshot) {
+                  final loadingSummary =
+                      !snapshot.hasData && !snapshot.hasError;
+                  final summary = snapshot.data;
+                  return Column(
                     children: [
-                      Expanded(
-                        child: StatCard(
-                          icon: Icons.how_to_reg_outlined,
-                          value: loadingSummary || summary == null
-                              ? '—'
-                              : '${summary.attended}/${summary.totalEmployees}',
-                          label: 'حضور اليوم',
-                          onTap: () =>
-                              context.go('/team-leader/attendance-summary'),
-                        ),
-                      ),
-                      const SizedBox(width: DsSpacing.md),
-                      Expanded(
-                        child: StatCard(
-                          icon: Icons.schedule_outlined,
-                          value: loadingSummary || summary == null
-                              ? '—'
-                              : '${summary.late}',
-                          label: 'متأخر اليوم',
-                          onTap: () => context.go(
-                            '/team-leader/attendance-summary?status=late',
+                      Row(
+                        children: [
+                          Expanded(
+                            child: StatCard(
+                              icon: Icons.how_to_reg_outlined,
+                              value:
+                                  loadingSummary || summary == null
+                                      ? '—'
+                                      : '${summary.attended}/${summary.totalEmployees}',
+                              label: 'حضور اليوم',
+                              onTap:
+                                  () => context.go(
+                                    '/team-leader/attendance-summary',
+                                  ),
+                            ),
                           ),
-                        ),
+                          const SizedBox(width: DsSpacing.md),
+                          Expanded(
+                            child: StatCard(
+                              icon: Icons.schedule_outlined,
+                              value:
+                                  loadingSummary || summary == null
+                                      ? '—'
+                                      : '${summary.late}',
+                              label: 'متأخر اليوم',
+                              onTap:
+                                  () => context.go(
+                                    '/team-leader/attendance-summary?status=late',
+                                  ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: DsSpacing.md),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: StatCard(
+                              icon: Icons.rule_outlined,
+                              value: '$pendingCount',
+                              label: 'طلبات معلقة',
+                              onTap: () => context.go('/team-leader/requests'),
+                            ),
+                          ),
+                          const SizedBox(width: DsSpacing.md),
+                          Expanded(
+                            child: StatCard(
+                              icon: Icons.task_alt_outlined,
+                              value: loadingTasks ? '—' : '$openTasks',
+                              label: 'مهام مفتوحة',
+                              onTap: () => context.go('/team-leader/tasks'),
+                            ),
+                          ),
+                        ],
                       ),
                     ],
-                  ),
-                  const SizedBox(height: DsSpacing.md),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: StatCard(
-                          icon: Icons.rule_outlined,
-                          value: '$pendingCount',
-                          label: 'طلبات معلقة',
-                          onTap: () => context.go('/team-leader/requests'),
-                        ),
-                      ),
-                      const SizedBox(width: DsSpacing.md),
-                      Expanded(
-                        child: StatCard(
-                          icon: Icons.task_alt_outlined,
-                          value: loadingTasks ? '—' : '$openTasks',
-                          label: 'مهام مفتوحة',
-                          onTap: () => context.go('/team-leader/tasks'),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
+                  );
+                },
               );
             },
-          );
-        },
-      ),
+          ),
     );
   }
 }

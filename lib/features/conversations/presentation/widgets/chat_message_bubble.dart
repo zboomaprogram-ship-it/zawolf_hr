@@ -18,7 +18,8 @@ class ChatMessageBubble extends StatelessWidget {
   final RichMessage message;
   final RichMessage? reply;
   final bool mine, seen;
-  final Widget Function(BuildContext, RichAttachment, [bool isMine]) attachmentBuilder;
+  final Widget Function(BuildContext, RichAttachment, [bool isMine])
+  attachmentBuilder;
   final VoidCallback onActions, onRetry;
   @override
   Widget build(BuildContext context) {
@@ -34,15 +35,23 @@ class ChatMessageBubble extends StatelessWidget {
     for (final emoji in message.reactions.values) {
       reactions[emoji] = (reactions[emoji] ?? 0) + 1;
     }
+    // Directional corners make sent and received messages distinguishable at
+    // a glance, following the familiar WhatsApp conversation pattern.
     final bubbleColor =
-        mine ? ZaWolfColors.primaryCyan : scheme.surfaceContainerLow;
-    final textColor = mine ? ZaWolfColors.background : ZaWolfColors.textPrimary;
-    final senderColor = mine ? ZaWolfColors.primaryBlue : scheme.primary;
+        mine ? const Color(0xFF126B82) : scheme.surfaceContainerLow;
+    final textColor = ZaWolfColors.textPrimary;
+    final senderColor = mine ? ZaWolfColors.primaryCyan : scheme.primary;
     final metaColor = mine ? ZaWolfColors.surface03 : scheme.onSurfaceVariant;
     final actionIconColor =
         mine ? ZaWolfColors.primaryBlue : scheme.onSurfaceVariant;
     final errorColor = mine ? ZaWolfColors.error : scheme.error;
 
+    final bubbleRadius = BorderRadius.only(
+      topLeft: const Radius.circular(18),
+      topRight: const Radius.circular(18),
+      bottomLeft: Radius.circular(mine ? 5 : 18),
+      bottomRight: Radius.circular(mine ? 18 : 5),
+    );
     return Align(
       alignment:
           mine
@@ -54,9 +63,9 @@ class ChatMessageBubble extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
           child: Material(
             color: bubbleColor,
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: bubbleRadius,
             child: InkWell(
-              borderRadius: BorderRadius.circular(16),
+              borderRadius: bubbleRadius,
               onLongPress: onActions,
               child: Padding(
                 padding: const EdgeInsets.all(12),
@@ -65,36 +74,37 @@ class ChatMessageBubble extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Flexible(
-                            child: Text(
-                              mine
-                                  ? 'أنت'
-                                  : (message.senderDisplayName.isEmpty
-                                      ? message.senderUserId
-                                      : message.senderDisplayName),
-                              style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                color: senderColor,
+                      if (!mine)
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Flexible(
+                              child: Text(
+                                mine
+                                    ? 'أنت'
+                                    : (message.senderDisplayName.isEmpty
+                                        ? message.senderUserId
+                                        : message.senderDisplayName),
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  color: senderColor,
+                                ),
                               ),
                             ),
-                          ),
-                          const SizedBox(width: 8),
-                          IconButton(
-                            tooltip: 'خيارات الرسالة',
-                            onPressed: onActions,
-                            visualDensity: VisualDensity.compact,
-                            icon: Icon(
-                              Icons.more_horiz,
-                              size: 20,
-                              color: actionIconColor,
+                            const SizedBox(width: 8),
+                            IconButton(
+                              tooltip: 'خيارات الرسالة',
+                              onPressed: onActions,
+                              visualDensity: VisualDensity.compact,
+                              icon: Icon(
+                                Icons.more_horiz,
+                                size: 20,
+                                color: actionIconColor,
+                              ),
                             ),
-                          ),
-                        ],
-                      ),
+                          ],
+                        ),
                       if (message.forwarded)
                         Text(
                           'رسالة معاد توجيهها',
@@ -109,7 +119,9 @@ class ChatMessageBubble extends StatelessWidget {
                             color:
                                 mine
                                     ? Colors.black.withValues(alpha: 0.06)
-                                    : ZaWolfColors.textPrimary.withValues(alpha: 0.05),
+                                    : ZaWolfColors.textPrimary.withValues(
+                                      alpha: 0.05,
+                                    ),
                             borderRadius: BorderRadius.circular(6),
                             border: BorderDirectional(
                               start: BorderSide(color: senderColor, width: 3),
@@ -124,7 +136,10 @@ class ChatMessageBubble extends StatelessWidget {
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
-                              color: mine ? Colors.black87 : ZaWolfColors.textSecondary,
+                              color:
+                                  mine
+                                      ? Colors.black87
+                                      : ZaWolfColors.textSecondary,
                               fontSize: 13,
                             ),
                           ),
@@ -223,10 +238,7 @@ class ChatMessageBubble extends StatelessWidget {
                           if (message.editedAt != null)
                             Text(
                               ' · معدّلة',
-                              style: TextStyle(
-                                fontSize: 11,
-                                color: metaColor,
-                              ),
+                              style: TextStyle(fontSize: 11, color: metaColor),
                             ),
                           if (mine) ...[
                             const SizedBox(width: 6),

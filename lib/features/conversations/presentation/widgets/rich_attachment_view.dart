@@ -58,7 +58,9 @@ class _RichAttachmentViewState extends State<RichAttachmentView> {
 
   Widget _actions(ChatDraftFile file) {
     final iconColor =
-        widget.isMine ? const Color(0xFF0F172A) : Theme.of(context).colorScheme.onSurfaceVariant;
+        widget.isMine
+            ? Colors.white
+            : Theme.of(context).colorScheme.onSurfaceVariant;
     return Wrap(
       children: [
         IconButton(
@@ -74,10 +76,10 @@ class _RichAttachmentViewState extends State<RichAttachmentView> {
       ],
     );
   }
+
   Widget _content(ChatDraftFile file) {
     final isVoice =
-        widget.attachment.kind == 'voice' ||
-        file.mimeType.startsWith('audio/');
+        widget.attachment.kind == 'voice' || file.mimeType.startsWith('audio/');
     if (file.mimeType.startsWith('image/')) {
       return ClipRRect(
         borderRadius: BorderRadius.circular(12),
@@ -140,13 +142,12 @@ class _RichAttachmentViewState extends State<RichAttachmentView> {
             ? Border.all(color: Colors.black.withValues(alpha: 0.12))
             : null;
     final titleStyle = TextStyle(
-      color: widget.isMine ? const Color(0xFF0F172A) : Colors.white,
+      color: Colors.white,
       fontWeight: FontWeight.bold,
       fontSize: 13,
     );
     final subtitleStyle = TextStyle(
-      color:
-          widget.isMine ? const Color(0xFF334155) : ZaWolfColors.textSecondary,
+      color: ZaWolfColors.textSecondary,
       fontSize: 11,
     );
 
@@ -162,7 +163,9 @@ class _RichAttachmentViewState extends State<RichAttachmentView> {
           border:
               widget.isMine
                   ? Border.all(color: Colors.black.withValues(alpha: 0.15))
-                  : Border.all(color: ZaWolfColors.error.withValues(alpha: 0.3)),
+                  : Border.all(
+                    color: ZaWolfColors.error.withValues(alpha: 0.3),
+                  ),
         ),
         child: Row(
           children: [
@@ -207,10 +210,7 @@ class _RichAttachmentViewState extends State<RichAttachmentView> {
         child: SingleChildScrollView(
           child: SelectableText(
             utf8.decode(file.bytes.take(100000).toList(), allowMalformed: true),
-            style: TextStyle(
-              color: widget.isMine ? const Color(0xFF0F172A) : Colors.white,
-              fontSize: 12,
-            ),
+            style: TextStyle(color: Colors.white, fontSize: 12),
           ),
         ),
       );
@@ -308,10 +308,7 @@ class _RichAttachmentViewState extends State<RichAttachmentView> {
                 ),
                 Text(
                   '${(widget.attachment.sizeBytes / 1024).toStringAsFixed(0)} KB',
-                  style: TextStyle(
-                    color: secondaryTextColor,
-                    fontSize: 11,
-                  ),
+                  style: TextStyle(color: secondaryTextColor, fontSize: 11),
                 ),
               ],
               if (state.loading)
