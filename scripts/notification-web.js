@@ -181,7 +181,7 @@ const {
 } = require('./request-approval-routing');
 
 const port = Number(process.env.PORT || 3000);
-const notificationRuntimeRelease = '2026-09-20-conversations-media-fix-v1';
+const notificationRuntimeRelease = '2026-09-20-custom-req-directory-and-advance-route-v2';
 const dispatchSecret = process.env.NOTIFICATION_DISPATCH_SECRET || '';
 const defaultGoogleWorkspaceOrigins = [
   'https://zawolf-hr-system-60317.web.app',
@@ -256,6 +256,7 @@ let pendingDispatchTimer = null;
 let notificationUnsubscribe = null;
 let notificationListenerOwner = false;
 let conversationOutboxUnsubscribe = null;
+let advanceRouteUnsubscribe = null;
 let runtimeLease = null;
 let googleSheetsIntegration = null;
 const googleSheetsRoleCache = new Map();
@@ -391,6 +392,64 @@ async function runTriggeredPush(reason) {
   }
 }
 
+const CEO_100_UID = 'lna3lpI4slboaUykFw3JlNTNjLN2';
+const CEO_100_NAME = 'سامي المتولي المتولي';
+
+async function reconcilePendingAdvanceRoutes(db) {
+  try {
+    const snap = await db.collection('advances')
+      .where('status', '==', 'pending_hr')
+      .limit(50)
+      .get();
+    let updated = 0;
+    for (const doc of snap.docs) {
+      const data = doc.data();
+      if (!data.advanceRouteStage || data.advanceRouteStage !== 'hr') {
+        await doc.ref.update({
+          advanceRouteStage: 'hr',
+          ceoId: CEO_100_UID,
+          ceoName: CEO_100_NAME,
+          managerId: 'HR',
+          managerIds: ['HR', CEO_100_UID],
+          managerNames: ['الموارد البشرية', CEO_100_NAME],
+        });
+        updated++;
+      }
+    }
+    return { found: snap.docs.length, updated };
+  } catch (error) {
+    console.error('[AdvanceReconciliation Error]', error);
+    return { error: String(error.message || error) };
+  }
+}
+
+function watchPendingAdvances({ db }) {
+  try {
+    return db.collection('advances')
+      .where('status', '==', 'pending_hr')
+      .onSnapshot((snapshot) => {
+        snapshot.docChanges().forEach((change) => {
+          if (change.type === 'added' || change.type === 'modified') {
+            const data = change.doc.data();
+            if (!data.advanceRouteStage || data.advanceRouteStage !== 'hr') {
+              change.doc.ref.update({
+                advanceRouteStage: 'hr',
+                ceoId: CEO_100_UID,
+                ceoName: CEO_100_NAME,
+                managerId: 'HR',
+                managerIds: ['HR', CEO_100_UID],
+                managerNames: ['الموارد البشرية', CEO_100_NAME],
+              }).catch((e) => console.warn('[Advance Listener Update Error]', e?.message || e));
+            }
+          }
+        });
+      }, (err) => console.warn('[Advance Listener Error]', err?.message || err));
+  } catch (e) {
+    console.warn('[watchPendingAdvances setup error]', e?.message || e);
+    return null;
+  }
+}
+
 function startNotificationListener() {
   void ensureNotificationListenerLeader();
 }
@@ -400,12 +459,17 @@ async function ensureNotificationListenerLeader() {
     if (!(await getRuntimeLease().acquire('notification_listener'))) {
       if (notificationUnsubscribe) notificationUnsubscribe();
       if (conversationOutboxUnsubscribe) conversationOutboxUnsubscribe();
+      if (advanceRouteUnsubscribe) advanceRouteUnsubscribe();
       notificationUnsubscribe = null;
       conversationOutboxUnsubscribe = null;
+      advanceRouteUnsubscribe = null;
       notificationListenerOwner = false;
       return;
     }
     notificationListenerOwner = true;
+    if (!advanceRouteUnsubscribe) {
+      advanceRouteUnsubscribe = watchPendingAdvances({ db: admin.firestore() });
+    }
     if (notificationUnsubscribe && conversationOutboxUnsubscribe) return;
     notificationUnsubscribe = watchPendingNotifications({
       onPending: (count) => {
@@ -440,6 +504,7 @@ async function ensureNotificationListenerLeader() {
     diagnostics.listenerError = String(error.message || error);
     console.error('Could not start pending notification listener:', error);
     notificationUnsubscribe = null;
+    advanceRouteUnsubscribe = null;
     setTimeout(() => void ensureNotificationListenerLeader(), 60 * 1000);
   }
 }
@@ -4097,6 +4162,7 @@ async function runBackgroundDispatch() {
       earlyLeaveReconciliation =
         await reconcilePendingEarlyLeaves({ admin });
       automaticAttendance = await processAutomaticAttendance();
+      await reconcilePendingAdvanceRoutes(admin.firestore());
       reminders = await queueAttendanceReminders();
     } catch (error) {
       // A reminder query failure must not stop approvals, tasks, and other
@@ -4503,7 +4569,7 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  if ((url.pathname === '/operations/custom-request-types' || url.pathname === '/operations/custom-request-directory') && req.method === 'GET') {
+  if (url.pathname === '/operations/custom-request-types' && req.method === 'GET') {
     const actor = await authorizeWorkspaceRequest(req);
     if (!actor) return sendJson(res, 401, { ok: false, code: 'session_expired' });
     try {
