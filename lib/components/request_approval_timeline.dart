@@ -76,20 +76,32 @@ class RequestApprovalTimeline extends StatelessWidget {
     if (route.isNotEmpty) {
       return _buildCustomRouteTimeline(context, status, route);
     }
-    if (data['advanceRouteStage'] != null ||
+    final isAdvance = data['advanceRouteStage'] != null ||
+        data['requestType'] == 'advance' ||
+        (data.containsKey('amount') &&
+            (data.containsKey('monthKey') ||
+                data.containsKey('advanceId') ||
+                data.containsKey('installmentMonths'))) ||
         _history.any(
           (event) => event['stage'] == 'accounting' || event['stage'] == 'ceo',
-        )) {
+        );
+    if (isAdvance) {
       return _buildAdvanceRouteTimeline(context, status);
     }
-    final managerNames =
+    var managerNames =
         (data['managerNames'] as List<dynamic>? ?? const [])
             .whereType<String>()
             .toList();
-    final managerIds =
+    var managerIds =
         (data['managerIds'] as List<dynamic>? ?? const [])
             .whereType<String>()
             .toList();
+    if (managerNames.isEmpty && (data['managerName'] as String?)?.trim().isNotEmpty == true) {
+      managerNames = [(data['managerName'] as String).trim()];
+    }
+    if (managerIds.isEmpty && (data['managerId'] as String?)?.trim().isNotEmpty == true) {
+      managerIds = [(data['managerId'] as String).trim()];
+    }
     final assignedCeoId = '${data['ceoId'] ?? ''}';
     final managerTrail =
         (data['managerApprovalTrail'] as List<dynamic>? ?? const [])
@@ -107,6 +119,7 @@ class RequestApprovalTimeline extends StatelessWidget {
     final showHrStage =
         hasRecordedHrReview ||
         data['requiresHrApproval'] == true ||
+        managerNames.isEmpty ||
         (data['requiresHrApproval'] == null &&
             approvalPolicy.requireHrAfterManagerApproval);
     final hasManagerRejected = managerTrail.any(
@@ -328,25 +341,45 @@ class RequestApprovalTimeline extends StatelessWidget {
     _TimelineStage stage(String key, String label, IconData icon) {
       final event = _event(key);
       final isCurrent =
-          (key == 'hr' && status == 'pending_hr') ||
+          (key == 'hr' &&
+              (status == 'pending_hr' ||
+                  (status.startsWith('pending') &&
+                      (routeStage.isEmpty || routeStage == 'hr')))) ||
           (key == 'ceo' &&
               routeStage == 'ceo' &&
-              status == 'pending_manager') ||
+              status.startsWith('pending')) ||
           (key == 'accounting' &&
               routeStage == 'accounting' &&
-              status == 'pending_manager');
+              status.startsWith('pending'));
+      final defaultName = key == 'ceo'
+          ? (data['ceoName'] as String? ?? 'سامي المتولي المتولي')
+          : (key == 'accounting'
+              ? (data['accountantName'] as String? ?? 'الحسابات')
+              : (key == 'hr' ? 'الموارد البشرية' : ''));
+      final isDone = event != null
+          ? event['status'] != 'rejected'
+          : (key == 'hr' &&
+                  (routeStage == 'ceo' ||
+                      routeStage == 'accounting' ||
+                      status == 'approved')) ||
+              (key == 'ceo' &&
+                  (routeStage == 'accounting' || status == 'approved')) ||
+              (key == 'accounting' && status == 'approved');
+      final isRejected = event?['status'] == 'rejected' ||
+          (status == 'rejected' && (isCurrent || routeStage == key));
+
       return _TimelineStage(
         label: label,
         person:
-            (event?['actorName'] as String?) ?? (isCurrent ? currentName : ''),
+            (event?['actorName'] as String?) ??
+            (isCurrent ? currentName : defaultName),
         jobTitle: label,
         icon: icon,
-        state:
-            event == null
-                ? (isCurrent ? _StageState.current : _StageState.waiting)
-                : event['status'] == 'rejected'
-                ? _StageState.rejected
-                : _StageState.done,
+        state: isRejected
+            ? _StageState.rejected
+            : isDone
+                ? _StageState.done
+                : (isCurrent ? _StageState.current : _StageState.waiting),
         timestamp: _date(event?['at']) ?? _date(event?['timestamp']),
       );
     }
@@ -485,6 +518,7 @@ class RequestApprovalTimeline extends StatelessWidget {
           : _StageState.done;
     }
     if (status == 'pending_$stage') return _StageState.current;
+    if (status == 'approved') return _StageState.done;
     return _StageState.waiting;
   }
 }

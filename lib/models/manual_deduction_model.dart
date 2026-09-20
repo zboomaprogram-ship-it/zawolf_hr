@@ -27,6 +27,7 @@ class ManualDeductionModel {
   final String? rejectionReason;
   final DateTime? createdAt;
   final DateTime? updatedAt;
+  final Map<String, dynamic> rawData;
 
   ManualDeductionModel({
     required this.id,
@@ -54,6 +55,7 @@ class ManualDeductionModel {
     this.rejectionReason,
     this.createdAt,
     this.updatedAt,
+    this.rawData = const {},
   });
 
   static String getFractionLabel(double fraction) {
@@ -101,10 +103,12 @@ class ManualDeductionModel {
       rejectionReason: data['rejectionReason'] as String?,
       createdAt: (data['createdAt'] as Timestamp?)?.toDate(),
       updatedAt: (data['updatedAt'] as Timestamp?)?.toDate(),
+      rawData: data,
     );
   }
 
   Map<String, dynamic> toFirestore() {
+    if (rawData.isNotEmpty) return rawData;
     return {
       'userId': userId,
       'employeeName': employeeName,

@@ -17,6 +17,7 @@ class ResignationModel {
   final String? reviewedBy;
   final String? reviewerName;
   final String? reviewerComment;
+  final Map<String, dynamic> rawData;
 
   const ResignationModel({
     required this.resignationId,
@@ -35,6 +36,7 @@ class ResignationModel {
     this.reviewedBy,
     this.reviewerName,
     this.reviewerComment,
+    this.rawData = const {},
   });
 
   factory ResignationModel.fromFirestore(DocumentSnapshot doc) {
@@ -61,6 +63,29 @@ class ResignationModel {
       reviewedBy: data['reviewedBy'] as String?,
       reviewerName: data['reviewerName'] as String?,
       reviewerComment: data['reviewerComment'] as String?,
+      rawData: data,
     );
+  }
+
+  Map<String, dynamic> toMap() {
+    if (rawData.isNotEmpty) return rawData;
+    return {
+      'resignationId': resignationId,
+      'userId': userId,
+      'employeeId': employeeId,
+      'employeeName': employeeName,
+      'department': department,
+      'reason': reason,
+      'resignationDate': resignationDate,
+      'status': status,
+      'managerId': managerId,
+      'managerIds': managerIds,
+      'managerNames': managerNames,
+      'managerApprovalIndex': managerApprovalIndex,
+      'submittedAt': submittedAt,
+      'reviewedBy': reviewedBy,
+      'reviewerName': reviewerName,
+      'reviewerComment': reviewerComment,
+    };
   }
 }

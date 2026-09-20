@@ -3361,6 +3361,13 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
               ),
             ),
           ],
+          if (data['approvalRoute'] != null ||
+              (data['managerNames'] as List?)?.isNotEmpty == true ||
+              (data['managerIds'] as List?)?.isNotEmpty == true ||
+              (data['approvalHistory'] as List?)?.isNotEmpty == true ||
+              isManual ||
+              isPermission)
+            RequestApprovalTimeline(data: data, compact: true),
           const SizedBox(height: 16),
           if (isApproved && canManageDeductions) ...[
             SizedBox(
@@ -4260,6 +4267,11 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
               ),
               textDirection: TextDirection.rtl,
             ),
+            const SizedBox(height: 10),
+            RequestApprovalTimeline(
+              data: item.rawData.isNotEmpty ? item.rawData : item.toFirestore(),
+              compact: true,
+            ),
             if (canApprove &&
                 (item.status == 'pending_hr' ||
                     item.status == 'pending_manager')) ...[
@@ -4903,6 +4915,8 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                         ),
                       ),
                     ],
+                    const SizedBox(height: 10),
+                    RequestApprovalTimeline(data: data, compact: true),
                     const SizedBox(height: 12),
                     _buildApprovalActions(
                       disabled: _isRequestBusy(doc.id),
@@ -5202,6 +5216,11 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
           ),
           const SizedBox(height: 8),
           Text('السبب: ${request.reason}'),
+          const SizedBox(height: 10),
+          RequestApprovalTimeline(
+            data: request.toMap(),
+            compact: true,
+          ),
           const SizedBox(height: 14),
           if (request.status == 'approved' || request.status == 'rejected')
             Padding(
@@ -6733,6 +6752,8 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                 'السبب: ${advance.reason}',
                 style: const TextStyle(color: ZaWolfColors.textSecondary),
               ),
+            const SizedBox(height: 10),
+            RequestApprovalTimeline(data: data, compact: true),
             const SizedBox(height: 16),
             if (_canActOnApproval(data, reviewer))
               _buildApprovalActions(
@@ -7916,6 +7937,8 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
           ),
           const SizedBox(height: 8),
           Text('السبب: ${data['reason'] ?? ''}'),
+          const SizedBox(height: 10),
+          RequestApprovalTimeline(data: data, compact: true),
           const SizedBox(height: 14),
           if (status == 'approved' || status == 'rejected')
             Padding(

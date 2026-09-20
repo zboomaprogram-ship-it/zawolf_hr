@@ -618,24 +618,79 @@ class _CustomRequestQueueScreenState extends State<CustomRequestQueueScreen> {
                 itemCount: _items.length,
                 itemBuilder: (_, index) {
                   final item = _items[index];
+                  final route = (item['approvalRoute'] as List? ?? const [])
+                      .whereType<Map>()
+                      .toList();
                   return Card(
-                    child: ListTile(
-                      title: Text('${item['title'] ?? item['typeNameAr']}'),
-                      subtitle: Text(
-                        '${item['requesterName'] ?? ''}\n${item['description'] ?? ''}',
-                      ),
-                      isThreeLine: true,
-                      trailing: Row(
-                        mainAxisSize: MainAxisSize.min,
+                    color: ZaWolfColors.surface01,
+                    margin: const EdgeInsets.only(bottom: 12),
+                    child: Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          IconButton(
-                            onPressed: () => _decide('${item['id']}', false),
-                            icon: const Icon(Icons.close, color: ZaWolfColors.error),
+                          ListTile(
+                            contentPadding: EdgeInsets.zero,
+                            title: Text(
+                              '${item['title'] ?? item['typeNameAr']}',
+                              style: const TextStyle(fontWeight: FontWeight.bold),
+                            ),
+                            subtitle: Text(
+                              '${item['requesterName'] ?? ''}\n${item['description'] ?? ''}',
+                            ),
+                            trailing: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                IconButton(
+                                  onPressed: () => _decide('${item['id']}', false),
+                                  icon: const Icon(Icons.close, color: ZaWolfColors.error),
+                                  tooltip: 'رفض',
+                                ),
+                                IconButton(
+                                  onPressed: () => _decide('${item['id']}', true),
+                                  icon: const Icon(Icons.check, color: ZaWolfColors.success),
+                                  tooltip: 'موافقة',
+                                ),
+                              ],
+                            ),
                           ),
-                          IconButton(
-                            onPressed: () => _decide('${item['id']}', true),
-                            icon: const Icon(Icons.check, color: ZaWolfColors.success),
-                          ),
+                          if (route.isNotEmpty) ...[
+                            const Divider(color: ZaWolfColors.surface02, height: 16),
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 6,
+                              children: route.map((stage) {
+                                final stState = '${stage['state']}';
+                                final isApp = stState == 'approved';
+                                final isRej = stState == 'rejected';
+                                final isPend = stState == 'pending';
+                                final chipColor = isApp
+                                    ? ZaWolfColors.success
+                                    : isRej
+                                        ? ZaWolfColors.error
+                                        : isPend
+                                            ? ZaWolfColors.warning
+                                            : ZaWolfColors.textMuted;
+                                return Chip(
+                                  visualDensity: VisualDensity.compact,
+                                  backgroundColor: chipColor.withValues(alpha: 0.12),
+                                  side: BorderSide(color: chipColor.withValues(alpha: 0.4)),
+                                  avatar: CircleAvatar(
+                                    radius: 10,
+                                    backgroundColor: chipColor,
+                                    child: Text(
+                                      '${stage['order'] ?? 1}',
+                                      style: const TextStyle(color: Colors.black, fontSize: 10, fontWeight: FontWeight.bold),
+                                    ),
+                                  ),
+                                  label: Text(
+                                    '${stage['approverName']}',
+                                    style: TextStyle(color: chipColor, fontSize: 11),
+                                  ),
+                                );
+                              }).toList(),
+                            ),
+                          ],
                         ],
                       ),
                     ),
