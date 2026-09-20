@@ -170,13 +170,14 @@ async function handleMedia({req,res,db,actor,channel,parts,payload,sendJson,prov
             secret.parentExternalId = 'local';
             secret.sessionUri = await provider.startLocal({fileId:secret.externalId,fileName:d.fileName,mimeType:d.mimeType,sizeBytes:d.sizeBytes});
             await secretRef.set(secret);
+            if (requested > 0) {
+              await ref.update({offset: 0});
+              sendJson(res, 409, {ok: false, code: 'upload_offset_mismatch', offset: 0});
+              return;
+            }
             state = await provider.chunk({sessionUri:secret.sessionUri,offset:0,bytes,sizeBytes:d.sizeBytes});
             offset = state.offset;
             await ref.update({offset});
-            if (offset < d.sizeBytes) {
-              sendJson(res,409,{ok:false,code:'upload_offset_mismatch',offset});
-              return;
-            }
           } else throw e;
         }
         offset=state.offset;

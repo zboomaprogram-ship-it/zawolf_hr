@@ -6,7 +6,7 @@ const crypto = require('node:crypto');
 const API = 'https://www.googleapis.com/drive/v3';
 const MAX_BYTES = 25 * 1024 * 1024;
 const LOCAL_STORAGE_DIR = process.env.CONVERSATIONS_MEDIA_DIR ||
-  path.resolve(__dirname, '../../data/conversation_attachments');
+  path.resolve(__dirname, '../data/conversation_attachments');
 
 function ensureLocalStorageDir() {
   try {
