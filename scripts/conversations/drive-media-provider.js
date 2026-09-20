@@ -23,16 +23,22 @@ function getLocalPaths(fileId) {
   };
 }
 
-function isQuotaError(e) {
+function isDriveFailure(e) {
   if (!e) return false;
   const msg = String(e?.response?.data?.error?.message || e?.response?.data?.error || e?.message || '').toLowerCase();
-  return msg.includes('service accounts do not have storage quota') ||
+  return msg.includes('file id is not usable') ||
+         msg.includes('usable') ||
+         msg.includes('service accounts do not have storage quota') ||
          msg.includes('storage quota') ||
          msg.includes('insufficientfilepermissions') ||
          msg.includes('invalid_grant') ||
+         msg.includes('invalid') ||
+         msg.includes('not found') ||
+         msg.includes('backend error') ||
          e?.code === 'drive_storage_quota_unavailable' ||
-         (Number(e?.response?.status) === 403 && (msg.includes('quota') || msg.includes('storage')));
+         Boolean(e?.response?.status && e?.response?.status >= 400);
 }
+const isQuotaError = isDriveFailure;
 
 function sessionUrl(raw) {
   if (typeof raw === 'string' && raw.startsWith('local://')) {
@@ -213,5 +219,5 @@ function createDriveMediaProvider({request}) {
     },
   };
 }
-module.exports={createDriveMediaProvider,isQuotaError,sessionUrl};
+module.exports={createDriveMediaProvider,isQuotaError,isDriveFailure,sessionUrl};
 

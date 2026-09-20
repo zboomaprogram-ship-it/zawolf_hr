@@ -71,4 +71,25 @@ test('drive provider gracefully falls back to local storage on quota exhaustion'
   assert.equal(downloaded.contents.length, 500);
   assert.equal(downloaded.fileName, 'test.jpg');
 });
+test('drive provider gracefully falls back to local storage on unusable file ID', async () => {
+  const fileIdErr = new Error('The provided file ID is not usable.');
+  fileIdErr.response = { status: 400, data: { error: { message: fileIdErr.message } } };
+
+  const request = async () => {
+    throw fileIdErr;
+  };
+  const p = createDriveMediaProvider({ request });
+  const id = 'unusable-id-test-' + Date.now();
+  const session = await p.start({ fileId: id, folderId: 'folder', fileName: 'voice.wav', mimeType: 'audio/wav', sizeBytes: 300 });
+  assert.equal(session.startsWith('local://'), true);
+
+  const chunkResult = await p.chunk({ sessionUri: session, offset: 0, bytes: Buffer.alloc(300), sizeBytes: 300 });
+  assert.equal(chunkResult.complete, true);
+  assert.equal(chunkResult.offset, 300);
+
+  const downloaded = await p.download({ fileId: id, folderId: 'folder' });
+  assert.equal(downloaded.contents.length, 300);
+  assert.equal(downloaded.fileName, 'voice.wav');
+});
+
 

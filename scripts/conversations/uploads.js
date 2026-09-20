@@ -1,7 +1,7 @@
 'use strict';
 const crypto=require('node:crypto');
 const {safeId}=require('../conversation-operations');
-const {isQuotaError}=require('./drive-media-provider');
+const {isQuotaError,isDriveFailure}=require('./drive-media-provider');
 const MAX_BYTES=25*1024*1024, CHUNK_BYTES=1024*1024;
 const VOICE_MIME_TYPES=new Set(['audio/wav','audio/webm','audio/mp4','audio/ogg','audio/mpeg']);
 function failure(code,status=400) { const e=new Error(code); e.code=code;e.status=status; return e; }
@@ -132,7 +132,7 @@ async function handleMedia({req,res,db,actor,channel,parts,payload,sendJson,prov
       if(secret.sessionUri) {
         try {offset=(await provider.status({sessionUri:secret.sessionUri,sizeBytes:d.sizeBytes})).offset;}
         catch(e) {
-          if([404,410].includes(Number(e.response?.status)) || isQuotaError(e)){
+          if([404,410].includes(Number(e.response?.status)) || isDriveFailure(e)){
             secret.sessionUri=null;
             offset=0;
           }else throw e;
@@ -142,10 +142,10 @@ async function handleMedia({req,res,db,actor,channel,parts,payload,sendJson,prov
         try {
           secret.sessionUri=await provider.start({fileId:secret.externalId,folderId:secret.parentExternalId,...d});
         } catch(e) {
-          if (isQuotaError(e)) {
+          if (isDriveFailure(e)) {
             secret.provider = 'local';
             secret.parentExternalId = 'local';
-            secret.sessionUri = await provider.startLocal({fileId:secret.externalId,folderId:'local',...d});
+            secret.sessionUri = await provider.startLocal({fileId:secret.externalId,fileName:d.fileName,mimeType:d.mimeType,sizeBytes:d.sizeBytes});
           } else throw e;
         }
         await secretRef.set(secret);offset=0;
@@ -164,16 +164,16 @@ async function handleMedia({req,res,db,actor,channel,parts,payload,sendJson,prov
         try {
           state=await provider.chunk({sessionUri:secret.sessionUri,offset,bytes,sizeBytes:d.sizeBytes});
         } catch (e) {
-          if (isQuotaError(e)) {
-            console.warn('[Uploads] Drive quota error on chunk write. Falling back to local storage for:', secret.externalId);
+          if (isDriveFailure(e)) {
+            console.warn('[Uploads] Drive failure on chunk write. Falling back to local storage for:', secret.externalId, e.message);
             secret.provider = 'local';
             secret.parentExternalId = 'local';
-            secret.sessionUri = await provider.startLocal({fileId:secret.externalId,folderId:'local',...d});
+            secret.sessionUri = await provider.startLocal({fileId:secret.externalId,fileName:d.fileName,mimeType:d.mimeType,sizeBytes:d.sizeBytes});
             await secretRef.set(secret);
             state = await provider.chunk({sessionUri:secret.sessionUri,offset:0,bytes,sizeBytes:d.sizeBytes});
             offset = state.offset;
             await ref.update({offset});
-            if (requested > 0) {
+            if (offset < d.sizeBytes) {
               sendJson(res,409,{ok:false,code:'upload_offset_mismatch',offset});
               return;
             }
