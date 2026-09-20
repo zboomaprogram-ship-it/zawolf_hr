@@ -43,3 +43,32 @@ test('resumable Drive provider retains generated ID and never leaks session in r
   assert.deepEqual(await p.chunk({sessionUri:session,offset:512,bytes:Buffer.alloc(512),sizeBytes:1024}),{offset:1024,complete:true});
   await assert.rejects(()=>p.status({sessionUri:'http://127.0.0.1/private',sizeBytes:1024}));
 });
+test('drive provider gracefully falls back to local storage on quota exhaustion', async () => {
+  const quotaErr = new Error('Service Accounts do not have storage quota. Leverage shared drives or use OAuth delegation instead.');
+  quotaErr.response = { status: 403, data: { error: { message: quotaErr.message } } };
+
+  const request = async () => {
+    throw quotaErr;
+  };
+  const p = createDriveMediaProvider({ request });
+  const id = 'quota-test-file-' + Date.now();
+  const session = await p.start({ fileId: id, folderId: 'folder', fileName: 'test.jpg', mimeType: 'image/jpeg', sizeBytes: 500 });
+  assert.equal(session.startsWith('local://'), true);
+
+  const status = await p.status({ sessionUri: session, sizeBytes: 500 });
+  assert.equal(status.complete, false);
+  assert.equal(status.offset, 0);
+
+  const chunkResult = await p.chunk({ sessionUri: session, offset: 0, bytes: Buffer.alloc(500), sizeBytes: 500 });
+  assert.equal(chunkResult.complete, true);
+  assert.equal(chunkResult.offset, 500);
+
+  const meta = await p.metadata({ fileId: id, folderId: 'folder' });
+  assert.equal(meta.id, id);
+  assert.equal(meta.name, 'test.jpg');
+
+  const downloaded = await p.download({ fileId: id, folderId: 'folder' });
+  assert.equal(downloaded.contents.length, 500);
+  assert.equal(downloaded.fileName, 'test.jpg');
+});
+

@@ -1,6 +1,7 @@
 'use strict';
 const crypto=require('node:crypto');
 const {safeId}=require('../conversation-operations');
+const {isQuotaError}=require('./drive-media-provider');
 const MAX_BYTES=25*1024*1024, CHUNK_BYTES=1024*1024;
 const VOICE_MIME_TYPES=new Set(['audio/wav','audio/webm','audio/mp4','audio/ogg','audio/mpeg']);
 function failure(code,status=400) { const e=new Error(code); e.code=code;e.status=status; return e; }
@@ -111,10 +112,14 @@ async function handleMedia({req,res,db,actor,channel,parts,payload,sendJson,prov
     }
     let secret=(await secretRef.get()).data();
     if(!secret) {
-      const folderId=await ensureFolder();
-      if(!folderId)throw failure('drive_upload_not_ready',503);
+      let folderId = '';
+      try {
+        folderId = await ensureFolder();
+      } catch (e) {
+        console.warn('[Uploads] ensureFolder failed, using local storage:', e?.message || e);
+      }
       const fileId=await provider.allocateId();
-      secret={externalId:fileId,parentExternalId:folderId,provider:'google_workspace'};
+      secret={externalId:fileId,parentExternalId:folderId||'local',provider:folderId?'google_workspace':'local'};
       await secretRef.set(secret);
     }
     // Resolve provider-success / response-loss before creating any new session.
@@ -126,10 +131,23 @@ async function handleMedia({req,res,db,actor,channel,parts,payload,sendJson,prov
       let offset=d.offset||0;
       if(secret.sessionUri) {
         try {offset=(await provider.status({sessionUri:secret.sessionUri,sizeBytes:d.sizeBytes})).offset;}
-        catch(e) {if([404,410].includes(Number(e.response?.status))){secret.sessionUri=null;offset=0;}else throw e;}
+        catch(e) {
+          if([404,410].includes(Number(e.response?.status)) || isQuotaError(e)){
+            secret.sessionUri=null;
+            offset=0;
+          }else throw e;
+        }
       }
       if(!secret.sessionUri) {
-        secret.sessionUri=await provider.start({fileId:secret.externalId,folderId:secret.parentExternalId,...d});
+        try {
+          secret.sessionUri=await provider.start({fileId:secret.externalId,folderId:secret.parentExternalId,...d});
+        } catch(e) {
+          if (isQuotaError(e)) {
+            secret.provider = 'local';
+            secret.parentExternalId = 'local';
+            secret.sessionUri = await provider.startLocal({fileId:secret.externalId,folderId:'local',...d});
+          } else throw e;
+        }
         await secretRef.set(secret);offset=0;
       }
       if(req.method==='PUT'&&parts.length===2) {
@@ -142,7 +160,25 @@ async function handleMedia({req,res,db,actor,channel,parts,payload,sendJson,prov
           validateVoiceMime(d.kind,validatedMimeType);
           d={...d,validatedMimeType};await ref.update({validatedMimeType});
         }
-        const state=await provider.chunk({sessionUri:secret.sessionUri,offset,bytes,sizeBytes:d.sizeBytes});
+        let state;
+        try {
+          state=await provider.chunk({sessionUri:secret.sessionUri,offset,bytes,sizeBytes:d.sizeBytes});
+        } catch (e) {
+          if (isQuotaError(e)) {
+            console.warn('[Uploads] Drive quota error on chunk write. Falling back to local storage for:', secret.externalId);
+            secret.provider = 'local';
+            secret.parentExternalId = 'local';
+            secret.sessionUri = await provider.startLocal({fileId:secret.externalId,folderId:'local',...d});
+            await secretRef.set(secret);
+            state = await provider.chunk({sessionUri:secret.sessionUri,offset:0,bytes,sizeBytes:d.sizeBytes});
+            offset = state.offset;
+            await ref.update({offset});
+            if (requested > 0) {
+              sendJson(res,409,{ok:false,code:'upload_offset_mismatch',offset});
+              return;
+            }
+          } else throw e;
+        }
         offset=state.offset;
         if(state.complete) {
           const m=await provider.metadata({fileId:secret.externalId,folderId:secret.parentExternalId});
