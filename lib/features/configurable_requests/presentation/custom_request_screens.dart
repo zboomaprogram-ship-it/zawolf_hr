@@ -45,99 +45,176 @@ class _CustomRequestTypesScreenState extends State<CustomRequestTypesScreen> {
     final attachmentController = TextEditingController();
     final selectedApproverIds = <String>[];
     var searchQuery = '';
+    var dialogUsers = List<CustomRequestDirectoryUser>.from(_users);
+    var loadingUsers = dialogUsers.isEmpty;
+    var fetchAttempted = false;
 
     final submitted = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => Directionality(
         textDirection: TextDirection.rtl,
         child: StatefulBuilder(
-          builder: (context, setDialogState) => AlertDialog(
-            backgroundColor: ZaWolfColors.surface01,
-            title: Row(
-              children: const [
-                Icon(Icons.assignment_add, color: ZaWolfColors.primaryCyan),
-                SizedBox(width: 10),
-                Text(
-                  'طلب مخصص جديد',
-                  style: TextStyle(color: ZaWolfColors.textPrimary, fontWeight: FontWeight.bold),
-                ),
-              ],
-            ),
-            content: SizedBox(
-              width: 580,
-              child: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    TextField(
-                      controller: titleController,
-                      style: const TextStyle(color: ZaWolfColors.textPrimary),
-                      decoration: const InputDecoration(
-                        labelText: 'عنوان الطلب (مطلوب)',
-                        hintText: 'مثال: طلب شراء أجهزة لفرع الرياض',
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    TextField(
-                      controller: descriptionController,
-                      maxLines: 4,
-                      style: const TextStyle(color: ZaWolfColors.textPrimary),
-                      decoration: const InputDecoration(
-                        labelText: 'تفاصيل وشرح الطلب (مطلوب)',
-                        hintText: 'اكتب كافة التفاصيل الفنية أو الإدارية المطلوبة...',
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    TextField(
-                      controller: attachmentController,
-                      style: const TextStyle(color: ZaWolfColors.textPrimary),
-                      decoration: const InputDecoration(
-                        labelText: 'رابط مرفق أو مستند إضافي (اختياري)',
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    const Text(
-                      'تحديد مسار الموافقات والاعتماد (اختر من 1 إلى 4 مسؤولين):',
-                      style: TextStyle(
-                        color: ZaWolfColors.primaryCyan,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 13,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    TextField(
-                      onChanged: (val) => setDialogState(() => searchQuery = val.trim()),
-                      decoration: const InputDecoration(
-                        hintText: 'بحث باسم المسؤول أو القسم...',
-                        prefixIcon: Icon(Icons.search, size: 18),
-                        isDense: true,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Container(
-                      height: 220,
-                      decoration: BoxDecoration(
-                        color: ZaWolfColors.surface02,
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: ZaWolfColors.surface03),
-                      ),
-                      child: Builder(
-                        builder: (context) {
-                          final filtered = _users.where((u) {
-                            if (searchQuery.isEmpty) return true;
-                            return u.name.contains(searchQuery) ||
-                                u.department.contains(searchQuery);
-                          }).toList();
+          builder: (context, setDialogState) {
+            if (loadingUsers && !fetchAttempted) {
+              fetchAttempted = true;
+              widget.repository.directory().then((users) {
+                if (context.mounted) {
+                  setDialogState(() {
+                    dialogUsers = users;
+                    loadingUsers = false;
+                  });
+                  if (mounted && users.isNotEmpty) {
+                    setState(() => _users = users);
+                  }
+                }
+              }).catchError((_) {
+                if (context.mounted) {
+                  setDialogState(() => loadingUsers = false);
+                }
+              });
+            }
 
-                          if (filtered.isEmpty) {
-                            return const Center(
-                              child: Text(
-                                'لا يوجد مسؤولون مطابقون للبحث',
-                                style: TextStyle(color: ZaWolfColors.textMuted, fontSize: 12),
-                              ),
-                            );
-                          }
+            return AlertDialog(
+              backgroundColor: ZaWolfColors.surface01,
+              title: Row(
+                children: const [
+                  Icon(Icons.assignment_add, color: ZaWolfColors.primaryCyan),
+                  SizedBox(width: 10),
+                  Text(
+                    'طلب مخصص جديد',
+                    style: TextStyle(color: ZaWolfColors.textPrimary, fontWeight: FontWeight.bold),
+                  ),
+                ],
+              ),
+              content: SizedBox(
+                width: 580,
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      TextField(
+                        controller: titleController,
+                        style: const TextStyle(color: ZaWolfColors.textPrimary),
+                        decoration: const InputDecoration(
+                          labelText: 'عنوان الطلب (مطلوب)',
+                          hintText: 'مثال: طلب شراء أجهزة لفرع الرياض',
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: descriptionController,
+                        maxLines: 4,
+                        style: const TextStyle(color: ZaWolfColors.textPrimary),
+                        decoration: const InputDecoration(
+                          labelText: 'تفاصيل وشرح الطلب (مطلوب)',
+                          hintText: 'اكتب كافة التفاصيل الفنية أو الإدارية المطلوبة...',
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: attachmentController,
+                        style: const TextStyle(color: ZaWolfColors.textPrimary),
+                        decoration: const InputDecoration(
+                          labelText: 'رابط مرفق أو مستند إضافي (اختياري)',
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      const Text(
+                        'تحديد مسار الموافقات والاعتماد (اختر من 1 إلى 4 مسؤولين):',
+                        style: TextStyle(
+                          color: ZaWolfColors.primaryCyan,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      TextField(
+                        onChanged: (val) => setDialogState(() => searchQuery = val.trim()),
+                        decoration: const InputDecoration(
+                          hintText: 'بحث باسم المسؤول أو القسم...',
+                          prefixIcon: Icon(Icons.search, size: 18),
+                          isDense: true,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Container(
+                        height: 220,
+                        decoration: BoxDecoration(
+                          color: ZaWolfColors.surface02,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: ZaWolfColors.surface03),
+                        ),
+                        child: Builder(
+                          builder: (context) {
+                            if (loadingUsers) {
+                              return const Center(
+                                child: SizedBox(
+                                  width: 24,
+                                  height: 24,
+                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                ),
+                              );
+                            }
+
+                            if (dialogUsers.isEmpty) {
+                              return Center(
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const Text(
+                                      'تعذر تحميل قائمة المسؤولين حالياً',
+                                      style: TextStyle(
+                                        color: ZaWolfColors.textMuted,
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    TextButton.icon(
+                                      onPressed: () async {
+                                        setDialogState(() => loadingUsers = true);
+                                        try {
+                                          final u = await widget.repository.directory();
+                                          if (context.mounted) {
+                                            setDialogState(() {
+                                              dialogUsers = u;
+                                              loadingUsers = false;
+                                            });
+                                            if (mounted && u.isNotEmpty) {
+                                              setState(() => _users = u);
+                                            }
+                                          }
+                                        } catch (_) {
+                                          if (context.mounted) {
+                                            setDialogState(() => loadingUsers = false);
+                                          }
+                                        }
+                                      },
+                                      icon: const Icon(Icons.refresh, size: 16),
+                                      label: const Text(
+                                        'إعادة المحاولة',
+                                        style: TextStyle(fontSize: 12),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            }
+
+                            final filtered = dialogUsers.where((u) {
+                              if (searchQuery.isEmpty) return true;
+                              return u.name.contains(searchQuery) ||
+                                  u.department.contains(searchQuery);
+                            }).toList();
+
+                            if (filtered.isEmpty) {
+                              return const Center(
+                                child: Text(
+                                  'لا يوجد مسؤولون مطابقون للبحث',
+                                  style: TextStyle(color: ZaWolfColors.textMuted, fontSize: 12),
+                                ),
+                              );
+                            }
 
                           return ListView.builder(
                             itemCount: filtered.length,
@@ -203,10 +280,11 @@ class _CustomRequestTypesScreenState extends State<CustomRequestTypesScreen> {
                 child: const Text('إرسال الطلب للاعتماد'),
               ),
             ],
-          ),
-        ),
+          );
+        },
       ),
-    );
+    ),
+  );
 
     if (submitted == true) {
       final title = titleController.text.trim();
