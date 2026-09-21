@@ -201,14 +201,21 @@ async function decideFieldMission({ db, admin, actor, requestId, body }) {
     if (!snap.exists) throw new Error('المأمورية غير موجودة.');
     const data = snap.data();
     const actorAliases = [actor.uid, actor.employeeId, actor.role === 'super_admin' ? 'CEO-100' : null].filter(Boolean);
-    // A system owner may resolve a blocked approval stage. The transition remains
-    // sequential and is recorded under the owner identity, so it cannot skip the
-    // audit trail or grant the override to ordinary managers.
-    const isCurrentApprover = actor.role === 'super_admin' || actorAliases.includes(data.currentApproverId);
-    if (data.status !== 'pending_manager' || !isCurrentApprover) throw new Error('ليست هذه المرحلة بانتظار قرارك.');
     const index = Number(data.currentApprovalIndex || 0);
     const route = Array.isArray(data.approvalRoute) ? data.approvalRoute.map((item) => ({ ...item })) : [];
-    if (!route[index] || (!actorAliases.includes(route[index].approverId) && actor.role !== 'super_admin') || route[index].state !== 'pending') throw new Error('مسار الموافقة غير متسق.');
+    const stage = route[index] || {};
+    const isAccountingStage = stage.labelAr === 'الحسابات' || /حساب|محاسب/i.test(stage.approverName || '') || /حساب|محاسب/i.test(stage.labelAr || '');
+    const isActorAccountant = actor.isAdvanceAccountsApprover === true ||
+      /account|حساب/i.test(actor.department || '') ||
+      actor.role === 'accountant' ||
+      /محاسب/i.test(actor.jobTitle || actor.position || '');
+
+    const isCurrentApprover = actor.role === 'super_admin' ||
+      actorAliases.includes(data.currentApproverId) ||
+      actorAliases.includes(stage.approverId) ||
+      (isAccountingStage && isActorAccountant);
+    if (data.status !== 'pending_manager' || !isCurrentApprover) throw new Error('ليست هذه المرحلة بانتظار قرارك.');
+    if (!stage || (!actorAliases.includes(stage.approverId) && actor.role !== 'super_admin' && !(isAccountingStage && isActorAccountant)) || stage.state !== 'pending') throw new Error('مسار الموافقة غير متسق.');
     route[index] = { ...route[index], state: decision, actedAt: stamp(), comment: comment || null };
     const history = Array.isArray(data.approvalHistory) ? data.approvalHistory : [];
     history.push({ action: decision, actorId: actor.uid, actorName: actor.displayName || actor.name || 'مسؤول موافقة', comment: comment || null, at: stamp(), stage: index + 1 });
@@ -230,9 +237,45 @@ async function decideFieldMission({ db, admin, actor, requestId, body }) {
     tx.set(opRef, { operationId, requestId, kind: 'field_mission_decision', decision, createdAt: admin.firestore.FieldValue.serverTimestamp() });
   });
   if (!outcome || outcome.duplicate) return { requestId, duplicate: true };
-  const notifications = outcome.status === 'next'
-    ? [queueNotification(db, admin, { recipientId: outcome.next.approverId, type: 'field_mission_approval_turn', title: 'مأمورية بانتظار موافقتك', body: `${outcome.employeeName} لديه مأمورية تحتاج قرارك.`, data: { administrativeRequestId: requestId, route: `/manager/requests?category=administrative&requestId=${requestId}` }, key: `${requestId}:turn:${outcome.next.order}` })]
-    : [queueNotification(db, admin, { recipientId: outcome.employeeId, type: outcome.status === 'approved' ? 'field_mission_approved' : 'field_mission_rejected', title: outcome.status === 'approved' ? 'تمت الموافقة على مأموريتك' : 'تم رفض المأمورية', body: outcome.status === 'approved' ? 'أصبحت المأمورية معتمدة ويمكنك تنفيذها في الموعد المحدد.' : `تم رفض المأمورية${comment ? `: ${comment}` : '.'}`, data: { administrativeRequestId: requestId, route: '/employee/requests' }, key: `${requestId}:${outcome.status}` })];
+  const notifications = [];
+  if (outcome.status === 'next') {
+    const nextStage = outcome.next;
+    const isNextAccounting = nextStage.labelAr === 'الحسابات' || /حساب|محاسب/i.test(nextStage.approverName || '');
+    if (isNextAccounting) {
+      const usersSnap = await db.collection('users').where('isActive', '==', true).limit(500).get();
+      for (const uDoc of usersSnap.docs) {
+        const uData = uDoc.data() || {};
+        if (uData.isAdvanceAccountsApprover === true || /account|حساب/i.test(uData.department || '')) {
+          notifications.push(queueNotification(db, admin, {
+            recipientId: uDoc.id,
+            type: 'field_mission_approval_turn',
+            title: 'مأمورية بانتظار موافقتك',
+            body: `${outcome.employeeName} لديه مأمورية تحتاج قرار الحسابات.`,
+            data: { administrativeRequestId: requestId, route: `/manager/requests?category=administrative&requestId=${requestId}` },
+            key: `${requestId}:turn:${nextStage.order}:${uDoc.id}`,
+          }));
+        }
+      }
+    } else {
+      notifications.push(queueNotification(db, admin, {
+        recipientId: nextStage.approverId,
+        type: 'field_mission_approval_turn',
+        title: 'مأمورية بانتظار موافقتك',
+        body: `${outcome.employeeName} لديه مأمورية تحتاج قرارك.`,
+        data: { administrativeRequestId: requestId, route: `/manager/requests?category=administrative&requestId=${requestId}` },
+        key: `${requestId}:turn:${nextStage.order}`,
+      }));
+    }
+  } else {
+    notifications.push(queueNotification(db, admin, {
+      recipientId: outcome.employeeId,
+      type: outcome.status === 'approved' ? 'field_mission_approved' : 'field_mission_rejected',
+      title: outcome.status === 'approved' ? 'تمت الموافقة على مأموريتك' : 'تم رفض المأمورية',
+      body: outcome.status === 'approved' ? 'أصبحت المأمورية معتمدة ويمكنك تنفيذها في الموعد المحدد.' : `تم رفض المأمورية${comment ? `: ${comment}` : '.'}`,
+      data: { administrativeRequestId: requestId, route: '/employee/requests' },
+      key: `${requestId}:${outcome.status}`,
+    }));
+  }
   await Promise.allSettled(notifications);
   return { requestId, status: outcome.status };
 }

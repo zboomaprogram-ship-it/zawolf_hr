@@ -85,6 +85,12 @@ class _ManualAttendanceViewState extends State<_ManualAttendanceView> {
           listener: (context, state) {
             final message = state.error ?? state.success;
             if (message == null) return;
+            if (state.success != null) {
+              setState(() {
+                _selectedEmployeeIds.clear();
+                _reason.clear();
+              });
+            }
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
                 content: Text(message),
@@ -158,10 +164,10 @@ class _ManualAttendanceViewState extends State<_ManualAttendanceView> {
                             leading: Checkbox(
                               value: _selectedEmployeeIds.contains(employee.id),
                               onChanged:
-                                  (_) => setState(() {
-                                    if (!_selectedEmployeeIds.add(
-                                      employee.id,
-                                    )) {
+                                  (checked) => setState(() {
+                                    if (checked == true) {
+                                      _selectedEmployeeIds.add(employee.id);
+                                    } else {
                                       _selectedEmployeeIds.remove(employee.id);
                                     }
                                   }),
@@ -185,8 +191,10 @@ class _ManualAttendanceViewState extends State<_ManualAttendanceView> {
                             ),
                             onTap:
                                 () => setState(() {
-                                  if (!_selectedEmployeeIds.add(employee.id)) {
+                                  if (_selectedEmployeeIds.contains(employee.id)) {
                                     _selectedEmployeeIds.remove(employee.id);
+                                  } else {
+                                    _selectedEmployeeIds.add(employee.id);
                                   }
                                 }),
                           ),
@@ -277,15 +285,8 @@ class _ManualAttendanceViewState extends State<_ManualAttendanceView> {
                                 );
                                 return;
                               }
-                              final selected =
-                                  state.employees
-                                      .where(
-                                        (employee) => _selectedEmployeeIds
-                                            .contains(employee.id),
-                                      )
-                                      .toList();
                               context.read<ManualAttendanceCubit>().submitBatch(
-                                employees: selected,
+                                employeeIds: _selectedEmployeeIds.toList(growable: false),
                                 eventType: _eventType,
                                 effectiveAt: _effectiveAt,
                                 reason: _reason.text.trim(),

@@ -162,6 +162,13 @@ class UserModel {
   final String preferredViewMode;
   final List<String> seenCelebrationBadgeIds;
   final bool excludeFromAttendanceReports;
+  final bool isAdvanceAccountsApprover;
+
+  bool get isAccountant =>
+      isAdvanceAccountsApprover ||
+      department.trim().toLowerCase() == 'accounting' ||
+      department.contains('حساب') ||
+      position.contains('محاسب');
 
   /// Legacy account imports used `employeeCode`.  All approval and
   /// notification routing must use this canonical model value so a valid
@@ -234,6 +241,7 @@ class UserModel {
     this.preferredViewMode = 'virtual_office',
     this.seenCelebrationBadgeIds = const [],
     this.excludeFromAttendanceReports = false,
+    this.isAdvanceAccountsApprover = false,
   });
 
   UserModel copyWith({
@@ -286,6 +294,7 @@ class UserModel {
     String? avatarFaceUrl,
     String? avatarAccent,
     String? preferredViewMode,
+    bool? isAdvanceAccountsApprover,
   }) {
     return UserModel(
       uid: uid ?? this.uid,
@@ -344,6 +353,8 @@ class UserModel {
       avatarFaceUrl: avatarFaceUrl ?? this.avatarFaceUrl,
       avatarAccent: avatarAccent ?? this.avatarAccent,
       preferredViewMode: preferredViewMode ?? this.preferredViewMode,
+      isAdvanceAccountsApprover:
+          isAdvanceAccountsApprover ?? this.isAdvanceAccountsApprover,
     );
   }
 
@@ -437,6 +448,8 @@ class UserModel {
           const [],
       excludeFromAttendanceReports:
           data['excludeFromAttendanceReports'] as bool? ?? false,
+      isAdvanceAccountsApprover:
+          data['isAdvanceAccountsApprover'] as bool? ?? false,
     );
   }
 
@@ -504,6 +517,7 @@ class UserModel {
       'preferredViewMode': preferredViewMode,
       'seenCelebrationBadgeIds': seenCelebrationBadgeIds,
       if (excludeFromAttendanceReports) 'excludeFromAttendanceReports': true,
+      if (isAdvanceAccountsApprover) 'isAdvanceAccountsApprover': true,
     };
   }
 
@@ -558,6 +572,7 @@ class UserModel {
       'avatarGender': avatarGender,
       'avatarFaceUrl': avatarFaceUrl,
       'avatarAccent': avatarAccent,
+      'isAdvanceAccountsApprover': isAdvanceAccountsApprover,
     };
   }
 
@@ -632,6 +647,8 @@ class UserModel {
       avatarGender: data['avatarGender'] as String? ?? 'male',
       avatarFaceUrl: data['avatarFaceUrl'] as String?,
       avatarAccent: data['avatarAccent'] as String? ?? 'cyan',
+      isAdvanceAccountsApprover:
+          data['isAdvanceAccountsApprover'] as bool? ?? false,
     );
   }
 

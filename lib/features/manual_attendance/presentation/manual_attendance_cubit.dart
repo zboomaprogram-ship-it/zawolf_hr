@@ -62,7 +62,8 @@ class ManualAttendanceCubit extends Cubit<ManualAttendanceState> {
   }
 
   Future<void> submitBatch({
-    required List<ManualAttendanceEmployee> employees,
+    List<ManualAttendanceEmployee>? employees,
+    List<String>? employeeIds,
     required String eventType,
     required DateTime effectiveAt,
     required String reason,
@@ -71,10 +72,13 @@ class ManualAttendanceCubit extends Cubit<ManualAttendanceState> {
       state.copyWith(submitting: true, clearError: true, clearSuccess: true),
     );
     try {
+      final ids = employeeIds ??
+          employees
+              ?.map((employee) => employee.id)
+              .toList(growable: false) ??
+          const <String>[];
       final result = await _repository.recordBatch(
-        employeeIds: employees
-            .map((employee) => employee.id)
-            .toList(growable: false),
+        employeeIds: ids,
         eventType: eventType,
         effectiveAt: effectiveAt,
         reason: reason,

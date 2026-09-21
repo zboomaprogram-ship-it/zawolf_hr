@@ -4,6 +4,8 @@ import 'package:provider/provider.dart';
 import '../../features/meeting_requests/data/meeting_repository_impl.dart';
 import '../../features/meeting_requests/presentation/meeting_request_screen.dart';
 import '../../features/meeting_requests/presentation/meeting_requests_list_screen.dart';
+import '../../features/configurable_requests/data/configurable_requests_repository_impl.dart';
+import '../../features/configurable_requests/presentation/custom_request_screens.dart';
 import 'package:intl/intl.dart' hide TextDirection;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:file_picker/file_picker.dart';
@@ -3445,8 +3447,8 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
   Widget _buildHistoryConsole(UserModel user, ThemeData theme) {
     return DefaultTabController(
       key: ValueKey('history-${widget.initialHistoryTab}'),
-      length: 8,
-      initialIndex: widget.initialHistoryTab.clamp(0, 7),
+      length: 9,
+      initialIndex: widget.initialHistoryTab.clamp(0, 8),
       child: Column(
         children: [
           Padding(
@@ -3473,6 +3475,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
               Tab(text: 'إدارية'),
               Tab(text: 'تصحيح الحضور'),
               Tab(text: 'الاجتماعات'),
+              Tab(text: 'طلبات مخصصة'),
             ],
             labelColor: ZaWolfColors.primaryCyan,
             unselectedLabelColor: ZaWolfColors.textSecondary,
@@ -3490,6 +3493,11 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
                 _buildAttendanceCorrectionHistory(user.uid, theme),
                 MeetingRequestsListScreen(
                   repository: MeetingRepositoryImpl(),
+                  approvalQueue: false,
+                  embedded: true,
+                ),
+                CustomRequestQueueScreen(
+                  repository: ConfigurableRequestsRepositoryImpl(),
                   approvalQueue: false,
                   embedded: true,
                 ),

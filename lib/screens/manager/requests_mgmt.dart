@@ -5547,17 +5547,25 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
             .toList() ??
         const <String>[];
 
+    final isAccountant =
+        reviewer.isAccountant || reviewer.isAdvanceAccountsApprover;
+
     final isAssignedManager =
         managerId == reviewer.uid.toUpperCase() ||
         managerId == reviewerCode ||
         currentApproverId == reviewer.uid.toUpperCase() ||
         currentApproverId == reviewerCode ||
         managerCodes.contains(reviewerCode) ||
-        managerIds.contains(reviewer.uid);
+        managerIds.contains(reviewer.uid) ||
+        (data['advanceRouteStage'] == 'accounting' && isAccountant);
 
     // SuperAdmin can approve any pending request
     if (isSuperAdmin) {
       if (status.startsWith('pending')) return true;
+    }
+
+    if (data['advanceRouteStage'] == 'accounting' && isAccountant) {
+      return true;
     }
 
     if (data['approvalRouteVersion'] == 1) {
@@ -5625,6 +5633,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
     String reviewerId,
     String role, {
     String? employeeId,
+    bool isAccountant = false,
   }) {
     var query = _db.collection(collection) as Query<Map<String, dynamic>>;
     final usesManagerChain =
@@ -5660,6 +5669,10 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
           'pending_ceo',
         ],
       );
+    } else if (collection == 'advances' && isAccountant) {
+      query = query
+          .where('status', isEqualTo: 'pending_manager')
+          .where('managerIds', arrayContains: reviewerId);
     } else if (usesManagerChain && EmployeeRole.canActAsApprovalManager(role)) {
       query = query
           .where('status', isEqualTo: 'pending_manager')
@@ -5668,7 +5681,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
       query = query.where('status', whereIn: const ['pending', 'pending_hr']);
     }
     return _cachedStream(
-      'pending|$collection|$reviewerId|$role',
+      'pending|$collection|$reviewerId|$role|$isAccountant',
       query.limit(300),
     );
   }
@@ -6648,6 +6661,8 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
         reviewer.uid,
         reviewer.role,
         employeeId: reviewer.employeeId,
+        isAccountant:
+            reviewer.isAccountant || reviewer.isAdvanceAccountsApprover,
       ),
       builder: (context, snapshot) {
         if (snapshot.hasError) {

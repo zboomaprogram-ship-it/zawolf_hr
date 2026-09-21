@@ -18,6 +18,30 @@ async function resolveApproverSnap(db, id) {
   return direct;
 }
 
+async function getActiveAccountantUids(db) {
+  const users = await db.collection('users').where('isActive', '==', true).limit(500).get();
+  const accountantUids = new Set();
+  const accountantCodes = new Set();
+  for (const doc of users.docs) {
+    const data = doc.data() || {};
+    if (data.isAdvanceAccountsApprover === true ||
+        /account|حساب/i.test(String(data.department || data.departmentName || '')) ||
+        /محاسب/i.test(String(data.jobTitle || data.position || data.role || ''))) {
+      accountantUids.add(doc.id);
+      if (data.employeeId) accountantCodes.add(String(data.employeeId).toUpperCase());
+      if (data.employeeCode) accountantCodes.add(String(data.employeeCode).toUpperCase());
+    }
+  }
+  return { accountantUids, accountantCodes };
+}
+
+function isActorAccountant(actor = {}) {
+  return actor?.isAdvanceAccountsApprover === true ||
+    /account|حساب/i.test(String(actor?.department || '')) ||
+    String(actor?.role || '').toLowerCase() === 'accountant' ||
+    /محاسب/i.test(String(actor?.jobTitle || actor?.position || ''));
+}
+
 function uniqueIds(values, max = 100) {
   return [...new Set((Array.isArray(values) ? values : []).map((value) => clean(value, 160)).filter(safeId))].slice(0, max);
 }
@@ -208,13 +232,24 @@ async function createCustomRequest({ db, admin, actor, body }) {
   });
 
   if (!result.replayed) {
+    const { accountantUids } = await getActiveAccountantUids(db);
+    const firstIsAccountant = accountantUids.has(route[0]?.approverId);
+    const approverNotifications = firstIsAccountant
+      ? [...accountantUids].map((uid) => queueNotification(db, admin, {
+          recipientId: uid, key: `${result.requestId}:turn:${uid}`,
+          title: 'طلب جديد بانتظار موافقتك',
+          body: `قدّم ${actor.displayName || 'موظف'} طلب: ${title || typeNameAr}`,
+          data: { path: '/approver/custom-requests', requestId: result.requestId },
+        }))
+      : [queueNotification(db, admin, {
+          recipientId: route[0].approverId, key: `${result.requestId}:turn`,
+          title: 'طلب جديد بانتظار موافقتك',
+          body: `قدّم ${actor.displayName || 'موظف'} طلب: ${title || typeNameAr}`,
+          data: { path: '/approver/custom-requests', requestId: result.requestId },
+        })];
+
     await Promise.all([
-      queueNotification(db, admin, {
-        recipientId: route[0].approverId, key: `${result.requestId}:turn`,
-        title: 'طلب جديد بانتظار موافقتك',
-        body: `قدّم ${actor.displayName || 'مسؤول HR'} طلب: ${title || typeNameAr}`,
-        data: { path: '/approver/custom-requests', requestId: result.requestId },
-      }),
+      ...approverNotifications,
       queueNotification(db, admin, {
         recipientId: actor.uid, key: `${result.requestId}:submitted`,
         title: 'تم تقديم الطلب بنجاح',
@@ -238,12 +273,31 @@ async function decideCustomRequest({ db, admin, actor, requestId, body }) {
     if (!snap.exists) throw new Error('الطلب غير موجود.');
     const request = snap.data();
     const actorAliases = [actor.uid, actor.employeeId, actor.role === 'super_admin' ? 'CEO-100' : null].filter(Boolean);
-    const isApprover = actorAliases.includes(request.currentApproverId) || actor.role === 'super_admin' || actor.employeeId === 'CEO-100';
+    const index = Number(request.currentApprovalIndex || 0);
+    const route = Array.isArray(request.approvalRoute) ? request.approvalRoute : [];
+    const stage = route[index] || {};
+
+    let isApprover = actorAliases.includes(request.currentApproverId) ||
+      actorAliases.includes(stage.approverId) ||
+      actor.role === 'super_admin' ||
+      actor.employeeId === 'CEO-100';
+
+    if (!isApprover && isActorAccountant(actor)) {
+      const { accountantUids, accountantCodes } = await getActiveAccountantUids(db);
+      const isAccountingStage =
+        accountantUids.has(request.currentApproverId) ||
+        accountantCodes.has(String(request.currentApproverId || '').toUpperCase()) ||
+        accountantUids.has(stage.approverId) ||
+        accountantCodes.has(String(stage.approverId || '').toUpperCase()) ||
+        /حساب|محاسب/i.test(stage.approverName || '');
+      if (isAccountingStage) {
+        isApprover = true;
+      }
+    }
+
     if (!isApprover || request.status !== 'pending') {
       throw new Error('هذا الطلب ليس بانتظار قرارك.');
     }
-    const index = Number(request.currentApprovalIndex || 0);
-    const route = Array.isArray(request.approvalRoute) ? request.approvalRoute : [];
     const next = decision === 'approved' ? route[index + 1] : null;
     const nextRoute = route.map((stage, stageIndex) => stageIndex === index
       ? { ...stage, state: decision, decidedAt: stamp() }
@@ -265,11 +319,23 @@ async function decideCustomRequest({ db, admin, actor, requestId, body }) {
     data: { path: '/employee/custom-requests', requestId },
   });
   if (decision === 'approved' && result.nextApproverId) {
-    await queueNotification(db, admin, {
-      recipientId: result.nextApproverId, key: `${requestId}:turn:${result.nextApproverId}`,
-      title: 'طلب جديد بانتظار موافقتك', body: `انتقل طلب ${result.typeName} إلى دورك للمراجعة.`,
-      data: { path: '/approver/custom-requests', requestId },
-    });
+    const { accountantUids } = await getActiveAccountantUids(db);
+    const nextIsAccountant = accountantUids.has(result.nextApproverId);
+    if (nextIsAccountant) {
+      for (const accUid of accountantUids) {
+        await queueNotification(db, admin, {
+          recipientId: accUid, key: `${requestId}:turn:${accUid}`,
+          title: 'طلب جديد بانتظار موافقتك', body: `انتقل طلب ${result.typeName} إلى دور الحسابات للمراجعة.`,
+          data: { path: '/approver/custom-requests', requestId },
+        });
+      }
+    } else {
+      await queueNotification(db, admin, {
+        recipientId: result.nextApproverId, key: `${requestId}:turn:${result.nextApproverId}`,
+        title: 'طلب جديد بانتظار موافقتك', body: `انتقل طلب ${result.typeName} إلى دورك للمراجعة.`,
+        data: { path: '/approver/custom-requests', requestId },
+      });
+    }
   }
 
   return { requestId, decision };
@@ -316,7 +382,36 @@ async function listCustomRequests({ db, actor, queue = false }) {
     }
   }
 
+  const actorIsAcc = isActorAccountant(actor);
+  const { accountantUids, accountantCodes } = actorIsAcc ? await getActiveAccountantUids(db) : { accountantUids: new Set(), accountantCodes: new Set() };
+
+  const pendingSnaps = await db.collection('customRequests').where('status', '==', 'pending').limit(100).get();
+  for (const doc of pendingSnaps.docs) {
+    if (seenIds.has(doc.id)) continue;
+    const data = doc.data() || {};
+    const currentApprover = String(data.currentApproverId || '');
+    const idx = Number(data.currentApprovalIndex || 0);
+    const route = Array.isArray(data.approvalRoute) ? data.approvalRoute : [];
+    const stage = route[idx] || {};
+    const stageApprover = String(stage.approverId || '');
+    const stageName = String(stage.approverName || '');
+
+    const matchesDirectly = approverAliases.includes(stageApprover) || approverAliases.includes(currentApprover);
+    const matchesAccountant = actorIsAcc && (
+      accountantUids.has(currentApprover) ||
+      accountantCodes.has(currentApprover.toUpperCase()) ||
+      accountantUids.has(stageApprover) ||
+      accountantCodes.has(stageApprover.toUpperCase()) ||
+      /حساب|محاسب/i.test(stageName)
+    );
+
+    if (matchesDirectly || matchesAccountant) {
+      seenIds.add(doc.id);
+      docs.push(doc);
+    }
+  }
+
   return docs.map(serializeCustomRequest).sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
 }
 
-module.exports = { listRequestTypes, listCustomRequestDirectory, saveRequestType, createCustomRequest, decideCustomRequest, listCustomRequests };
+module.exports = { listRequestTypes, listCustomRequestDirectory, saveRequestType, createCustomRequest, decideCustomRequest, listCustomRequests, getActiveAccountantUids };

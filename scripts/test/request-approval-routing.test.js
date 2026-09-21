@@ -55,3 +55,24 @@ test('employee mission route resolves manager, CEO-100, and accounting on the se
   assert.match(source, /'CEO-100'/);
   assert.match(source, /'الحسابات'/);
 });
+
+test('accounting stage allows any active accountant to decide and notifies accountants', () => {
+  const source = require('node:fs').readFileSync(
+    require('node:path').join(__dirname, '..', 'request-approval-routing.js'),
+    'utf8',
+  );
+  assert.match(source, /isAccountingStage/);
+  assert.match(source, /isActorAccountant/);
+  assert.match(source, /isNextAccounting/);
+});
+
+test('configurable requests verify accountant stage allowance and queue visibility', () => {
+  const source = require('node:fs').readFileSync(
+    require('node:path').join(__dirname, '..', 'configurable-requests.js'),
+    'utf8',
+  );
+  assert.match(source, /getActiveAccountantUids/);
+  assert.match(source, /isActorAccountant/);
+  assert.match(source, /matchesAccountant/);
+  assert.match(source, /isAccountingStage/);
+});

@@ -255,14 +255,74 @@ class ConfigurableRequestsRepositoryImpl
       try {
         Query<Map<String, dynamic>> q = _firestore.collection('customRequests');
         if (queue) {
-          q = q
-              .where('currentApproverId', isEqualTo: user.uid)
-              .where('status', isEqualTo: 'pending');
+          q = q.where('status', isEqualTo: 'pending');
         } else {
           q = q.where('requesterId', isEqualTo: user.uid);
         }
         final snap = await q.limit(100).get();
-        return snap.docs.map((doc) => {'id': doc.id, ...doc.data()}).toList();
+        final userDoc =
+            await _firestore.collection('users').doc(user.uid).get();
+        final userData = userDoc.data() ?? <String, dynamic>{};
+        final employeeId =
+            (userData['employeeId'] ?? '').toString().trim().toUpperCase();
+        final dept = (userData['department'] ?? '').toString();
+        final pos = (userData['position'] ?? '').toString();
+        final role = (userData['role'] ?? '').toString();
+        final isAccountant =
+            userData['isAdvanceAccountsApprover'] == true ||
+            role == 'accountant' ||
+            RegExp(r'account|حساب', caseSensitive: false).hasMatch(dept) ||
+            RegExp(r'محاسب').hasMatch(pos);
+
+        final docs =
+            snap.docs.map((doc) => {'id': doc.id, ...doc.data()}).toList();
+        if (!queue) return docs;
+
+        return docs.where((item) {
+          final currentApproverId =
+              (item['currentApproverId'] ?? '')
+                  .toString()
+                  .trim()
+                  .toUpperCase();
+          if (currentApproverId == user.uid.toUpperCase() ||
+              (employeeId.isNotEmpty && currentApproverId == employeeId)) {
+            return true;
+          }
+          final route =
+              (item['approvalRoute'] as List? ?? const [])
+                  .whereType<Map>()
+                  .toList();
+          final index = (item['currentApprovalIndex'] as num?)?.toInt() ?? 0;
+          if (index < route.length) {
+            final stage = route[index];
+            final approverId =
+                (stage['approverId'] ?? '').toString().trim().toUpperCase();
+            if (approverId == user.uid.toUpperCase() ||
+                (employeeId.isNotEmpty && approverId == employeeId)) {
+              return true;
+            }
+            final isAccountingStage =
+                stage['isAccountant'] == true ||
+                RegExp(
+                  r'account|حساب',
+                  caseSensitive: false,
+                ).hasMatch(stage['role']?.toString() ?? '') ||
+                RegExp(
+                  r'account|حساب',
+                  caseSensitive: false,
+                ).hasMatch(stage['department']?.toString() ?? '') ||
+                RegExp(
+                  r'محاسب',
+                ).hasMatch(stage['approverName']?.toString() ?? '') ||
+                RegExp(
+                  r'حساب|مالي',
+                ).hasMatch(stage['stageNameAr']?.toString() ?? '');
+            if (isAccountingStage && isAccountant) {
+              return true;
+            }
+          }
+          return false;
+        }).toList();
       } catch (_) {
         return const [];
       }

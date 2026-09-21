@@ -58,6 +58,7 @@ const {
   createCustomRequest,
   decideCustomRequest,
   listCustomRequests,
+  getActiveAccountantUids,
 } = require('./configurable-requests');
 const {
   listAssignments: listAttendanceLocationAssignments,
@@ -416,7 +417,34 @@ async function reconcilePendingAdvanceRoutes(db) {
         updated++;
       }
     }
-    return { found: snap.docs.length, updated };
+
+    const accSnap = await db.collection('advances')
+      .where('status', '==', 'pending_manager')
+      .limit(50)
+      .get();
+    const { accountantUids, accountantCodes } = await getActiveAccountantUids(db);
+    const accUidList = Array.from(accountantUids);
+    const accCodeList = Array.from(accountantCodes);
+    for (const doc of accSnap.docs) {
+      const data = doc.data();
+      if (data.advanceRouteStage === 'accounting' && accUidList.length > 0) {
+        const currentIds = Array.isArray(data.managerIds) ? data.managerIds : [];
+        const currentCodes = Array.isArray(data.managerCodes) ? data.managerCodes : [];
+        const missingUid = accUidList.some((id) => !currentIds.includes(id));
+        const missingCode = accCodeList.some((code) => !currentCodes.includes(code));
+        if (missingUid || missingCode) {
+          const mergedIds = Array.from(new Set([...currentIds, ...accUidList]));
+          const mergedCodes = Array.from(new Set([...currentCodes, ...accCodeList]));
+          await doc.ref.update({
+            managerIds: mergedIds,
+            managerCodes: mergedCodes,
+          });
+          updated++;
+        }
+      }
+    }
+
+    return { found: snap.docs.length + accSnap.docs.length, updated };
   } catch (error) {
     console.error('[AdvanceReconciliation Error]', error);
     return { error: String(error.message || error) };
@@ -660,6 +688,7 @@ async function authorizeWorkspaceRequest(req) {
       employeeId: String(data.employeeId || data.employeeCode || data.employee_id || data.code || ''),
       employeeCode: String(data.employeeCode || data.employee_id || data.employeeId || data.code || ''),
       isItManager: data.isItManager === true || data.isITManager === true,
+      isAdvanceAccountsApprover: data.isAdvanceAccountsApprover === true,
       teamIds: Array.isArray(data.teamIds)
         ? data.teamIds.map((value) => String(value))
         : Array.isArray(data.teams) ? data.teams.map((value) => String(value)) : [],
@@ -3683,6 +3712,85 @@ async function handleRequestManagementNotification(req, res) {
   }
 }
 
+async function decideAdvanceRequest({ db, admin, actor, advanceId, body }) {
+  const decision = body?.decision === 'approved' ? 'approved' : body?.decision === 'rejected' ? 'rejected' : '';
+  const comment = String(body?.comment || '').trim();
+  if (!decision) throw new Error('قرار السلفة غير صالح.');
+
+  const docRef = db.collection('advances').doc(advanceId);
+  const snap = await docRef.get();
+  if (!snap.exists) throw new Error('طلب السلفة غير موجود.');
+  const advance = snap.data() || {};
+
+  const isActorAccountant = actor.isAdvanceAccountsApprover === true ||
+    /account|حساب/i.test(actor.department || '') ||
+    actor.role === 'accountant' ||
+    /محاسب/i.test(actor.jobTitle || actor.position || '');
+
+  const isSuperAdmin = actor.role === 'super_admin';
+  const isCeo = isSuperAdmin || actor.employeeId === 'CEO-100' || actor.employeeCode === 'CEO-100';
+
+  const stage = advance.advanceRouteStage || '';
+  if (stage === 'accounting') {
+    if (!isActorAccountant && !isSuperAdmin && !isCeo) {
+      throw new Error('ليست لديك صلاحية مراجعة واعتماد الحسابات للسلفة.');
+    }
+    if (advance.status !== 'pending_manager') {
+      throw new Error('طلب السلفة لم يعد قيد الانتظار.');
+    }
+
+    const history = Array.isArray(advance.approvalHistory) ? advance.approvalHistory : [];
+    history.push({
+      action: decision,
+      actorId: actor.uid,
+      actorName: actor.displayName || actor.name || 'الحسابات',
+      role: 'accounting',
+      comment: comment || null,
+      at: new Date().toISOString(),
+    });
+
+    const update = {
+      status: decision === 'approved' ? 'approved' : 'rejected',
+      advanceRouteStage: decision === 'approved' ? 'completed' : 'accounting',
+      reviewedBy: actor.uid,
+      reviewedAt: admin.firestore.FieldValue.serverTimestamp(),
+      isRead: false,
+      approvalHistory: history,
+      ...(comment ? { reviewerComment: comment } : {}),
+    };
+
+    await docRef.update(update);
+
+    await db.collection('auditLogs').add({
+      actorId: actor.uid,
+      action: 'advance_request_reviewed',
+      targetCollection: 'advances',
+      targetId: advanceId,
+      metadata: { newStatus: update.status, stage: 'accounting', decision },
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    if (advance.userId) {
+      const notifId = `advance-decision-${advanceId}-${Date.now()}`;
+      await db.collection('notifications').doc(advance.userId).collection('items').doc(notifId).set({
+        notificationId: notifId,
+        type: decision === 'approved' ? 'advance_approved' : 'advance_rejected',
+        title: decision === 'approved' ? 'تم قبول طلب السلفة ✅' : 'تم رفض طلب السلفة ❌',
+        body: decision === 'approved'
+          ? `تمت الموافقة على طلب السلفة بقيمة ${(advance.amount || 0).toFixed(2)} بواسطة الحسابات.`
+          : `تم رفض طلب السلفة${comment ? `. السبب: ${comment}` : '.'}`,
+        data: { advanceId },
+        isRead: false,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+    }
+
+    return { advanceId, status: update.status };
+  }
+
+  throw new Error('هذه السلفة ليست في مرحلة مراجعة الحسابات.');
+}
+
 async function handleOperationalVisibilityRequest(req, res, url) {
   const actor = await authorizeWorkspaceRequest(req);
   if (!actor) {
@@ -4633,6 +4741,31 @@ const server = http.createServer(async (req, res) => {
       sendJson(res, 200, { ok: true, ...(await decideCustomRequest({ db: admin.firestore(initializeFirebase()), admin, actor, requestId: customDecision[1], body: await readJsonBody(req) })) });
     } catch (error) {
       sendJson(res, 400, { ok: false, code: 'custom_decision_failed', error: String(error.message || error) });
+    }
+    return;
+  }
+
+  const advanceDecision = url.pathname.match(/^\/operations\/advances\/([A-Za-z0-9_-]{8,160})\/decision$/);
+  if (advanceDecision && req.method === 'POST') {
+    const actor = await authorizeWorkspaceRequest(req);
+    if (!actor) return sendJson(res, 401, { ok: false, code: 'session_expired' });
+    try {
+      sendJson(res, 200, {
+        ok: true,
+        ...(await decideAdvanceRequest({
+          db: admin.firestore(initializeFirebase()),
+          admin,
+          actor,
+          advanceId: advanceDecision[1],
+          body: await readJsonBody(req),
+        })),
+      });
+    } catch (error) {
+      sendJson(res, /صلاحية/.test(String(error.message || error)) ? 403 : 400, {
+        ok: false,
+        code: 'advance_decision_failed',
+        error: String(error.message || error),
+      });
     }
     return;
   }

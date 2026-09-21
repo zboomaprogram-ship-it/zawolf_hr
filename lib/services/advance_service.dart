@@ -1,4 +1,7 @@
+import 'dart:convert';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:http/http.dart' as http;
 import '../models/advance_model.dart';
 import '../models/user_model.dart';
 import '../models/employee_role.dart';
@@ -7,6 +10,45 @@ import 'role_notification_service.dart';
 
 class AdvanceService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
+
+  Future<bool> _tryBackendAdvanceDecision({
+    required String advanceId,
+    required String decision,
+    String? comment,
+  }) async {
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      final token = await user?.getIdToken();
+      if (token == null || token.isEmpty) return false;
+
+      final client = http.Client();
+      try {
+        final res = await client.post(
+          Uri.parse(
+            'https://notification.zawolf.ai/operations/advances/$advanceId/decision',
+          ),
+          headers: {
+            'content-type': 'application/json',
+            'Authorization': 'Bearer $token',
+          },
+          body: jsonEncode({
+            'decision': decision,
+            if (comment != null && comment.trim().isNotEmpty)
+              'comment': comment.trim(),
+          }),
+        );
+        if (res.statusCode >= 200 && res.statusCode < 300) {
+          final body = jsonDecode(res.body);
+          if (body is Map && body['ok'] == true) {
+            return true;
+          }
+        }
+      } finally {
+        client.close();
+      }
+    } catch (_) {}
+    return false;
+  }
 
   /// Validates the rules before allocating an id or writing a request.  Keeping
   /// this deterministic makes the same policy available to every client.
@@ -200,6 +242,16 @@ class AdvanceService {
     final doc = await docRef.get();
     if (!doc.exists) throw Exception('طلب السلفة غير موجود');
     final advance = AdvanceModel.fromFirestore(doc);
+    final data = doc.data() ?? <String, dynamic>{};
+
+    if (status == 'rejected' && data['advanceRouteStage'] == 'accounting') {
+      final backendOk = await _tryBackendAdvanceDecision(
+        advanceId: advanceId,
+        decision: 'rejected',
+        comment: comment,
+      );
+      if (backendOk) return;
+    }
 
     await docRef.update({
       'status': status,
@@ -282,11 +334,30 @@ class AdvanceService {
         (advance.managerId == reviewer.uid ||
             advance.managerId == 'CEO-100' ||
             isCompanyCeo)) {
-      final accountant = await _findAdvanceAccountant();
+      final accountants = await _findAdvanceAccountants();
+      final accountant = accountants.first;
+      final accountantUids = accountants.map((a) => a.uid).toSet().toList();
+      final accountantCodes =
+          accountants
+              .map((a) => a.employeeId.trim().toUpperCase())
+              .where((c) => c.isNotEmpty)
+              .toSet()
+              .toList();
+      final accountantNames =
+          accountants
+              .map((a) => a.displayName.trim())
+              .where((n) => n.isNotEmpty)
+              .toList();
+
       update = {
         'status': 'pending_manager',
         'managerId': accountant.uid,
-        'managerName': accountant.displayName,
+        'managerName':
+            accountantNames.isNotEmpty
+                ? accountantNames.first
+                : accountant.displayName,
+        'managerIds': accountantUids,
+        'managerCodes': accountantCodes,
         'advanceRouteStage': 'accounting',
         'reviewedBy': reviewer.uid,
         'reviewedAt': FieldValue.serverTimestamp(),
@@ -296,7 +367,18 @@ class AdvanceService {
         ]),
       };
     } else if (data['advanceRouteStage'] == 'accounting' &&
-        (advance.managerId == reviewer.uid || isExecutive)) {
+        (advance.managerId == reviewer.uid ||
+            reviewer.isAccountant ||
+            reviewer.isAdvanceAccountsApprover ||
+            (data['managerIds'] as List<dynamic>?)?.contains(reviewer.uid) ==
+                true ||
+            isExecutive)) {
+      final backendOk = await _tryBackendAdvanceDecision(
+        advanceId: advanceId,
+        decision: 'approved',
+      );
+      if (backendOk) return;
+
       update = {
         'status': 'approved',
         'advanceRouteStage': 'completed',
@@ -330,6 +412,22 @@ class AdvanceService {
 
     final nextStatus = update['status'] as String? ?? '';
     if (nextStatus == 'pending_manager') {
+      if (data['advanceRouteStage'] == 'ceo') {
+        final accountants = await _findAdvanceAccountants();
+        for (final acc in accountants) {
+          try {
+            await _createNotification(
+              recipientId: acc.uid,
+              type: 'advance_pending_accounting',
+              title: 'طلب سلفة بانتظار موافقتك',
+              body:
+                  '${advance.employeeName} حصل على موافقة CEO وينتظر اعتماد الحسابات.',
+              data: {'advanceId': advanceId},
+            );
+          } catch (_) {}
+        }
+        return;
+      }
       final nextManagerId = update['managerId'] as String? ?? '';
       if (nextManagerId.isNotEmpty) {
         try {
@@ -402,27 +500,31 @@ class AdvanceService {
     );
   }
 
-  Future<UserModel> _findAdvanceAccountant() async {
+  Future<List<UserModel>> _findAdvanceAccountants() async {
     final snapshot =
         await _db
             .collection('users')
             .where('isActive', isEqualTo: true)
             .limit(500)
             .get();
-    // Finance approval is an explicit role assignment, not an inferred
-    // department. A department rename must never silently reroute money.
     final candidates =
+        snapshot.docs
+            .map(UserModel.fromFirestore)
+            .where((user) => user.isAdvanceAccountsApprover || user.isAccountant)
+            .toList()
+          ..sort((a, b) => a.employeeId.compareTo(b.employeeId));
+    if (candidates.isNotEmpty) return candidates;
+
+    final rawCandidates =
         snapshot.docs
             .where((doc) => doc.data()['isAdvanceAccountsApprover'] == true)
             .map(UserModel.fromFirestore)
-            .toList()
-          ..sort((a, b) => a.employeeId.compareTo(b.employeeId));
-    if (candidates.isEmpty) {
-      throw StateError(
-        'لا يوجد مسؤول حسابات مفعّل لمسار السلف. فعّل isAdvanceAccountsApprover لحساب المحاسب.',
-      );
-    }
-    return candidates.first;
+            .toList();
+    if (rawCandidates.isNotEmpty) return rawCandidates;
+
+    throw StateError(
+      'لا يوجد مسؤول حسابات مفعّل لمسار السلف. فعّل isAdvanceAccountsApprover لحساب المحاسب.',
+    );
   }
 
   Future<void> markAsRead(String advanceId) async {

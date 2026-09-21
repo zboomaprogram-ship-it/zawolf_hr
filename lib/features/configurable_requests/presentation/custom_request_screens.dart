@@ -632,8 +632,16 @@ class _CustomRequestSubmissionScreenState
 }
 
 class CustomRequestQueueScreen extends StatefulWidget {
-  const CustomRequestQueueScreen({required this.repository, super.key});
+  const CustomRequestQueueScreen({
+    required this.repository,
+    this.approvalQueue = true,
+    this.embedded = false,
+    super.key,
+  });
   final ConfigurableRequestsRepository repository;
+  final bool approvalQueue;
+  final bool embedded;
+
   @override
   State<CustomRequestQueueScreen> createState() =>
       _CustomRequestQueueScreenState();
@@ -650,7 +658,7 @@ class _CustomRequestQueueScreenState extends State<CustomRequestQueueScreen> {
 
   Future<void> _load() async {
     try {
-      final items = await widget.repository.requests(queue: true);
+      final items = await widget.repository.requests(queue: widget.approvalQueue);
       if (mounted) {
         setState(() {
           _items = items;
@@ -682,99 +690,179 @@ class _CustomRequestQueueScreenState extends State<CustomRequestQueueScreen> {
         ),
       );
   @override
-  Widget build(BuildContext context) => Directionality(
-    textDirection: TextDirection.rtl,
-    child: Scaffold(
-      appBar: AppBar(title: const Text('طلبات مخصصة بانتظار قراري')),
-      body:
-          _loading
-              ? const Center(child: CircularProgressIndicator())
-              : _items.isEmpty
-              ? const Center(child: Text('لا توجد طلبات بانتظار قرارك.'))
-              : ListView.builder(
-                padding: const EdgeInsets.all(16),
-                itemCount: _items.length,
-                itemBuilder: (_, index) {
-                  final item = _items[index];
-                  final route = (item['approvalRoute'] as List? ?? const [])
-                      .whereType<Map>()
-                      .toList();
-                  return Card(
-                    color: ZaWolfColors.surface01,
-                    margin: const EdgeInsets.only(bottom: 12),
-                    child: Padding(
-                      padding: const EdgeInsets.all(12),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          ListTile(
-                            contentPadding: EdgeInsets.zero,
-                            title: Text(
-                              '${item['title'] ?? item['typeNameAr']}',
-                              style: const TextStyle(fontWeight: FontWeight.bold),
-                            ),
-                            subtitle: Text(
-                              '${item['requesterName'] ?? ''}\n${item['description'] ?? ''}',
-                            ),
-                            trailing: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                IconButton(
-                                  onPressed: () => _decide('${item['id']}', false),
-                                  icon: const Icon(Icons.close, color: ZaWolfColors.error),
-                                  tooltip: 'رفض',
-                                ),
-                                IconButton(
-                                  onPressed: () => _decide('${item['id']}', true),
-                                  icon: const Icon(Icons.check, color: ZaWolfColors.success),
-                                  tooltip: 'موافقة',
-                                ),
-                              ],
-                            ),
+  Widget build(BuildContext context) {
+    final body =
+        _loading
+            ? const Center(child: CircularProgressIndicator())
+            : _items.isEmpty
+            ? Center(
+              child: Text(
+                widget.approvalQueue
+                    ? 'لا توجد طلبات بانتظار قرارك.'
+                    : 'لا توجد طلبات مخصصة سابقة.',
+              ),
+            )
+            : ListView.builder(
+              padding: const EdgeInsets.all(16),
+              itemCount: _items.length,
+              itemBuilder: (_, index) {
+                final item = _items[index];
+                final route =
+                    (item['approvalRoute'] as List? ?? const [])
+                        .whereType<Map>()
+                        .toList();
+                final itemStatus = '${item['status'] ?? 'pending'}';
+                final statusColor =
+                    itemStatus == 'approved'
+                        ? ZaWolfColors.success
+                        : itemStatus == 'rejected'
+                        ? ZaWolfColors.error
+                        : ZaWolfColors.warning;
+                final statusText =
+                    itemStatus == 'approved'
+                        ? 'مقبول'
+                        : itemStatus == 'rejected'
+                        ? 'مرفوض'
+                        : 'قيد الانتظار';
+
+                return Card(
+                  color: ZaWolfColors.surface01,
+                  margin: const EdgeInsets.only(bottom: 12),
+                  child: Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          title: Text(
+                            '${item['title'] ?? item['typeNameAr']}',
+                            style: const TextStyle(fontWeight: FontWeight.bold),
                           ),
-                          if (route.isNotEmpty) ...[
-                            const Divider(color: ZaWolfColors.surface02, height: 16),
-                            Wrap(
-                              spacing: 8,
-                              runSpacing: 6,
-                              children: route.map((stage) {
-                                final stState = '${stage['state']}';
-                                final isApp = stState == 'approved';
-                                final isRej = stState == 'rejected';
-                                final isPend = stState == 'pending';
-                                final chipColor = isApp
-                                    ? ZaWolfColors.success
-                                    : isRej
-                                        ? ZaWolfColors.error
-                                        : isPend
-                                            ? ZaWolfColors.warning
-                                            : ZaWolfColors.textMuted;
-                                return Chip(
-                                  visualDensity: VisualDensity.compact,
-                                  backgroundColor: chipColor.withValues(alpha: 0.12),
-                                  side: BorderSide(color: chipColor.withValues(alpha: 0.4)),
-                                  avatar: CircleAvatar(
-                                    radius: 10,
-                                    backgroundColor: chipColor,
-                                    child: Text(
-                                      '${stage['order'] ?? 1}',
-                                      style: const TextStyle(color: Colors.black, fontSize: 10, fontWeight: FontWeight.bold),
+                          subtitle: Text(
+                            '${item['requesterName'] ?? ''}\n${item['description'] ?? ''}',
+                          ),
+                          trailing:
+                              widget.approvalQueue
+                                  ? Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      IconButton(
+                                        onPressed:
+                                            () => _decide('${item['id']}', false),
+                                        icon: const Icon(
+                                          Icons.close,
+                                          color: ZaWolfColors.error,
+                                        ),
+                                        tooltip: 'رفض',
+                                      ),
+                                      IconButton(
+                                        onPressed:
+                                            () => _decide('${item['id']}', true),
+                                        icon: const Icon(
+                                          Icons.check,
+                                          color: ZaWolfColors.success,
+                                        ),
+                                        tooltip: 'موافقة',
+                                      ),
+                                    ],
+                                  )
+                                  : Chip(
+                                    label: Text(
+                                      statusText,
+                                      style: TextStyle(
+                                        color: statusColor,
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                    backgroundColor: statusColor.withValues(
+                                      alpha: 0.12,
+                                    ),
+                                    side: BorderSide(
+                                      color: statusColor.withValues(alpha: 0.4),
                                     ),
                                   ),
-                                  label: Text(
-                                    '${stage['approverName']}',
-                                    style: TextStyle(color: chipColor, fontSize: 11),
-                                  ),
-                                );
-                              }).toList(),
-                            ),
-                          ],
+                        ),
+                        if (route.isNotEmpty) ...[
+                          const Divider(
+                            color: ZaWolfColors.surface02,
+                            height: 16,
+                          ),
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 6,
+                            children:
+                                route.map((stage) {
+                                  final stState = '${stage['state']}';
+                                  final isApp = stState == 'approved';
+                                  final isRej = stState == 'rejected';
+                                  final isPend = stState == 'pending';
+                                  final chipColor =
+                                      isApp
+                                          ? ZaWolfColors.success
+                                          : isRej
+                                          ? ZaWolfColors.error
+                                          : isPend
+                                          ? ZaWolfColors.warning
+                                          : ZaWolfColors.textMuted;
+                                  return Chip(
+                                    visualDensity: VisualDensity.compact,
+                                    backgroundColor: chipColor.withValues(
+                                      alpha: 0.12,
+                                    ),
+                                    side: BorderSide(
+                                      color: chipColor.withValues(alpha: 0.4),
+                                    ),
+                                    avatar: CircleAvatar(
+                                      radius: 10,
+                                      backgroundColor: chipColor,
+                                      child: Text(
+                                        '${stage['order'] ?? 1}',
+                                        style: const TextStyle(
+                                          color: Colors.black,
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ),
+                                    label: Text(
+                                      '${stage['approverName']}',
+                                      style: TextStyle(
+                                        color: chipColor,
+                                        fontSize: 11,
+                                      ),
+                                    ),
+                                  );
+                                }).toList(),
+                          ),
                         ],
-                      ),
+                      ],
                     ),
-                  );
-                },
-              ),
-    ),
-  );
+                  ),
+                );
+              },
+            );
+
+    if (widget.embedded) {
+      return Directionality(
+        textDirection: TextDirection.rtl,
+        child: body,
+      );
+    }
+
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: Scaffold(
+        appBar: AppBar(
+          title: Text(
+            widget.approvalQueue
+                ? 'طلبات مخصصة بانتظار قراري'
+                : 'طلباتي المخصصة',
+          ),
+        ),
+        body: body,
+      ),
+    );
+  }
 }

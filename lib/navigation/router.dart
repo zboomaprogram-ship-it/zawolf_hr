@@ -715,6 +715,13 @@ class ZaWolfRouter {
                   ),
             ),
             GoRoute(
+              path: '/hr/custom-requests',
+              builder:
+                  (context, state) => CustomRequestTypesScreen(
+                    repository: ConfigurableRequestsRepositoryImpl(),
+                  ),
+            ),
+            GoRoute(
               path: '/employee/custom-requests',
               builder:
                   (context, state) => CustomRequestSubmissionScreen(
