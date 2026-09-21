@@ -8368,7 +8368,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
     });
   }
 
-  Future<void> _reverseSalaryDeduction({
+  Future<bool> _reverseSalaryDeduction({
     required AttendanceModel attendance,
     required UserModel reviewer,
   }) async {

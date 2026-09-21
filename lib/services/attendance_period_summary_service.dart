@@ -52,16 +52,17 @@ class AttendancePeriodSummary {
   int get lateDays => days.where((day) => day.isLate).length;
   int get absentDays => days.where((day) => day.isAbsent).length;
 
-  /// Discipline follows a final HR decision. A pending deduction is visible
-  /// to the employee, but must never lower their score while an approved
-  /// permission, correction, or HR review can still clear it.
+  /// Discipline reflects active attendance infractions (unexplained absences,
+  /// late arrivals, missed checkouts) and approved consequence fractions.
+  /// Deductions that HR has explicitly rejected or reversed do not lower the score.
   double get disciplineImpactDayFractions =>
       approvedPermissionConsequenceFractions +
       days.fold<double>(0, (total, day) {
         if (day.isAbsent) {
           final attendance = day.attendance;
           if (attendance != null &&
-              attendance.salaryDeductionApprovalStatus == 'rejected') {
+              (attendance.salaryDeductionApprovalStatus == 'rejected' ||
+                  attendance.salaryDeductionApprovalStatus == 'reversed')) {
             return total;
           }
           final fraction = attendance?.salaryDeductionFraction;
@@ -69,9 +70,8 @@ class AttendancePeriodSummary {
         }
         final attendance = day.attendance;
         if (attendance == null ||
-            !const {
-              'approved',
-            }.contains(attendance.salaryDeductionApprovalStatus) ||
+            attendance.salaryDeductionApprovalStatus == 'rejected' ||
+            attendance.salaryDeductionApprovalStatus == 'reversed' ||
             attendance.salaryDeductionFraction <= 0) {
           return total;
         }
@@ -80,8 +80,8 @@ class AttendancePeriodSummary {
 
   /// Employee dashboard discipline percentage for the selected period.
   ///
-  /// Pending items are visible immediately, while payroll still waits for HR
-  /// approval before deducting salary.
+  /// Active and pending deductions are reflected in the dashboard score, while
+  /// payroll still waits for HR approval before deducting salary.
   double get disciplinePercentage {
     if (expectedDays == 0) return 100;
     final score = 100 * (1 - (disciplineImpactDayFractions / expectedDays));
@@ -94,6 +94,81 @@ class AttendancePeriodSummaryService {
 
   AttendancePeriodSummaryService({FirebaseFirestore? firestore})
     : _db = firestore ?? FirebaseFirestore.instance;
+
+  Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>> _safeAttendanceQuery(
+    String uid,
+    String startKey,
+    String endExclusiveKey,
+  ) async {
+    try {
+      final snap = await _db
+          .collection('attendance')
+          .where('userId', isEqualTo: uid)
+          .where('date', isGreaterThanOrEqualTo: startKey)
+          .where('date', isLessThan: endExclusiveKey)
+          .get();
+      return snap.docs;
+    } catch (_) {
+      final snap = await _db
+          .collection('attendance')
+          .where('userId', isEqualTo: uid)
+          .get();
+      return snap.docs;
+    }
+  }
+
+  Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>> _safeLeavesQuery(
+    String uid,
+    Timestamp endExclusive,
+  ) async {
+    try {
+      final snap = await _db
+          .collection('leaves')
+          .where('userId', isEqualTo: uid)
+          .where('status', isEqualTo: 'approved')
+          .where('startDate', isLessThan: endExclusive)
+          .get();
+      return snap.docs;
+    } catch (_) {
+      final snap = await _db
+          .collection('leaves')
+          .where('userId', isEqualTo: uid)
+          .where('status', isEqualTo: 'approved')
+          .get();
+      return snap.docs;
+    }
+  }
+
+  Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>> _safePermissionsQuery(
+    String uid,
+    String startKey,
+    String endExclusiveKey,
+  ) async {
+    try {
+      final snap = await _db
+          .collection('permissions')
+          .where('userId', isEqualTo: uid)
+          .where('requestDate', isGreaterThanOrEqualTo: startKey)
+          .where('requestDate', isLessThan: endExclusiveKey)
+          .get();
+      return snap.docs;
+    } catch (_) {
+      final snap = await _db
+          .collection('permissions')
+          .where('userId', isEqualTo: uid)
+          .get();
+      return snap.docs;
+    }
+  }
+
+  Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>> _safeCompanyDayOffsQuery() async {
+    try {
+      final snap = await _db.collection('companyDayOffs').get();
+      return snap.docs;
+    } catch (_) {
+      return const [];
+    }
+  }
 
   Future<AttendancePeriodSummary> loadForUser({
     required UserModel user,
@@ -114,54 +189,49 @@ class AttendancePeriodSummaryService {
     final endExclusive = effectiveEnd.add(const Duration(days: 1));
     final endExclusiveKey = DateFormat('yyyy-MM-dd').format(endExclusive);
 
-    final snapshots = await Future.wait([
-      _db
-          .collection('attendance')
-          .where('userId', isEqualTo: user.uid)
-          .where('date', isGreaterThanOrEqualTo: startKey)
-          .where('date', isLessThan: endExclusiveKey)
-          .get(),
-      // A leave that starts in the selected period is sufficient for the
-      // common case. Older overlapping leaves are retained by the small
-      // client-side overlap check below, so historical data remains correct.
-      _db
-          .collection('leaves')
-          .where('userId', isEqualTo: user.uid)
-          .where('status', isEqualTo: 'approved')
-          .where('startDate', isLessThan: Timestamp.fromDate(endExclusive))
-          .get(),
-      _db
-          .collection('permissions')
-          .where('userId', isEqualTo: user.uid)
-          .where('requestDate', isGreaterThanOrEqualTo: startKey)
-          .where('requestDate', isLessThan: endExclusiveKey)
-          .get(),
-      _db.collection('companyDayOffs').get(),
+    final results = await Future.wait([
+      _safeAttendanceQuery(user.uid, startKey, endExclusiveKey),
+      _safeLeavesQuery(user.uid, Timestamp.fromDate(endExclusive)),
+      _safePermissionsQuery(user.uid, startKey, endExclusiveKey),
+      _safeCompanyDayOffsQuery(),
     ]);
 
     final attendanceByDate = <String, AttendanceModel>{};
-    for (final doc in snapshots[0].docs) {
+    for (final doc in results[0]) {
       final item = AttendanceModel.fromFirestore(doc);
-      attendanceByDate[item.date] = item;
+      if (item.date.compareTo(startKey) >= 0 &&
+          item.date.compareTo(endExclusiveKey) < 0) {
+        attendanceByDate[item.date] = item;
+      }
     }
     final approvedLeaves =
-        snapshots[1].docs
+        results[1]
             .map(LeaveModel.fromFirestore)
             .where((leave) => !leave.endDate.isBefore(startDay))
             .toList();
     final approvedPermissionDates =
-        snapshots[2].docs
+        results[2]
             .where((doc) => doc.data()['status'] == 'approved')
             .map((doc) => doc.data()['requestDate'] as String? ?? '')
-            .where((date) => date.isNotEmpty)
+            .where(
+              (date) =>
+                  date.isNotEmpty &&
+                  date.compareTo(startKey) >= 0 &&
+                  date.compareTo(endExclusiveKey) < 0,
+            )
             .toSet();
     final companyDaysOff =
-        snapshots[3].docs
+        results[3]
             .where((doc) => doc.data()['isActive'] == true)
             .map((doc) => doc.data()['date'] as String? ?? doc.id)
             .toSet();
 
-    final approvedPermissionConsequenceFractions = snapshots[2].docs
+    final approvedPermissionConsequenceFractions = results[2]
+        .where((doc) {
+          final date = doc.data()['requestDate'] as String? ?? '';
+          return date.compareTo(startKey) >= 0 &&
+              date.compareTo(endExclusiveKey) < 0;
+        })
         .fold<double>(0, (total, doc) {
           final consequence = doc.data()['rejectionConsequence'];
           if (consequence is! Map || consequence['status'] != 'approved') {

@@ -98,7 +98,7 @@ void main() {
   );
 
   test(
-    'pending attendance deductions do not lower discipline before HR approval',
+    'active attendance deductions lower discipline percentage',
     () {
       final summary = AttendancePeriodSummary([
         _periodDay(
@@ -111,6 +111,29 @@ void main() {
       ]);
 
       expect(summary.lateDays, 1);
+      expect(summary.disciplinePercentage, 87.5);
+    },
+  );
+
+  test(
+    'rejected or reversed deductions do not lower discipline percentage',
+    () {
+      final summary = AttendancePeriodSummary([
+        _periodDay(
+          dateKey: '2026-08-16',
+          isLate: true,
+          deductionFraction: 0.25,
+          approvalStatus: 'reversed',
+        ),
+        _periodDay(
+          dateKey: '2026-08-17',
+          isLate: true,
+          deductionFraction: 0.25,
+          approvalStatus: 'rejected',
+        ),
+      ]);
+
+      expect(summary.lateDays, 2);
       expect(summary.disciplinePercentage, 100);
     },
   );
