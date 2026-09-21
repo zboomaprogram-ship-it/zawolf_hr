@@ -97,7 +97,13 @@ async function handleMedia({req,res,db,actor,channel,parts,payload,sendJson,prov
     else if(parts.length===3&&parts[2]==='download') {
       const secret=(await secretRef.get()).data();
       if(!secret)throw failure('attachment_unavailable',404);
-      const file=await provider.download({fileId:secret.externalId,folderId:secret.parentExternalId});
+      let file;
+      try {
+        file=await provider.download({fileId:secret.externalId,folderId:secret.parentExternalId});
+      } catch (e) {
+        console.error('[Uploads] provider.download failed for resource:', resourceId, e.message || e);
+        throw failure('attachment_unavailable', 404);
+      }
       await db.collection('conversationAudit').doc(crypto.randomUUID()).set({actorId:actor.uid,conversationId:channel.id,resourceId,action:'attachment_download',createdAt:new Date()});
       res.writeHead(200,{'content-type':d.validatedMimeType||file.mimeType,'content-length':String(file.contents.length),
         'content-disposition':`attachment; filename*=UTF-8''${encodeURIComponent(d.fileName||d.name||file.fileName)}`,
@@ -162,7 +168,7 @@ async function handleMedia({req,res,db,actor,channel,parts,payload,sendJson,prov
         }
         let state;
         try {
-          state=await provider.chunk({sessionUri:secret.sessionUri,offset,bytes,sizeBytes:d.sizeBytes});
+          state=await provider.chunk({sessionUri:secret.sessionUri,offset,bytes,sizeBytes:d.sizeBytes,fileId:secret.externalId,fileName:d.fileName,mimeType:d.mimeType});
         } catch (e) {
           if (isDriveFailure(e)) {
             console.warn('[Uploads] Drive failure on chunk write. Falling back to local storage for:', secret.externalId, e.message);

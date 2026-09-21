@@ -92,4 +92,33 @@ test('drive provider gracefully falls back to local storage on unusable file ID'
   assert.equal(downloaded.fileName, 'voice.wav');
 });
 
+test('drive provider downloads via arraybuffer and follows redirects', async () => {
+  const fileBytes = Buffer.from('mock binary audio wav file payload');
+  const calls = [];
+  const request = async (o) => {
+    calls.push(o);
+    if (o.url.includes('/files/drive-download-id') && o.params?.fields) {
+      return { status: 200, data: { id: 'drive-download-id', name: 'recording.wav', mimeType: 'audio/wav', size: String(fileBytes.length), parents: ['folder'] } };
+    }
+    if (o.params?.alt === 'media') {
+      assert.equal(o.responseType, 'arraybuffer');
+      assert.equal(o.maxRedirects, 5);
+      return { status: 200, data: fileBytes };
+    }
+    throw new Error('unexpected request: ' + o.url);
+  };
+  const p = createDriveMediaProvider({ request });
+  const result = await p.download({ fileId: 'drive-download-id', folderId: 'folder' });
+  assert.equal(result.fileName, 'recording.wav');
+  assert.equal(result.mimeType, 'audio/wav');
+  assert.deepEqual(result.contents, fileBytes);
+
+  // Subsequent download uses local cache without calling provider request again
+  const callsBefore = calls.length;
+  const cached = await p.download({ fileId: 'drive-download-id', folderId: 'folder' });
+  assert.equal(calls.length, callsBefore);
+  assert.deepEqual(cached.contents, fileBytes);
+});
+
+
 

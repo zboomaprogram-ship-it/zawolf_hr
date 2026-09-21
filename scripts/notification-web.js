@@ -181,7 +181,7 @@ const {
 } = require('./request-approval-routing');
 
 const port = Number(process.env.PORT || 3000);
-const notificationRuntimeRelease = '2026-09-20-custom-req-directory-and-advance-route-v2';
+const notificationRuntimeRelease = '2026-09-21-conversations-download-fix-v2';
 const dispatchSecret = process.env.NOTIFICATION_DISPATCH_SECRET || '';
 const defaultGoogleWorkspaceOrigins = [
   'https://zawolf-hr-system-60317.web.app',

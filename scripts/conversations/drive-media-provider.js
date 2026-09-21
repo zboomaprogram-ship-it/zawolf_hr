@@ -135,7 +135,7 @@ function createDriveMediaProvider({request}) {
       }
       return {offset: 0, complete: false};
     },
-    async chunk({sessionUri,offset,bytes,sizeBytes}) {
+    async chunk({sessionUri,offset,bytes,sizeBytes,fileId,fileName,mimeType}) {
       if (typeof sessionUri === 'string' && sessionUri.startsWith('local://')) {
         return this.chunkLocal({sessionUri,offset,bytes,sizeBytes});
       }
@@ -143,6 +143,24 @@ function createDriveMediaProvider({request}) {
         const r=await send({method:'PUT',url:sessionUrl(sessionUri),data:bytes,
           headers:{'content-length':String(bytes.length),'content-range':`bytes ${offset}-${offset+bytes.length-1}/${sizeBytes}`},
           validateStatus:s=>(s>=200&&s<300)||s===308});
+        if (fileId) {
+          try {
+            ensureLocalStorageDir();
+            const {part,bin,meta} = getLocalPaths(fileId);
+            let fd = fs.openSync(part, fs.existsSync(part) ? 'r+' : 'w+');
+            try {
+              fs.writeSync(fd, bytes, 0, bytes.length, offset);
+            } finally {
+              fs.closeSync(fd);
+            }
+            const stat = fs.statSync(part);
+            const newOffset = offset + bytes.length;
+            if (newOffset >= sizeBytes || stat.size >= sizeBytes) {
+              if (fs.existsSync(part)) fs.renameSync(part, bin);
+              fs.writeFileSync(meta, JSON.stringify({id:fileId,name:fileName||'attachment',mimeType:mimeType||'application/octet-stream',size:sizeBytes}));
+            }
+          } catch (_) {}
+        }
         return progress(r,sizeBytes);
       } catch (e) {
         if (isQuotaError(e)) {
@@ -186,7 +204,7 @@ function createDriveMediaProvider({request}) {
         const r=await send({method:'GET',url:`${API}/files/${encodeURIComponent(fileId)}`,
           params:{fields:'id,name,mimeType,size,parents,trashed',supportsAllDrives:true}});
         const m=r.data;
-        if(m.trashed||(folderId&&folderId!=='local'&&!m.parents?.includes(folderId))||Number(m.size)>MAX_BYTES) throw new Error('attachment_unavailable');
+        if(m.trashed||(folderId&&folderId!=='local'&&Array.isArray(m.parents)&&m.parents.length>0&&!m.parents.includes(folderId))||Number(m.size)>MAX_BYTES) throw new Error('attachment_unavailable');
         return m;
       } catch(e) { if(Number(e.response?.status)===404) return null; throw e; }
     },
@@ -203,14 +221,10 @@ function createDriveMediaProvider({request}) {
       const metadata=await this.metadata({fileId,folderId});
       if(!metadata) throw new Error('attachment_unavailable');
       const r=await send({method:'GET',url:`${API}/files/${encodeURIComponent(fileId)}`,
-        params:{alt:'media',supportsAllDrives:true},responseType:'stream'});
-      const chunks=[];let length=0;
-      for await(const piece of r.data) {
-        length+=piece.length;
-        if(length>MAX_BYTES) {r.data.destroy?.();throw new Error('too_large');}
-        chunks.push(piece);
-      }
-      const downloaded = {contents:Buffer.concat(chunks),fileName:metadata.name,mimeType:metadata.mimeType};
+        params:{alt:'media',supportsAllDrives:true},responseType:'arraybuffer',maxRedirects:5,retry:true});
+      const contents = Buffer.isBuffer(r.data) ? r.data : Buffer.from(r.data || []);
+      if(contents.length>MAX_BYTES) throw new Error('too_large');
+      const downloaded = {contents,fileName:metadata.name,mimeType:metadata.mimeType};
       try {
         fs.writeFileSync(meta, JSON.stringify({id: fileId, name: metadata.name, mimeType: metadata.mimeType, size: downloaded.contents.length}));
         fs.writeFileSync(bin, downloaded.contents);
