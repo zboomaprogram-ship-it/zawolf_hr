@@ -35,6 +35,37 @@ void main() {
     },
   );
 
+  test(
+    'cancelled salary deductions are excluded from deductions and all tabs',
+    () {
+      final cancelledRecord = RequestVisibilityRecord(
+        stableId: 'r2',
+        sourceType: RequestSourceType.lateArrivalDeduction,
+        employeeId: 'e1',
+        approvalStage: RequestApprovalStage.finalised,
+        lifecycleState: RequestLifecycleState.cancelled,
+        occurredAt: DateTime.utc(2026, 7, 22),
+        sourceReference: 'deductions/r2',
+      );
+      final scope = const RequestActorScope(actorId: 'hr', role: 'hr');
+      final deductions = RequestViewQuery(
+        actorScope: scope,
+        tab: RequestViewTab.deductions,
+        fromDate: DateTime.utc(2026),
+        toDate: DateTime.utc(2026, 12, 31),
+      );
+      final all = RequestViewQuery(
+        actorScope: scope,
+        tab: RequestViewTab.all,
+        fromDate: DateTime.utc(2026),
+        toDate: DateTime.utc(2026, 12, 31),
+      );
+
+      expect(deductions.matches(cancelledRecord), isFalse);
+      expect(all.matches(cancelledRecord), isFalse);
+    },
+  );
+
   test('resolves collection and documentId safely from composite sourceReference', () {
     expect(record.collection, 'deductions');
     expect(record.documentId, 'r1');

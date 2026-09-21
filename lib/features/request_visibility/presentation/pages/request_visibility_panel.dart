@@ -15,11 +15,13 @@ final class RequestVisibilityPanel extends StatefulWidget {
     required this.query,
     this.searchTerm = '',
     this.onSelectRecord,
+    this.excludedRecordIds = const <String>{},
   });
 
   final RequestViewQuery query;
   final String searchTerm;
   final void Function(RequestVisibilityRecord record)? onSelectRecord;
+  final Set<String> excludedRecordIds;
 
   @override
   State<RequestVisibilityPanel> createState() => _RequestVisibilityPanelState();
@@ -269,6 +271,11 @@ final class _RequestVisibilityPanelState extends State<RequestVisibilityPanel>
       child: BlocBuilder<RequestVisibilityCubit, RequestVisibilityState>(
         builder: (context, state) {
           final records = state.records
+              .where(
+                (record) =>
+                    !widget.excludedRecordIds.contains(record.stableId) &&
+                    !widget.excludedRecordIds.contains(record.documentId),
+              )
               .where((record) => _matchesSearch(record, widget.searchTerm))
               .where((record) {
                 if (_selectedLifecycle == null) return true;

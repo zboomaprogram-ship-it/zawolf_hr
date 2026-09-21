@@ -88,7 +88,7 @@ final class FirestoreRequestVisibilityDataSource
                     request
                         .where(
                           'salaryDeductionApprovalStatus',
-                          whereIn: const ['pending_hr', 'approved', 'reversed'],
+                          whereIn: const ['pending_hr', 'approved'],
                         )
                         .limit(limit)
                         .get(),
@@ -166,7 +166,7 @@ final class FirestoreRequestVisibilityDataSource
           .where(
             (doc) =>
                 collection != 'attendance' ||
-                const <String>{'pending_hr', 'approved', 'reversed'}.contains(
+                const <String>{'pending_hr', 'approved'}.contains(
                   '${doc.data()['salaryDeductionApprovalStatus'] ?? ''}',
                 ),
           )

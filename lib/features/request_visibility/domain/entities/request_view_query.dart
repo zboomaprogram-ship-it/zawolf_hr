@@ -52,9 +52,13 @@ final class RequestViewQuery {
       RequestViewTab.active => !record.isHistorical,
       RequestViewTab.history => record.isHistorical,
       RequestViewTab.deductions =>
-        record.sourceType == RequestSourceType.salaryDeduction ||
-            record.sourceType == RequestSourceType.lateArrivalDeduction,
-      RequestViewTab.all => true,
+        (record.sourceType == RequestSourceType.salaryDeduction ||
+            record.sourceType == RequestSourceType.lateArrivalDeduction) &&
+        record.lifecycleState != RequestLifecycleState.cancelled,
+      RequestViewTab.all =>
+        !(record.lifecycleState == RequestLifecycleState.cancelled &&
+            (record.sourceType == RequestSourceType.salaryDeduction ||
+                record.sourceType == RequestSourceType.lateArrivalDeduction)),
     };
   }
 }

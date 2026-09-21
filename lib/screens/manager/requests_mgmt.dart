@@ -2912,6 +2912,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                             record: record,
                             reviewer: reviewer,
                             theme: theme,
+                            dialogContext: dialogContext,
                           );
                         },
                       ),
@@ -2931,6 +2932,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
     required RequestVisibilityRecord record,
     required UserModel reviewer,
     required ThemeData theme,
+    BuildContext? dialogContext,
   }) {
     switch (record.sourceType) {
       case RequestSourceType.leave:
@@ -2976,6 +2978,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
           record: record,
           reviewer: reviewer,
           theme: theme,
+          dialogContext: dialogContext,
         );
       default:
         if (record.collection == 'attendance' ||
@@ -2985,6 +2988,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
             record: record,
             reviewer: reviewer,
             theme: theme,
+            dialogContext: dialogContext,
           );
         }
         return _buildGenericRequestCard(
@@ -3186,6 +3190,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
     required RequestVisibilityRecord record,
     required UserModel reviewer,
     required ThemeData theme,
+    BuildContext? dialogContext,
   }) {
     final data = doc.data() ?? <String, dynamic>{};
     final collection = record.collection;
@@ -3379,15 +3384,19 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                   padding: const EdgeInsets.symmetric(vertical: 12),
                 ),
                 onPressed: () async {
+                  bool success = false;
                   if (isAttendance) {
                     final att = AttendanceModel.fromFirestore(doc);
-                    await _reverseSalaryDeduction(attendance: att, reviewer: reviewer);
+                    success = await _reverseSalaryDeduction(attendance: att, reviewer: reviewer);
                   } else if (isManual) {
                     final manualItem = ManualDeductionModel.fromFirestore(doc);
-                    await _reverseManualDeduction(deduction: manualItem, reviewer: reviewer);
+                    success = await _reverseManualDeduction(deduction: manualItem, reviewer: reviewer);
                   } else if (isPermission) {
                     final perm = PermissionModel.fromFirestore(doc);
-                    await _reversePermissionSalaryDeduction(permission: perm, reviewer: reviewer);
+                    success = await _reversePermissionSalaryDeduction(permission: perm, reviewer: reviewer);
+                  }
+                  if (success && dialogContext != null && dialogContext.mounted) {
+                    Navigator.of(dialogContext).pop();
                   }
                 },
                 icon: const Icon(Icons.undo, color: ZaWolfColors.error),
@@ -3516,6 +3525,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
               key: const ValueKey('unified-all-requests'),
               query: allRequestsQuery,
               searchTerm: _searchQuery,
+              excludedRecordIds: _resolvedRequestIds,
               onSelectRecord:
                   (record) => _showInPlaceRequestAction(
                     tabContext,
@@ -3553,6 +3563,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                 key: const ValueKey('unified-deductions'),
                 query: deductionQuery,
                 searchTerm: _searchQuery,
+                excludedRecordIds: _resolvedRequestIds,
                 onSelectRecord:
                     (record) => _showInPlaceRequestAction(
                       tabContext,
@@ -7396,7 +7407,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
     if (reversalOnly) {
       deductionsQuery = deductionsQuery.where(
         'salaryDeductionApprovalStatus',
-        whereIn: const ['approved', 'reversed'],
+        isEqualTo: 'approved',
       );
     } else {
       // Keep the active HR queue separate from history. Combining approved,
@@ -7430,7 +7441,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
             loadedItems.where((attendance) {
               final status = attendance.salaryDeductionApprovalStatus;
               if (reversalOnly) {
-                return status == 'approved' || status == 'reversed';
+                return status == 'approved';
               }
               final isPending = status == 'pending_hr';
               if (!isPending) return false;
@@ -8430,27 +8441,29 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
     );
     final reason = reasonController.text.trim();
     reasonController.dispose();
-    if (confirmed != true || reason.length < 5) return;
+    if (confirmed != true || reason.length < 5) return false;
     try {
       await _attendanceService.reverseSalaryDeduction(
         attendanceId: attendance.attendanceId,
         reviewerId: reviewer.uid,
         reason: reason,
       );
-      if (!mounted) return;
+      if (!mounted) return true;
       setState(() => _resolvedRequestIds.add(attendance.attendanceId));
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('تم إلغاء الخصم المعتمد وتسجيل السبب.')),
       );
+      return true;
     } catch (error) {
-      if (!mounted) return;
+      if (!mounted) return false;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('تعذر إلغاء الخصم: ${userFacingError(error)}')),
       );
+      return false;
     }
   }
 
-  Future<void> _reverseManualDeduction({
+  Future<bool> _reverseManualDeduction({
     required ManualDeductionModel deduction,
     required UserModel reviewer,
   }) async {
@@ -8523,27 +8536,29 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
     );
     final reason = reasonController.text.trim();
     reasonController.dispose();
-    if (confirmed != true || reason.length < 5) return;
+    if (confirmed != true || reason.length < 5) return false;
     try {
       await ManualDeductionService().reverseDeduction(
         deductionId: deduction.id,
         reviewer: reviewer,
         reason: reason,
       );
-      if (!mounted) return;
+      if (!mounted) return true;
       setState(() => _resolvedRequestIds.add(deduction.id));
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('تم إلغاء الخصم الإداري وتسجيل السبب.')),
       );
+      return true;
     } catch (error) {
-      if (!mounted) return;
+      if (!mounted) return false;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('تعذر إلغاء الخصم: ${userFacingError(error)}')),
       );
+      return false;
     }
   }
 
-  Future<void> _reversePermissionSalaryDeduction({
+  Future<bool> _reversePermissionSalaryDeduction({
     required PermissionModel permission,
     required UserModel reviewer,
   }) async {
@@ -8616,23 +8631,25 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
     );
     final reason = reasonController.text.trim();
     reasonController.dispose();
-    if (confirmed != true || reason.length < 5) return;
+    if (confirmed != true || reason.length < 5) return false;
     try {
       await _permissionService.reverseSalaryDeduction(
         permissionId: permission.permissionId,
         reviewerId: reviewer.uid,
         reason: reason,
       );
-      if (!mounted) return;
+      if (!mounted) return true;
       setState(() => _resolvedRequestIds.add(permission.permissionId));
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('تم إلغاء خصم الإذن المعتمد بنجاح.')),
       );
+      return true;
     } catch (error) {
-      if (!mounted) return;
+      if (!mounted) return false;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('تعذر إلغاء خصم الإذن: ${userFacingError(error)}')),
       );
+      return false;
     }
   }
 

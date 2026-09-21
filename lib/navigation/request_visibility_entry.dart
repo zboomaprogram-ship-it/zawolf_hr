@@ -15,11 +15,13 @@ final class RequestVisibilityEntry extends StatefulWidget {
     required this.query,
     this.searchTerm = '',
     this.onSelectRecord,
+    this.excludedRecordIds = const <String>{},
   });
 
   final RequestViewQuery query;
   final String searchTerm;
   final void Function(RequestVisibilityRecord record)? onSelectRecord;
+  final Set<String> excludedRecordIds;
 
   @override
   State<RequestVisibilityEntry> createState() => _RequestVisibilityEntryState();
@@ -52,6 +54,7 @@ final class _RequestVisibilityEntryState extends State<RequestVisibilityEntry> {
       query: widget.query,
       searchTerm: widget.searchTerm,
       onSelectRecord: widget.onSelectRecord,
+      excludedRecordIds: widget.excludedRecordIds,
     ),
   );
 }
