@@ -3375,33 +3375,83 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
             RequestApprovalTimeline(data: data, compact: true),
           const SizedBox(height: 16),
           if (isApproved && canManageDeductions) ...[
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: ZaWolfColors.error,
+                      side: const BorderSide(color: ZaWolfColors.error, width: 1.5),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                    ),
+                    onPressed: () async {
+                      bool success = false;
+                      if (isAttendance) {
+                        final att = AttendanceModel.fromFirestore(doc);
+                        success = await _reverseSalaryDeduction(attendance: att, reviewer: reviewer);
+                      } else if (isManual) {
+                        final manualItem = ManualDeductionModel.fromFirestore(doc);
+                        success = await _reverseManualDeduction(deduction: manualItem, reviewer: reviewer);
+                      } else if (isPermission) {
+                        final perm = PermissionModel.fromFirestore(doc);
+                        success = await _reversePermissionSalaryDeduction(permission: perm, reviewer: reviewer);
+                      }
+                      if (success && dialogContext != null && dialogContext.mounted) {
+                        Navigator.of(dialogContext).pop();
+                      }
+                    },
+                    icon: const Icon(Icons.undo, color: ZaWolfColors.error),
+                    label: const Text(
+                      'إلغاء الخصم المعتمد',
+                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                    ),
+                  ),
+                ),
+                if (isAttendance) ...[
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: ZaWolfColors.primaryCyan,
+                        side: const BorderSide(color: ZaWolfColors.primaryCyan, width: 1.5),
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                      ),
+                      onPressed: () async {
+                        final att = AttendanceModel.fromFirestore(doc);
+                        final success = await _reopenSalaryDeduction(attendance: att, reviewer: reviewer);
+                        if (success && dialogContext != null && dialogContext.mounted) {
+                          Navigator.of(dialogContext).pop();
+                        }
+                      },
+                      icon: const Icon(Icons.refresh, color: ZaWolfColors.primaryCyan),
+                      label: const Text(
+                        'إعادة للمراجعة',
+                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ] else if (isReversed && canManageDeductions && isAttendance) ...[
             SizedBox(
               width: double.infinity,
               child: OutlinedButton.icon(
                 style: OutlinedButton.styleFrom(
-                  foregroundColor: ZaWolfColors.error,
-                  side: const BorderSide(color: ZaWolfColors.error, width: 1.5),
+                  foregroundColor: ZaWolfColors.primaryCyan,
+                  side: const BorderSide(color: ZaWolfColors.primaryCyan, width: 1.5),
                   padding: const EdgeInsets.symmetric(vertical: 12),
                 ),
                 onPressed: () async {
-                  bool success = false;
-                  if (isAttendance) {
-                    final att = AttendanceModel.fromFirestore(doc);
-                    success = await _reverseSalaryDeduction(attendance: att, reviewer: reviewer);
-                  } else if (isManual) {
-                    final manualItem = ManualDeductionModel.fromFirestore(doc);
-                    success = await _reverseManualDeduction(deduction: manualItem, reviewer: reviewer);
-                  } else if (isPermission) {
-                    final perm = PermissionModel.fromFirestore(doc);
-                    success = await _reversePermissionSalaryDeduction(permission: perm, reviewer: reviewer);
-                  }
+                  final att = AttendanceModel.fromFirestore(doc);
+                  final success = await _reopenSalaryDeduction(attendance: att, reviewer: reviewer);
                   if (success && dialogContext != null && dialogContext.mounted) {
                     Navigator.of(dialogContext).pop();
                   }
                 },
-                icon: const Icon(Icons.undo, color: ZaWolfColors.error),
+                icon: const Icon(Icons.refresh, color: ZaWolfColors.primaryCyan),
                 label: const Text(
-                  'إلغاء الخصم المعتمد',
+                  'إعادة الخصم إلى قيد المراجعة',
                   style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
                 ),
               ),
@@ -7425,12 +7475,9 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
         isEqualTo: 'approved',
       );
     } else {
-      // Keep the active HR queue separate from history. Combining approved,
-      // reversed and pending records could fill the bounded page before recent
-      // pending deductions (such as Ashraf's) were returned.
       deductionsQuery = deductionsQuery.where(
         'salaryDeductionApprovalStatus',
-        isEqualTo: 'pending_hr',
+        whereIn: const ['pending_hr', 'approved', 'reversed'],
       );
     }
     deductionsQuery = deductionsQuery.orderBy('date', descending: true);
@@ -7459,8 +7506,6 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
               if (reversalOnly) {
                 return status == 'approved';
               }
-              final isPending = status == 'pending_hr';
-              if (!isPending) return false;
 
               final isAbsence =
                   attendance.salaryDeductionFraction >= 1.0 ||
@@ -7644,19 +7689,47 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                                           ),
                                 ),
                           )
-                        else if (reversalOnly &&
-                            attendance.salaryDeductionApprovalStatus ==
-                                'approved')
+                        else if (attendance.salaryDeductionApprovalStatus ==
+                            'approved')
+                          Row(
+                            children: [
+                              Expanded(
+                                child: OutlinedButton.icon(
+                                  onPressed:
+                                      () => _reverseSalaryDeduction(
+                                        attendance: attendance,
+                                        reviewer: reviewer,
+                                      ),
+                                  icon: const Icon(Icons.undo),
+                                  label: const Text('إلغاء الخصم'),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: OutlinedButton.icon(
+                                  onPressed:
+                                      () => _reopenSalaryDeduction(
+                                        attendance: attendance,
+                                        reviewer: reviewer,
+                                      ),
+                                  icon: const Icon(Icons.refresh),
+                                  label: const Text('إعادة للمراجعة'),
+                                ),
+                              ),
+                            ],
+                          )
+                        else if (attendance.salaryDeductionApprovalStatus ==
+                            'reversed')
                           SizedBox(
                             width: double.infinity,
                             child: OutlinedButton.icon(
                               onPressed:
-                                  () => _reverseSalaryDeduction(
+                                  () => _reopenSalaryDeduction(
                                     attendance: attendance,
                                     reviewer: reviewer,
                                   ),
-                              icon: const Icon(Icons.undo),
-                              label: const Text('إلغاء الخصم المعتمد'),
+                              icon: const Icon(Icons.refresh),
+                              label: const Text('إعادة الخصم إلى قيد المراجعة'),
                             ),
                           ),
                       ],
@@ -8221,6 +8294,12 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
         return false;
       }
       switch (_salaryDeductionFilter) {
+        case 'pending':
+          return item.salaryDeductionApprovalStatus == 'pending_hr';
+        case 'approved':
+          return item.salaryDeductionApprovalStatus == 'approved';
+        case 'reversed':
+          return item.salaryDeductionApprovalStatus == 'reversed';
         case 'today':
           return item.date == today;
         case 'absent':
@@ -8257,6 +8336,9 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
             alignment: WrapAlignment.end,
             children: [
               _buildSalaryFilterChip('الكل', 'all'),
+              _buildSalaryFilterChip('بانتظار HR', 'pending'),
+              _buildSalaryFilterChip('معتمد', 'approved'),
+              _buildSalaryFilterChip('ملغي', 'reversed'),
               _buildSalaryFilterChip('اليوم', 'today'),
               _buildSalaryFilterChip('غياب', 'absent'),
               _buildSalaryFilterChip('تأخير', 'late'),
@@ -8474,6 +8556,55 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
       if (!mounted) return false;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('تعذر إلغاء الخصم: ${userFacingError(error)}')),
+      );
+      return false;
+    }
+  }
+
+  Future<bool> _reopenSalaryDeduction({
+    required AttendanceModel attendance,
+    required UserModel reviewer,
+  }) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder:
+          (dialogContext) => AlertDialog(
+            title: const Text(
+              'إعادة الخصم للمراجعة',
+              textDirection: TextDirection.rtl,
+            ),
+            content: const Text(
+              'هل تريد إعادة هذا الخصم إلى حالة قيد المراجعة بواسطة HR؟',
+              textDirection: TextDirection.rtl,
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext, false),
+                child: const Text('إلغاء'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(dialogContext, true),
+                child: const Text('تأكيد الإعادة'),
+              ),
+            ],
+          ),
+    );
+    if (confirmed != true) return false;
+    try {
+      await _attendanceService.reopenSalaryDeductionToPending(
+        attendanceId: attendance.attendanceId,
+        reviewerId: reviewer.uid,
+      );
+      if (!mounted) return true;
+      setState(() => _resolvedRequestIds.remove(attendance.attendanceId));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('تمت إعادة الخصم إلى حالة قيد المراجعة.')),
+      );
+      return true;
+    } catch (error) {
+      if (!mounted) return false;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('تعذر إعادة الخصم: ${userFacingError(error)}')),
       );
       return false;
     }

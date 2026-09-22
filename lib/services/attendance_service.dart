@@ -1652,6 +1652,34 @@ class AttendanceService {
     );
   }
 
+  Future<void> reopenSalaryDeductionToPending({
+    required String attendanceId,
+    required String reviewerId,
+  }) async {
+    final ref = _db.collection('attendance').doc(attendanceId);
+    await _db.runTransaction((transaction) async {
+      final snapshot = await transaction.get(ref);
+      if (!snapshot.exists) throw Exception('سجل الحضور غير موجود.');
+      transaction.update(ref, {
+        'salaryDeductionApprovalStatus': 'pending_hr',
+        'salaryDeductionReviewedBy': FieldValue.delete(),
+        'salaryDeductionReviewedAt': FieldValue.delete(),
+        'salaryDeductionReversedBy': FieldValue.delete(),
+        'salaryDeductionReversedAt': FieldValue.delete(),
+        'salaryDeductionReversalReason': FieldValue.delete(),
+      });
+    });
+
+    try {
+      await AuditLogService.instance.record(
+        actorId: reviewerId,
+        action: 'salary_deduction_reopened',
+        targetCollection: 'attendance',
+        targetId: attendanceId,
+      );
+    } catch (_) {}
+  }
+
   Future<void> correctCheckInTime({
     required String attendanceId,
     required String reviewerId,
