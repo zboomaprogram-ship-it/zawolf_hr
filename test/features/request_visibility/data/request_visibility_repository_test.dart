@@ -126,6 +126,64 @@ void main() {
     expect(record.approvalStage, RequestApprovalStage.hr);
   });
 
+  test('prioritizes salaryDeductionApprovalStatus over attendance daily status', () {
+    final pending = RequestVisibilityNormalizer.fromMap({
+      'id': 'att-pending',
+      'userId': 'employee-1',
+      'sourceCollection': 'attendance',
+      'status': 'late_quarter_day',
+      'salaryDeductionApprovalStatus': 'pending_hr',
+      'salaryDeductionFraction': 0.25,
+      'date': '2026-09-22',
+    });
+    expect(pending, isNotNull);
+    expect(pending!.lifecycleState, RequestLifecycleState.pending);
+    expect(pending.approvalStage, RequestApprovalStage.hr);
+    expect(pending.isHistorical, isFalse);
+
+    final approved = RequestVisibilityNormalizer.fromMap({
+      'id': 'att-approved',
+      'userId': 'employee-1',
+      'sourceCollection': 'attendance',
+      'status': 'late_half_day',
+      'salaryDeductionApprovalStatus': 'approved',
+      'salaryDeductionFraction': 0.5,
+      'date': '2026-09-10',
+    });
+    expect(approved, isNotNull);
+    expect(approved!.lifecycleState, RequestLifecycleState.approved);
+    expect(approved.approvalStage, RequestApprovalStage.finalised);
+    expect(approved.isHistorical, isTrue);
+
+    final reversed = RequestVisibilityNormalizer.fromMap({
+      'id': 'att-reversed',
+      'userId': 'employee-1',
+      'sourceCollection': 'attendance',
+      'status': 'late_half_day',
+      'salaryDeductionApprovalStatus': 'reversed',
+      'salaryDeductionFraction': 0.5,
+      'date': '2026-09-12',
+    });
+    expect(reversed, isNotNull);
+    expect(reversed!.lifecycleState, RequestLifecycleState.cancelled);
+    expect(reversed.approvalStage, RequestApprovalStage.finalised);
+    expect(reversed.isHistorical, isTrue);
+
+    final rejected = RequestVisibilityNormalizer.fromMap({
+      'id': 'att-rejected',
+      'userId': 'employee-1',
+      'sourceCollection': 'attendance',
+      'status': 'late_quarter_day',
+      'salaryDeductionApprovalStatus': 'rejected',
+      'salaryDeductionFraction': 0.25,
+      'date': '2026-08-25',
+    });
+    expect(rejected, isNotNull);
+    expect(rejected!.lifecycleState, RequestLifecycleState.rejected);
+    expect(rejected.approvalStage, RequestApprovalStage.finalised);
+    expect(rejected.isHistorical, isTrue);
+  });
+
   test('keeps legacy requester ids and updated timestamps visible', () {
     final record = RequestVisibilityNormalizer.fromMap({
       'id': 'legacy-request',

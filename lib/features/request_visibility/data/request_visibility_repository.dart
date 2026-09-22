@@ -191,11 +191,15 @@ abstract final class RequestVisibilityNormalizer {
     if (value['isConfirmed'] == true) {
       return RequestLifecycleState.confirmed;
     }
-    final state =
-        (_text(value['status']) ??
-                _text(value['salaryDeductionApprovalStatus']) ??
-                '')
-            .toLowerCase();
+    final salaryDeductionStatus = _text(value['salaryDeductionApprovalStatus']);
+    final isAttendance = value['sourceCollection'] == 'attendance' ||
+        value.containsKey('salaryDeductionApprovalStatus') ||
+        value.containsKey('lateMinutes') ||
+        value.containsKey('salaryDeductionFraction');
+    final rawStatus = (isAttendance && salaryDeductionStatus != null)
+        ? salaryDeductionStatus
+        : (_text(value['status']) ?? salaryDeductionStatus ?? '');
+    final state = rawStatus.toLowerCase();
     if (state.contains('confirm')) {
       return RequestLifecycleState.confirmed;
     }
@@ -215,11 +219,15 @@ abstract final class RequestVisibilityNormalizer {
   }
 
   static RequestApprovalStage _stage(Map<String, dynamic> value) {
-    final state =
-        (_text(value['status']) ??
-                _text(value['salaryDeductionApprovalStatus']) ??
-                '')
-            .toLowerCase();
+    final salaryDeductionStatus = _text(value['salaryDeductionApprovalStatus']);
+    final isAttendance = value['sourceCollection'] == 'attendance' ||
+        value.containsKey('salaryDeductionApprovalStatus') ||
+        value.containsKey('lateMinutes') ||
+        value.containsKey('salaryDeductionFraction');
+    final rawStatus = (isAttendance && salaryDeductionStatus != null)
+        ? salaryDeductionStatus
+        : (_text(value['status']) ?? salaryDeductionStatus ?? '');
+    final state = rawStatus.toLowerCase();
     if (state.contains('manager')) {
       return RequestApprovalStage.manager;
     }

@@ -7433,10 +7433,11 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
         isEqualTo: 'pending_hr',
       );
     }
+    deductionsQuery = deductionsQuery.orderBy('date', descending: true);
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
       stream: _cachedStream(
-        'attendance|salary-deduction|${reviewer.uid}|reversal:$reversalOnly',
-        deductionsQuery.limit(200),
+        'attendance|salary-deduction|${reviewer.uid}|reversal:$reversalOnly|absence:$absenceOnly',
+        deductionsQuery.limit(300),
       ),
       builder: (context, snapshot) {
         if (snapshot.hasError) {
