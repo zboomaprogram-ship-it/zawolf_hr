@@ -773,6 +773,12 @@ class _UnifiedManagementWebDashboardState
           icon: Icons.playlist_add_check_outlined,
           onTap: () => context.go('/hr/custom-request-types'),
         ),
+      if (isHrRole)
+        _buildShortcutChip(
+          label: 'إعدادات مسارات الاعتماد',
+          icon: Icons.settings_suggest_outlined,
+          onTap: () => context.go('/hr/approval-chains-settings'),
+        ),
     ];
     final people = <Widget>[
       _buildShortcutChip(
