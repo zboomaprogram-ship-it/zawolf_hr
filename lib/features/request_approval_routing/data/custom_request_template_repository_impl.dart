@@ -148,6 +148,23 @@ class CustomRequestTemplateRepositoryImpl implements CustomRequestTemplateReposi
         ApprovalChainStep(stepId: 'step_1', order: 1, approverType: 'hr', department: 'hr', labelAr: 'الموارد البشرية (HR)'),
       ],
     ),
+    const CustomRequestType(
+      id: 'core_it_support',
+      nameAr: 'طلبات تقنية المعلومات والأجهزة (IT Support & Assets)',
+      category: 'general',
+      descriptionAr: 'طلب جهاز عمل أو لابتوب جديد، صلاحيات وصول للأنظمة، أو صيانة ودعم فني IT',
+      isActive: true,
+      subtypes: ['طلب جهاز لابتوب / كمبيوتر عمل', 'طلب صلاحيات وصول لأنظمة الشركة', 'طلب بريد إلكتروني أو رخصة برمجية', 'صيانة واستبدال جهاز تالف'],
+      fields: [
+        CustomRequestField(key: 'requestDetail', labelAr: 'تفاصيل الطلب أو الجهاز المطلوب', type: 'text', isRequired: true),
+        CustomRequestField(key: 'reason', labelAr: 'سبب الاحتياج ومبرر العمل', type: 'text', isRequired: true),
+      ],
+      approvalSteps: [
+        ApprovalChainStep(stepId: 'step_1', order: 1, approverType: 'direct_manager', labelAr: 'المدير المباشر'),
+        ApprovalChainStep(stepId: 'step_2', order: 2, approverType: 'it', department: 'it', labelAr: 'إدارة تقنية المعلومات (IT)'),
+        ApprovalChainStep(stepId: 'step_3', order: 3, approverType: 'hr', department: 'hr', labelAr: 'الموارد البشرية (HR)'),
+      ],
+    ),
   ];
 
   @override

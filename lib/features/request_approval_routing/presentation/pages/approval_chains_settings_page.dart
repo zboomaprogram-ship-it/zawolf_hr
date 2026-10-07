@@ -568,36 +568,83 @@ class _EditRequestTypeDialogState extends State<_EditRequestTypeDialog> {
                   ),
                   const SizedBox(width: 8),
                   Expanded(
-                    flex: 2,
+                    flex: 3,
                     child: DropdownButton<String>(
                       isExpanded: true,
-                      value: const ['direct_manager', 'hr', 'accounting', 'department_pool', 'coo', 'ceo'].contains(s.approverType)
+                      value: const ['direct_manager', 'it', 'hr', 'accounting', 'legal', 'department_pool', 'coo', 'ceo'].contains(s.approverType)
                           ? s.approverType
                           : 'direct_manager',
                       items: const [
                         DropdownMenuItem(value: 'direct_manager', child: Text('المدير المباشر (Direct Manager)')),
+                        DropdownMenuItem(value: 'it', child: Text('إدارة تقنية المعلومات (IT Department)')),
                         DropdownMenuItem(value: 'hr', child: Text('الموارد البشرية (HR Admin)')),
                         DropdownMenuItem(value: 'accounting', child: Text('الحسابات والمالية (Accounts / Finance)')),
-                        DropdownMenuItem(value: 'department_pool', child: Text('أي موظف في قسم محدد (Pool)')),
+                        DropdownMenuItem(value: 'legal', child: Text('الشؤون القانونية (Legal Department)')),
                         DropdownMenuItem(value: 'coo', child: Text('المدير التنفيذي للعمليات (COO)')),
                         DropdownMenuItem(value: 'ceo', child: Text('الرئيس التنفيذي (CEO)')),
+                        DropdownMenuItem(value: 'department_pool', child: Text('أي موظف في قسم مخصص (Pool)')),
                       ],
                       onChanged: (val) {
+                        final type = val ?? 'direct_manager';
+                        final dept = type == 'it'
+                            ? 'it'
+                            : type == 'hr'
+                                ? 'hr'
+                                : type == 'accounting'
+                                    ? 'accounting'
+                                    : type == 'legal'
+                                        ? 'legal'
+                                        : s.department;
+                        final defaultLabel = switch (type) {
+                          'it' => 'إدارة تقنية المعلومات (IT)',
+                          'hr' => 'الموارد البشرية (HR)',
+                          'accounting' => 'الحسابات والمالية',
+                          'legal' => 'الشؤون القانونية (Legal)',
+                          'coo' => 'المدير التنفيذي للعمليات (COO)',
+                          'ceo' => 'الرئيس التنفيذي (CEO)',
+                          'department_pool' => 'قسم محدد',
+                          _ => 'المدير المباشر',
+                        };
                         setState(() {
                           _approvalSteps[idx] = ApprovalChainStep(
                             stepId: s.stepId,
                             order: idx + 1,
-                            approverType: val ?? 'direct_manager',
-                            labelAr: s.labelAr,
-                            department: s.department,
+                            approverType: type,
+                            labelAr: defaultLabel,
+                            department: dept,
                           );
                         });
+                      },
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    flex: 2,
+                    child: TextFormField(
+                      key: ValueKey('label_${s.stepId}_${s.approverType}'),
+                      initialValue: s.labelAr,
+                      decoration: const InputDecoration(
+                        labelText: 'مسمى المرحلة',
+                        hintText: 'مثال: تقنية المعلومات (IT)',
+                        contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                      ),
+                      onChanged: (text) {
+                        _approvalSteps[idx] = ApprovalChainStep(
+                          stepId: s.stepId,
+                          order: s.order,
+                          approverType: s.approverType,
+                          labelAr: text,
+                          department: s.department,
+                          specificUserId: s.specificUserId,
+                          specificUserName: s.specificUserName,
+                        );
                       },
                     ),
                   ),
                   if (s.approverType == 'department_pool') ...[
                     const SizedBox(width: 8),
                     Expanded(
+                      flex: 2,
                       child: DropdownButton<String>(
                         isExpanded: true,
                         value: s.department ?? 'it',
@@ -613,7 +660,7 @@ class _EditRequestTypeDialogState extends State<_EditRequestTypeDialog> {
                               stepId: s.stepId,
                               order: idx + 1,
                               approverType: s.approverType,
-                              labelAr: s.labelAr,
+                              labelAr: 'فريق ${dept == "it" ? "تقنية المعلومات" : dept == "hr" ? "الموارد البشرية" : dept == "accounting" ? "الحسابات" : "القانونية"}',
                               department: dept,
                             );
                           });
