@@ -103,19 +103,67 @@ class _ApprovalChainsSettingsViewState extends State<_ApprovalChainsSettingsView
                         color: item.isActive ? Colors.blue.shade800 : Colors.grey,
                       ),
                     ),
-                    title: Text(
-                      item.nameAr,
-                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    title: Row(
+                      children: [
+                        Text(
+                          item.nameAr,
+                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                        ),
+                        if (item.id.startsWith('core_')) ...[
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: Colors.blue.withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(6),
+                              border: Border.all(color: Colors.blue.withValues(alpha: 0.4)),
+                            ),
+                            child: const Text(
+                              'طلب أساسي بالنظام',
+                              style: TextStyle(fontSize: 11, color: Colors.blue, fontWeight: FontWeight.w600),
+                            ),
+                          ),
+                        ],
+                      ],
                     ),
                     subtitle: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
+                        const SizedBox(height: 4),
                         Text('التصنيف: ${_categoryLabel(item.category)} | الحقول: ${item.fields.length} | مراحل الاعتماد: ${item.approvalSteps.length}'),
+                        if (item.approvalSteps.isNotEmpty)
+                          Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 6),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                              decoration: BoxDecoration(
+                                color: Colors.grey.withValues(alpha: 0.08),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Row(
+                                children: [
+                                  const Icon(Icons.route, size: 16, color: Colors.teal),
+                                  const SizedBox(width: 6),
+                                  Expanded(
+                                    child: Text(
+                                      'مسار الاعتماد: ${item.approvalSteps.map((s) => s.labelAr.isNotEmpty ? s.labelAr : s.approverType).join(' ⬅️ ')}',
+                                      style: const TextStyle(
+                                        fontSize: 12,
+                                        color: Colors.teal,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
                         if (item.subtypes.isNotEmpty)
                           Padding(
                             padding: const EdgeInsets.only(top: 4),
                             child: Wrap(
                               spacing: 6,
+                              runSpacing: 4,
                               children: item.subtypes.map((st) => Chip(
                                 label: Text(st, style: const TextStyle(fontSize: 11)),
                                 visualDensity: VisualDensity.compact,
@@ -128,13 +176,16 @@ class _ApprovalChainsSettingsViewState extends State<_ApprovalChainsSettingsView
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         IconButton(
+                          tooltip: 'تعديل الطلب ومسار الاعتماد',
                           icon: const Icon(Icons.edit, color: Colors.blue),
                           onPressed: () => _openEditDialog(context, item),
                         ),
-                        IconButton(
-                          icon: const Icon(Icons.delete_outline, color: Colors.red),
-                          onPressed: () => _confirmDelete(context, item),
-                        ),
+                        if (!item.id.startsWith('core_'))
+                          IconButton(
+                            tooltip: 'حذف',
+                            icon: const Icon(Icons.delete_outline, color: Colors.red),
+                            onPressed: () => _confirmDelete(context, item),
+                          ),
                       ],
                     ),
                   ),
@@ -520,9 +571,13 @@ class _EditRequestTypeDialogState extends State<_EditRequestTypeDialog> {
                     flex: 2,
                     child: DropdownButton<String>(
                       isExpanded: true,
-                      value: s.approverType,
+                      value: const ['direct_manager', 'hr', 'accounting', 'department_pool', 'coo', 'ceo'].contains(s.approverType)
+                          ? s.approverType
+                          : 'direct_manager',
                       items: const [
                         DropdownMenuItem(value: 'direct_manager', child: Text('المدير المباشر (Direct Manager)')),
+                        DropdownMenuItem(value: 'hr', child: Text('الموارد البشرية (HR Admin)')),
+                        DropdownMenuItem(value: 'accounting', child: Text('الحسابات والمالية (Accounts / Finance)')),
                         DropdownMenuItem(value: 'department_pool', child: Text('أي موظف في قسم محدد (Pool)')),
                         DropdownMenuItem(value: 'coo', child: Text('المدير التنفيذي للعمليات (COO)')),
                         DropdownMenuItem(value: 'ceo', child: Text('الرئيس التنفيذي (CEO)')),
