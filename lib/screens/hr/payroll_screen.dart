@@ -309,7 +309,10 @@ class _PayrollScreenState extends State<PayrollScreen> {
                       onPressed: () => Navigator.pop(context),
                     )
                   : null,
-              title: Text('إدارة الرواتب', style: theme.textTheme.headlineMedium),
+              title: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text('إدارة الرواتب', style: isDesktop ? theme.textTheme.headlineMedium : theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
+              ),
               actions: [
                 IconButton(
                   tooltip: 'اختيار الشهر يدوياً',
@@ -384,7 +387,7 @@ class _PayrollScreenState extends State<PayrollScreen> {
                         child: Row(
                           children: [
                             IconButton(
-                              icon: const Icon(Icons.chevron_right),
+                              icon: const Icon(Icons.chevron_left),
                               tooltip: 'الشهر السابق',
                               onPressed: () => _changeMonth(-1),
                             ),
@@ -417,7 +420,7 @@ class _PayrollScreenState extends State<PayrollScreen> {
                               ),
                             ),
                             IconButton(
-                              icon: const Icon(Icons.chevron_left),
+                              icon: const Icon(Icons.chevron_right),
                               tooltip: 'الشهر التالي',
                               onPressed: () => _changeMonth(1),
                             ),

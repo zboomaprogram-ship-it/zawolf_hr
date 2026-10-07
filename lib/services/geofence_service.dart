@@ -263,8 +263,8 @@ class GeofenceService {
             altLocation.longitude,
           );
           final altTolerance = strictLocationOnly
-              ? position.accuracy.clamp(0, 12).toDouble()
-              : position.accuracy.clamp(0, 25).toDouble();
+              ? position.accuracy.clamp(0, 25).toDouble()
+              : position.accuracy.clamp(0, 35).toDouble();
           if (altDistance <= altLocation.geofenceRadiusMeters + altTolerance) {
             location = altLocation;
             distanceMeters = altDistance;
@@ -284,8 +284,8 @@ class GeofenceService {
     // from being reported as outside. Large accuracy values never enlarge the
     // geofence and are rejected by AttendanceService instead.
     final accuracyTolerance = strictLocationOnly
-        ? position.accuracy.clamp(0, 12).toDouble()
-        : position.accuracy.clamp(0, 25).toDouble();
+        ? position.accuracy.clamp(0, 25).toDouble()
+        : position.accuracy.clamp(0, 35).toDouble();
     final effectiveRadius = location.geofenceRadiusMeters + accuracyTolerance;
     final isWithin = distanceMeters <= effectiveRadius;
 
@@ -351,7 +351,7 @@ class GeofenceService {
       );
     }
     final tolerance = position.accuracy
-        .clamp(0, strictLocationOnly ? 12 : 25)
+        .clamp(0, strictLocationOnly ? 25 : 35)
         .toDouble();
     return GeofenceResult(
       isWithinZone: true,

@@ -163,32 +163,57 @@ class UserModel {
   final List<String> seenCelebrationBadgeIds;
   final bool excludeFromAttendanceReports;
   final bool isAdvanceAccountsApprover;
+  final bool isHiringAccountsApprover;
+  final bool isHiringItApprover;
+  final String? executiveRole;
+  final bool isExecutiveApprover;
 
   bool get isAccountant =>
       isAdvanceAccountsApprover ||
+      isHiringAccountsApprover ||
       department.trim().toLowerCase() == 'accounting' ||
       department.contains('حساب') ||
-      position.contains('محاسب');
+      position.contains('محاسب') ||
+      employeeId.trim().toUpperCase().startsWith('ACC-');
+
+  bool get isItMember =>
+      isHiringItApprover ||
+      department.trim().toLowerCase() == 'it' ||
+      department.contains('تقنية') ||
+      department.contains('تكنولوجيا') ||
+      position.toLowerCase().contains('it') ||
+      position.contains('تقنية') ||
+      position.contains('تكنولوجيا') ||
+      employeeId.trim().toUpperCase().startsWith('IT-');
 
   /// Legacy account imports used `employeeCode`.  All approval and
-  /// notification routing must use this canonical model value so a valid
-  /// CEO-100 account is never skipped because of that field-name difference.
-  bool get isCompanyCeo => employeeId.trim().toUpperCase() == 'CEO-100';
+  /// CEO executive authority: dynamically resolved from executiveRole or superAdmin.
+  bool get isCompanyCeo {
+    final execRole = (executiveRole ?? '').trim().toLowerCase();
+    if (execRole == 'ceo') return true;
+    final r = role.trim().toLowerCase();
+    return r == 'ceo' || (r == EmployeeRole.superAdmin && execRole != 'coo');
+  }
 
-  /// COO-1300 oversees operations and division management.
-  bool get isCompanyCoo => employeeId.trim().toUpperCase() == 'COO-1300';
+  /// Operations and division management authority: dynamically resolved from executiveRole.
+  bool get isCompanyCoo {
+    final execRole = (executiveRole ?? '').trim().toLowerCase();
+    return execRole == 'coo' || role.trim().toLowerCase() == 'coo';
+  }
 
   /// Top executive leaders with company-wide operational visibility and authority.
   bool get isExecutiveLeader =>
-      isCompanyCeo || isCompanyCoo || role == EmployeeRole.superAdmin;
+      isCompanyCeo ||
+      isCompanyCoo ||
+      isExecutiveApprover ||
+      role == EmployeeRole.superAdmin;
 
-  /// CEO approval is an assigned workflow stage, not a generic administrator
-  /// capability. Treating every super administrator as CEO allowed unrelated
-  /// executive accounts to advance a request after their own manager decision.
+  /// CEO approval is an assigned workflow stage.
   bool get canReviewCeoStage => isCompanyCeo;
 
   /// Executive review authority for company operations and division approvals.
-  bool get canReviewExecutiveStage => isCompanyCeo || isCompanyCoo;
+  bool get canReviewExecutiveStage =>
+      isCompanyCeo || isCompanyCoo || isExecutiveApprover;
 
   UserModel({
     required this.uid,
@@ -242,6 +267,10 @@ class UserModel {
     this.seenCelebrationBadgeIds = const [],
     this.excludeFromAttendanceReports = false,
     this.isAdvanceAccountsApprover = false,
+    this.isHiringAccountsApprover = false,
+    this.isHiringItApprover = false,
+    this.executiveRole,
+    this.isExecutiveApprover = false,
   });
 
   UserModel copyWith({
@@ -295,6 +324,10 @@ class UserModel {
     String? avatarAccent,
     String? preferredViewMode,
     bool? isAdvanceAccountsApprover,
+    bool? isHiringAccountsApprover,
+    bool? isHiringItApprover,
+    String? executiveRole,
+    bool? isExecutiveApprover,
   }) {
     return UserModel(
       uid: uid ?? this.uid,
@@ -355,6 +388,11 @@ class UserModel {
       preferredViewMode: preferredViewMode ?? this.preferredViewMode,
       isAdvanceAccountsApprover:
           isAdvanceAccountsApprover ?? this.isAdvanceAccountsApprover,
+      isHiringAccountsApprover:
+          isHiringAccountsApprover ?? this.isHiringAccountsApprover,
+      isHiringItApprover: isHiringItApprover ?? this.isHiringItApprover,
+      executiveRole: executiveRole ?? this.executiveRole,
+      isExecutiveApprover: isExecutiveApprover ?? this.isExecutiveApprover,
     );
   }
 
@@ -450,6 +488,12 @@ class UserModel {
           data['excludeFromAttendanceReports'] as bool? ?? false,
       isAdvanceAccountsApprover:
           data['isAdvanceAccountsApprover'] as bool? ?? false,
+      isHiringAccountsApprover:
+          data['isHiringAccountsApprover'] as bool? ?? false,
+      isHiringItApprover:
+          data['isHiringItApprover'] as bool? ?? false,
+      executiveRole: data['executiveRole'] as String?,
+      isExecutiveApprover: data['isExecutiveApprover'] as bool? ?? false,
     );
   }
 
@@ -518,6 +562,10 @@ class UserModel {
       'seenCelebrationBadgeIds': seenCelebrationBadgeIds,
       if (excludeFromAttendanceReports) 'excludeFromAttendanceReports': true,
       if (isAdvanceAccountsApprover) 'isAdvanceAccountsApprover': true,
+      if (isHiringAccountsApprover) 'isHiringAccountsApprover': true,
+      if (isHiringItApprover) 'isHiringItApprover': true,
+      if (executiveRole != null) 'executiveRole': executiveRole,
+      if (isExecutiveApprover) 'isExecutiveApprover': true,
     };
   }
 
@@ -573,6 +621,10 @@ class UserModel {
       'avatarFaceUrl': avatarFaceUrl,
       'avatarAccent': avatarAccent,
       'isAdvanceAccountsApprover': isAdvanceAccountsApprover,
+      'isHiringAccountsApprover': isHiringAccountsApprover,
+      'isHiringItApprover': isHiringItApprover,
+      if (executiveRole != null) 'executiveRole': executiveRole,
+      'isExecutiveApprover': isExecutiveApprover,
     };
   }
 
@@ -649,6 +701,12 @@ class UserModel {
       avatarAccent: data['avatarAccent'] as String? ?? 'cyan',
       isAdvanceAccountsApprover:
           data['isAdvanceAccountsApprover'] as bool? ?? false,
+      isHiringAccountsApprover:
+          data['isHiringAccountsApprover'] as bool? ?? false,
+      isHiringItApprover:
+          data['isHiringItApprover'] as bool? ?? false,
+      executiveRole: data['executiveRole'] as String?,
+      isExecutiveApprover: data['isExecutiveApprover'] as bool? ?? false,
     );
   }
 

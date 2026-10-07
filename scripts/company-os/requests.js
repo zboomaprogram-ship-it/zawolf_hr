@@ -64,9 +64,9 @@ function validateCreateInput(input, actor) {
     error.code = 'invalid_input';
     throw error;
   }
-  const managerUid = String(actor.managerIds?.[0] || '').trim();
+  const managerUid = String(actor.managerIds?.[0] || actor.managerId || '').trim();
   const specialistRole = specialistRoleForRequest(classification.type);
-  if (!managerUid && !specialistRole) {
+  if (!managerUid && !specialistRole && !classification.costBearing) {
     const error = new Error('Manager unavailable');
     error.code = 'access_denied';
     throw error;

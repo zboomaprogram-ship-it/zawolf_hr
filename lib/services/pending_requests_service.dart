@@ -370,9 +370,7 @@ class PendingRequestsService {
             snap.docs
                 .where((doc) {
                   final ceoId = (doc.data()['ceoId'] ?? '').toString();
-                  return ceoId.isEmpty ||
-                      ceoId == reviewerId ||
-                      ceoId == 'CEO-100';
+                  return ceoId.isEmpty || ceoId == reviewerId;
                 })
                 .map((doc) => doc.id),
           );

@@ -279,22 +279,40 @@ class LeaveService {
   }
 
   /// Long leave is reviewed by the canonical active CEO account, never by an
-  /// arbitrary manager in the employee's reporting chain. CEO-100 is the
-  /// organisation's explicit assignment for this workflow.
+  /// arbitrary manager in the employee's reporting chain.
   Future<({String id, String name})> _assignedCeo() async {
-    final results =
-        await _db
-            .collection('users')
-            .where('employeeId', isEqualTo: 'CEO-100')
-            .limit(1)
-            .get();
+    // 1. Query for user with executiveRole == 'ceo'
+    var results = await _db
+        .collection('users')
+        .where('executiveRole', isEqualTo: 'ceo')
+        .where('isActive', isEqualTo: true)
+        .limit(1)
+        .get();
+
+    // 2. Fallback to role == 'ceo'
     if (results.docs.isEmpty) {
-      throw StateError('تعذر تحديد حساب CEO-100 النشط لمسار الإجازة.');
+      results = await _db
+          .collection('users')
+          .where('role', isEqualTo: 'ceo')
+          .where('isActive', isEqualTo: true)
+          .limit(1)
+          .get();
+    }
+
+    // 3. Fallback to superAdmin
+    if (results.docs.isEmpty) {
+      results = await _db
+          .collection('users')
+          .where('role', isEqualTo: EmployeeRole.superAdmin)
+          .where('isActive', isEqualTo: true)
+          .limit(1)
+          .get();
+    }
+
+    if (results.docs.isEmpty) {
+      throw StateError('تعذر تحديد حساب الرئيس التنفيذي (CEO) النشط لمسار الإجازة.');
     }
     final data = results.docs.first.data();
-    if (data['isActive'] == false) {
-      throw StateError('حساب CEO-100 غير نشط لمسار الإجازة.');
-    }
     return (
       id: results.docs.first.id,
       name: (data['displayName'] as String? ?? '').trim(),
@@ -457,8 +475,33 @@ class LeaveService {
         approvalManagerIds.isEmpty ? '' : approvalManagerIds.first;
     final requiresCeoApproval =
         !isAutoApprovedCasual &&
-        LeaveTypePolicy.requiresCeoApproval(req.leaveType, req.numberOfDays);
+        LeaveTypePolicy.requiresCeoApproval(
+          req.leaveType,
+          req.numberOfDays,
+          thresholdDays: approvalPolicy.ceoLeaveApprovalThresholdDays,
+          requireForRemote: approvalPolicy.requireCeoApprovalForRemote,
+        );
     final assignedCeo = requiresCeoApproval ? await _assignedCeo() : null;
+
+    final cycle = PayrollCycle.forDate(req.startDate);
+    int daysOffInCurrentPeriod = 0;
+    try {
+      final pastLeavesSnap = await _db
+          .collection('leaves')
+          .where('userId', isEqualTo: employee.uid)
+          .get();
+      final records = pastLeavesSnap.docs.map((doc) {
+        final map = Map<String, dynamic>.from(doc.data());
+        map['id'] = doc.id;
+        return map;
+      }).toList();
+      daysOffInCurrentPeriod = countDaysOffInCycle(
+        leaveRecords: records,
+        targetDate: req.startDate,
+        currentLeaveId: reqRef.id,
+      );
+    } catch (_) {}
+
     final finalModel = LeaveModel(
       leaveId: reqRef.id,
       userId: req.userId,
@@ -481,11 +524,16 @@ class LeaveService {
       submittedAt: DateTime.now(),
       convertToAnnual:
           req.convertToAnnual && effectiveType == LeaveTypePolicy.sick,
+      daysOffInCurrentPeriod: daysOffInCurrentPeriod,
+      currentPeriodRange: cycle.arabicRangeLabel,
     );
 
     final leaveData = {
       ...finalModel.toFirestore(),
       'jobTitle': employee.position.trim(),
+      'daysOffInCurrentPeriod': daysOffInCurrentPeriod,
+      'currentPeriodKey': cycle.key,
+      'currentPeriodRange': cycle.arabicRangeLabel,
       'deductsLeaveBalance':
           LeaveTypePolicy.balanceKeys(effectiveType).isNotEmpty,
       if (LeaveTypePolicy.balanceKey(effectiveType) != null)
@@ -601,6 +649,8 @@ class LeaveService {
     // The leave is authoritative once its document is committed. A
     // notification permission or transient delivery error must never make the
     // employee see a failed submission and retry an already saved request.
+    final daysOffNote =
+        ' (أيام الإجازة السابقة في الفترة الحالية: $daysOffInCurrentPeriod يوم)';
     try {
       if (usesHrFallback) {
         await RoleNotificationService.instance.notifyRole(
@@ -609,8 +659,12 @@ class LeaveService {
           type: 'leave_request_submitted',
           title: 'طلب إجازة بدون مدير معيّن',
           body:
-              '${req.employeeName} أرسل ${LeaveTypePolicy.arabicLabel(req.leaveType)} وينتظر قرار HR.',
-          data: {'leaveId': reqRef.id},
+              '${req.employeeName} أرسل ${LeaveTypePolicy.arabicLabel(req.leaveType)} لمدّة ${req.numberOfDays} يوم$daysOffNote وينتظر قرار HR.',
+          data: {
+            'leaveId': reqRef.id,
+            'daysOffInCurrentPeriod': daysOffInCurrentPeriod,
+            'currentPeriodRange': cycle.arabicRangeLabel,
+          },
         );
       } else {
         await _createNotification(
@@ -618,8 +672,12 @@ class LeaveService {
           type: 'leave_request_submitted',
           title: 'طلب إجازة بانتظار موافقتك',
           body:
-              'يطلب ${req.employeeName} ${LeaveTypePolicy.arabicLabel(req.leaveType)} لمدّة ${req.numberOfDays} يوم. تسليم العمل إلى: ${req.workHandoverTo}.',
-          data: {'leaveId': reqRef.id},
+              'يطلب ${req.employeeName} ${LeaveTypePolicy.arabicLabel(req.leaveType)} لمدّة ${req.numberOfDays} يوم$daysOffNote. تسليم العمل إلى: ${req.workHandoverTo}.',
+          data: {
+            'leaveId': reqRef.id,
+            'daysOffInCurrentPeriod': daysOffInCurrentPeriod,
+            'currentPeriodRange': cycle.arabicRangeLabel,
+          },
         );
       }
     } catch (_) {
@@ -634,6 +692,7 @@ class LeaveService {
           req: req,
           reqRefId: reqRef.id,
           managerIds: managerIds,
+          daysOffInCurrentPeriod: daysOffInCurrentPeriod,
         );
       } catch (_) {
         // Notification errors must not fail leave submission.
@@ -789,10 +848,16 @@ class LeaveService {
             ?.trim()
             .toUpperCase() ??
         '';
-    final isCompanyCeo = reviewerCode == 'CEO-100';
-    final isCompanyCoo = reviewerCode == 'COO-1300';
-    final isExecutive =
-        isCompanyCeo || isCompanyCoo || role == EmployeeRole.superAdmin;
+    final reviewerExecutiveRole =
+        (reviewerDoc.data()?['executiveRole'] as String?)?.trim().toLowerCase();
+    final reviewerUser = reviewerDoc.exists
+        ? UserModel.fromFirestore(reviewerDoc)
+        : null;
+    final isCompanyCeo = reviewerUser?.isCompanyCeo ??
+        (reviewerExecutiveRole == 'ceo' || reviewerCode.startsWith('CEO-'));
+    final isCompanyCoo = reviewerUser?.isCompanyCoo ?? (reviewerExecutiveRole == 'coo');
+    final isExecutive = reviewerUser?.canReviewExecutiveStage ??
+        (isCompanyCeo || isCompanyCoo || role == EmployeeRole.superAdmin);
     final isMatchingManager =
         leave.managerId == reviewerId ||
         (reviewerCode.isNotEmpty && leave.managerId == reviewerCode) ||
@@ -801,19 +866,24 @@ class LeaveService {
         (data['managerIds'] as List<dynamic>?)?.contains(reviewerId) == true ||
         isExecutive;
     final requiresCeoApproval =
-        (data['requiresCeoApproval'] as bool?) ??
-        LeaveTypePolicy.requiresCeoApproval(
-          leave.leaveType,
-          leave.numberOfDays,
-        );
+        (data['requiresCeoApproval'] as bool?) ?? false;
+
+    final history =
+        (data['approvalHistory'] as List<dynamic>?) ?? const <dynamic>[];
+    final hasHrApproval = history.any(
+      (e) => e is Map && e['stage'] == 'hr' && e['status'] == 'approved',
+    );
+    final hasCeoApproval = history.any(
+      (e) => e is Map && e['stage'] == 'ceo' && e['status'] == 'approved',
+    );
 
     if (leave.status == 'pending_ceo') {
-      if (!reviewerCode.toUpperCase().startsWith('CEO-') ||
+      final canApproveCeo = reviewerUser?.canReviewCeoStage ?? isCompanyCeo;
+      if (!canApproveCeo ||
           (data['ceoId'] != null &&
               data['ceoId'] != reviewerId &&
-              data['ceoId'] != 'CEO-100' &&
-              reviewerCode != 'CEO-100')) {
-        throw Exception('هذه المرحلة متاحة للـ CEO المعيّن للموظف فقط.');
+              !canApproveCeo)) {
+        throw Exception('هذه المرحلة متاحة للرئيس التنفيذي (CEO) المعيّن للموظف فقط.');
       }
       final event = _approvalEvent(
         stage: 'ceo',
@@ -821,27 +891,29 @@ class LeaveService {
         actorId: reviewerId,
         actorName: reviewerName,
       );
-      await docRef.update({
-        'status': 'pending_hr',
-        'reviewedBy': reviewerId,
-        'reviewerName': reviewerName,
-        'reviewedAt': FieldValue.serverTimestamp(),
-        'approvalHistory': FieldValue.arrayUnion([event]),
-      });
-      try {
-        await RoleNotificationService.instance.notifyRole(
-          role: EmployeeRole.hrAdmin,
-          includeSuperAdmins: false,
-          type: 'leave_request_submitted',
-          title: 'إجازة طويلة بانتظار مراجعة HR',
-          body:
-              'اعتمد CEO المعيّن طلب ${leave.employeeName} وهو الآن بانتظار القرار النهائي من HR.',
-          data: {'leaveId': leaveId},
-        );
-      } catch (_) {
-        // Notification retry is independent of committed decision
+      if (!hasHrApproval) {
+        await docRef.update({
+          'status': 'pending_hr',
+          'reviewedBy': reviewerId,
+          'reviewerName': reviewerName,
+          'reviewedAt': FieldValue.serverTimestamp(),
+          'approvalHistory': FieldValue.arrayUnion([event]),
+        });
+        try {
+          await RoleNotificationService.instance.notifyRole(
+            role: EmployeeRole.hrAdmin,
+            includeSuperAdmins: false,
+            type: 'leave_request_submitted',
+            title: 'إجازة طويلة بانتظار مراجعة HR',
+            body:
+                'اعتمد CEO المعيّن طلب ${leave.employeeName} وهو الآن بانتظار القرار النهائي من HR.',
+            data: {'leaveId': leaveId},
+          );
+        } catch (_) {
+          // Notification retry is independent of committed decision
+        }
+        return;
       }
-      return;
     }
 
     if (leave.status == 'pending_hr') {
@@ -876,7 +948,23 @@ class LeaveService {
     bool isFinalApproval = false;
     Map<String, dynamic> update;
 
-    if (EmployeeRole.isHr(role)) {
+    if (leave.status == 'pending_ceo') {
+      final event = _approvalEvent(
+        stage: 'ceo',
+        status: 'approved',
+        actorId: reviewerId,
+        actorName: reviewerName,
+      );
+      update = {
+        'status': 'approved',
+        'reviewedBy': reviewerId,
+        'reviewerName': reviewerName,
+        'reviewedAt': FieldValue.serverTimestamp(),
+        'finalApprovalAt': FieldValue.serverTimestamp(),
+        'approvalHistory': FieldValue.arrayUnion([event]),
+      };
+      isFinalApproval = true;
+    } else if (EmployeeRole.isHr(role)) {
       if (leave.status == 'pending_hr') {
         final managerIds =
             (data['managerIds'] as List<dynamic>?)
@@ -894,7 +982,7 @@ class LeaveService {
             managerIds.isEmpty || approvalTrail.length >= managerIds.length;
         final firstManagerId = managerIds.isNotEmpty ? managerIds.first : '';
         final nextStatus =
-            requiresCeoApproval
+            (requiresCeoApproval && !hasCeoApproval)
                 ? 'pending_ceo'
                 : (managersCompleted ? 'approved' : 'pending_manager');
         update = {
@@ -907,6 +995,8 @@ class LeaveService {
           'reviewedBy': reviewerId,
           'reviewerName': reviewerName,
           'reviewedAt': FieldValue.serverTimestamp(),
+          if (nextStatus == 'approved')
+            'finalApprovalAt': FieldValue.serverTimestamp(),
           'approvalHistory': FieldValue.arrayUnion([
             _approvalEvent(
               stage: 'hr',
@@ -994,6 +1084,12 @@ class LeaveService {
       );
     } catch (_) {}
 
+    final periodDaysOff = data['daysOffInCurrentPeriod'] ??
+        leave.daysOffInCurrentPeriod;
+    final periodDaysOffNote = periodDaysOff != null
+        ? ' (إجازات الفترة الحالية: $periodDaysOff يوم)'
+        : '';
+
     if (update['status'] == 'pending_manager') {
       final nextManagerId = update['managerId'] as String?;
       if (nextManagerId != null && nextManagerId.isNotEmpty) {
@@ -1002,7 +1098,7 @@ class LeaveService {
             recipientId: nextManagerId,
             type: 'leave_request_submitted',
             title: 'طلب إجازة بانتظار موافقتك',
-            body: '${leave.employeeName} حصل على موافقة سابقة وينتظر قرارك.',
+            body: '${leave.employeeName} حصل على موافقة سابقة$periodDaysOffNote وينتظر قرارك.',
             data: {'leaveId': leaveId},
           );
         } catch (_) {}
@@ -1018,7 +1114,7 @@ class LeaveService {
           type: 'leave_request_submitted',
           title: 'طلب إجازة بانتظار مراجعة HR',
           body:
-              'اكتملت موافقات المديرين على طلب ${leave.employeeName} وينتظر القرار النهائي من HR.',
+              'اكتملت موافقات المديرين على طلب ${leave.employeeName}$periodDaysOffNote وينتظر القرار النهائي من HR.',
           data: {'leaveId': leaveId},
         );
       } catch (_) {
@@ -1038,7 +1134,7 @@ class LeaveService {
           type: 'leave_request_submitted',
           title: 'إجازة طويلة بانتظار اعتماد CEO',
           body:
-              'راجع HR طلب ${leave.employeeName} لمدة ${leave.numberOfDays} أيام وينتظر اعتمادك النهائي.',
+              'راجع HR طلب ${leave.employeeName} لمدة ${leave.numberOfDays} أيام$periodDaysOffNote وينتظر اعتمادك النهائي.',
           data: {'leaveId': leaveId},
         );
       } catch (_) {
@@ -1090,10 +1186,16 @@ class LeaveService {
             ?.trim()
             .toUpperCase() ??
         '';
-    final isCompanyCeo = reviewerCode == 'CEO-100';
-    final isCompanyCoo = reviewerCode == 'COO-1300';
-    final isExecutive =
-        isCompanyCeo || isCompanyCoo || reviewerRole == EmployeeRole.superAdmin;
+    final reviewerExecutiveRole =
+        (reviewerDoc.data()?['executiveRole'] as String?)?.trim().toLowerCase();
+    final reviewerUser = reviewerDoc.exists
+        ? UserModel.fromFirestore(reviewerDoc)
+        : null;
+    final isCompanyCeo = reviewerUser?.isCompanyCeo ??
+        (reviewerExecutiveRole == 'ceo' || reviewerCode.startsWith('CEO-'));
+    final isCompanyCoo = reviewerUser?.isCompanyCoo ?? (reviewerExecutiveRole == 'coo');
+    final isExecutive = reviewerUser?.canReviewExecutiveStage ??
+        (isCompanyCeo || isCompanyCoo || reviewerRole == EmployeeRole.superAdmin);
     final isMatchingManager =
         leave.managerId == reviewerId ||
         (reviewerCode.isNotEmpty && leave.managerId == reviewerCode) ||
@@ -1106,8 +1208,9 @@ class LeaveService {
         isExecutive;
 
     if (leave.status == 'pending_ceo') {
-      if (!reviewerCode.toUpperCase().startsWith('CEO-') && !isCompanyCeo) {
-        throw Exception('رفض هذا الطلب متاح لحساب CEO-100 فقط.');
+      final canRejectCeo = reviewerUser?.canReviewCeoStage ?? isCompanyCeo;
+      if (!canRejectCeo) {
+        throw Exception('رفض هذا الطلب متاح للرئيس التنفيذي (CEO) فقط.');
       }
     }
     if (leave.status == 'pending_hr') {
@@ -1210,6 +1313,86 @@ class LeaveService {
     );
   }
 
+  static int countDaysOffInCycle({
+    required Iterable<Map<String, dynamic>> leaveRecords,
+    required DateTime targetDate,
+    String? currentLeaveId,
+  }) {
+    final cycle = PayrollCycle.forDate(targetDate);
+    final cycleStartDateOnly = DateTime(
+      cycle.start.year,
+      cycle.start.month,
+      cycle.start.day,
+    );
+    final cycleEndDateOnly = DateTime(
+      cycle.end.year,
+      cycle.end.month,
+      cycle.end.day,
+    );
+
+    int totalDays = 0;
+    final processedIds = <String>{};
+    for (final record in leaveRecords) {
+      final status = (record['status'] as String? ?? '').trim();
+      if (status == 'cancelled' || status == 'rejected') continue;
+
+      final id = (record['id'] ?? record['leaveId'])?.toString().trim() ?? '';
+      if (id.isNotEmpty && processedIds.contains(id)) continue;
+      if (currentLeaveId != null &&
+          currentLeaveId.trim().isNotEmpty &&
+          id == currentLeaveId.trim()) {
+        continue;
+      }
+
+      final rawStart = record['startDate'];
+      DateTime? startDate;
+      if (rawStart is Timestamp) {
+        startDate = rawStart.toDate();
+      } else if (rawStart is DateTime) {
+        startDate = rawStart;
+      } else if (rawStart is String) {
+        startDate = DateTime.tryParse(rawStart);
+      }
+      if (startDate == null) continue;
+
+      final dateOnly = DateTime(startDate.year, startDate.month, startDate.day);
+      if (!dateOnly.isBefore(cycleStartDateOnly) &&
+          !dateOnly.isAfter(cycleEndDateOnly)) {
+        if (id.isNotEmpty) processedIds.add(id);
+        final rawDays = record['numberOfDays'];
+        final days = rawDays is int ? rawDays : (int.tryParse('$rawDays') ?? 1);
+        totalDays += days;
+      }
+    }
+
+    return totalDays;
+  }
+
+  Future<int> countDaysOffInCycleForUser({
+    required String userId,
+    required DateTime targetDate,
+    String? currentLeaveId,
+  }) async {
+    try {
+      final pastLeavesSnap = await _db
+          .collection('leaves')
+          .where('userId', isEqualTo: userId)
+          .get();
+      final records = pastLeavesSnap.docs.map((doc) {
+        final map = Map<String, dynamic>.from(doc.data());
+        map['id'] = doc.id;
+        return map;
+      }).toList();
+      return countDaysOffInCycle(
+        leaveRecords: records,
+        targetDate: targetDate,
+        currentLeaveId: currentLeaveId,
+      );
+    } catch (_) {
+      return 0;
+    }
+  }
+
   static int countCasualLeavesInCycle({
     required Iterable<Map<String, dynamic>> leaveRecords,
     required DateTime targetDate,
@@ -1267,24 +1450,31 @@ class LeaveService {
     required LeaveModel req,
     required String reqRefId,
     required List<String> managerIds,
+    int daysOffInCurrentPeriod = 0,
   }) async {
     final startDateStr = DateFormat('yyyy-MM-dd').format(req.startDate);
+    final daysOffInfo =
+        ' (أيام الإجازة السابقة في الفترة الحالية: $daysOffInCurrentPeriod يوم)';
 
-    // 1. Notify manager or team leader
+    // 1. Notify direct manager of the team
     try {
-      for (final managerId in managerIds) {
-        if (managerId.trim().isEmpty || managerId == employee.uid) continue;
+      final managerId = employee.managerId?.trim() ?? '';
+      final directManagerId = managerId.isNotEmpty
+          ? managerId
+          : (managerIds.isNotEmpty ? managerIds.first.trim() : '');
+      if (directManagerId.isNotEmpty && directManagerId != employee.uid) {
         await _createNotification(
-          recipientId: managerId,
-          notificationId: 'casual_leave_manager_${reqRefId}_$managerId',
+          recipientId: directManagerId,
+          notificationId: 'casual_leave_manager_${reqRefId}_$directManagerId',
           type: 'casual_leave_notification',
           title: 'إشعار إجازة عارضة - ${employee.displayName}',
           body:
-              'سجل ${employee.displayName} إجازة عارضة لمدّة ${req.numberOfDays} يوم بدءاً من $startDateStr.',
+              'سجل ${employee.displayName} إجازة عارضة لمدّة ${req.numberOfDays} يوم بدءاً من $startDateStr$daysOffInfo.',
           data: {
             'leaveId': reqRefId,
             'category': 'leave',
             'requestId': reqRefId,
+            'daysOffInCurrentPeriod': daysOffInCurrentPeriod,
             'route': '/manager/requests?category=leave&requestId=$reqRefId',
           },
         );
@@ -1295,15 +1485,16 @@ class LeaveService {
     try {
       await RoleNotificationService.instance.notifyRole(
         role: EmployeeRole.hrAdmin,
-        includeSuperAdmins: true,
+        includeSuperAdmins: false,
         type: 'casual_leave_notification',
         title: 'إشعار إجازة عارضة جديدة - ${employee.displayName}',
         body:
-            'سجل ${employee.displayName} إجازة عارضة لمدّة ${req.numberOfDays} يوم بدءاً من $startDateStr.',
+            'سجل ${employee.displayName} إجازة عارضة لمدّة ${req.numberOfDays} يوم بدءاً من $startDateStr$daysOffInfo.',
         data: {
           'leaveId': reqRefId,
           'category': 'leave',
           'requestId': reqRefId,
+          'daysOffInCurrentPeriod': daysOffInCurrentPeriod,
           'route': '/manager/requests?category=leave&requestId=$reqRefId',
         },
       );
@@ -1347,7 +1538,7 @@ class LeaveService {
     if (casualCount >= 3) {
       await RoleNotificationService.instance.notifyRole(
         role: EmployeeRole.hrAdmin,
-        includeSuperAdmins: true,
+        includeSuperAdmins: false,
         type: 'casual_leave_threshold_alert',
         title: 'تنبيه: تكرار إجازة عارضة (3 مرات أو أكثر)',
         body:

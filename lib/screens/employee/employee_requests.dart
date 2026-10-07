@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../features/meeting_requests/data/meeting_repository_impl.dart';
@@ -49,7 +48,6 @@ import '../../models/task_model.dart';
 import '../shared/requests_log_screen.dart';
 import '../../utils/payroll_cycle.dart';
 import '../../utils/permission_cycle_accounting.dart';
-import '../../core/feature_flags/company_os_feature_flags.dart';
 import '../../features/company_os/domain/entities/operational_request_category.dart';
 import '../../navigation/company_os_requests_entry.dart';
 import 'widgets/virtual_office_game_widget.dart';
@@ -115,6 +113,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
   String? _complaintAttachmentUrl;
   final _resignationReasonController = TextEditingController();
   DateTime _resignationDate = DateTime.now().add(const Duration(days: 30));
+  DateTime? _lastWorkingDay;
   String _administrativeCategory = AdministrativeRequestCategory.personalData;
   final _administrativeNotesController = TextEditingController();
   final _administrativeAttachmentController = TextEditingController();
@@ -1166,9 +1165,11 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
         employee: employee,
         reason: _resignationReasonController.text,
         resignationDate: _resignationDate,
+        lastWorkingDay: _lastWorkingDay,
       );
       if (!mounted) return;
       _resignationReasonController.clear();
+      _lastWorkingDay = null;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('تم إرسال طلب الاستقالة بنجاح')),
       );
@@ -1324,9 +1325,12 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
       textDirection: TextDirection.rtl,
       child: Scaffold(
       appBar: AppBar(
-        title: const Text(
-          'المقر الافتراضي ومركز الخدمات',
-          style: TextStyle(fontWeight: FontWeight.bold),
+        title: const FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Text(
+            'المقر الافتراضي ومركز الخدمات',
+            style: TextStyle(fontWeight: FontWeight.bold),
+          ),
         ),
         actions: [
           IconButton(
@@ -1480,21 +1484,6 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
   }
 
   void _openOperationalRequest(String category) {
-    final actorId = context.read<AuthService>().currentUser?.uid ?? '';
-    final enabled = context.read<CompanyOsFeatureFlags>().isEnabledFor(
-      feature: CompanyOsFeature.requests,
-      actorId: actorId,
-    );
-    if (!enabled) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'طلبات الخدمات التقنية والمالية غير مفعّلة لحسابك الآن.',
-          ),
-        ),
-      );
-      return;
-    }
     final types = _requestTypes(context);
     final targetId = category == 'financial'
         ? 'operational_financial'
@@ -1713,25 +1702,6 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
                     _openOperationalRequest('assets');
                   },
                 ),
-                if (kIsWeb)
-                  ListTile(
-                    leading: const Icon(
-                      Icons.folder_shared,
-                      color: ZaWolfColors.primaryCyan,
-                    ),
-                    title: const Text(
-                      'بوابة مستندات الشركة (Google Workspace)',
-                      style: TextStyle(color: ZaWolfColors.textPrimary),
-                    ),
-                    subtitle: const Text(
-                      'متاحة عبر المتصفح ومساحة العمل الرسمية',
-                      style: TextStyle(color: ZaWolfColors.textMuted, fontSize: 11),
-                    ),
-                    onTap: () {
-                      Navigator.pop(context);
-                      context.push('/workspace');
-                    },
-                  ),
               ],
             ),
           ),
@@ -1778,6 +1748,20 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
                   onTap: () {
                     Navigator.pop(context);
                     _openDirectRequest(2);
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(
+                    Icons.payments_outlined,
+                    color: ZaWolfColors.perfGold,
+                  ),
+                  title: const Text(
+                    'طلب مصروفات ومدفوعات الشركة (Company Expenses)',
+                    style: TextStyle(color: ZaWolfColors.textPrimary),
+                  ),
+                  onTap: () {
+                    Navigator.pop(context);
+                    _openOperationalRequest('financial');
                   },
                 ),
                 ListTile(
@@ -1983,10 +1967,6 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
 
   List<({String id, String label, IconData icon, Color color, String? route})>
   _requestTypes(BuildContext context) {
-    final actorId = context.read<AuthService>().currentUser?.uid ?? '';
-    final operationalEnabled = context
-        .read<CompanyOsFeatureFlags>()
-        .isEnabledFor(feature: CompanyOsFeature.requests, actorId: actorId);
     return <({String id, String label, IconData icon, Color color, String? route})>[
       (
         id: 'permission',
@@ -2051,22 +2031,20 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
         color: const Color(0xFF6366F1),
         route: null,
       ),
-      if (operationalEnabled)
-        (
-          id: 'operational_technical',
-          label: 'خدمات تقنية وتشغيلية',
-          icon: Icons.computer_outlined,
-          color: const Color(0xFF0EA5E9),
-          route: null,
-        ),
-      if (operationalEnabled)
-        (
-          id: 'operational_financial',
-          label: 'مصروفات ومدفوعات الشركة',
-          icon: Icons.payments_outlined,
-          color: const Color(0xFFEA580C),
-          route: null,
-        ),
+      (
+        id: 'operational_technical',
+        label: 'خدمات تقنية وتشغيلية',
+        icon: Icons.computer_outlined,
+        color: const Color(0xFF0EA5E9),
+        route: null,
+      ),
+      (
+        id: 'operational_financial',
+        label: 'مصروفات ومدفوعات الشركة',
+        icon: Icons.payments_outlined,
+        color: const Color(0xFFEA580C),
+        route: null,
+      ),
     ];
   }
 
@@ -4237,6 +4215,31 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
               );
               if (picked != null && mounted) {
                 setState(() => _resignationDate = picked);
+              }
+            },
+          ),
+          const SizedBox(height: 8),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('آخر يوم عمل متوقع (اختياري)'),
+            subtitle: Text(
+              _lastWorkingDay != null
+                  ? DateFormat('yyyy/MM/dd').format(_lastWorkingDay!)
+                  : 'حدد تاريخ آخر يوم عمل',
+            ),
+            trailing: const Icon(
+              Icons.event_available,
+              color: ZaWolfColors.primaryCyan,
+            ),
+            onTap: () async {
+              final picked = await showDatePicker(
+                context: context,
+                initialDate: _lastWorkingDay ?? _resignationDate,
+                firstDate: DateTime.now(),
+                lastDate: DateTime.now().add(const Duration(days: 730)),
+              );
+              if (picked != null && mounted) {
+                setState(() => _lastWorkingDay = picked);
               }
             },
           ),

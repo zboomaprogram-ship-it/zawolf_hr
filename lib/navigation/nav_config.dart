@@ -419,14 +419,6 @@ List<NavigationItem> _operationalAdminItems() => [
     domain: NavDomain.people,
   ),
   NavigationItem(
-    icon: Icons.cloud_sync_outlined,
-    activeIcon: Icons.cloud_sync,
-    label: 'مركز ملفات الشركة',
-    englishLabel: 'Company Workspace',
-    path: '/workspace',
-    domain: NavDomain.people,
-  ),
-  NavigationItem(
     icon: Icons.developer_mode_outlined,
     activeIcon: Icons.developer_mode,
     label: 'إدارة أدوات المطوّر',
@@ -671,6 +663,14 @@ List<NavigationItem> _hrItems() {
       domain: NavDomain.approvals,
     ),
     NavigationItem(
+      icon: Icons.settings_suggest_outlined,
+      activeIcon: Icons.settings_suggest,
+      label: 'إعدادات مسارات الاعتماد',
+      englishLabel: 'Approval Chains',
+      path: '/hr/approval-chains-settings',
+      domain: NavDomain.approvals,
+    ),
+    NavigationItem(
       icon: Icons.assignment_turned_in_outlined,
       activeIcon: Icons.assignment_turned_in,
       label: 'سجل الحضور',
@@ -814,6 +814,14 @@ List<NavigationItem> _superAdminItems() {
       label: 'الموافقات',
       englishLabel: 'Approvals',
       path: '/manager/requests',
+      domain: NavDomain.approvals,
+    ),
+    NavigationItem(
+      icon: Icons.settings_suggest_outlined,
+      activeIcon: Icons.settings_suggest,
+      label: 'إعدادات مسارات الاعتماد',
+      englishLabel: 'Approval Chains',
+      path: '/hr/approval-chains-settings',
       domain: NavDomain.approvals,
     ),
     NavigationItem(

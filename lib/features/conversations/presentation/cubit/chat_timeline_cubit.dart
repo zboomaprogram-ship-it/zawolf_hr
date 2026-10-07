@@ -1,9 +1,10 @@
 import 'dart:async';
+import 'package:equatable/equatable.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../domain/entities/rich_chat.dart';
 import '../../domain/repositories/rich_chat_repository.dart';
 
-class ChatTimelineState {
+class ChatTimelineState extends Equatable {
   const ChatTimelineState({
     this.snapshot = const RichChatSnapshot(),
     this.loading = false,
@@ -13,6 +14,9 @@ class ChatTimelineState {
   final RichChatSnapshot snapshot;
   final bool loading, paging;
   final String? error;
+
+  @override
+  List<Object?> get props => [snapshot, loading, paging, error];
 }
 
 class ChatTimelineCubit extends Cubit<ChatTimelineState> {

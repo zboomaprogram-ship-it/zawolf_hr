@@ -19,7 +19,7 @@ final class WebAttendanceAccessRepositoryImpl
   final AuthenticatedOperationClient _operations;
   final Uri _baseUri;
   String _operationId() =>
-      '${DateTime.now().microsecondsSinceEpoch}-${Random().nextInt(1 << 32)}';
+      '${DateTime.now().microsecondsSinceEpoch}-${Random().nextInt(0x7fffffff)}';
   Never _fail(AuthenticatedOperationResponse response) =>
       throw Exception('${response.data['error'] ?? 'تعذر تنفيذ العملية.'}');
   @override

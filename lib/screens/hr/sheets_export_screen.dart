@@ -131,7 +131,7 @@ class _SheetsExportScreenState extends State<SheetsExportScreen> {
             id: report.resourceId,
             name: report.name,
             type: 'sheet',
-            department: 'التقارير',
+            department: 'الموارد البشرية',
             description: 'سجل تدقيق Workspace',
             hasExternalId: true,
             schemaProfileId: '',

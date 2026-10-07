@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart' hide TextDirection;
 import 'package:provider/provider.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../components/wolf_card.dart';
 import '../../models/warning_reward_model.dart';
@@ -27,9 +28,12 @@ class EmployeeWarningsRewardsScreen extends StatelessWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(
-          'الإنذارات والمكافآت',
-          style: theme.textTheme.headlineMedium,
+        title: FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Text(
+            'سجل الإنذارات والمكافآت',
+            style: theme.textTheme.headlineMedium,
+          ),
         ),
       ),
       body: StreamBuilder<List<WarningRewardModel>>(
@@ -45,10 +49,130 @@ class EmployeeWarningsRewardsScreen extends StatelessWidget {
               .where((record) => record.status != WarningRewardStatus.suggested)
               .toList();
           if (visible.isEmpty) {
-            return Center(
-              child: Text(
-                'لا توجد سجلات حتى الآن',
-                style: theme.textTheme.titleMedium,
+            return SingleChildScrollView(
+              padding: const EdgeInsets.all(20),
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 500),
+                  child: Column(
+                    children: [
+                      const SizedBox(height: 16),
+                      Container(
+                        padding: const EdgeInsets.all(22),
+                        decoration: BoxDecoration(
+                          color: ZaWolfColors.success.withValues(alpha: 0.12),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(
+                          Icons.verified_user_rounded,
+                          color: ZaWolfColors.success,
+                          size: 56,
+                        ),
+                      ),
+                      const SizedBox(height: 18),
+                      Text(
+                        'سجل وظيفي منضبط ونظيف 🌟',
+                        style: theme.textTheme.titleLarge?.copyWith(
+                          color: ZaWolfColors.textPrimary,
+                          fontWeight: FontWeight.bold,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 8),
+                      const Text(
+                        'لا توجد أي إنذارات أو مخالفات مسجلة في ملفك. التزامك وحسن أدائك محل تقدير إدارة الشركة!',
+                        style: TextStyle(
+                          color: ZaWolfColors.textSecondary,
+                          fontSize: 13,
+                          height: 1.5,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 28),
+                      WolfCard(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            const Text(
+                              'سجلاتك التشغيلية الأخرى في النظام:',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 14,
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            ListTile(
+                              dense: true,
+                              contentPadding: EdgeInsets.zero,
+                              leading: Container(
+                                padding: const EdgeInsets.all(8),
+                                decoration: BoxDecoration(
+                                  color: ZaWolfColors.primaryCyan
+                                      .withValues(alpha: 0.15),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: const Icon(Icons.assignment_outlined,
+                                    color: ZaWolfColors.primaryCyan, size: 20),
+                              ),
+                              title: const Text('سجل الطلبات والإجازات'),
+                              subtitle: const Text(
+                                  'متابعة حالة الإجازات والأذونات والسلف'),
+                              trailing: const Icon(Icons.chevron_left,
+                                  color: ZaWolfColors.textMuted),
+                              onTap: () => context.push('/employee/requests'),
+                            ),
+                            const Divider(color: ZaWolfColors.surface03),
+                            ListTile(
+                              dense: true,
+                              contentPadding: EdgeInsets.zero,
+                              leading: Container(
+                                padding: const EdgeInsets.all(8),
+                                decoration: BoxDecoration(
+                                  color: ZaWolfColors.warning
+                                      .withValues(alpha: 0.15),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: const Icon(
+                                    Icons.money_off_csred_outlined,
+                                    color: ZaWolfColors.warning, size: 20),
+                              ),
+                              title: const Text('سجل الخصومات والتأخيرات'),
+                              subtitle:
+                                  const Text('سجل الخصومات التلقائية واليدوية'),
+                              trailing: const Icon(Icons.chevron_left,
+                                  color: ZaWolfColors.textMuted),
+                              onTap: () =>
+                                  context.push('/employee/deductions'),
+                            ),
+                            const Divider(color: ZaWolfColors.surface03),
+                            ListTile(
+                              dense: true,
+                              contentPadding: EdgeInsets.zero,
+                              leading: Container(
+                                padding: const EdgeInsets.all(8),
+                                decoration: BoxDecoration(
+                                  color: ZaWolfColors.dayoffPurple
+                                      .withValues(alpha: 0.15),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: const Icon(Icons.task_alt_outlined,
+                                    color: ZaWolfColors.dayoffPurple,
+                                    size: 20),
+                              ),
+                              title: const Text('سجل المهام والأداء'),
+                              subtitle:
+                                  const Text('متابعة المهام المنجزة والجارية'),
+                              trailing: const Icon(Icons.chevron_left,
+                                  color: ZaWolfColors.textMuted),
+                              onTap: () => context.push('/employee/tasks'),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ),
             );
           }

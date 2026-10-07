@@ -151,6 +151,13 @@ test('private chat policy enforces employee, manager, HR/admin, and IT boundarie
   assert.equal(P.canDirect({ uid: 'manager', role: 'manager' }, { id: 'any', role: 'manager' }), true);
   assert.equal(P.canDirect({ uid: 'admin', role: 'super_admin' }, { id: 'any', role: 'employee' }), true);
   assert.equal(P.canDirect(employee, { id: 'gone', isActive: false }), false);
+
+  // Dynamic policy overrides:
+  assert.equal(P.canDirect(employee, { id: 'peer', role: 'employee' }, { employeeCanChatWithPeers: false }), false);
+  assert.equal(P.canDirect(employee, { id: 'foreign-manager', role: 'manager' }, { employeeCanChatWithOtherManagers: true }), true);
+  assert.equal(P.canDirect(employee, { id: 'admin', role: 'super_admin' }, { employeeCanChatWithSuperAdmin: true }), true);
+  assert.equal(P.canDirect(employee, { id: 'manager', role: 'manager' }, { employeeCanChatWithDirectManager: false }), false);
+  assert.equal(P.canDirect(employee, { id: 'hr', role: 'hr_manager' }, { employeeCanChatWithHr: false }), false);
 });
 test('direct creation is deterministic, participant-only, and rejects forged targets', async () => {
   const db = seed({

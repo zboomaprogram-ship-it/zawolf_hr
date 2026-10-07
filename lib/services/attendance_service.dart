@@ -4,6 +4,7 @@ import 'dart:developer' as developer;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:intl/intl.dart' hide TextDirection;
+import 'package:sentry_flutter/sentry_flutter.dart';
 import '../utils/payroll_cycle.dart';
 import '../models/user_model.dart';
 import '../models/attendance_model.dart';
@@ -444,6 +445,14 @@ class AttendanceService {
                 '${employee.displayName}: ${deduction.arabicLabel} (${salaryDeductionAmount.toStringAsFixed(2)} ${employee.salaryCurrency}).',
             data: {'attendanceId': logRef.id},
           );
+          await RoleNotificationService.instance.createNotification(
+            recipientId: employee.uid,
+            type: 'salary_deduction_pending',
+            title: 'تنبيه خصم تأخير',
+            body:
+                'تم تسجيل ${deduction.arabicLabel} (${salaryDeductionAmount.toStringAsFixed(2)} ${employee.salaryCurrency}) بانتظار مراجعة HR.',
+            data: {'attendanceId': logRef.id},
+          );
         }
         if (savedOnline && effectiveLocationRisk.requiresReview) {
           await _notifyLocationSecurityReview(
@@ -607,6 +616,14 @@ class AttendanceService {
                 '${employee.displayName}: ${earlyCheckoutDeduction.label} (${earlyCheckoutDeduction.amount.toStringAsFixed(2)} ${employee.salaryCurrency}).',
             data: {'attendanceId': checkInDoc.id},
           );
+          await RoleNotificationService.instance.createNotification(
+            recipientId: employee.uid,
+            type: 'salary_deduction_pending',
+            title: 'تنبيه خصم انصراف مبكر',
+            body:
+                'تم تسجيل ${earlyCheckoutDeduction.label} (${earlyCheckoutDeduction.amount.toStringAsFixed(2)} ${employee.salaryCurrency}) بانتظار مراجعة HR.',
+            data: {'attendanceId': checkInDoc.id},
+          );
         }
         if (savedOnline && effectiveLocationRisk.requiresReview) {
           await _notifyLocationSecurityReview(
@@ -661,6 +678,16 @@ class AttendanceService {
     developer.log(
       'Attendance client action failed at $stage ($safeCode)',
       name: 'zawolf.attendance',
+    );
+    unawaited(
+      Sentry.captureException(
+        error,
+        withScope: (scope) {
+          scope.setTag('feature', 'attendance_action');
+          scope.setTag('stage', stage);
+          scope.setTag('safeCode', safeCode);
+        },
+      ),
     );
     await SafeDiagnosticsService.instance.capture(
       feature: 'attendance_checkin',
@@ -976,14 +1003,8 @@ class AttendanceService {
     required _LocationRiskAssessment risk,
     required bool isCheckOut,
   }) {
-    return _notifyRole(
-      role: 'hr_admin',
-      type: 'attendance_security_review',
-      title:
-          isCheckOut ? 'انصراف يحتاج مراجعة أمنية' : 'حضور يحتاج مراجعة أمنية',
-      body: '${employee.displayName}: ${risk.message}',
-      data: {'attendanceId': attendanceId},
-    );
+    // Disabled per requirement: do not send notifications for security review.
+    return Future.value();
   }
 
   Future<AttendanceModel?> loadTodayAttendanceForDisplay(String userId) async {
@@ -1298,6 +1319,14 @@ class AttendanceService {
           title: 'خصم عدم تسجيل انصراف بانتظار مراجعة HR',
           body:
               '${employee.displayName}: ${missedCheckoutDeduction.label} عن يوم ${log.date} (${missedCheckoutDeduction.amount.toStringAsFixed(2)} ${employee.salaryCurrency}).',
+          data: {'attendanceId': doc.id},
+        );
+        await RoleNotificationService.instance.createNotification(
+          recipientId: employee.uid,
+          type: 'salary_deduction_pending',
+          title: 'تنبيه عدم تسجيل الانصراف',
+          body:
+              'تم تسجيل ${missedCheckoutDeduction.label} عن يوم ${log.date}.',
           data: {'attendanceId': doc.id},
         );
       }

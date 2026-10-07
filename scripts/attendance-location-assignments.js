@@ -101,7 +101,7 @@ async function validateAssignedLocation({ db, actorUid, rawAction, eventTime }) 
     coordinates.latitude, coordinates.longitude,
   );
   const accuracyMeters = Math.max(0, Number(rawAction.accuracyMeters) || 0);
-  const allowedRadiusMeters = coordinates.radius + Math.min(accuracyMeters, 12);
+  const allowedRadiusMeters = coordinates.radius + Math.min(accuracyMeters, 35);
   if (distanceMeters > allowedRadiusMeters) {
     throw assignmentError('أنت خارج نطاق مواقع الحضور المسندة إليك.', 'outside_range', 409);
   }

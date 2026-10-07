@@ -55,15 +55,10 @@ final class FirestoreRequestVisibilityDataSource
     // them exactly like the current HR role so a valid HR reviewer does not
     // accidentally fall back to the manager-only query below.
     final role = query.actorScope.role.trim().toLowerCase();
-    // COO-1300 is an assigned workflow reviewer. It must not inherit the
-    // unrestricted read model used by the legacy super-admin account role.
-    final isRestrictedCoo =
-        query.actorScope.employeeCode?.trim().toUpperCase() == 'COO-1300';
+    final isRestrictedCoo = role == 'coo';
     final isExecutive =
         (query.actorScope.isExecutive && !isRestrictedCoo) ||
-        query.actorScope.employeeCode?.trim().toUpperCase() == 'CEO-100' ||
-        role == 'ceo' ||
-        (role == 'coo' && !isRestrictedCoo);
+        role == 'ceo';
     final isHrOrAdmin =
         (isExecutive && !isRestrictedCoo) ||
         const <String>{
@@ -252,13 +247,10 @@ final class FirestoreRequestVisibilityDataSource
 
   bool _hasCompanyScope(RequestViewQuery query) {
     final role = query.actorScope.role.trim().toLowerCase();
-    final restrictedCoo =
-        query.actorScope.employeeCode?.trim().toUpperCase() == 'COO-1300';
+    final restrictedCoo = role == 'coo';
     if (restrictedCoo) return false;
     return query.actorScope.isExecutive ||
-        query.actorScope.employeeCode?.trim().toUpperCase() == 'CEO-100' ||
         role == 'ceo' ||
-        role == 'coo' ||
         const <String>{
           'hr',
           'hr_admin',

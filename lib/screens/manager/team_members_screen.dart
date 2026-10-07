@@ -101,7 +101,10 @@ class _TeamMembersScreenState extends State<TeamMembersScreen> {
                         onPressed: () => Navigator.pop(context),
                       )
                       : null,
-              title: Text('ملفات فريقي', style: theme.textTheme.headlineMedium),
+              title: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text('ملفات فريقي', style: theme.textTheme.headlineMedium),
+              ),
               actions: [
                 IconButton(
                   tooltip: 'تحديث',

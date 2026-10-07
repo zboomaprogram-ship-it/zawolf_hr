@@ -60,7 +60,10 @@ class _EmployeeInsightsScreenState extends State<EmployeeInsightsScreen> {
             icon: Icon(RtlNavigation.backIcon(context)),
             onPressed: () => Navigator.maybePop(context),
           ),
-          title: Text('ملف الموظف', style: theme.textTheme.headlineMedium),
+          title: FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Text('ملف الموظف', style: theme.textTheme.headlineMedium),
+          ),
         ),
         body: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
           stream: _db.collection('users').doc(widget.employeeUid).snapshots(),

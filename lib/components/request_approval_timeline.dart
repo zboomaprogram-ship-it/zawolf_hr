@@ -193,7 +193,7 @@ class RequestApprovalTimeline extends StatelessWidget {
           person:
               (_event('ceo')?['actorName'] as String?) ??
               (data['ceoName'] as String?) ??
-              'CEO-100',
+              'الرئيس التنفيذي',
           jobTitle: 'الرئيس التنفيذي',
           icon: Icons.workspace_premium_outlined,
           state: _namedStageState(status, 'ceo', _event('ceo')),

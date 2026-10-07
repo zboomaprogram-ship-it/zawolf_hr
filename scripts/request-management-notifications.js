@@ -42,11 +42,22 @@ function employeeUserIdFromRequest(request = {}) {
 }
 
 function managerUserIds({ request = {}, employee = {} } = {}) {
-  return orderedUnique([
+  const currentApproverId = String(request.currentApproverId || '').trim();
+  const isCeoStage = String(request.status || '').toLowerCase() === 'pending_ceo' ||
+    String(request.stage || '').toLowerCase() === 'ceo' ||
+    (currentApproverId && currentApproverId === String(request.ceoId || '').trim());
+  const directManagerId = String(request.managerId || employee.managerId || request.directManagerId || employee.directManagerId || '').trim();
+  const ceoId = String(request.ceoId || '').trim();
+
+  // CEO only receives reminder notifications if the request is at the CEO approval stage,
+  // or if the employee is directly assigned to the CEO.
+  const includeCeo = Boolean(ceoId && (isCeoStage || directManagerId === ceoId));
+
+  const allManagerCandidates = [
     // Route-based requests (including custom and CEO stages) name the person
     // who must act now. Prefer that recipient before legacy manager fields.
     request.currentApproverId,
-    request.ceoId,
+    ...(includeCeo ? [ceoId] : []),
     ...(Array.isArray(request.managerIds) ? request.managerIds : []),
     request.managerId,
     request.directManagerId,
@@ -55,7 +66,17 @@ function managerUserIds({ request = {}, employee = {} } = {}) {
     employee.managerId,
     employee.directManagerId,
     employee.teamLeaderId,
-  ]);
+  ];
+
+  return orderedUnique(
+    allManagerCandidates.filter((id) => {
+      if (!id) return false;
+      if (!includeCeo && ceoId && id === ceoId) {
+        return false;
+      }
+      return true;
+    })
+  );
 }
 
 function requestEmployeeName(request = {}, employee = {}) {

@@ -22,6 +22,7 @@ import 'core/feature_flags/phase007_feature_flags.dart';
 import 'core/feature_flags/remote_phase007_feature_flags.dart';
 import 'core/feature_flags/company_os_feature_flags.dart';
 import 'core/feature_flags/remote_company_os_feature_flags.dart';
+import 'package:sentry_flutter/sentry_flutter.dart';
 import 'features/company_workspace/data/datasources/firebase_workspace_session.dart';
 import 'features/company_workspace/data/feature_flags/remote_company_workspace_feature_flag.dart';
 
@@ -45,7 +46,24 @@ void main() async {
     debugPrint('Firebase initialization failed: $e');
   }
 
-  runApp(const MyApp());
+  const sentryDsn = String.fromEnvironment(
+    'SENTRY_DSN',
+    defaultValue: 'https://fe357be55546ad24f6fc4e30489b4cfb@o4507000000000000.ingest.us.sentry.io/4507000000000000',
+  );
+
+  await SentryFlutter.init(
+    (options) {
+      options.dsn = sentryDsn;
+      options.tracesSampleRate = 1.0;
+      options.profilesSampleRate = 1.0;
+      options.attachScreenshot = false;
+      options.sendDefaultPii = false;
+      options.enableAutoPerformanceTracing = true;
+      options.autoSessionTrackingInterval = const Duration(milliseconds: 30000);
+      options.environment = kReleaseMode ? 'production' : 'development';
+    },
+    appRunner: () => runApp(const MyApp()),
+  );
 
   unawaited(_initializeAppServicesAfterFirstFrame());
 }
@@ -201,6 +219,18 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
           return MaterialApp(
             debugShowCheckedModeBanner: false,
             theme: ZaWolfTheme.darkTheme,
+            builder: (context, child) {
+              final mediaQuery = MediaQuery.of(context);
+              return MediaQuery(
+                data: mediaQuery.copyWith(
+                  textScaler: mediaQuery.textScaler.clamp(
+                    minScaleFactor: 0.85,
+                    maxScaleFactor: 1.0,
+                  ),
+                ),
+                child: child ?? const SizedBox.shrink(),
+              );
+            },
             home: const Scaffold(
               body: Center(
                 child: CircularProgressIndicator(
@@ -250,13 +280,18 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
                 ],
                 supportedLocales: const [Locale('ar'), Locale('en')],
                 locale: const Locale('ar'),
-                builder:
-                    (context, child) =>
-                        kIsWeb
-                            ? SelectionArea(
-                              child: child ?? const SizedBox.shrink(),
-                            )
-                            : child ?? const SizedBox.shrink(),
+                builder: (context, child) {
+                  final mediaQuery = MediaQuery.of(context);
+                  final clampedScaler = mediaQuery.textScaler.clamp(
+                    minScaleFactor: 0.85,
+                    maxScaleFactor: 1.0,
+                  );
+                  final content = MediaQuery(
+                    data: mediaQuery.copyWith(textScaler: clampedScaler),
+                    child: child ?? const SizedBox.shrink(),
+                  );
+                  return kIsWeb ? SelectionArea(child: content) : content;
+                },
               );
             },
           ),

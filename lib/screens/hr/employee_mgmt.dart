@@ -995,9 +995,12 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(
-          'إدارة شؤون الموظفين',
-          style: theme.textTheme.headlineMedium,
+        title: FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Text(
+            'إدارة شؤون الموظفين',
+            style: theme.textTheme.headlineMedium,
+          ),
         ),
         actions: [
           IconButton(

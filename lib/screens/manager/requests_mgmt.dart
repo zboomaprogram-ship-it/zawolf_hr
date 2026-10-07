@@ -50,6 +50,7 @@ import '../../features/configurable_requests/data/configurable_requests_reposito
 import '../../features/configurable_requests/presentation/custom_request_screens.dart';
 import '../../design_system/bidi.dart';
 import '../../utils/user_facing_error.dart';
+import '../../utils/payroll_cycle.dart';
 import '../../services/safe_diagnostics_service.dart';
 import '../../core/sync/authenticated_operation_client.dart';
 import '../../features/request_visibility/domain/entities/request_view_query.dart';
@@ -3750,9 +3751,15 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
       initialIndex: initialTabIndex,
       child: Scaffold(
         appBar: AppBar(
-          title: Text(
-            'طلبات الموافقة المعلقة',
-            style: theme.textTheme.headlineMedium,
+          title: FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Text(
+              'طلبات الموافقة المعلقة',
+              style: theme.textTheme.titleLarge?.copyWith(
+                fontWeight: FontWeight.bold,
+                color: ZaWolfColors.textPrimary,
+              ) ?? const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+            ),
           ),
           actions: [
             IconButton(
@@ -5526,9 +5533,8 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
             ]);
           }).toList();
     }
-    // COO-1300 is an executive approver, not a company-wide request inbox.
-    // Older Firestore rules permit executive reads for compatibility, so keep
-    // the client list aligned with the actual current approval stage.
+    // The COO is an executive approver, not a company-wide request inbox.
+    // Ensure the client list is aligned with the actual current approval stage.
     if (reviewer.isCompanyCoo) {
       filtered = filtered
           .where((doc) => _canActOnApproval(doc.data(), reviewer))
@@ -5572,9 +5578,8 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
   bool _canActOnApproval(Map<String, dynamic> data, UserModel reviewer) {
     final status = '${data['status'] ?? ''}';
     final reviewerCode = reviewer.employeeId.trim().toUpperCase();
-    final isCompanyCeo =
-        reviewer.canReviewCeoStage || reviewerCode == 'CEO-100';
-    final isCompanyCoo = reviewer.isCompanyCoo || reviewerCode == 'COO-1300';
+    final isCompanyCeo = reviewer.canReviewCeoStage;
+    final isCompanyCoo = reviewer.isCompanyCoo;
     // This account historically carries the super-admin role for account
     // maintenance, but request authority follows its assigned COO stage.
     final isSuperAdmin =
@@ -5599,6 +5604,30 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
 
     final isAccountant =
         reviewer.isAccountant || reviewer.isAdvanceAccountsApprover;
+    final isItMember = reviewer.isItMember;
+
+    final route = (data['approvalRoute'] as List<dynamic>?)
+            ?.map((e) => e is Map ? Map<String, dynamic>.from(e) : null)
+            .whereType<Map<String, dynamic>>()
+            .toList() ??
+        const <Map<String, dynamic>>[];
+    final currentIdx = (data['currentApprovalIndex'] as num?)?.toInt() ?? 0;
+    final currentStage = (currentIdx >= 0 && currentIdx < route.length)
+        ? route[currentIdx]
+        : null;
+    final currentStageLabel = currentStage?['labelAr'] as String? ?? '';
+    final currentStageApproverName = currentStage?['approverName'] as String? ?? '';
+    final isAccountingRouteStage =
+        currentStageLabel == 'الحسابات' ||
+        currentStageLabel == 'مدير الحسابات' ||
+        currentStageApproverName.contains('حساب') ||
+        currentStageApproverName.contains('محاسب');
+    final isItRouteStage =
+        currentStageLabel == 'تقنية المعلومات' ||
+        currentStageLabel == 'مدير تقنية المعلومات' ||
+        currentStageApproverName.contains('تقنية') ||
+        currentStageApproverName.contains('تكنولوجيا') ||
+        currentStageApproverName.toLowerCase().contains('it');
 
     final isAssignedManager =
         managerId == reviewer.uid.toUpperCase() ||
@@ -5607,7 +5636,9 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
         currentApproverId == reviewerCode ||
         managerCodes.contains(reviewerCode) ||
         managerIds.contains(reviewer.uid) ||
-        (data['advanceRouteStage'] == 'accounting' && isAccountant);
+        (data['advanceRouteStage'] == 'accounting' && isAccountant) ||
+        (isAccountingRouteStage && isAccountant) ||
+        (isItRouteStage && isItMember);
 
     // SuperAdmin can approve any pending request
     if (isSuperAdmin) {
@@ -5642,7 +5673,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
         return ceoId.isEmpty ||
             ceoId == reviewer.uid.toUpperCase() ||
             ceoId == reviewerCode ||
-            ceoId == 'CEO-100';
+            isCompanyCeo;
       }
       if (status == 'pending_manager' ||
           status == 'pending_hr' ||
@@ -5656,7 +5687,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
         return cooId.isEmpty ||
             cooId == reviewer.uid.toUpperCase() ||
             cooId == reviewerCode ||
-            cooId == 'COO-1300';
+            isCompanyCoo;
       }
       if (status == 'pending_manager' ||
           status == 'pending_hr' ||
@@ -5691,8 +5722,8 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
         collection == 'permissions' ||
         collection == 'advances';
     final empCode = employeeId?.trim().toUpperCase() ?? '';
-    final reviewerIsCeo = empCode == 'CEO-100' || role == 'ceo';
-    final isCoo = empCode == 'COO-1300' || role == 'coo';
+    final reviewerIsCeo = empCode.startsWith('CEO-') || role == 'ceo';
+    final isCoo = role == 'coo';
     final isExecutive =
         reviewerIsCeo ||
         role == 'super_admin' ||
@@ -5857,6 +5888,71 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
             ),
             Text(
               'الفترة: ${DateFormat('yyyy-MM-dd').format(leave.startDate)} إلى ${DateFormat('yyyy-MM-dd').format(leave.endDate)} (${leave.numberOfDays} يوم)',
+            ),
+            Builder(
+              builder: (context) {
+                final cachedDays = data['daysOffInCurrentPeriod'] ??
+                    leave.daysOffInCurrentPeriod;
+                final periodRange = data['currentPeriodRange'] ??
+                    leave.currentPeriodRange ??
+                    PayrollCycle.forDate(leave.startDate).arabicRangeLabel;
+
+                Widget buildBadge(int days) {
+                  return Padding(
+                    padding: const EdgeInsets.only(top: 6),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 6),
+                      decoration: BoxDecoration(
+                        color:
+                            ZaWolfColors.primaryCyan.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color:
+                              ZaWolfColors.primaryCyan.withValues(alpha: 0.35),
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(
+                            Icons.event_note,
+                            color: ZaWolfColors.primaryCyan,
+                            size: 16,
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            'أيام الإجازة السابقة في الفترة الحالية ($periodRange): $days يوم',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: ZaWolfColors.primaryCyan,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                }
+
+                if (cachedDays != null) {
+                  return buildBadge((cachedDays as num).toInt());
+                }
+
+                return FutureBuilder<int>(
+                  future: LeaveService().countDaysOffInCycleForUser(
+                    userId: leave.userId,
+                    targetDate: leave.startDate,
+                    currentLeaveId: leave.leaveId,
+                  ),
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState == ConnectionState.waiting) {
+                      return const SizedBox.shrink();
+                    }
+                    final count = snapshot.data ?? 0;
+                    return buildBadge(count);
+                  },
+                );
+              },
             ),
             if (leave.convertToAnnual)
               const Text(
@@ -6310,14 +6406,13 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
     UserModel reviewer,
   ) {
     var query = _db.collection('permissions') as Query<Map<String, dynamic>>;
-    final isCompanyCeo = reviewer.employeeId.trim().toUpperCase() == 'CEO-100';
-    final reviewerCode = reviewer.employeeId.trim().toUpperCase();
+    final isCompanyCeo = reviewer.isCompanyCeo;
     final isExecutive =
         reviewer.isExecutiveLeader ||
         reviewer.canReviewCeoStage ||
         isCompanyCeo ||
         reviewer.role == EmployeeRole.superAdmin;
-    final isCompanyCoo = reviewerCode == 'COO-1300';
+    final isCompanyCoo = reviewer.isCompanyCoo;
     if (isCompanyCoo) {
       query = query.where(
         'status',

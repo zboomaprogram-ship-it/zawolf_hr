@@ -34,9 +34,12 @@ class _EmployeePerformanceViewScreenState
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(
-          'لوحة تقييم الأداء والـ KPIs',
-          style: theme.textTheme.headlineMedium,
+        title: FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Text(
+            'لوحة تقييم الأداء والـ KPIs',
+            style: theme.textTheme.headlineMedium,
+          ),
         ),
       ),
       body: StreamBuilder<List<PerformanceModel>>(

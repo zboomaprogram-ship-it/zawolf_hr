@@ -48,6 +48,30 @@ test('notifications prefer the active approval owner, including CEO-100', () => 
   }), ['employee-1']);
 });
 
+test('CEO is only notified if request requires CEO approval or employee reports directly to CEO', () => {
+  const input = { target: 'manager' };
+  // Request pending direct manager; CEO is assigned company CEO but not current approver or direct manager
+  assert.deepEqual(recipientUserIds({
+    input,
+    request: { currentApproverId: 'manager-1', ceoId: 'ceo-user', managerId: 'manager-1', status: 'pending_manager' },
+    employee: { managerId: 'manager-1' },
+  }), ['manager-1']);
+
+  // Request pending CEO approval; CEO must be included
+  assert.deepEqual(recipientUserIds({
+    input,
+    request: { currentApproverId: 'ceo-user', ceoId: 'ceo-user', managerId: 'manager-1', status: 'pending_ceo' },
+    employee: { managerId: 'manager-1' },
+  }), ['ceo-user', 'manager-1']);
+
+  // Employee directly assigned to CEO; CEO must be included
+  assert.deepEqual(recipientUserIds({
+    input,
+    request: { currentApproverId: 'ceo-user', ceoId: 'ceo-user', managerId: 'ceo-user', status: 'pending_manager' },
+    employee: { managerId: 'ceo-user' },
+  }), ['ceo-user']);
+});
+
 test('notification IDs are retry-safe per operation and recipient', () => {
   const first = notificationDocumentId({
     operationId: 'operation-1', recipientUserId: 'manager-1',

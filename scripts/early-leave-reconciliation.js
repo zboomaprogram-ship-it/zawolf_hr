@@ -164,6 +164,7 @@ async function reconcileEarlyLeave({ admin, permissionId }) {
       status: 'consequence_pending_hr',
       consequenceId: consequence.consequenceId,
       dayFraction: consequence.dayFraction,
+      userId: permission.userId,
     };
   });
   await notifyHrReviewers({ admin, permissionId, result });
@@ -210,28 +211,57 @@ async function queueNotification({ admin, recipientId, notificationId, type, tit
   });
 }
 
+function isHrOnlyReviewer(actor) {
+  const role = String(actor?.role || '').toLowerCase();
+  if (['hr', 'hr_admin', 'hr_manager'].includes(role)) {
+    return true;
+  }
+  const scope = [actor?.department, actor?.position, actor?.jobTitle]
+    .filter(Boolean).join(' ').toLowerCase();
+  return /(^|\s)hr([_\s-]|$)/.test(scope) || scope.includes('human resource') ||
+    scope.includes('الموارد البشرية') || scope.includes('موارد بشرية') ||
+    scope.includes('شؤون العاملين');
+}
+
 async function notifyHrReviewers({ admin, permissionId, result }) {
   if (result.status !== 'consequence_pending_hr') return;
   try {
     const usersCollection = admin.firestore().collection('users');
     if (typeof usersCollection.where !== 'function') return;
     const snapshot = await usersCollection.where('isActive', '==', true).limit(100).get();
-    const reviewers = snapshot.docs.filter((doc) => canReviewConsequence(doc.data() || {}));
-    await Promise.all(reviewers.map((doc) => queueNotification({
-      admin,
-      recipientId: doc.id,
-      notificationId: `early-leave-review-${permissionId}-${doc.id}`,
-      type: 'early_leave_deduction_review',
-      title: 'خصم مغادرة مبكرة يحتاج قراراً',
-      body: `يوجد خصم ${Number(result.dayFraction || 0)} يوم بانتظار مراجعة الموارد البشرية.`,
-      data: {
+    const reviewers = snapshot.docs.filter((doc) => isHrOnlyReviewer(doc.data() || {}));
+    await Promise.all([
+      ...reviewers.map((doc) => queueNotification({
+        admin,
+        recipientId: doc.id,
+        notificationId: `early-leave-review-${permissionId}-${doc.id}`,
         type: 'early_leave_deduction_review',
-        permissionId,
-        requestId: permissionId,
-        category: 'salary_deductions',
-        route: `/manager/requests?category=salary_deductions&requestId=${encodeURIComponent(permissionId)}`,
-      },
-    })));
+        title: 'خصم مغادرة مبكرة يحتاج قراراً',
+        body: `يوجد خصم ${Number(result.dayFraction || 0)} يوم بانتظار مراجعة الموارد البشرية.`,
+        data: {
+          type: 'early_leave_deduction_review',
+          permissionId,
+          requestId: permissionId,
+          category: 'salary_deductions',
+          route: `/manager/requests?category=salary_deductions&requestId=${encodeURIComponent(permissionId)}`,
+        },
+      })),
+      ...(result.userId ? [queueNotification({
+        admin,
+        recipientId: result.userId,
+        notificationId: `early-leave-employee-${permissionId}`,
+        type: 'salary_deduction_pending',
+        title: 'تنبيه خصم مغادرة مبكرة',
+        body: `تم تسجيل خصم مغادرة مبكرة (${Number(result.dayFraction || 0)} يوم) بانتظار مراجعة الموارد البشرية.`,
+        data: {
+          type: 'salary_deduction_pending',
+          permissionId,
+          requestId: permissionId,
+          category: 'salary_deductions',
+          route: '/employee/requests',
+        },
+      })] : []),
+    ]);
   } catch (error) {
     console.error('Early-leave HR notification failed:', {
       permissionId,

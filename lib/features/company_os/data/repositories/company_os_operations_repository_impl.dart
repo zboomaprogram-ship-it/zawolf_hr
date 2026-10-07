@@ -130,8 +130,50 @@ final class CompanyOsOperationsRepositoryImpl
       );
     } catch (_) {
       try {
-        final snap = await _db.collection('workspaceAuditLogs').limit(filter.safeLimit).get();
-        final items = snap.docs.map((doc) {
+        final snap = await _db.collection('companyOsAuditEvents').limit(filter.safeLimit).get();
+        if (snap.docs.isNotEmpty) {
+          final items = snap.docs.map((doc) {
+            final d = doc.data();
+            final ts = d['createdAt'] as Timestamp?;
+            return OperationalAuditEvent(
+              id: doc.id,
+              operationId: _text(d['operationId']),
+              actorUid: _text(d['actorUid']),
+              actorRole: _text(d['actorRole']),
+              action: _text(d['action']),
+              targetType: _text(d['targetType']),
+              targetId: _text(d['targetId']),
+              safeBefore: _map(d['safeBefore']),
+              safeAfter: _map(d['safeAfter']),
+              createdAt: ts?.toDate().toLocal() ?? DateTime.now(),
+            );
+          }).toList();
+          return CompanyOsPage(items: items, appliedScope: 'company');
+        }
+
+        final auditSnap = await _db.collection('auditLogs').limit(filter.safeLimit).get();
+        if (auditSnap.docs.isNotEmpty) {
+          final items = auditSnap.docs.map((doc) {
+            final d = doc.data();
+            final ts = d['createdAt'] as Timestamp?;
+            return OperationalAuditEvent(
+              id: doc.id,
+              operationId: _text(d['targetId']),
+              actorUid: _text(d['actorId']),
+              actorRole: 'admin',
+              action: _text(d['action']),
+              targetType: _text(d['targetCollection']),
+              targetId: _text(d['targetId']),
+              safeBefore: const {},
+              safeAfter: _map(d['metadata']),
+              createdAt: ts?.toDate().toLocal() ?? DateTime.now(),
+            );
+          }).toList();
+          return CompanyOsPage(items: items, appliedScope: 'company');
+        }
+
+        final workspaceSnap = await _db.collection('workspaceAuditLogs').limit(filter.safeLimit).get();
+        final items = workspaceSnap.docs.map((doc) {
           final d = doc.data();
           return OperationalAuditEvent(
             id: doc.id,

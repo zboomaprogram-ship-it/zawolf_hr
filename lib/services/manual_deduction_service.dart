@@ -115,9 +115,11 @@ class ManualDeductionService {
 
     // Send notification to the reviewer or employee
     if (status == 'pending_manager') {
-      for (final mgrId in managerIds) {
+      final directManagerId =
+          managerIds.isNotEmpty ? managerIds.first : (targetEmployee.managerId ?? '');
+      if (directManagerId.isNotEmpty) {
         await _sendNotification(
-          recipientId: mgrId,
+          recipientId: directManagerId,
           type: 'salary_deduction_pending',
           title: 'طلب خصم إداري بانتظار موافقتك',
           body:
@@ -131,7 +133,7 @@ class ManualDeductionService {
       final hrDocs =
           await _db
               .collection('users')
-              .where('role', whereIn: ['hr_admin', 'hr_manager', 'super_admin'])
+              .where('role', whereIn: ['hr_admin', 'hr_manager'])
               .get();
       for (final doc in hrDocs.docs) {
         await _sendNotification(

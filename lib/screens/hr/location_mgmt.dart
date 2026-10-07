@@ -168,23 +168,43 @@ class _LocationManagementScreenState extends State<LocationManagementScreen> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
+    final screenWidth = MediaQuery.sizeOf(context).width;
+    final isDesktop = screenWidth >= 900;
+
     return Scaffold(
       appBar: AppBar(
-        title: Text(
-          'إدارة المواقع والفروع',
-          style: theme.textTheme.headlineMedium!.copyWith(color: Colors.white),
+        title: FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Text(
+            'إدارة المواقع والفروع',
+            style: isDesktop
+                ? theme.textTheme.headlineMedium!.copyWith(color: Colors.white)
+                : theme.textTheme.titleLarge?.copyWith(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                  ),
+          ),
         ),
         actions: [
           Padding(
             padding: const EdgeInsetsDirectional.only(end: 12),
-            child: TextButton.icon(
-              key: const ValueKey('attendance-multi-location-action'),
-              onPressed: _visibleLocations.isEmpty
-                  ? null
-                  : () => _openAssignments(_visibleLocations),
-              icon: const Icon(Icons.add_location_alt_outlined),
-              label: const Text('إسناد مواقع متعددة'),
-            ),
+            child: isDesktop
+                ? TextButton.icon(
+                    key: const ValueKey('attendance-multi-location-action'),
+                    onPressed: _visibleLocations.isEmpty
+                        ? null
+                        : () => _openAssignments(_visibleLocations),
+                    icon: const Icon(Icons.add_location_alt_outlined),
+                    label: const Text('إسناد مواقع متعددة'),
+                  )
+                : IconButton(
+                    key: const ValueKey('attendance-multi-location-action'),
+                    tooltip: 'إسناد مواقع متعددة',
+                    onPressed: _visibleLocations.isEmpty
+                        ? null
+                        : () => _openAssignments(_visibleLocations),
+                    icon: const Icon(Icons.add_location_alt_outlined),
+                  ),
           ),
         ],
       ),

@@ -26,6 +26,8 @@ class LeaveModel {
   final bool convertToAnnual;
   final bool autoApprovedOverridden;
   final String? autoApprovalOverrideReason;
+  final int? daysOffInCurrentPeriod;
+  final String? currentPeriodRange;
 
   LeaveModel({
     required this.leaveId,
@@ -53,6 +55,8 @@ class LeaveModel {
     this.convertToAnnual = false,
     this.autoApprovedOverridden = false,
     this.autoApprovalOverrideReason,
+    this.daysOffInCurrentPeriod,
+    this.currentPeriodRange,
   });
 
   factory LeaveModel.fromFirestore(DocumentSnapshot doc) {
@@ -84,6 +88,8 @@ class LeaveModel {
       convertToAnnual: data['convertToAnnual'] as bool? ?? false,
       autoApprovedOverridden: data['autoApprovedOverridden'] as bool? ?? false,
       autoApprovalOverrideReason: overrideMap?['reason'] as String?,
+      daysOffInCurrentPeriod: data['daysOffInCurrentPeriod'] as int?,
+      currentPeriodRange: data['currentPeriodRange'] as String?,
     );
   }
 
@@ -115,6 +121,9 @@ class LeaveModel {
       if (autoApproved) 'autoApproved': true,
       if (convertToAnnual) 'convertToAnnual': true,
       if (autoApprovedOverridden) 'autoApprovedOverridden': true,
+      if (daysOffInCurrentPeriod != null)
+        'daysOffInCurrentPeriod': daysOffInCurrentPeriod,
+      if (currentPeriodRange != null) 'currentPeriodRange': currentPeriodRange,
     };
   }
 }

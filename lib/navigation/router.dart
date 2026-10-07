@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+import 'package:sentry_flutter/sentry_flutter.dart';
 import '../core/feature_flags/company_workspace_feature_flag.dart';
 import '../core/feature_flags/phase007_feature_flags.dart';
 import '../core/feature_flags/company_os_feature_flags.dart';
@@ -37,6 +38,8 @@ import '../features/meeting_requests/presentation/meeting_rooms_management_scree
 import '../features/meeting_requests/presentation/meeting_requests_list_screen.dart';
 import '../features/configurable_requests/data/configurable_requests_repository_impl.dart';
 import '../features/configurable_requests/presentation/custom_request_screens.dart';
+import '../features/request_approval_routing/data/custom_request_template_repository_impl.dart';
+import '../features/request_approval_routing/presentation/pages/approval_chains_settings_page.dart';
 import '../screens/hr/location_mgmt.dart';
 import '../screens/hr/payroll_screen.dart';
 import '../screens/hr/custom_badges_screen.dart';
@@ -97,6 +100,9 @@ class ZaWolfRouter {
 
     return GoRouter(
       initialLocation: '/splash',
+      observers: [
+        SentryNavigatorObserver(),
+      ],
       refreshListenable: Listenable.merge([
         authService,
         workspaceV2.changes,
@@ -712,6 +718,13 @@ class ZaWolfRouter {
               builder:
                   (context, state) => CustomRequestTypesScreen(
                     repository: ConfigurableRequestsRepositoryImpl(),
+                  ),
+            ),
+            GoRoute(
+              path: '/hr/approval-chains-settings',
+              builder:
+                  (context, state) => ApprovalChainsSettingsPage(
+                    repository: CustomRequestTemplateRepositoryImpl(),
                   ),
             ),
             GoRoute(

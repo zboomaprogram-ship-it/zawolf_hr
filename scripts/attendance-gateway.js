@@ -98,7 +98,7 @@ async function bindTrustedDevice({ db, admin, actor, action, userRef, user, deve
       // binding remains protected and requires HR to reset it explicitly,
       // except for executive accounts which may switch between authorized devices.
       const empCode = String(user.employeeId || user.employeeCode || '').trim().toUpperCase();
-      const isExecutive = empCode === 'CEO-100' || empCode === 'COO-1300' || user.role === 'super_admin';
+      const isExecutive = empCode === 'CEO-100' || empCode === 'COO-1300' || empCode === 'MKT-600' || user.role === 'super_admin' || user.executiveRole === 'coo' || user.executiveRole === 'ceo' || Boolean(user.isExecutiveApprover);
       if (registeredSnap.exists && registeredSnap.data()?.userId === actor.uid && !isExecutive && !developerDeviceOverride) {
         throw gatewayError('هذا الحساب مربوط بجهاز حضور آخر. اطلب من HR إعادة ضبط الجهاز.', 'device_mismatch');
       }
@@ -487,10 +487,31 @@ async function resolveCheckInStatus({ admin, actor, attendanceId }) {
   };
 }
 
+/// Employee self-service request to HR when device_mismatch occurs (e.g. app reinstall).
+async function requestDeviceReset({ admin, actor, reason, newDeviceId, newDeviceLabel }) {
+  const db = admin.firestore();
+  const reqId = `reset_${actor.uid}_${Date.now()}`;
+  const reqRef = db.collection('attendanceDeviceResetRequests').doc(reqId);
+  const auditReason = asString(reason, 'طلب اعتماد جهاز جديد');
+  await reqRef.set({
+    requestId: reqId,
+    userId: actor.uid,
+    employeeId: asString(actor.employeeId),
+    employeeName: asString(actor.displayName),
+    reason: auditReason,
+    newDeviceId: asString(newDeviceId),
+    newDeviceLabel: asString(newDeviceLabel, 'Unknown device'),
+    status: 'pending_hr',
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+  });
+  return { action: 'device_reset_request', status: 'submitted', requestId: reqId };
+}
+
 module.exports = {
   submitAttendanceAction,
   bindAttendanceDevice,
   resetAttendanceDevice,
+  requestDeviceReset,
   canResetAttendanceDevice,
   resolveCheckInStatus,
 };

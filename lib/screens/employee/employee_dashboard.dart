@@ -268,7 +268,7 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
     final authService = Provider.of<AuthService>(context, listen: false);
     final user = authService.currentUser;
     if (user == null) {
-      setState(() => _checkingLocation = false);
+      if (mounted) setState(() => _checkingLocation = false);
       return;
     }
 
@@ -277,6 +277,11 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
       final res = await GeofenceService().validateCheckIn(
         user,
         strictLocationOnly: !policy.requiresBiometric,
+      ).timeout(
+        const Duration(seconds: 10),
+        onTimeout: () => throw TimeoutException(
+          'استغرق تحديد موقعك وقتاً أطول من المتوقع. تأكد من تشغيل الـ GPS وصلاحيات الموقع ثم أعد المحاولة.',
+        ),
       );
       if (mounted) {
         setState(() {
@@ -292,6 +297,199 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
         });
       }
     }
+  }
+
+  void _showLocationGuideDialog() {
+    showDialog(
+      context: context,
+      builder: (ctx) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          backgroundColor: ZaWolfColors.surface01,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+            side: const BorderSide(color: ZaWolfColors.surface03),
+          ),
+          title: const Row(
+            children: [
+              Icon(
+                Icons.location_on_outlined,
+                color: ZaWolfColors.primaryCyan,
+                size: 26,
+              ),
+              SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'دليل تفعيل الموقع الجغرافي (GPS)',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Text(
+                  'لتسجيل الحضور والانصراف، يحتاج التطبيق للتحقق من تواجدك في نطاق الفرع. يرجى التأكد من الإعدادات التالية:',
+                  style: TextStyle(
+                    color: ZaWolfColors.textSecondary,
+                    fontSize: 13,
+                    height: 1.5,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                _buildGuideSection(
+                  icon: Icons.android_rounded,
+                  iconColor: Colors.greenAccent,
+                  title: 'أجهزة أندرويد (Android):',
+                  steps: const [
+                    'اسحب شريط الإشعارات من الأعلى وتأكد من تفعيل "الموقع" (Location / GPS).',
+                    'افتح "إعدادات الهاتف" > "التطبيقات" > "ZaWolf HR" > "الأذونات" > "الموقع".',
+                    'اختر "السماح عند استخدام التطبيق فقط" وتأكد من تفعيل مفتاح "استخدام الموقع الدقيق" (Precise location).',
+                  ],
+                ),
+                const SizedBox(height: 14),
+                _buildGuideSection(
+                  icon: Icons.apple_rounded,
+                  iconColor: Colors.white,
+                  title: 'أجهزة آبل (iOS / iPhone):',
+                  steps: const [
+                    'افتح "الإعدادات" > "الخصوصية والأمن" > "خدمات الموقع" وتأكد من تشغيلها.',
+                    'مرر لأسفل واختر تطبيق "ZaWolf HR".',
+                    'اختر "أثناء استخدام التطبيق" وتأكد من تشغيل مفتاح "الموقع الدقيق" (Precise Location: ON).',
+                  ],
+                ),
+                if (kIsWeb) ...[
+                  const SizedBox(height: 14),
+                  _buildGuideSection(
+                    icon: Icons.language_rounded,
+                    iconColor: ZaWolfColors.primaryCyan,
+                    title: 'متصفح الويب (Web):',
+                    steps: const [
+                      'اضغط على أيقونة القفل 🔒 أو الموقع بجوار رابط الصفحة في شريط العنوان.',
+                      'اختر "السماح بالوصول إلى الموقع" (Allow Location).',
+                      'أعد تحديث الصفحة لتفعيل الموقع.',
+                    ],
+                  ),
+                ],
+              ],
+            ),
+          ),
+          actionsAlignment: MainAxisAlignment.spaceBetween,
+          actions: [
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                if (!kIsWeb) ...[
+                  OutlinedButton.icon(
+                    onPressed: () async {
+                      Navigator.pop(ctx);
+                      await Geolocator.openLocationSettings();
+                    },
+                    icon: const Icon(Icons.location_on, size: 16, color: ZaWolfColors.primaryCyan),
+                    label: const Text('إعدادات GPS', style: TextStyle(color: ZaWolfColors.primaryCyan)),
+                  ),
+                  OutlinedButton.icon(
+                    onPressed: () async {
+                      Navigator.pop(ctx);
+                      await Geolocator.openAppSettings();
+                    },
+                    icon: const Icon(Icons.settings, size: 16, color: ZaWolfColors.primaryCyan),
+                    label: const Text('أذونات التطبيق', style: TextStyle(color: ZaWolfColors.primaryCyan)),
+                  ),
+                ],
+                FilledButton.icon(
+                  onPressed: () {
+                    Navigator.pop(ctx);
+                    _checkCurrentGeofence();
+                  },
+                  icon: const Icon(Icons.refresh_rounded, size: 16),
+                  label: const Text('إعادة المحاولة'),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: ZaWolfColors.primaryCyan,
+                    foregroundColor: ZaWolfColors.background,
+                  ),
+                ),
+              ],
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('إغلاق', style: TextStyle(color: ZaWolfColors.textSecondary)),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildGuideSection({
+    required IconData icon,
+    required Color iconColor,
+    required String title,
+    required List<String> steps,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: ZaWolfColors.surface02,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: ZaWolfColors.surface03),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, size: 18, color: iconColor),
+              const SizedBox(width: 8),
+              Text(
+                title,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 13,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          for (var i = 0; i < steps.length; i++)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '${i + 1}. ',
+                    style: const TextStyle(
+                      color: ZaWolfColors.primaryCyan,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 12,
+                    ),
+                  ),
+                  Expanded(
+                    child: Text(
+                      steps[i],
+                      style: const TextStyle(
+                        color: ZaWolfColors.textSecondary,
+                        fontSize: 12,
+                        height: 1.4,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
   }
 
   Future<void> _checkCompanyDayOff() async {
@@ -1016,6 +1214,8 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
                       geofenceResult: _geofenceResult,
                       checkingLocation: _checkingLocation,
                       onRetryGeofence: _checkCurrentGeofence,
+                      locationError: _locationError,
+                      onOpenGuide: _showLocationGuideDialog,
                     ),
                     const SizedBox(height: 12),
 
@@ -1033,31 +1233,64 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
 
                     if (_locationError != null) ...[
                       WolfCard(
-                        child: Row(
+                        padding: const EdgeInsets.all(14),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
-                            TextButton.icon(
-                              onPressed:
-                                  _checkingLocation
-                                      ? null
-                                      : _checkCurrentGeofence,
-                              icon: const Icon(Icons.refresh),
-                              label: const Text('تحديث'),
-                            ),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: Text(
-                                _locationError!,
-                                style: const TextStyle(
+                            Row(
+                              children: [
+                                const Icon(
+                                  Icons.location_disabled_outlined,
                                   color: ZaWolfColors.warning,
-                                  fontWeight: FontWeight.bold,
+                                  size: 24,
                                 ),
-                                textDirection: TextDirection.rtl,
-                              ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: Text(
+                                    _locationError!,
+                                    style: const TextStyle(
+                                      color: ZaWolfColors.warning,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 13,
+                                    ),
+                                    textDirection: TextDirection.rtl,
+                                  ),
+                                ),
+                              ],
                             ),
-                            const SizedBox(width: 10),
-                            const Icon(
-                              Icons.location_disabled_outlined,
-                              color: ZaWolfColors.warning,
+                            const SizedBox(height: 12),
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: [
+                                OutlinedButton.icon(
+                                  onPressed: _showLocationGuideDialog,
+                                  icon: const Icon(Icons.help_outline, size: 16, color: ZaWolfColors.primaryCyan),
+                                  label: const Text('دليل تفعيل الموقع', style: TextStyle(color: ZaWolfColors.primaryCyan, fontSize: 12)),
+                                ),
+                                if (!kIsWeb) ...[
+                                  OutlinedButton.icon(
+                                    onPressed: () async => Geolocator.openLocationSettings(),
+                                    icon: const Icon(Icons.location_on, size: 16, color: ZaWolfColors.primaryCyan),
+                                    label: const Text('إعدادات GPS', style: TextStyle(color: ZaWolfColors.primaryCyan, fontSize: 12)),
+                                  ),
+                                  OutlinedButton.icon(
+                                    onPressed: () async => Geolocator.openAppSettings(),
+                                    icon: const Icon(Icons.settings, size: 16, color: ZaWolfColors.primaryCyan),
+                                    label: const Text('أذونات التطبيق', style: TextStyle(color: ZaWolfColors.primaryCyan, fontSize: 12)),
+                                  ),
+                                ],
+                                FilledButton.icon(
+                                  onPressed: _checkingLocation ? null : _checkCurrentGeofence,
+                                  icon: const Icon(Icons.refresh, size: 16),
+                                  label: const Text('تحديث', style: TextStyle(fontSize: 12)),
+                                  style: FilledButton.styleFrom(
+                                    backgroundColor: ZaWolfColors.primaryCyan,
+                                    foregroundColor: ZaWolfColors.background,
+                                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                                  ),
+                                ),
+                              ],
                             ),
                           ],
                         ),

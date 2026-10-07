@@ -32,11 +32,7 @@ class ResignationService {
 
   Stream<List<ResignationModel>> watchPending(UserModel reviewer) {
     Query<Map<String, dynamic>> query = _db.collection('resignations');
-    final reviewerCode = reviewer.employeeId.trim().toUpperCase();
-    final isCompanyCeo = reviewer.isCompanyCeo || reviewerCode == 'CEO-100';
-    final isCompanyCoo = reviewer.isCompanyCoo || reviewerCode == 'COO-1300';
-    final isExecutive =
-        isCompanyCeo || isCompanyCoo || reviewer.role == EmployeeRole.superAdmin;
+    final isExecutive = reviewer.canReviewExecutiveStage;
     if (isExecutive) {
       query = query.where(
         'status',
@@ -63,6 +59,7 @@ class ResignationService {
     required UserModel employee,
     required String reason,
     required DateTime resignationDate,
+    DateTime? lastWorkingDay,
   }) async {
     final cleanReason = reason.trim();
     final today = DateTime.now();
@@ -95,7 +92,10 @@ class ResignationService {
       'department': employee.department,
       'reason': cleanReason,
       'resignationDate': Timestamp.fromDate(resignationDate),
+      if (lastWorkingDay != null)
+        'lastWorkingDay': Timestamp.fromDate(lastWorkingDay),
       'status': managerIds.isEmpty ? 'pending_hr' : 'pending_manager',
+      'clearanceStatus': 'pending',
       'managerId': firstManagerId,
       'managerIds': managerIds,
       'managerNames': managerNames,
@@ -151,8 +151,31 @@ class ResignationService {
         'reviewerName': reviewer.displayName,
         'reviewerComment': comment.trim(),
         'reviewedAt': FieldValue.serverTimestamp(),
+        'clearanceStatus': approve ? 'archived_in_clearances' : 'rejected',
         'isRead': true,
       });
+
+      if (approve) {
+        try {
+          await _db.collection('clearances').doc(resignationId).set({
+            'resignationId': resignationId,
+            'userId': request.userId,
+            'employeeId': request.employeeId,
+            'employeeName': request.employeeName,
+            'department': request.department,
+            'lastWorkingDay': request.lastWorkingDay != null
+                ? Timestamp.fromDate(request.lastWorkingDay!)
+                : null,
+            'resignationDate': Timestamp.fromDate(request.resignationDate),
+            'reason': request.reason,
+            'status': 'cleared',
+            'archivedAt': FieldValue.serverTimestamp(),
+            'archivedBy': reviewer.uid,
+          }, SetOptions(merge: true));
+        } catch (e) {
+          debugPrint('Archiving resignation to clearances failed: $e');
+        }
+      }
     } else {
       final reviewerCode = reviewer.employeeId.trim().toUpperCase();
       final isMatchingManager =

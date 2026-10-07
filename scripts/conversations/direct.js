@@ -9,6 +9,7 @@ async function createDirect({ db, actor, payload, now = new Date() }) {
   const op = C.operation(db, actor, 'direct', payload);
   const ids = pair(actor.uid, payload.targetUserId);
   const pairKey = C.hash(ids).slice(0, 48), id = `direct:${pairKey}`;
+  const policy = await P.loadPolicy(db);
   return db.runTransaction(async tx => {
     const prior = C.replay(await tx.get(op.ref), op); if (prior) return prior;
     const docs = await Promise.all(ids.map(userId => tx.get(db.collection('users').doc(userId))));
@@ -16,7 +17,7 @@ async function createDirect({ db, actor, payload, now = new Date() }) {
     const [first, second] = docs.map(doc => userDto(doc.id, doc.data()));
     const self = first.id === actor.uid ? first : second;
     const target = first.id === actor.uid ? second : first;
-    if (!P.canDirect({ ...self, ...actor }, target)) C.fail('access_denied', 403);
+    if (!P.canDirect({ ...self, ...actor }, target, policy)) C.fail('access_denied', 403);
     const ref = db.collection('conversations').doc(id), existing = await tx.get(ref);
     if (!existing.exists) tx.create(ref, {
       kind: 'direct', state: 'active', memberUserIds: ids, participantUserIds: ids, pairKey,

@@ -17,7 +17,7 @@ class RoleNotificationService {
     required String body,
     Map<String, dynamic>? data,
     String? eventId,
-    bool includeSuperAdmins = true,
+    bool includeSuperAdmins = false,
   }) async {
     try {
       final targets = await recipientIdsForRole(
@@ -42,7 +42,7 @@ class RoleNotificationService {
 
   Future<Set<String>> recipientIdsForRole(
     String role, {
-    bool includeSuperAdmins = true,
+    bool includeSuperAdmins = false,
   }) async {
     final targets = <String>{};
     await _addDirectoryRecipients(targets, role);
@@ -76,6 +76,9 @@ class RoleNotificationService {
     Map<String, dynamic>? data,
     String? eventId,
   }) async {
+    // Disabled per requirement: do not send notifications for security review.
+    if (type == 'attendance_security_review') return;
+
     final resolvedEventId = eventId ?? _eventIdFromData(type, data);
     final items = _db
         .collection('notifications')

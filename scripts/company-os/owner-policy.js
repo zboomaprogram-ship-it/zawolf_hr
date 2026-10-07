@@ -6,9 +6,23 @@ async function resolveCompanyOwner(db) {
     const policy = policySnapshot.docs[0].data();
     return { ownerUid: policy.ownerUid, version: Number(policy.version), source: 'managed_policy' };
   }
-  const ownerSnapshot = await db.collection('users').where('code', '==', 'ceo-100').where('isActive', '==', true).limit(2).get();
-  if (ownerSnapshot.size !== 1) { const error = new Error('Owner unavailable'); error.code = 'owner_unavailable'; throw error; }
-  return { ownerUid: ownerSnapshot.docs[0].id, version: 1, source: 'initial_resolution' };
+  const queries = [
+    db.collection('users').where('isExecutiveApprover', '==', true).where('isActive', '==', true).limit(1),
+    db.collection('users').where('executiveRole', '==', 'ceo').where('isActive', '==', true).limit(1),
+    db.collection('users').where('employeeId', '==', 'CEO-100').where('isActive', '==', true).limit(1),
+    db.collection('users').where('employeeCode', '==', 'CEO-100').where('isActive', '==', true).limit(1),
+    db.collection('users').where('code', '==', 'ceo-100').where('isActive', '==', true).limit(2),
+    db.collection('users').where('role', '==', 'super_admin').where('isActive', '==', true).limit(1),
+  ];
+  for (const q of queries) {
+    try {
+      const snap = await q.get();
+      if (!snap.empty) {
+        return { ownerUid: snap.docs[0].id, version: 1, source: 'initial_resolution' };
+      }
+    } catch (_) {}
+  }
+  const error = new Error('Owner unavailable'); error.code = 'owner_unavailable'; throw error;
 }
 
 async function replaceCompanyOwner({ db, ownerUid, actorUid, operationId, now = new Date() }) {

@@ -9,8 +9,32 @@ class HiringRequest {
   final String id, name, jobTitle, status, currentApproverName;
 }
 
+class HiringManagerOption {
+  const HiringManagerOption({
+    required this.id,
+    required this.name,
+    required this.employeeId,
+    required this.department,
+  });
+  final String id, name, employeeId, department;
+}
+
+class HiringEmployeeOption {
+  const HiringEmployeeOption({
+    required this.id,
+    required this.name,
+    required this.employeeId,
+    required this.department,
+    required this.jobTitle,
+  });
+  final String id, name, employeeId, department, jobTitle;
+}
+
 abstract interface class HiringRequestRepository {
   Future<List<HiringRequest>> list();
+  Future<List<HiringManagerOption>> getManagers();
+  Future<List<String>> getJobTitles();
+  Future<List<HiringEmployeeOption>> getEmployees();
   Future<void> create({
     required String name,
     required String jobTitle,

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import '../../../../core/errors/errors.dart';
@@ -69,11 +70,7 @@ final class HttpWorkspaceSheetRemoteDataSource
           ),
         );
       }
-      final raw = jsonDecode(response.body);
-      if (raw is! Map) {
-        throw const FormatException('Invalid workspace sheet response');
-      }
-      return _snapshotFromJson(Map<String, Object?>.from(raw));
+      return await compute(_parseSnapshotFromBody, response.body);
     } on WorkspaceRemoteFailure {
       rethrow;
     } on TimeoutException {
@@ -94,7 +91,15 @@ final class HttpWorkspaceSheetRemoteDataSource
     }
   }
 
-  SpreadsheetSnapshot _snapshotFromJson(Map<String, Object?> json) {
+  static SpreadsheetSnapshot _parseSnapshotFromBody(String body) {
+    final raw = jsonDecode(body);
+    if (raw is! Map) {
+      throw const FormatException('Invalid workspace sheet response');
+    }
+    return _snapshotFromJson(Map<String, Object?>.from(raw));
+  }
+
+  static SpreadsheetSnapshot _snapshotFromJson(Map<String, Object?> json) {
     final viewport = Map<String, Object?>.from(
       json['viewport'] as Map? ?? const {},
     );
@@ -163,6 +168,6 @@ final class HttpWorkspaceSheetRemoteDataSource
     );
   }
 
-  int _asInt(Object? value) =>
+  static int _asInt(Object? value) =>
       value is num ? value.toInt() : int.tryParse('$value') ?? 0;
 }

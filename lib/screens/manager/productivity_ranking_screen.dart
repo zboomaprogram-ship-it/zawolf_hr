@@ -132,7 +132,10 @@ class _ProductivityRankingScreenState extends State<ProductivityRankingScreen> {
             icon: Icon(RtlNavigation.backIcon(context)),
             onPressed: () => Navigator.maybePop(context),
           ),
-          title: Text('ترتيب الإنتاجية', style: theme.textTheme.headlineMedium),
+          title: FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Text('ترتيب الإنتاجية', style: theme.textTheme.headlineMedium),
+          ),
           actions: [
             IconButton(
               tooltip: 'تحديث الحساب',

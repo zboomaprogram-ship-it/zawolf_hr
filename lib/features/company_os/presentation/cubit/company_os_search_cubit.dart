@@ -25,14 +25,19 @@ final class CompanyOsSearchFailure extends CompanyOsSearchState {
 
 final class CompanyOsSearchCubit extends Cubit<CompanyOsSearchState> {
   CompanyOsSearchCubit(this._repository)
-    : super(const CompanyOsSearchLoading());
+      : super(const CompanyOsSearchLoading());
   final CompanyOsOperationsRepository _repository;
+  int _activeRequestId = 0;
 
   Future<void> search(CompanyOperationsFilter filter) async {
+    final currentRequestId = ++_activeRequestId;
     emit(const CompanyOsSearchLoading());
     try {
-      emit(CompanyOsSearchReady(await _repository.search(filter), filter));
+      final results = await _repository.search(filter);
+      if (isClosed || currentRequestId != _activeRequestId) return;
+      emit(CompanyOsSearchReady(results, filter));
     } catch (_) {
+      if (isClosed || currentRequestId != _activeRequestId) return;
       emit(CompanyOsSearchFailure('تعذر إكمال البحث. أعد المحاولة.', filter));
     }
   }

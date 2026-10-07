@@ -19,7 +19,7 @@ function materializeApprovalPlan({ requestId, requestType, managerUid, specialis
   const stages = [];
   if (managerUid) {
     stages.push({ type: 'manager', assigneeUid: managerUid, required: true, status: 'pending' });
-  } else if (!specialistRole) {
+  } else if (!specialistRole && !classification.costBearing) {
     const error = new Error('Manager unavailable'); error.code = 'access_denied'; throw error;
   }
   if (specialistRole) stages.push({ type: 'specialist', role: specialistRole, required: true, status: 'pending' });

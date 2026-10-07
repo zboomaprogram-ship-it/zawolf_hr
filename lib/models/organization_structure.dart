@@ -26,10 +26,14 @@ class OrganizationLevel {
   static String defaultFor({
     required String employeeId,
     required String appRole,
+    String? executiveRole,
   }) {
+    final execRole = (executiveRole ?? '').trim().toLowerCase();
     final code = employeeId.trim().toUpperCase();
-    if (code == 'CEO-100') return ceo;
-    if (code == 'COO-1300') return divisionManager;
+    if (execRole == 'ceo' || code.startsWith('CEO-') || (appRole == 'super_admin' && execRole != 'coo' && !code.startsWith('COO-'))) return ceo;
+    if (execRole == 'coo' || code.startsWith('COO-') || appRole == 'coo') {
+      return divisionManager;
+    }
     if (appRole == 'team_leader') return teamLeader;
     if (appRole == 'manager' ||
         appRole == 'hr_admin' ||
@@ -120,7 +124,7 @@ class OrganizationDefaults {
       id: operations,
       name: 'القسم التشغيلي',
       order: 1,
-      managerEmployeeId: 'COO-1300',
+      managerEmployeeId: 'MKT-600',
     ),
     OrganizationDivision(id: sales, name: 'قسم المبيعات', order: 2),
   ];

@@ -73,7 +73,7 @@ async function hydrate(db, messages) {
     const atts = Array.isArray(m.attachments) ? m.attachments : [];
     return {
       ...m,
-      attachments: resIds.map(id => atts.find(a => a.resourceId === id) || (resources.get(id)?.conversationId === m.conversationId ? attachmentDto(id, resources.get(id)) : {resourceId:id,fileName:'',mimeType:'application/octet-stream',sizeBytes:0,kind:'file',status:'unavailable'}))
+      attachments: resIds.map(id => atts.find(a => a.resourceId === id) || (resources.get(id)?.conversationId === m.conversationId ? attachmentDto(id, resources.get(id)) : {resourceId:id,fileName:resources.get(id)?.fileName || 'ملف مرفق',mimeType:resources.get(id)?.mimeType || 'application/octet-stream',sizeBytes:resources.get(id)?.sizeBytes || 0,kind:resources.get(id)?.kind || 'file',status:resources.get(id)?.status || 'uploaded'}))
     };
   });
 }

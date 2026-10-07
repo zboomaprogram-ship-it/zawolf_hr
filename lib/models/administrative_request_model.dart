@@ -6,6 +6,7 @@ class AdministrativeRequestCategory {
   static const softwareSubscription = 'software_subscription';
   static const equipment = 'equipment';
   static const fieldMission = 'field_mission';
+  static const companyExpenses = 'company_expenses';
   static const other = 'other';
 
   static const values = [
@@ -14,6 +15,7 @@ class AdministrativeRequestCategory {
     softwareSubscription,
     equipment,
     fieldMission,
+    companyExpenses,
     other,
   ];
 
@@ -23,6 +25,7 @@ class AdministrativeRequestCategory {
     softwareSubscription => 'اشتراك برنامج أو خدمة',
     equipment => 'جهاز أو معدات',
     fieldMission => 'مهمة ميدانية',
+    companyExpenses => 'مصروفات ومدفوعات الشركة',
     _ => 'طلب إداري آخر',
   };
 }

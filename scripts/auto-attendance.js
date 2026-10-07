@@ -146,7 +146,7 @@ async function writeHrNotification(db, title, body, data, type = 'salary_deducti
     const user = userDoc.data();
     if (user?.isActive === false) continue;
     const role = user.role;
-    if (role !== 'hr_admin' && role !== 'hr_manager' && role !== 'super_admin') continue;
+    if (role !== 'hr_admin' && role !== 'hr_manager') continue;
     const notification = db.collection('notifications').doc(userDoc.id).collection('items').doc();
     batch.set(notification, {
       notificationId: notification.id,
@@ -158,6 +158,21 @@ async function writeHrNotification(db, title, body, data, type = 'salary_deducti
     count++;
   }
   if (count) await batch.commit();
+}
+
+async function writeUserNotification(db, userId, title, body, data, type = 'salary_deduction_pending') {
+  if (!userId) return;
+  const userRef = db.collection('users').doc(userId);
+  const notification = db.collection('notifications').doc(userId).collection('items').doc();
+  const batch = db.batch();
+  batch.set(notification, {
+    notificationId: notification.id,
+    type, title, body, data,
+    isRead: false, pushSent: false,
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+  });
+  batch.update(userRef, { unreadNotifications: admin.firestore.FieldValue.increment(1) });
+  await batch.commit();
 }
 
 function activeWorkingPeriod({ nowMinutes, workTimes, permissions, policy }) {
@@ -369,6 +384,7 @@ async function processSignal(db, signalDoc, company, now, checkoutPolicy, multiL
     await resolveSignal(db, signalDoc, 'processed_check_in', { attendanceId: attendanceRef.id });
     if (deduction.fraction > 0) {
       await writeHrNotification(db, 'خصم تأخير بانتظار مراجعة HR', `${user.displayName || user.employeeId}: ${deduction.label} (${deduction.amount.toFixed(2)} ${deduction.currency}).`, { attendanceId: attendanceRef.id });
+      await writeUserNotification(db, userDoc.id, 'تنبيه خصم تأخير', `تم تسجيل ${deduction.label} (${deduction.amount.toFixed(2)} ${deduction.currency}) بانتظار مراجعة HR.`, { attendanceId: attendanceRef.id });
     }
     return;
   }

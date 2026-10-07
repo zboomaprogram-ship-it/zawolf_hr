@@ -5,6 +5,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:sentry_flutter/sentry_flutter.dart';
 import '../models/user_model.dart';
 import '../models/leave_entitlement_policy.dart';
 import '../models/employee_role.dart';
@@ -28,6 +30,11 @@ class AuthService with ChangeNotifier {
   bool _interactiveSignInInProgress = false;
 
   static const _cachedProfileKey = 'zawolf.auth.cached_profile.v1';
+
+  static const _secureStorage = FlutterSecureStorage(
+    aOptions: AndroidOptions(encryptedSharedPreferences: true),
+    iOptions: IOSOptions(accessibility: KeychainAccessibility.first_unlock),
+  );
 
   static String _profileCacheKey(String uid) => '$_cachedProfileKey.$uid';
 
@@ -60,6 +67,9 @@ class AuthService with ChangeNotifier {
         _loading = false;
         notifyListeners();
         unawaited(OneSignalService.instance.logout());
+        unawaited(() async {
+          await Sentry.configureScope((scope) => scope.setUser(null));
+        }());
       } else {
         if (_interactiveSignInInProgress) return;
         if (_currentUser?.uid == user.uid && !_loading) {
@@ -104,6 +114,30 @@ class AuthService with ChangeNotifier {
   Future<void> _startUserSessionServices(String uid) async {
     if (_startedSessionServicesForUid == uid || _currentUser == null) return;
     _startedSessionServicesForUid = uid;
+    final user = _currentUser;
+    if (user != null) {
+      unawaited(
+        () async {
+          await Sentry.configureScope((scope) {
+            scope.setUser(
+              SentryUser(
+                id: user.uid,
+                email: user.email,
+                username: user.displayName,
+                data: {
+                  'role': user.role,
+                  'employeeId': user.employeeId,
+                  'department': user.department,
+                },
+              ),
+            );
+            scope.setTag('role', user.role);
+            scope.setTag('department', user.department);
+            scope.setTag('employeeId', user.employeeId);
+          });
+        }(),
+      );
+    }
     if (kIsWeb) return;
     NotificationService.instance.startListening(uid);
     unawaited(OneSignalService.instance.login(uid));
@@ -158,10 +192,23 @@ class AuthService with ChangeNotifier {
 
   Future<UserModel?> _readCachedProfile(String uid) async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final raw =
-          prefs.getString(_profileCacheKey(uid)) ??
-          prefs.getString(_cachedProfileKey);
+      // 1. First attempt to read from encrypted hardware-backed secure storage
+      String? raw = await _secureStorage.read(key: _profileCacheKey(uid));
+
+      // 2. Legacy fallback & migration from unencrypted SharedPreferences
+      if (raw == null || raw.isEmpty) {
+        final prefs = await SharedPreferences.getInstance();
+        raw = prefs.getString(_profileCacheKey(uid)) ??
+            prefs.getString(_cachedProfileKey);
+
+        if (raw != null && raw.isNotEmpty) {
+          // Migrate immediately to secure storage and purge plaintext copy
+          await _secureStorage.write(key: _profileCacheKey(uid), value: raw);
+          await prefs.remove(_profileCacheKey(uid));
+          await prefs.remove(_cachedProfileKey);
+        }
+      }
+
       if (raw == null || raw.isEmpty) return null;
 
       final data = jsonDecode(raw);
@@ -169,7 +216,7 @@ class AuthService with ChangeNotifier {
       final cachedUser = UserModel.fromSessionCache(data);
       return cachedUser.uid == uid ? cachedUser : null;
     } catch (e) {
-      if (kDebugMode) debugPrint('Unable to restore cached user profile: $e');
+      if (kDebugMode) debugPrint('Unable to restore cached user profile: ');
       return null;
     }
   }
@@ -222,15 +269,20 @@ class AuthService with ChangeNotifier {
   }
 
   Future<void> _cacheProfile(UserModel user) async {
-    final prefs = await SharedPreferences.getInstance();
     final encoded = jsonEncode(user.toSessionCache());
-    await prefs.setString(_profileCacheKey(user.uid), encoded);
-    // Keep the legacy key during migration for installed builds that have not
-    // received this change yet. Reads always prefer the UID-scoped entry.
-    await prefs.setString(_cachedProfileKey, encoded);
+    // Persist sensitive profile and compensation data in encrypted secure storage
+    await _secureStorage.write(key: _profileCacheKey(user.uid), value: encoded);
+
+    // Purge any remaining plaintext profiles from SharedPreferences
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_profileCacheKey(user.uid));
+    await prefs.remove(_cachedProfileKey);
   }
 
   Future<void> _clearCachedProfile([String? uid]) async {
+    if (uid != null) {
+      await _secureStorage.delete(key: _profileCacheKey(uid));
+    }
     final prefs = await SharedPreferences.getInstance();
     if (uid != null) await prefs.remove(_profileCacheKey(uid));
     await prefs.remove(_cachedProfileKey);

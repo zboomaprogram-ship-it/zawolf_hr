@@ -67,22 +67,32 @@ class ChatInboxCubit extends Cubit<ChatInboxState> {
   final RichChatRepository repository;
   final String? section;
   StreamSubscription<ChatPage<RichChannel>>? _subscription;
+  final Map<String, bool> _archivedCache = {};
   Future<List<RichChannel>> _visible(Iterable<RichChannel> channels) async {
+    final list = channels.toList();
+    final checks = await Future.wait(
+      list.map((c) async {
+        if (_archivedCache.containsKey(c.id)) return _archivedCache[c.id]!;
+        try {
+          final isArch = await repository.isArchived(c.id);
+          _archivedCache[c.id] = isArch;
+          return isArch;
+        } on NoSuchMethodError {
+          return false;
+        } catch (_) {
+          return false;
+        }
+      }),
+    );
     final visible = <RichChannel>[];
-    for (final channel in channels) {
-      var archived = false;
-      try {
-        archived = await repository.isArchived(channel.id);
-      } on NoSuchMethodError {
-        // Compatibility with pre-archive repository doubles during the
-        // Strangler migration. Production implementations always persist it.
-      }
-      if (!archived) visible.add(channel);
+    for (var i = 0; i < list.length; i++) {
+      if (!checks[i]) visible.add(list[i]);
     }
     return visible;
   }
 
   Future<void> archive(RichChannel channel) async {
+    _archivedCache[channel.id] = true;
     await repository.setArchived(channel.id, true);
     if (!isClosed) {
       emit(
@@ -98,6 +108,7 @@ class ChatInboxCubit extends Cubit<ChatInboxState> {
   }
 
   Future<void> restore(RichChannel channel) async {
+    _archivedCache[channel.id] = false;
     await repository.setArchived(channel.id, false);
     await load();
   }

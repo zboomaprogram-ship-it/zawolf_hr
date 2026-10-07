@@ -19,7 +19,10 @@ class SuggestionsManagementScreen extends StatelessWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text('المقترحات', style: theme.textTheme.headlineMedium),
+        title: FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Text('المقترحات', style: theme.textTheme.headlineMedium),
+        ),
       ),
       body: StreamBuilder<List<SuggestionModel>>(
         stream: service.watchAllSuggestions(),

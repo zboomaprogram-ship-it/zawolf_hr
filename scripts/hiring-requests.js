@@ -12,8 +12,59 @@ const userName = (data) => clean(data?.displayName || data?.name || 'موظف', 
 const roleText = (data) => [data?.role, data?.department, data?.departmentName, data?.position, data?.jobTitle]
   .filter(Boolean).join(' ').toLowerCase();
 const isManager = (data) => ['manager', 'team_leader', 'hr_manager'].includes(String(data?.role || '').toLowerCase()) || roleText(data).includes('manager') || roleText(data).includes('مدير');
-const isIt = (data) => /\bit\b|information technology|تقنية|تكنولوجيا/.test(roleText(data));
-const isAccounts = (data) => /accounts?|accounting|finance|مالية|حسابات/.test(roleText(data));
+const isIt = (data) => /\bit\b|information technology|تقنية|تكنولوجيا/i.test(roleText(data));
+const isAccounts = (data) => /accounts?|accounting|finance|مالية|حسابات/i.test(roleText(data));
+
+function isActorItApprover(actor = {}) {
+  const dept = String(actor?.department || actor?.departmentName || '').trim().toUpperCase();
+  const empId = String(actor?.employeeId || actor?.employeeCode || '').trim().toUpperCase();
+  const pos = String(actor?.position || actor?.jobTitle || '').trim();
+  const isItDept = dept === 'IT' || /تقنية|تكنولوجيا/i.test(dept);
+  const isItCode = empId.startsWith('IT-');
+  const isItPos = /\bIT\b/i.test(pos) || /تقنية|تكنولوجيا/i.test(pos);
+  return actor.isHiringItApprover === true ||
+    isItDept || isItCode || isItPos ||
+    actor.role === 'super_admin';
+}
+
+function isActorAccountsApprover(actor = {}) {
+  const dept = String(actor?.department || actor?.departmentName || '').trim().toLowerCase();
+  const empId = String(actor?.employeeId || actor?.employeeCode || '').trim().toUpperCase();
+  const pos = String(actor?.position || actor?.jobTitle || '').trim();
+  const role = String(actor?.role || '').trim().toLowerCase();
+  const isAccDept = dept === 'accounting' || /مالية|حسابات/i.test(dept);
+  const isAccCode = empId.startsWith('ACC-');
+  const isAccPos = /accountant/i.test(pos) || /محاسب/i.test(pos);
+  const isAccRole = role === 'accountant';
+  return actor.isHiringAccountsApprover === true ||
+    actor.isAdvanceAccountsApprover === true ||
+    isAccDept || isAccCode || isAccPos || isAccRole ||
+    actor.role === 'super_admin';
+}
+
+async function getActiveItApproverUids(db) {
+  const snap = await db.collection('users').where('isActive', '==', true).limit(500).get();
+  const uids = new Set();
+  for (const doc of snap.docs) {
+    const data = doc.data() || {};
+    if (isActorItApprover({ ...data, uid: doc.id })) {
+      uids.add(doc.id);
+    }
+  }
+  return uids;
+}
+
+async function getActiveAccountsApproverUids(db) {
+  const snap = await db.collection('users').where('isActive', '==', true).limit(500).get();
+  const uids = new Set();
+  for (const doc of snap.docs) {
+    const data = doc.data() || {};
+    if (isActorAccountsApprover({ ...data, uid: doc.id })) {
+      uids.add(doc.id);
+    }
+  }
+  return uids;
+}
 
 function canManageHiring(actor) { return isHrOrAdmin({ ...actor, active: true }); }
 
@@ -37,7 +88,15 @@ async function resolveApprover(users, { kind }) {
   const explicit = kind === 'it'
     ? candidates.filter(({ data }) => data.isHiringItApprover === true)
     : kind === 'accounts' ? candidates.filter(({ data }) => data.isHiringAccountsApprover === true) : candidates;
-  const selected = explicit.length ? explicit : candidates;
+  let selected = explicit.length ? explicit : candidates;
+  if (selected.length > 1 && kind === 'it') {
+    const onlyManagers = selected.filter(({ data }) => String(data?.role || '').toLowerCase() === 'manager');
+    if (onlyManagers.length === 1) selected = onlyManagers;
+  }
+  if (selected.length > 1 && kind === 'accounts') {
+    const onlyAccounting = selected.filter(({ data }) => /accounting|finance|مالية|حسابات/.test(String(data?.department || data?.departmentName || '').toLowerCase()));
+    if (onlyAccounting.length === 1) selected = onlyAccounting;
+  }
   if (selected.length !== 1) {
     const label = kind === 'ceo' ? 'CEO-100' : kind === 'it' ? 'مدير تقنية المعلومات' : 'مدير الحسابات';
     throw new Error(selected.length ? `إعداد ${label} غير واضح؛ يجب تعيين مسؤول واحد فقط.` : `لم يتم العثور على ${label} نشط.`);
@@ -118,36 +177,119 @@ async function decideHiringRequest({ db, admin, actor, requestId, body }) {
     if ((await tx.get(operationRef)).exists) { outcome = { duplicate: true }; return; }
     const snap = await tx.get(ref); const data = snap.data() || {};
     if (!snap.exists || data.requestType !== 'hiring_request') throw new Error('طلب التعيين غير موجود.');
-    if (data.currentApproverId !== actor.uid) throw new Error('هذا الطلب ليس بانتظار قرارك.');
+
     const route = Array.isArray(data.approvalRoute) ? data.approvalRoute.map((item) => ({ ...item })) : [];
     const index = Number(data.currentApprovalIndex || 0); const stage = route[index];
-    if (!stage || stage.approverId !== actor.uid || stage.state !== 'pending') throw new Error('حالة مسار الموافقة غير صالحة.');
-    route[index] = { ...stage, state: decision, actedAt: new Date().toISOString(), comment };
+    if (!stage || stage.state !== 'pending') throw new Error('حالة مسار الموافقة غير صالحة.');
+
+    const isCeoStage = stage.labelAr === 'الرئيس التنفيذي' || data.status === 'pending_ceo' || index === 0;
+    const isItStage = stage.labelAr === 'مدير تقنية المعلومات' || /تقنية|تكنولوجيا|\bit\b/i.test(stage.approverName || '') || data.status === 'pending_it' || index === 1;
+    const isAccountsStage = stage.labelAr === 'مدير الحسابات' || /حساب|محاسب|accounting|finance/i.test(stage.approverName || '') || data.status === 'pending_accounts' || index === 2;
+
+    const isActorCeo = actor.role === 'super_admin' ||
+      actor.role === 'ceo' ||
+      actor.executiveRole === 'ceo' ||
+      clean(actor.employeeId || actor.employeeCode, 80).toUpperCase().startsWith('CEO-');
+    const isActorItMember = isActorItApprover(actor);
+    const isActorAccountsMember = isActorAccountsApprover(actor);
+
+    const isAuthorized = actor.uid === data.currentApproverId ||
+      actor.uid === stage.approverId ||
+      actor.role === 'super_admin' ||
+      (isCeoStage && isActorCeo) ||
+      (isItStage && isActorItMember) ||
+      (isAccountsStage && isActorAccountsMember);
+
+    if (!isAuthorized) throw new Error('هذا الطلب ليس بانتظار قرارك.');
+
+    route[index] = { ...stage, state: decision, actedAt: new Date().toISOString(), decidedBy: actor.uid, decidedByName: userName(actor), comment };
     const history = [...(Array.isArray(data.approvalHistory) ? data.approvalHistory : []), { action: decision, actorId: actor.uid, actorName: userName(actor), comment, at: new Date().toISOString() }];
     const nextIndex = index + 1;
     const update = { approvalRoute: route, approvalHistory: history, updatedAt: admin.firestore.FieldValue.serverTimestamp() };
-    if (decision === 'rejected') { Object.assign(update, { status: 'rejected', currentApproverId: '', currentApproverName: '', rejectedAt: admin.firestore.FieldValue.serverTimestamp(), rejectedBy: actor.uid }); outcome = { state: 'rejected', data }; }
-    else if (nextIndex < route.length) { Object.assign(update, { status: nextIndex === 1 ? 'pending_it' : 'pending_accounts', currentApprovalIndex: nextIndex, currentApproverId: route[nextIndex].approverId, currentApproverName: route[nextIndex].approverName }); outcome = { state: 'next', next: route[nextIndex], data }; }
-    else { Object.assign(update, { status: 'approved', currentApproverId: '', currentApproverName: '', finalApprovalAt: admin.firestore.FieldValue.serverTimestamp(), finalApprovedBy: actor.uid }); outcome = { state: 'approved', data }; }
-    tx.update(ref, update); tx.set(operationRef, { operationId, requestId, decision, actorId: actor.uid, createdAt: admin.firestore.FieldValue.serverTimestamp() });
+    if (decision === 'rejected') {
+      Object.assign(update, { status: 'rejected', currentApproverId: '', currentApproverName: '', rejectedAt: admin.firestore.FieldValue.serverTimestamp(), rejectedBy: actor.uid });
+      outcome = { state: 'rejected', data };
+    } else if (nextIndex < route.length) {
+      Object.assign(update, {
+        status: nextIndex === 1 ? 'pending_it' : 'pending_accounts',
+        currentApprovalIndex: nextIndex,
+        currentApproverId: route[nextIndex].approverId,
+        currentApproverName: route[nextIndex].approverName
+      });
+      outcome = { state: 'next', next: route[nextIndex], nextIndex, data };
+    } else {
+      Object.assign(update, {
+        status: 'approved',
+        currentApproverId: '',
+        currentApproverName: '',
+        finalApprovalAt: admin.firestore.FieldValue.serverTimestamp(),
+        finalApprovedBy: actor.uid
+      });
+      outcome = { state: 'approved', data };
+    }
+    tx.update(ref, update);
+    tx.set(operationRef, { operationId, requestId, decision, actorId: actor.uid, createdAt: admin.firestore.FieldValue.serverTimestamp() });
   });
   if (outcome.duplicate) return { requestId, duplicate: true };
-  const data = outcome.data; const recipients = outcome.state === 'next' ? [outcome.next.approverId] : [data.requestedById, data.existingEmployeeUid].filter(Boolean);
+  const data = outcome.data;
+  let recipients = [];
+  if (outcome.state === 'next') {
+    if (outcome.nextIndex === 1) {
+      const itUids = await getActiveItApproverUids(db);
+      recipients = Array.from(new Set([...itUids, outcome.next.approverId]));
+    } else if (outcome.nextIndex === 2) {
+      const accUids = await getActiveAccountsApproverUids(db);
+      recipients = Array.from(new Set([...accUids, outcome.next.approverId]));
+    } else {
+      recipients = [outcome.next.approverId];
+    }
+  } else {
+    recipients = [data.requestedById, data.existingEmployeeUid].filter(Boolean);
+  }
+
   await Promise.allSettled(recipients.map((recipientId) => queueNotification(db, admin, {
-    recipientId, type: `hiring_request_${outcome.state}`,
+    recipientId,
+    type: `hiring_request_${outcome.state}`,
     title: outcome.state === 'approved' ? 'تمت الموافقة على طلب التعيين' : outcome.state === 'rejected' ? 'تم رفض طلب التعيين' : 'طلب تعيين بانتظار قرارك',
     body: outcome.state === 'next' ? `${data.proposedEmployeeName} يحتاج موافقتك.` : `طلب تعيين ${data.proposedEmployeeName} ${outcome.state === 'approved' ? 'تمت الموافقة عليه.' : 'تم رفضه.'}`,
-    data: { hiringRequestId: requestId, route: `/hiring-requests?requestId=${requestId}` }, key: `${requestId}:${outcome.state}:${recipientId}`,
+    data: { hiringRequestId: requestId, route: `/hiring-requests?requestId=${requestId}` },
+    key: `${requestId}:${outcome.state}:${recipientId}`,
   })));
   return { requestId, status: outcome.state };
 }
 
 async function listHiringRequests({ db, actor }) {
-  const queries = canManageHiring(actor)
-    ? [db.collection('hiringRequests').where('requestedById', '==', actor.uid).limit(100), db.collection('hiringRequests').where('currentApproverId', '==', actor.uid).limit(100)]
-    : [db.collection('hiringRequests').where('currentApproverId', '==', actor.uid).limit(100), db.collection('hiringRequests').where('existingEmployeeUid', '==', actor.uid).limit(100)];
-  const snaps = await Promise.all(queries.map((query) => query.get())); const byId = new Map();
-  for (const snap of snaps) for (const doc of snap.docs) byId.set(doc.id, { id: doc.id, ...doc.data() });
+  const isItMember = isActorItApprover(actor);
+  const isAccountsMember = isActorAccountsApprover(actor);
+  const isCeo = actor.role === 'super_admin' || ['CEO-100'].includes(clean(actor.employeeId || actor.employeeCode, 80).toUpperCase());
+
+  const queries = [];
+  if (actor.role === 'super_admin') {
+    queries.push(db.collection('hiringRequests').limit(100));
+  } else {
+    if (canManageHiring(actor)) {
+      queries.push(db.collection('hiringRequests').where('requestedById', '==', actor.uid).limit(100));
+    }
+    queries.push(db.collection('hiringRequests').where('currentApproverId', '==', actor.uid).limit(100));
+    queries.push(db.collection('hiringRequests').where('existingEmployeeUid', '==', actor.uid).limit(100));
+    if (isCeo) {
+      queries.push(db.collection('hiringRequests').where('status', '==', 'pending_ceo').limit(100));
+    }
+    if (isItMember) {
+      queries.push(db.collection('hiringRequests').where('status', '==', 'pending_it').limit(100));
+    }
+    if (isAccountsMember) {
+      queries.push(db.collection('hiringRequests').where('status', '==', 'pending_accounts').limit(100));
+    }
+  }
+
+  const snaps = await Promise.all(queries.map((query) => query.get()));
+  const byId = new Map();
+  for (const snap of snaps) {
+    for (const doc of snap.docs) {
+      byId.set(doc.id, { id: doc.id, ...doc.data() });
+    }
+  }
   return [...byId.values()].sort((a, b) => String(b.assignmentDate || '').localeCompare(String(a.assignmentDate || '')));
 }
 module.exports = { canManageHiring, resolveRoute, createHiringRequest, decideHiringRequest, listHiringRequests };

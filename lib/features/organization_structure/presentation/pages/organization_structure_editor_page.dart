@@ -1757,7 +1757,7 @@ class _SnapshotVisualMap extends StatelessWidget {
               departmentUnitId: 'default',
               employeeUid: 'root',
               employeeName: 'المدير التنفيذي / CEO',
-              employeeCode: 'CEO-100',
+              employeeCode: 'CEO',
               isPrimary: true,
             ),
     );

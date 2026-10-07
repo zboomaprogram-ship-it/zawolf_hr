@@ -103,9 +103,12 @@ class _TeamAttendanceScreenState extends State<TeamAttendanceScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(
-          'حضور وانصراف الفريق',
-          style: theme.textTheme.headlineMedium,
+        title: FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Text(
+            'حضور وانصراف الفريق',
+            style: theme.textTheme.headlineMedium,
+          ),
         ),
       ),
       body: Column(

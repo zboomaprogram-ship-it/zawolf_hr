@@ -42,7 +42,10 @@ class EmployeeKpiScreen extends StatelessWidget {
                       onPressed: () => Navigator.pop(context),
                     )
                   : null,
-              title: Text('أهداف KPI الشهرية', style: theme.textTheme.headlineMedium),
+              title: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text('أهداف KPI الشهرية', style: isDesktop ? theme.textTheme.headlineMedium : theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
+              ),
             ),
             body: StreamBuilder<List<EmployeeKpiModel>>(
               stream: KpiService().watchMyKpis(user, monthKey),

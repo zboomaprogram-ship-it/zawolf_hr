@@ -460,6 +460,94 @@ async function processManagerLeavePermissionBypasses() {
   return { found: candidates.length, processed, failed, date: dateKey };
 }
 
+async function reconcilePendingRequestIntegrity(db) {
+  if (!db) return { patchedJobTitles: 0, finalizedCount: 0 };
+  let patchedJobTitles = 0;
+  let finalizedCount = 0;
+
+  try {
+    let requireHr = false;
+    try {
+      const configDoc = await db.collection("publicConfig").doc("requestApproval").get();
+      if (configDoc.exists && configDoc.data()?.requireHrAfterManagerApproval === true) {
+        requireHr = true;
+      }
+    } catch (_) {}
+
+    const collections = ["leaves", "permissions"];
+    for (const col of collections) {
+      const snapshot = await db
+        .collection(col)
+        .where("status", "in", ["pending_manager", "pending_hr"])
+        .limit(100)
+        .get();
+
+      for (const doc of snapshot.docs) {
+        const data = doc.data();
+        const updates = {};
+
+        // 1. Ensure jobTitle is present
+        if (!data.jobTitle || typeof data.jobTitle !== "string" || !data.jobTitle.trim()) {
+          const userId = String(data.userId || "").trim();
+          if (userId) {
+            try {
+              const uDoc = await db.collection("users").doc(userId).get();
+              if (uDoc.exists) {
+                const uData = uDoc.data();
+                const pos = uData.position || uData.jobTitle || "";
+                if (pos) updates.jobTitle = pos;
+              }
+            } catch (_) {}
+          }
+        }
+
+        // 2. Ensure approvalRouteVersion is 1
+        if (data.approvalRouteVersion !== 1) {
+          updates.approvalRouteVersion = 1;
+        }
+
+        // 3. Handle pending_hr state
+        if (data.status === "pending_hr") {
+          const managerIds = Array.isArray(data.managerIds) ? data.managerIds.filter(Boolean) : [];
+          const trail = Array.isArray(data.managerApprovalTrail) ? data.managerApprovalTrail : [];
+          const isManagerComplete = managerIds.length === 0 || trail.length >= managerIds.length;
+
+          if (!requireHr && isManagerComplete) {
+            updates.status = "approved";
+            updates.finalApprovalAt = admin.firestore.FieldValue.serverTimestamp();
+            if (col === "leaves" && data.userId && data.numberOfDays) {
+              try {
+                const userRef = db.collection("users").doc(data.userId);
+                const userDoc = await userRef.get();
+                if (userDoc.exists) {
+                  const balance = userDoc.data().leaveBalance || {};
+                  const key = data.leaveBalanceKey || "daysOff";
+                  const current = Number(balance[key] || 0);
+                  await userRef.update({
+                    [`leaveBalance.${key}`]: Math.max(0, current - Number(data.numberOfDays || 1)),
+                  });
+                }
+              } catch (_) {}
+            }
+            finalizedCount++;
+          } else if (requireHr && isManagerComplete && data.managerId) {
+            // Clear managerId so it leaves the manager's pending queue
+            updates.managerId = "";
+          }
+        }
+
+        if (Object.keys(updates).length > 0) {
+          await doc.ref.update(updates);
+          if (updates.jobTitle) patchedJobTitles++;
+        }
+      }
+    }
+  } catch (error) {
+    console.error("reconcilePendingRequestIntegrity error:", error);
+  }
+  return { patchedJobTitles, finalizedCount };
+}
+
 if (require.main === module) {
   processManagerLeavePermissionBypasses()
     .then((result) => {
@@ -481,5 +569,6 @@ module.exports = {
   permissionCycleForRequestDate,
   processManagerLeavePermissionBypasses,
   reconcileFinalizedPermissions,
+  reconcilePendingRequestIntegrity,
   shouldUpdateActivePermissionBalance,
 };

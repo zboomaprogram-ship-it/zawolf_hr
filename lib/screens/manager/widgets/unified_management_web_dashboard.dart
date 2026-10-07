@@ -799,12 +799,6 @@ class _UnifiedManagementWebDashboardState
           icon: Icons.workspace_premium_outlined,
           onTap: () => context.go('/hr/custom-badges'),
         ),
-      if (isHrRole)
-        _buildShortcutChip(
-          label: 'مركز ملفات الشركة',
-          icon: Icons.cloud_sync_outlined,
-          onTap: () => context.go('/workspace'),
-        ),
     ];
     final operations = <Widget>[
       _buildShortcutChip(
@@ -930,11 +924,6 @@ class _UnifiedManagementWebDashboardState
       label: 'مركز تشغيل الشركة',
       icon: Icons.business_center_outlined,
       onTap: () => context.go('/company-os'),
-    ),
-    _buildShortcutChip(
-      label: 'مركز ملفات الشركة',
-      icon: Icons.cloud_sync_outlined,
-      onTap: () => context.go('/workspace'),
     ),
     _buildShortcutChip(
       label: 'إدارة أدوات المطوّر',

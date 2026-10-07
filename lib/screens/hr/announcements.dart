@@ -491,9 +491,12 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(
-          _isScopedSender ? scopedLabel : 'بث إعلان إداري',
-          style: theme.textTheme.headlineMedium,
+        title: FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Text(
+            _isScopedSender ? scopedLabel : 'بث إعلان إداري',
+            style: theme.textTheme.headlineMedium,
+          ),
         ),
       ),
       body: _isLoadingAudience

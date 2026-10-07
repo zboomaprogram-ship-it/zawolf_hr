@@ -157,32 +157,40 @@ async function createEmployeeFieldMission({ db, admin, actor, body }) {
   const employee = employeeSnap.data() || {};
   if (!employeeSnap.exists || !isActiveUser(employee)) throw new Error('حساب الموظف غير نشط.');
   const managerId = clean((Array.isArray(employee.managerIds) && employee.managerIds[0]) || employee.managerId, 128);
-  if (!safeId(managerId)) throw new Error('يجب تعيين مدير مباشر نشط قبل إرسال المأمورية.');
   const [managerSnap, ceoById, ceoByCode, activeUsers] = await Promise.all([
-    db.collection('users').doc(managerId).get(),
+    safeId(managerId) ? db.collection('users').doc(managerId).get() : Promise.resolve(null),
     db.collection('users').where('employeeId', '==', 'CEO-100').limit(1).get(),
     db.collection('users').where('employeeCode', '==', 'CEO-100').limit(1).get(),
     db.collection('users').where('isActive', '==', true).limit(500).get(),
   ]);
   const ceoSnap = ceoById.docs[0] || ceoByCode.docs[0];
+  if (!ceoSnap || !isActiveUser(ceoSnap.data())) {
+    throw new Error('تعذر تحديد حساب CEO-100 النشط لمسار المأمورية.');
+  }
   const accountantCandidates = activeUsers.docs
     .filter((doc) => doc.data().isAdvanceAccountsApprover === true && doc.id !== actor.uid)
     .sort((a, b) => clean(a.data().employeeId, 80).localeCompare(clean(b.data().employeeId, 80)));
   const accountantSnap = accountantCandidates
     .find((doc) => doc.id !== managerId && doc.id !== ceoSnap?.id) || accountantCandidates[0];
-  if (!managerSnap.exists || !isActiveUser(managerSnap.data()) || !ceoSnap || !isActiveUser(ceoSnap.data())) {
-    throw new Error('تعذر تحديد المدير أو حساب CEO-100 النشط لمسار المأمورية.');
-  }
   if (!accountantSnap) throw new Error('لا يوجد مسؤول حسابات مفعّل لمسار المأمورية. فعّل isAdvanceAccountsApprover لحساب المحاسب.');
   const approver = (snap, labelAr) => ({ id: snap.id, labelAr });
+  const candidateApprovers = [];
+  if (managerSnap && managerSnap.exists && isActiveUser(managerSnap.data()) && managerSnap.id !== actor.uid) {
+    candidateApprovers.push(approver(managerSnap, 'المدير المباشر'));
+  }
+  if (ceoSnap && ceoSnap.id !== actor.uid) {
+    candidateApprovers.push(approver(ceoSnap, 'CEO-100'));
+  }
+  if (accountantSnap && accountantSnap.id !== actor.uid) {
+    candidateApprovers.push(approver(accountantSnap, 'الحسابات'));
+  }
+  if (candidateApprovers.length === 0 && ceoSnap) {
+    candidateApprovers.push(approver(ceoSnap, 'CEO-100'));
+  }
   return createFieldMission({ db, admin, actor, employeeInitiated: true, body: {
     ...body,
     employeeUids: [actor.uid],
-    approvers: collapseGeneratedApprovers([
-      approver(managerSnap, 'المدير المباشر'),
-      approver(ceoSnap, 'CEO-100'),
-      approver(accountantSnap, 'الحسابات'),
-    ]),
+    approvers: collapseGeneratedApprovers(candidateApprovers),
   }});
 }
 
@@ -204,18 +212,28 @@ async function decideFieldMission({ db, admin, actor, requestId, body }) {
     const index = Number(data.currentApprovalIndex || 0);
     const route = Array.isArray(data.approvalRoute) ? data.approvalRoute.map((item) => ({ ...item })) : [];
     const stage = route[index] || {};
-    const isAccountingStage = stage.labelAr === 'الحسابات' || /حساب|محاسب/i.test(stage.approverName || '') || /حساب|محاسب/i.test(stage.labelAr || '');
+    const isAccountingStage = stage.labelAr === 'الحسابات' || stage.labelAr === 'مدير الحسابات' || /حساب|محاسب|accounting|finance/i.test(stage.approverName || '') || /حساب|محاسب|accounting|finance/i.test(stage.labelAr || '');
     const isActorAccountant = actor.isAdvanceAccountsApprover === true ||
-      /account|حساب/i.test(actor.department || '') ||
+      actor.isHiringAccountsApprover === true ||
+      /accounting|finance|حساب/i.test(actor.department || '') ||
+      String(actor.employeeId || actor.employeeCode || '').toUpperCase().startsWith('ACC-') ||
       actor.role === 'accountant' ||
       /محاسب/i.test(actor.jobTitle || actor.position || '');
+
+    const isItStage = stage.labelAr === 'تقنية المعلومات' || stage.labelAr === 'مدير تقنية المعلومات' || /تقنية|تكنولوجيا|\bit\b/i.test(stage.approverName || '') || /تقنية|تكنولوجيا|\bit\b/i.test(stage.labelAr || '');
+    const isActorIt = actor.isHiringItApprover === true ||
+      String(actor.department || actor.departmentName || '').toUpperCase() === 'IT' ||
+      String(actor.employeeId || actor.employeeCode || '').toUpperCase().startsWith('IT-') ||
+      /\bit\b|information technology|تقنية|تكنولوجيا/i.test(actor.department || actor.departmentName || '') ||
+      /\bit\b|تقنية|تكنولوجيا/i.test(actor.jobTitle || actor.position || '');
 
     const isCurrentApprover = actor.role === 'super_admin' ||
       actorAliases.includes(data.currentApproverId) ||
       actorAliases.includes(stage.approverId) ||
-      (isAccountingStage && isActorAccountant);
+      (isAccountingStage && isActorAccountant) ||
+      (isItStage && isActorIt);
     if (data.status !== 'pending_manager' || !isCurrentApprover) throw new Error('ليست هذه المرحلة بانتظار قرارك.');
-    if (!stage || (!actorAliases.includes(stage.approverId) && actor.role !== 'super_admin' && !(isAccountingStage && isActorAccountant)) || stage.state !== 'pending') throw new Error('مسار الموافقة غير متسق.');
+    if (!stage || (!actorAliases.includes(stage.approverId) && actor.role !== 'super_admin' && !(isAccountingStage && isActorAccountant) && !(isItStage && isActorIt)) || stage.state !== 'pending') throw new Error('مسار الموافقة غير متسق.');
     route[index] = { ...route[index], state: decision, actedAt: stamp(), comment: comment || null };
     const history = Array.isArray(data.approvalHistory) ? data.approvalHistory : [];
     history.push({ action: decision, actorId: actor.uid, actorName: actor.displayName || actor.name || 'مسؤول موافقة', comment: comment || null, at: stamp(), stage: index + 1 });
@@ -240,17 +258,44 @@ async function decideFieldMission({ db, admin, actor, requestId, body }) {
   const notifications = [];
   if (outcome.status === 'next') {
     const nextStage = outcome.next;
-    const isNextAccounting = nextStage.labelAr === 'الحسابات' || /حساب|محاسب/i.test(nextStage.approverName || '');
+    const isNextAccounting = nextStage.labelAr === 'الحسابات' || /حساب|محاسب|accounting|finance/i.test(nextStage.approverName || '') || /حساب|محاسب|accounting|finance/i.test(nextStage.labelAr || '');
+    const isNextIt = nextStage.labelAr === 'تقنية المعلومات' || /تقنية|تكنولوجيا|\bit\b/i.test(nextStage.approverName || '') || /تقنية|تكنولوجيا|\bit\b/i.test(nextStage.labelAr || '');
     if (isNextAccounting) {
       const usersSnap = await db.collection('users').where('isActive', '==', true).limit(500).get();
       for (const uDoc of usersSnap.docs) {
         const uData = uDoc.data() || {};
-        if (uData.isAdvanceAccountsApprover === true || /account|حساب/i.test(uData.department || '')) {
+        const isAcc = uData.isAdvanceAccountsApprover === true ||
+          uData.isHiringAccountsApprover === true ||
+          String(uData.employeeId || uData.employeeCode || '').toUpperCase().startsWith('ACC-') ||
+          /account|حساب/i.test(uData.department || '') ||
+          uData.role === 'accountant' ||
+          /محاسب/i.test(uData.jobTitle || uData.position || '');
+        if (isAcc) {
           notifications.push(queueNotification(db, admin, {
             recipientId: uDoc.id,
             type: 'field_mission_approval_turn',
             title: 'مأمورية بانتظار موافقتك',
             body: `${outcome.employeeName} لديه مأمورية تحتاج قرار الحسابات.`,
+            data: { administrativeRequestId: requestId, route: `/manager/requests?category=administrative&requestId=${requestId}` },
+            key: `${requestId}:turn:${nextStage.order}:${uDoc.id}`,
+          }));
+        }
+      }
+    } else if (isNextIt) {
+      const usersSnap = await db.collection('users').where('isActive', '==', true).limit(500).get();
+      for (const uDoc of usersSnap.docs) {
+        const uData = uDoc.data() || {};
+        const isIt = uData.isHiringItApprover === true ||
+          String(uData.department || uData.departmentName || '').toUpperCase() === 'IT' ||
+          String(uData.employeeId || uData.employeeCode || '').toUpperCase().startsWith('IT-') ||
+          /\bit\b|information technology|تقنية|تكنولوجيا/i.test(uData.department || uData.departmentName || '') ||
+          /\bit\b|تقنية|تكنولوجيا/i.test(uData.jobTitle || uData.position || '');
+        if (isIt) {
+          notifications.push(queueNotification(db, admin, {
+            recipientId: uDoc.id,
+            type: 'field_mission_approval_turn',
+            title: 'مأمورية بانتظار موافقتك',
+            body: `${outcome.employeeName} لديه مأمورية تحتاج قرار تقنية المعلومات.`,
             data: { administrativeRequestId: requestId, route: `/manager/requests?category=administrative&requestId=${requestId}` },
             key: `${requestId}:turn:${nextStage.order}:${uDoc.id}`,
           }));

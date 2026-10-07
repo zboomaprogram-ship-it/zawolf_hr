@@ -6,6 +6,7 @@ const {
   nextApprovalStage,
   permissionCycleForRequestDate,
   reconcileFinalizedPermissions,
+  reconcilePendingRequestIntegrity,
   shouldUpdateActivePermissionBalance,
 } = require("../manager-leave-permission-bypass");
 
@@ -134,3 +135,67 @@ test("late approval cannot consume the next payroll cycle balance", () => {
     true,
   );
 });
+
+test("reconcilePendingRequestIntegrity patches missing jobTitle and approvalRouteVersion", async () => {
+  const updates = {};
+  const mockDoc = {
+    id: "leave-1",
+    data() {
+      return {
+        status: "pending_manager",
+        userId: "user-1",
+      };
+    },
+    ref: {
+      async update(fields) {
+        Object.assign(updates, fields);
+      },
+    },
+  };
+
+  const db = {
+    collection(name) {
+      if (name === "publicConfig") {
+        return {
+          doc() {
+            return {
+              async get() {
+                return { exists: true, data: () => ({ requireHrAfterManagerApproval: false }) };
+              },
+            };
+          },
+        };
+      }
+      if (name === "users") {
+        return {
+          doc() {
+            return {
+              async get() {
+                return { exists: true, data: () => ({ position: "Developer" }) };
+              },
+            };
+          },
+        };
+      }
+      return {
+        where() {
+          return {
+            limit() {
+              return {
+                async get() {
+                  return { docs: name === "leaves" ? [mockDoc] : [] };
+                },
+              };
+            },
+          };
+        },
+      };
+    },
+  };
+
+  const result = await reconcilePendingRequestIntegrity(db);
+  assert.equal(result.patchedJobTitles, 1);
+  assert.equal(updates.jobTitle, "Developer");
+  assert.equal(updates.approvalRouteVersion, 1);
+});
+

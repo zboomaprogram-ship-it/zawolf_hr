@@ -140,7 +140,7 @@ class RequestLogService {
     PayrollCycle cycle, {
     required bool allTime,
   }) async {
-    final isCompanyCeo = user.employeeId.trim().toUpperCase() == 'CEO-100';
+    final isCompanyCeo = user.isCompanyCeo;
     if (!isCompanyCeo && EmployeeRole.isHr(user.role)) {
       final base = _db.collection(collection);
       final snapshot =

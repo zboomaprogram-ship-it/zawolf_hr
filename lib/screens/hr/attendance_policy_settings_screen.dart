@@ -4,8 +4,14 @@ import 'package:flutter/material.dart';
 import '../../components/wolf_card.dart';
 import '../../components/wolf_input_field.dart';
 import '../../models/attendance_policy.dart';
+import '../../models/chat_policy.dart';
+import '../../models/request_approval_policy.dart';
 import '../../services/attendance_policy_service.dart';
 import '../../services/app_security_policy_service.dart';
+import '../../services/auth_service.dart';
+import '../../services/chat_policy_service.dart';
+import '../../services/request_approval_policy_service.dart';
+import 'package:provider/provider.dart';
 import '../../theme/theme.dart';
 import '../../utils/user_facing_error.dart';
 import '../../features/checkout_policy/data/checkout_policy_repository_impl.dart';
@@ -38,6 +44,18 @@ class _AttendancePolicySettingsScreenState
   final _androidStoreUrl = TextEditingController();
   final _iosStoreUrl = TextEditingController();
   final _updateMessage = TextEditingController();
+  final _ceoLeaveThreshold = TextEditingController();
+  final _leaveNoticeDays = TextEditingController();
+  final _probationDays = TextEditingController();
+  final _workDaysPerMonth = TextEditingController();
+  final _advanceMaxSalaryPercentage = TextEditingController();
+  bool _requireCeoApprovalForRemote = true;
+  bool _requireCeoApprovalForAdvance = true;
+  bool _requireHrAfterManagerApproval = false;
+  final RequestApprovalPolicyService _requestApprovalPolicyService =
+      RequestApprovalPolicyService();
+  final ChatPolicyService _chatPolicyService = ChatPolicyService();
+  ChatPolicyConfig _chatPolicy = const ChatPolicyConfig();
   bool _loading = true;
   bool _saving = false;
   AttendancePolicyConfig _loadedPolicy = const AttendancePolicyConfig();
@@ -75,6 +93,11 @@ class _AttendancePolicySettingsScreenState
       _androidStoreUrl,
       _iosStoreUrl,
       _updateMessage,
+      _ceoLeaveThreshold,
+      _leaveNoticeDays,
+      _probationDays,
+      _workDaysPerMonth,
+      _advanceMaxSalaryPercentage,
     ]) {
       controller.dispose();
     }
@@ -86,10 +109,14 @@ class _AttendancePolicySettingsScreenState
       AttendancePolicyService().getPolicyConfig(),
       AppSecurityPolicyService.instance.loadStatus(),
       _checkoutPolicyController.load(),
+      _requestApprovalPolicyService.getPolicy(),
+      _chatPolicyService.loadPolicy(),
     ]);
     final policy = results[0] as AttendancePolicyConfig;
     final securityStatus = results[1] as AppSecurityStatus;
     final checkoutPolicy = results[2] as CheckoutPolicySnapshot;
+    final reqPolicy = results[3] as RequestApprovalPolicy;
+    final chatPolicy = results[4] as ChatPolicyConfig;
     if (!mounted) return;
     _checkInOpen.text = policy.checkInOpenTime;
     _start.text = policy.defaultStartTime;
@@ -117,6 +144,17 @@ class _AttendancePolicySettingsScreenState
     _updateMessage.text = securityStatus.policy.messageAr;
     _currentBuild = securityStatus.currentBuild;
     _checkoutPolicy = checkoutPolicy;
+
+    _ceoLeaveThreshold.text = reqPolicy.ceoLeaveApprovalThresholdDays.toString();
+    _leaveNoticeDays.text = reqPolicy.leaveNoticeDaysNormal.toString();
+    _probationDays.text = reqPolicy.probationPeriodDays.toString();
+    _workDaysPerMonth.text = reqPolicy.payrollWorkDaysPerMonth.toString();
+    _advanceMaxSalaryPercentage.text = reqPolicy.advanceMaxSalaryPercentage.toStringAsFixed(0);
+    _requireCeoApprovalForRemote = reqPolicy.requireCeoApprovalForRemote;
+    _requireCeoApprovalForAdvance = reqPolicy.requireCeoApprovalForAdvance;
+    _requireHrAfterManagerApproval = reqPolicy.requireHrAfterManagerApproval;
+    _chatPolicy = chatPolicy;
+
     setState(() => _loading = false);
   }
 
@@ -369,6 +407,7 @@ class _AttendancePolicySettingsScreenState
       return;
     }
     setState(() => _saving = true);
+    final workDays = _readInt(_workDaysPerMonth);
     final policy = AttendancePolicyConfig(
       checkInOpenTime: _checkInOpen.text.trim(),
       defaultStartTime: _start.text.trim(),
@@ -377,7 +416,7 @@ class _AttendancePolicySettingsScreenState
       graceMinutes: grace,
       quarterDayUntilMinutes: quarter,
       halfDayUntilMinutes: half,
-      payrollWorkDaysPerMonth: _loadedPolicy.payrollWorkDaysPerMonth,
+      payrollWorkDaysPerMonth: workDays > 0 ? workDays : _loadedPolicy.payrollWorkDaysPerMonth,
       checkInReminderLeadMinutes: _readInt(_reminderLead),
       checkInLateWarningMinutes: _readInt(_lateWarning),
       checkInFinalWarningLeadMinutes: _readInt(_finalWarningLead),
@@ -395,6 +434,18 @@ class _AttendancePolicySettingsScreenState
       iosStoreUrl: _iosStoreUrl.text.trim(),
       messageAr: _updateMessage.text.trim(),
     );
+    final reqApprovalPolicy = RequestApprovalPolicy(
+      requireHrAfterManagerApproval: _requireHrAfterManagerApproval,
+      ceoLeaveApprovalThresholdDays: _readInt(_ceoLeaveThreshold),
+      requireCeoApprovalForRemote: _requireCeoApprovalForRemote,
+      leaveNoticeDaysNormal: _readInt(_leaveNoticeDays),
+      probationPeriodDays: _readInt(_probationDays),
+      payrollWorkDaysPerMonth: workDays > 0 ? workDays : 26,
+      requireCeoApprovalForAdvance: _requireCeoApprovalForAdvance,
+      advanceMaxSalaryPercentage: double.tryParse(_advanceMaxSalaryPercentage.text.trim()) ?? 50.0,
+    );
+    final currentUser = context.read<AuthService>().currentUser;
+    final actorId = currentUser?.uid ?? 'system';
     try {
       final db = FirebaseFirestore.instance;
       final batch = db.batch();
@@ -407,13 +458,23 @@ class _AttendancePolicySettingsScreenState
         ...securityPolicy.toMap(),
         'updatedAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
+      batch.set(db.collection('publicConfig').doc('requestApproval'), {
+        ...reqApprovalPolicy.toMap(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
       await batch.commit();
+
+      await _chatPolicyService.updatePolicy(
+        policy: _chatPolicy,
+        actorId: actorId,
+      );
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             backgroundColor: ZaWolfColors.success,
             content: Text(
-              'تم حفظ سياسة الدوام. تُستخدم التغييرات في الحضور والتنبيهات القادمة.',
+              'تم حفظ سياسات الدوام وقواعد الطلبات وإعدادات الشات بنجاح.',
             ),
           ),
         );
@@ -482,9 +543,12 @@ class _AttendancePolicySettingsScreenState
     final theme = Theme.of(context);
     return Scaffold(
       appBar: AppBar(
-        title: Text(
-          'سياسة الدوام والحضور',
-          style: theme.textTheme.headlineMedium,
+        title: FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Text(
+            'سياسة الدوام والحضور',
+            style: theme.textTheme.headlineMedium,
+          ),
         ),
       ),
       body: _loading
@@ -734,6 +798,91 @@ class _AttendancePolicySettingsScreenState
                       ],
                     ),
                   ),
+                  WolfCard(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Text(
+                          'قواعد الطلبات والاعتماد المالي والإداري',
+                          style: theme.textTheme.titleLarge?.copyWith(
+                            color: Colors.white,
+                          ),
+                          textDirection: TextDirection.rtl,
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'تخصيص شروط وسلالم تصعيد موافقة المدير التنفيذي (CEO) والمدد الزمنية للطلبات بدلاً من القيم الثابتة.',
+                          style: theme.textTheme.bodySmall,
+                          textDirection: TextDirection.rtl,
+                        ),
+                        const SizedBox(height: 16),
+                        _buildNumberField(
+                          'حد أيام الإجازة لتصعيدها للـ CEO (3 كقيمة افتراضية، 0 للإلغاء)',
+                          _ceoLeaveThreshold,
+                        ),
+                        const SizedBox(height: 12),
+                        SwitchListTile.adaptive(
+                          contentPadding: EdgeInsets.zero,
+                          value: _requireCeoApprovalForRemote,
+                          onChanged: _saving
+                              ? null
+                              : (val) => setState(() => _requireCeoApprovalForRemote = val),
+                          title: const Text('طلب موافقة CEO على العمل عن بعد'),
+                          subtitle: const Text('يتطلب يوم العمل عن بعد موافقة المدير التنفيذي.'),
+                        ),
+                        const SizedBox(height: 12),
+                        SwitchListTile.adaptive(
+                          contentPadding: EdgeInsets.zero,
+                          value: _requireCeoApprovalForAdvance,
+                          onChanged: _saving
+                              ? null
+                              : (val) => setState(() => _requireCeoApprovalForAdvance = val),
+                          title: const Text('طلب موافقة CEO على طلبات السلفة'),
+                          subtitle: const Text('تمر السلفة بمرحلة اعتماد CEO قبل الصرف المالي.'),
+                        ),
+                        const SizedBox(height: 12),
+                        SwitchListTile.adaptive(
+                          contentPadding: EdgeInsets.zero,
+                          value: _requireHrAfterManagerApproval,
+                          onChanged: _saving
+                              ? null
+                              : (val) => setState(() => _requireHrAfterManagerApproval = val),
+                          title: const Text('إلزام مراجعة HR بعد موافقة المدير المباشر'),
+                          subtitle: const Text('تتطلب الطلبات العادية توثيق HR بعد المدير.'),
+                        ),
+                        const SizedBox(height: 12),
+                        _buildNumberField(
+                          'أيام الإشعار المسبق للإجازة العادية (بالأيام)',
+                          _leaveNoticeDays,
+                        ),
+                        const SizedBox(height: 12),
+                        _buildNumberField(
+                          'فترة التجربة للموظف الجديد (بالأيام - 90 يوماً افتراضياً)',
+                          _probationDays,
+                        ),
+                        const SizedBox(height: 12),
+                        _buildNumberField(
+                          'عدد أيام العمل المحسوبة للشهر في مسير الرواتب (26 افتراضياً)',
+                          _workDaysPerMonth,
+                        ),
+                        const SizedBox(height: 12),
+                        WolfInputField(
+                          controller: _advanceMaxSalaryPercentage,
+                          labelText: 'الحد الأقصى للسلفة كنسبة من الراتب الشهري (%)',
+                          keyboardType: TextInputType.number,
+                          textDirection: TextDirection.ltr,
+                          validator: (value) {
+                            final val = double.tryParse(value?.trim() ?? '');
+                            return val != null && val > 0 && val <= 100
+                                ? null
+                                : 'أدخل نسبة مئوية بين 1 و 100';
+                          },
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  _buildChatPolicyCard(theme),
                   const SizedBox(height: 20),
                   FilledButton.icon(
                     onPressed: _saving ? null : _save,
@@ -744,11 +893,186 @@ class _AttendancePolicySettingsScreenState
                             child: CircularProgressIndicator(strokeWidth: 2),
                           )
                         : const Icon(Icons.save_outlined),
-                    label: const Text('حفظ سياسة الدوام'),
+                    label: const Text('حفظ جميع الإعدادات والسياسات'),
                   ),
                 ],
               ),
             ),
+    );
+  }
+
+  Widget _buildChatPolicyCard(ThemeData theme) {
+    return WolfCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              const Icon(
+                Icons.chat_bubble_outline_rounded,
+                color: ZaWolfColors.primaryCyan,
+                size: 22,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'سياسة وقواعد المحادثات والشات (Chat Governance)',
+                  style: theme.textTheme.titleLarge?.copyWith(
+                    color: Colors.white,
+                  ),
+                  textDirection: TextDirection.rtl,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'تحديد صلاحيات الموظف في بدء المحادثات المباشرة. إذا بادر المدير أو الأدمن بمراسلة الموظف، تفتح القناة ويستطيع الموظف التحدث معه تلقائياً.',
+            style: TextStyle(color: ZaWolfColors.textSecondary, fontSize: 13),
+            textDirection: TextDirection.rtl,
+          ),
+          const SizedBox(height: 16),
+          SwitchListTile.adaptive(
+            contentPadding: EdgeInsets.zero,
+            value: _chatPolicy.employeeCanChatWithPeers,
+            onChanged: _saving
+                ? null
+                : (val) => setState(
+                      () => _chatPolicy = ChatPolicyConfig(
+                        employeeCanChatWithPeers: val,
+                        employeeCanChatWithDirectManager:
+                            _chatPolicy.employeeCanChatWithDirectManager,
+                        employeeCanChatWithHr: _chatPolicy.employeeCanChatWithHr,
+                        employeeCanChatWithIt: _chatPolicy.employeeCanChatWithIt,
+                        employeeCanChatWithOtherManagers:
+                            _chatPolicy.employeeCanChatWithOtherManagers,
+                        employeeCanChatWithSuperAdmin:
+                            _chatPolicy.employeeCanChatWithSuperAdmin,
+                      ),
+                    ),
+            title: const Text('مراسلة الموظفين لبعضهم (الزملاء بنفس المستوى)'),
+            subtitle: const Text(
+                'يسمح للموظف ببدء محادثة مباشرة مع زملائه الموظفين في الشركة.'),
+          ),
+          const SizedBox(height: 8),
+          SwitchListTile.adaptive(
+            contentPadding: EdgeInsets.zero,
+            value: _chatPolicy.employeeCanChatWithDirectManager,
+            onChanged: _saving
+                ? null
+                : (val) => setState(
+                      () => _chatPolicy = ChatPolicyConfig(
+                        employeeCanChatWithPeers:
+                            _chatPolicy.employeeCanChatWithPeers,
+                        employeeCanChatWithDirectManager: val,
+                        employeeCanChatWithHr: _chatPolicy.employeeCanChatWithHr,
+                        employeeCanChatWithIt: _chatPolicy.employeeCanChatWithIt,
+                        employeeCanChatWithOtherManagers:
+                            _chatPolicy.employeeCanChatWithOtherManagers,
+                        employeeCanChatWithSuperAdmin:
+                            _chatPolicy.employeeCanChatWithSuperAdmin,
+                      ),
+                    ),
+            title: const Text('مراسلة الموظف لمديره المباشر'),
+            subtitle: const Text(
+                'يسمح للموظف ببدء محادثة مباشرة مع مديره المباشر أو قائد فريقه.'),
+          ),
+          const SizedBox(height: 8),
+          SwitchListTile.adaptive(
+            contentPadding: EdgeInsets.zero,
+            value: _chatPolicy.employeeCanChatWithHr,
+            onChanged: _saving
+                ? null
+                : (val) => setState(
+                      () => _chatPolicy = ChatPolicyConfig(
+                        employeeCanChatWithPeers:
+                            _chatPolicy.employeeCanChatWithPeers,
+                        employeeCanChatWithDirectManager:
+                            _chatPolicy.employeeCanChatWithDirectManager,
+                        employeeCanChatWithHr: val,
+                        employeeCanChatWithIt: _chatPolicy.employeeCanChatWithIt,
+                        employeeCanChatWithOtherManagers:
+                            _chatPolicy.employeeCanChatWithOtherManagers,
+                        employeeCanChatWithSuperAdmin:
+                            _chatPolicy.employeeCanChatWithSuperAdmin,
+                      ),
+                    ),
+            title: const Text('مراسلة مسؤولي الموارد البشرية (HR)'),
+            subtitle: const Text(
+                'يسمح للموظف بمراسلة مسؤولي الموارد البشرية للاستفسارات والدعم.'),
+          ),
+          const SizedBox(height: 8),
+          SwitchListTile.adaptive(
+            contentPadding: EdgeInsets.zero,
+            value: _chatPolicy.employeeCanChatWithIt,
+            onChanged: _saving
+                ? null
+                : (val) => setState(
+                      () => _chatPolicy = ChatPolicyConfig(
+                        employeeCanChatWithPeers:
+                            _chatPolicy.employeeCanChatWithPeers,
+                        employeeCanChatWithDirectManager:
+                            _chatPolicy.employeeCanChatWithDirectManager,
+                        employeeCanChatWithHr: _chatPolicy.employeeCanChatWithHr,
+                        employeeCanChatWithIt: val,
+                        employeeCanChatWithOtherManagers:
+                            _chatPolicy.employeeCanChatWithOtherManagers,
+                        employeeCanChatWithSuperAdmin:
+                            _chatPolicy.employeeCanChatWithSuperAdmin,
+                      ),
+                    ),
+            title: const Text('مراسلة الدعم الفني وتقنية المعلومات (IT)'),
+            subtitle: const Text(
+                'يسمح للموظف بمراسلة قسم الدعم الفني لحل المشاكل التقنية.'),
+          ),
+          const SizedBox(height: 8),
+          SwitchListTile.adaptive(
+            contentPadding: EdgeInsets.zero,
+            value: _chatPolicy.employeeCanChatWithOtherManagers,
+            onChanged: _saving
+                ? null
+                : (val) => setState(
+                      () => _chatPolicy = ChatPolicyConfig(
+                        employeeCanChatWithPeers:
+                            _chatPolicy.employeeCanChatWithPeers,
+                        employeeCanChatWithDirectManager:
+                            _chatPolicy.employeeCanChatWithDirectManager,
+                        employeeCanChatWithHr: _chatPolicy.employeeCanChatWithHr,
+                        employeeCanChatWithIt: _chatPolicy.employeeCanChatWithIt,
+                        employeeCanChatWithOtherManagers: val,
+                        employeeCanChatWithSuperAdmin:
+                            _chatPolicy.employeeCanChatWithSuperAdmin,
+                      ),
+                    ),
+            title: const Text('بدء محادثة مع مدراء آخرين خارج إدارته'),
+            subtitle: const Text(
+                'معطل افتراضياً. إذا بدأ المدير الآخر المحادثة أولاً، تصبح القناة متاحة للموظف للرد والتواصل.'),
+          ),
+          const SizedBox(height: 8),
+          SwitchListTile.adaptive(
+            contentPadding: EdgeInsets.zero,
+            value: _chatPolicy.employeeCanChatWithSuperAdmin,
+            onChanged: _saving
+                ? null
+                : (val) => setState(
+                      () => _chatPolicy = ChatPolicyConfig(
+                        employeeCanChatWithPeers:
+                            _chatPolicy.employeeCanChatWithPeers,
+                        employeeCanChatWithDirectManager:
+                            _chatPolicy.employeeCanChatWithDirectManager,
+                        employeeCanChatWithHr: _chatPolicy.employeeCanChatWithHr,
+                        employeeCanChatWithIt: _chatPolicy.employeeCanChatWithIt,
+                        employeeCanChatWithOtherManagers:
+                            _chatPolicy.employeeCanChatWithOtherManagers,
+                        employeeCanChatWithSuperAdmin: val,
+                      ),
+                    ),
+            title: const Text('بدء محادثة مباشرة مع الإدارة العليا / Super Admin'),
+            subtitle: const Text(
+                'معطل افتراضياً. يمكن التواصل إذا بادر الأدمن بالمحادثة، أو عبر تقديم طلب اجتماع (Meeting Request).'),
+          ),
+        ],
+      ),
     );
   }
 }

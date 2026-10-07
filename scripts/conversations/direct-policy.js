@@ -15,17 +15,63 @@ const isIt = user => /^(it|information technology)$/i.test(department(user)) || 
 function managerIds(user) {
   return new Set([user?.managerId, user?.teamLeaderId, ...(Array.isArray(user?.managerIds) ? user.managerIds : [])].filter(id => typeof id === 'string' && id));
 }
-function canDirect(actor, target) {
+let cachedPolicy = null;
+let lastPolicyFetch = 0;
+
+async function loadPolicy(db) {
+  const now = Date.now();
+  if (cachedPolicy && now - lastPolicyFetch < 60000) {
+    return cachedPolicy;
+  }
+  try {
+    if (db && typeof db.collection === 'function') {
+      const doc = await db.collection('publicConfig').doc('chatPolicy').get();
+      if (doc.exists) {
+        cachedPolicy = doc.data() || {};
+        lastPolicyFetch = now;
+        return cachedPolicy;
+      }
+      const compDoc = await db.collection('companies').doc('zawolf').get();
+      if (compDoc.exists && compDoc.data()?.chatPolicy) {
+        cachedPolicy = compDoc.data().chatPolicy || {};
+        lastPolicyFetch = now;
+        return cachedPolicy;
+      }
+    }
+  } catch (_) {}
+  return cachedPolicy || {};
+}
+
+function canDirect(actor, target, policy = {}) {
   if (!actor?.uid || !target?.id || actor.uid === target.id || !isActive(actor) || !isActive(target)) return false;
   if (isAdmin(actor) || isHr(actor) || isManager(actor)) return true;
-  // An employee can always reach IT and HR, but executive/admin accounts are
-  // treated as managers for direct-chat purposes. This prevents a role field
-  // such as `super_admin` on a CEO profile from accidentally opening a bypass.
-  if (isIt(target) || isHr(target)) return true;
-  if (!isManager(target) && !isAdmin(target)) return true;
-  return managerIds(actor).has(target.id);
+
+  // Actor is a normal employee:
+  // 1. Direct Manager:
+  if (managerIds(actor).has(target.id)) {
+    return policy.employeeCanChatWithDirectManager !== false;
+  }
+  // 2. HR:
+  if (isHr(target)) {
+    return policy.employeeCanChatWithHr !== false;
+  }
+  // 3. IT:
+  if (isIt(target)) {
+    return policy.employeeCanChatWithIt !== false;
+  }
+  // 4. Other Manager:
+  if (isManager(target)) {
+    return policy.employeeCanChatWithOtherManagers === true;
+  }
+  // 5. Admin / Super Admin:
+  if (isAdmin(target)) {
+    return policy.employeeCanChatWithSuperAdmin === true;
+  }
+  // 6. Peers (normal employees who are not manager, admin, or HR):
+  return policy.employeeCanChatWithPeers !== false;
 }
-function departments(users, actor) {
-  return [...new Set(users.filter(user => canDirect(actor, user)).map(department).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'ar'));
+function departments(users, actor, policy = {}) {
+  return [...new Set(users.filter(user => canDirect(actor, user, policy)).map(department).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'ar'));
 }
-module.exports = { department, isActive, isAdmin, isHr, isManager, isIt, managerIds, canDirect, departments };
+module.exports = { department, isActive, isAdmin, isHr, isManager, isIt, managerIds, canDirect, departments, loadPolicy };
+

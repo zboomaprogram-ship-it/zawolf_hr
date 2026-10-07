@@ -502,6 +502,14 @@ async function loadPendingNotifications(db) {
     ) {
       continue;
     }
+    if (data.type === 'attendance_security_review') {
+      await doc.ref.update({
+        pushSent: true,
+        pushDeliveryStatus: 'suppressed',
+        pushSentAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+      continue;
+    }
     const claimed = await claimNotification(db, doc.ref);
     if (!claimed) continue;
     pending.push({

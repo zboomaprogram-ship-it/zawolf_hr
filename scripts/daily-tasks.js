@@ -372,12 +372,7 @@ async function runDailyTasks() {
     .where('role', '==', 'hr_manager')
     .get();
   hrManagerSnap.docs.filter(doc => isActiveUser(doc.data())).forEach(doc => reviewerIds.add(doc.id));
-  const superSnap = await db
-    .collection('users')
-    .where('role', '==', 'super_admin')
-    .get();
-  superSnap.docs.filter(doc => isActiveUser(doc.data())).forEach(doc => reviewerIds.add(doc.id));
-  console.log(`Found ${reviewerIds.size} HR/HR-manager/super-admin reviewers for deduction notifications.`);
+  console.log(`Found ${reviewerIds.size} HR/HR-manager reviewers for deduction notifications.`);
 
   // Load attendance policy
   let payrollWorkDaysPerMonth = 26;
@@ -441,6 +436,27 @@ async function runDailyTasks() {
       batchOps++;
       await commitIfNeeded();
     }
+  }
+
+  async function notifyEmployee(userId, type, title, body, data) {
+    if (!userId) return;
+    const notifRef = db.collection('notifications').doc(userId).collection('items').doc();
+    batch.set(notifRef, {
+      notificationId: notifRef.id,
+      type,
+      title,
+      body,
+      data: data || {},
+      isRead: false,
+      pushSent: false,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+    batchOps++;
+    batch.update(db.collection('users').doc(userId), {
+      unreadNotifications: admin.firestore.FieldValue.increment(1)
+    });
+    batchOps++;
+    await commitIfNeeded();
   }
 
   async function markOverdueTasks() {
@@ -595,6 +611,13 @@ async function runDailyTasks() {
             `${user.displayName}: خصم يوم كامل عن إجازة بدون راتب بتاريخ ${todayStr} (${unpaidLeaveAmount.toFixed(2)} ${user.salaryCurrency || 'EGP'}).`,
             { attendanceId: attendanceId, leaveId: activeLeave.leaveId || '' }
           );
+          await notifyEmployee(
+            userId,
+            'salary_deduction_pending',
+            'تنبيه خصم إجازة بدون راتب',
+            `تم تسجيل خصم يوم كامل عن إجازة بدون راتب بتاريخ ${todayStr} (${unpaidLeaveAmount.toFixed(2)} ${user.salaryCurrency || 'EGP'}) بانتظار مراجعة HR.`,
+            { attendanceId: attendanceId, leaveId: activeLeave.leaveId || '' }
+          );
         }
       } else {
         // Create absent record
@@ -631,6 +654,13 @@ async function runDailyTasks() {
           'salary_deduction_pending',
           'غياب بانتظار مراجعة HR',
           `${user.displayName}: غياب عن يوم ${todayStr} (${amount.toFixed(2)} ${user.salaryCurrency || 'EGP'}).`,
+          { attendanceId: attendanceId }
+        );
+        await notifyEmployee(
+          userId,
+          'salary_deduction_pending',
+          'تنبيه غياب',
+          `تم تسجيل غياب عن يوم ${todayStr} (${amount.toFixed(2)} ${user.salaryCurrency || 'EGP'}) بانتظار مراجعة HR.`,
           { attendanceId: attendanceId }
         );
       }
@@ -769,6 +799,19 @@ async function runDailyTasks() {
         employeeCount: missedCheckoutEmployees.length,
       },
     );
+    for (const employee of missedCheckoutEmployees) {
+      await notifyEmployee(
+        employee.userId,
+        'salary_deduction_pending',
+        'تنبيه عدم تسجيل الانصراف',
+        `لم يتم تسجيل انصراف عن يوم ${todayStr}. تم احتساب خصم ربع يوم بانتظار مراجعة HR.`,
+        {
+          attendanceId: employee.attendanceId,
+          date: todayStr,
+          deductionType: 'missed_checkout',
+        }
+      );
+    }
   }
 
   await markOverdueTasks();

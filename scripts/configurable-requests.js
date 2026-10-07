@@ -35,11 +35,40 @@ async function getActiveAccountantUids(db) {
   return { accountantUids, accountantCodes };
 }
 
+async function getActiveItUids(db) {
+  const users = await db.collection('users').where('isActive', '==', true).limit(500).get();
+  const itUids = new Set();
+  const itCodes = new Set();
+  for (const doc of users.docs) {
+    const data = doc.data() || {};
+    if (data.isHiringItApprover === true ||
+        String(data.department || data.departmentName || '').toUpperCase() === 'IT' ||
+        String(data.employeeId || data.employeeCode || '').toUpperCase().startsWith('IT-') ||
+        /\bit\b|information technology|تقنية|تكنولوجيا/i.test(String(data.department || data.departmentName || '')) ||
+        /\bit\b|تقنية|تكنولوجيا/i.test(String(data.jobTitle || data.position || ''))) {
+      itUids.add(doc.id);
+      if (data.employeeId) itCodes.add(String(data.employeeId).toUpperCase());
+      if (data.employeeCode) itCodes.add(String(data.employeeCode).toUpperCase());
+    }
+  }
+  return { itUids, itCodes };
+}
+
 function isActorAccountant(actor = {}) {
   return actor?.isAdvanceAccountsApprover === true ||
-    /account|حساب/i.test(String(actor?.department || '')) ||
+    actor?.isHiringAccountsApprover === true ||
+    /accounting|finance|حساب/i.test(String(actor?.department || '')) ||
+    String(actor?.employeeId || actor?.employeeCode || '').toUpperCase().startsWith('ACC-') ||
     String(actor?.role || '').toLowerCase() === 'accountant' ||
     /محاسب/i.test(String(actor?.jobTitle || actor?.position || ''));
+}
+
+function isActorIt(actor = {}) {
+  return actor?.isHiringItApprover === true ||
+    String(actor?.department || actor?.departmentName || '').toUpperCase() === 'IT' ||
+    String(actor?.employeeId || actor?.employeeCode || '').toUpperCase().startsWith('IT-') ||
+    /\bit\b|information technology|تقنية|تكنولوجيا/i.test(String(actor?.department || actor?.departmentName || '')) ||
+    /\bit\b|تقنية|تكنولوجيا/i.test(String(actor?.jobTitle || actor?.position || ''));
 }
 
 function uniqueIds(values, max = 100) {
@@ -233,20 +262,33 @@ async function createCustomRequest({ db, admin, actor, body }) {
 
   if (!result.replayed) {
     const { accountantUids } = await getActiveAccountantUids(db);
-    const firstIsAccountant = accountantUids.has(route[0]?.approverId);
-    const approverNotifications = firstIsAccountant
-      ? [...accountantUids].map((uid) => queueNotification(db, admin, {
-          recipientId: uid, key: `${result.requestId}:turn:${uid}`,
-          title: 'طلب جديد بانتظار موافقتك',
-          body: `قدّم ${actor.displayName || 'موظف'} طلب: ${title || typeNameAr}`,
-          data: { path: '/approver/custom-requests', requestId: result.requestId },
-        }))
-      : [queueNotification(db, admin, {
-          recipientId: route[0].approverId, key: `${result.requestId}:turn`,
-          title: 'طلب جديد بانتظار موافقتك',
-          body: `قدّم ${actor.displayName || 'موظف'} طلب: ${title || typeNameAr}`,
-          data: { path: '/approver/custom-requests', requestId: result.requestId },
-        })];
+    const { itUids } = await getActiveItUids(db);
+    const firstApproverId = route[0]?.approverId;
+    const firstIsAccountant = accountantUids.has(firstApproverId);
+    const firstIsIt = itUids.has(firstApproverId);
+    let approverNotifications;
+    if (firstIsAccountant) {
+      approverNotifications = [...accountantUids].map((uid) => queueNotification(db, admin, {
+        recipientId: uid, key: `${result.requestId}:turn:${uid}`,
+        title: 'طلب جديد بانتظار موافقتك',
+        body: `قدّم ${actor.displayName || 'موظف'} طلب: ${title || typeNameAr}`,
+        data: { path: '/approver/custom-requests', requestId: result.requestId },
+      }));
+    } else if (firstIsIt) {
+      approverNotifications = [...itUids].map((uid) => queueNotification(db, admin, {
+        recipientId: uid, key: `${result.requestId}:turn:${uid}`,
+        title: 'طلب جديد بانتظار موافقتك',
+        body: `قدّم ${actor.displayName || 'موظف'} طلب: ${title || typeNameAr}`,
+        data: { path: '/approver/custom-requests', requestId: result.requestId },
+      }));
+    } else {
+      approverNotifications = [queueNotification(db, admin, {
+        recipientId: route[0].approverId, key: `${result.requestId}:turn`,
+        title: 'طلب جديد بانتظار موافقتك',
+        body: `قدّم ${actor.displayName || 'موظف'} طلب: ${title || typeNameAr}`,
+        data: { path: '/approver/custom-requests', requestId: result.requestId },
+      })];
+    }
 
     await Promise.all([
       ...approverNotifications,
@@ -295,6 +337,19 @@ async function decideCustomRequest({ db, admin, actor, requestId, body }) {
       }
     }
 
+    if (!isApprover && isActorIt(actor)) {
+      const { itUids, itCodes } = await getActiveItUids(db);
+      const isItStage =
+        itUids.has(request.currentApproverId) ||
+        itCodes.has(String(request.currentApproverId || '').toUpperCase()) ||
+        itUids.has(stage.approverId) ||
+        itCodes.has(String(stage.approverId || '').toUpperCase()) ||
+        /\bit\b|تقنية|تكنولوجيا/i.test(stage.approverName || '');
+      if (isItStage) {
+        isApprover = true;
+      }
+    }
+
     if (!isApprover || request.status !== 'pending') {
       throw new Error('هذا الطلب ليس بانتظار قرارك.');
     }
@@ -320,12 +375,22 @@ async function decideCustomRequest({ db, admin, actor, requestId, body }) {
   });
   if (decision === 'approved' && result.nextApproverId) {
     const { accountantUids } = await getActiveAccountantUids(db);
+    const { itUids } = await getActiveItUids(db);
     const nextIsAccountant = accountantUids.has(result.nextApproverId);
+    const nextIsIt = itUids.has(result.nextApproverId);
     if (nextIsAccountant) {
       for (const accUid of accountantUids) {
         await queueNotification(db, admin, {
           recipientId: accUid, key: `${requestId}:turn:${accUid}`,
           title: 'طلب جديد بانتظار موافقتك', body: `انتقل طلب ${result.typeName} إلى دور الحسابات للمراجعة.`,
+          data: { path: '/approver/custom-requests', requestId },
+        });
+      }
+    } else if (nextIsIt) {
+      for (const itUid of itUids) {
+        await queueNotification(db, admin, {
+          recipientId: itUid, key: `${requestId}:turn:${itUid}`,
+          title: 'طلب جديد بانتظار موافقتك', body: `انتقل طلب ${result.typeName} إلى دور تقنية المعلومات للمراجعة.`,
           data: { path: '/approver/custom-requests', requestId },
         });
       }
@@ -385,6 +450,9 @@ async function listCustomRequests({ db, actor, queue = false }) {
   const actorIsAcc = isActorAccountant(actor);
   const { accountantUids, accountantCodes } = actorIsAcc ? await getActiveAccountantUids(db) : { accountantUids: new Set(), accountantCodes: new Set() };
 
+  const actorIsIt = isActorIt(actor);
+  const { itUids, itCodes } = actorIsIt ? await getActiveItUids(db) : { itUids: new Set(), itCodes: new Set() };
+
   const pendingSnaps = await db.collection('customRequests').where('status', '==', 'pending').limit(100).get();
   for (const doc of pendingSnaps.docs) {
     if (seenIds.has(doc.id)) continue;
@@ -404,8 +472,15 @@ async function listCustomRequests({ db, actor, queue = false }) {
       accountantCodes.has(stageApprover.toUpperCase()) ||
       /حساب|محاسب/i.test(stageName)
     );
+    const matchesIt = actorIsIt && (
+      itUids.has(currentApprover) ||
+      itCodes.has(currentApprover.toUpperCase()) ||
+      itUids.has(stageApprover) ||
+      itCodes.has(stageApprover.toUpperCase()) ||
+      /\bit\b|تقنية|تكنولوجيا/i.test(stageName)
+    );
 
-    if (matchesDirectly || matchesAccountant) {
+    if (matchesDirectly || matchesAccountant || matchesIt) {
       seenIds.add(doc.id);
       docs.push(doc);
     }
@@ -414,4 +489,4 @@ async function listCustomRequests({ db, actor, queue = false }) {
   return docs.map(serializeCustomRequest).sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
 }
 
-module.exports = { listRequestTypes, listCustomRequestDirectory, saveRequestType, createCustomRequest, decideCustomRequest, listCustomRequests, getActiveAccountantUids };
+module.exports = { listRequestTypes, listCustomRequestDirectory, saveRequestType, createCustomRequest, decideCustomRequest, listCustomRequests, getActiveAccountantUids, getActiveItUids };

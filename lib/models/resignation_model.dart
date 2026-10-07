@@ -13,6 +13,9 @@ class ResignationModel {
   final List<String> managerIds;
   final List<String> managerNames;
   final int managerApprovalIndex;
+  final DateTime? lastWorkingDay;
+  final String? clearanceStatus;
+  final List<Map<String, dynamic>> clearanceStages;
   final DateTime? submittedAt;
   final String? reviewedBy;
   final String? reviewerName;
@@ -29,6 +32,9 @@ class ResignationModel {
     required this.resignationDate,
     required this.status,
     required this.managerId,
+    this.lastWorkingDay,
+    this.clearanceStatus,
+    this.clearanceStages = const [],
     this.managerIds = const [],
     this.managerNames = const [],
     this.managerApprovalIndex = 0,
@@ -41,6 +47,10 @@ class ResignationModel {
 
   factory ResignationModel.fromFirestore(DocumentSnapshot doc) {
     final data = doc.data() as Map<String, dynamic>;
+    final rawStages = data['clearanceStages'];
+    final clearanceStages = rawStages is List
+        ? rawStages.whereType<Map<String, dynamic>>().toList()
+        : const <Map<String, dynamic>>[];
     return ResignationModel(
       resignationId: doc.id,
       userId: data['userId'] as String? ?? '',
@@ -52,6 +62,9 @@ class ResignationModel {
           (data['resignationDate'] as Timestamp?)?.toDate() ?? DateTime.now(),
       status: data['status'] as String? ?? 'pending_manager',
       managerId: data['managerId'] as String? ?? '',
+      lastWorkingDay: (data['lastWorkingDay'] as Timestamp?)?.toDate(),
+      clearanceStatus: data['clearanceStatus'] as String?,
+      clearanceStages: clearanceStages,
       managerIds: (data['managerIds'] as List<dynamic>? ?? const [])
           .whereType<String>()
           .toList(),
@@ -77,6 +90,9 @@ class ResignationModel {
       'department': department,
       'reason': reason,
       'resignationDate': resignationDate,
+      if (lastWorkingDay != null) 'lastWorkingDay': lastWorkingDay,
+      if (clearanceStatus != null) 'clearanceStatus': clearanceStatus,
+      if (clearanceStages.isNotEmpty) 'clearanceStages': clearanceStages,
       'status': status,
       'managerId': managerId,
       'managerIds': managerIds,

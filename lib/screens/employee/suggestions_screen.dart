@@ -91,7 +91,10 @@ class _EmployeeSuggestionsScreenState extends State<EmployeeSuggestionsScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text('المقترحات', style: theme.textTheme.headlineMedium),
+        title: FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Text('المقترحات', style: theme.textTheme.headlineMedium),
+        ),
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),

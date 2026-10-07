@@ -1,8 +1,9 @@
+import 'package:equatable/equatable.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../domain/entities/rich_chat.dart';
 import '../../domain/repositories/rich_chat_repository.dart';
 
-class ChatSearchState {
+class ChatSearchState extends Equatable {
   const ChatSearchState({
     this.query = '',
     this.messages = const [],
@@ -16,6 +17,17 @@ class ChatSearchState {
   final List<RichMessage> messages;
   final bool loading, offline, complete;
   final String? cursor, error;
+
+  @override
+  List<Object?> get props => [
+        query,
+        messages,
+        loading,
+        offline,
+        complete,
+        cursor,
+        error,
+      ];
 }
 
 class ChatSearchCubit extends Cubit<ChatSearchState> {

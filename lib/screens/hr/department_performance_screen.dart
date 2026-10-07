@@ -214,9 +214,12 @@ class _DepartmentPerformanceScreenState
                     onPressed: () => Navigator.pop(context),
                   )
                   : null,
-          title: Text(
-            'الأقسام والهيكل الوظيفي',
-            style: theme.textTheme.headlineMedium,
+          title: FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Text(
+              'الأقسام والهيكل الوظيفي',
+              style: theme.textTheme.headlineMedium,
+            ),
           ),
           actions: [
             if (!(organizationTabSelected && _showOrganizationTrees))
@@ -833,7 +836,7 @@ class _OrganizationChartBodyState extends State<_OrganizationChartBody> {
       executives =
           allUsers
               .where(
-                (user) => user.employeeId.trim().toUpperCase() == 'CEO-100',
+                (user) => user.isCompanyCeo,
               )
               .toList();
     }
@@ -1785,7 +1788,7 @@ class _ExecutiveTier extends StatelessWidget {
                   child: _OrganizationPerson(
                     user: user,
                     roleLabel:
-                        user.employeeId.toUpperCase() == 'CEO-100'
+                        user.isCompanyCeo
                             ? 'المدير التنفيذي'
                             : EmployeeRole.arabicLabel(user.role),
                     accent: ZaWolfColors.warning,

@@ -352,7 +352,10 @@ class _FieldAssignmentsScreenState extends State<FieldAssignmentsScreen> {
     final theme = Theme.of(context);
     return Scaffold(
       appBar: AppBar(
-        title: Text('المهام الميدانية', style: theme.textTheme.headlineMedium),
+        title: FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Text('المهام الميدانية', style: theme.textTheme.headlineMedium),
+        ),
       ),
       body: ListView(
         padding: const EdgeInsets.all(16),

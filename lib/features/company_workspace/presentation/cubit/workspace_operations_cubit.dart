@@ -53,7 +53,7 @@ final class WorkspaceOperationsCubit extends Cubit<WorkspaceOperationsState> {
   }) async {
     emit(const WorkspaceOperationsSubmitting());
     final operation = WorkspaceOperation(
-      id: 'ws_${DateTime.now().microsecondsSinceEpoch}_${_random.nextInt(1 << 32).toRadixString(36)}',
+      id: 'ws_${DateTime.now().microsecondsSinceEpoch}_${_random.nextInt(0x7fffffff).toRadixString(36)}',
       actorId: _actorId,
       resourceId: resourceId,
       kind: kind,

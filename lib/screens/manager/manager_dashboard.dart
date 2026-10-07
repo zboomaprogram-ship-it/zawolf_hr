@@ -109,7 +109,14 @@ class _ManagerDashboardScreenState extends State<ManagerDashboardScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text('لوحة المدير', style: theme.textTheme.headlineMedium),
+        title: FittedBox(
+          fit: BoxFit.scaleDown,
+          alignment: Alignment.centerRight,
+          child: Text(
+            'لوحة المدير',
+            style: theme.textTheme.headlineMedium,
+          ),
+        ),
         actions: [
           IconButton(
             tooltip: 'الإشعارات',
@@ -402,14 +409,6 @@ class _ManagerDashboardScreenState extends State<ManagerDashboardScreen> {
                       () => context.go('/manager/team'),
                       theme,
                     ),
-                    if (kIsWeb)
-                      _buildQuickActionCard(
-                        'ملفات الفريق',
-                        'منح الوصول إلى ملفات ومصادر القسم',
-                        Icons.folder_shared_outlined,
-                        () => context.go('/workspace'),
-                        theme,
-                      ),
                     _buildQuickActionCard(
                       'مهام الفريق',
                       'توزيع ومتابعة التنفيذ',

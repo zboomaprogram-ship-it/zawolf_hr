@@ -363,5 +363,69 @@ void main() {
       expect(source, contains('تنبيه: تكرار إجازة عارضة (3 مرات أو أكثر)'));
       expect(source, contains('استنفد \$casualCount إجازات عارضة خلال'));
     });
+
+    test('countDaysOffInCycle accurately sums days of previous leaves in the current cycle', () {
+      final targetDate = DateTime(2026, 8, 10); // Cycle: 2026-07-26 to 2026-08-25
+
+      final records = [
+        // 2 days in cycle
+        {
+          'id': 'leave-1',
+          'leaveType': 'day_off',
+          'numberOfDays': 2,
+          'status': 'approved',
+          'startDate': DateTime(2026, 7, 28),
+        },
+        // 1 day in cycle
+        {
+          'id': 'leave-2',
+          'leaveType': 'casual',
+          'numberOfDays': 1,
+          'status': 'pending_manager',
+          'startDate': DateTime(2026, 8, 2),
+        },
+        // Rejected -> excluded
+        {
+          'id': 'leave-3-rejected',
+          'leaveType': 'day_off',
+          'numberOfDays': 3,
+          'status': 'rejected',
+          'startDate': DateTime(2026, 8, 5),
+        },
+        // Cancelled -> excluded
+        {
+          'id': 'leave-4-cancelled',
+          'leaveType': 'day_off',
+          'numberOfDays': 2,
+          'status': 'cancelled',
+          'startDate': DateTime(2026, 8, 6),
+        },
+        // Previous cycle -> excluded
+        {
+          'id': 'leave-old',
+          'leaveType': 'day_off',
+          'numberOfDays': 4,
+          'status': 'approved',
+          'startDate': DateTime(2026, 7, 15),
+        },
+        // Current pending leave being submitted -> excluded via currentLeaveId
+        {
+          'id': 'leave-new',
+          'leaveType': 'day_off',
+          'numberOfDays': 1,
+          'status': 'pending_manager',
+          'startDate': DateTime(2026, 8, 10),
+        },
+      ];
+
+      final count = LeaveService.countDaysOffInCycle(
+        leaveRecords: records,
+        targetDate: targetDate,
+        currentLeaveId: 'leave-new',
+      );
+
+      // leave-1 (2 days) + leave-2 (1 day) = 3 days
+      expect(count, equals(3));
+    });
   });
 }

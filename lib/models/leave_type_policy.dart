@@ -83,12 +83,22 @@ class LeaveTypePolicy {
   }
 
   static bool get requiresReason => true;
-  static bool requiresTwoDayNotice(String type) => type == normal;
+  static bool requiresNotice(String type, {int noticeDays = 2}) =>
+      type == normal && noticeDays > 0;
+  static bool requiresTwoDayNotice(String type) => requiresNotice(type, noticeDays: 2);
   static bool requiresFullDaySalaryDeduction(String type) => type == unpaid;
 
-  /// Three chargeable workdays or more require the employee's assigned CEO.
-  /// The leave service calculates chargeable days before this policy is used,
-  /// so Fridays and active company holidays never create an extra approval.
-  static bool requiresCeoApproval(String type, int numberOfDays) =>
-      type == remote || numberOfDays >= 3;
+  /// Dynamic CEO approval evaluation.
+  /// If [thresholdDays] is > 0, leaves with days >= [thresholdDays] require CEO.
+  /// If [requireForRemote] is true, remote work requires CEO.
+  static bool requiresCeoApproval(
+    String type,
+    int numberOfDays, {
+    int thresholdDays = 3,
+    bool requireForRemote = true,
+  }) {
+    if (requireForRemote && type == remote) return true;
+    if (thresholdDays > 0 && numberOfDays >= thresholdDays) return true;
+    return false;
+  }
 }

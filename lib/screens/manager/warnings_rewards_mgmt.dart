@@ -57,9 +57,12 @@ class _WarningsRewardsManagementScreenState
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(
-          'الإنذارات والمكافآت',
-          style: theme.textTheme.headlineMedium,
+        title: FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Text(
+            'الإنذارات والمكافآت',
+            style: theme.textTheme.headlineMedium,
+          ),
         ),
         actions: [
           IconButton(
@@ -293,21 +296,59 @@ class _CreateRecordSheetState extends State<_CreateRecordSheet> {
             FutureBuilder<List<UserModel>>(
               future: _employeesFuture,
               builder: (context, snapshot) {
-                final employees = snapshot.data ?? [];
-                return DropdownButtonFormField<UserModel>(
-                  initialValue: _employee,
-                  decoration: const InputDecoration(labelText: 'الموظف'),
-                  items: employees
-                      .map(
-                        (user) => DropdownMenuItem(
-                          value: user,
-                          child: Text(
-                            '${user.displayName} · ${user.department}',
-                          ),
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 8),
+                    child: Center(
+                      child: SizedBox(
+                        height: 20,
+                        width: 20,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: ZaWolfColors.primaryCyan,
                         ),
-                      )
-                      .toList(),
-                  onChanged: (value) => setState(() => _employee = value),
+                      ),
+                    ),
+                  );
+                }
+                final employees = snapshot.data ?? [];
+                return InkWell(
+                  onTap: employees.isEmpty
+                      ? null
+                      : () async {
+                          final selected = await showDialog<UserModel>(
+                            context: context,
+                            builder: (ctx) => _EmployeeSearchDialog(
+                              employees: employees,
+                              selected: _employee,
+                            ),
+                          );
+                          if (selected != null) {
+                            setState(() => _employee = selected);
+                          }
+                        },
+                  borderRadius: BorderRadius.circular(8),
+                  child: InputDecorator(
+                    decoration: const InputDecoration(
+                      labelText: 'الموظف',
+                      prefixIcon: Icon(
+                        Icons.person_search,
+                        color: ZaWolfColors.primaryCyan,
+                      ),
+                      suffixIcon: Icon(Icons.arrow_drop_down),
+                    ),
+                    child: Text(
+                      _employee == null
+                          ? 'اضغط لاختيار الموظف أو البحث عنه...'
+                          : '${_employee!.displayName} (${_employee!.employeeId}) · ${_employee!.department}',
+                      style: TextStyle(
+                        color: _employee == null
+                            ? ZaWolfColors.textMuted
+                            : Colors.white,
+                      ),
+                      textDirection: TextDirection.rtl,
+                    ),
+                  ),
                 );
               },
             ),
@@ -322,7 +363,7 @@ class _CreateRecordSheetState extends State<_CreateRecordSheet> {
                 ),
                 DropdownMenuItem(
                   value: WarningRewardType.notice,
-                  child: Text('لفت نظر (غير رسمي)'),
+                  child: Text('لفت نظر'),
                 ),
                 DropdownMenuItem(
                   value: WarningRewardType.followUp,
@@ -407,6 +448,204 @@ class _Chip extends StatelessWidget {
         border: Border.all(color: color.withValues(alpha: 0.35)),
       ),
       child: Text(text, style: TextStyle(color: color, fontSize: 12)),
+    );
+  }
+}
+
+class _EmployeeSearchDialog extends StatefulWidget {
+  final List<UserModel> employees;
+  final UserModel? selected;
+
+  const _EmployeeSearchDialog({
+    required this.employees,
+    this.selected,
+  });
+
+  @override
+  State<_EmployeeSearchDialog> createState() => _EmployeeSearchDialogState();
+}
+
+class _EmployeeSearchDialogState extends State<_EmployeeSearchDialog> {
+  final TextEditingController _search = TextEditingController();
+  String _query = '';
+
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final normalized = _query.trim().toLowerCase();
+    final filtered = widget.employees.where((u) {
+      if (normalized.isEmpty) return true;
+      final name = u.displayName.toLowerCase();
+      final code = u.employeeId.toLowerCase();
+      final dept = u.department.toLowerCase();
+      final pos = u.position.toLowerCase();
+      return name.contains(normalized) ||
+          code.contains(normalized) ||
+          dept.contains(normalized) ||
+          pos.contains(normalized);
+    }).toList();
+
+    return Dialog(
+      backgroundColor: ZaWolfColors.surface01,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 500, maxHeight: 600),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'اختر الموظف',
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close, color: ZaWolfColors.textMuted),
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: _search,
+                autofocus: true,
+                decoration: InputDecoration(
+                  labelText: 'بحث بالاسم، الكود، أو القسم...',
+                  prefixIcon: const Icon(
+                    Icons.search,
+                    color: ZaWolfColors.primaryCyan,
+                  ),
+                  suffixIcon: _query.isNotEmpty
+                      ? IconButton(
+                          icon: const Icon(Icons.clear, size: 18),
+                          onPressed: () {
+                            _search.clear();
+                            setState(() => _query = '');
+                          },
+                        )
+                      : null,
+                ),
+                onChanged: (val) => setState(() => _query = val),
+              ),
+              const SizedBox(height: 12),
+              Flexible(
+                child: filtered.isEmpty
+                    ? const Center(
+                        child: Padding(
+                          padding: EdgeInsets.symmetric(vertical: 24),
+                          child: Text(
+                            'لا يوجد موظف مطابق للبحث',
+                            style: TextStyle(color: ZaWolfColors.textMuted),
+                          ),
+                        ),
+                      )
+                    : ListView.separated(
+                        shrinkWrap: true,
+                        itemCount: filtered.length,
+                        separatorBuilder: (_, __) => const Divider(
+                          color: ZaWolfColors.surface02,
+                          height: 1,
+                        ),
+                        itemBuilder: (context, index) {
+                          final user = filtered[index];
+                          final isSelected = widget.selected?.uid == user.uid;
+                          final initial = user.displayName.trim().isNotEmpty
+                              ? user.displayName.trim().characters.first
+                              : '؟';
+                          return ListTile(
+                            dense: true,
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 4,
+                            ),
+                            leading: CircleAvatar(
+                              radius: 18,
+                              backgroundColor: isSelected
+                                  ? ZaWolfColors.primaryCyan
+                                  : ZaWolfColors.surface02,
+                              child: Text(
+                                initial,
+                                style: TextStyle(
+                                  color: isSelected
+                                      ? Colors.black
+                                      : Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 14,
+                                ),
+                              ),
+                            ),
+                            title: Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    user.displayName,
+                                    style: TextStyle(
+                                      color: isSelected
+                                          ? ZaWolfColors.primaryCyan
+                                          : Colors.white,
+                                      fontWeight: isSelected
+                                          ? FontWeight.bold
+                                          : FontWeight.normal,
+                                    ),
+                                  ),
+                                ),
+                                if (user.employeeId.isNotEmpty)
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 6,
+                                      vertical: 2,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: ZaWolfColors.surface02,
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                    child: Text(
+                                      user.employeeId,
+                                      style: const TextStyle(
+                                        color: ZaWolfColors.primaryCyan,
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                            subtitle: Text(
+                              '${user.department}${user.position.isNotEmpty ? ' · ${user.position}' : ''}',
+                              style: const TextStyle(
+                                color: ZaWolfColors.textMuted,
+                                fontSize: 12,
+                              ),
+                            ),
+                            trailing: isSelected
+                                ? const Icon(
+                                    Icons.check_circle,
+                                    color: ZaWolfColors.primaryCyan,
+                                    size: 20,
+                                  )
+                                : null,
+                            onTap: () => Navigator.pop(context, user),
+                          );
+                        },
+                      ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

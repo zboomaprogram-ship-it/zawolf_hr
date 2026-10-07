@@ -155,6 +155,54 @@ class ProductivityService {
     return controller.stream;
   }
 
+  Future<List<EmployeeTaskModel>> _safeTasksQuery(
+    String uid,
+    DateTime start,
+    DateTime nextStart,
+  ) async {
+    try {
+      final snap = await _db
+          .collection('tasks')
+          .where('assigneeId', isEqualTo: uid)
+          .where('dueDate', isGreaterThanOrEqualTo: Timestamp.fromDate(start))
+          .where('dueDate', isLessThan: Timestamp.fromDate(nextStart))
+          .get();
+      return snap.docs.map(EmployeeTaskModel.fromFirestore).toList();
+    } catch (_) {
+      try {
+        final snap = await _db
+            .collection('tasks')
+            .where('assigneeId', isEqualTo: uid)
+            .get();
+        return snap.docs
+            .map(EmployeeTaskModel.fromFirestore)
+            .where(
+              (t) =>
+                  !t.dueDate.isBefore(start) && t.dueDate.isBefore(nextStart),
+            )
+            .toList();
+      } catch (_) {
+        return [];
+      }
+    }
+  }
+
+  Future<EmployeeKpiModel?> _safeKpiQuery(String uid, String monthKey) async {
+    try {
+      final snap = await _db
+          .collection('employeeKpis')
+          .where('userId', isEqualTo: uid)
+          .where('monthKey', isEqualTo: monthKey)
+          .limit(1)
+          .get();
+      return snap.docs.isEmpty
+          ? null
+          : EmployeeKpiModel.fromFirestore(snap.docs.first);
+    } catch (_) {
+      return null;
+    }
+  }
+
   Future<ProductivityScoreModel> calculateForUser(
     UserModel user,
     String monthKey,
@@ -166,31 +214,13 @@ class ProductivityService {
         start: cycle.start,
         end: cycle.end,
       ),
-      _db
-          .collection('tasks')
-          .where('assigneeId', isEqualTo: user.uid)
-          .where(
-            'dueDate',
-            isGreaterThanOrEqualTo: Timestamp.fromDate(cycle.start),
-          )
-          .where('dueDate', isLessThan: Timestamp.fromDate(cycle.nextStart))
-          .get(),
-      _db
-          .collection('employeeKpis')
-          .where('userId', isEqualTo: user.uid)
-          .where('monthKey', isEqualTo: monthKey)
-          .limit(1)
-          .get(),
+      _safeTasksQuery(user.uid, cycle.start, cycle.nextStart),
+      _safeKpiQuery(user.uid, monthKey),
     ]);
 
     final attendanceSummary = results[0] as AttendancePeriodSummary;
-    final taskDocs = results[1] as QuerySnapshot<Map<String, dynamic>>;
-    final kpiDocs = results[2] as QuerySnapshot<Map<String, dynamic>>;
-
-    final tasks = taskDocs.docs.map(EmployeeTaskModel.fromFirestore).toList();
-    final kpi = kpiDocs.docs.isEmpty
-        ? null
-        : EmployeeKpiModel.fromFirestore(kpiDocs.docs.first);
+    final tasks = results[1] as List<EmployeeTaskModel>;
+    final kpi = results[2] as EmployeeKpiModel?;
 
     final absentDays = attendanceSummary.absentDays;
     final lateDays = attendanceSummary.lateDays;
@@ -305,29 +335,32 @@ class ProductivityService {
     required UserModel user,
     required String monthKey,
   }) async {
-    final base = _db
-        .collection('employeeKpis')
-        .where('monthKey', isEqualTo: monthKey);
-    final queries = user.role == EmployeeRole.teamLeader
-        ? <Query<Map<String, dynamic>>>[
-            base.where('teamLeaderId', isEqualTo: user.uid),
-          ]
-        : <Query<Map<String, dynamic>>>[
-            base.where('managerIds', arrayContains: user.uid),
-            base.where('managerId', isEqualTo: user.uid),
-            base.where('teamLeaderId', isEqualTo: user.uid),
-          ];
-    final snapshots = await Future.wait(queries.map((query) => query.get()));
-    final byId = <String, EmployeeKpiModel>{};
-    for (final snapshot in snapshots) {
-      for (final document in snapshot.docs) {
-        final item = EmployeeKpiModel.fromFirestore(document);
-        if (item.userId != user.uid) {
-          byId[item.employeeKpiId] = item;
+    try {
+      final base = _db
+          .collection('employeeKpis')
+          .where('monthKey', isEqualTo: monthKey);
+      final queries = user.role == EmployeeRole.teamLeader
+          ? <Query<Map<String, dynamic>>>[
+              base.where('teamLeaderId', isEqualTo: user.uid),
+            ]
+          : <Query<Map<String, dynamic>>>[
+              base.where('managerId', isEqualTo: user.uid),
+              base.where('teamLeaderId', isEqualTo: user.uid),
+            ];
+      final snapshots = await Future.wait(queries.map((query) => query.get()));
+      final byId = <String, EmployeeKpiModel>{};
+      for (final snapshot in snapshots) {
+        for (final document in snapshot.docs) {
+          final item = EmployeeKpiModel.fromFirestore(document);
+          if (item.userId != user.uid) {
+            byId[item.employeeKpiId] = item;
+          }
         }
       }
+      return byId.values.map((item) => item.overallProgress).toList();
+    } catch (_) {
+      return [];
     }
-    return byId.values.map((item) => item.overallProgress).toList();
   }
 
   Future<void> calculateAndCacheForUser({

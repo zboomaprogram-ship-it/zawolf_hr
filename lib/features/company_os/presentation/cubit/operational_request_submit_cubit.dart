@@ -2,6 +2,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../domain/repositories/operational_request_repository.dart';
 import '../../domain/entities/company_os_attachment_reference.dart';
+import '../../domain/entities/company_os_safe_error.dart';
 
 sealed class OperationalRequestSubmitState {
   const OperationalRequestSubmitState();
@@ -53,12 +54,11 @@ final class OperationalRequestSubmitCubit
         attachments: attachments,
       );
       emit(const OperationalRequestSubmitted('تم حفظ الطلب وإرساله للمراجعة.'));
-    } catch (_) {
-      emit(
-        const OperationalRequestSubmitFailure(
-          'تعذر إرسال الطلب. تحقق من البيانات ثم أعد المحاولة.',
-        ),
-      );
+    } catch (error) {
+      final message = error is CompanyOsSafeError
+          ? error.arabicMessage
+          : 'تعذر إرسال الطلب. تحقق من البيانات ثم أعد المحاولة.';
+      emit(OperationalRequestSubmitFailure(message));
     }
   }
 }

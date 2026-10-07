@@ -57,7 +57,10 @@ class _EmployeeTasksScreenState extends State<EmployeeTasksScreen> {
                       onPressed: () => Navigator.pop(context),
                     )
                   : null,
-              title: Text('مهامي اليومية والتشغيلية', style: theme.textTheme.headlineMedium),
+              title: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text('مهامي اليومية والتشغيلية', style: isDesktop ? theme.textTheme.headlineMedium : theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
+              ),
             ),
             body: StreamBuilder<List<EmployeeTaskModel>>(
               stream: taskService.watchMyTasks(user.uid),

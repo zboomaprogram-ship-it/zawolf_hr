@@ -17,8 +17,15 @@ function pageById(query, value, limit) {
 }
 async function unreadCount(channel, actor) {
   const read = channel.data.readers?.[actor.uid];
+  const lastActivityAt = channel.data.latestActivityAt;
+  const lastActivityId = channel.data.latestActivityId;
+  if (read?.sentAt && lastActivityAt && lastActivityId && read.messageId === lastActivityId) {
+    const readTime = new Date(read.sentAt).getTime();
+    const actTime = new Date(lastActivityAt).getTime();
+    if (readTime >= actTime) return 0;
+  }
   try {
-    const snaps = await channel.ref.collection('messages').orderBy('sentAt', 'desc').limit(100).get();
+    const snaps = await channel.ref.collection('messages').orderBy('sentAt', 'desc').limit(25).get();
     if (read?.sentAt) {
       const at = new Date(read.sentAt).getTime();
       return snaps.docs.filter(doc => {
@@ -166,11 +173,12 @@ async function eligibleUsers(dbOrContext, actorArg, paramsArg) {
   const docs = await pageById(db.collection('users').where('isActive', '==', true), cursor, 100).get();
   const actorDoc = await db.collection('users').doc(actor.uid).get();
   const fullActor = actorDoc.exists ? { ...actorDoc.data(), ...actor } : actor;
+  const policy = await P.loadPolicy(db);
   const department = params && typeof params.get === 'function' ? params.get('department') : null;
   const section = params && typeof params.get === 'function' ? params.get('section') : null;
   if (department && department.length > 120) C.fail('validation_failed');
   if (section && !['manager', 'hr', 'admin', 'it'].includes(section)) C.fail('validation_failed');
-  const all = docs.docs.map(doc => ({ doc, data: { id: doc.id, ...doc.data() } })).filter(({data}) => P.canDirect(fullActor, data));
+  const all = docs.docs.map(doc => ({ doc, data: { id: doc.id, ...doc.data() } })).filter(({data}) => P.canDirect(fullActor, data, policy));
   const filtered = all.filter(({data}) => !department || P.department(data) === department).filter(({data}) => !section || (section === 'manager' ? P.isManager(data) : section === 'hr' ? P.isHr(data) && !P.isAdmin(data) : section === 'admin' ? P.isAdmin(data) : P.isIt(data)));
   return { contacts: filtered.map(({doc}) => userDto(doc, section || 'department')), nextCursor: docs.size === 100 ? docs.docs.at(-1).id : null };
 }
@@ -181,9 +189,10 @@ async function contactDepartments(dbOrContext, actorArg, paramsArg) {
   const cursor = params && typeof params.get === 'function' ? params.get('cursor') : null;
   const actorDoc = await db.collection('users').doc(actor.uid).get();
   const fullActor = actorDoc.exists ? { ...actorDoc.data(), ...actor } : actor;
+  const policy = await P.loadPolicy(db);
   const docs = await pageById(db.collection('users').where('isActive', '==', true), cursor, 100).get();
   const counts = new Map();
-  for (const doc of docs.docs) { const target = { id: doc.id, ...doc.data() }; if (P.canDirect(fullActor, target) && P.department(target)) counts.set(P.department(target), (counts.get(P.department(target)) || 0) + 1); }
+  for (const doc of docs.docs) { const target = { id: doc.id, ...doc.data() }; if (P.canDirect(fullActor, target, policy) && P.department(target)) counts.set(P.department(target), (counts.get(P.department(target)) || 0) + 1); }
   return { departments: [...counts].sort(([a],[b]) => a.localeCompare(b, 'ar')).map(([name, eligibleCount]) => ({ id: name, name, eligibleCount })), nextCursor: docs.size === 100 ? docs.docs.at(-1).id : null };
 }
 async function members({db, channel}) {

@@ -167,9 +167,13 @@ class _HrDashboardScreenState extends State<HrDashboardScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(
-          'لوحة الموارد البشرية (HR)',
-          style: theme.textTheme.headlineMedium,
+        title: FittedBox(
+          fit: BoxFit.scaleDown,
+          alignment: Alignment.centerRight,
+          child: Text(
+            'لوحة الموارد البشرية (HR)',
+            style: theme.textTheme.headlineMedium,
+          ),
         ),
         actions: [
           IconButton(
@@ -520,10 +524,10 @@ class _HrDashboardScreenState extends State<HrDashboardScreen> {
                   theme,
                 ),
                 _actionTile(
-                  'أنواع الطلبات المخصصة',
-                  'إنشاء نماذج الطلبات ومسارات الموافقة',
+                  'محرك الطلبات ومسارات الاعتماد',
+                  'إدارة النماذج والأنواع وسلاسل الموافقة المخصصة',
                   Icons.playlist_add_check_outlined,
-                  () => context.go('/hr/custom-request-types'),
+                  () => context.go('/hr/approval-chains-settings'),
                   theme,
                 ),
               ],
@@ -578,22 +582,6 @@ class _HrDashboardScreenState extends State<HrDashboardScreen> {
                     'تصدير الحضور والإجازات مباشرة لـ Google Sheets',
                     Icons.file_download_outlined,
                     () => context.go('/hr/reports'),
-                    theme,
-                  ),
-                if (canAccessReports && kIsWeb)
-                  _actionTile(
-                    'مركز ملفات الشركة',
-                    'إدارة المصادر والمخططات وصلاحيات الوصول',
-                    Icons.cloud_sync_outlined,
-                    () => context.go('/workspace'),
-                    theme,
-                  ),
-                if (canAccessReports && kIsWeb)
-                  _actionTile(
-                    'تقارير ملفات الشركة',
-                    'اكتشاف تقارير نشاط الملفات وتقارير HR المحمية',
-                    Icons.folder_shared_outlined,
-                    () => context.go('/hr/workspace-reports'),
                     theme,
                   ),
               ],

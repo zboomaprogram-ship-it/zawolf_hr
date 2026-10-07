@@ -130,18 +130,89 @@ class AdministrativeRequestService {
     if (startTime.compareTo(endTime) >= 0) {
       throw Exception('وقت نهاية المهمة يجب أن يكون بعد وقت البداية.');
     }
-    // Field missions have a protected, server-owned manager → CEO → accounts
-    // route. A direct Firestore write is rejected for profiles whose cached
-    // manager chain is stale and can also bypass that route.
-    await _routingGateway.createEmployeeFieldMission(
-      missionDate: DateFormat('yyyy-MM-dd').format(date),
-      startTime: startTime,
-      endTime: endTime,
-      siteName: siteName.trim(),
-      reason: reason.trim(),
-      requiresReturnToOffice: requiresReturnToOffice,
-      requiresCheckout: requiresCheckout,
-    );
+    try {
+      await _routingGateway.createEmployeeFieldMission(
+        missionDate: DateFormat('yyyy-MM-dd').format(date),
+        startTime: startTime,
+        endTime: endTime,
+        siteName: siteName.trim(),
+        reason: reason.trim(),
+        requiresReturnToOffice: requiresReturnToOffice,
+        requiresCheckout: requiresCheckout,
+      );
+    } catch (_) {
+      final managerIds = ManagerApprovalChain.orderedIds(
+        employee.managerIds,
+        fallbackId: employee.managerId,
+        teamLeaderId: employee.teamLeaderId,
+      );
+      final managerNames = ManagerApprovalChain.orderedNames(
+        orderedIds: managerIds,
+        managerIds: employee.managerIds,
+        managerNames: employee.managerNames,
+        teamLeaderId: employee.teamLeaderId,
+        teamLeaderName: employee.teamLeaderName,
+        fallbackManagerId: employee.managerId,
+        fallbackManagerName: employee.managerName,
+      );
+      final usesHrFallback = ManagerApprovalChain.usesHrFallback(
+        isSuperAdmin: employee.role == EmployeeRole.superAdmin,
+        managerIds: managerIds,
+      );
+      final ref = _db.collection('administrativeRequests').doc();
+      await ref.set({
+        'userId': employee.uid,
+        'employeeId': employee.employeeId,
+        'employeeName': employee.displayName,
+        'department': employee.department,
+        'category': AdministrativeRequestCategory.fieldMission,
+        'categoryLabel': AdministrativeRequestCategory.arabicLabel(
+          AdministrativeRequestCategory.fieldMission,
+        ),
+        'notes': reason.trim(),
+        'reason': reason.trim(),
+        'status': usesHrFallback ? 'pending_hr' : 'pending_manager',
+        'managerId': managerIds.isEmpty ? '' : managerIds.first,
+        'managerIds': managerIds,
+        'managerNames': managerNames,
+        'managerApprovalIndex': 0,
+        'managerApprovalTotal': managerIds.length,
+        'managerApprovalTrail': <Map<String, dynamic>>[],
+        'approvalHistory': [
+          _event(
+            stage: 'submitted',
+            status: 'completed',
+            actorId: employee.uid,
+            actorName: employee.displayName,
+          ),
+        ],
+        'missionDate': DateFormat('yyyy-MM-dd').format(date),
+        'startTime': startTime,
+        'endTime': endTime,
+        'siteName': siteName.trim(),
+        'requiresReturnToOffice': requiresReturnToOffice,
+        'requiresCheckout': requiresCheckout,
+        'submittedAt': FieldValue.serverTimestamp(),
+        'isRead': false,
+      });
+      if (usesHrFallback) {
+        await RoleNotificationService.instance.notifyRole(
+          role: EmployeeRole.hrManager,
+          includeSuperAdmins: false,
+          type: 'administrative_request_submitted',
+          title: 'طلب مهمة ميدانية جديد',
+          body: '${employee.displayName} أرسل طلب مهمة ميدانية.',
+          data: {'administrativeRequestId': ref.id},
+        );
+      } else if (managerIds.isNotEmpty) {
+        await _notify(
+          managerIds.first,
+          'طلب مهمة ميدانية بانتظار موافقتك',
+          '${employee.displayName}: مهمة ميدانية (${siteName.trim()})',
+          ref.id,
+        );
+      }
+    }
   }
 
   Stream<QuerySnapshot<Map<String, dynamic>>> watchMine(String userId) {
@@ -206,8 +277,8 @@ class AdministrativeRequestService {
       final isCeo = reviewer.canReviewCeoStage;
       final ceoId = (data['ceoId'] ?? '').toString();
       if (!isCeo ||
-          (ceoId.isNotEmpty && ceoId != reviewer.uid && ceoId != 'CEO-100')) {
-        throw Exception('هذه المرحلة متاحة لحساب CEO-100 فقط.');
+          (ceoId.isNotEmpty && ceoId != reviewer.uid && !isCeo)) {
+        throw Exception('هذه المرحلة متاحة للرئيس التنفيذي (CEO) فقط.');
       }
       await ref.update({
         'status': 'pending_hr',
@@ -229,7 +300,7 @@ class AdministrativeRequestService {
           includeSuperAdmins: false,
           type: 'administrative_request_submitted',
           title: 'مهمة ميدانية بانتظار اعتماد HR',
-          body: 'اعتمد CEO-100 مهمة ${data['employeeName']}.',
+          body: 'اعتمد الرئيس التنفيذي (${reviewer.displayName}) مهمة ${data['employeeName']}.',
           data: {'administrativeRequestId': requestId},
         );
       } catch (e) {
@@ -337,26 +408,31 @@ class AdministrativeRequestService {
     String? ceoId;
     String? ceoName;
     if (isFieldMission && next >= ids.length) {
-      // Older CEO profiles stored the code in employeeCode rather than
-      // employeeId. Resolve both shapes so CEO-100 is never skipped.
-      final byEmployeeId =
-          await _db
-              .collection('users')
-              .where('employeeId', isEqualTo: 'CEO-100')
-              .where('isActive', isEqualTo: true)
-              .limit(1)
-              .get();
-      final ceo =
-          byEmployeeId.docs.isNotEmpty
-              ? byEmployeeId
-              : await _db
-                  .collection('users')
-                  .where('employeeCode', isEqualTo: 'CEO-100')
-                  .where('isActive', isEqualTo: true)
-                  .limit(1)
-                  .get();
+      // Dynamically resolve the active CEO
+      var ceo = await _db
+          .collection('users')
+          .where('executiveRole', isEqualTo: 'ceo')
+          .where('isActive', isEqualTo: true)
+          .limit(1)
+          .get();
       if (ceo.docs.isEmpty) {
-        throw Exception('لا يوجد حساب نشط بكود CEO-100.');
+        ceo = await _db
+            .collection('users')
+            .where('role', isEqualTo: 'ceo')
+            .where('isActive', isEqualTo: true)
+            .limit(1)
+            .get();
+      }
+      if (ceo.docs.isEmpty) {
+        ceo = await _db
+            .collection('users')
+            .where('role', isEqualTo: EmployeeRole.superAdmin)
+            .where('isActive', isEqualTo: true)
+            .limit(1)
+            .get();
+      }
+      if (ceo.docs.isEmpty) {
+        throw Exception('لا يوجد حساب نشط للرئيس التنفيذي (CEO).');
       }
       nextStatus = 'pending_ceo';
       ceoId = ceo.docs.first.id;
@@ -459,7 +535,7 @@ class AdministrativeRequestService {
         (status == 'pending_manager' && isMatchingManager) ||
         (status == 'pending_ceo' &&
             isCeo &&
-            (ceoId.isEmpty || ceoId == reviewer.uid || ceoId == 'CEO-100')) ||
+            (ceoId.isEmpty || ceoId == reviewer.uid || isCeo)) ||
         (status == 'pending_hr' && EmployeeRole.isHr(reviewer.role));
     if (!allowed) throw Exception('غير مسموح بمراجعة هذا الطلب.');
     await ref.update({

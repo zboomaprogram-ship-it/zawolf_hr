@@ -7,9 +7,12 @@ import '../models/user_model.dart';
 import '../models/employee_role.dart';
 import 'audit_log_service.dart';
 import 'role_notification_service.dart';
+import 'request_approval_policy_service.dart';
 
 class AdvanceService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
+  final RequestApprovalPolicyService _approvalPolicyService =
+      RequestApprovalPolicyService();
 
   Future<bool> _tryBackendAdvanceDecision({
     required String advanceId,
@@ -50,16 +53,20 @@ class AdvanceService {
     return false;
   }
 
-  /// Validates the rules before allocating an id or writing a request.  Keeping
+  /// Validates the rules before allocating an id or writing a request. Keeping
   /// this deterministic makes the same policy available to every client.
   static void validateSubmissionEligibility({
     required UserModel employee,
     required double amount,
     required DateTime now,
+    int probationPeriodDays = 90,
+    double advanceMaxSalaryPercentage = 50.0,
   }) {
     if (employee.hiringDate == null ||
-        now.difference(employee.hiringDate!).inDays < 90) {
-      throw Exception('لا يمكن طلب سلفة قبل قضاء 3 أشهر على الأقل في الخدمة.');
+        now.difference(employee.hiringDate!).inDays < probationPeriodDays) {
+      final months = (probationPeriodDays / 30).round();
+      final monthLabel = months > 0 ? '$months أشهر' : '$probationPeriodDays يوم';
+      throw Exception('لا يمكن طلب سلفة قبل قضاء $monthLabel على الأقل في الخدمة.');
     }
     if (now.day < 15) {
       throw Exception(
@@ -69,11 +76,12 @@ class AdvanceService {
     if (amount <= 0) {
       throw Exception('قيمة السلفة يجب أن تكون أكبر من الصفر.');
     }
-    if (employee.baseMonthlySalary > 0) {
-      final maximum = employee.baseMonthlySalary * .5;
+    if (employee.baseMonthlySalary > 0 && advanceMaxSalaryPercentage > 0) {
+      final fraction = advanceMaxSalaryPercentage / 100.0;
+      final maximum = employee.baseMonthlySalary * fraction;
       if (amount > maximum) {
         throw Exception(
-          'قيمة السلفة لا يمكن أن تتجاوز 50% من الراتب الشهري (الحد الأقصى المتاح لك: ${maximum.toStringAsFixed(0)} ${employee.salaryCurrency}).',
+          'قيمة السلفة لا يمكن أن تتجاوز ${advanceMaxSalaryPercentage.toStringAsFixed(0)}% من الراتب الشهري (الحد الأقصى المتاح لك: ${maximum.toStringAsFixed(0)} ${employee.salaryCurrency}).',
         );
       }
     }
@@ -151,10 +159,13 @@ class AdvanceService {
     UserModel employee,
   ) async {
     final now = DateTime.now();
+    final approvalPolicy = await _approvalPolicyService.getPolicy();
     validateSubmissionEligibility(
       employee: employee,
       amount: req.amount,
       now: now,
+      probationPeriodDays: approvalPolicy.probationPeriodDays,
+      advanceMaxSalaryPercentage: approvalPolicy.advanceMaxSalaryPercentage,
     );
     final ref = _db.collection('advances').doc();
     final managerIds = _approvalManagerIds(employee, req.managerId);
@@ -213,11 +224,7 @@ class AdvanceService {
   Stream<List<AdvanceModel>> watchTeamAdvances(UserModel reviewer) {
     Query<Map<String, dynamic>> query = _db.collection('advances');
 
-    final reviewerCode = reviewer.employeeId.trim().toUpperCase();
-    final isCompanyCeo = reviewer.isCompanyCeo || reviewerCode == 'CEO-100';
-    final isCompanyCoo = reviewer.isCompanyCoo || reviewerCode == 'COO-1300';
-    final isExecutive =
-        isCompanyCeo || isCompanyCoo || reviewer.role == EmployeeRole.superAdmin;
+    final isExecutive = reviewer.canReviewExecutiveStage;
 
     if (!isExecutive && reviewer.role == EmployeeRole.manager) {
       query = query
@@ -298,12 +305,8 @@ class AdvanceService {
     final advance = AdvanceModel.fromFirestore(doc);
     final data = doc.data() ?? <String, dynamic>{};
     final reviewerCode = reviewer.employeeId.trim().toUpperCase();
-    final isCompanyCeo = reviewer.isCompanyCeo || reviewerCode == 'CEO-100';
-    final isCompanyCoo = reviewer.isCompanyCoo || reviewerCode == 'COO-1300';
-    final isExecutive =
-        isCompanyCeo ||
-        isCompanyCoo ||
-        reviewer.role == EmployeeRole.superAdmin;
+    final isCompanyCeo = reviewer.isCompanyCeo;
+    final isExecutive = reviewer.canReviewExecutiveStage;
     final isMatchingManager =
         advance.managerId == reviewer.uid ||
         (reviewerCode.isNotEmpty && advance.managerId == reviewerCode) ||
@@ -314,25 +317,59 @@ class AdvanceService {
         isExecutive;
 
     Map<String, dynamic> update;
+    final approvalPolicy = await _approvalPolicyService.getPolicy();
     if ((EmployeeRole.isHr(reviewer.role) || isExecutive) &&
         advance.status == 'pending_hr') {
-      final ceo = await _findAssignedCeo(advance.userId);
-      update = {
-        'status': 'pending_manager',
-        'managerId': ceo.uid,
-        'managerName': ceo.displayName,
-        'managerApprovalIndex': 0,
-        'advanceRouteStage': 'ceo',
-        'approvalHistory': FieldValue.arrayUnion([
-          _routeEvent('hr', reviewer, 'approved'),
-        ]),
-        'reviewedBy': reviewer.uid,
-        'reviewedAt': FieldValue.serverTimestamp(),
-        'isRead': false,
-      };
+      if (approvalPolicy.requireCeoApprovalForAdvance) {
+        final ceo = await _findAssignedCeo(advance.userId);
+        update = {
+          'status': 'pending_manager',
+          'managerId': ceo.uid,
+          'managerName': ceo.displayName,
+          'managerApprovalIndex': 0,
+          'advanceRouteStage': 'ceo',
+          'approvalHistory': FieldValue.arrayUnion([
+            _routeEvent('hr', reviewer, 'approved'),
+          ]),
+          'reviewedBy': reviewer.uid,
+          'reviewedAt': FieldValue.serverTimestamp(),
+          'isRead': false,
+        };
+      } else {
+        // Skip CEO stage directly to accounting
+        final accountants = await _findAdvanceAccountants();
+        final accountant = accountants.first;
+        final accountantUids = accountants.map((a) => a.uid).toSet().toList();
+        final accountantCodes = accountants
+            .map((a) => a.employeeId.trim().toUpperCase())
+            .where((c) => c.isNotEmpty)
+            .toSet()
+            .toList();
+        final accountantNames = accountants
+            .map((a) => a.displayName.trim())
+            .where((n) => n.isNotEmpty)
+            .toList();
+
+        update = {
+          'status': 'pending_manager',
+          'managerId': accountant.uid,
+          'managerName': accountantNames.isNotEmpty
+              ? accountantNames.first
+              : accountant.displayName,
+          'managerIds': accountantUids,
+          'managerCodes': accountantCodes,
+          'advanceRouteStage': 'accounting',
+          'reviewedBy': reviewer.uid,
+          'reviewedAt': FieldValue.serverTimestamp(),
+          'isRead': false,
+          'approvalHistory': FieldValue.arrayUnion([
+            _routeEvent('hr', reviewer, 'approved'),
+          ]),
+        };
+      }
     } else if (data['advanceRouteStage'] == 'ceo' &&
         (advance.managerId == reviewer.uid ||
-            advance.managerId == 'CEO-100' ||
+            reviewer.canReviewCeoStage ||
             isCompanyCeo)) {
       final accountants = await _findAdvanceAccountants();
       final accountant = accountants.first;
@@ -484,9 +521,11 @@ class AdvanceService {
       final doc = await _db.collection('users').doc(current).get();
       if (!doc.exists) continue;
       final user = UserModel.fromFirestore(doc);
-      final isCeo = user.employeeId.trim().toUpperCase().startsWith('CEO-');
+      final isCeo = user.isCompanyCeo ||
+          user.employeeId.trim().toUpperCase().startsWith('CEO-');
       final canApproveAdvance =
           doc.data()?['isAdvanceCeoApprover'] == true ||
+          user.canReviewCeoStage ||
           user.role == EmployeeRole.manager;
       if (isCeo && canApproveAdvance) return user;
       nextIds.addAll(user.managerIds.where((id) => id.isNotEmpty));

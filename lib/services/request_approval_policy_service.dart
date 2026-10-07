@@ -36,4 +36,15 @@ class RequestApprovalPolicyService {
       'updatedAt': FieldValue.serverTimestamp(),
     }, SetOptions(merge: true));
   }
+
+  Future<void> updatePolicy({
+    required RequestApprovalPolicy policy,
+    required String updatedBy,
+  }) {
+    return _policyRef.set({
+      ...policy.toMap(),
+      'updatedBy': updatedBy,
+      'updatedAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
+  }
 }

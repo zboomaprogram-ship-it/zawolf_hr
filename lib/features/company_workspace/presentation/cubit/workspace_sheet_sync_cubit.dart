@@ -148,7 +148,7 @@ final class WorkspaceSheetSyncCubit extends Cubit<WorkspaceSheetSyncState> {
     emit(const WorkspaceSheetSyncSaving());
     final result = await _repository.submit(
       WorkspaceOperation(
-        id: 'sheet_${DateTime.now().microsecondsSinceEpoch}_${_random.nextInt(1 << 32).toRadixString(36)}',
+        id: 'sheet_${DateTime.now().microsecondsSinceEpoch}_${_random.nextInt(0x7fffffff).toRadixString(36)}',
         actorId: _actorId,
         resourceId: resourceId,
         kind: kind,

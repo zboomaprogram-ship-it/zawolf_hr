@@ -533,10 +533,17 @@ class PermissionService {
             ?.trim()
             .toUpperCase() ??
         '';
-    final isCompanyCeo = reviewerEmployeeId == 'CEO-100';
-    final isCompanyCoo = reviewerEmployeeId == 'COO-1300';
-    final isExecutive =
-        isCompanyCeo || isCompanyCoo || reviewerRole == EmployeeRole.superAdmin;
+    final reviewerExecutiveRole =
+        (reviewerDoc.data()?['executiveRole'] as String?)?.trim().toLowerCase();
+    final reviewerUser = reviewerDoc.exists
+        ? UserModel.fromFirestore(reviewerDoc)
+        : null;
+    final isCompanyCeo = reviewerUser?.isCompanyCeo ??
+        (reviewerExecutiveRole == 'ceo' || reviewerEmployeeId.startsWith('CEO-'));
+    final isCompanyCoo =
+        reviewerUser?.isCompanyCoo ?? (reviewerExecutiveRole == 'coo');
+    final isExecutive = reviewerUser?.canReviewExecutiveStage ??
+        (isCompanyCeo || isCompanyCoo || reviewerRole == EmployeeRole.superAdmin);
     final isMatchingManager =
         perm.managerId == reviewerId ||
         (reviewerEmployeeId.isNotEmpty &&
@@ -814,10 +821,17 @@ class PermissionService {
             ?.trim()
             .toUpperCase() ??
         '';
-    final isCompanyCeo = reviewerEmployeeId == 'CEO-100';
-    final isCompanyCoo = reviewerEmployeeId == 'COO-1300';
-    final isExecutive =
-        isCompanyCeo || isCompanyCoo || reviewerRole == EmployeeRole.superAdmin;
+    final reviewerExecutiveRole =
+        (reviewerDoc.data()?['executiveRole'] as String?)?.trim().toLowerCase();
+    final reviewerUser = reviewerDoc.exists
+        ? UserModel.fromFirestore(reviewerDoc)
+        : null;
+    final isCompanyCeo = reviewerUser?.isCompanyCeo ??
+        (reviewerExecutiveRole == 'ceo' || reviewerEmployeeId.startsWith('CEO-'));
+    final isCompanyCoo =
+        reviewerUser?.isCompanyCoo ?? (reviewerExecutiveRole == 'coo');
+    final isExecutive = reviewerUser?.canReviewExecutiveStage ??
+        (isCompanyCeo || isCompanyCoo || reviewerRole == EmployeeRole.superAdmin);
     final isMatchingManager =
         perm.managerId == reviewerId ||
         (reviewerEmployeeId.isNotEmpty &&

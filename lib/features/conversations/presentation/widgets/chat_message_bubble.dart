@@ -174,13 +174,20 @@ class ChatMessageBubble extends StatelessWidget {
                           ),
                         if (message.attachmentResourceIds.isNotEmpty &&
                             message.attachments.isEmpty)
-                          Padding(
-                            padding: const EdgeInsets.only(top: 8),
-                            child: Text(
-                              'جارٍ تحميل بيانات الملفات…',
-                              style: TextStyle(color: metaColor),
+                          for (final resId in message.attachmentResourceIds)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 8),
+                              child: attachmentBuilder(
+                                context,
+                                RichAttachment(
+                                  resourceId: resId,
+                                  fileName: 'ملف مرفق',
+                                  mimeType: 'application/octet-stream',
+                                  sizeBytes: 0,
+                                ),
+                                mine,
+                              ),
                             ),
-                          ),
                       ],
                       if (pending)
                         const Padding(

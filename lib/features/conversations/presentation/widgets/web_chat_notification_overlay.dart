@@ -35,6 +35,15 @@ class _WebChatNotificationOverlayState
   }
 
   @override
+  void didUpdateWidget(WebChatNotificationOverlay oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.notifications != widget.notifications) {
+      _subscription?.cancel();
+      _subscription = widget.notifications.alerts.listen(_handleIncomingToast);
+    }
+  }
+
+  @override
   void dispose() {
     _subscription?.cancel();
     _dismissTimer?.cancel();

@@ -29,19 +29,10 @@ class WarningRewardService {
   }
 
   Future<List<UserModel>> loadAssignableEmployees(UserModel reviewer) async {
-    Query<Map<String, dynamic>> query = _db
-        .collection('users')
-        .where('isActive', isEqualTo: true);
-    if (reviewer.role == EmployeeRole.manager) {
-      query = query.where('managerIds', arrayContains: reviewer.uid);
-    }
-    final snap = await query.get();
+    final snap = await _db.collection('users').get();
     final users = snap.docs.map(UserModel.fromFirestore).where((user) {
-      if (user.role == EmployeeRole.superAdmin) return false;
-      if (reviewer.role == EmployeeRole.manager) {
-        return user.managerId == reviewer.uid ||
-            user.managerIds.contains(reviewer.uid);
-      }
+      if (user.uid == reviewer.uid) return false;
+      if (!user.isActive) return false;
       return true;
     }).toList();
     users.sort((a, b) => a.displayName.compareTo(b.displayName));
@@ -69,9 +60,12 @@ class WarningRewardService {
       employeeName: employee.displayName,
       department: employee.department,
       managerId: employee.managerId ?? creator.uid,
-      managerIds: employee.managerIds.isEmpty
-          ? [employee.managerId ?? creator.uid]
-          : employee.managerIds,
+      managerIds: {
+        if (employee.managerId != null && employee.managerId!.isNotEmpty)
+          employee.managerId!,
+        ...employee.managerIds,
+        creator.uid,
+      }.toList(),
       type: type,
       status: status,
       title: title.trim(),
@@ -324,7 +318,7 @@ class WarningRewardService {
     } else if (warningCount == 4) {
       await RoleNotificationService.instance.notifyRole(
         role: EmployeeRole.hrAdmin,
-        includeSuperAdmins: true,
+        includeSuperAdmins: false,
         type: 'warning_dismissal_review',
         title: 'مراجعة تعطيل حساب موظف',
         body:

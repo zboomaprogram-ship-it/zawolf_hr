@@ -96,7 +96,7 @@ class _RichChatPageState extends State<RichChatPage>
       final bounds = viewport.localToGlobal(Offset.zero) & viewport.size;
       final messages = [..._timeline.state.snapshot.messages]
         ..sort((a, b) => b.sentAt.compareTo(a.sentAt));
-      for (final message in messages) {
+      for (final message in messages.take(15)) {
         if (message.syncState != ChatSyncState.synced) continue;
         final box =
             _messageKeys[message.id]?.currentContext?.findRenderObject();
@@ -591,8 +591,11 @@ class _RichChatPageState extends State<RichChatPage>
                   builder: (context, state) {
                     final messages = [...state.snapshot.messages]
                       ..sort((a, b) => b.sentAt.compareTo(a.sentAt));
-                    final ids = messages.map((message) => message.id).toSet();
-                    _messageKeys.removeWhere((id, _) => !ids.contains(id));
+                    final recentIds =
+                        messages.take(15).map((m) => m.id).toSet();
+                    _messageKeys.removeWhere(
+                      (id, _) => !recentIds.contains(id),
+                    );
                     final byId = {
                       for (final message in messages) message.id: message,
                     };
@@ -672,10 +675,14 @@ class _RichChatPageState extends State<RichChatPage>
                                                 date: message.sentAt,
                                               ),
                                             KeyedSubtree(
-                                              key: _messageKeys.putIfAbsent(
-                                                message.id,
-                                                GlobalKey.new,
-                                              ),
+                                              key: index < 15
+                                                  ? _messageKeys.putIfAbsent(
+                                                      message.id,
+                                                      GlobalKey.new,
+                                                    )
+                                                  : ValueKey<String>(
+                                                      message.id,
+                                                    ),
                                               child: ChatMessageBubble(
                                                 message: message,
                                                 mine:

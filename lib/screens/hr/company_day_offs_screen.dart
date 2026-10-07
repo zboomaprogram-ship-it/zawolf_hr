@@ -84,7 +84,10 @@ class _CompanyDayOffsScreenState extends State<CompanyDayOffsScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text('أيام العطلة', style: theme.textTheme.headlineMedium),
+        title: FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Text('أيام العطلة', style: theme.textTheme.headlineMedium),
+        ),
       ),
       body: ListView(
         padding: const EdgeInsets.all(16),

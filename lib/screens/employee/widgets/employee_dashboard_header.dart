@@ -17,6 +17,8 @@ class EmployeeDashboardHeader extends StatelessWidget {
     required this.geofenceResult,
     required this.checkingLocation,
     required this.onRetryGeofence,
+    this.locationError,
+    this.onOpenGuide,
     super.key,
   });
 
@@ -24,26 +26,34 @@ class EmployeeDashboardHeader extends StatelessWidget {
   final GeofenceResult? geofenceResult;
   final bool checkingLocation;
   final VoidCallback onRetryGeofence;
+  final String? locationError;
+  final VoidCallback? onOpenGuide;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final hasError = !checkingLocation && locationError != null && locationError!.trim().isNotEmpty;
+    final isInside = !hasError && geofenceResult?.isWithinZone == true;
+    final chipColor = checkingLocation
+        ? ZaWolfColors.primaryCyan
+        : hasError
+            ? ZaWolfColors.warning
+            : isInside
+                ? ZaWolfColors.success
+                : ZaWolfColors.error;
+
     final locationChip = InkWell(
-      onTap: checkingLocation ? null : onRetryGeofence,
+      onTap: checkingLocation
+          ? null
+          : (hasError && onOpenGuide != null ? onOpenGuide : onRetryGeofence),
       borderRadius: BorderRadius.circular(8),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         decoration: BoxDecoration(
-          color: (geofenceResult?.isWithinZone == true
-                  ? ZaWolfColors.success
-                  : ZaWolfColors.error)
-              .withValues(alpha: 0.10),
+          color: chipColor.withValues(alpha: 0.10),
           borderRadius: BorderRadius.circular(8),
           border: Border.all(
-            color: (geofenceResult?.isWithinZone == true
-                    ? ZaWolfColors.success
-                    : ZaWolfColors.error)
-                .withValues(alpha: 0.25),
+            color: chipColor.withValues(alpha: 0.25),
           ),
         ),
         child: Row(
@@ -60,35 +70,30 @@ class EmployeeDashboardHeader extends StatelessWidget {
               )
             else
               Icon(
-                geofenceResult?.isWithinZone == true
-                    ? Icons.location_on
-                    : Icons.location_off,
+                hasError
+                    ? Icons.warning_amber_rounded
+                    : isInside
+                        ? Icons.location_on
+                        : Icons.location_off,
                 size: 16,
-                color:
-                    geofenceResult?.isWithinZone == true
-                        ? ZaWolfColors.success
-                        : ZaWolfColors.error,
+                color: chipColor,
               ),
             const SizedBox(width: 6),
             Text(
               checkingLocation
                   ? 'جاري التحديد'
-                  : geofenceResult?.isWithinZone == true
-                  ? 'داخل النطاق'
-                  : 'خارج النطاق',
+                  : hasError
+                      ? 'مشكلة بالموقع'
+                      : isInside
+                          ? 'داخل النطاق'
+                          : 'خارج النطاق',
               style:
                   theme.textTheme.bodySmall?.copyWith(
-                    color:
-                        geofenceResult?.isWithinZone == true
-                            ? ZaWolfColors.success
-                            : ZaWolfColors.error,
+                    color: chipColor,
                     fontWeight: FontWeight.w700,
                   ) ??
                   TextStyle(
-                    color:
-                        geofenceResult?.isWithinZone == true
-                            ? ZaWolfColors.success
-                            : ZaWolfColors.error,
+                    color: chipColor,
                     fontWeight: FontWeight.w700,
                   ),
             ),
@@ -187,95 +192,111 @@ class MyStatusCard extends StatelessWidget {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          if (todayLog.checkInTime case final checkInTime?)
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'حضور اليوم: ${DateFormat('hh:mm a').format(checkInTime)}',
-                  style:
-                      theme.textTheme.bodyMedium?.copyWith(
-                        color: ZaWolfColors.textPrimary,
-                        fontWeight: FontWeight.bold,
-                      ) ??
-                      const TextStyle(
-                        color: ZaWolfColors.textPrimary,
-                        fontWeight: FontWeight.bold,
+          Expanded(
+            child: todayLog.checkInTime != null
+                ? Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'حضور اليوم: ${DateFormat('hh:mm a').format(todayLog.checkInTime!)}',
+                        style:
+                            theme.textTheme.bodyMedium?.copyWith(
+                              color: ZaWolfColors.textPrimary,
+                              fontWeight: FontWeight.bold,
+                            ) ??
+                            const TextStyle(
+                              color: ZaWolfColors.textPrimary,
+                              fontWeight: FontWeight.bold,
+                            ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
-                ),
-                if (todayLog.checkOutTime case final checkOutTime?)
-                  Text(
-                    'انصراف اليوم: ${DateFormat('hh:mm a').format(checkOutTime)}',
+                      if (todayLog.checkOutTime case final checkOutTime?)
+                        Text(
+                          'انصراف اليوم: ${DateFormat('hh:mm a').format(checkOutTime)}',
+                          style:
+                              theme.textTheme.bodyMedium?.copyWith(
+                                color: ZaWolfColors.textPrimary,
+                                fontWeight: FontWeight.bold,
+                              ) ??
+                              const TextStyle(
+                                color: ZaWolfColors.textPrimary,
+                                fontWeight: FontWeight.bold,
+                              ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        )
+                      else
+                        Text(
+                          'قيد العمل في فرع (${todayLog.locationName})',
+                          style: theme.textTheme.bodySmall,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                    ],
+                  )
+                : Text(
+                    'لم يتم تسجيل وقت حضور صالح لهذا اليوم.',
                     style:
                         theme.textTheme.bodyMedium?.copyWith(
-                          color: ZaWolfColors.textPrimary,
+                          color: ZaWolfColors.warning,
                           fontWeight: FontWeight.bold,
                         ) ??
                         const TextStyle(
-                          color: ZaWolfColors.textPrimary,
+                          color: ZaWolfColors.warning,
                           fontWeight: FontWeight.bold,
                         ),
-                  )
-                else
-                  Text(
-                    'قيد العمل في فرع (${todayLog.locationName})',
-                    style: theme.textTheme.bodySmall,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
                   ),
-              ],
-            )
-          else
-            Text(
-              'لم يتم تسجيل وقت حضور صالح لهذا اليوم.',
-              style:
-                  theme.textTheme.bodyMedium?.copyWith(
-                    color: ZaWolfColors.warning,
-                    fontWeight: FontWeight.bold,
-                  ) ??
-                  const TextStyle(
-                    color: ZaWolfColors.warning,
-                    fontWeight: FontWeight.bold,
-                  ),
+          ),
+          const SizedBox(width: 8),
+          Flexible(
+            fit: FlexFit.loose,
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerLeft,
+              child: todayLog.checkInTime != null
+                  ? Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      decoration: BoxDecoration(
+                        color:
+                            todayLog.isLate
+                                ? ZaWolfColors.warning.withValues(alpha: 0.2)
+                                : ZaWolfColors.success.withValues(alpha: 0.2),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        todayLog.isLate
+                            ? '${AttendancePolicy.arabicDeductionLabel(todayLog.salaryDeductionCode, fallback: todayLog.salaryDeductionLabel)} · ${dsBidi(todayLog.salaryDeductionAmount.toStringAsFixed(2))} ${todayLog.salaryCurrency}'
+                            : 'في الموعد',
+                        style: TextStyle(
+                          color:
+                              todayLog.isLate
+                                  ? ZaWolfColors.warning
+                                  : ZaWolfColors.success,
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    )
+                  : Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: ZaWolfColors.surface02,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Text(
+                        'بانتظار الحضور',
+                        style: TextStyle(
+                          color: ZaWolfColors.textMuted,
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
             ),
-          if (todayLog.checkInTime != null)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-              decoration: BoxDecoration(
-                color:
-                    todayLog.isLate
-                        ? ZaWolfColors.warning.withValues(alpha: 0.2)
-                        : ZaWolfColors.success.withValues(alpha: 0.2),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Text(
-                todayLog.isLate
-                    ? '${AttendancePolicy.arabicDeductionLabel(todayLog.salaryDeductionCode, fallback: todayLog.salaryDeductionLabel)} · ${dsBidi(todayLog.salaryDeductionAmount.toStringAsFixed(2))} ${todayLog.salaryCurrency}'
-                    : 'في الموعد',
-                style: TextStyle(
-                  color:
-                      todayLog.isLate
-                          ? ZaWolfColors.warning
-                          : ZaWolfColors.success,
-                  fontSize: 11,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            )
-          else
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-              decoration: BoxDecoration(
-                color: ZaWolfColors.surface02,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Text(
-                'بانتظار الحضور',
-                style: TextStyle(
-                  color: ZaWolfColors.textMuted,
-                  fontSize: 11,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ),
+          ),
         ],
       ),
     );

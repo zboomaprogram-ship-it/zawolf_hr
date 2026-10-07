@@ -87,15 +87,29 @@ class _EmployeePayrollScreenState extends State<EmployeePayrollScreen> {
                       onPressed: () => Navigator.pop(context),
                     )
                   : null,
-              title: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(Icons.receipt_long_outlined,
-                      color: ZaWolfColors.primaryCyan, size: 24),
-                  const SizedBox(width: 8),
-                  Text('مسير الراتب ومستحقاتي',
-                      style: theme.textTheme.headlineMedium),
-                ],
+              title: FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerRight,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(
+                      Icons.receipt_long_outlined,
+                      color: ZaWolfColors.primaryCyan,
+                      size: 22,
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      'مسير الراتب ومستحقاتي',
+                      style: isDesktop
+                          ? theme.textTheme.headlineMedium
+                          : theme.textTheme.titleMedium?.copyWith(
+                              fontWeight: FontWeight.bold,
+                              color: ZaWolfColors.textPrimary,
+                            ),
+                    ),
+                  ],
+                ),
               ),
               actions: [
                 _buildCycleSelector(isDesktop: isDesktop),
@@ -114,42 +128,125 @@ class _EmployeePayrollScreenState extends State<EmployeePayrollScreen> {
                 final run = snapshot.data;
                 if (run == null) {
                   return Center(
-                    child: Padding(
-                      padding: const EdgeInsets.all(32),
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.all(20),
-                            decoration: BoxDecoration(
-                              color: ZaWolfColors.primaryCyan
-                                  .withValues(alpha: 0.08),
-                              shape: BoxShape.circle,
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.all(24),
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 500),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(20),
+                              decoration: BoxDecoration(
+                                color: ZaWolfColors.primaryCyan
+                                    .withValues(alpha: 0.12),
+                                shape: BoxShape.circle,
+                              ),
+                              child: const Icon(
+                                Icons.hourglass_top_rounded,
+                                color: ZaWolfColors.primaryCyan,
+                                size: 52,
+                              ),
                             ),
-                            child: const Icon(
-                              Icons.hourglass_empty_rounded,
-                              color: ZaWolfColors.textMuted,
-                              size: 56,
+                            const SizedBox(height: 18),
+                            Text(
+                              'مسير راتب شهر $_monthKey',
+                              style: theme.textTheme.titleLarge?.copyWith(
+                                color: ZaWolfColors.textPrimary,
+                                fontWeight: FontWeight.bold,
+                              ),
+                              textAlign: TextAlign.center,
                             ),
-                          ),
-                          const SizedBox(height: 18),
-                          Text(
-                            'لم يتم إصدار أو احتساب مسير راتب لشهر $_monthKey بعد',
-                            style: theme.textTheme.titleLarge?.copyWith(
-                              color: ZaWolfColors.textPrimary,
-                              fontWeight: FontWeight.bold,
+                            const SizedBox(height: 8),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 14, vertical: 6),
+                              decoration: BoxDecoration(
+                                color: ZaWolfColors.surface02,
+                                borderRadius: BorderRadius.circular(20),
+                                border:
+                                    Border.all(color: ZaWolfColors.surface03),
+                              ),
+                              child: Text(
+                                'دورة الرواتب: ${cycle.arabicRangeLabel}',
+                                style: const TextStyle(
+                                  color: ZaWolfColors.textSecondary,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
                             ),
-                            textAlign: TextAlign.center,
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            'دورة الرواتب: ${cycle.arabicRangeLabel}',
-                            style: const TextStyle(
-                              color: ZaWolfColors.textSecondary,
-                              fontSize: 13,
+                            const SizedBox(height: 20),
+                            WolfCard(
+                              child: Column(
+                                children: [
+                                  Row(
+                                    mainAxisAlignment:
+                                        MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      const Text(
+                                        'الراتب الأساسي التعاقدي',
+                                        style: TextStyle(
+                                          color: ZaWolfColors.textSecondary,
+                                          fontSize: 13,
+                                        ),
+                                      ),
+                                      Text(
+                                        '${user.baseMonthlySalary.toStringAsFixed(2)} ${user.salaryCurrency}',
+                                        style: const TextStyle(
+                                          color: ZaWolfColors.success,
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 15,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const Divider(
+                                      color: ZaWolfColors.surface03,
+                                      height: 20),
+                                  Row(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: const [
+                                      Icon(
+                                        Icons.info_outline,
+                                        size: 16,
+                                        color: ZaWolfColors.primaryCyan,
+                                      ),
+                                      SizedBox(width: 8),
+                                      Expanded(
+                                        child: Text(
+                                          'يتم إصدار المسير النهائي وتفاصيل الخصومات والمكافآت والسلف فور اعتماده رسمياً من إدارة الموارد البشرية مع نهاية الدورة.',
+                                          style: TextStyle(
+                                            color: ZaWolfColors.textMuted,
+                                            fontSize: 12,
+                                            height: 1.4,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ),
                             ),
-                          ),
-                        ],
+                            const SizedBox(height: 16),
+                            OutlinedButton.icon(
+                              onPressed: () => _changeMonth(-1),
+                              icon: const Icon(Icons.arrow_back, size: 16),
+                              label: const Text('عرض مسير الشهر السابق'),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: ZaWolfColors.primaryCyan,
+                                side: const BorderSide(
+                                    color: ZaWolfColors.primaryCyan),
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 20, vertical: 12),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   );
@@ -215,7 +312,7 @@ class _EmployeePayrollScreenState extends State<EmployeePayrollScreen> {
 
   Widget _buildCycleSelector({required bool isDesktop}) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+      padding: EdgeInsets.symmetric(horizontal: isDesktop ? 6 : 4, vertical: isDesktop ? 4 : 2),
       decoration: BoxDecoration(
         color: ZaWolfColors.surface02,
         borderRadius: BorderRadius.circular(10),
@@ -223,30 +320,31 @@ class _EmployeePayrollScreenState extends State<EmployeePayrollScreen> {
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
+        textDirection: TextDirection.ltr,
         children: [
           IconButton(
-            icon: const Icon(Icons.chevron_right, size: 20),
+            icon: Icon(Icons.chevron_left, size: isDesktop ? 20 : 18),
             tooltip: 'الشهر السابق',
             padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+            constraints: BoxConstraints(minWidth: isDesktop ? 32 : 24, minHeight: isDesktop ? 32 : 28),
             onPressed: () => _changeMonth(-1),
           ),
           InkWell(
             onTap: _pickMonth,
             borderRadius: BorderRadius.circular(6),
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              padding: EdgeInsets.symmetric(horizontal: isDesktop ? 8 : 4, vertical: isDesktop ? 4 : 2),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(Icons.calendar_month,
-                      color: ZaWolfColors.primaryCyan, size: 16),
-                  const SizedBox(width: 6),
+                  Icon(Icons.calendar_month,
+                      color: ZaWolfColors.primaryCyan, size: isDesktop ? 16 : 14),
+                  SizedBox(width: isDesktop ? 6 : 4),
                   Text(
                     _monthKey,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontWeight: FontWeight.bold,
-                      fontSize: 14,
+                      fontSize: isDesktop ? 14 : 12,
                       color: ZaWolfColors.textPrimary,
                     ),
                   ),
@@ -255,10 +353,10 @@ class _EmployeePayrollScreenState extends State<EmployeePayrollScreen> {
             ),
           ),
           IconButton(
-            icon: const Icon(Icons.chevron_left, size: 20),
+            icon: Icon(Icons.chevron_right, size: isDesktop ? 20 : 18),
             tooltip: 'الشهر التالي',
             padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+            constraints: BoxConstraints(minWidth: isDesktop ? 32 : 24, minHeight: isDesktop ? 32 : 28),
             onPressed: () => _changeMonth(1),
           ),
         ],

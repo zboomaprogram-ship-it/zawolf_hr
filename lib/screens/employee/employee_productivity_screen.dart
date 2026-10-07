@@ -8,7 +8,6 @@ import '../../services/productivity_service.dart';
 import '../../theme/theme.dart';
 import '../../utils/payroll_cycle.dart';
 import '../../design_system/components/skeletons.dart' show SkeletonList;
-import '../../design_system/components/rtl_navigation.dart';
 
 class EmployeeProductivityScreen extends StatefulWidget {
   const EmployeeProductivityScreen({super.key});
@@ -20,14 +19,31 @@ class EmployeeProductivityScreen extends StatefulWidget {
 
 class _EmployeeProductivityScreenState
     extends State<EmployeeProductivityScreen> {
-  late final String _monthKey = PayrollCycle.keyFor(DateTime.now());
+  late String _monthKey;
   final ProductivityService _service = ProductivityService();
   Future<ProductivityScoreModel>? _scoreFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _monthKey = PayrollCycle.keyFor(DateTime.now());
+  }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     _scoreFuture ??= _loadScore();
+  }
+
+  void _changeMonth(int delta) {
+    final parts = _monthKey.split('-');
+    final year = int.parse(parts[0]);
+    final month = int.parse(parts[1]);
+    final date = DateTime(year, month + delta);
+    setState(() {
+      _monthKey = PayrollCycle.keyFor(date);
+      _scoreFuture = _loadScore();
+    });
   }
 
   Future<ProductivityScoreModel> _loadScore() async {
@@ -36,20 +52,88 @@ class _EmployeeProductivityScreenState
     return _service.calculateForUser(user, _monthKey);
   }
 
+  Widget _buildCycleSelector({required bool isDesktop}) {
+    return Container(
+      padding: EdgeInsets.symmetric(
+        horizontal: isDesktop ? 6 : 4,
+        vertical: isDesktop ? 4 : 2,
+      ),
+      decoration: BoxDecoration(
+        color: ZaWolfColors.surface02,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: ZaWolfColors.surface03),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        textDirection: TextDirection.ltr,
+        children: [
+          IconButton(
+            icon: Icon(Icons.chevron_left, size: isDesktop ? 20 : 18),
+            tooltip: 'الشهر السابق',
+            padding: EdgeInsets.zero,
+            constraints: BoxConstraints(
+              minWidth: isDesktop ? 32 : 24,
+              minHeight: isDesktop ? 32 : 28,
+            ),
+            onPressed: () => _changeMonth(-1),
+          ),
+          Padding(
+            padding: EdgeInsets.symmetric(
+              horizontal: isDesktop ? 8 : 4,
+              vertical: isDesktop ? 4 : 2,
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.calendar_month,
+                  color: ZaWolfColors.primaryCyan,
+                  size: isDesktop ? 16 : 14,
+                ),
+                SizedBox(width: isDesktop ? 6 : 4),
+                Text(
+                  _monthKey,
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: isDesktop ? 14 : 12,
+                    color: ZaWolfColors.textPrimary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          IconButton(
+            icon: Icon(Icons.chevron_right, size: isDesktop ? 20 : 18),
+            tooltip: 'الشهر التالي',
+            padding: EdgeInsets.zero,
+            constraints: BoxConstraints(
+              minWidth: isDesktop ? 32 : 24,
+              minHeight: isDesktop ? 32 : 28,
+            ),
+            onPressed: () => _changeMonth(1),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final isDesktop = MediaQuery.of(context).size.width >= 900;
     return Directionality(
       textDirection: TextDirection.rtl,
       child: Scaffold(
         appBar: AppBar(
           automaticallyImplyLeading: false,
-          leading: IconButton(
-            tooltip: 'رجوع',
-            icon: Icon(RtlNavigation.backIcon(context)),
-            onPressed: () => Navigator.maybePop(context),
+          title: FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Text('إنتاجيتي', style: theme.textTheme.headlineMedium),
           ),
-          title: Text('إنتاجيتي', style: theme.textTheme.headlineMedium),
+          actions: [
+            _buildCycleSelector(isDesktop: isDesktop),
+            const SizedBox(width: 12),
+          ],
         ),
         body: FutureBuilder<ProductivityScoreModel>(
           future: _scoreFuture,
@@ -62,9 +146,62 @@ class _EmployeeProductivityScreenState
             }
             if (snapshot.hasError || !snapshot.hasData) {
               return Center(
-                child: Text(
-                  'تعذر حساب الإنتاجية الآن',
-                  style: theme.textTheme.titleMedium,
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(
+                        Icons.insights_outlined,
+                        size: 48,
+                        color: ZaWolfColors.textMuted,
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        'لا تتوفر بيانات إنتاجية كافية لشهر $_monthKey حتى الآن',
+                        style: theme.textTheme.titleMedium,
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 8),
+                      const Text(
+                        'يتم احتساب الإنتاجية بالاعتماد على الحضور والانصراف وإنجاز المهام ومؤشرات الأداء.',
+                        style: TextStyle(
+                          color: ZaWolfColors.textSecondary,
+                          fontSize: 12,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 16),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          OutlinedButton.icon(
+                            onPressed: () => _changeMonth(-1),
+                            icon: const Icon(Icons.arrow_back, size: 16),
+                            label: const Text('الشهر السابق'),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: ZaWolfColors.primaryCyan,
+                              side: const BorderSide(
+                                color: ZaWolfColors.primaryCyan,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          ElevatedButton.icon(
+                            onPressed: () {
+                              setState(() => _scoreFuture = _loadScore());
+                            },
+                            icon: const Icon(Icons.refresh, size: 16),
+                            label: const Text('إعادة المحاولة'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: ZaWolfColors.primaryCyan,
+                              foregroundColor: Colors.black,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
               );
             }

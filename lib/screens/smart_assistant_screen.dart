@@ -82,7 +82,10 @@ class _SmartAssistantScreenState extends State<SmartAssistantScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text('المساعد الذكي', style: theme.textTheme.headlineMedium),
+        title: FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Text('المساعد الذكي', style: theme.textTheme.headlineMedium),
+        ),
       ),
       body: Column(
         children: [

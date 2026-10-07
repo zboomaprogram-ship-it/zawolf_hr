@@ -60,7 +60,10 @@ class _TasksManagementScreenState extends State<TasksManagementScreen> {
                       onPressed: () => Navigator.pop(context),
                     )
                   : null,
-              title: Text('إدارة المهام', style: theme.textTheme.headlineMedium),
+              title: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text('إدارة المهام', style: theme.textTheme.headlineMedium),
+              ),
               actions: [
                 IconButton(
                   tooltip: 'إضافة مهمة',

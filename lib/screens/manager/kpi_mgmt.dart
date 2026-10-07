@@ -63,7 +63,10 @@ class _KpiManagementScreenState extends State<KpiManagementScreen> {
                     onPressed: () => Navigator.pop(context),
                   )
                 : null,
-            title: Text('إدارة KPI', style: theme.textTheme.headlineMedium),
+            title: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text('إدارة KPI', style: theme.textTheme.headlineMedium),
+            ),
             bottom: const TabBar(
               tabs: [
                 Tab(text: 'لوحة الفريق'),

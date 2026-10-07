@@ -27,7 +27,10 @@ class PlaceholderScreen extends StatelessWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(title, style: theme.textTheme.headlineMedium),
+        title: FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Text(title, style: theme.textTheme.headlineMedium),
+        ),
         actions: [
           IconButton(
             icon: const Icon(Icons.logout, color: ZaWolfColors.error),
