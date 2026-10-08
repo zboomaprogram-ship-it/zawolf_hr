@@ -281,32 +281,58 @@ class LeaveService {
   /// Long leave is reviewed by the canonical active CEO account, never by an
   /// arbitrary manager in the employee's reporting chain.
   Future<({String id, String name})> _assignedCeo() async {
-    // 1. Query for user with executiveRole == 'ceo'
+    // 1. Query for user with employeeId == 'CEO-100' (canonical active CEO account, permitted by security rules)
     var results = await _db
         .collection('users')
-        .where('executiveRole', isEqualTo: 'ceo')
+        .where('employeeId', isEqualTo: 'CEO-100')
         .where('isActive', isEqualTo: true)
         .limit(1)
         .get();
 
-    // 2. Fallback to role == 'ceo'
+    // 2. Query for user with employeeCode == 'CEO-100'
     if (results.docs.isEmpty) {
       results = await _db
           .collection('users')
-          .where('role', isEqualTo: 'ceo')
+          .where('employeeCode', isEqualTo: 'CEO-100')
           .where('isActive', isEqualTo: true)
           .limit(1)
           .get();
     }
 
-    // 3. Fallback to superAdmin
+    // 3. Fallback to executiveRole == 'ceo'
     if (results.docs.isEmpty) {
-      results = await _db
-          .collection('users')
-          .where('role', isEqualTo: EmployeeRole.superAdmin)
-          .where('isActive', isEqualTo: true)
-          .limit(1)
-          .get();
+      try {
+        results = await _db
+            .collection('users')
+            .where('executiveRole', isEqualTo: 'ceo')
+            .where('isActive', isEqualTo: true)
+            .limit(1)
+            .get();
+      } catch (_) {}
+    }
+
+    // 4. Fallback to role == 'ceo'
+    if (results.docs.isEmpty) {
+      try {
+        results = await _db
+            .collection('users')
+            .where('role', isEqualTo: 'ceo')
+            .where('isActive', isEqualTo: true)
+            .limit(1)
+            .get();
+      } catch (_) {}
+    }
+
+    // 5. Fallback to superAdmin
+    if (results.docs.isEmpty) {
+      try {
+        results = await _db
+            .collection('users')
+            .where('role', isEqualTo: EmployeeRole.superAdmin)
+            .where('isActive', isEqualTo: true)
+            .limit(1)
+            .get();
+      } catch (_) {}
     }
 
     if (results.docs.isEmpty) {

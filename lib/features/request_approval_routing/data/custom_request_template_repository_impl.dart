@@ -16,6 +16,14 @@ class CustomRequestTemplateRepositoryImpl implements CustomRequestTemplateReposi
       descriptionAr: 'طلبات الإجازات السنوية والعارضة والمرضية بمختلف أنواعها',
       isActive: true,
       subtypes: ['إجازة سنوية (اعتيادية)', 'إجازة عارضة', 'إجازة مرضية', 'إجازة بدون راتب', 'إجازة حج / عمرة', 'إجازة وضع / رعاية'],
+      subtypeConfigs: [
+        CustomSubtypeConfig(nameAr: 'إجازة سنوية (اعتيادية)', deductsFromQuota: true, quotaKey: 'daysOff'),
+        CustomSubtypeConfig(nameAr: 'إجازة عارضة', deductsFromQuota: true, quotaKey: 'casual'),
+        CustomSubtypeConfig(nameAr: 'إجازة مرضية', deductsFromQuota: false, quotaKey: 'none', requiresAttachment: true),
+        CustomSubtypeConfig(nameAr: 'إجازة بدون راتب', deductsFromQuota: false, quotaKey: 'none'),
+        CustomSubtypeConfig(nameAr: 'إجازة حج / عمرة', deductsFromQuota: false, quotaKey: 'none'),
+        CustomSubtypeConfig(nameAr: 'إجازة وضع / رعاية', deductsFromQuota: false, quotaKey: 'none', requiresAttachment: true),
+      ],
       fields: [
         CustomRequestField(key: 'startDate', labelAr: 'تاريخ بداية الإجازة', type: 'date', isRequired: true),
         CustomRequestField(key: 'endDate', labelAr: 'تاريخ نهاية الإجازة', type: 'date', isRequired: true),
@@ -24,7 +32,7 @@ class CustomRequestTemplateRepositoryImpl implements CustomRequestTemplateReposi
       approvalSteps: [
         ApprovalChainStep(stepId: 'step_1', order: 1, approverType: 'direct_manager', labelAr: 'المدير المباشر'),
         ApprovalChainStep(stepId: 'step_2', order: 2, approverType: 'hr', department: 'hr', labelAr: 'الموارد البشرية (HR)'),
-        ApprovalChainStep(stepId: 'step_3', order: 3, approverType: 'ceo', labelAr: 'الرئيس التنفيذي (CEO - للطلبات الأكثر من 3 أيام)'),
+        ApprovalChainStep(stepId: 'step_3', order: 3, approverType: 'ceo', labelAr: 'الرئيس التنفيذي (CEO - للطلبات الأكثر من 3 أيام)', conditionType: 'days_threshold', minDays: 3),
       ],
     ),
     const CustomRequestType(
@@ -33,7 +41,14 @@ class CustomRequestTemplateRepositoryImpl implements CustomRequestTemplateReposi
       category: 'permission',
       descriptionAr: 'طلبات التأخير الصباحي والخروج المبكر وساعات الإذن الشهرية',
       isActive: true,
+      monthlyQuotaCount: 2,
+      monthlyQuotaHours: 4.0,
       subtypes: ['إذن تأخير صباحي', 'إذن انصراف مبكر', 'إذن خروج مؤقت أثناء العمل'],
+      subtypeConfigs: [
+        CustomSubtypeConfig(nameAr: 'إذن تأخير صباحي', deductsFromQuota: true, quotaKey: 'permissions'),
+        CustomSubtypeConfig(nameAr: 'إذن انصراف مبكر', deductsFromQuota: true, quotaKey: 'permissions'),
+        CustomSubtypeConfig(nameAr: 'إذن خروج مؤقت أثناء العمل', deductsFromQuota: true, quotaKey: 'permissions'),
+      ],
       fields: [
         CustomRequestField(key: 'date', labelAr: 'تاريخ الإذن', type: 'date', isRequired: true),
         CustomRequestField(key: 'hours', labelAr: 'عدد الساعات المطلوبة', type: 'number', isRequired: true),
@@ -51,6 +66,11 @@ class CustomRequestTemplateRepositoryImpl implements CustomRequestTemplateReposi
       descriptionAr: 'طلبات السلف على الراتب وجدولة الاستقطاع الشهري',
       isActive: true,
       subtypes: ['سلفة راتب شهرية', 'سلفة علاجية / طارئة', 'سلفة شراء أجهزة'],
+      subtypeConfigs: [
+        CustomSubtypeConfig(nameAr: 'سلفة راتب شهرية', deductsFromQuota: false, quotaKey: 'none'),
+        CustomSubtypeConfig(nameAr: 'سلفة علاجية / طارئة', deductsFromQuota: false, quotaKey: 'none', requiresAttachment: true),
+        CustomSubtypeConfig(nameAr: 'سلفة شراء أجهزة', deductsFromQuota: false, quotaKey: 'none'),
+      ],
       fields: [
         CustomRequestField(key: 'amount', labelAr: 'المبلغ المطلوب', type: 'number', isRequired: true),
         CustomRequestField(key: 'repaymentMonths', labelAr: 'عدد شهور التقسيط', type: 'number', isRequired: true),
@@ -60,7 +80,7 @@ class CustomRequestTemplateRepositoryImpl implements CustomRequestTemplateReposi
         ApprovalChainStep(stepId: 'step_1', order: 1, approverType: 'direct_manager', labelAr: 'المدير المباشر'),
         ApprovalChainStep(stepId: 'step_2', order: 2, approverType: 'hr', department: 'hr', labelAr: 'الموارد البشرية (HR)'),
         ApprovalChainStep(stepId: 'step_3', order: 3, approverType: 'accounting', department: 'accounting', labelAr: 'الحسابات والمالية'),
-        ApprovalChainStep(stepId: 'step_4', order: 4, approverType: 'ceo', labelAr: 'الرئيس التنفيذي (CEO)'),
+        ApprovalChainStep(stepId: 'step_4', order: 4, approverType: 'ceo', labelAr: 'الرئيس التنفيذي (CEO - للمبالغ أكثر من 5000)', conditionType: 'amount_threshold', minAmount: 5000),
       ],
     ),
     const CustomRequestType(
@@ -136,10 +156,16 @@ class CustomRequestTemplateRepositoryImpl implements CustomRequestTemplateReposi
     const CustomRequestType(
       id: 'core_administrative',
       nameAr: 'الطلبات والشهادات الإدارية (Administrative Requests)',
-      category: 'general',
+      category: 'administrative',
       descriptionAr: 'طلب شهادة خبرة، بيان مفردات مرتب، أو خطابات رسمية للجهات',
       isActive: true,
       subtypes: ['شهادة خبرة', 'بيان مفردات مرتب موجه لبنك', 'خطاب تعريف بالعمل', 'طلب مستندات رسمية'],
+      subtypeConfigs: [
+        CustomSubtypeConfig(nameAr: 'شهادة خبرة', deductsFromQuota: false, quotaKey: 'none'),
+        CustomSubtypeConfig(nameAr: 'بيان مفردات مرتب موجه لبنك', deductsFromQuota: false, quotaKey: 'none'),
+        CustomSubtypeConfig(nameAr: 'خطاب تعريف بالعمل', deductsFromQuota: false, quotaKey: 'none'),
+        CustomSubtypeConfig(nameAr: 'طلب مستندات رسمية', deductsFromQuota: false, quotaKey: 'none'),
+      ],
       fields: [
         CustomRequestField(key: 'addressedTo', labelAr: 'الجهة الموجه إليها الخطاب', type: 'text', isRequired: true),
         CustomRequestField(key: 'notes', labelAr: 'ملاحظات إضافية', type: 'text', isRequired: false),
@@ -207,8 +233,11 @@ class CustomRequestTemplateRepositoryImpl implements CustomRequestTemplateReposi
       descriptionAr: requestType.descriptionAr,
       isActive: requestType.isActive,
       subtypes: requestType.subtypes,
+      subtypeConfigs: requestType.subtypeConfigs,
       fields: requestType.fields,
       approvalSteps: requestType.approvalSteps,
+      monthlyQuotaCount: requestType.monthlyQuotaCount,
+      monthlyQuotaHours: requestType.monthlyQuotaHours,
       updatedAt: DateTime.now(),
     );
 

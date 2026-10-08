@@ -147,13 +147,12 @@ class PendingRequestsService {
     // An HR account may also be CEO-100. Its default work queue must remain
     // the HR stage; CEO-specific requests are added separately below.
     final isCompanyCeo = reviewer.canReviewCeoStage;
-    final isHrStaff = EmployeeRole.isHrStaff(reviewer.role);
+    final isHrStaff = EmployeeRole.isHr(reviewer.role);
     final reviewsManagerStage =
         !isHrStaff &&
         (isCompanyCeo ||
             reviewer.role == EmployeeRole.manager ||
-            reviewer.role == EmployeeRole.teamLeader ||
-            reviewer.role == EmployeeRole.superAdmin);
+            reviewer.role == EmployeeRole.teamLeader);
 
     String targetStatus = 'pending_hr';
     if (reviewsManagerStage) {
@@ -237,18 +236,8 @@ class PendingRequestsService {
       advancesQuery = advancesQuery
           .where('managerId', isEqualTo: reviewer.uid)
           .where('status', isEqualTo: targetStatus);
-    } else if (reviewer.role == EmployeeRole.hrAdmin) {
-      advancesQuery = advancesQuery.where('status', isEqualTo: targetStatus);
-    } else if (reviewer.role == EmployeeRole.hrManager) {
-      advancesQuery = advancesQuery.where(
-        'status',
-        whereIn: ['pending_hr', 'pending_manager'],
-      );
-    } else if (reviewer.role == EmployeeRole.superAdmin) {
-      advancesQuery = advancesQuery.where(
-        'status',
-        whereIn: ['pending_hr', 'pending_manager'],
-      );
+    } else if (isHrStaff) {
+      advancesQuery = advancesQuery.where('status', isEqualTo: 'pending_hr');
     }
 
     _advancesSub = advancesQuery.snapshots().listen(

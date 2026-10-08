@@ -19,9 +19,11 @@ Future<bool> showConfirmationSheet(
   String? commentHint,
   bool requireComment = false,
   TextEditingController? commentController,
+  bool useRootNavigator = true,
 }) {
   return showModalBottomSheet<bool>(
     context: context,
+    useRootNavigator: useRootNavigator,
     isScrollControlled: true,
     backgroundColor: ZaWolfColors.surface01,
     shape: const RoundedRectangleBorder(

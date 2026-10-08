@@ -131,24 +131,68 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
 
   bool _isRequestBusy(String requestId) => _busyRequestIds.contains(requestId);
 
+  Future<void> _runApprovalDirectly({
+    required String requestId,
+    BuildContext? dialogContext,
+    String successMessage = 'تم اعتماد الطلب بنجاح وتحديث القائمة.',
+    required Future<void> Function() run,
+  }) async {
+    if (!mounted) return;
+    try {
+      await _withRequestGuard(requestId, run);
+      if (mounted) {
+        setState(() => _resolvedRequestIds.add(requestId));
+        if (dialogContext != null && dialogContext.mounted) {
+          Navigator.of(dialogContext).pop();
+        }
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(successMessage),
+            backgroundColor: ZaWolfColors.success,
+          ),
+        );
+      }
+    } catch (error) {
+      _recordRequestDecisionFailure(error);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('فشل الإجراء: ${userFacingError(error)}'),
+            backgroundColor: ZaWolfColors.error,
+          ),
+        );
+      }
+    }
+  }
+
   Future<void> _confirmLeaveWithStaffing(
     LeaveModel leave,
-    UserModel reviewer,
-  ) async {
+    UserModel reviewer, {
+    BuildContext? dialogContext,
+  }) async {
     final conflicts = await _staffingConflictService.forLeave(
       leave,
       reviewer.uid,
     );
-    final detail =
-        conflicts.isEmpty
-            ? 'سيتم تنفيذ الإجراء على هذا الطلب.'
-            : 'تنبيه تغطية الفريق: يوجد ${conflicts.length} طلب متداخل لموظف بالمسمى الوظيفي نفسه (${conflicts.first.employeeName} • ${conflicts.first.date}). يمكنك المتابعة أو الرفض حسب احتياج العمل.';
     if (!mounted) return;
-    await _confirmAndRun(
+    if (dialogContext != null && !dialogContext.mounted) return;
+    if (conflicts.isNotEmpty) {
+      final targetCtx = dialogContext ?? context;
+      final ok = await showConfirmationSheet(
+        targetCtx,
+        useRootNavigator: true,
+        title: 'اعتماد طلب الإجازة',
+        message:
+            'تنبيه تغطية الفريق: يوجد ${conflicts.length} طلب متداخل لموظف بالمسمى الوظيفي نفسه (${conflicts.first.employeeName} • ${conflicts.first.date}). يمكنك المتابعة أو الرفض حسب احتياج العمل.',
+        confirmLabel: 'متابعة الاعتماد',
+      );
+      if (!ok || !mounted) return;
+      if (dialogContext != null && !dialogContext.mounted) return;
+    }
+    await _runApprovalDirectly(
       requestId: leave.leaveId,
-      title: 'اعتماد طلب الإجازة',
-      message: detail,
-      confirmLabel: 'اعتماد',
+      dialogContext: dialogContext,
+      successMessage: 'تم اعتماد طلب الإجازة بنجاح.',
       run:
           () => _leaveService.approveLeave(
             leave.leaveId,
@@ -160,22 +204,32 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
 
   Future<void> _confirmPermissionWithStaffing(
     PermissionModel permission,
-    UserModel reviewer,
-  ) async {
+    UserModel reviewer, {
+    BuildContext? dialogContext,
+  }) async {
     final conflicts = await _staffingConflictService.forPermission(
       permission,
       reviewer.uid,
     );
-    final detail =
-        conflicts.isEmpty
-            ? 'سيتم تنفيذ الإجراء على هذا الطلب.'
-            : 'تنبيه تغطية الفريق: يوجد ${conflicts.length} طلب متداخل لموظف بالمسمى الوظيفي نفسه (${conflicts.first.employeeName} • ${conflicts.first.date}). يمكنك المتابعة أو الرفض حسب احتياج العمل.';
     if (!mounted) return;
-    await _confirmAndRun(
+    if (dialogContext != null && !dialogContext.mounted) return;
+    if (conflicts.isNotEmpty) {
+      final targetCtx = dialogContext ?? context;
+      final ok = await showConfirmationSheet(
+        targetCtx,
+        useRootNavigator: true,
+        title: 'اعتماد طلب الإذن',
+        message:
+            'تنبيه تغطية الفريق: يوجد ${conflicts.length} طلب متداخل لموظف بالمسمى الوظيفي نفسه (${conflicts.first.employeeName} • ${conflicts.first.date}). يمكنك المتابعة أو الرفض حسب احتياج العمل.',
+        confirmLabel: 'متابعة الاعتماد',
+      );
+      if (!ok || !mounted) return;
+      if (dialogContext != null && !dialogContext.mounted) return;
+    }
+    await _runApprovalDirectly(
       requestId: permission.permissionId,
-      title: 'اعتماد طلب الإذن',
-      message: detail,
-      confirmLabel: 'اعتماد',
+      dialogContext: dialogContext,
+      successMessage: 'تم اعتماد طلب الإذن بنجاح.',
       run:
           () => _permissionService.approvePermission(
             permission.permissionId,
@@ -207,33 +261,29 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
     String message = 'سيتم تنفيذ الإجراء على هذا الطلب.',
     required String confirmLabel,
     bool destructive = false,
+    BuildContext? dialogContext,
     required Future<void> Function() run,
   }) async {
     if (!mounted) return;
-    final ok = await showConfirmationSheet(
-      context,
-      title: title,
-      message: message,
-      confirmLabel: confirmLabel,
-      destructive: destructive,
-    );
-    if (!ok || !mounted) return;
-    try {
-      await _withRequestGuard(requestId, run);
-      if (mounted) {
-        setState(() => _resolvedRequestIds.add(requestId));
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('تم حفظ القرار وتحديث القائمة.')),
-        );
-      }
-    } catch (error) {
-      _recordRequestDecisionFailure(error);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('فشل الإجراء: ${userFacingError(error)}')),
-        );
-      }
+    if (destructive) {
+      final targetCtx = dialogContext ?? context;
+      final ok = await showConfirmationSheet(
+        targetCtx,
+        useRootNavigator: true,
+        title: title,
+        message: message,
+        confirmLabel: confirmLabel,
+        destructive: destructive,
+      );
+      if (!ok || !mounted) return;
+      if (dialogContext != null && !dialogContext.mounted) return;
     }
+    await _runApprovalDirectly(
+      requestId: requestId,
+      dialogContext: dialogContext,
+      successMessage: 'تم تنفيذ الإجراء بنجاح وتحديث القائمة.',
+      run: run,
+    );
   }
 
   bool _canArchiveManagedRequest(UserModel reviewer) {
@@ -2952,36 +3002,42 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
           doc: doc,
           reviewer: reviewer,
           theme: theme,
+          dialogContext: dialogContext,
         );
       case RequestSourceType.permission:
         return _buildPermissionRequestCard(
           doc: doc,
           reviewer: reviewer,
           theme: theme,
+          dialogContext: dialogContext,
         );
       case RequestSourceType.advance:
         return _buildAdvanceRequestCard(
           doc: doc,
           reviewer: reviewer,
           theme: theme,
+          dialogContext: dialogContext,
         );
       case RequestSourceType.administrative:
         return _buildAdministrativeRequestCard(
           doc: doc,
           reviewer: reviewer,
           theme: theme,
+          dialogContext: dialogContext,
         );
       case RequestSourceType.resignation:
         return _buildResignationRequestCard(
           doc: doc,
           reviewer: reviewer,
           theme: theme,
+          dialogContext: dialogContext,
         );
       case RequestSourceType.attendanceCorrection:
         return _buildCorrectionRequestCard(
           doc: doc,
           reviewer: reviewer,
           theme: theme,
+          dialogContext: dialogContext,
         );
       case RequestSourceType.salaryDeduction:
       case RequestSourceType.lateArrivalDeduction:
@@ -3008,6 +3064,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
           record: record,
           reviewer: reviewer,
           theme: theme,
+          dialogContext: dialogContext,
         );
     }
   }
@@ -3072,6 +3129,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
     required RequestVisibilityRecord record,
     required UserModel reviewer,
     required ThemeData theme,
+    BuildContext? dialogContext,
   }) {
     final data = doc.data() ?? <String, dynamic>{};
     final style = RequestTypeStyle.fromSourceType(record.sourceType);
@@ -3133,6 +3191,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                     requestId: docId,
                     title: 'اعتماد الطلب',
                     confirmLabel: 'اعتماد',
+                    dialogContext: dialogContext,
                     run: () async {
                       await _db.collection(collection).doc(docId).update({
                         'status': 'approved',
@@ -4707,6 +4766,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
     required UserModel reviewer,
     required ThemeData theme,
     bool isTarget = false,
+    BuildContext? dialogContext,
   }) {
     final request = AdministrativeRequestModel.fromFirestore(doc);
     final data = doc.data() ?? <String, dynamic>{};
@@ -4791,6 +4851,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                         requestId: request.id,
                         title: 'اعتماد الطلب الإداري',
                         confirmLabel: 'اعتماد',
+                        dialogContext: dialogContext,
                         run:
                             () => _administrativeRequestService.approve(
                               request.id,
@@ -5256,16 +5317,23 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
     required DocumentSnapshot<Map<String, dynamic>> doc,
     required UserModel reviewer,
     required ThemeData theme,
+    BuildContext? dialogContext,
   }) {
     final request = ResignationModel.fromFirestore(doc);
-    return _buildResignationCardFromModel(request, reviewer, theme);
+    return _buildResignationCardFromModel(
+      request,
+      reviewer,
+      theme,
+      dialogContext: dialogContext,
+    );
   }
 
   Widget _buildResignationCardFromModel(
     ResignationModel request,
     UserModel reviewer,
-    ThemeData theme,
-  ) {
+    ThemeData theme, {
+    BuildContext? dialogContext,
+  }) {
     return WolfCard(
       margin: const EdgeInsets.only(bottom: 12),
       borderColor: RequestTypeStyle.resignation.borderColor,
@@ -5352,6 +5420,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                               requestId: request.resignationId,
                               title: 'اعتماد طلب الاستقالة',
                               confirmLabel: 'اعتماد',
+                              dialogContext: dialogContext,
                               run:
                                   () => _resignationService.review(
                                     resignationId: request.resignationId,
@@ -5577,134 +5646,107 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
   }
 
   bool _canActOnApproval(Map<String, dynamic> data, UserModel reviewer) {
-    final status = '${data['status'] ?? ''}';
+    final status = '${data['status'] ?? ''}'.trim();
+    if (status.isEmpty ||
+        status == 'approved' ||
+        status == 'rejected' ||
+        status == 'cancelled' ||
+        status == 'canceled') {
+      return false;
+    }
+
     final reviewerCode = reviewer.employeeId.trim().toUpperCase();
+    final reviewerUid = reviewer.uid.trim().toUpperCase();
     final isCompanyCeo = reviewer.canReviewCeoStage;
     final isCompanyCoo = reviewer.isCompanyCoo;
-    // This account historically carries the super-admin role for account
-    // maintenance, but request authority follows its assigned COO stage.
     final isSuperAdmin =
         reviewer.role == EmployeeRole.superAdmin && !isCompanyCoo;
     final isHrReviewer = EmployeeRole.isHr(reviewer.role) && !isCompanyCoo;
-    final currentApproverId =
-        (data['currentApproverId'] ?? '').toString().trim().toUpperCase();
-    final managerId = (data['managerId'] ?? '').toString().trim().toUpperCase();
-    final ceoId = (data['ceoId'] ?? '').toString().trim().toUpperCase();
-    final cooId = (data['cooId'] ?? '').toString().trim().toUpperCase();
-
-    final managerCodes =
-        (data['managerCodes'] as List<dynamic>?)
-            ?.map((e) => e.toString().trim().toUpperCase())
-            .toList() ??
-        const <String>[];
-    final managerIds =
-        (data['managerIds'] as List<dynamic>?)
-            ?.map((e) => e.toString().trim())
-            .toList() ??
-        const <String>[];
 
     final isAccountant =
         reviewer.isAccountant || reviewer.isAdvanceAccountsApprover;
     final isItMember = reviewer.isItMember;
 
+    // Check custom approval route if present
     final route = (data['approvalRoute'] as List<dynamic>?)
             ?.map((e) => e is Map ? Map<String, dynamic>.from(e) : null)
             .whereType<Map<String, dynamic>>()
             .toList() ??
         const <Map<String, dynamic>>[];
-    final currentIdx = (data['currentApprovalIndex'] as num?)?.toInt() ?? 0;
-    final currentStage = (currentIdx >= 0 && currentIdx < route.length)
-        ? route[currentIdx]
-        : null;
-    final currentStageLabel = currentStage?['labelAr'] as String? ?? '';
-    final currentStageApproverName = currentStage?['approverName'] as String? ?? '';
-    final isAccountingRouteStage =
-        currentStageLabel == 'الحسابات' ||
-        currentStageLabel == 'مدير الحسابات' ||
-        currentStageApproverName.contains('حساب') ||
-        currentStageApproverName.contains('محاسب');
-    final isItRouteStage =
-        currentStageLabel == 'تقنية المعلومات' ||
-        currentStageLabel == 'مدير تقنية المعلومات' ||
-        currentStageApproverName.contains('تقنية') ||
-        currentStageApproverName.contains('تكنولوجيا') ||
-        currentStageApproverName.toLowerCase().contains('it');
 
-    final isAssignedManager =
-        managerId == reviewer.uid.toUpperCase() ||
-        managerId == reviewerCode ||
-        currentApproverId == reviewer.uid.toUpperCase() ||
-        currentApproverId == reviewerCode ||
-        managerCodes.contains(reviewerCode) ||
-        managerIds.contains(reviewer.uid) ||
-        (data['advanceRouteStage'] == 'accounting' && isAccountant) ||
-        (isAccountingRouteStage && isAccountant) ||
-        (isItRouteStage && isItMember);
+    if (route.isNotEmpty) {
+      final currentIdx = (data['currentApprovalIndex'] as num?)?.toInt() ?? 0;
+      if (currentIdx >= 0 && currentIdx < route.length) {
+        final currentStage = route[currentIdx];
+        final approverType = (currentStage['approverType'] as String? ?? '').trim();
+        final specificUserId = (currentStage['specificUserId'] as String? ?? '').trim().toUpperCase();
+        final stageDept = (currentStage['department'] as String? ?? '').trim().toLowerCase();
 
-    // SuperAdmin can approve any pending request
-    if (isSuperAdmin) {
-      if (status.startsWith('pending')) return true;
+        switch (approverType) {
+          case 'direct_manager':
+            final managerId = (data['managerId'] ?? '').toString().trim().toUpperCase();
+            final currentApproverId = (data['currentApproverId'] ?? '').toString().trim().toUpperCase();
+            return managerId == reviewerUid ||
+                managerId == reviewerCode ||
+                currentApproverId == reviewerUid ||
+                currentApproverId == reviewerCode;
+          case 'hr':
+            return isHrReviewer || isSuperAdmin;
+          case 'accounting':
+            return isAccountant;
+          case 'it':
+            return isItMember;
+          case 'ceo':
+            return isCompanyCeo;
+          case 'coo':
+            return isCompanyCoo;
+          case 'specific_user':
+            return specificUserId == reviewerUid || specificUserId == reviewerCode;
+          case 'department_pool':
+            return reviewer.department.trim().toLowerCase() == stageDept;
+          default:
+            return isSuperAdmin;
+        }
+      }
+      return false;
     }
 
+    // Standard / legacy status checking
     if (data['advanceRouteStage'] == 'accounting' && isAccountant) {
       return true;
     }
 
-    if (data['approvalRouteVersion'] == 1) {
-      if (status == 'pending_manager') {
-        // A COO/CEO may inspect every request, but only the stage's assigned
-        // reviewer may decide it.  The previous executive shortcut rendered
-        // buttons which Firestore correctly rejected for another manager.
-        return isAssignedManager || isSuperAdmin;
-      }
-      if (status == 'pending_ceo') {
-        return isCompanyCeo || isSuperAdmin;
-      }
-      if (status == 'pending_coo') {
-        return isCompanyCoo || isSuperAdmin;
-      }
-      if (status == 'pending_hr' || status == 'pending') {
-        return isHrReviewer || isSuperAdmin;
-      }
-      return false;
-    }
-
-    if (isCompanyCeo) {
-      if (status == 'pending_ceo') {
-        return ceoId.isEmpty ||
-            ceoId == reviewer.uid.toUpperCase() ||
-            ceoId == reviewerCode ||
-            isCompanyCeo;
-      }
-      if (status == 'pending_manager' ||
-          status == 'pending_hr' ||
-          status == 'pending') {
-        return isAssignedManager || isHrReviewer;
-      }
-    }
-
-    if (isCompanyCoo) {
-      if (status == 'pending_coo') {
-        return cooId.isEmpty ||
-            cooId == reviewer.uid.toUpperCase() ||
-            cooId == reviewerCode ||
-            isCompanyCoo;
-      }
-      if (status == 'pending_manager' ||
-          status == 'pending_hr' ||
-          status == 'pending') {
-        return isAssignedManager || EmployeeRole.isHr(reviewer.role);
-      }
-    }
-
-    if (isHrReviewer) {
-      if (status == 'pending_hr' || status == 'pending') return true;
-      if (status == 'pending_manager' && isAssignedManager) return true;
-      return false;
-    }
+    final managerId = (data['managerId'] ?? '').toString().trim().toUpperCase();
+    final currentApproverId = (data['currentApproverId'] ?? '').toString().trim().toUpperCase();
+    final isCurrentAssignedManager =
+        managerId == reviewerUid ||
+        managerId == reviewerCode ||
+        currentApproverId == reviewerUid ||
+        currentApproverId == reviewerCode;
 
     if (status == 'pending_manager') {
-      return isAssignedManager;
+      // Only the currently assigned manager for this stage can approve!
+      // HR, CEO, COO, or another manager cannot act out of turn.
+      return isCurrentAssignedManager;
+    }
+
+    if (status == 'pending_hr' || status == 'pending') {
+      // HR stage
+      return isHrReviewer || isSuperAdmin;
+    }
+
+    if (status == 'pending_ceo') {
+      final ceoId = (data['ceoId'] ?? '').toString().trim().toUpperCase();
+      return isCompanyCeo && (ceoId.isEmpty || ceoId == reviewerUid || ceoId == reviewerCode);
+    }
+
+    if (status == 'pending_coo') {
+      final cooId = (data['cooId'] ?? '').toString().trim().toUpperCase();
+      return isCompanyCoo && (cooId.isEmpty || cooId == reviewerUid || cooId == reviewerCode);
+    }
+
+    if (status == 'pending_accounts') {
+      return isAccountant;
     }
 
     return false;
@@ -5863,6 +5905,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
     required DocumentSnapshot<Map<String, dynamic>> doc,
     required UserModel reviewer,
     required ThemeData theme,
+    BuildContext? dialogContext,
   }) {
     final leave = LeaveModel.fromFirestore(doc);
     final data = doc.data() ?? <String, dynamic>{};
@@ -6023,7 +6066,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                       docId: leave.leaveId,
                       requestTitle: 'طلب الإجازة',
                     ),
-                onApprove: () => _confirmLeaveWithStaffing(leave, reviewer),
+                onApprove: () => _confirmLeaveWithStaffing(leave, reviewer, dialogContext: dialogContext),
                 onReject:
                     () => _showRejectionDialog(
                       requestId: leave.leaveId,
@@ -6534,6 +6577,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
     required DocumentSnapshot<Map<String, dynamic>> doc,
     required UserModel reviewer,
     required ThemeData theme,
+    BuildContext? dialogContext,
   }) {
     final perm = PermissionModel.fromFirestore(doc);
     final data = doc.data() ?? <String, dynamic>{};
@@ -6657,7 +6701,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                       docId: perm.permissionId,
                       requestTitle: 'طلب الإذن',
                     ),
-                onApprove: () => _confirmPermissionWithStaffing(perm, reviewer),
+                onApprove: () => _confirmPermissionWithStaffing(perm, reviewer, dialogContext: dialogContext),
                 onReject:
                     () => _showRejectionDialog(
                       requestId: perm.permissionId,
@@ -6901,6 +6945,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
     required DocumentSnapshot<Map<String, dynamic>> doc,
     required UserModel reviewer,
     required ThemeData theme,
+    BuildContext? dialogContext,
   }) {
     final advance = AdvanceModel.fromFirestore(doc);
     final data = doc.data() ?? <String, dynamic>{};
@@ -6951,6 +6996,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                       requestId: advance.advanceId,
                       title: 'اعتماد طلب السلفة',
                       confirmLabel: 'اعتماد',
+                      dialogContext: dialogContext,
                       run:
                           () => _advanceService.approveAdvanceRequest(
                             advanceId: advance.advanceId,
@@ -8102,6 +8148,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
     required DocumentSnapshot<Map<String, dynamic>> doc,
     required UserModel reviewer,
     required ThemeData theme,
+    BuildContext? dialogContext,
   }) {
     final data = doc.data() ?? <String, dynamic>{};
     final original = data['originalCheckInTime'] as Timestamp?;
@@ -8207,12 +8254,14 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                     requestId: doc.id,
                     reviewer: reviewer,
                     approve: true,
+                    dialogContext: dialogContext,
                   ),
               onReject:
                   () => _reviewAttendanceCorrection(
                     requestId: doc.id,
                     reviewer: reviewer,
                     approve: false,
+                    dialogContext: dialogContext,
                   ),
             )
           else
@@ -8244,58 +8293,47 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
     required String requestId,
     required UserModel reviewer,
     required bool approve,
+    BuildContext? dialogContext,
   }) async {
     final commentController = TextEditingController();
-    final confirmed = await showConfirmationSheet(
-      context,
-      title: approve ? 'اعتماد تصحيح الحضور' : 'رفض تصحيح الحضور',
-      message:
-          approve
-              ? 'سيتم تصحيح الوقت وإعادة حساب الخصم.'
-              : 'سيتم رفض طلب التصحيح وإشعار الموظف بالسبب.',
-      confirmLabel: approve ? 'اعتماد' : 'رفض',
-      destructive: !approve,
-      commentHint:
-          approve ? 'ملاحظة اختيارية للموظف' : 'اكتب سبب الرفض للموظف (مطلوب)',
-      requireComment: !approve,
-      commentController: commentController,
-    );
+    if (!approve) {
+      final confirmed = await showConfirmationSheet(
+        dialogContext ?? context,
+        useRootNavigator: true,
+        title: 'رفض تصحيح الحضور',
+        message: 'سيتم رفض طلب التصحيح وإشعار الموظف بالسبب.',
+        confirmLabel: 'رفض',
+        destructive: true,
+        commentHint: 'اكتب سبب الرفض للموظف (مطلوب)',
+        requireComment: true,
+        commentController: commentController,
+      );
+      if (!confirmed || !mounted) {
+        commentController.dispose();
+        return;
+      }
+      if (dialogContext != null && !dialogContext.mounted) {
+        commentController.dispose();
+        return;
+      }
+    }
     try {
-      if (!confirmed || !mounted) return;
-      await _withRequestGuard(requestId, () async {
-        await AttendanceCorrectionRequestService().review(
-          requestId: requestId,
-          reviewer: reviewer,
-          approve: approve,
-          comment: commentController.text,
-        );
-      });
-      if (!mounted) return;
-      setState(() => _resolvedRequestIds.add(requestId));
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
+      await _runApprovalDirectly(
+        requestId: requestId,
+        dialogContext: dialogContext,
+        successMessage:
             approve
                 ? 'تم تصحيح الوقت وإعادة حساب الخصم.'
                 : 'تم رفض طلب التصحيح.',
-          ),
-        ),
+        run: () async {
+          await AttendanceCorrectionRequestService().review(
+            requestId: requestId,
+            reviewer: reviewer,
+            approve: approve,
+            comment: commentController.text,
+          );
+        },
       );
-    } catch (error) {
-      _recordRequestDecisionFailure(
-        error,
-        operation:
-            approve
-                ? 'attendance_correction_approve'
-                : 'attendance_correction_reject',
-      );
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('تعذر مراجعة الطلب: ${userFacingError(error)}'),
-          ),
-        );
-      }
     } finally {
       commentController.dispose();
     }

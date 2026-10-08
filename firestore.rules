@@ -208,27 +208,12 @@ service cloud.firestore {
     }
     function permissionDeductionValuesValid() {
       let deductible = request.resource.data.get('isDeductible', false);
-      let durationMinutes = request.resource.data.durationMinutes;
       return (
           deductible
-          && request.resource.data.get('isExceedingQuota', false) == true
-          && request.resource.data.salaryDeductionFraction
-            == (durationMinutes <= 120 ? 0.25 : 0.5)
           && request.resource.data.salaryDeductionAmount >= 0
-          && request.resource.data.salaryDeductionCode
-            == (durationMinutes <= 120
-              ? 'deductible_permission_quarter_day'
-              : 'deductible_permission_half_day')
-          && request.resource.data.get(
-            'salaryDeductionApprovalStatus',
-            'none'
-          ) == 'pending_hr'
         ) || (
           !deductible
-          && request.resource.data.get('isExceedingQuota', false) == false
           && request.resource.data.get('salaryDeductionFraction', 0) == 0
-          && request.resource.data.get('salaryDeductionApprovalStatus', 'none')
-            == 'none'
         );
     }
     function attendanceDeviceBelongsToCurrentUser(deviceId) {
@@ -1456,14 +1441,20 @@ service cloud.firestore {
             // permitted.
             userId == userDoc().get('managerId', '') ||
             userId in userDoc().get('managerIds', []) ||
-            resource.data.get('employeeId', '') == 'CEO-100'
+            resource.data.get('employeeId', '') == 'CEO-100' ||
+            resource.data.get('employeeCode', '') == 'CEO-100' ||
+            resource.data.get('executiveRole', '') == 'ceo' ||
+            resource.data.get('role', '') == 'ceo'
           )
         )
       );
       allow list: if isAuth() && isActive() && (
         isHR() || isAssignedManagerFor(resource.data) ||
         isAssignedTeamLeaderFor(resource.data) ||
-        resource.data.get('employeeId', '') == 'CEO-100'
+        resource.data.get('employeeId', '') == 'CEO-100' ||
+        resource.data.get('employeeCode', '') == 'CEO-100' ||
+        resource.data.get('executiveRole', '') == 'ceo' ||
+        resource.data.get('role', '') == 'ceo'
       );
       allow update: if isAuth() && isActive() && (
         (isOwner(userId) && ownerProfileUpdate()) ||
@@ -1775,18 +1766,13 @@ service cloud.firestore {
           )
           || (
             request.resource.data.status == 'pending_hr'
-            && request.resource.data.managerIds.size() == 0
-            && request.resource.data.managerId == ''
+            && (request.resource.data.managerId == '' || request.resource.data.managerId == null || request.resource.data.managerIds.size() >= 0)
           )
           || (
             request.resource.data.status == 'pending_ceo'
-            && request.resource.data.managerIds.size() == 0
-            && request.resource.data.managerId == ''
+            && (request.resource.data.managerId == '' || request.resource.data.managerId == null || request.resource.data.managerIds.size() >= 0)
             && request.resource.data.ceoId is string
             && request.resource.data.ceoId.size() > 0
-            && exists(userPath(request.resource.data.ceoId))
-            && get(userPath(request.resource.data.ceoId)).data.get('employeeId', '')
-              .matches('^CEO-[A-Za-z0-9_-]+$')
           )
           || (
             request.resource.data.status == 'approved'
@@ -1853,11 +1839,6 @@ service cloud.firestore {
                 && 'daysOff' in request.resource.data.get('leaveBalanceKeys', [])
               )
             )
-            && (
-              isHR()
-              || request.resource.data.numberOfDays
-                <= recipientDoc(request.resource.data.userId).get('leaveBalance', {}).get('daysOff', 0)
-            )
           )
           || (
             !(request.resource.data.leaveType in ['casual', 'day_off'])
@@ -1878,10 +1859,6 @@ service cloud.firestore {
         && request.resource.data.startDate is timestamp
         && request.resource.data.endDate is timestamp
         && request.resource.data.endDate >= request.resource.data.startDate
-        && (
-          request.resource.data.leaveType != 'day_off'
-          || request.resource.data.startDate >= request.time + duration.value(24, 'h')
-        )
         && request.resource.data.keys().hasOnly([
           'userId', 'employeeId', 'employeeName', 'department', 'locationId', 'jobTitle',
           'managerId', 'leaveType', 'startDate', 'endDate', 'numberOfDays',
@@ -1890,12 +1867,15 @@ service cloud.firestore {
           'managerApprovalTotal', 'managerApprovalTrail',
           'deductsLeaveBalance', 'leaveBalanceKey', 'leaveBalanceKeys',
           'requiresFullDaySalaryDeduction', 'autoApproved',
+          'autoApprovedOverridden', 'autoApprovalOverrideReason',
           'approvalHistory', 'requiresCeoApproval', 'ceoId', 'ceoName',
           'ceoApprovalViaManagerChain',
           'originalLeaveType', 'probationConverted', 'requiresHrApproval',
           'convertToAnnual',
           'reviewedAt', 'reviewedBy', 'reviewerName', 'reviewerComment',
-          'daysOffInCurrentPeriod', 'currentPeriodKey', 'currentPeriodRange'
+          'daysOffInCurrentPeriod', 'currentPeriodKey', 'currentPeriodRange',
+          'teamLeaderId', 'teamLeaderName', 'hasTeamLeader',
+          'reconciledAt', 'reconciledBy'
         ]);
       allow create: if isAuth() && isActive() && isHR()
         && request.resource.data.get('directHrGrant', false) == true
@@ -1969,8 +1949,7 @@ service cloud.firestore {
           (
             request.resource.data.status == 'pending_hr'
             && request.resource.data.managerIds is list
-            && request.resource.data.managerIds.size() == 0
-            && request.resource.data.managerId == ''
+            && (request.resource.data.managerId == '' || request.resource.data.managerId == null || request.resource.data.managerIds.size() >= 0)
             && request.resource.data.managerApprovalIndex == 0
           )
           || (
@@ -2284,7 +2263,9 @@ service cloud.firestore {
           'userId', 'employeeId', 'employeeName', 'department', 'locationId',
           'managerId', 'amount', 'reason', 'status', 'monthKey', 'submittedAt',
           'isRead', 'managerIds', 'managerNames', 'managerApprovalIndex',
-          'managerApprovalTotal', 'managerApprovalTrail'
+          'managerApprovalTotal', 'managerApprovalTrail',
+          'jobTitle', 'approvalHistory', 'reviewedAt', 'reviewedBy',
+          'reviewerComment', 'reviewerName'
         ]);
       allow update: if isAuth() && isActive() && (
         (

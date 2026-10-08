@@ -91,8 +91,16 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
 
   // Leave form fields
   String _leaveType = LeaveTypePolicy.normal;
-  DateTime _leaveStart = DateTime.now().add(const Duration(days: 2));
-  DateTime _leaveEnd = DateTime.now().add(const Duration(days: 2));
+  DateTime _leaveStart = DateTime(
+    DateTime.now().year,
+    DateTime.now().month,
+    DateTime.now().day,
+  ).add(const Duration(days: 2));
+  DateTime _leaveEnd = DateTime(
+    DateTime.now().year,
+    DateTime.now().month,
+    DateTime.now().day,
+  ).add(const Duration(days: 2));
   bool _leaveMultipleDays = false;
   bool _convertSickToAnnual = false;
   int? _leaveWorkingDays;
@@ -890,6 +898,14 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
       return;
     }
 
+    final reason = _attendanceCorrectionReasonController.text.trim();
+    if (reason.length < 5) {
+      _onValidationFailed(
+        customMessage: 'يجب كتابة سبب التصحيح (5 أحرف على الأقل).',
+      );
+      return;
+    }
+
     final day = attendance.checkInTime!;
     setState(() => _loading = true);
     try {
@@ -944,14 +960,51 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
       return;
     }
 
-    final days = _leaveEnd.difference(_leaveStart).inDays + 1;
+    final today = DateTime(
+      DateTime.now().year,
+      DateTime.now().month,
+      DateTime.now().day,
+    );
+    final normalizedStart = DateTime(
+      _leaveStart.year,
+      _leaveStart.month,
+      _leaveStart.day,
+    );
+    final normalizedEnd = DateTime(
+      _leaveEnd.year,
+      _leaveEnd.month,
+      _leaveEnd.day,
+    );
+
+    if (normalizedEnd.isBefore(normalizedStart)) {
+      _onValidationFailed(
+        customMessage: 'تاريخ نهاية الإجازة يسبق تاريخ البداية.',
+      );
+      return;
+    }
+    if (normalizedStart.isBefore(today)) {
+      _onValidationFailed(
+        customMessage: 'لا يمكن تقديم طلب إجازة عن يوم سابق.',
+      );
+      return;
+    }
+
+    final days = normalizedEnd.difference(normalizedStart).inDays + 1;
     final leaveType =
         LeaveEntitlementPolicy.isOnProbation(
               employee.hiringDate,
-              onDate: _leaveStart,
+              onDate: normalizedStart,
             )
             ? LeaveTypePolicy.unpaid
             : _leaveType;
+
+    if (LeaveTypePolicy.requiresTwoDayNotice(leaveType) &&
+        normalizedStart.isBefore(today.add(const Duration(days: 2)))) {
+      _onValidationFailed(
+        customMessage: 'الإجازة العادية يجب تقديمها قبل موعدها بيومين على الأقل.',
+      );
+      return;
+    }
 
     if (leaveType == LeaveTypePolicy.exam &&
         (_attachmentUrl == null || _attachmentUrl!.trim().isEmpty)) {
@@ -959,6 +1012,37 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
         customMessage: 'يجب إرفاق جدول الامتحان أو ما يفيد دخول الامتحان فعلياً.',
       );
       return;
+    }
+
+    if (leaveType == LeaveTypePolicy.normal && employee.leaveBalance.daysOff < days) {
+      _onValidationFailed(
+        customMessage:
+            'رصيد الإجازات العادية غير كافٍ (المتاح: ${employee.leaveBalance.daysOff} يوم، المطلوب: $days يوم).',
+      );
+      return;
+    }
+
+    if (leaveType == LeaveTypePolicy.casual) {
+      if (days > 2) {
+        _onValidationFailed(
+          customMessage: 'الحد الأقصى للإجازة العارضة يومان متتاليان في المرة الواحدة.',
+        );
+        return;
+      }
+      if (employee.leaveBalance.casual < days) {
+        _onValidationFailed(
+          customMessage:
+              'رصيد الإجازات العارضة غير كافٍ (المتاح: ${employee.leaveBalance.casual} يوم، المطلوب: $days يوم).',
+        );
+        return;
+      }
+      if (employee.leaveBalance.daysOff < days) {
+        _onValidationFailed(
+          customMessage:
+              'رصيد الإجازات الكلي غير كافٍ (المتاح: ${employee.leaveBalance.daysOff} يوم، المطلوب: $days يوم).',
+        );
+        return;
+      }
     }
 
     setState(() => _loading = true);
@@ -975,8 +1059,8 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
         locationId: employee.locationId,
         managerId: employee.managerId ?? '',
         leaveType: leaveType,
-        startDate: _leaveStart,
-        endDate: _leaveEnd,
+        startDate: normalizedStart,
+        endDate: normalizedEnd,
         numberOfDays: days,
         reason: _leaveReasonController.text.trim(),
         attachmentUrl: _attachmentUrl,
@@ -998,12 +1082,14 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
         _leaveReasonController.clear();
         _workHandoverController.clear();
         _leaveAttachmentController.clear();
-        final today = DateTime.now();
-        final nextStart = DateTime(
-          today.year,
-          today.month,
-          today.day,
-        ).add(Duration(days: leaveType == LeaveTypePolicy.normal ? 2 : 0));
+        final startOfToday = DateTime(
+          DateTime.now().year,
+          DateTime.now().month,
+          DateTime.now().day,
+        );
+        final nextStart = startOfToday.add(
+          Duration(days: leaveType == LeaveTypePolicy.normal ? 2 : 0),
+        );
         setState(() {
           _attachmentUrl = null;
           _convertSickToAnnual = false;
@@ -1049,6 +1135,14 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
     if (!dateEligible) {
       _onValidationFailed(
         customMessage: 'طلب السلفة متاح فقط من يوم 15 إلى نهاية الشهر.',
+      );
+      return;
+    }
+
+    final amount = double.tryParse(_advanceAmountController.text) ?? 0;
+    if (amount <= 0) {
+      _onValidationFailed(
+        customMessage: 'أدخل قيمة سلفة صحيحة أكبر من صفر.',
       );
       return;
     }
