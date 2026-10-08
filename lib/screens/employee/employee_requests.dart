@@ -3462,22 +3462,40 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
           Expanded(
             child: TabBarView(
               children: [
-                _buildLeavesHistory(user.uid, theme),
-                _buildPermissionsHistory(user.uid, theme),
-                _buildAdvancesHistory(user.uid, theme),
-                _buildComplaintsHistory(user.uid, theme),
-                _buildResignationsHistory(user.uid, theme),
-                _buildAdministrativeHistory(user.uid, theme),
-                _buildAttendanceCorrectionHistory(user.uid, theme),
-                MeetingRequestsListScreen(
-                  repository: MeetingRepositoryImpl(),
-                  approvalQueue: false,
-                  embedded: true,
+                _LazyRequestHistoryTab(
+                  builder: (context) => _buildLeavesHistory(user.uid, theme),
                 ),
-                CustomRequestQueueScreen(
-                  repository: ConfigurableRequestsRepositoryImpl(),
-                  approvalQueue: false,
-                  embedded: true,
+                _LazyRequestHistoryTab(
+                  builder: (context) => _buildPermissionsHistory(user.uid, theme),
+                ),
+                _LazyRequestHistoryTab(
+                  builder: (context) => _buildAdvancesHistory(user.uid, theme),
+                ),
+                _LazyRequestHistoryTab(
+                  builder: (context) => _buildComplaintsHistory(user.uid, theme),
+                ),
+                _LazyRequestHistoryTab(
+                  builder: (context) => _buildResignationsHistory(user.uid, theme),
+                ),
+                _LazyRequestHistoryTab(
+                  builder: (context) => _buildAdministrativeHistory(user.uid, theme),
+                ),
+                _LazyRequestHistoryTab(
+                  builder: (context) => _buildAttendanceCorrectionHistory(user.uid, theme),
+                ),
+                _LazyRequestHistoryTab(
+                  builder: (context) => MeetingRequestsListScreen(
+                    repository: MeetingRepositoryImpl(),
+                    approvalQueue: false,
+                    embedded: true,
+                  ),
+                ),
+                _LazyRequestHistoryTab(
+                  builder: (context) => CustomRequestQueueScreen(
+                    repository: ConfigurableRequestsRepositoryImpl(),
+                    approvalQueue: false,
+                    embedded: true,
+                  ),
                 ),
               ],
             ),
@@ -5193,5 +5211,28 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
 
   String _getLeaveTypeLabel(String type) {
     return LeaveTypePolicy.arabicLabel(type);
+  }
+}
+
+class _LazyRequestHistoryTab extends StatefulWidget {
+  const _LazyRequestHistoryTab({required this.builder});
+  final WidgetBuilder builder;
+
+  @override
+  State<_LazyRequestHistoryTab> createState() => _LazyRequestHistoryTabState();
+}
+
+class _LazyRequestHistoryTabState extends State<_LazyRequestHistoryTab>
+    with AutomaticKeepAliveClientMixin {
+  Widget? _child;
+
+  @override
+  bool get wantKeepAlive => _child != null;
+
+  @override
+  Widget build(BuildContext context) {
+    super.build(context);
+    _child ??= widget.builder(context);
+    return _child!;
   }
 }

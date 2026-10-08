@@ -1,3 +1,4 @@
+import 'package:equatable/equatable.dart';
 import '../domain/early_leave_checkout_eligibility.dart';
 
 enum EarlyLeaveCheckoutViewStatus {
@@ -8,7 +9,7 @@ enum EarlyLeaveCheckoutViewStatus {
   error,
 }
 
-final class EarlyLeaveCheckoutState {
+final class EarlyLeaveCheckoutState extends Equatable {
   const EarlyLeaveCheckoutState({
     this.status = EarlyLeaveCheckoutViewStatus.initial,
     this.eligibility,
@@ -29,4 +30,7 @@ final class EarlyLeaveCheckoutState {
     eligibility: clearEligibility ? null : eligibility ?? this.eligibility,
     message: message,
   );
+
+  @override
+  List<Object?> get props => [status, eligibility, message];
 }

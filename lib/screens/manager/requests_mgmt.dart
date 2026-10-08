@@ -101,6 +101,16 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
   bool _isBulkReviewing = false;
   String _salaryDeductionFilter = 'all';
   String _searchQuery = '';
+  Timer? _searchDebounceTimer;
+
+  void _onSearchChanged(String value) {
+    _searchDebounceTimer?.cancel();
+    _searchDebounceTimer = Timer(const Duration(milliseconds: 250), () {
+      if (mounted) {
+        setState(() => _searchQuery = value.trim().toLowerCase());
+      }
+    });
+  }
   final Set<String> _busyRequestIds = {};
   // Firestore streams can take a moment to emit after a mobile decision.
   // Hide a committed decision immediately so the reviewer never needs to tap
@@ -457,6 +467,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
 
   @override
   void dispose() {
+    _searchDebounceTimer?.cancel();
     _categoryScrollController.dispose();
     _requestOperationsHttp.close();
     super.dispose();
@@ -3569,81 +3580,72 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
       const Tab(text: 'إدارية'),
       const Tab(text: 'السجل الموحد'),
     ];
-    final tabViews = <Widget>[
-      Builder(
-        builder:
-            (tabContext) => RequestVisibilityEntry(
-              key: const ValueKey('unified-all-requests'),
-              query: allRequestsQuery,
-              searchTerm: _searchQuery,
-              excludedRecordIds: _resolvedRequestIds,
-              onSelectRecord:
-                  (record) => _showInPlaceRequestAction(
-                    tabContext,
-                    record,
-                    manager,
-                    tabs,
-                  ),
+    final tabViewBuilders = <WidgetBuilder>[
+      (tabContext) => RequestVisibilityEntry(
+        key: const ValueKey('unified-all-requests'),
+        query: allRequestsQuery,
+        searchTerm: _searchQuery,
+        excludedRecordIds: _resolvedRequestIds,
+        onSelectRecord:
+            (record) => _showInPlaceRequestAction(
+              tabContext,
+              record,
+              manager,
+              tabs,
             ),
       ),
-      _buildLeavesTab(manager, theme),
-      _buildPermissionsTab(manager, theme),
-      _buildAdvancesTab(manager, theme),
-      _buildMeetingRequestsTab(manager, theme),
-      _buildCompanyExpensesTab(manager, theme),
-      _buildItOperationalServicesTab(manager, theme),
-      _buildCustomRequestsTab(manager, theme),
+      (tabContext) => _buildLeavesTab(manager, theme),
+      (tabContext) => _buildPermissionsTab(manager, theme),
+      (tabContext) => _buildAdvancesTab(manager, theme),
+      (tabContext) => _buildMeetingRequestsTab(manager, theme),
+      (tabContext) => _buildCompanyExpensesTab(manager, theme),
+      (tabContext) => _buildItOperationalServicesTab(manager, theme),
+      (tabContext) => _buildCustomRequestsTab(manager, theme),
       if (canReviewSalaryDeductions)
-        _buildSalaryDeductionsTab(
+        (tabContext) => _buildSalaryDeductionsTab(
           manager,
           theme,
           reversalOnly: false,
           absenceOnly: false,
         ),
       if (canReviewSalaryDeductions)
-        _buildSalaryDeductionsTab(
+        (tabContext) => _buildSalaryDeductionsTab(
           manager,
           theme,
           reversalOnly: false,
           absenceOnly: true,
         ),
       if (canReviewSalaryDeductions)
-        Builder(
-          builder:
-              (tabContext) => RequestVisibilityEntry(
-                key: const ValueKey('unified-deductions'),
-                query: deductionQuery,
-                searchTerm: _searchQuery,
-                excludedRecordIds: _resolvedRequestIds,
-                onSelectRecord:
-                    (record) => _showInPlaceRequestAction(
-                      tabContext,
-                      record,
-                      manager,
-                      tabs,
-                    ),
+        (tabContext) => RequestVisibilityEntry(
+          key: const ValueKey('unified-deductions'),
+          query: deductionQuery,
+          searchTerm: _searchQuery,
+          excludedRecordIds: _resolvedRequestIds,
+          onSelectRecord:
+              (record) => _showInPlaceRequestAction(
+                tabContext,
+                record,
+                manager,
+                tabs,
               ),
         ),
-      _buildManualDeductionsTab(manager, theme),
+      (tabContext) => _buildManualDeductionsTab(manager, theme),
       if (canReviewTimeCorrections)
-        _buildAttendanceCorrectionsTab(manager, theme),
-      if (canReviewSecurity) _buildSecurityReviewsTab(manager, theme),
-      _buildComplaintsTab(manager, theme),
-      _buildResignationsTab(manager, theme),
-      _buildAdministrativeRequestsTab(manager, theme, widget.initialRequestId),
-      Builder(
-        builder:
-            (tabContext) => RequestVisibilityEntry(
-              key: const ValueKey('unified-request-history'),
-              query: historyQuery,
-              searchTerm: _searchQuery,
-              onSelectRecord:
-                  (record) => _showInPlaceRequestAction(
-                    tabContext,
-                    record,
-                    manager,
-                    tabs,
-                  ),
+        (tabContext) => _buildAttendanceCorrectionsTab(manager, theme),
+      if (canReviewSecurity) (tabContext) => _buildSecurityReviewsTab(manager, theme),
+      (tabContext) => _buildComplaintsTab(manager, theme),
+      (tabContext) => _buildResignationsTab(manager, theme),
+      (tabContext) => _buildAdministrativeRequestsTab(manager, theme, widget.initialRequestId),
+      (tabContext) => RequestVisibilityEntry(
+        key: const ValueKey('unified-request-history'),
+        query: historyQuery,
+        searchTerm: _searchQuery,
+        onSelectRecord:
+            (record) => _showInPlaceRequestAction(
+              tabContext,
+              record,
+              manager,
+              tabs,
             ),
       ),
     ];
@@ -3812,10 +3814,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                         border: OutlineInputBorder(),
                         isDense: true,
                       ),
-                      onChanged:
-                          (value) => setState(
-                            () => _searchQuery = value.trim().toLowerCase(),
-                          ),
+                      onChanged: _onSearchChanged,
                     ),
                   ),
                   const SizedBox(width: 10),
@@ -3887,8 +3886,8 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
             _buildRequestCategoryPicker(tabs),
             Expanded(
               child: TabBarView(
-                children: tabViews
-                    .map((child) => _KeepAliveRequestTab(child: child))
+                children: tabViewBuilders
+                    .map((builder) => _LazyRequestTab(builder: builder))
                     .toList(growable: false),
               ),
             ),
@@ -4907,11 +4906,13 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
             ? FirebaseFirestore.instance
                 .collection('meetingRequests')
                 .where('status', isEqualTo: 'pending')
+                .limit(40)
                 .snapshots()
             : FirebaseFirestore.instance
                 .collection('meetingRequests')
                 .where('currentApproverId', isEqualTo: reviewer.uid)
                 .where('status', isEqualTo: 'pending')
+                .limit(40)
                 .snapshots();
 
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
@@ -5763,7 +5764,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
     }
     return _cachedStream(
       'pending|$collection|$reviewerId|$role|$isAccountant',
-      query.limit(300),
+      query.limit(40),
     );
   }
 
@@ -5819,12 +5820,17 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
               return ListView.builder(
                 padding: _requestListPadding(context),
                 itemCount: docs.length,
-                itemBuilder:
-                    (context, index) => _buildLeaveRequestCard(
-                      doc: docs[index],
+                itemBuilder: (context, index) {
+                  final doc = docs[index];
+                  return KeyedSubtree(
+                    key: ValueKey('leave-card-${doc.id}'),
+                    child: _buildLeaveRequestCard(
+                      doc: doc,
                       reviewer: reviewer,
                       theme: theme,
                     ),
+                  );
+                },
               );
             }
             return DsMasterDetailView(
@@ -6438,7 +6444,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
     }
     return _cachedStream(
       'permissions|${reviewer.uid}|${reviewer.role}',
-      query.limit(300),
+      query.limit(40),
     );
   }
 
@@ -6485,12 +6491,17 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
               return ListView.builder(
                 padding: _requestListPadding(context),
                 itemCount: docs.length,
-                itemBuilder:
-                    (context, index) => _buildPermissionRequestCard(
-                      doc: docs[index],
+                itemBuilder: (context, index) {
+                  final doc = docs[index];
+                  return KeyedSubtree(
+                    key: ValueKey('permission-card-${doc.id}'),
+                    child: _buildPermissionRequestCard(
+                      doc: doc,
                       reviewer: reviewer,
                       theme: theme,
                     ),
+                  );
+                },
               );
             }
             return DsMasterDetailView(
@@ -7579,7 +7590,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
       stream: _cachedStream(
         'attendance|salary-deduction|${reviewer.uid}|reversal:$reversalOnly|absence:$absenceOnly',
-        deductionsQuery.limit(300),
+        deductionsQuery.limit(40),
       ),
       builder: (context, snapshot) {
         if (snapshot.hasError) {
@@ -8904,7 +8915,8 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
         'attendance|checkin-security|${reviewer.uid}',
         _db
             .collection('attendance')
-            .where('securityReviewStatus', isEqualTo: 'pending_hr'),
+            .where('securityReviewStatus', isEqualTo: 'pending_hr')
+            .limit(40),
       ),
       builder: (context, checkInSnapshot) {
         return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
@@ -8912,7 +8924,8 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
             'attendance|checkout-security|${reviewer.uid}',
             _db
                 .collection('attendance')
-                .where('checkoutSecurityReviewStatus', isEqualTo: 'pending_hr'),
+                .where('checkoutSecurityReviewStatus', isEqualTo: 'pending_hr')
+                .limit(40),
           ),
           builder: (context, checkoutSnapshot) {
             if (checkInSnapshot.hasError || checkoutSnapshot.hasError) {
@@ -9565,13 +9578,13 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
   }
 }
 
-class _KeepAliveRequestTab extends StatefulWidget {
-  const _KeepAliveRequestTab({required this.child});
+class _LazyRequestTab extends StatefulWidget {
+  const _LazyRequestTab({required this.builder});
 
-  final Widget child;
+  final WidgetBuilder builder;
 
   @override
-  State<_KeepAliveRequestTab> createState() => _KeepAliveRequestTabState();
+  State<_LazyRequestTab> createState() => _LazyRequestTabState();
 }
 
 class _RequestLoadingState extends StatefulWidget {
@@ -9651,15 +9664,18 @@ class _RequestLoadingStateState extends State<_RequestLoadingState> {
   }
 }
 
-class _KeepAliveRequestTabState extends State<_KeepAliveRequestTab>
+class _LazyRequestTabState extends State<_LazyRequestTab>
     with AutomaticKeepAliveClientMixin {
+  Widget? _child;
+
   @override
-  bool get wantKeepAlive => true;
+  bool get wantKeepAlive => _child != null;
 
   @override
   Widget build(BuildContext context) {
     super.build(context);
-    return widget.child;
+    _child ??= widget.builder(context);
+    return _child!;
   }
 }
 

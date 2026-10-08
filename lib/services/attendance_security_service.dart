@@ -3,6 +3,7 @@ import 'dart:math';
 import 'package:flutter/foundation.dart';
 
 import 'package:device_info_plus/device_info_plus.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:jailbreak_root_detection/jailbreak_root_detection.dart';
 import 'package:local_auth/local_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -27,6 +28,7 @@ class AttendanceSecurityResult {
 class AttendanceSecurityService {
   final LocalAuthentication _localAuth;
   final DeviceInfoPlugin _deviceInfo;
+  final FlutterSecureStorage _secureStorage;
   static const _attendanceInstallDeviceIdKey =
       'attendance_install_device_id_v2';
   static const _securityChannel = MethodChannel('zawolf_hr/device_security');
@@ -34,8 +36,17 @@ class AttendanceSecurityService {
   AttendanceSecurityService({
     LocalAuthentication? localAuth,
     DeviceInfoPlugin? deviceInfo,
+    FlutterSecureStorage? secureStorage,
   }) : _localAuth = localAuth ?? LocalAuthentication(),
-       _deviceInfo = deviceInfo ?? DeviceInfoPlugin();
+       _deviceInfo = deviceInfo ?? DeviceInfoPlugin(),
+       _secureStorage =
+           secureStorage ??
+           const FlutterSecureStorage(
+             aOptions: AndroidOptions(encryptedSharedPreferences: true),
+             iOptions: IOSOptions(
+               accessibility: KeychainAccessibility.first_unlock,
+             ),
+           );
 
   static String deviceDocumentId(String deviceId) {
     final trimmed = deviceId.trim();
@@ -212,10 +223,26 @@ class AttendanceSecurityService {
   }
 
   Future<String> _attendanceInstallDeviceId() async {
+    try {
+      final secure =
+          await _secureStorage.read(key: _attendanceInstallDeviceIdKey);
+      if (secure != null && secure.trim().isNotEmpty) {
+        return secure.trim();
+      }
+    } catch (_) {}
+
+    // Check legacy SharedPreferences and migrate
     final prefs = await SharedPreferences.getInstance();
-    final existing = prefs.getString(_attendanceInstallDeviceIdKey);
-    if (existing != null && existing.trim().isNotEmpty) {
-      return existing;
+    final legacy = prefs.getString(_attendanceInstallDeviceIdKey);
+    if (legacy != null && legacy.trim().isNotEmpty) {
+      try {
+        await _secureStorage.write(
+          key: _attendanceInstallDeviceIdKey,
+          value: legacy.trim(),
+        );
+        await prefs.remove(_attendanceInstallDeviceIdKey);
+      } catch (_) {}
+      return legacy.trim();
     }
 
     final random = Random.secure();
@@ -225,7 +252,14 @@ class AttendanceSecurityService {
     );
     final generated =
         '${DateTime.now().microsecondsSinceEpoch.toRadixString(16)}-${parts.join()}';
-    await prefs.setString(_attendanceInstallDeviceIdKey, generated);
+    try {
+      await _secureStorage.write(
+        key: _attendanceInstallDeviceIdKey,
+        value: generated,
+      );
+    } catch (_) {
+      await prefs.setString(_attendanceInstallDeviceIdKey, generated);
+    }
     return generated;
   }
 }

@@ -222,7 +222,13 @@ class _RichConversationEntryState extends State<RichConversationEntry> {
   @override
   void dispose() {
     _auth?.cancel();
-    _repository?.dispose();
+    _auth = null;
+    _repository?.setForeground(false);
+    final repo = _repository;
+    if (repo != null) {
+      unawaited(repo.dispose());
+    }
+    _repository = null;
     _client.close();
     super.dispose();
   }

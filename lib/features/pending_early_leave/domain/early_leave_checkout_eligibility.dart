@@ -37,6 +37,26 @@ final class EarlyLeaveCheckoutEligibility {
         'طلب المغادرة المبكرة ما زال قيد المراجعة. إذا رُفض بعد الانصراف فسيُنشأ خصم $fraction بانتظار مراجعة الموارد البشرية.',
     };
   }
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is EarlyLeaveCheckoutEligibility &&
+          runtimeType == other.runtimeType &&
+          permissionId == other.permissionId &&
+          requestState == other.requestState &&
+          requestedCheckoutAt == other.requestedCheckoutAt &&
+          normalCheckoutAt == other.normalCheckoutAt &&
+          requestedMinutes == other.requestedMinutes;
+
+  @override
+  int get hashCode => Object.hash(
+        permissionId,
+        requestState,
+        requestedCheckoutAt,
+        normalCheckoutAt,
+        requestedMinutes,
+      );
 }
 
 EarlyLeaveRequestState? parseEarlyLeaveRequestState(String value) =>

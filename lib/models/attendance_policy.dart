@@ -264,4 +264,38 @@ class AttendancePolicyConfig {
       payrollWorkDaysPerMonth: payrollWorkDaysPerMonth,
     );
   }
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is AttendancePolicyConfig &&
+          runtimeType == other.runtimeType &&
+          checkInOpenTime == other.checkInOpenTime &&
+          defaultStartTime == other.defaultStartTime &&
+          defaultEndTime == other.defaultEndTime &&
+          latestCheckoutTime == other.latestCheckoutTime &&
+          graceMinutes == other.graceMinutes &&
+          quarterDayUntilMinutes == other.quarterDayUntilMinutes &&
+          halfDayUntilMinutes == other.halfDayUntilMinutes &&
+          payrollWorkDaysPerMonth == other.payrollWorkDaysPerMonth &&
+          checkInReminderLeadMinutes == other.checkInReminderLeadMinutes &&
+          checkInLateWarningMinutes == other.checkInLateWarningMinutes &&
+          checkInFinalWarningLeadMinutes == other.checkInFinalWarningLeadMinutes &&
+          attendanceVerificationMode == other.attendanceVerificationMode;
+
+  @override
+  int get hashCode => Object.hash(
+        checkInOpenTime,
+        defaultStartTime,
+        defaultEndTime,
+        latestCheckoutTime,
+        graceMinutes,
+        quarterDayUntilMinutes,
+        halfDayUntilMinutes,
+        payrollWorkDaysPerMonth,
+        checkInReminderLeadMinutes,
+        checkInLateWarningMinutes,
+        checkInFinalWarningLeadMinutes,
+        attendanceVerificationMode,
+      );
 }

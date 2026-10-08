@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:developer' as developer;
 
+import 'package:equatable/equatable.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../models/attendance_policy.dart';
@@ -9,7 +10,7 @@ import '../../services/attendance_gateway_service.dart';
 import '../../services/attendance_service.dart';
 
 /// Immutable snapshot of the employee attendance gate configuration.
-class AttendanceGateState {
+class AttendanceGateState extends Equatable {
   const AttendanceGateState({
     this.policyConfig = const AttendancePolicyConfig(),
     this.checkoutAllowedFrom,
@@ -31,6 +32,9 @@ class AttendanceGateState {
       checkoutEnabled: checkoutEnabled ?? this.checkoutEnabled,
     );
   }
+
+  @override
+  List<Object?> get props => [policyConfig, checkoutAllowedFrom, checkoutEnabled];
 }
 
 /// Owns loading of the attendance policy gate for one employee screen.

@@ -116,14 +116,22 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
       if (!mounted) return;
       final previousDay = DateUtils.dateOnly(_now);
       final updatedNow = DateTime.now();
-      setState(() => _now = updatedNow);
+      final dateChanged = DateUtils.dateOnly(updatedNow) != previousDay;
       final user = context.read<AuthService>().currentUser;
-      if (user != null) {
-        if (DateUtils.dateOnly(updatedNow) != previousDay) {
+
+      if (dateChanged) {
+        setState(() => _now = updatedNow);
+        if (user != null) {
           unawaited(_checkCompanyDayOff());
           unawaited(_loadPeriodSummary(user, force: true));
+          unawaited(_refreshAttendanceGate(user));
         }
-        unawaited(_refreshAttendanceGate(user));
+      } else {
+        // Quietly update current timestamp for time window comparisons
+        _now = updatedNow;
+        if (user != null) {
+          setState(() {});
+        }
       }
       _scheduleClockTick();
     });
