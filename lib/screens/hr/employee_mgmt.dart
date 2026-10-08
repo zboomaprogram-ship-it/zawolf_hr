@@ -2413,14 +2413,28 @@ class _AddEmployeeDialogState extends State<AddEmployeeDialog> {
         casualLeaveBalance: int.tryParse(_casualLeaveController.text) ?? 7,
         managerId: primaryManager?.uid,
         managerName: primaryManager?.displayName,
-        managerIds: selectedManagers.map((manager) => manager.uid).toList(),
-        managerNames:
-            selectedManagers.map((manager) => manager.displayName).toList(),
-        managerCodes:
-            selectedManagers
-                .map((manager) => manager.employeeId)
-                .where((code) => code.isNotEmpty)
-                .toList(),
+        managerIds: (() {
+          final seen = <String>{};
+          return selectedManagers
+              .map((m) => m.uid)
+              .where((id) => id.isNotEmpty && seen.add(id))
+              .toList();
+        })(),
+        managerNames: (() {
+          final seen = <String>{};
+          return selectedManagers
+              .where((m) => m.uid.isNotEmpty && seen.add(m.uid))
+              .map((m) => m.displayName)
+              .toList();
+        })(),
+        managerCodes: (() {
+          final seen = <String>{};
+          return selectedManagers
+              .where((m) => m.uid.isNotEmpty && seen.add(m.uid))
+              .map((m) => m.employeeId)
+              .where((code) => code.isNotEmpty)
+              .toList();
+        })(),
         teamLeaderId: _selectedTeamLeaderId,
         teamLeaderName: _selectedTeamLeaderName,
         workSchedule: WorkSchedule(
@@ -3131,14 +3145,17 @@ class _EditEmployeeDialogState extends State<EditEmployeeDialog> {
     _workDays = List<int>.from(
       emp.workSchedule.workDays ?? const [6, 7, 1, 2, 3, 4],
     );
-    _hiringDate = emp.joinDate;
-    _selectedManagerIds =
-        emp.managerIds.isNotEmpty
-            ? List<String>.from(emp.managerIds)
-            : [
-              if (emp.managerId != null && emp.managerId!.isNotEmpty)
-                emp.managerId!,
-            ];
+    final rawManagerIds = [
+      if (emp.managerId != null && emp.managerId!.isNotEmpty) emp.managerId!,
+      ...emp.managerIds,
+    ];
+    final seenManagerIds = <String>{};
+    _selectedManagerIds = [];
+    for (final id in rawManagerIds) {
+      if (id.isNotEmpty && seenManagerIds.add(id)) {
+        _selectedManagerIds.add(id);
+      }
+    }
 
     _fetchLocationsAndManagers();
   }
@@ -3415,14 +3432,28 @@ class _EditEmployeeDialogState extends State<EditEmployeeDialog> {
             widget.employee.leaveBalance.casual,
         'managerId': primaryManager?.uid,
         'managerName': primaryManager?.displayName,
-        'managerIds': selectedManagers.map((manager) => manager.uid).toList(),
-        'managerNames':
-            selectedManagers.map((manager) => manager.displayName).toList(),
-        'managerCodes':
-            selectedManagers
-                .map((manager) => manager.employeeId)
-                .where((code) => code.isNotEmpty)
-                .toList(),
+        'managerIds': (() {
+          final seen = <String>{};
+          return selectedManagers
+              .map((m) => m.uid)
+              .where((id) => id.isNotEmpty && seen.add(id))
+              .toList();
+        })(),
+        'managerNames': (() {
+          final seen = <String>{};
+          return selectedManagers
+              .where((m) => m.uid.isNotEmpty && seen.add(m.uid))
+              .map((m) => m.displayName)
+              .toList();
+        })(),
+        'managerCodes': (() {
+          final seen = <String>{};
+          return selectedManagers
+              .where((m) => m.uid.isNotEmpty && seen.add(m.uid))
+              .map((m) => m.employeeId)
+              .where((code) => code.isNotEmpty)
+              .toList();
+        })(),
         'teamLeaderId': _selectedTeamLeaderId,
         'teamLeaderName': _selectedTeamLeaderName,
         'workSchedule':
