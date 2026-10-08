@@ -5260,15 +5260,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
       ),
       builder: (context, snapshot) {
         if (snapshot.hasError) {
-          return Center(
-            child: Text(
-              userFacingError(
-                snapshot.error!,
-                fallback: 'تعذر تحميل طلبات الاستقالة حالياً. أعد المحاولة.',
-              ),
-              textAlign: TextAlign.center,
-            ),
-          );
+          return _buildStreamError('تعذر تحميل طلبات الاستقالة');
         }
         if (!snapshot.hasData) {
           return _buildLoadingState('تحميل طلبات الاستقالة...');

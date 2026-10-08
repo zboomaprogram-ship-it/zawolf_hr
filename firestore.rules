@@ -2012,8 +2012,12 @@ service cloud.firestore {
     match /resignations/{resignationId} {
       allow read: if isAuth() && isActive() && (
         isOwner(resource.data.userId)
+        || isMyManager(resource.data.managerId)
+        || resource.data.get('managerId', '') == uid()
+        || resource.data.get('managerId', '') == employeeCode()
         || uid() in resource.data.get('managerIds', [])
         || employeeCode() in resource.data.get('managerIds', [])
+        || employeeCode() in resource.data.get('managerCodes', [])
         || isHR()
         || isCompanyExecutive()
       );
@@ -2043,6 +2047,14 @@ service cloud.firestore {
             'status', 'cancelledAt', 'cancelledBy'
           ])
         )
+        // Employee links clearance request or updates clearance status
+        || (
+          isOwner(resource.data.userId)
+          && resource.data.status in ['pending_manager', 'pending_hr']
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'clearanceRequestId', 'clearanceStatus'
+          ])
+        )
         // Manager reviews a pending_manager resignation
         || (
           resource.data.status == 'pending_manager'
@@ -2053,7 +2065,8 @@ service cloud.firestore {
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
             'status', 'managerId', 'managerName', 'managerApprovalIndex',
             'managerApprovalTrail', 'reviewedBy', 'reviewerName',
-            'reviewerComment', 'reviewedAt', 'isRead'
+            'reviewerComment', 'reviewedAt', 'isRead',
+            'clearanceRequestId', 'clearanceStatus'
           ])
           && request.resource.data.reviewedBy == uid()
         )
@@ -2066,7 +2079,7 @@ service cloud.firestore {
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
             'status', 'clearanceStatus', 'managerId', 'managerName', 'managerApprovalIndex',
             'managerApprovalTrail', 'reviewedBy', 'reviewerName',
-            'reviewerComment', 'reviewedAt', 'isRead'
+            'reviewerComment', 'reviewedAt', 'isRead', 'clearanceRequestId'
           ])
           && request.resource.data.reviewedBy == uid()
         )
@@ -2080,8 +2093,23 @@ service cloud.firestore {
         isOwner(resource.data.userId)
         || isHR()
         || isCompanyExecutive()
+        || isCurrentApprovalManager()
+        || uid() == resource.data.get('currentApproverId', '')
+        || employeeCode() == resource.data.get('currentApproverId', '')
       );
-      allow create, update: if isAuth() && isActive() && (isHR() || isSuperAdmin());
+      allow create: if isAuth() && isActive() && (
+        isOwner(request.resource.data.userId)
+        || isHR()
+        || isSuperAdmin()
+      );
+      allow update: if isAuth() && isActive() && (
+        isOwner(resource.data.userId)
+        || isHR()
+        || isSuperAdmin()
+        || isCurrentApprovalManager()
+        || uid() == resource.data.get('currentApproverId', '')
+        || employeeCode() == resource.data.get('currentApproverId', '')
+      );
       allow delete: if isAuth() && isActive() && isSuperAdmin();
     }
 

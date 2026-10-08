@@ -25,8 +25,7 @@ async function getActiveAccountantUids(db) {
   for (const doc of users.docs) {
     const data = doc.data() || {};
     if (data.isAdvanceAccountsApprover === true ||
-        /account|حساب/i.test(String(data.department || data.departmentName || '')) ||
-        /محاسب/i.test(String(data.jobTitle || data.position || data.role || ''))) {
+        (data.role === 'manager' && /^(?:accounting|حسابات|إدارة الحسابات|قسم الحسابات)$/i.test(String(data.department || data.departmentName || '').trim()))) {
       accountantUids.add(doc.id);
       if (data.employeeId) accountantCodes.add(String(data.employeeId).toUpperCase());
       if (data.employeeCode) accountantCodes.add(String(data.employeeCode).toUpperCase());

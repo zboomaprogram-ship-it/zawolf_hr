@@ -119,7 +119,8 @@ class EmployeeWarningsRewardsScreen extends StatelessWidget {
                               subtitle: const Text(
                                   'متابعة حالة الإجازات والأذونات والسلف'),
                               trailing: const Icon(Icons.chevron_left,
-                                  color: ZaWolfColors.textMuted),
+                                  color: ZaWolfColors.textMuted,
+                                  textDirection: TextDirection.ltr),
                               onTap: () => context.push('/employee/requests'),
                             ),
                             const Divider(color: ZaWolfColors.surface03),
@@ -141,7 +142,8 @@ class EmployeeWarningsRewardsScreen extends StatelessWidget {
                               subtitle:
                                   const Text('سجل الخصومات التلقائية واليدوية'),
                               trailing: const Icon(Icons.chevron_left,
-                                  color: ZaWolfColors.textMuted),
+                                  color: ZaWolfColors.textMuted,
+                                  textDirection: TextDirection.ltr),
                               onTap: () =>
                                   context.push('/employee/deductions'),
                             ),
@@ -164,7 +166,8 @@ class EmployeeWarningsRewardsScreen extends StatelessWidget {
                               subtitle:
                                   const Text('متابعة المهام المنجزة والجارية'),
                               trailing: const Icon(Icons.chevron_left,
-                                  color: ZaWolfColors.textMuted),
+                                  color: ZaWolfColors.textMuted,
+                                  textDirection: TextDirection.ltr),
                               onTap: () => context.push('/employee/tasks'),
                             ),
                           ],

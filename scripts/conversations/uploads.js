@@ -65,6 +65,8 @@ async function leased(db,ref,body) {
     });
   }
 }
+const mediaDownloadCache = new Map();
+
 async function handleMedia({req,res,db,actor,channel,parts,payload,sendJson,provider,ensureFolder}) {
   if(!['uploads','attachments'].includes(parts[0])) return false;
   const uploads=parts[0]==='uploads';
@@ -95,6 +97,18 @@ async function handleMedia({req,res,db,actor,channel,parts,payload,sendJson,prov
     if(req.method!=='GET')throw failure('not_found',404);
     if(parts.length===2)sendJson(res,200,{ok:true,attachment:descriptor(resourceId,d)});
     else if(parts.length===3&&parts[2]==='download') {
+      const cached = mediaDownloadCache.get(resourceId);
+      if (cached) {
+        res.writeHead(200, {
+          'content-type': d.validatedMimeType || cached.mimeType,
+          'content-length': String(cached.contents.length),
+          'content-disposition': `attachment; filename*=UTF-8''${encodeURIComponent(d.fileName || d.name || cached.fileName)}`,
+          'cache-control': 'private, max-age=604800, immutable',
+          'x-content-type-options': 'nosniff',
+        });
+        res.end(cached.contents);
+        return true;
+      }
       const secret=(await secretRef.get()).data();
       if(!secret)throw failure('attachment_unavailable',404);
       let file;
@@ -104,10 +118,27 @@ async function handleMedia({req,res,db,actor,channel,parts,payload,sendJson,prov
         console.error('[Uploads] provider.download failed for resource:', resourceId, e.message || e);
         throw failure('attachment_unavailable', 404);
       }
-      await db.collection('conversationAudit').doc(crypto.randomUUID()).set({actorId:actor.uid,conversationId:channel.id,resourceId,action:'attachment_download',createdAt:new Date()});
-      res.writeHead(200,{'content-type':d.validatedMimeType||file.mimeType,'content-length':String(file.contents.length),
-        'content-disposition':`attachment; filename*=UTF-8''${encodeURIComponent(d.fileName||d.name||file.fileName)}`,
-        'cache-control':'private, no-store','x-content-type-options':'nosniff'});res.end(file.contents);
+      if (file && file.contents) {
+        if (mediaDownloadCache.size >= 150) {
+          mediaDownloadCache.delete(mediaDownloadCache.keys().next().value);
+        }
+        mediaDownloadCache.set(resourceId, file);
+      }
+      db.collection('conversationAudit').doc(crypto.randomUUID()).set({
+        actorId: actor.uid,
+        conversationId: channel.id,
+        resourceId,
+        action: 'attachment_download',
+        createdAt: new Date(),
+      }).catch(() => {});
+      res.writeHead(200, {
+        'content-type': d.validatedMimeType || file.mimeType,
+        'content-length': String(file.contents.length),
+        'content-disposition': `attachment; filename*=UTF-8''${encodeURIComponent(d.fileName || d.name || file.fileName)}`,
+        'cache-control': 'private, max-age=604800, immutable',
+        'x-content-type-options': 'nosniff',
+      });
+      res.end(file.contents);
     }else throw failure('not_found',404);
     return true;
   }

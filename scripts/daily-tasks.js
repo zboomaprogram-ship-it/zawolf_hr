@@ -503,6 +503,58 @@ async function runDailyTasks() {
     console.log(`Marked ${overdueTasks} overdue tasks.`);
   }
 
+  async function checkLastDayClearances() {
+    try {
+      const clearanceSnap = await db
+        .collection('customRequests')
+        .where('typeId', '==', 'core_clearance')
+        .where('status', '==', 'pending')
+        .get();
+
+      let remindersCount = 0;
+      for (const doc of clearanceSnap.docs) {
+        const data = doc.data() || {};
+        const lastDayStr = timestampToDateStr(data.lastWorkingDay);
+        if (lastDayStr === todayStr && !data.lastDayReminderSent) {
+          const approverId = data.currentApproverId;
+          const employeeName = data.requesterName || 'الموظف';
+          const title = 'تذكير: آخر يوم عمل وإخلاء طرف';
+          const body = `اليوم (${todayStr}) هو آخر يوم عمل للموظف (${employeeName}). يرجى استكمال إجراءات تسليم العهد واعتماد إخلاء الطرف.`;
+
+          if (approverId) {
+            await notifyEmployee(
+              approverId,
+              'clearance_last_day_reminder',
+              title,
+              body,
+              { requestId: doc.id, resignationId: data.resignationId, route: '/manager/requests' }
+            );
+          }
+
+          await notifyReviewers(
+            'clearance_last_day_reminder',
+            title,
+            body,
+            { requestId: doc.id, resignationId: data.resignationId, route: '/manager/requests' }
+          );
+
+          batch.update(doc.ref, {
+            lastDayReminderSent: true,
+            lastDayReminderAt: admin.firestore.FieldValue.serverTimestamp(),
+          });
+          batchOps++;
+          remindersCount++;
+          await commitIfNeeded();
+        }
+      }
+      if (remindersCount > 0) {
+        console.log(`Sent ${remindersCount} last-day clearance reminders.`);
+      }
+    } catch (err) {
+      console.warn('Error in checkLastDayClearances:', err);
+    }
+  }
+
   for (const userDoc of activeUsers) {
     const user = userDoc.data();
     const userId = userDoc.id;
@@ -815,6 +867,7 @@ async function runDailyTasks() {
   }
 
   await markOverdueTasks();
+  await checkLastDayClearances();
 
   if (batchOps > 0) {
     await batch.commit();

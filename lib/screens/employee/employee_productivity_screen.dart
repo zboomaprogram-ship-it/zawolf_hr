@@ -68,7 +68,9 @@ class _EmployeeProductivityScreenState
         textDirection: TextDirection.ltr,
         children: [
           IconButton(
-            icon: Icon(Icons.chevron_left, size: isDesktop ? 20 : 18),
+            icon: Icon(Icons.chevron_left,
+                size: isDesktop ? 20 : 18,
+                textDirection: TextDirection.ltr),
             tooltip: 'الشهر السابق',
             padding: EdgeInsets.zero,
             constraints: BoxConstraints(
@@ -103,7 +105,9 @@ class _EmployeeProductivityScreenState
             ),
           ),
           IconButton(
-            icon: Icon(Icons.chevron_right, size: isDesktop ? 20 : 18),
+            icon: Icon(Icons.chevron_right,
+                size: isDesktop ? 20 : 18,
+                textDirection: TextDirection.ltr),
             tooltip: 'الشهر التالي',
             padding: EdgeInsets.zero,
             constraints: BoxConstraints(
@@ -177,7 +181,8 @@ class _EmployeeProductivityScreenState
                         children: [
                           OutlinedButton.icon(
                             onPressed: () => _changeMonth(-1),
-                            icon: const Icon(Icons.arrow_back, size: 16),
+                            icon: const Icon(Icons.arrow_back,
+                                size: 16, textDirection: TextDirection.ltr),
                             label: const Text('الشهر السابق'),
                             style: OutlinedButton.styleFrom(
                               foregroundColor: ZaWolfColors.primaryCyan,

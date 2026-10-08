@@ -23,9 +23,14 @@ class RichAttachmentView extends StatefulWidget {
   State<RichAttachmentView> createState() => _RichAttachmentViewState();
 }
 
-class _RichAttachmentViewState extends State<RichAttachmentView> {
+class _RichAttachmentViewState extends State<RichAttachmentView>
+    with AutomaticKeepAliveClientMixin {
   late final ChatMediaCubit _cubit = ChatMediaCubit(widget.download);
   bool get _available => widget.attachment.resourceId.trim().isNotEmpty;
+
+  @override
+  bool get wantKeepAlive => true;
+
   @override
   void initState() {
     super.initState();
@@ -279,6 +284,7 @@ class _RichAttachmentViewState extends State<RichAttachmentView> {
 
   @override
   Widget build(BuildContext context) {
+    super.build(context);
     final isVoice =
         widget.attachment.kind == 'voice' ||
         widget.attachment.mimeType.startsWith('audio/');

@@ -135,20 +135,6 @@ class _EmployeePayrollScreenState extends State<EmployeePayrollScreen> {
                         child: Column(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            Container(
-                              padding: const EdgeInsets.all(20),
-                              decoration: BoxDecoration(
-                                color: ZaWolfColors.primaryCyan
-                                    .withValues(alpha: 0.12),
-                                shape: BoxShape.circle,
-                              ),
-                              child: const Icon(
-                                Icons.hourglass_top_rounded,
-                                color: ZaWolfColors.primaryCyan,
-                                size: 52,
-                              ),
-                            ),
-                            const SizedBox(height: 18),
                             Text(
                               'مسير راتب شهر $_monthKey',
                               style: theme.textTheme.titleLarge?.copyWith(
@@ -232,7 +218,8 @@ class _EmployeePayrollScreenState extends State<EmployeePayrollScreen> {
                             const SizedBox(height: 16),
                             OutlinedButton.icon(
                               onPressed: () => _changeMonth(-1),
-                              icon: const Icon(Icons.arrow_back, size: 16),
+                              icon: const Icon(Icons.arrow_back,
+                                  size: 16, textDirection: TextDirection.ltr),
                               label: const Text('عرض مسير الشهر السابق'),
                               style: OutlinedButton.styleFrom(
                                 foregroundColor: ZaWolfColors.primaryCyan,
@@ -323,7 +310,9 @@ class _EmployeePayrollScreenState extends State<EmployeePayrollScreen> {
         textDirection: TextDirection.ltr,
         children: [
           IconButton(
-            icon: Icon(Icons.chevron_left, size: isDesktop ? 20 : 18),
+            icon: Icon(Icons.chevron_left,
+                size: isDesktop ? 20 : 18,
+                textDirection: TextDirection.ltr),
             tooltip: 'الشهر السابق',
             padding: EdgeInsets.zero,
             constraints: BoxConstraints(minWidth: isDesktop ? 32 : 24, minHeight: isDesktop ? 32 : 28),
@@ -353,7 +342,9 @@ class _EmployeePayrollScreenState extends State<EmployeePayrollScreen> {
             ),
           ),
           IconButton(
-            icon: Icon(Icons.chevron_right, size: isDesktop ? 20 : 18),
+            icon: Icon(Icons.chevron_right,
+                size: isDesktop ? 20 : 18,
+                textDirection: TextDirection.ltr),
             tooltip: 'الشهر التالي',
             padding: EdgeInsets.zero,
             constraints: BoxConstraints(minWidth: isDesktop ? 32 : 24, minHeight: isDesktop ? 32 : 28),

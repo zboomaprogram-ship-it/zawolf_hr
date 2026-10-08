@@ -103,6 +103,26 @@ class CustomRequestTemplateRepositoryImpl implements CustomRequestTemplateReposi
       ],
     ),
     const CustomRequestType(
+      id: 'core_clearance',
+      nameAr: 'إخلاء طرف (Clearance Request)',
+      category: 'administrative',
+      descriptionAr: 'طلب إخلاء طرف وتسليم العهد والأجهزة والمستحقات المالية عند نهاية الخدمة',
+      isActive: true,
+      subtypes: ['إخلاء طرف استقالة', 'إخلاء طرف إنهاء تعاقد', 'إخلاء طرف عام'],
+      fields: [
+        CustomRequestField(key: 'lastWorkingDay', labelAr: 'آخر يوم عمل', type: 'date', isRequired: true),
+        CustomRequestField(key: 'handoverNotes', labelAr: 'خطة تسليم المهام والعهد', type: 'text', isRequired: false),
+        CustomRequestField(key: 'notes', labelAr: 'ملاحظات إضافية', type: 'text', isRequired: false),
+      ],
+      approvalSteps: [
+        ApprovalChainStep(stepId: 'step_1', order: 1, approverType: 'direct_manager', labelAr: 'المدير المباشر (تسليم المهام)'),
+        ApprovalChainStep(stepId: 'step_2', order: 2, approverType: 'it', department: 'it', labelAr: 'تقنية المعلومات (تسليم الأجهزة والصلاحيات)'),
+        ApprovalChainStep(stepId: 'step_3', order: 3, approverType: 'hr', department: 'hr', labelAr: 'الموارد البشرية (تسليم العهد الإدارية)'),
+        ApprovalChainStep(stepId: 'step_4', order: 4, approverType: 'accounting', department: 'accounting', labelAr: 'الحسابات (المخالصة المالية والراتب)'),
+        ApprovalChainStep(stepId: 'step_5', order: 5, approverType: 'ceo', labelAr: 'الرئيس التنفيذي (الاعتماد النهائي)'),
+      ],
+    ),
+    const CustomRequestType(
       id: 'core_field_missions',
       nameAr: 'المأموريات والمهام الميدانية (Field Missions)',
       category: 'general',

@@ -266,10 +266,7 @@ async function decideFieldMission({ db, admin, actor, requestId, body }) {
         const uData = uDoc.data() || {};
         const isAcc = uData.isAdvanceAccountsApprover === true ||
           uData.isHiringAccountsApprover === true ||
-          String(uData.employeeId || uData.employeeCode || '').toUpperCase().startsWith('ACC-') ||
-          /account|حساب/i.test(uData.department || '') ||
-          uData.role === 'accountant' ||
-          /محاسب/i.test(uData.jobTitle || uData.position || '');
+          (uData.role === 'manager' && /^(?:accounting|حسابات|إدارة الحسابات|قسم الحسابات)$/i.test(String(uData.department || '').trim()));
         if (isAcc) {
           notifications.push(queueNotification(db, admin, {
             recipientId: uDoc.id,

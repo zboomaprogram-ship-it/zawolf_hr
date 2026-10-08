@@ -554,7 +554,7 @@ function sendBinary(res, payload) {
     'content-type': payload.mimeType || 'application/octet-stream',
     'content-length': payload.contents.length,
     'content-disposition': `attachment; filename*=UTF-8''${encodeURIComponent(safeName)}`,
-    'cache-control': 'private, no-store',
+    'cache-control': 'private, max-age=604800, immutable',
     'x-content-type-options': 'nosniff',
   });
   res.end(payload.contents);

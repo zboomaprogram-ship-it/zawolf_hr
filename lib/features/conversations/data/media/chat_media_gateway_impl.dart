@@ -25,9 +25,9 @@ class ChatMediaGatewayImpl implements ChatMediaGateway {
     if (fromCamera) {
       final file = await picker.pickImage(
         source: ImageSource.camera,
-        maxWidth: 1920,
-        maxHeight: 1920,
-        imageQuality: 85,
+        maxWidth: 1280,
+        maxHeight: 1280,
+        imageQuality: 75,
       );
       if (file == null) return [];
       final bytes = await file.readAsBytes();
@@ -38,9 +38,9 @@ class ChatMediaGatewayImpl implements ChatMediaGateway {
       return [ChatDraftFile(fileName: name, mimeType: mime, bytes: bytes, kind: 'image')];
     } else {
       final files = await picker.pickMultiImage(
-        maxWidth: 1920,
-        maxHeight: 1920,
-        imageQuality: 85,
+        maxWidth: 1280,
+        maxHeight: 1280,
+        imageQuality: 75,
       );
       if (files.isEmpty) return [];
       if (files.length > 10) throw const ChatFailure('too_many_attachments');

@@ -75,12 +75,16 @@ class EmployeeAvatar extends StatelessWidget {
               ? Image.memory(
                 image,
                 fit: BoxFit.cover,
+                cacheWidth: (size * 2).toInt(),
+                cacheHeight: (size * 2).toInt(),
                 errorBuilder: (_, _, _) => fallback,
               )
               : url.startsWith('https://')
               ? Image.network(
                 url,
                 fit: BoxFit.cover,
+                cacheWidth: (size * 2).toInt(),
+                cacheHeight: (size * 2).toInt(),
                 errorBuilder: (_, _, _) => fallback,
               )
               : fallback,

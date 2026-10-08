@@ -25,10 +25,11 @@ class RichChatRepositoryImpl implements RichChatRepository {
   final Map<String, int> _failures = {};
   final Map<String, DateTime> _typed = {};
   final Map<String, StreamController<ChatPage<RichChannel>>> _inboxes = {};
-  final LinkedHashMap<String, ChatDraftFile> _attachmentCache = LinkedHashMap();
-  final Map<String, Future<ChatDraftFile>> _attachmentDownloads = {};
-  int _attachmentCacheBytes = 0;
-  static const int _maxAttachmentCacheBytes = 24 * 1024 * 1024;
+  static final LinkedHashMap<String, ChatDraftFile> _attachmentCache =
+      LinkedHashMap();
+  static final Map<String, Future<ChatDraftFile>> _attachmentDownloads = {};
+  static int _attachmentCacheBytes = 0;
+  static const int _maxAttachmentCacheBytes = 48 * 1024 * 1024;
   static const int _maxPersistentMediaBytes = 64 * 1024 * 1024;
   bool _foreground = true, _disposed = false;
   String _channel(String id) => '/channels/${Uri.encodeComponent(id)}';
