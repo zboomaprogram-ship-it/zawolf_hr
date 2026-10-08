@@ -547,6 +547,77 @@ async function runDailyTasks() {
           await commitIfNeeded();
         }
       }
+
+      // Check resignations that have lastWorkingDay == todayStr and haven't had a clearance created
+      const pendingResignations = await db
+        .collection('resignations')
+        .where('status', 'in', ['pending', 'approved'])
+        .get();
+
+      for (const resDoc of pendingResignations.docs) {
+        const resData = resDoc.data() || {};
+        const resLastDayStr = timestampToDateStr(resData.lastWorkingDay);
+        if (resLastDayStr === todayStr && !resData.clearanceRequestId) {
+          const typeDoc = await db.collection('customRequestTypes').doc('core_clearance').get();
+          let steps = [];
+          if (typeDoc.exists && typeDoc.data()?.approvalSteps) {
+            steps = typeDoc.data().approvalSteps;
+          }
+          if (steps.length === 0) {
+            steps = [
+              { order: 1, approverType: 'direct_manager', labelAr: 'المدير المباشر' },
+              { order: 2, approverType: 'it', labelAr: 'تقنية المعلومات' },
+              { order: 3, approverType: 'hr', labelAr: 'الموارد البشرية' },
+              { order: 4, approverType: 'accounting', labelAr: 'الحسابات والمالية' },
+              { order: 5, approverType: 'ceo', labelAr: 'الرئيس التنفيذي' },
+            ];
+          }
+          let firstApproverId = resData.managerId || '';
+          let firstApproverName = resData.managerName || 'المدير المباشر';
+          const newClearanceRef = db.collection('customRequests').doc();
+          const clearanceData = {
+            requestId: newClearanceRef.id,
+            resignationId: resDoc.id,
+            requesterId: resData.userId,
+            requesterName: resData.userName || 'الموظف',
+            typeId: 'core_clearance',
+            typeNameAr: 'إخلاء طرف',
+            title: `طلب إخلاء طرف - ${resData.userName || ''}`,
+            description: `طلب إخلاء طرف وتسليم العهد عند الاستقالة. آخر يوم عمل: ${todayStr}`,
+            status: 'pending',
+            approvalRoute: steps,
+            currentApproverId: firstApproverId,
+            currentApproverName: firstApproverName,
+            currentApprovalIndex: 0,
+            lastWorkingDay: resData.lastWorkingDay,
+            createdAt: admin.firestore.FieldValue.serverTimestamp(),
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          };
+          batch.set(newClearanceRef, clearanceData);
+          batch.update(resDoc.ref, {
+            clearanceRequestId: newClearanceRef.id,
+            clearanceStatus: 'in_progress',
+          });
+          batchOps += 2;
+          if (firstApproverId) {
+            await notifyEmployee(
+              firstApproverId,
+              'new_request_assigned',
+              'طلب إخلاء طرف جديد',
+              `تم إنشاء طلب إخلاء طرف للموظف (${resData.userName || ''}) بانتظار موافقتك.`,
+              { requestId: newClearanceRef.id, route: '/manager/requests' }
+            );
+          }
+          await notifyReviewers(
+            'new_request_assigned',
+            'طلب إخلاء طرف جديد',
+            `اليوم هو آخر يوم عمل للموظف (${resData.userName || ''}) وتم بدء مسار إخلاء الطرف.`,
+            { requestId: newClearanceRef.id, route: '/manager/requests' }
+          );
+          await commitIfNeeded();
+        }
+      }
+
       if (remindersCount > 0) {
         console.log(`Sent ${remindersCount} last-day clearance reminders.`);
       }
