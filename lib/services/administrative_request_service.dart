@@ -243,10 +243,10 @@ class AdministrativeRequestService {
           .limit(100)
           .snapshots();
     }
-    if (reviewer.isCompanyCoo) {
+    if (reviewer.isCompanyCoo || reviewer.isItMember) {
       return _db
           .collection('administrativeRequests')
-          .where('status', isEqualTo: 'pending_manager')
+          .where('status', whereIn: ['pending_manager', 'pending_hr'])
           .limit(100)
           .snapshots();
     }
