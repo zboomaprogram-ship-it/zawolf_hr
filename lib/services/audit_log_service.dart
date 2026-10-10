@@ -1,4 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
 
 class AuditLogService {
   AuditLogService._();
@@ -14,15 +16,29 @@ class AuditLogService {
     required String targetId,
     Map<String, dynamic> metadata = const {},
   }) async {
-    if (actorId.isEmpty) return;
+    try {
+      final currentUid = FirebaseAuth.instance.currentUser?.uid;
+      final effectiveActorId =
+          (currentUid != null && currentUid.isNotEmpty) ? currentUid : actorId;
 
-    await _db.collection('auditLogs').add({
-      'actorId': actorId,
-      'action': action,
-      'targetCollection': targetCollection,
-      'targetId': targetId,
-      'metadata': metadata,
-      'createdAt': FieldValue.serverTimestamp(),
-    });
+      if (effectiveActorId.isEmpty) return;
+
+      final data = <String, dynamic>{
+        'actorId': effectiveActorId,
+        'action': action,
+        'targetCollection': targetCollection,
+        'targetId': targetId,
+        'metadata': metadata,
+        'createdAt': FieldValue.serverTimestamp(),
+      };
+
+      if (actorId.isNotEmpty && actorId != effectiveActorId) {
+        data['subjectUserId'] = actorId;
+      }
+
+      await _db.collection('auditLogs').add(data);
+    } catch (e) {
+      debugPrint('AuditLogService.record failed: $e');
+    }
   }
 }

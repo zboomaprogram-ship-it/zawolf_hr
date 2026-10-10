@@ -15,9 +15,25 @@ service cloud.firestore {
     function isActive() {
       return userDocExists() && userDoc().get('isActive', true) == true;
     }
-    function isManagerRole() { return role() == 'manager'; }
+    function isManagerRole() { return role() in ['manager', 'general_manager']; }
     function isTeamLeaderRole() { return role() == 'team_leader'; }
-    function isHRRole() { return role() in ['hr_admin', 'hr_manager']; }
+    function isHRRole() {
+      return role() in [
+          'hr_admin', 'hr_manager', 'hr', 'HR',
+          'hr_specialist', 'hr_officer', 'hr_staff'
+        ]
+        || (userDocExists() && (
+          userDoc().get('isHr', false) == true
+          || userDoc().get('role', '') in [
+            'hr_admin', 'hr_manager', 'hr', 'HR',
+            'hr_specialist', 'hr_officer', 'hr_staff'
+          ]
+          || userDoc().get('department', '') in [
+            'hr', 'HR', 'Human Resources', 'human_resources',
+            'الموارد البشرية', 'إدارة الموارد البشرية'
+          ]
+        ));
+    }
     function isHRManagerRole() { return isHRRole(); }
     function isSuperAdmin() { return role() == 'super_admin'; }
     function isCompanyCeo() {
@@ -1645,6 +1661,9 @@ service cloud.firestore {
           request.resource.data.userId == uid()
           || isHR()
           || isAssignedManagerForUser(request.resource.data.userId)
+          || isCompanyExecutive()
+          || isManagerRole()
+          || isSuperAdmin()
         )
         && request.resource.data.requestId == requestId
         && request.resource.data.status == 'pending_hr'
@@ -1745,6 +1764,9 @@ service cloud.firestore {
           isValidSelfCreate()
           || isHR()
           || isAssignedManagerForUser(request.resource.data.userId)
+          || isCompanyExecutive()
+          || isManagerRole()
+          || isSuperAdmin()
         )
         && request.resource.data.status in [
           'pending_manager', 'pending_hr', 'pending_ceo', 'approved'
@@ -1941,6 +1963,9 @@ service cloud.firestore {
           isValidSelfCreate()
           || isHR()
           || isAssignedManagerForUser(request.resource.data.userId)
+          || isCompanyExecutive()
+          || isManagerRole()
+          || isSuperAdmin()
         )
         && request.resource.data.status in ['pending_manager', 'pending_hr']
         && request.resource.data.managerIds is list
@@ -2026,6 +2051,9 @@ service cloud.firestore {
           request.resource.data.userId == uid()
           || isHR()
           || isAssignedManagerForUser(request.resource.data.userId)
+          || isCompanyExecutive()
+          || isManagerRole()
+          || isSuperAdmin()
         )
         && request.resource.data.reason is string
         && request.resource.data.reason.size() > 0
@@ -2130,6 +2158,9 @@ service cloud.firestore {
           request.resource.data.userId == uid()
           || isHR()
           || isAssignedManagerForUser(request.resource.data.userId)
+          || isCompanyExecutive()
+          || isManagerRole()
+          || isSuperAdmin()
         )
         && request.resource.data.category in [
           'personal_data', 'employment_status', 'software_subscription',
@@ -2284,6 +2315,9 @@ service cloud.firestore {
           isValidSelfCreate()
           || isHR()
           || isAssignedManagerForUser(request.resource.data.userId)
+          || isCompanyExecutive()
+          || isManagerRole()
+          || isSuperAdmin()
         )
         && request.resource.data.status in ['pending_hr', 'pending_manager']
         && request.resource.data.amount > 0
@@ -2293,7 +2327,9 @@ service cloud.firestore {
           'isRead', 'managerIds', 'managerNames', 'managerApprovalIndex',
           'managerApprovalTotal', 'managerApprovalTrail',
           'jobTitle', 'approvalHistory', 'reviewedAt', 'reviewedBy',
-          'reviewerComment', 'reviewerName'
+          'reviewerComment', 'reviewerName', 'createdBy', 'createdByName',
+          'currency', 'salaryCurrency', 'notes', 'advanceRouteStage',
+          'managerCodes'
         ]);
       allow update: if isAuth() && isActive() && (
         (
@@ -2628,8 +2664,14 @@ service cloud.firestore {
     }
 
     match /auditLogs/{auditId} {
-      allow read: if isAuth() && isActive() && isHR();
-      allow create: if isAuth() && isActive() && request.resource.data.actorId == uid();
+      allow read: if isAuth() && isActive() && (isHR() || isSuperAdmin());
+      allow create: if isAuth() && isActive() && (
+        request.resource.data.actorId == uid()
+        || isHR()
+        || isAssignedManagerForUser(request.resource.data.actorId)
+        || isCompanyExecutive()
+        || isSuperAdmin()
+      );
       allow update, delete: if false;
     }
 

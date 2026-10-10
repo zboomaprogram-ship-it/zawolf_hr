@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import '../models/advance_model.dart';
 import '../models/user_model.dart';
@@ -166,6 +167,10 @@ class AdvanceService {
     final ref = _db.collection('advances').doc();
     final managerIds = _approvalManagerIds(employee, req.managerId);
     final managerNames = _approvalManagerNames(employee, employee.managerName);
+    final initialStatus = (managerIds.isNotEmpty && req.status == 'pending_manager')
+        ? 'pending_manager'
+        : (req.status == 'pending_hr' || managerIds.isEmpty ? 'pending_hr' : 'pending_manager');
+
     final newReq = AdvanceModel(
       advanceId: ref.id,
       userId: req.userId,
@@ -176,7 +181,7 @@ class AdvanceService {
       managerId: req.managerId,
       amount: req.amount,
       reason: req.reason,
-      status: 'pending_hr',
+      status: initialStatus,
       monthKey: req.monthKey,
     );
 
@@ -189,21 +194,40 @@ class AdvanceService {
       'managerApprovalTrail': <Map<String, dynamic>>[],
     });
 
-    await AuditLogService.instance.record(
-      actorId: employee.uid,
-      action: 'advance_request_submitted',
-      targetCollection: 'advances',
-      targetId: ref.id,
-    );
+    try {
+      await AuditLogService.instance.record(
+        actorId: employee.uid,
+        action: 'advance_request_submitted',
+        targetCollection: 'advances',
+        targetId: ref.id,
+      );
+    } catch (e) {
+      debugPrint('AuditLogService advance error: $e');
+    }
 
-    await _notifyRole(
-      role: EmployeeRole.hrAdmin,
-      type: 'advance_pending_hr',
-      title: 'طلب سلفة بانتظار HR',
-      body:
-          '${req.employeeName} يطلب سلفة بقيمة ${req.amount.toStringAsFixed(2)} ${employee.salaryCurrency}.',
-      data: {'advanceId': ref.id},
-    );
+    try {
+      if (initialStatus == 'pending_manager' && managerIds.isNotEmpty) {
+        await _createNotification(
+          recipientId: managerIds.first,
+          type: 'advance_pending_manager',
+          title: 'طلب سلفة بانتظار موافقتك',
+          body:
+              '${req.employeeName} يطلب سلفة بقيمة ${req.amount.toStringAsFixed(2)} ${employee.salaryCurrency}.',
+          data: {'advanceId': ref.id},
+        );
+      } else {
+        await _notifyRole(
+          role: EmployeeRole.hrAdmin,
+          type: 'advance_pending_hr',
+          title: 'طلب سلفة بانتظار HR',
+          body:
+              '${req.employeeName} يطلب سلفة بقيمة ${req.amount.toStringAsFixed(2)} ${employee.salaryCurrency}.',
+          data: {'advanceId': ref.id},
+        );
+      }
+    } catch (e) {
+      debugPrint('Notification advance error: $e');
+    }
   }
 
   Stream<List<AdvanceModel>> watchMyAdvances(String userId) {
