@@ -74,7 +74,12 @@ service cloud.firestore {
       return userDocExists() && userDoc().get('isAdvanceCeoApprover', false) == true;
     }
     function isAdvanceAccountsApprover() {
-      return userDocExists() && userDoc().get('isAdvanceAccountsApprover', false) == true;
+      return userDocExists() && (
+        userDoc().get('isAdvanceAccountsApprover', false) == true
+        || userDoc().get('role', '') == 'accountant'
+        || userDoc().get('department', '') in ['Accounting', 'حسابات', 'الحسابات', 'إدارة الحسابات', 'قسم الحسابات']
+        || employeeCode().matches('^ACC-[0-9]+$')
+      );
     }
     // Workspace control follows the current organisation data, never an
     // employee code.  Any manager assigned to an IT unit gains the same
@@ -314,6 +319,7 @@ service cloud.firestore {
             'salary_deduction_pending',
             'permission_pending_hr',
             'advance_pending_hr',
+            'advance_pending_accounting',
             'leave_request_submitted',
             'resignation_pending_hr',
             'warning_dismissal_review',
@@ -323,7 +329,13 @@ service cloud.firestore {
             'attendance_security_review',
             'attendance_correction_pending_hr'
           ]
-          && recipientDoc(userId).get('role', '') in ['hr_admin', 'hr_manager', 'super_admin']
+          && (
+            recipientDoc(userId).get('role', '') in ['hr_admin', 'hr_manager', 'super_admin']
+            || recipientDoc(userId).get('isAdvanceAccountsApprover', false) == true
+            || recipientDoc(userId).get('department', '') in ['Accounting', 'حسابات', 'الحسابات']
+            || isHR()
+            || isCompanyExecutive()
+          )
         )
         || (
           request.resource.data.type in [
@@ -1031,7 +1043,8 @@ service cloud.firestore {
           .hasOnly([
             'status', 'reviewedBy', 'reviewedAt', 'reviewerComment', 'isRead',
             'managerId', 'managerName', 'managerApprovalIndex',
-            'managerApprovalTrail', 'approvalHistory', 'advanceRouteStage'
+            'managerApprovalTrail', 'approvalHistory', 'advanceRouteStage',
+            'accountantName'
           ])
         && request.resource.data.status in ['pending_manager', 'approved', 'rejected']
         && request.resource.data.reviewedBy == uid();
@@ -1040,15 +1053,16 @@ service cloud.firestore {
       return (
           (
             isCurrentApprovalManager()
-            && sequentialManagerDecision()
             && (
-              isManagerRole()
+              (resource.data.get('advanceRouteStage', '') == 'accounting'
+                && isAdvanceAccountsApprover())
               || (resource.data.get('advanceRouteStage', '') == 'ceo'
                 && isAdvanceCeoApprover())
-              || (resource.data.get('advanceRouteStage', '') == 'accounting'
-                && isAdvanceAccountsApprover())
+              || (sequentialManagerDecision() && isManagerRole())
             )
           ) ||
+          (resource.data.get('advanceRouteStage', '') == 'accounting'
+            && isAdvanceAccountsApprover()) ||
           isSuperAdmin()
         )
         && resource.data.status == 'pending_manager'
@@ -1056,7 +1070,7 @@ service cloud.firestore {
           .hasOnly([
             'status', 'reviewedBy', 'reviewedAt', 'reviewerComment', 'isRead',
             'managerId', 'managerName', 'managerApprovalIndex', 'managerApprovalTrail',
-            'approvalHistory', 'advanceRouteStage'
+            'approvalHistory', 'advanceRouteStage', 'accountantName'
           ])
         && request.resource.data.status in ['pending_manager', 'approved', 'rejected']
         && request.resource.data.reviewedBy == uid();
@@ -2308,7 +2322,8 @@ service cloud.firestore {
         employeeCode() in resource.data.get('managerIds', []) ||
         employeeCode() in resource.data.get('managerCodes', []) ||
         isHR() ||
-        isCompanyExecutive()
+        isCompanyExecutive() ||
+        (resource.data.get('advanceRouteStage', '') == 'accounting' && isAdvanceAccountsApprover())
       );
       allow create: if isAuth() && isActive()
         && (
@@ -2329,7 +2344,7 @@ service cloud.firestore {
           'jobTitle', 'approvalHistory', 'reviewedAt', 'reviewedBy',
           'reviewerComment', 'reviewerName', 'createdBy', 'createdByName',
           'currency', 'salaryCurrency', 'notes', 'advanceRouteStage',
-          'managerCodes'
+          'managerCodes', 'accountantName'
         ]);
       allow update: if isAuth() && isActive() && (
         (

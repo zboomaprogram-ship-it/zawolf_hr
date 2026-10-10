@@ -373,9 +373,8 @@ class AdvanceService {
         update = {
           'status': 'pending_manager',
           'managerId': accountant.uid,
-          'managerName': accountantNames.isNotEmpty
-              ? accountantNames.first
-              : accountant.displayName,
+          'managerName': 'قسم الحسابات',
+          'accountantName': 'قسم الحسابات',
           'managerIds': accountantUids,
           'managerCodes': accountantCodes,
           'advanceRouteStage': 'accounting',
@@ -409,10 +408,8 @@ class AdvanceService {
       update = {
         'status': 'pending_manager',
         'managerId': accountant.uid,
-        'managerName':
-            accountantNames.isNotEmpty
-                ? accountantNames.first
-                : accountant.displayName,
+        'managerName': 'قسم الحسابات',
+        'accountantName': 'قسم الحسابات',
         'managerIds': accountantUids,
         'managerCodes': accountantCodes,
         'advanceRouteStage': 'accounting',
