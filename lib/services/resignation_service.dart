@@ -86,7 +86,10 @@ class ResignationService {
       fallbackManagerName: employee.managerName,
     );
     final ref = _db.collection('resignations').doc();
+    final clearanceDocRef = _db.collection('customRequests').doc();
     final firstManagerId = managerIds.isEmpty ? '' : managerIds.first;
+    final effectiveLastWorkingDay = lastWorkingDay ?? resignationDate;
+
     await ref.set({
       'userId': employee.uid,
       'employeeId': employee.employeeId,
@@ -94,10 +97,10 @@ class ResignationService {
       'department': employee.department,
       'reason': cleanReason,
       'resignationDate': Timestamp.fromDate(resignationDate),
-      if (lastWorkingDay != null)
-        'lastWorkingDay': Timestamp.fromDate(lastWorkingDay),
+      'lastWorkingDay': Timestamp.fromDate(effectiveLastWorkingDay),
       'status': managerIds.isEmpty ? 'pending_hr' : 'pending_manager',
-      'clearanceStatus': 'pending',
+      'clearanceRequestId': clearanceDocRef.id,
+      'clearanceStatus': 'in_progress',
       'managerId': firstManagerId,
       'managerIds': managerIds,
       'managerNames': managerNames,
@@ -107,6 +110,20 @@ class ResignationService {
       'submittedAt': FieldValue.serverTimestamp(),
       'isRead': false,
     });
+
+    // Automatically create dynamic clearance (إخلاء طرف) request
+    try {
+      await _createDynamicClearanceRequest(
+        resignationId: ref.id,
+        clearanceDocRef: clearanceDocRef,
+        employee: employee,
+        reason: cleanReason,
+        resignationDate: resignationDate,
+        lastWorkingDay: effectiveLastWorkingDay,
+      );
+    } catch (e) {
+      debugPrint('Dynamic clearance request trigger failed: $e');
+    }
 
     try {
       if (managerIds.isEmpty) {
@@ -127,44 +144,38 @@ class ResignationService {
           data: {'resignationId': ref.id},
         );
       }
-      if (lastWorkingDay != null) {
-        await _createDynamicClearanceRequest(
-          resignationId: ref.id,
-          employee: employee,
-          reason: cleanReason,
-          resignationDate: resignationDate,
-          lastWorkingDay: lastWorkingDay,
-        );
-      }
     } catch (e) {
-      debugPrint('Resignation submission notification/clearance trigger failed: $e');
+      debugPrint('Resignation submission notification trigger failed: $e');
     }
   }
 
   Future<void> _createDynamicClearanceRequest({
     required String resignationId,
+    required DocumentReference<Map<String, dynamic>> clearanceDocRef,
     required UserModel employee,
     required String reason,
     required DateTime resignationDate,
     required DateTime lastWorkingDay,
   }) async {
     try {
-      final typeDoc = await _db
-          .collection('customRequestTypes')
-          .doc('core_clearance')
-          .get();
       List<ApprovalChainStep> steps = [];
-      if (typeDoc.exists && typeDoc.data() != null) {
-        final data = typeDoc.data()!;
-        final rawSteps = data['approvalSteps'] as List<dynamic>?;
-        if (rawSteps != null && rawSteps.isNotEmpty) {
-          steps = rawSteps
-              .whereType<Map<String, dynamic>>()
-              .map(ApprovalChainStep.fromMap)
-              .toList();
-          steps.sort((a, b) => a.order.compareTo(b.order));
+      try {
+        final typeDoc = await _db
+            .collection('customRequestTypes')
+            .doc('core_clearance')
+            .get();
+        if (typeDoc.exists && typeDoc.data() != null) {
+          final data = typeDoc.data()!;
+          final rawSteps = data['approvalSteps'] as List<dynamic>?;
+          if (rawSteps != null && rawSteps.isNotEmpty) {
+            steps = rawSteps
+                .whereType<Map<String, dynamic>>()
+                .map(ApprovalChainStep.fromMap)
+                .toList();
+            steps.sort((a, b) => a.order.compareTo(b.order));
+          }
         }
-      }
+      } catch (_) {}
 
       if (steps.isEmpty) {
         final defaultClearance = CustomRequestTemplateRepositoryImpl
@@ -199,7 +210,6 @@ class ResignationService {
       final firstApproverName =
           route.isNotEmpty ? (route.first['approverName'] as String? ?? '') : '';
 
-      final clearanceDocRef = _db.collection('customRequests').doc();
       final formattedLastDay =
           '${lastWorkingDay.year}-${lastWorkingDay.month.toString().padLeft(2, '0')}-${lastWorkingDay.day.toString().padLeft(2, '0')}';
       final clearanceData = {
@@ -235,11 +245,6 @@ class ResignationService {
 
       await clearanceDocRef.set(clearanceData);
 
-      await _db.collection('resignations').doc(resignationId).update({
-        'clearanceRequestId': clearanceDocRef.id,
-        'clearanceStatus': 'in_progress',
-      });
-
       await _db.collection('clearances').doc(resignationId).set({
         'resignationId': resignationId,
         'clearanceRequestId': clearanceDocRef.id,
@@ -258,7 +263,7 @@ class ResignationService {
         'submittedAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
 
-      if (firstApproverId.isNotEmpty) {
+      if (firstApproverId.isNotEmpty && firstApproverId != 'IT' && firstApproverId != 'ACCOUNTING') {
         await RoleNotificationService.instance.createNotification(
           recipientId: firstApproverId,
           type: 'clearance_pending_approval',
@@ -302,7 +307,7 @@ class ResignationService {
             name: managerNames.isNotEmpty ? managerNames.first : 'المدير المباشر',
           );
         }
-        break;
+        return await _resolveHrApprover();
 
       case 'specific_user':
         if (step.specificUserId != null && step.specificUserId!.isNotEmpty) {
@@ -314,143 +319,76 @@ class ResignationService {
         break;
 
       case 'it':
-        try {
-          final itSnap = await _db
-              .collection('users')
-              .where('isActive', isEqualTo: true)
-              .where('isHiringItApprover', isEqualTo: true)
-              .limit(1)
-              .get();
-          if (itSnap.docs.isNotEmpty) {
-            final doc = itSnap.docs.first;
-            final d = doc.data();
-            return (
-              id: doc.id,
-              name: (d['displayName'] ?? d['name'] ?? 'مسؤول IT').toString(),
-            );
-          }
-          final itFallback = await _db
-              .collection('users')
-              .where('isActive', isEqualTo: true)
-              .where('department', isEqualTo: 'IT')
-              .limit(1)
-              .get();
-          if (itFallback.docs.isNotEmpty) {
-            final doc = itFallback.docs.first;
-            final d = doc.data();
-            return (
-              id: doc.id,
-              name: (d['displayName'] ?? d['name'] ?? 'مسؤول IT').toString(),
-            );
-          }
-        } catch (_) {}
-        break;
+        return (id: 'IT', name: 'تقنية المعلومات (IT)');
 
       case 'hr':
-        try {
-          final hrSnap = await _db
-              .collection('users')
-              .where('isActive', isEqualTo: true)
-              .where('role', isEqualTo: 'hr_manager')
-              .limit(1)
-              .get();
-          if (hrSnap.docs.isNotEmpty) {
-            final doc = hrSnap.docs.first;
-            final d = doc.data();
-            return (
-              id: doc.id,
-              name: (d['displayName'] ?? d['name'] ?? 'مدير الموارد البشرية')
-                  .toString(),
-            );
-          }
-        } catch (_) {}
-        break;
+        return await _resolveHrApprover();
 
       case 'accounting':
-        try {
-          final accSnap = await _db
-              .collection('users')
-              .where('isActive', isEqualTo: true)
-              .where('isAdvanceAccountsApprover', isEqualTo: true)
-              .limit(1)
-              .get();
-          if (accSnap.docs.isNotEmpty) {
-            final doc = accSnap.docs.first;
-            final d = doc.data();
-            return (
-              id: doc.id,
-              name: (d['displayName'] ?? d['name'] ?? 'مدير الحسابات والمالية')
-                  .toString(),
-            );
-          }
-        } catch (_) {}
-        break;
+        return (id: 'ACCOUNTING', name: 'الحسابات والمالية');
 
       case 'ceo':
-        try {
-          final ceoSnap = await _db
-              .collection('users')
-              .where('isActive', isEqualTo: true)
-              .where('role', isEqualTo: 'general_manager')
-              .limit(1)
-              .get();
-          if (ceoSnap.docs.isNotEmpty) {
-            final doc = ceoSnap.docs.first;
-            final d = doc.data();
-            return (
-              id: doc.id,
-              name: (d['displayName'] ?? d['name'] ?? 'الرئيس التنفيذي')
-                  .toString(),
-            );
-          }
-        } catch (_) {}
-        break;
+        return await _resolveCeoApprover();
 
       case 'coo':
-        try {
-          final cooSnap = await _db
-              .collection('users')
-              .where('isActive', isEqualTo: true)
-              .where('role', isEqualTo: 'coo')
-              .limit(1)
-              .get();
-          if (cooSnap.docs.isNotEmpty) {
-            final doc = cooSnap.docs.first;
-            final d = doc.data();
-            return (
-              id: doc.id,
-              name: (d['displayName'] ?? d['name'] ?? 'المدير التنفيذي للعمليات')
-                  .toString(),
-            );
-          }
-        } catch (_) {}
-        break;
+        return (id: 'COO', name: 'المدير التنفيذي للعمليات (COO)');
 
       case 'department_pool':
         final dept = step.department;
-        if (dept != null && dept.isNotEmpty) {
-          try {
-            final deptSnap = await _db
-                .collection('users')
-                .where('isActive', isEqualTo: true)
-                .where('role', isEqualTo: 'manager')
-                .where('department', isEqualTo: dept)
-                .limit(1)
-                .get();
-            if (deptSnap.docs.isNotEmpty) {
-              final doc = deptSnap.docs.first;
-              final d = doc.data();
-              return (
-                id: doc.id,
-                name: (d['displayName'] ?? d['name'] ?? 'مدير القسم').toString(),
-              );
-            }
-          } catch (_) {}
-        }
-        break;
+        return (
+          id: dept != null && dept.isNotEmpty ? dept : 'DEPT',
+          name: step.labelAr,
+        );
     }
 
     return (id: '', name: step.labelAr);
+  }
+
+  Future<({String id, String name})> _resolveHrApprover() async {
+    try {
+      final doc = await _db
+          .collection('notificationRecipients')
+          .doc('hr_manager')
+          .get();
+      final ids = (doc.data()?['userIds'] as List<dynamic>?)
+          ?.whereType<String>()
+          .where((id) => id.trim().isNotEmpty)
+          .toList();
+      if (ids != null && ids.isNotEmpty) {
+        return (id: ids.first, name: 'الموارد البشرية (HR)');
+      }
+    } catch (_) {}
+    try {
+      final doc = await _db
+          .collection('notificationRecipients')
+          .doc('hr_admin')
+          .get();
+      final ids = (doc.data()?['userIds'] as List<dynamic>?)
+          ?.whereType<String>()
+          .where((id) => id.trim().isNotEmpty)
+          .toList();
+      if (ids != null && ids.isNotEmpty) {
+        return (id: ids.first, name: 'الموارد البشرية (HR)');
+      }
+    } catch (_) {}
+    return (id: 'HR', name: 'الموارد البشرية (HR)');
+  }
+
+  Future<({String id, String name})> _resolveCeoApprover() async {
+    try {
+      final doc = await _db
+          .collection('notificationRecipients')
+          .doc('super_admin')
+          .get();
+      final ids = (doc.data()?['userIds'] as List<dynamic>?)
+          ?.whereType<String>()
+          .where((id) => id.trim().isNotEmpty)
+          .toList();
+      if (ids != null && ids.isNotEmpty) {
+        return (id: ids.first, name: 'الرئيس التنفيذي (CEO)');
+      }
+    } catch (_) {}
+    return (id: 'CEO-100', name: 'الرئيس التنفيذي (CEO)');
   }
 
   Future<void> review({

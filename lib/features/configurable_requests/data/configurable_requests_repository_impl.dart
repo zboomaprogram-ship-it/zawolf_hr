@@ -273,6 +273,24 @@ class ConfigurableRequestsRepositoryImpl
             role == 'accountant' ||
             RegExp(r'account|حساب', caseSensitive: false).hasMatch(dept) ||
             RegExp(r'محاسب').hasMatch(pos);
+        final isIt =
+            userData['isHiringItApprover'] == true ||
+            role == 'it' ||
+            RegExp(r'\bit\b|تقنية|معلومات', caseSensitive: false).hasMatch(dept) ||
+            RegExp(r'\bit\b|تقنية|شبكات|برمجة', caseSensitive: false).hasMatch(pos) ||
+            employeeId.startsWith('IT-');
+        final isHr =
+            userData['isHr'] == true ||
+            role == 'hr' ||
+            role == 'hr_manager' ||
+            role == 'hr_admin' ||
+            RegExp(r'hr|موارد بشرية', caseSensitive: false).hasMatch(dept) ||
+            RegExp(r'موارد بشرية').hasMatch(pos);
+        final isCeo =
+            role == 'super_admin' ||
+            role == 'general_manager' ||
+            role == 'ceo' ||
+            employeeId == 'CEO-100';
 
         final docs =
             snap.docs.map((doc) => {'id': doc.id, ...doc.data()}).toList();
@@ -297,11 +315,46 @@ class ConfigurableRequestsRepositoryImpl
             final stage = route[index];
             final approverId =
                 (stage['approverId'] ?? '').toString().trim().toUpperCase();
+            final approverType = (stage['approverType'] ?? '').toString().toLowerCase();
+            final stageDept = (stage['department'] ?? '').toString().toLowerCase();
+            final stageName = (stage['stageNameAr'] ?? stage['approverName'] ?? '').toString();
+
             if (approverId == user.uid.toUpperCase() ||
                 (employeeId.isNotEmpty && approverId == employeeId)) {
               return true;
             }
+
+            // Direct Manager matching
+            if (approverType == 'direct_manager') {
+              if (approverId == user.uid.toUpperCase() ||
+                  (employeeId.isNotEmpty && approverId == employeeId)) {
+                return true;
+              }
+            }
+
+            // IT stage matching
+            final isItStage =
+                approverType == 'it' ||
+                approverId == 'IT' ||
+                currentApproverId == 'IT' ||
+                stageDept == 'it' ||
+                RegExp(r'تقنية|تكنولوجيا|\bit\b', caseSensitive: false).hasMatch(stageName);
+            if (isItStage && isIt) return true;
+
+            // HR stage matching
+            final isHrStage =
+                approverType == 'hr' ||
+                approverId == 'HR' ||
+                currentApproverId == 'HR' ||
+                stageDept == 'hr' ||
+                RegExp(r'موارد بشرية|hr', caseSensitive: false).hasMatch(stageName);
+            if (isHrStage && isHr) return true;
+
+            // Accounting stage matching
             final isAccountingStage =
+                approverType == 'accounting' ||
+                approverId == 'ACCOUNTING' ||
+                currentApproverId == 'ACCOUNTING' ||
                 stage['isAccountant'] == true ||
                 RegExp(
                   r'account|حساب',
@@ -310,16 +363,24 @@ class ConfigurableRequestsRepositoryImpl
                 RegExp(
                   r'account|حساب',
                   caseSensitive: false,
-                ).hasMatch(stage['department']?.toString() ?? '') ||
+                ).hasMatch(stageDept) ||
                 RegExp(
                   r'محاسب',
                 ).hasMatch(stage['approverName']?.toString() ?? '') ||
                 RegExp(
                   r'حساب|مالي',
-                ).hasMatch(stage['stageNameAr']?.toString() ?? '');
+                ).hasMatch(stageName);
             if (isAccountingStage && isAccountant) {
               return true;
             }
+
+            // CEO stage matching
+            final isCeoStage =
+                approverType == 'ceo' ||
+                approverId == 'CEO-100' ||
+                currentApproverId == 'CEO-100' ||
+                RegExp(r'رئيس تنفيذي|مدير عام|ceo', caseSensitive: false).hasMatch(stageName);
+            if (isCeoStage && isCeo) return true;
           }
           return false;
         }).toList();
@@ -377,6 +438,27 @@ class ConfigurableRequestsRepositoryImpl
         'status': newStatus,
         'updatedAt': FieldValue.serverTimestamp(),
       });
+
+      // Synchronize linked resignation & clearance documents if applicable
+      final resignationId = data['resignationId'] as String?;
+      if (resignationId != null && resignationId.isNotEmpty) {
+        final clearanceStatus = newStatus == 'approved'
+            ? 'archived_in_clearances'
+            : (newStatus == 'rejected' ? 'rejected' : 'in_progress');
+        try {
+          await _firestore.collection('resignations').doc(resignationId).update({
+            'clearanceStatus': clearanceStatus,
+          });
+        } catch (_) {}
+        try {
+          await _firestore.collection('clearances').doc(resignationId).set({
+            'status': newStatus,
+            'currentApprovalIndex': nextIndex,
+            'currentApproverId': nextApproverId,
+            'approvalRoute': route,
+          }, SetOptions(merge: true));
+        } catch (_) {}
+      }
     }
   }
 }

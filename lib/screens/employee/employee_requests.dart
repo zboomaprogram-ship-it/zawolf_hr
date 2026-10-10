@@ -1125,16 +1125,9 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
     final tenureEligible =
         employee.hiringDate != null &&
         now.difference(employee.hiringDate!).inDays >= 90;
-    final dateEligible = now.day >= 15;
     if (!tenureEligible) {
       _onValidationFailed(
         customMessage: 'لا يمكن طلب سلفة قبل إتمام 3 أشهر من تاريخ التعيين.',
-      );
-      return;
-    }
-    if (!dateEligible) {
-      _onValidationFailed(
-        customMessage: 'طلب السلفة متاح فقط من يوم 15 إلى نهاية الشهر.',
       );
       return;
     }
@@ -1255,11 +1248,12 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
     }
     setState(() => _loading = true);
     try {
+      final effectiveLastDay = _lastWorkingDay ?? _resignationDate;
       await ResignationService().submit(
         employee: employee,
         reason: _resignationReasonController.text,
         resignationDate: _resignationDate,
-        lastWorkingDay: _lastWorkingDay,
+        lastWorkingDay: effectiveLastDay,
       );
       if (!mounted) return;
       _resignationReasonController.clear();
@@ -3171,7 +3165,6 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
     final tenureEligible =
         user.hiringDate != null &&
         now.difference(user.hiringDate!).inDays >= 90;
-    final dateEligible = now.day >= 15;
     return Form(
       key: _formKeyAdvance,
       autovalidateMode:
@@ -3187,7 +3180,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
               color: ZaWolfColors.warning.withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(12),
               border: Border.all(
-                color: ZaWolfColors.warning.withValues(alpha: 0.3),
+                 color: ZaWolfColors.warning.withValues(alpha: 0.3),
               ),
             ),
             child: Text(
@@ -3201,11 +3194,11 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
           ),
           const SizedBox(height: 16),
           Text(
-            'الحد الأقصى: $maxLabel · ${tenureEligible ? 'مدة الخدمة مكتملة' : 'لم تكتمل 3 أشهر خدمة'} · ${dateEligible ? 'متاح هذا الشهر' : 'متاح بدءاً من يوم 15'}',
+            'الحد الأقصى: $maxLabel · ${tenureEligible ? 'مدة الخدمة مكتملة' : 'لم تكتمل 3 أشهر خدمة'} · متاح طوال الشهر',
             textDirection: TextDirection.rtl,
             style: theme.textTheme.bodySmall?.copyWith(
               color:
-                  tenureEligible && dateEligible
+                  tenureEligible
                       ? ZaWolfColors.success
                       : ZaWolfColors.warning,
             ),
@@ -4326,7 +4319,10 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
                 lastDate: DateTime.now().add(const Duration(days: 730)),
               );
               if (picked != null && mounted) {
-                setState(() => _resignationDate = picked);
+                setState(() {
+                  _resignationDate = picked;
+                  _lastWorkingDay ??= picked;
+                });
               }
             },
           ),
@@ -4335,9 +4331,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
             contentPadding: EdgeInsets.zero,
             title: const Text('آخر يوم عمل متوقع (اختياري)'),
             subtitle: Text(
-              _lastWorkingDay != null
-                  ? DateFormat('yyyy/MM/dd').format(_lastWorkingDay!)
-                  : 'حدد تاريخ آخر يوم عمل',
+              DateFormat('yyyy/MM/dd').format(_lastWorkingDay ?? _resignationDate),
             ),
             trailing: const Icon(
               Icons.event_available,
@@ -4485,6 +4479,27 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
                   ),
                   const SizedBox(height: 6),
                   Text('السبب: ${request.reason}'),
+                  if ((request.clearanceRequestId ?? '').isNotEmpty) ...[
+                    const SizedBox(height: 6),
+                    Row(
+                      children: [
+                        const Icon(
+                          Icons.assignment_turned_in_outlined,
+                          size: 16,
+                          color: ZaWolfColors.primaryCyan,
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          'طلب إخلاء الطرف: ${request.clearanceStatus == 'archived_in_clearances' || request.clearanceStatus == 'approved' ? 'معتمد ومكتمل ✅' : request.clearanceStatus == 'rejected' ? 'مرفوض ❌' : 'قيد المتابعة والاعتماد ⏳'}',
+                          style: const TextStyle(
+                            color: ZaWolfColors.primaryCyan,
+                            fontWeight: FontWeight.w600,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                   if ((request.reviewerComment ?? '').isNotEmpty) ...[
                     const SizedBox(height: 6),
                     Text(

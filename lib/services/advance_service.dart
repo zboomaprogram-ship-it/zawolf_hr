@@ -68,11 +68,7 @@ class AdvanceService {
       final monthLabel = months > 0 ? '$months أشهر' : '$probationPeriodDays يوم';
       throw Exception('لا يمكن طلب سلفة قبل قضاء $monthLabel على الأقل في الخدمة.');
     }
-    if (now.day < 15) {
-      throw Exception(
-        'يُتاح تقديم طلب السلفة فقط بدءاً من يوم 15 في الشهر الميلادي.',
-      );
-    }
+    // Note: Advances can now be requested anytime during the month per updated policy.
     if (amount <= 0) {
       throw Exception('قيمة السلفة يجب أن تكون أكبر من الصفر.');
     }

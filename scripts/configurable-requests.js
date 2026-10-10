@@ -339,12 +339,28 @@ async function decideCustomRequest({ db, admin, actor, requestId, body }) {
     if (!isApprover && isActorIt(actor)) {
       const { itUids, itCodes } = await getActiveItUids(db);
       const isItStage =
+        request.currentApproverId === 'IT' ||
+        stage.approverId === 'IT' ||
+        stage.approverType === 'it' ||
         itUids.has(request.currentApproverId) ||
         itCodes.has(String(request.currentApproverId || '').toUpperCase()) ||
         itUids.has(stage.approverId) ||
         itCodes.has(String(stage.approverId || '').toUpperCase()) ||
         /\bit\b|تقنية|تكنولوجيا/i.test(stage.approverName || '');
       if (isItStage) {
+        isApprover = true;
+      }
+    }
+
+    if (!isApprover && isHrOrAdmin({ ...actor, active: true })) {
+      const isHrStage =
+        request.currentApproverId === 'HR' ||
+        stage.approverId === 'HR' ||
+        stage.approverType === 'hr' ||
+        String(stage.department || '').toLowerCase() === 'hr' ||
+        /موارد بشرية|hr/i.test(stage.approverName || '') ||
+        /موارد بشرية|hr/i.test(stage.stageNameAr || '');
+      if (isHrStage) {
         isApprover = true;
       }
     }
@@ -363,6 +379,19 @@ async function decideCustomRequest({ db, admin, actor, requestId, body }) {
       approvalHistory: [...(request.approvalHistory || []), { action: decision, actorId: actor.uid, comment: clean(body.comment, 500), at: stamp() }],
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     });
+
+    if (request.resignationId) {
+      const newClearanceStatus = decision === 'rejected' ? 'rejected' : (next ? 'in_progress' : 'archived_in_clearances');
+      tx.set(db.collection('resignations').doc(request.resignationId), {
+        clearanceStatus: newClearanceStatus,
+      }, { merge: true });
+      tx.set(db.collection('clearances').doc(request.resignationId), {
+        status: decision === 'rejected' ? 'rejected' : (next ? 'pending' : 'approved'),
+        currentApprovalIndex: next ? index + 1 : index + 1,
+        currentApproverId: next?.approverId || '',
+        approvalRoute: nextRoute,
+      }, { merge: true });
+    }
     return { requesterId: request.requesterId, typeName: request.typeNameAr, nextApproverId: next?.approverId || null };
   });
 
@@ -451,6 +480,7 @@ async function listCustomRequests({ db, actor, queue = false }) {
 
   const actorIsIt = isActorIt(actor);
   const { itUids, itCodes } = actorIsIt ? await getActiveItUids(db) : { itUids: new Set(), itCodes: new Set() };
+  const actorIsHr = isHrOrAdmin({ ...actor, active: true });
 
   const pendingSnaps = await db.collection('customRequests').where('status', '==', 'pending').limit(100).get();
   for (const doc of pendingSnaps.docs) {
@@ -465,6 +495,9 @@ async function listCustomRequests({ db, actor, queue = false }) {
 
     const matchesDirectly = approverAliases.includes(stageApprover) || approverAliases.includes(currentApprover);
     const matchesAccountant = actorIsAcc && (
+      currentApprover === 'ACCOUNTING' ||
+      stageApprover === 'ACCOUNTING' ||
+      stage.approverType === 'accounting' ||
       accountantUids.has(currentApprover) ||
       accountantCodes.has(currentApprover.toUpperCase()) ||
       accountantUids.has(stageApprover) ||
@@ -472,14 +505,25 @@ async function listCustomRequests({ db, actor, queue = false }) {
       /حساب|محاسب/i.test(stageName)
     );
     const matchesIt = actorIsIt && (
+      currentApprover === 'IT' ||
+      stageApprover === 'IT' ||
+      stage.approverType === 'it' ||
       itUids.has(currentApprover) ||
       itCodes.has(currentApprover.toUpperCase()) ||
       itUids.has(stageApprover) ||
       itCodes.has(stageApprover.toUpperCase()) ||
       /\bit\b|تقنية|تكنولوجيا/i.test(stageName)
     );
+    const matchesHr = actorIsHr && (
+      currentApprover === 'HR' ||
+      stageApprover === 'HR' ||
+      stage.approverType === 'hr' ||
+      String(stage.department || '').toLowerCase() === 'hr' ||
+      /موارد بشرية|hr/i.test(stageName) ||
+      /موارد بشرية|hr/i.test(stage.stageNameAr || '')
+    );
 
-    if (matchesDirectly || matchesAccountant || matchesIt) {
+    if (matchesDirectly || matchesAccountant || matchesIt || matchesHr) {
       seenIds.add(doc.id);
       docs.push(doc);
     }

@@ -14,6 +14,7 @@ class ResignationModel {
   final List<String> managerNames;
   final int managerApprovalIndex;
   final DateTime? lastWorkingDay;
+  final String? clearanceRequestId;
   final String? clearanceStatus;
   final List<Map<String, dynamic>> clearanceStages;
   final DateTime? submittedAt;
@@ -33,6 +34,7 @@ class ResignationModel {
     required this.status,
     required this.managerId,
     this.lastWorkingDay,
+    this.clearanceRequestId,
     this.clearanceStatus,
     this.clearanceStages = const [],
     this.managerIds = const [],
@@ -63,6 +65,7 @@ class ResignationModel {
       status: data['status'] as String? ?? 'pending_manager',
       managerId: data['managerId'] as String? ?? '',
       lastWorkingDay: (data['lastWorkingDay'] as Timestamp?)?.toDate(),
+      clearanceRequestId: data['clearanceRequestId'] as String?,
       clearanceStatus: data['clearanceStatus'] as String?,
       clearanceStages: clearanceStages,
       managerIds: (data['managerIds'] as List<dynamic>? ?? const [])
@@ -91,6 +94,7 @@ class ResignationModel {
       'reason': reason,
       'resignationDate': resignationDate,
       if (lastWorkingDay != null) 'lastWorkingDay': lastWorkingDay,
+      if (clearanceRequestId != null) 'clearanceRequestId': clearanceRequestId,
       if (clearanceStatus != null) 'clearanceStatus': clearanceStatus,
       if (clearanceStages.isNotEmpty) 'clearanceStages': clearanceStages,
       'status': status,
