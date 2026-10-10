@@ -365,10 +365,6 @@ class AdvanceService {
             .where((c) => c.isNotEmpty)
             .toSet()
             .toList();
-        final accountantNames = accountants
-            .map((a) => a.displayName.trim())
-            .where((n) => n.isNotEmpty)
-            .toList();
 
         update = {
           'status': 'pending_manager',
@@ -398,11 +394,6 @@ class AdvanceService {
               .map((a) => a.employeeId.trim().toUpperCase())
               .where((c) => c.isNotEmpty)
               .toSet()
-              .toList();
-      final accountantNames =
-          accountants
-              .map((a) => a.displayName.trim())
-              .where((n) => n.isNotEmpty)
               .toList();
 
       update = {
