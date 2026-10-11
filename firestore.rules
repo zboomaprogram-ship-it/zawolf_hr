@@ -1422,6 +1422,22 @@ service cloud.firestore {
       allow delete: if isAuth() && isActive() && (isHR() || isSuperAdmin());
     }
 
+    match /meetingRequests/{requestId} {
+      allow read: if isAuth() && isActive();
+      allow create: if isAuth() && isActive();
+      allow update: if isAuth() && isActive();
+      allow delete: if isAuth() && isActive() && (isHR() || isSuperAdmin());
+    }
+
+    match /meetingRooms/{roomId} {
+      allow read: if isAuth() && isActive();
+      allow write: if isAuth() && isActive() && (isHR() || isSuperAdmin());
+    }
+
+    match /meetingRequestOperations/{opId} {
+      allow read, write: if isAuth() && isActive();
+    }
+
     match /publicConfig/{configId} {
       allow read: if configId == 'appSecurity'
         || (configId == 'requestApproval' && isAuth() && isActive());

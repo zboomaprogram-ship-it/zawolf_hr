@@ -5598,9 +5598,9 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
             ]);
           }).toList();
     }
-    // The COO is an executive approver, not a company-wide request inbox.
-    // Ensure the client list is aligned with the actual current approval stage.
-    if (reviewer.isCompanyCoo) {
+    // Non-HR/SuperAdmin reviewers (including Division Managers and COO)
+    // should only see requests they are authorized to act on or assigned to.
+    if (reviewer.role != EmployeeRole.superAdmin && !EmployeeRole.isHr(reviewer.role)) {
       filtered = filtered
           .where((doc) => _canActOnApproval(doc.data(), reviewer))
           .toList(growable: false);
@@ -5967,11 +5967,14 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                             size: 16,
                           ),
                           const SizedBox(width: 6),
-                          Text(
-                            'أيام الإجازة السابقة في الفترة الحالية ($periodRange): $days يوم',
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              color: ZaWolfColors.primaryCyan,
-                              fontWeight: FontWeight.bold,
+                          Flexible(
+                            child: Text(
+                              'أيام الإجازة السابقة في الفترة الحالية ($periodRange): $days يوم',
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: ZaWolfColors.primaryCyan,
+                                fontWeight: FontWeight.bold,
+                              ),
+                              softWrap: true,
                             ),
                           ),
                         ],
@@ -6459,7 +6462,13 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
         isCompanyCeo ||
         reviewer.role == EmployeeRole.superAdmin;
     final isCompanyCoo = reviewer.isCompanyCoo;
-    if (isCompanyCoo) {
+    if (isCompanyCoo && reviewer.role == 'manager') {
+      // If reviewer is a department/division manager who also has an executive COO title,
+      // they should only review permissions assigned to them.
+      query = query
+          .where('status', isEqualTo: 'pending_manager')
+          .where('managerId', isEqualTo: reviewer.uid);
+    } else if (isCompanyCoo) {
       query = query.where(
         'status',
         whereIn: const ['pending_manager', 'pending_coo'],
@@ -9303,8 +9312,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
             ),
           ),
           const SizedBox(width: 8),
-          ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 136),
+          Flexible(
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
               decoration: BoxDecoration(

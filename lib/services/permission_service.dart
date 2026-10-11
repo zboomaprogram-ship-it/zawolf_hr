@@ -699,7 +699,6 @@ class PermissionService {
       );
     }
 
-    final batch = _db.batch();
     final approvalPolicy = await _approvalPolicyService.getPolicy();
     final nextUpdate = _nextManagerApprovalUpdate(
       data: doc.data() ?? <String, dynamic>{},
@@ -717,22 +716,24 @@ class PermissionService {
     }
 
     // 1. Update status
-    batch.update(docRef, nextUpdate);
+    await docRef.update(nextUpdate);
 
-    // 2. Increment employee quota counters
+    // 2. Increment employee quota counters safely
     if (nextUpdate['status'] == 'approved' &&
         !perm.isDeductible &&
         _updatesActiveBalance(perm, requesterDoc.data())) {
-      final userRef = _db.collection('users').doc(perm.userId);
-      batch.update(userRef, {
-        'permissionBalance.usedThisMonth': FieldValue.increment(1),
-        'permissionBalance.usedHoursThisMonth': FieldValue.increment(
-          perm.durationMinutes / 60.0,
-        ),
-      });
+      try {
+        final userRef = _db.collection('users').doc(perm.userId);
+        await userRef.update({
+          'permissionBalance.usedThisMonth': FieldValue.increment(1),
+          'permissionBalance.usedHoursThisMonth': FieldValue.increment(
+            perm.durationMinutes / 60.0,
+          ),
+        });
+      } catch (_) {
+        // Balance counter synchronization must not rollback approved permission.
+      }
     }
-
-    await batch.commit();
 
     await AuditLogService.instance.record(
       actorId: reviewerId,
