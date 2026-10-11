@@ -168,12 +168,27 @@ class ZaWolfRouter {
           return null;
         }
 
+        final user = authService.currentUser;
+        final isAccountantApprover =
+            user?.isAccountant == true ||
+            user?.isAdvanceAccountsApprover == true;
+        final isItApprover = user?.isItMember == true;
+        final isAllowedManagerRequests =
+            state.matchedLocation.startsWith('/manager/requests') &&
+                (isAccountantApprover || isItApprover);
+
         if (role == EmployeeRole.employee) {
+          if (goingToManager && isAllowedManagerRequests) {
+            return null;
+          }
           // Employees cannot access manager or hr paths
           if (goingToHr || goingToManager || goingToTeamLeader) {
             return '/employee/dashboard';
           }
         } else if (role == EmployeeRole.teamLeader) {
+          if (goingToManager && isAllowedManagerRequests) {
+            return null;
+          }
           if (goingToHr || goingToManager) {
             return '/team-leader/dashboard';
           }

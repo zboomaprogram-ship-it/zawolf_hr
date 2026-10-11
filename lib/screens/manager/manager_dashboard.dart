@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -6,6 +7,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart' hide TextDirection;
 import '../../services/auth_service.dart';
 import '../../services/dashboard_attendance_summary_service.dart';
+import '../../services/managed_employee_service.dart';
 import '../../services/pending_requests_service.dart';
 import '../../services/task_service.dart';
 import '../../models/task_model.dart';
@@ -35,7 +37,9 @@ class _ManagerDashboardScreenState extends State<ManagerDashboardScreen> {
       DashboardAttendanceSummaryService();
   final TaskService _taskService = TaskService();
   Future<DashboardAttendanceSummary>? _attendanceSummaryFuture;
-  Stream<QuerySnapshot<Map<String, dynamic>>>? _todayAttendanceStream;
+  final ManagedEmployeeService _managedEmployeeService =
+      ManagedEmployeeService();
+  Stream<List<Map<String, dynamic>>>? _todayAttendanceStream;
   String? _todayAttendanceStreamKey;
 
   void _loadAttendanceSummary() {
@@ -54,21 +58,94 @@ class _ManagerDashboardScreenState extends State<ManagerDashboardScreen> {
         .timeout(const Duration(seconds: 20));
   }
 
-  Stream<QuerySnapshot<Map<String, dynamic>>> _attendanceForToday(
-    String managerId,
+  Stream<List<Map<String, dynamic>>> _attendanceForToday(
+    UserModel manager,
     String date,
   ) {
-    final key = '$managerId|$date';
+    final key = '${manager.uid}|$date';
     if (_todayAttendanceStream == null || _todayAttendanceStreamKey != key) {
       _todayAttendanceStreamKey = key;
-      _todayAttendanceStream =
-          _db
-              .collection('attendance')
-              .where('managerId', isEqualTo: managerId)
-              .where('date', isEqualTo: date)
-              .snapshots();
+      _todayAttendanceStream = _watchAttendanceForToday(manager, date);
     }
     return _todayAttendanceStream!;
+  }
+
+  Stream<List<Map<String, dynamic>>> _watchAttendanceForToday(
+    UserModel manager,
+    String date,
+  ) async* {
+    final teamMembers = await _managedEmployeeService.loadForReviewer(manager);
+    final userIds = teamMembers.map((e) => e.uid).toSet();
+    if (userIds.isEmpty && manager.uid.isNotEmpty) {
+      userIds.add(manager.uid);
+    }
+
+    final queryList = <Query<Map<String, dynamic>>>[];
+    queryList.add(
+      _db
+          .collection('attendance')
+          .where('managerId', isEqualTo: manager.uid)
+          .where('date', isEqualTo: date),
+    );
+
+    final userList = userIds.toList();
+    for (var offset = 0; offset < userList.length; offset += 30) {
+      final end = (offset + 30).clamp(0, userList.length);
+      final batch = userList.sublist(offset, end);
+      queryList.add(
+        _db
+            .collection('attendance')
+            .where('userId', whereIn: batch)
+            .where('date', isEqualTo: date),
+      );
+    }
+
+    final controller = StreamController<List<Map<String, dynamic>>>();
+    final snapshotsMap = <int, List<Map<String, dynamic>>>{};
+    final subs = <StreamSubscription<QuerySnapshot<Map<String, dynamic>>>>[];
+
+    void emit() {
+      final byId = <String, Map<String, dynamic>>{};
+      for (final list in snapshotsMap.values) {
+        for (final item in list) {
+          final id = item['id'] as String? ?? item['userId'] as String? ?? '';
+          byId[id] = item;
+        }
+      }
+      if (!controller.isClosed) {
+        final sorted = byId.values.toList();
+        sorted.sort((a, b) =>
+            ('${a['employeeName'] ?? ''}').compareTo('${b['employeeName'] ?? ''}'));
+        controller.add(sorted);
+      }
+    }
+
+    for (var i = 0; i < queryList.length; i++) {
+      final index = i;
+      subs.add(
+        queryList[i].snapshots().listen(
+          (snap) {
+            snapshotsMap[index] = snap.docs.map((doc) {
+              final d = Map<String, dynamic>.from(doc.data());
+              d['id'] = doc.id;
+              return d;
+            }).toList();
+            emit();
+          },
+          onError: (e) {
+            if (!controller.isClosed) controller.addError(e);
+          },
+        ),
+      );
+    }
+
+    controller.onCancel = () {
+      for (final s in subs) {
+        s.cancel();
+      }
+    };
+
+    yield* controller.stream;
   }
 
   @override
@@ -168,17 +245,10 @@ class _ManagerDashboardScreenState extends State<ManagerDashboardScreen> {
           ),
         ],
       ),
-      body: StreamBuilder<QuerySnapshot>(
-        stream: _attendanceForToday(manager.uid, todayStr),
+      body: StreamBuilder<List<Map<String, dynamic>>>(
+        stream: _attendanceForToday(manager, todayStr),
         builder: (context, snapshot) {
-          List<Map<String, dynamic>> teamList = [];
-
-          if (snapshot.hasData) {
-            for (var doc in snapshot.data!.docs) {
-              final data = doc.data() as Map<String, dynamic>;
-              teamList.add(data);
-            }
-          }
+          final List<Map<String, dynamic>> teamList = snapshot.data ?? [];
 
           return SingleChildScrollView(
             padding: const EdgeInsets.all(16),

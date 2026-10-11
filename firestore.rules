@@ -571,6 +571,11 @@ service cloud.firestore {
         ''
       );
       let leavePath = /databases/$(database)/documents/leaves/$(leaveId);
+      let prevDaysOff = resource.data.get('leaveBalance', {}).get('daysOff', resource.data.get('leaveBalance', {}).get('annual', 15));
+      let prevCasual = resource.data.get('leaveBalance', {}).get('casual', 7);
+      let deductedDays = getAfter(leavePath).data.numberOfDays;
+      let nextDaysOff = request.resource.data.get('leaveBalance', {}).get('daysOff', 0);
+      let nextCasual = request.resource.data.get('leaveBalance', {}).get('casual', 0);
       return leaveId is string
         && leaveId.size() > 0
         && existsAfter(leavePath)
@@ -582,14 +587,10 @@ service cloud.firestore {
           'leaveBalance', 'leaveBalance.daysOff', 'leaveBalance.casual',
           'lastAutoApprovedCasualLeaveId'
         ])
-        && request.resource.data.leaveBalance.daysOff
-          == resource.data.leaveBalance.daysOff
-            - getAfter(leavePath).data.numberOfDays
-        && request.resource.data.leaveBalance.casual
-          == resource.data.leaveBalance.casual
-            - getAfter(leavePath).data.numberOfDays
-        && request.resource.data.leaveBalance.daysOff >= 0
-        && request.resource.data.leaveBalance.casual >= 0;
+        && nextDaysOff == prevDaysOff - deductedDays
+        && nextCasual == prevCasual - deductedDays
+        && nextDaysOff >= 0
+        && nextCasual >= 0;
     }
     function hrCanWriteUser() {
       return isHRRole()
@@ -1858,7 +1859,7 @@ service cloud.firestore {
                 request.resource.data.numberOfDays
                   <= recipientDoc(request.resource.data.userId).get('leaveBalance', {}).get('casual', 7)
                 && request.resource.data.numberOfDays
-                  <= recipientDoc(request.resource.data.userId).get('leaveBalance', {}).get('daysOff', 0)
+                  <= recipientDoc(request.resource.data.userId).get('leaveBalance', {}).get('daysOff', recipientDoc(request.resource.data.userId).get('leaveBalance', {}).get('annual', 15))
               )
             )
           )
@@ -1889,7 +1890,7 @@ service cloud.firestore {
           !request.resource.data.keys().hasAny(['workHandoverTo'])
           || (
             request.resource.data.workHandoverTo is string
-            && request.resource.data.workHandoverTo.size() > 0
+            && request.resource.data.workHandoverTo.size() >= 0
           )
         )
         && request.resource.data.startDate is timestamp

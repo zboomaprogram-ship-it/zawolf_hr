@@ -1,9 +1,12 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart' hide TextDirection;
 import 'package:go_router/go_router.dart';
+import '../../models/user_model.dart';
 import '../../services/auth_service.dart';
+import '../../services/managed_employee_service.dart';
 import '../../theme/theme.dart';
 import '../../components/wolf_card.dart';
 import '../../core/feature_flags/phase007_feature_flags.dart';
@@ -24,7 +27,9 @@ class _TeamAttendanceScreenState extends State<TeamAttendanceScreen> {
   DateTime _selectedDate = DateTime.now();
   String _selectedStatus =
       'all'; // 'all' | 'present' | 'late' | 'absent' | 'on-leave'
-  Stream<QuerySnapshot<Map<String, dynamic>>>? _attendanceStream;
+  final ManagedEmployeeService _managedEmployeeService =
+      ManagedEmployeeService();
+  Stream<List<Map<String, dynamic>>>? _attendanceListStream;
   String? _attendanceStreamKey;
   late final Stream<QuerySnapshot<Map<String, dynamic>>>
   _hiddenEmployeeIdsStream = _db
@@ -33,25 +38,101 @@ class _TeamAttendanceScreenState extends State<TeamAttendanceScreen> {
       .limit(500)
       .snapshots();
 
-  Stream<QuerySnapshot<Map<String, dynamic>>> _attendanceForSelection(
-    String managerId,
+  Stream<List<Map<String, dynamic>>> _attendanceForSelection(
+    UserModel manager,
     String date,
     String status,
   ) {
-    final key = '$managerId|$date|$status';
-    if (_attendanceStream != null && _attendanceStreamKey == key) {
-      return _attendanceStream!;
-    }
-    Query<Map<String, dynamic>> query = _db
-        .collection('attendance')
-        .where('managerId', isEqualTo: managerId)
-        .where('date', isEqualTo: date);
-    if (status != 'all') {
-      query = query.where('status', isEqualTo: status);
+    final key = '${manager.uid}|$date|$status';
+    if (_attendanceListStream != null && _attendanceStreamKey == key) {
+      return _attendanceListStream!;
     }
     _attendanceStreamKey = key;
-    _attendanceStream = query.snapshots();
-    return _attendanceStream!;
+    _attendanceListStream = _watchAttendanceForReviewer(manager, date, status);
+    return _attendanceListStream!;
+  }
+
+  Stream<List<Map<String, dynamic>>> _watchAttendanceForReviewer(
+    UserModel manager,
+    String date,
+    String status,
+  ) async* {
+    final teamMembers = await _managedEmployeeService.loadForReviewer(manager);
+    final userIds = teamMembers.map((e) => e.uid).toSet();
+    if (userIds.isEmpty && manager.uid.isNotEmpty) {
+      userIds.add(manager.uid);
+    }
+
+    final queryList = <Query<Map<String, dynamic>>>[];
+    Query<Map<String, dynamic>> baseDirect = _db
+        .collection('attendance')
+        .where('managerId', isEqualTo: manager.uid)
+        .where('date', isEqualTo: date);
+    if (status != 'all') {
+      baseDirect = baseDirect.where('status', isEqualTo: status);
+    }
+    queryList.add(baseDirect);
+
+    final userList = userIds.toList();
+    for (var offset = 0; offset < userList.length; offset += 30) {
+      final end = (offset + 30).clamp(0, userList.length);
+      final batch = userList.sublist(offset, end);
+      Query<Map<String, dynamic>> userQuery = _db
+          .collection('attendance')
+          .where('userId', whereIn: batch)
+          .where('date', isEqualTo: date);
+      if (status != 'all') {
+        userQuery = userQuery.where('status', isEqualTo: status);
+      }
+      queryList.add(userQuery);
+    }
+
+    final controller = StreamController<List<Map<String, dynamic>>>();
+    final snapshotsMap = <int, List<Map<String, dynamic>>>{};
+    final subs = <StreamSubscription<QuerySnapshot<Map<String, dynamic>>>>[];
+
+    void emit() {
+      final byId = <String, Map<String, dynamic>>{};
+      for (final list in snapshotsMap.values) {
+        for (final item in list) {
+          final id = item['id'] as String? ?? item['userId'] as String? ?? '';
+          byId[id] = item;
+        }
+      }
+      if (!controller.isClosed) {
+        final sorted = byId.values.toList();
+        sorted.sort((a, b) =>
+            ('${a['employeeName'] ?? ''}').compareTo('${b['employeeName'] ?? ''}'));
+        controller.add(sorted);
+      }
+    }
+
+    for (var i = 0; i < queryList.length; i++) {
+      final index = i;
+      subs.add(
+        queryList[i].snapshots().listen(
+          (snap) {
+            snapshotsMap[index] = snap.docs.map((doc) {
+              final d = Map<String, dynamic>.from(doc.data());
+              d['id'] = doc.id;
+              return d;
+            }).toList();
+            emit();
+          },
+          onError: (e) {
+            if (!controller.isClosed) controller.addError(e);
+          },
+        ),
+      );
+    }
+
+    controller.onCancel = () {
+      for (final s in subs) {
+        s.cancel();
+      }
+    };
+
+    yield* controller.stream;
   }
 
   Future<void> _selectDate(BuildContext context) async {
@@ -181,9 +262,9 @@ class _TeamAttendanceScreenState extends State<TeamAttendanceScreen> {
                 final hiddenIds =
                     hiddenSnapshot.data?.docs.map((doc) => doc.id).toSet() ??
                     const <String>{};
-                return StreamBuilder<QuerySnapshot>(
+                return StreamBuilder<List<Map<String, dynamic>>>(
                   stream: _attendanceForSelection(
-                    manager.uid,
+                    manager,
                     dateStr,
                     _selectedStatus,
                   ),
@@ -195,11 +276,8 @@ class _TeamAttendanceScreenState extends State<TeamAttendanceScreen> {
                       );
                     }
 
-                    final docs = (snapshot.data?.docs ?? [])
-                        .where((doc) {
-                          final data = doc.data() as Map<String, dynamic>;
-                          return !hiddenIds.contains(data['userId']);
-                        })
+                    final docs = (snapshot.data ?? [])
+                        .where((data) => !hiddenIds.contains(data['userId']))
                         .toList(growable: false);
                     if (docs.isEmpty) {
                       return const EmptyState(
@@ -212,7 +290,7 @@ class _TeamAttendanceScreenState extends State<TeamAttendanceScreen> {
                       padding: const EdgeInsets.all(16),
                       itemCount: docs.length,
                       itemBuilder: (context, index) {
-                        final data = docs[index].data() as Map<String, dynamic>;
+                        final data = docs[index];
                         final name = data['employeeName'] as String? ?? '';
                         final userId = data['userId'] as String? ?? '';
                         final empId = data['employeeId'] as String? ?? '';
@@ -243,7 +321,7 @@ class _TeamAttendanceScreenState extends State<TeamAttendanceScreen> {
 
                         return Padding(
                           padding: const EdgeInsets.only(bottom: 12.0),
-                          key: ValueKey(docs[index].id),
+                          key: ValueKey(data['id'] ?? '$index'),
                           child: WolfCard(
                             onTap: userId.isEmpty
                                 ? null

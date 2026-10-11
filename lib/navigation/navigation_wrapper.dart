@@ -246,12 +246,19 @@ class _NavigationWrapperState extends State<NavigationWrapper>
             ? user
             : user.copyWith(unreadNotifications: _notificationUnreadCount);
 
+    final isAccountantApprover =
+        user.isAccountant || user.isAdvanceAccountsApprover;
+    final isApproverRole =
+        user.role == EmployeeRole.manager ||
+        user.role == EmployeeRole.hrAdmin ||
+        user.role == EmployeeRole.hrManager ||
+        user.role == EmployeeRole.superAdmin ||
+        isAccountantApprover ||
+        user.isItMember;
+
     if (_currentUserUid != user.uid) {
       _currentUserUid = user.uid;
-      if (user.role == EmployeeRole.manager ||
-          user.role == EmployeeRole.hrAdmin ||
-          user.role == EmployeeRole.hrManager ||
-          user.role == EmployeeRole.superAdmin) {
+      if (isApproverRole) {
         PendingRequestsService.instance.startListening(user);
       } else {
         PendingRequestsService.instance.stopListening();
@@ -266,6 +273,26 @@ class _NavigationWrapperState extends State<NavigationWrapper>
 
     // Single shared source for both shells.
     final List<NavigationItem> items = navItemsForRole(role);
+    if (isAccountantApprover || user.isItMember) {
+      if (!items.any((item) => item.path == '/manager/requests')) {
+        final insertIndex = items.indexWhere(
+          (item) => item.path == '/employee/requests',
+        );
+        final approvalsItem = NavigationItem(
+          icon: Icons.rule_outlined,
+          activeIcon: Icons.rule,
+          label: 'الموافقات',
+          englishLabel: 'Approvals',
+          path: '/manager/requests',
+          domain: NavDomain.approvals,
+        );
+        if (insertIndex != -1) {
+          items.insert(insertIndex + 1, approvalsItem);
+        } else {
+          items.add(approvalsItem);
+        }
+      }
+    }
     // Watch the remote configuration so Company OS entries appear as soon as
     // the signed-in user's entitlements finish loading. Using `read` here
     // made a valid enabled feature remain invisible until a full app rebuild.
@@ -353,7 +380,45 @@ class _NavigationWrapperState extends State<NavigationWrapper>
     }
 
     // Mobile bottom nav: fixed four role tabs + grouped More sheet.
-    final bottomItems = mobileTabsForRole(role);
+    final List<NavigationItem> bottomItems;
+    if (user.role == EmployeeRole.employee &&
+        (isAccountantApprover || user.isItMember)) {
+      bottomItems = [
+        NavigationItem(
+          icon: Icons.home_outlined,
+          activeIcon: Icons.home,
+          label: 'الرئيسية',
+          englishLabel: 'Home',
+          path: '/employee/dashboard',
+          domain: NavDomain.home,
+        ),
+        NavigationItem(
+          icon: Icons.assignment_outlined,
+          activeIcon: Icons.assignment,
+          label: 'طلباتي',
+          englishLabel: 'Requests',
+          path: '/employee/requests',
+          domain: NavDomain.approvals,
+        ),
+        NavigationItem(
+          icon: Icons.rule_outlined,
+          activeIcon: Icons.rule,
+          label: 'الموافقات',
+          englishLabel: 'Approvals',
+          path: '/manager/requests',
+          domain: NavDomain.approvals,
+        ),
+        NavigationItem(
+          icon: Icons.person_outline,
+          activeIcon: Icons.person,
+          label: 'حسابي',
+          englishLabel: 'Profile',
+          path: '/employee/profile',
+        ),
+      ];
+    } else {
+      bottomItems = mobileTabsForRole(role);
+    }
     final allItems = items;
     final hasOverflow = allItems.any((item) => !bottomItems.contains(item));
     final overflowItems =

@@ -3713,7 +3713,10 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
         widget.initialCategory ??
         (widget.smartTabSelect
             ? PendingRequestsService.instance.firstPendingCategory
-            : null);
+            : (PendingRequestsService.instance.firstPendingCategory ??
+                ((manager.isAccountant || manager.isAdvanceAccountsApprover)
+                    ? 'advances'
+                    : null)));
 
     int initialTabIndex = 0;
     if (initialCategory != null && initialCategory.isNotEmpty) {
@@ -5793,8 +5796,10 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
       query = query
           .where('status', isEqualTo: 'pending_manager')
           .where('managerId', isEqualTo: reviewerId);
-    } else {
+    } else if (EmployeeRole.isHr(role)) {
       query = query.where('status', whereIn: const ['pending', 'pending_hr']);
+    } else {
+      query = query.where('managerId', isEqualTo: '__no_approver__');
     }
     return _cachedStream(
       'pending|$collection|$reviewerId|$role|$isAccountant',

@@ -12,6 +12,7 @@ import '../../../models/attendance_model.dart';
 import '../../../models/employee_role.dart';
 import '../../../models/task_model.dart';
 import '../../../models/user_model.dart';
+import '../../../services/pending_requests_service.dart';
 import '../../../theme/theme.dart';
 import 'month_activity_section.dart';
 import 'web_kpi_bento_grid.dart';
@@ -295,12 +296,28 @@ class EmployeeWebDashboardView extends StatelessWidget {
             spacing: 10,
             runSpacing: 10,
             children: [
+              if (user.isAccountant ||
+                  user.isAdvanceAccountsApprover ||
+                  user.isItMember ||
+                  PendingRequestsService.instance.pendingCount.value > 0)
+                _buildShortcutButton(
+                  context: context,
+                  label: 'طلبات الموافقة المعلقة',
+                  icon: Icons.approval_rounded,
+                  route: PendingRequestsService.instance.firstPendingCategory != null
+                      ? '/manager/requests?category=${PendingRequestsService.instance.firstPendingCategory}'
+                      : '/manager/requests',
+                  isPrimary: true,
+                ),
               _buildShortcutButton(
                 context: context,
                 label: 'تقديم طلب جديد',
                 icon: Icons.add_circle_outline_rounded,
                 route: '/employee/requests',
-                isPrimary: true,
+                isPrimary: !(user.isAccountant ||
+                    user.isAdvanceAccountsApprover ||
+                    user.isItMember ||
+                    PendingRequestsService.instance.pendingCount.value > 0),
               ),
               _buildShortcutButton(
                 context: context,

@@ -117,6 +117,13 @@ final class FirestoreRequestVisibilityDataSource
                     )
                     .limit(limit)
                     .get(),
+                request
+                    .where(
+                      'reviewedBy',
+                      isEqualTo: query.actorScope.actorId,
+                    )
+                    .limit(limit)
+                    .get(),
                 if (empCode.isNotEmpty) ...[
                   request
                       .where('managerId', isEqualTo: empCode)
@@ -128,6 +135,10 @@ final class FirestoreRequestVisibilityDataSource
                       .get(),
                   request
                       .where('currentApproverId', isEqualTo: empCode)
+                      .limit(limit)
+                      .get(),
+                  request
+                      .where('reviewedBy', isEqualTo: empCode)
                       .limit(limit)
                       .get(),
                 ],

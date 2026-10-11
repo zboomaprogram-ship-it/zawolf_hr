@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../design_system/components/priority_strip.dart';
 import '../../../models/task_model.dart';
+import '../../../services/pending_requests_service.dart';
 import '../../../services/task_service.dart';
 import '../../../theme/theme.dart';
 import 'package:go_router/go_router.dart';
@@ -47,8 +48,22 @@ class EmployeePriorityStrip extends StatelessWidget {
                   !task.dueDate.isAfter(endOfToday);
             }).length;
 
+        final pendingApprovals = PendingRequestsService.instance.pendingCount.value;
+        final firstPendingCat = PendingRequestsService.instance.firstPendingCategory;
+
         return PriorityStrip(
           items: [
+            if (pendingApprovals > 0)
+              PriorityItem(
+                label: 'طلب بانتظار موافقتك',
+                count: pendingApprovals,
+                icon: Icons.approval_outlined,
+                accent: ZaWolfColors.primaryCyan,
+                onTap: () {
+                  final catParam = firstPendingCat != null ? '?category=$firstPendingCat' : '';
+                  context.go('/manager/requests$catParam');
+                },
+              ),
             PriorityItem(
               label: 'طلب بانتظار الموافقة',
               count: pendingRequestsCount,

@@ -18,16 +18,32 @@ class DomainHubScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final role = context.watch<AuthService>().currentUser?.role;
+    final currentUser = context.watch<AuthService>().currentUser;
+    final role = currentUser?.role;
     if (role == null) return const SizedBox.shrink();
-    final items = navItemsForRole(role)
-        .where((item) => item.domain == domain)
-        .toList();
+    final items = navItemsForRole(role).toList();
+    final isApprover = currentUser?.isAccountant == true ||
+        currentUser?.isAdvanceAccountsApprover == true ||
+        currentUser?.isItMember == true;
+    if (isApprover && !items.any((item) => item.path == '/manager/requests')) {
+      items.add(
+        NavigationItem(
+          icon: Icons.rule_outlined,
+          activeIcon: Icons.rule,
+          label: 'الموافقات',
+          englishLabel: 'Approvals',
+          path: '/manager/requests',
+          domain: NavDomain.approvals,
+        ),
+      );
+    }
+    final filteredItems =
+        items.where((item) => item.domain == domain).toList();
 
     // De-duplicate identical destinations while preserving first label.
     final seen = <String>{};
     final unique = [
-      for (final item in items)
+      for (final item in filteredItems)
         if (seen.add(item.path)) item,
     ];
 

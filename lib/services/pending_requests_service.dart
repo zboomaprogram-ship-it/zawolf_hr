@@ -153,6 +153,8 @@ class PendingRequestsService {
         (isCompanyCeo ||
             reviewer.role == EmployeeRole.manager ||
             reviewer.role == EmployeeRole.teamLeader);
+    final isAccountant =
+        reviewer.isAccountant || reviewer.isAdvanceAccountsApprover;
 
     String targetStatus = 'pending_hr';
     if (reviewsManagerStage) {
@@ -160,23 +162,25 @@ class PendingRequestsService {
     }
 
     // 1. Leaves
-    Query<Map<String, dynamic>> leavesQuery = _db.collection('leaves');
-    if (reviewsManagerStage) {
-      leavesQuery = leavesQuery
-          .where('managerId', isEqualTo: reviewer.uid)
-          .where('status', isEqualTo: 'pending_manager');
-    } else if (isHrStaff) {
-      leavesQuery = leavesQuery.where('status', isEqualTo: 'pending_hr');
-    }
+    if (reviewsManagerStage || isHrStaff) {
+      Query<Map<String, dynamic>> leavesQuery = _db.collection('leaves');
+      if (reviewsManagerStage) {
+        leavesQuery = leavesQuery
+            .where('managerId', isEqualTo: reviewer.uid)
+            .where('status', isEqualTo: 'pending_manager');
+      } else if (isHrStaff) {
+        leavesQuery = leavesQuery.where('status', isEqualTo: 'pending_hr');
+      }
 
-    _leavesSub = leavesQuery.snapshots().listen(
-      (snap) {
-        _replaceIds(_leavesLegacyIds, snap);
-      },
-      onError: (_) {
-        _clearIdsAndUpdate(_leavesLegacyIds);
-      },
-    );
+      _leavesSub = leavesQuery.snapshots().listen(
+        (snap) {
+          _replaceIds(_leavesLegacyIds, snap);
+        },
+        onError: (_) {
+          _clearIdsAndUpdate(_leavesLegacyIds);
+        },
+      );
+    }
     if (isHrStaff || isCompanyCeo) {
       _leavesRouteSub = _watchCurrentApprover(
         collection: 'leaves',
@@ -193,28 +197,30 @@ class PendingRequestsService {
     }
 
     // 2. Permissions
-    Query<Map<String, dynamic>> permissionsQuery = _db.collection(
-      'permissions',
-    );
-    if (reviewsManagerStage) {
-      permissionsQuery = permissionsQuery
-          .where('managerId', isEqualTo: reviewer.uid)
-          .where('status', isEqualTo: 'pending_manager');
-    } else if (isHrStaff) {
-      permissionsQuery = permissionsQuery.where(
-        'status',
-        isEqualTo: 'pending_hr',
+    if (reviewsManagerStage || isHrStaff) {
+      Query<Map<String, dynamic>> permissionsQuery = _db.collection(
+        'permissions',
+      );
+      if (reviewsManagerStage) {
+        permissionsQuery = permissionsQuery
+            .where('managerId', isEqualTo: reviewer.uid)
+            .where('status', isEqualTo: 'pending_manager');
+      } else if (isHrStaff) {
+        permissionsQuery = permissionsQuery.where(
+          'status',
+          isEqualTo: 'pending_hr',
+        );
+      }
+
+      _permissionsSub = permissionsQuery.snapshots().listen(
+        (snap) {
+          _replaceIds(_permissionsLegacyIds, snap);
+        },
+        onError: (_) {
+          _clearIdsAndUpdate(_permissionsLegacyIds);
+        },
       );
     }
-
-    _permissionsSub = permissionsQuery.snapshots().listen(
-      (snap) {
-        _replaceIds(_permissionsLegacyIds, snap);
-      },
-      onError: (_) {
-        _clearIdsAndUpdate(_permissionsLegacyIds);
-      },
-    );
     if (isHrStaff || isCompanyCeo) {
       _permissionsRouteSub = _watchCurrentApprover(
         collection: 'permissions',
@@ -231,24 +237,39 @@ class PendingRequestsService {
     }
 
     // 3. Advances
-    Query<Map<String, dynamic>> advancesQuery = _db.collection('advances');
-    if (reviewsManagerStage) {
-      advancesQuery = advancesQuery
-          .where('managerId', isEqualTo: reviewer.uid)
-          .where('status', isEqualTo: targetStatus);
-    } else if (isHrStaff) {
-      advancesQuery = advancesQuery.where('status', isEqualTo: 'pending_hr');
-    }
+    if (isAccountant) {
+      final advancesQuery = _db
+          .collection('advances')
+          .where('status', isEqualTo: 'pending_manager')
+          .where('managerIds', arrayContains: reviewer.uid);
+      _advancesSub = advancesQuery.snapshots().listen(
+        (snap) {
+          _replaceIds(_advancesLegacyIds, snap);
+        },
+        onError: (_) {
+          _clearIdsAndUpdate(_advancesLegacyIds);
+        },
+      );
+    } else if (reviewsManagerStage || isHrStaff) {
+      Query<Map<String, dynamic>> advancesQuery = _db.collection('advances');
+      if (reviewsManagerStage) {
+        advancesQuery = advancesQuery
+            .where('managerId', isEqualTo: reviewer.uid)
+            .where('status', isEqualTo: targetStatus);
+      } else if (isHrStaff) {
+        advancesQuery = advancesQuery.where('status', isEqualTo: 'pending_hr');
+      }
 
-    _advancesSub = advancesQuery.snapshots().listen(
-      (snap) {
-        _replaceIds(_advancesLegacyIds, snap);
-      },
-      onError: (_) {
-        _clearIdsAndUpdate(_advancesLegacyIds);
-      },
-    );
-    if (isHrStaff || isCompanyCeo) {
+      _advancesSub = advancesQuery.snapshots().listen(
+        (snap) {
+          _replaceIds(_advancesLegacyIds, snap);
+        },
+        onError: (_) {
+          _clearIdsAndUpdate(_advancesLegacyIds);
+        },
+      );
+    }
+    if (isHrStaff || isCompanyCeo || isAccountant) {
       _advancesRouteSub = _watchCurrentApprover(
         collection: 'advances',
         reviewerId: reviewer.uid,
@@ -264,25 +285,27 @@ class PendingRequestsService {
     }
 
     // 4. Administrative requests
-    Query<Map<String, dynamic>> adminQuery = _db.collection(
-      'administrativeRequests',
-    );
-    if (reviewsManagerStage) {
-      adminQuery = adminQuery
-          .where('managerId', isEqualTo: reviewer.uid)
-          .where('status', isEqualTo: 'pending_manager');
-    } else if (isHrStaff) {
-      adminQuery = adminQuery.where('status', isEqualTo: 'pending_hr');
-    }
+    if (reviewsManagerStage || isHrStaff) {
+      Query<Map<String, dynamic>> adminQuery = _db.collection(
+        'administrativeRequests',
+      );
+      if (reviewsManagerStage) {
+        adminQuery = adminQuery
+            .where('managerId', isEqualTo: reviewer.uid)
+            .where('status', isEqualTo: 'pending_manager');
+      } else if (isHrStaff) {
+        adminQuery = adminQuery.where('status', isEqualTo: 'pending_hr');
+      }
 
-    _administrativeSub = adminQuery.snapshots().listen(
-      (snap) {
-        _replaceIds(_administrativeLegacyIds, snap);
-      },
-      onError: (_) {
-        _clearIdsAndUpdate(_administrativeLegacyIds);
-      },
-    );
+      _administrativeSub = adminQuery.snapshots().listen(
+        (snap) {
+          _replaceIds(_administrativeLegacyIds, snap);
+        },
+        onError: (_) {
+          _clearIdsAndUpdate(_administrativeLegacyIds);
+        },
+      );
+    }
     if (isHrStaff || isCompanyCeo) {
       _administrativeRouteSub = _watchCurrentApprover(
         collection: 'administrativeRequests',
@@ -299,28 +322,30 @@ class PendingRequestsService {
     }
 
     // 5. Resignations
-    Query<Map<String, dynamic>> resignationQuery = _db.collection(
-      'resignations',
-    );
-    if (reviewsManagerStage) {
-      resignationQuery = resignationQuery
-          .where('managerId', isEqualTo: reviewer.uid)
-          .where('status', isEqualTo: 'pending_manager');
-    } else if (isHrStaff) {
-      resignationQuery = resignationQuery.where(
-        'status',
-        isEqualTo: 'pending_hr',
+    if (reviewsManagerStage || isHrStaff) {
+      Query<Map<String, dynamic>> resignationQuery = _db.collection(
+        'resignations',
+      );
+      if (reviewsManagerStage) {
+        resignationQuery = resignationQuery
+            .where('managerId', isEqualTo: reviewer.uid)
+            .where('status', isEqualTo: 'pending_manager');
+      } else if (isHrStaff) {
+        resignationQuery = resignationQuery.where(
+          'status',
+          isEqualTo: 'pending_hr',
+        );
+      }
+
+      _resignationSub = resignationQuery.snapshots().listen(
+        (snap) {
+          _replaceIds(_resignationLegacyIds, snap);
+        },
+        onError: (_) {
+          _clearIdsAndUpdate(_resignationLegacyIds);
+        },
       );
     }
-
-    _resignationSub = resignationQuery.snapshots().listen(
-      (snap) {
-        _replaceIds(_resignationLegacyIds, snap);
-      },
-      onError: (_) {
-        _clearIdsAndUpdate(_resignationLegacyIds);
-      },
-    );
     if (isHrStaff || isCompanyCeo) {
       _resignationRouteSub = _watchCurrentApprover(
         collection: 'resignations',

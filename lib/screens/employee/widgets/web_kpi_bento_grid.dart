@@ -6,6 +6,7 @@ import '../../../design_system/tokens.dart';
 import '../../../models/attendance_model.dart';
 import '../../../models/task_model.dart';
 import '../../../models/user_model.dart';
+import '../../../services/pending_requests_service.dart';
 import '../../../services/task_service.dart';
 import '../../../theme/theme.dart';
 
@@ -386,7 +387,12 @@ class WebKpiBentoGrid extends StatelessWidget {
   }
 
   Widget _buildPendingRequestsCard(BuildContext context) {
-    final hasPending = pendingRequestsCount > 0;
+    final pendingApprovals = PendingRequestsService.instance.pendingCount.value;
+    final firstPendingCat = PendingRequestsService.instance.firstPendingCategory;
+    final isApproverWithWork = pendingApprovals > 0;
+
+    final displayCount = isApproverWithWork ? pendingApprovals : pendingRequestsCount;
+    final hasPending = displayCount > 0;
     final accentColor =
         hasPending ? ZaWolfColors.warning : ZaWolfColors.primaryCyan;
 
@@ -394,7 +400,14 @@ class WebKpiBentoGrid extends StatelessWidget {
       borderColor: accentColor.withValues(alpha: 0.3),
       shadowColor: accentColor,
       padding: const EdgeInsets.all(DsSpacing.lg),
-      onTap: () => context.go('/employee/requests'),
+      onTap: () {
+        if (isApproverWithWork) {
+          final catParam = firstPendingCat != null ? '?category=$firstPendingCat' : '';
+          context.go('/manager/requests$catParam');
+        } else {
+          context.go('/employee/requests');
+        }
+      },
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -408,7 +421,9 @@ class WebKpiBentoGrid extends StatelessWidget {
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Icon(
-                  Icons.pending_actions_rounded,
+                  isApproverWithWork
+                      ? Icons.approval_rounded
+                      : Icons.pending_actions_rounded,
                   color: accentColor,
                   size: 20,
                 ),
@@ -426,7 +441,7 @@ class WebKpiBentoGrid extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
               Text(
-                '$pendingRequestsCount',
+                '$displayCount',
                 style: TextStyle(
                   color: hasPending ? accentColor : ZaWolfColors.textPrimary,
                   fontSize: 28,
@@ -435,12 +450,12 @@ class WebKpiBentoGrid extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: DsSpacing.sm),
-              const Expanded(
+              Expanded(
                 child: Padding(
-                  padding: EdgeInsets.only(bottom: 4),
+                  padding: const EdgeInsets.only(bottom: 4),
                   child: Text(
-                    'طلبات معلقة',
-                    style: TextStyle(
+                    isApproverWithWork ? 'بانتظار موافقتك' : 'طلبات معلقة',
+                    style: const TextStyle(
                       color: ZaWolfColors.textMuted,
                       fontSize: 12,
                       fontWeight: FontWeight.w500,
@@ -454,9 +469,11 @@ class WebKpiBentoGrid extends StatelessWidget {
           ),
           const SizedBox(height: DsSpacing.xs),
           Text(
-            hasPending
-                ? 'بانتظار موافقة الإدارة أو HR'
-                : 'جميع الطلبات تمت معالجتها',
+            isApproverWithWork
+                ? 'لديك طلبات بحاجة إلى اعتمادك'
+                : (hasPending
+                    ? 'بانتظار موافقة الإدارة أو HR'
+                    : 'جميع الطلبات تمت معالجتها'),
             style: TextStyle(
               color: hasPending ? accentColor : ZaWolfColors.success,
               fontSize: 12,
@@ -464,9 +481,11 @@ class WebKpiBentoGrid extends StatelessWidget {
             ),
           ),
           const SizedBox(height: DsSpacing.sm),
-          const Text(
-            'اضغط لعرض ومتابعة الطلبات ←',
-            style: TextStyle(color: ZaWolfColors.textMuted, fontSize: 11),
+          Text(
+            isApproverWithWork
+                ? 'اضغط للمراجعة والاعتماد ←'
+                : 'اضغط لعرض ومتابعة الطلبات ←',
+            style: const TextStyle(color: ZaWolfColors.textMuted, fontSize: 11),
           ),
         ],
       ),

@@ -107,7 +107,7 @@ class LeaveModel {
       'numberOfDays': numberOfDays,
       if (reason != null) 'reason': reason,
       if (attachmentUrl != null) 'attachmentUrl': attachmentUrl,
-      'workHandoverTo': workHandoverTo,
+      if (workHandoverTo.trim().isNotEmpty) 'workHandoverTo': workHandoverTo.trim(),
       'status': status,
       'submittedAt':
           submittedAt != null

@@ -51,21 +51,22 @@ class RequestStaffingConflictService {
     required String start,
     required String end,
   }) async {
-    final normalized = await title;
-    if (normalized.isEmpty || managerId.isEmpty) return const [];
-    final results = <RequestStaffingConflict>[];
-    final snapshots = await Future.wait([
-      _db
-          .collection('leaves')
-          .where('managerId', isEqualTo: managerId)
-          .limit(100)
-          .get(),
-      _db
-          .collection('permissions')
-          .where('managerId', isEqualTo: managerId)
-          .limit(100)
-          .get(),
-    ]);
+    try {
+      final normalized = await title;
+      if (normalized.isEmpty || managerId.isEmpty) return const [];
+      final results = <RequestStaffingConflict>[];
+      final snapshots = await Future.wait([
+        _db
+            .collection('leaves')
+            .where('managerId', isEqualTo: managerId)
+            .limit(100)
+            .get(),
+        _db
+            .collection('permissions')
+            .where('managerId', isEqualTo: managerId)
+            .limit(100)
+            .get(),
+      ]);
     for (final doc in snapshots[0].docs) {
       final d = doc.data();
       if (d['userId'] == employeeId || !_active.contains(d['status'])) continue;
@@ -104,7 +105,10 @@ class RequestStaffingConflictService {
         );
       }
     }
-    return results;
+      return results;
+    } catch (_) {
+      return const [];
+    }
   }
 
   Future<void> notifyManagerForLeave(
