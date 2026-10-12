@@ -166,7 +166,7 @@ function userMatchesRole(user = {}, role) {
   const position = clean(user.position || user.jobTitle).toLowerCase();
   const code = upper(user.employeeId || user.employeeCode);
   if (role === 'hr') {
-    return ['hr', 'hr_admin', 'hr_manager', 'hr_specialist', 'hr_officer', 'hr_staff', 'super_admin'].includes(normalizedRole) ||
+    return ['hr', 'hr_admin', 'hr_manager', 'hr_specialist', 'hr_officer', 'hr_staff'].includes(normalizedRole) ||
       user.isHr === true || department.includes('human resource') || department.includes('الموارد البشرية');
   }
   if (role === 'super_admin') return normalizedRole === 'super_admin';

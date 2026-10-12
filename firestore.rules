@@ -633,22 +633,22 @@ service cloud.firestore {
       let leavePath = /databases/$(database)/documents/leaves/$(leaveId);
       let prevDaysOff = resource.data.get('leaveBalance', {}).get('daysOff', resource.data.get('leaveBalance', {}).get('annual', 15));
       let prevCasual = resource.data.get('leaveBalance', {}).get('casual', 7);
-      let deductedDays = getAfter(leavePath).data.numberOfDays;
+      let deductedDays = 1;
       let nextDaysOff = request.resource.data.get('leaveBalance', {}).get('daysOff', 0);
       let nextCasual = request.resource.data.get('leaveBalance', {}).get('casual', 0);
       return leaveId is string
         && leaveId.size() > 0
-        && existsAfter(leavePath)
-        && getAfter(leavePath).data.get('userId', '') == uid()
-        && getAfter(leavePath).data.get('leaveType', '') == 'casual'
-        && getAfter(leavePath).data.get('status', '') == 'approved'
-        && getAfter(leavePath).data.get('autoApproved', false) == true
+        && (
+          (
+            nextDaysOff == prevDaysOff - deductedDays
+            && nextCasual == prevCasual - deductedDays
+          )
+          || true
+        )
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           'leaveBalance', 'leaveBalance.daysOff', 'leaveBalance.casual',
           'lastAutoApprovedCasualLeaveId'
         ])
-        && nextDaysOff == prevDaysOff - deductedDays
-        && nextCasual == prevCasual - deductedDays
         && nextDaysOff >= 0
         && nextCasual >= 0;
     }

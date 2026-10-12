@@ -5762,7 +5762,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
         status == 'pending_hr_manager' ||
         status == 'pending') {
       // HR stage
-      return isHrReviewer || isSuperAdmin;
+      return isHrReviewer;
     }
 
     if (status == 'pending_ceo') {

@@ -58,10 +58,10 @@ test('zero current route index is not replaced by a later legacy manager index',
   );
 });
 
-test('HR stage reaches active HR and system administrators only', () => {
+test('HR stage reaches active HR only without super admin spam', () => {
   const request = { userId: 'employee-1', status: 'pending_hr' };
   const recipients = resolveAudienceUsers(approvalAudience(request), users, request);
-  assert.deepEqual(recipients.sort(), ['admin-1', 'hr-1']);
+  assert.deepEqual(recipients.sort(), ['hr-1']);
 });
 
 test('role stages resolve the accounting pool without notifying HR or managers', () => {

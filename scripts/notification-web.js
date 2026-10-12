@@ -4805,7 +4805,7 @@ const server = http.createServer(async (req, res) => {
     const roomId = String(url.searchParams.get('roomId') || '');
     const startAt = new Date(String(url.searchParams.get('startAt') || ''));
     const endAt = new Date(String(url.searchParams.get('endAt') || ''));
-    if (!/^[A-Za-z0-9_-]{8,160}$/.test(roomId) || Number.isNaN(startAt.getTime()) || Number.isNaN(endAt.getTime()) || startAt >= endAt) {
+    if (!/^[A-Za-z0-9_-]{3,160}$/.test(roomId) || Number.isNaN(startAt.getTime()) || Number.isNaN(endAt.getTime()) || startAt >= endAt) {
       return sendJson(res, 400, { ok: false, code: 'invalid_meeting_time', error: 'اختر قاعة ووقت بداية ونهاية صحيحين.' });
     }
     try {

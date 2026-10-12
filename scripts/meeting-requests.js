@@ -4,7 +4,7 @@ const crypto = require('crypto');
 const { isHrOrAdmin } = require('./phase007-authorization');
 
 const clean = (value, max = 500) => String(value || '').replace(/\s+/g, ' ').trim().slice(0, max);
-const safeId = (value) => /^[A-Za-z0-9_-]{8,160}$/.test(String(value || ''));
+const safeId = (value) => /^[A-Za-z0-9_-]{3,160}$/.test(String(value || ''));
 const digest = (...parts) => crypto.createHash('sha256').update(parts.join('\u001f')).digest('hex').slice(0, 40);
 const stamp = () => new Date().toISOString();
 
