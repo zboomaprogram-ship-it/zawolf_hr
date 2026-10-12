@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:flutter/foundation.dart';
 import '../models/user_model.dart';
 import '../models/permission_model.dart';
 import '../models/attendance_policy.dart';
@@ -472,25 +473,31 @@ class PermissionService {
     }
 
     // ── Triggers notifications (No functions, direct Firestore write) ──
-    if (usesHrFallback) {
-      await RoleNotificationService.instance.notifyRole(
-        role: EmployeeRole.hrManager,
-        includeSuperAdmins: false,
-        type: 'permission_pending_hr',
-        title: 'طلب إذن بدون مدير معيّن',
-        body: '${req.employeeName} أرسل طلب إذن وينتظر قرار HR.',
-        data: {'permissionId': permRef.id},
-      );
-    } else {
-      await _createNotification(
-        recipientId: firstManagerId,
-        type: 'permission_pending_manager',
-        title: 'طلب إذن بانتظار موافقتك',
-        body:
-            '${req.employeeName} يطلب إذن ${PermissionTypePolicy.arabicLabel(req.permissionType)}.'
-            '${req.isDeductible ? " (إذن استقطاعي: ${deduction.arabicLabel})" : ""}',
-        data: {'permissionId': permRef.id},
-      );
+    // The request is already committed. Notification delivery is recovered by
+    // the server and must not turn a successful submission into a failure.
+    try {
+      if (usesHrFallback) {
+        await RoleNotificationService.instance.notifyRole(
+          role: EmployeeRole.hrManager,
+          includeSuperAdmins: false,
+          type: 'permission_pending_hr',
+          title: 'طلب إذن بدون مدير معيّن',
+          body: '${req.employeeName} أرسل طلب إذن وينتظر قرار HR.',
+          data: {'permissionId': permRef.id},
+        );
+      } else {
+        await _createNotification(
+          recipientId: firstManagerId,
+          type: 'permission_pending_manager',
+          title: 'طلب إذن بانتظار موافقتك',
+          body:
+              '${req.employeeName} يطلب إذن ${PermissionTypePolicy.arabicLabel(req.permissionType)}.'
+              '${req.isDeductible ? " (إذن استقطاعي: ${deduction.arabicLabel})" : ""}',
+          data: {'permissionId': permRef.id},
+        );
+      }
+    } catch (error) {
+      debugPrint('Permission saved; notification will be reconciled by the server: $error');
     }
   }
 

@@ -5598,13 +5598,11 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
             ]);
           }).toList();
     }
-    // Non-HR/SuperAdmin reviewers (including Division Managers and COO)
-    // should only see requests they are authorized to act on or assigned to.
-    if (reviewer.role != EmployeeRole.superAdmin && !EmployeeRole.isHr(reviewer.role)) {
-      filtered = filtered
-          .where((doc) => _canActOnApproval(doc.data(), reviewer))
-          .toList(growable: false);
-    }
+    // Every reviewer sees only requests belonging to a stage they can act on.
+    // HR/admin access remains role-scoped and does not expose manager stages.
+    filtered = filtered
+        .where((doc) => _canActOnApproval(doc.data(), reviewer))
+        .toList(growable: false);
     return _newestFirst(filtered);
   }
 
@@ -5661,6 +5659,16 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
     final isAccountant =
         reviewer.isAccountant || reviewer.isAdvanceAccountsApprover;
     final isItMember = reviewer.isItMember;
+    final currentApproverId =
+        (data['currentApproverId'] ?? '').toString().trim().toUpperCase();
+
+    // Materialized routes are authoritative. Several existing request types
+    // store only the concrete approver ID and intentionally omit approverType.
+    if (currentApproverId.isNotEmpty &&
+        (currentApproverId == reviewerUid ||
+            currentApproverId == reviewerCode)) {
+      return true;
+    }
 
     // Check custom approval route if present
     final route = (data['approvalRoute'] as List<dynamic>?)
@@ -5674,8 +5682,27 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
       if (currentIdx >= 0 && currentIdx < route.length) {
         final currentStage = route[currentIdx];
         final approverType = (currentStage['approverType'] as String? ?? '').trim();
+        final stageApproverId =
+            (currentStage['approverId'] as String? ?? '').trim().toUpperCase();
         final specificUserId = (currentStage['specificUserId'] as String? ?? '').trim().toUpperCase();
         final stageDept = (currentStage['department'] as String? ?? '').trim().toLowerCase();
+
+        const roleMarkers = {
+          'HR',
+          'ACCOUNTING',
+          'ACCOUNTS',
+          'IT',
+          'CEO',
+          'CEO-100',
+          'COO',
+          'COO-1300',
+          'SUPER_ADMIN',
+        };
+        if (stageApproverId.isNotEmpty &&
+            !roleMarkers.contains(stageApproverId)) {
+          return stageApproverId == reviewerUid ||
+              stageApproverId == reviewerCode;
+        }
 
         switch (approverType) {
           case 'direct_manager':
@@ -5700,7 +5727,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
           case 'department_pool':
             return reviewer.department.trim().toLowerCase() == stageDept;
           default:
-            return isSuperAdmin;
+            return false;
         }
       }
       return false;
@@ -5712,20 +5739,21 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
     }
 
     final managerId = (data['managerId'] ?? '').toString().trim().toUpperCase();
-    final currentApproverId = (data['currentApproverId'] ?? '').toString().trim().toUpperCase();
     final isCurrentAssignedManager =
         managerId == reviewerUid ||
         managerId == reviewerCode ||
         currentApproverId == reviewerUid ||
         currentApproverId == reviewerCode;
 
-    if (status == 'pending_manager') {
+    if (status == 'pending_manager' || status == 'pending_team_leader') {
       // Only the currently assigned manager for this stage can approve!
       // HR, CEO, COO, or another manager cannot act out of turn.
       return isCurrentAssignedManager;
     }
 
-    if (status == 'pending_hr' || status == 'pending') {
+    if (status == 'pending_hr' ||
+        status == 'pending_hr_manager' ||
+        status == 'pending') {
       // HR stage
       return isHrReviewer || isSuperAdmin;
     }
@@ -5742,6 +5770,14 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
 
     if (status == 'pending_accounts') {
       return isAccountant;
+    }
+
+    if (status == 'pending_it') {
+      return isItMember;
+    }
+
+    if (status == 'pending_super_admin') {
+      return isSuperAdmin;
     }
 
     return false;

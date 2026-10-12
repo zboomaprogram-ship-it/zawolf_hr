@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart';
 
 import '../models/employee_deletion_request.dart';
 import '../models/employee_role.dart';
@@ -111,16 +112,20 @@ class EmployeeDeletionRequestService {
       'requestedAt': FieldValue.serverTimestamp(),
       'updatedAt': FieldValue.serverTimestamp(),
     });
-    await RoleNotificationService.instance.notifyRole(
-      role: status == 'pending_hr_manager'
-          ? EmployeeRole.hrManager
-          : EmployeeRole.superAdmin,
-      type: 'employee_deletion_pending',
-      title: 'طلب إنهاء حساب موظف',
-      body: 'طلب ${requester.displayName} إنهاء حساب ${employee.displayName}.',
-      data: {'requestId': ref.id, 'route': '/hr/employees'},
-      includeSuperAdmins: status == 'pending_super_admin',
-    );
+    try {
+      await RoleNotificationService.instance.notifyRole(
+        role: status == 'pending_hr_manager'
+            ? EmployeeRole.hrManager
+            : EmployeeRole.superAdmin,
+        type: 'employee_deletion_pending',
+        title: 'طلب إنهاء حساب موظف',
+        body: 'طلب ${requester.displayName} إنهاء حساب ${employee.displayName}.',
+        data: {'requestId': ref.id, 'route': '/hr/employees'},
+        includeSuperAdmins: status == 'pending_super_admin',
+      );
+    } catch (error) {
+      debugPrint('Deletion request saved; server will reconcile notification: $error');
+    }
   }
 
   Future<void> review({

@@ -137,6 +137,9 @@ const {
   requestEmployeeName,
 } = require('./request-management-notifications');
 const {
+  watchRequestNotifications,
+} = require('./request-notification-reconciliation');
+const {
   canManageDeveloperTools,
   canManageOperationalVisibility,
   canReviewAttendanceSecurity,
@@ -258,6 +261,7 @@ let pendingDispatchTimer = null;
 let notificationUnsubscribe = null;
 let notificationListenerOwner = false;
 let conversationOutboxUnsubscribe = null;
+let requestNotificationsUnsubscribe = null;
 let advanceRouteUnsubscribe = null;
 let runtimeLease = null;
 let googleSheetsIntegration = null;
@@ -488,9 +492,11 @@ async function ensureNotificationListenerLeader() {
     if (!(await getRuntimeLease().acquire('notification_listener'))) {
       if (notificationUnsubscribe) notificationUnsubscribe();
       if (conversationOutboxUnsubscribe) conversationOutboxUnsubscribe();
+      if (requestNotificationsUnsubscribe) requestNotificationsUnsubscribe();
       if (advanceRouteUnsubscribe) advanceRouteUnsubscribe();
       notificationUnsubscribe = null;
       conversationOutboxUnsubscribe = null;
+      requestNotificationsUnsubscribe = null;
       advanceRouteUnsubscribe = null;
       notificationListenerOwner = false;
       return;
@@ -499,8 +505,7 @@ async function ensureNotificationListenerLeader() {
     if (!advanceRouteUnsubscribe) {
       advanceRouteUnsubscribe = watchPendingAdvances({ db: admin.firestore() });
     }
-    if (notificationUnsubscribe && conversationOutboxUnsubscribe) return;
-    notificationUnsubscribe = watchPendingNotifications({
+    if (!notificationUnsubscribe) notificationUnsubscribe = watchPendingNotifications({
       onPending: (count) => {
         diagnostics.listenerError = null;
         console.log(`Firestore notification trigger received ${count} new item(s).`);
@@ -517,7 +522,7 @@ async function ensureNotificationListenerLeader() {
         );
       },
     });
-    conversationOutboxUnsubscribe = watchPendingConversationOutboxes({
+    if (!conversationOutboxUnsubscribe) conversationOutboxUnsubscribe = watchPendingConversationOutboxes({
       onPending: (count) => {
         diagnostics.listenerError = null;
         console.log(`Firestore conversation notification trigger received ${count} new outbox item(s).`);
@@ -526,6 +531,23 @@ async function ensureNotificationListenerLeader() {
       onError: (error) => {
         diagnostics.listenerError = String(error.message || error);
         console.error('Conversation notification outbox listener failed:', error);
+        conversationOutboxUnsubscribe = null;
+        setTimeout(() => void ensureNotificationListenerLeader(), 60 * 1000);
+      },
+    });
+    if (!requestNotificationsUnsubscribe) requestNotificationsUnsubscribe = watchRequestNotifications({
+      db: admin.firestore(),
+      admin,
+      onQueued: (count) => {
+        diagnostics.listenerError = null;
+        console.log(`Request approval routing queued ${count} notification(s).`);
+        schedulePushDispatch('request_approval_stage', 0);
+      },
+      onError: (error) => {
+        diagnostics.listenerError = String(error.message || error);
+        console.error('Request approval notification listener failed:', error);
+        requestNotificationsUnsubscribe = null;
+        setTimeout(() => void ensureNotificationListenerLeader(), 60 * 1000);
       },
     });
   } catch (error) {
@@ -533,6 +555,8 @@ async function ensureNotificationListenerLeader() {
     diagnostics.listenerError = String(error.message || error);
     console.error('Could not start pending notification listener:', error);
     notificationUnsubscribe = null;
+    conversationOutboxUnsubscribe = null;
+    requestNotificationsUnsubscribe = null;
     advanceRouteUnsubscribe = null;
     setTimeout(() => void ensureNotificationListenerLeader(), 60 * 1000);
   }

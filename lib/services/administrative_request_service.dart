@@ -95,22 +95,26 @@ class AdministrativeRequestService {
       'submittedAt': FieldValue.serverTimestamp(),
       'isRead': false,
     });
-    if (usesHrFallback) {
-      await RoleNotificationService.instance.notifyRole(
-        role: EmployeeRole.hrManager,
-        includeSuperAdmins: false,
-        type: 'administrative_request_submitted',
-        title: 'طلب إداري جديد',
-        body: '${employee.displayName} أرسل طلباً إدارياً.',
-        data: {'administrativeRequestId': ref.id},
-      );
-    } else {
-      await _notify(
-        managerIds.first,
-        'طلب إداري بانتظار موافقتك',
-        '${employee.displayName}: ${AdministrativeRequestCategory.arabicLabel(category)}',
-        ref.id,
-      );
+    try {
+      if (usesHrFallback) {
+        await RoleNotificationService.instance.notifyRole(
+          role: EmployeeRole.hrManager,
+          includeSuperAdmins: false,
+          type: 'administrative_request_submitted',
+          title: 'طلب إداري جديد',
+          body: '${employee.displayName} أرسل طلباً إدارياً.',
+          data: {'administrativeRequestId': ref.id},
+        );
+      } else {
+        await _notify(
+          managerIds.first,
+          'طلب إداري بانتظار موافقتك',
+          '${employee.displayName}: ${AdministrativeRequestCategory.arabicLabel(category)}',
+          ref.id,
+        );
+      }
+    } catch (error) {
+      debugPrint('Administrative request saved; server will reconcile notification: $error');
     }
   }
 
@@ -195,22 +199,26 @@ class AdministrativeRequestService {
         'submittedAt': FieldValue.serverTimestamp(),
         'isRead': false,
       });
-      if (usesHrFallback) {
-        await RoleNotificationService.instance.notifyRole(
-          role: EmployeeRole.hrManager,
-          includeSuperAdmins: false,
-          type: 'administrative_request_submitted',
-          title: 'طلب مهمة ميدانية جديد',
-          body: '${employee.displayName} أرسل طلب مهمة ميدانية.',
-          data: {'administrativeRequestId': ref.id},
-        );
-      } else if (managerIds.isNotEmpty) {
-        await _notify(
-          managerIds.first,
-          'طلب مهمة ميدانية بانتظار موافقتك',
-          '${employee.displayName}: مهمة ميدانية (${siteName.trim()})',
-          ref.id,
-        );
+      try {
+        if (usesHrFallback) {
+          await RoleNotificationService.instance.notifyRole(
+            role: EmployeeRole.hrManager,
+            includeSuperAdmins: false,
+            type: 'administrative_request_submitted',
+            title: 'طلب مهمة ميدانية جديد',
+            body: '${employee.displayName} أرسل طلب مهمة ميدانية.',
+            data: {'administrativeRequestId': ref.id},
+          );
+        } else if (managerIds.isNotEmpty) {
+          await _notify(
+            managerIds.first,
+            'طلب مهمة ميدانية بانتظار موافقتك',
+            '${employee.displayName}: مهمة ميدانية (${siteName.trim()})',
+            ref.id,
+          );
+        }
+      } catch (error) {
+        debugPrint('Field mission saved; server will reconcile notification: $error');
       }
     }
   }

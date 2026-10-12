@@ -89,7 +89,7 @@ void main() {
     );
     expect(
       firestoreRules,
-      contains("resource.data.status == 'pending_hr'\n          && isHR()"),
+      contains("return isHR()\n        && uid() != resource.data.userId"),
     );
     expect(firestoreRules, contains('&& uid() != resource.data.userId'));
   });
@@ -101,10 +101,10 @@ void main() {
         screenSource,
         contains("whereIn: ['pending_manager', 'pending_ceo']"),
       );
-      expect(screenSource, contains('final reviewerIsCeo'));
-      expect(
-        screenSource,
-        contains("reviewer.employeeId.trim().toUpperCase() == 'CEO-100'"),
+    expect(screenSource, contains('final isCompanyCeo = reviewer.canReviewCeoStage'));
+    expect(
+      screenSource,
+      contains("if (status == 'pending_ceo')"),
       );
       expect(
         screenSource,
@@ -123,7 +123,7 @@ void main() {
     expect(screenSource, contains('!_resolvedRequestIds.contains(r.resignationId)'));
     expect(screenSource, contains('!_resolvedRequestIds.contains(d.id)'));
     expect(screenSource, contains('_resolvedRequestIds.contains(item.id)'));
-    expect(screenSource, contains('تم حفظ القرار وتحديث القائمة.'));
+    expect(screenSource, contains('تم اعتماد الطلب بنجاح وتحديث القائمة.'));
   });
 
   test('management web shell keeps attendance and request shortcuts', () {
@@ -173,5 +173,48 @@ void main() {
     expect(screenSource, contains("RequestTypeStyle.attendanceCorrection.borderColor"));
     expect(screenSource, contains("RequestTypeStyle.salaryDeduction.borderColor"));
   });
-}
 
+  test('all reviewers only see requests belonging to their active approval stage', () {
+    expect(
+      screenSource,
+      contains('.where((doc) => _canActOnApproval(doc.data(), reviewer))'),
+    );
+    expect(
+      screenSource,
+      isNot(contains('reviewer.role != EmployeeRole.superAdmin && !EmployeeRole.isHr(reviewer.role)')),
+    );
+    expect(
+      screenSource,
+      contains("(currentStage['approverId'] as String? ?? '')"),
+    );
+    expect(screenSource, contains("status == 'pending_team_leader'"));
+    expect(screenSource, contains("status == 'pending_hr_manager'"));
+    expect(screenSource, contains("status == 'pending_it'"));
+    expect(screenSource, contains("status == 'pending_super_admin'"));
+  });
+
+  test('saved requests do not fail when direct notification delivery fails', () {
+    final permissionServiceSource =
+        File('lib/services/permission_service.dart').readAsStringSync();
+    expect(
+      permissionServiceSource,
+      contains('Permission saved; notification will be reconciled by the server'),
+    );
+    expect(
+      administrativeServiceSource,
+      contains('Administrative request saved; server will reconcile notification'),
+    );
+    expect(
+      administrativeServiceSource,
+      contains('Field mission saved; server will reconcile notification'),
+    );
+    expect(
+      File('lib/services/complaint_service.dart').readAsStringSync(),
+      contains('Complaint saved; server will reconcile notification'),
+    );
+    expect(
+      File('lib/services/employee_deletion_request_service.dart').readAsStringSync(),
+      contains('Deletion request saved; server will reconcile notification'),
+    );
+  });
+}

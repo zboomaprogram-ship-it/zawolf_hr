@@ -43,40 +43,22 @@ function employeeUserIdFromRequest(request = {}) {
 
 function managerUserIds({ request = {}, employee = {} } = {}) {
   const currentApproverId = String(request.currentApproverId || '').trim();
-  const isCeoStage = String(request.status || '').toLowerCase() === 'pending_ceo' ||
-    String(request.stage || '').toLowerCase() === 'ceo' ||
-    (currentApproverId && currentApproverId === String(request.ceoId || '').trim());
-  const directManagerId = String(request.managerId || employee.managerId || request.directManagerId || employee.directManagerId || '').trim();
-  const ceoId = String(request.ceoId || '').trim();
+  const roleMarkers = new Set(['HR', 'ACCOUNTING', 'ACCOUNTS', 'IT', 'CEO', 'COO', 'SUPER_ADMIN']);
+  if (currentApproverId && !roleMarkers.has(currentApproverId.toUpperCase())) {
+    return [currentApproverId];
+  }
 
-  // CEO only receives reminder notifications if the request is at the CEO approval stage,
-  // or if the employee is directly assigned to the CEO.
-  const includeCeo = Boolean(ceoId && (isCeoStage || directManagerId === ceoId));
+  const status = String(request.status || '').trim().toLowerCase();
+  if (status === 'pending_ceo') {
+    const ceoId = String(request.ceoId || '').trim();
+    return ceoId && !roleMarkers.has(ceoId.toUpperCase()) ? [ceoId] : [];
+  }
+  if (status !== 'pending_manager' && status !== 'pending') return [];
 
-  const allManagerCandidates = [
-    // Route-based requests (including custom and CEO stages) name the person
-    // who must act now. Prefer that recipient before legacy manager fields.
-    request.currentApproverId,
-    ...(includeCeo ? [ceoId] : []),
-    ...(Array.isArray(request.managerIds) ? request.managerIds : []),
-    request.managerId,
-    request.directManagerId,
-    request.teamLeaderId,
-    ...(Array.isArray(employee.managerIds) ? employee.managerIds : []),
-    employee.managerId,
-    employee.directManagerId,
-    employee.teamLeaderId,
-  ];
-
-  return orderedUnique(
-    allManagerCandidates.filter((id) => {
-      if (!id) return false;
-      if (!includeCeo && ceoId && id === ceoId) {
-        return false;
-      }
-      return true;
-    })
-  );
+  const managerIds = Array.isArray(request.managerIds) ? request.managerIds : [];
+  const index = Math.max(0, Number(request.managerApprovalIndex || 0));
+  const activeManagerId = String(request.managerId || managerIds[index] || '').trim();
+  return activeManagerId ? [activeManagerId] : [];
 }
 
 function requestEmployeeName(request = {}, employee = {}) {

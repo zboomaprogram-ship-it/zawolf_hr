@@ -28,12 +28,16 @@ test('request notification input requires a target and a useful description', ()
   });
 });
 
-test('recipient resolution keeps request managers first and removes duplicates', () => {
+test('recipient resolution returns only the manager who owns the active stage', () => {
   assert.equal(employeeUserIdFromRequest({ userId: 'employee-1' }), 'employee-1');
   assert.deepEqual(managerUserIds({
-    request: { managerIds: ['manager-2', 'manager-1'], managerId: 'manager-2' },
+    request: {
+      status: 'pending_manager',
+      managerIds: ['manager-2', 'manager-1'],
+      managerId: 'manager-2',
+    },
     employee: { managerIds: ['manager-1', 'manager-3'] },
-  }), ['manager-2', 'manager-1', 'manager-3']);
+  }), ['manager-2']);
 });
 
 test('notifications prefer the active approval owner, including CEO-100', () => {
@@ -41,7 +45,7 @@ test('notifications prefer the active approval owner, including CEO-100', () => 
   assert.deepEqual(recipientUserIds({
     input,
     request: { currentApproverId: 'ceo-user', ceoId: 'ceo-user', managerId: 'manager-1' },
-  }), ['ceo-user', 'manager-1']);
+  }), ['ceo-user']);
   assert.deepEqual(recipientUserIds({
     input: { target: 'employee' },
     request: { requesterId: 'employee-1' },
@@ -62,7 +66,7 @@ test('CEO is only notified if request requires CEO approval or employee reports 
     input,
     request: { currentApproverId: 'ceo-user', ceoId: 'ceo-user', managerId: 'manager-1', status: 'pending_ceo' },
     employee: { managerId: 'manager-1' },
-  }), ['ceo-user', 'manager-1']);
+  }), ['ceo-user']);
 
   // Employee directly assigned to CEO; CEO must be included
   assert.deepEqual(recipientUserIds({

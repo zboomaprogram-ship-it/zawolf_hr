@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart';
 
 import '../models/complaint_model.dart';
 import '../models/user_model.dart';
@@ -31,15 +32,19 @@ class ComplaintService {
     );
 
     await ref.set(complaint.toFirestore());
-    await _notifyRole(
-      role: 'hr_admin',
-      type: 'complaint_new',
-      title: 'شكوى جديدة',
-      body: isAnonymous
-          ? 'تم استلام شكوى مجهولة: ${title.trim()}'
-          : '${employee.displayName}: ${title.trim()}',
-      data: {'complaintId': ref.id},
-    );
+    try {
+      await _notifyRole(
+        role: 'hr_admin',
+        type: 'complaint_new',
+        title: 'شكوى جديدة',
+        body: isAnonymous
+            ? 'تم استلام شكوى مجهولة: ${title.trim()}'
+            : '${employee.displayName}: ${title.trim()}',
+        data: {'complaintId': ref.id},
+      );
+    } catch (error) {
+      debugPrint('Complaint saved; server will reconcile notification: $error');
+    }
   }
 
   Future<void> markReviewed(String complaintId, String reviewerId) async {
