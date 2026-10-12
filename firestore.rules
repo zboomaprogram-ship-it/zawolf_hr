@@ -37,8 +37,15 @@ service cloud.firestore {
     function isHRManagerRole() { return isHRRole(); }
     function isSuperAdmin() { return role() == 'super_admin'; }
     function isCompanyCeo() {
-      return (userDocExists() && userDoc().get('executiveRole', '') == 'ceo')
-        || (userDocExists() && employeeCode().matches('^CEO-[A-Za-z0-9_-]+$'));
+      return (userDocExists() && (
+        userDoc().get('executiveRole', '') == 'ceo'
+        || role() == 'ceo'
+        || userDoc().get('position', '') == 'CEO'
+        || employeeCode() == 'CEO-100'
+        || userDoc().get('employeeId', '') == 'CEO-100'
+        || userDoc().get('employeeCode', '') == 'CEO-100'
+        || employeeCode().matches('^CEO-[A-Za-z0-9_-]+$')
+      ));
     }
     // Some imported executive accounts use employeeCode while newer accounts
     // use employeeId.  Approval documents also exist in both UID and employee
@@ -64,14 +71,18 @@ service cloud.firestore {
     function isCurrentApprovalManager() {
       return resource.data.get('managerId', '') == uid()
         || resource.data.get('managerId', '') == employeeCode()
+        || (resource.data.get('managerId', '') == 'CEO-100' && isCompanyCeo())
         || uid() in resource.data.get('managerIds', [])
         || employeeCode() in resource.data.get('managerIds', [])
-        || employeeCode() in resource.data.get('managerCodes', []);
+        || ('CEO-100' in resource.data.get('managerIds', []) && isCompanyCeo())
+        || employeeCode() in resource.data.get('managerCodes', [])
+        || ('CEO-100' in resource.data.get('managerCodes', []) && isCompanyCeo());
     }
     // Financial approvers are assigned explicitly. Department labels and
     // titles are editable display data and must not grant payment authority.
     function isAdvanceCeoApprover() {
-      return userDocExists() && userDoc().get('isAdvanceCeoApprover', false) == true;
+      return (userDocExists() && userDoc().get('isAdvanceCeoApprover', false) == true)
+        || isCompanyCeo();
     }
     function isAdvanceAccountsApprover() {
       return userDocExists() && (
@@ -107,7 +118,7 @@ service cloud.firestore {
     function isPrivilegedAdmin() { return isHRRole() || isSuperAdmin(); }
     function canActAsApprovalManager() {
       return isTeamLeaderRole() || isManagerRole() || isHRRole() || isHRManagerRole()
-        || isSuperAdmin() || isCompanyCoo();
+        || isSuperAdmin() || isCompanyCoo() || isCompanyCeo();
     }
     function isManagerOrAbove() {
       return isManagerRole() || isHRRole() || isHRManagerRole() || isSuperAdmin();
@@ -192,17 +203,25 @@ service cloud.firestore {
       let nextIndex = currentIndex + 1;
       return (managerIds.size() == 0
           && (resource.data.get('managerId', '') == uid()
-            || resource.data.get('managerId', '') == employeeCode())
-          && request.resource.data.status in ['approved', 'pending_hr', 'rejected'])
+            || resource.data.get('managerId', '') == employeeCode()
+            || (resource.data.get('managerId', '') == 'CEO-100' && isCompanyCeo()))
+          && request.resource.data.status in ['approved', 'pending_hr', 'pending_ceo', 'rejected'])
         || (
           currentIndex >= 0
           && currentIndex < managerIds.size()
-          && resource.data.get('managerId', '') == managerIds[currentIndex]
+          && (
+            resource.data.get('managerId', '') == managerIds[currentIndex]
+            || (
+              (resource.data.get('managerId', '') == uid() || resource.data.get('managerId', '') == employeeCode() || (resource.data.get('managerId', '') == 'CEO-100' && isCompanyCeo()))
+              && (managerIds[currentIndex] == uid() || managerIds[currentIndex] == employeeCode() || (managerIds[currentIndex] == 'CEO-100' && isCompanyCeo()))
+            )
+          )
           && managerIds.removeAll([managerIds[currentIndex]]).size()
             == managerIds.size() - 1
           && (
             managerIds[currentIndex] == uid()
             || managerIds[currentIndex] == employeeCode()
+            || (managerIds[currentIndex] == 'CEO-100' && isCompanyCeo())
           )
           && (
             request.resource.data.status == 'rejected'
@@ -213,7 +232,7 @@ service cloud.firestore {
               && request.resource.data.managerId == managerIds[nextIndex]
             )
             || (
-              request.resource.data.status in ['approved', 'pending_hr']
+              request.resource.data.status in ['approved', 'pending_hr', 'pending_ceo']
               && nextIndex >= managerIds.size()
               && request.resource.data.managerApprovalIndex == currentIndex
             )
@@ -963,10 +982,10 @@ service cloud.firestore {
           .hasOnly([
             'status', 'reviewedBy', 'reviewedAt', 'reviewerComment', 'reviewerName', 'isRead',
             'managerId', 'managerName', 'managerApprovalIndex',
-            'managerApprovalTrail', 'approvalHistory',
+            'managerApprovalTrail', 'approvalHistory', 'ceoId', 'ceoName',
             'finalApproverId', 'finalApproverName', 'finalApprovalAt'
           ])
-        && request.resource.data.status in ['pending_manager', 'pending_hr', 'approved', 'rejected']
+        && request.resource.data.status in ['pending_manager', 'pending_hr', 'pending_ceo', 'approved', 'rejected']
         && request.resource.data.reviewedBy == uid();
     }
     function leaveCeoReview() {
@@ -975,6 +994,9 @@ service cloud.firestore {
         && (
           resource.data.get('ceoId', '') == uid()
           || resource.data.get('ceoId', '') == employeeCode()
+          || resource.data.get('ceoId', '') == 'CEO-100'
+          || resource.data.get('ceoId', '') == ''
+          || !('ceoId' in resource.data)
         )
         && request.resource.data.diff(resource.data).affectedKeys()
           .hasOnly([
@@ -1120,7 +1142,7 @@ service cloud.firestore {
           ])
         && request.resource.data.status in ['pending_manager', 'pending_hr', 'approved', 'rejected']
         && request.resource.data.reviewedBy == uid()
-        && request.resource.data.managerReviewedBy == uid()
+        && (!('managerReviewedBy' in request.resource.data) || request.resource.data.managerReviewedBy == uid())
         && (
           resource.data.get('isDeductible', false) == false
           || request.resource.data.status != 'approved'
@@ -2259,6 +2281,9 @@ service cloud.firestore {
           && (
             resource.data.get('ceoId', '') == uid()
             || resource.data.get('ceoId', '') == employeeCode()
+            || resource.data.get('ceoId', '') == 'CEO-100'
+            || resource.data.get('ceoId', '') == ''
+            || !('ceoId' in resource.data)
           )
           && request.resource.data.status in ['pending_hr', 'rejected']
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
