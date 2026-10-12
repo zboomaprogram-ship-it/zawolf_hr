@@ -648,9 +648,7 @@ service cloud.firestore {
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           'leaveBalance', 'leaveBalance.daysOff', 'leaveBalance.casual',
           'lastAutoApprovedCasualLeaveId'
-        ])
-        && nextDaysOff >= 0
-        && nextCasual >= 0;
+        ]);
     }
     function hrCanWriteUser() {
       return isHRRole()
