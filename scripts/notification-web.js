@@ -139,6 +139,7 @@ const {
 const {
   watchRequestNotifications,
 } = require('./request-notification-reconciliation');
+const { isEmployeeApiTokenAllowed } = require('./employee-api-auth');
 const {
   canManageDeveloperTools,
   canManageOperationalVisibility,
@@ -186,7 +187,7 @@ const {
 } = require('./request-approval-routing');
 
 const port = Number(process.env.PORT || 3000);
-const notificationRuntimeRelease = '2026-10-07-release-v1';
+const notificationRuntimeRelease = '2026-10-12-request-reliability-v2';
 const dispatchSecret = process.env.NOTIFICATION_DISPATCH_SECRET || '';
 const defaultGoogleWorkspaceOrigins = [
   'https://zawolf-hr-system-60317.web.app',
@@ -4422,6 +4423,16 @@ const server = http.createServer(async (req, res) => {
       notificationListener: notificationListenerOwner && notificationUnsubscribe
         ? 'connected'
         : 'standby',
+      requestNotificationListener:
+        notificationListenerOwner && requestNotificationsUnsubscribe
+          ? 'connected'
+          : 'standby',
+      employeeApi: {
+        configured: Boolean(
+          process.env.EMPLOYEE_API_KEY ||
+          process.env.NOTIFICATION_DISPATCH_SECRET
+        ),
+      },
       backgroundScheduler: backgroundSchedulerEnabled ? 'internal' : 'external_cron',
       // The app ID is public and is embedded in every mobile build. Returning
       // it lets support verify that Hostinger sends through the same OneSignal
@@ -4518,13 +4529,7 @@ const server = http.createServer(async (req, res) => {
       ? authHeader.slice('Bearer '.length).trim()
       : String(url.searchParams.get('token') || url.searchParams.get('apiKey') || '').trim();
 
-    const allowedTokens = [
-      process.env.EMPLOYEE_API_KEY,
-      process.env.NOTIFICATION_DISPATCH_SECRET,
-      'zawolf_api_2026',
-    ].filter(Boolean);
-
-    if (!token || !allowedTokens.includes(token)) {
+    if (!isEmployeeApiTokenAllowed(token)) {
       sendJson(res, 401, {
         ok: false,
         error: 'Unauthorized: Invalid or missing Bearer token',

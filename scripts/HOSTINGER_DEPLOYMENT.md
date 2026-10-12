@@ -47,6 +47,9 @@ but causes Company Files requests to fail with a module-not-found error.
 - `ONESIGNAL_APP_ID`: OneSignal application ID used by the Flutter app
 - `ONESIGNAL_REST_API_KEY`: OneSignal REST API key
 - `NOTIFICATION_DISPATCH_SECRET`: a long private value used by protected routes
+- `EMPLOYEE_API_KEY`: optional separate long private value for
+  `GET /api/v1/employees`. When omitted, that endpoint accepts
+  `NOTIFICATION_DISPATCH_SECRET`. There is no source-code fallback token.
 - `SALES_API_KEY`: Sales Analytics API bearer key
 
 For the optional private Google Sheets test, also set:
@@ -202,7 +205,22 @@ cycles. The recovery scan is bounded to 100 permission documents per run and is
 executed by the existing Hostinger scheduler, so no second scheduler should be
 enabled.
 
-### Server release packages — 2026-09-16
+### Server release package — 2026-10-12
+
+- File: `build/releases/zawolf-hostinger-request-reliability-2026-10-12-v2.zip`
+- SHA-256: see the adjacent `.sha256` file.
+- Release marker: `2026-10-12-request-reliability-v2`.
+- Includes request-stage notification reconciliation, current-approver-only
+  reminders, chat and attendance dependencies, and environment-only employee
+  API authentication.
+
+After extraction, run `npm install`, restart the application, and confirm that
+`/health` reports this release marker. The responding worker can report
+`notificationListener: standby` during a rolling deployment because exactly
+one Hostinger worker owns the Firestore listener lease. The lease owner reports
+both notification listener fields as `connected`.
+
+### Older server release packages — 2026-09-16
 
 #### Version 2 (Attendance Security Patch & Pending Early Leave)
 - File: `build/releases/zawolf-hostinger-pending-early-leave-2026-09-16-v2.zip`

@@ -1,7 +1,20 @@
 const admin = require('firebase-admin');
-const { installFirestoreCompatibility } = require('./firebase-service-account');
+const {
+  installFirestoreCompatibility,
+  parseFirebaseServiceAccount,
+} = require('./firebase-service-account');
 installFirestoreCompatibility(admin);
-const serviceAccount = require('/Users/seg/Downloads/zawolf-hr-system-60317-firebase-adminsdk-fbsvc-92ac87dc9b.json');
+const serviceAccount = parseFirebaseServiceAccount(process.env.FIREBASE_SERVICE_ACCOUNT);
+
+const email = String(process.env.HR_BOOTSTRAP_EMAIL || '').trim();
+const password = String(process.env.HR_BOOTSTRAP_PASSWORD || '');
+const displayName = String(process.env.HR_BOOTSTRAP_DISPLAY_NAME || 'HR Admin').trim();
+const employeeId = String(process.env.HR_BOOTSTRAP_EMPLOYEE_ID || '').trim();
+if (!email || password.length < 12 || !employeeId) {
+  throw new Error(
+    'Set HR_BOOTSTRAP_EMAIL, HR_BOOTSTRAP_PASSWORD (12+ characters), and HR_BOOTSTRAP_EMPLOYEE_ID.',
+  );
+}
 
 admin.initializeApp({
   credential: admin.cert(serviceAccount)
@@ -10,10 +23,6 @@ admin.initializeApp({
 const db = admin.firestore();
 
 async function createHRUser() {
-  const email = 'hr@zawolf.com';
-  const password = 'ZW@admin';
-  const displayName = 'HR Admin - Zawolf';
-
   try {
     console.log(`Creating user in Auth: ${email}...`);
     // Attempt to delete it first just in case it exists in auth but not firestore
@@ -40,7 +49,7 @@ async function createHRUser() {
       email: email,
       displayName: displayName,
       role: 'hr_admin',
-      employeeId: 'HR-201',
+      employeeId,
       department: 'Human Resources',
       position: 'HR',
       locationId: 'Zawolf',

@@ -2,26 +2,25 @@
 
 const assert = require('node:assert/strict');
 const test = require('node:test');
+const {
+  configuredEmployeeApiTokens,
+  isEmployeeApiTokenAllowed,
+} = require('../employee-api-auth');
 
 test('GET /api/v1/employees token authorization logic', () => {
-  const allowedTokens = [
-    'custom_secret_key',
-    'zawolf_api_2026',
-  ].filter(Boolean);
-
-  const checkAuth = (headerToken, queryToken) => {
-    const token = (headerToken && headerToken.startsWith('Bearer '))
-      ? headerToken.slice('Bearer '.length).trim()
-      : (queryToken || '').trim();
-    return Boolean(token && allowedTokens.includes(token));
+  const env = {
+    EMPLOYEE_API_KEY: 'employee-secret',
+    NOTIFICATION_DISPATCH_SECRET: 'dispatcher-secret',
   };
-
-  assert.equal(checkAuth('Bearer zawolf_api_2026', ''), true);
-  assert.equal(checkAuth('Bearer custom_secret_key', ''), true);
-  assert.equal(checkAuth('', 'zawolf_api_2026'), true);
-  assert.equal(checkAuth('Bearer wrong_token', ''), false);
-  assert.equal(checkAuth('', 'wrong_token'), false);
-  assert.equal(checkAuth('', ''), false);
+  assert.deepEqual(configuredEmployeeApiTokens(env), [
+    'employee-secret',
+    'dispatcher-secret',
+  ]);
+  assert.equal(isEmployeeApiTokenAllowed('employee-secret', env), true);
+  assert.equal(isEmployeeApiTokenAllowed('dispatcher-secret', env), true);
+  assert.equal(isEmployeeApiTokenAllowed('zawolf_api_2026', env), false);
+  assert.equal(isEmployeeApiTokenAllowed('wrong_token', env), false);
+  assert.equal(isEmployeeApiTokenAllowed('', env), false);
 });
 
 test('Employee mapping outputs id, name, email, department, workLocation, organizationSector, jobTitle, manager, role, isActive, and assignedDate', () => {
