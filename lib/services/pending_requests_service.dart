@@ -9,7 +9,7 @@ class PendingRequestsService {
   static final PendingRequestsService instance =
       PendingRequestsService._internal();
 
-  final FirebaseFirestore _db = FirebaseFirestore.instance;
+  FirebaseFirestore get _db => FirebaseFirestore.instance;
 
   final ValueNotifier<int> pendingCount = ValueNotifier<int>(0);
 

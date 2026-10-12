@@ -932,6 +932,11 @@ class _UnifiedManagementWebDashboardState
       onTap: () => context.go('/company-os'),
     ),
     _buildShortcutChip(
+      label: 'مركز ملفات الشركة',
+      icon: Icons.folder_shared_outlined,
+      onTap: () => context.go('/workspace'),
+    ),
+    _buildShortcutChip(
       label: 'إدارة أدوات المطوّر',
       icon: Icons.developer_mode_outlined,
       onTap: () => context.go('/hr/developer-tools'),

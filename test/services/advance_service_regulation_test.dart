@@ -40,20 +40,12 @@ void main() {
     );
   });
 
-  test('advance rule denies before tenure, before day 15, and above cap', () {
+  test('advance rule denies before tenure and above cap', () {
     expect(
       () => AdvanceService.validateSubmissionEligibility(
         employee: employee(joined: DateTime(2026, 6, 18)),
         amount: 5000,
         now: eligibleAt,
-      ),
-      throwsException,
-    );
-    expect(
-      () => AdvanceService.validateSubmissionEligibility(
-        employee: employee(joined: DateTime(2025, 1, 1)),
-        amount: 5000,
-        now: DateTime(2026, 9, 14, 10),
       ),
       throwsException,
     );

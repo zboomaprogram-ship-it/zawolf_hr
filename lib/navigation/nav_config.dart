@@ -419,6 +419,14 @@ List<NavigationItem> _operationalAdminItems() => [
     domain: NavDomain.people,
   ),
   NavigationItem(
+    icon: Icons.folder_shared_outlined,
+    activeIcon: Icons.folder_shared,
+    label: 'مركز ملفات الشركة',
+    englishLabel: 'Company Workspace',
+    path: '/workspace',
+    domain: NavDomain.people,
+  ),
+  NavigationItem(
     icon: Icons.developer_mode_outlined,
     activeIcon: Icons.developer_mode,
     label: 'إدارة أدوات المطوّر',

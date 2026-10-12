@@ -156,29 +156,32 @@ class ProductivityService {
   }
 
   Future<List<EmployeeTaskModel>> _safeTasksQuery(
-    String uid,
-    DateTime start,
-    DateTime nextStart,
+    UserModel user,
+    PayrollCycle cycle,
   ) async {
     try {
       final snap = await _db
           .collection('tasks')
-          .where('assigneeId', isEqualTo: uid)
-          .where('dueDate', isGreaterThanOrEqualTo: Timestamp.fromDate(start))
-          .where('dueDate', isLessThan: Timestamp.fromDate(nextStart))
+          .where('assigneeId', isEqualTo: user.uid)
+          .where(
+            'dueDate',
+            isGreaterThanOrEqualTo: Timestamp.fromDate(cycle.start),
+          )
+          .where('dueDate', isLessThan: Timestamp.fromDate(cycle.nextStart))
           .get();
       return snap.docs.map(EmployeeTaskModel.fromFirestore).toList();
     } catch (_) {
       try {
         final snap = await _db
             .collection('tasks')
-            .where('assigneeId', isEqualTo: uid)
+            .where('assigneeId', isEqualTo: user.uid)
             .get();
         return snap.docs
             .map(EmployeeTaskModel.fromFirestore)
             .where(
               (t) =>
-                  !t.dueDate.isBefore(start) && t.dueDate.isBefore(nextStart),
+                  !t.dueDate.isBefore(cycle.start) &&
+                  t.dueDate.isBefore(cycle.nextStart),
             )
             .toList();
       } catch (_) {
@@ -187,11 +190,11 @@ class ProductivityService {
     }
   }
 
-  Future<EmployeeKpiModel?> _safeKpiQuery(String uid, String monthKey) async {
+  Future<EmployeeKpiModel?> _safeKpiQuery(UserModel user, String monthKey) async {
     try {
       final snap = await _db
           .collection('employeeKpis')
-          .where('userId', isEqualTo: uid)
+          .where('userId', isEqualTo: user.uid)
           .where('monthKey', isEqualTo: monthKey)
           .limit(1)
           .get();
@@ -214,8 +217,8 @@ class ProductivityService {
         start: cycle.start,
         end: cycle.end,
       ),
-      _safeTasksQuery(user.uid, cycle.start, cycle.nextStart),
-      _safeKpiQuery(user.uid, monthKey),
+      _safeTasksQuery(user, cycle),
+      _safeKpiQuery(user, monthKey),
     ]);
 
     final attendanceSummary = results[0] as AttendancePeriodSummary;
@@ -345,6 +348,7 @@ class ProductivityService {
             ]
           : <Query<Map<String, dynamic>>>[
               base.where('managerId', isEqualTo: user.uid),
+              base.where('managerIds', arrayContains: user.uid),
               base.where('teamLeaderId', isEqualTo: user.uid),
             ];
       final snapshots = await Future.wait(queries.map((query) => query.get()));
