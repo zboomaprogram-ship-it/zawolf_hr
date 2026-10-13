@@ -205,14 +205,14 @@ cycles. The recovery scan is bounded to 100 permission documents per run and is
 executed by the existing Hostinger scheduler, so no second scheduler should be
 enabled.
 
-### Server release package — 2026-10-12
+### Server release package — 2026-10-13
 
-- File: `build/releases/zawolf-hostinger-request-reliability-2026-10-12-v2.zip`
+- File: `build/releases/zawolf-hostinger-request-routing-2026-10-13-v3.zip`
 - SHA-256: see the adjacent `.sha256` file.
-- Release marker: `2026-10-12-request-reliability-v2`.
-- Includes request-stage notification reconciliation, current-approver-only
-  reminders, chat and attendance dependencies, and environment-only employee
-  API authentication.
+- Release marker: `2026-10-13-request-routing-v3`.
+- Includes initial-snapshot suppression for request notification recovery and
+  current-approver-only routing, together with chat and attendance dependencies
+  and environment-only employee API authentication.
 
 After extraction, run `npm install`, restart the application, and confirm that
 `/health` reports this release marker. The responding worker can report
