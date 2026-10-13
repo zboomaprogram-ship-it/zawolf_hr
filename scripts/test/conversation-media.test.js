@@ -9,6 +9,9 @@ test('upload boundaries and unsafe metadata are rejected', () => {
   for (const change of [{sizeBytes:0},{sizeBytes:input.sizeBytes+1},{fileName:'../secret'},{mimeType:'text/html\r\nx:1'},{operationId:'bad/path'}]) {
     assert.throws(()=>normalizeUpload({...input,...change}));
   }
+  const thumbnail='data:image/jpeg;base64,'+Buffer.alloc(100).toString('base64');
+  assert.equal(normalizeUpload({...input,thumbnailBase64:thumbnail}).thumbnailBase64,thumbnail);
+  assert.throws(()=>normalizeUpload({...input,thumbnailBase64:'data:text/html;base64,AAAA'}));
 });
 test('chunk offsets and final length cannot exceed declared upload', () => {
   assert.doesNotThrow(()=>validateChunk(0,1024,1024));
@@ -145,6 +148,7 @@ test('hybrid provider writes new media to Firebase Storage and keeps legacy Driv
     download: async ({ fileId }) => { calls.push(`cloud-download:${fileId}`); return { contents:Buffer.from('new'), fileName:'new', mimeType:'text/plain' }; },
   };
   const provider = createHybridMediaProvider({ driveProvider:drive, firebaseProvider:cloud });
+  assert.equal(provider.supportsDirectUpload, true);
   const id = await provider.allocateId();
   assert.equal(id, 'gcs_new');
   await provider.start({ fileId:id });

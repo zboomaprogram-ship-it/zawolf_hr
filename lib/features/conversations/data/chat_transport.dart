@@ -88,4 +88,53 @@ class ChatTransport {
       bytes: response.bodyBytes,
     );
   }
+
+  /// Sends one chunk to a server-issued Cloud Storage resumable session.
+  /// The session URI is a short-lived capability and is never persisted by
+  /// the client. A failure is surfaced so the repository can resume through
+  /// the authenticated Hostinger proxy using the authoritative server offset.
+  Future<int> directUploadChunk({
+    required Uri sessionUri,
+    required Uint8List bytes,
+    required int offset,
+    required int totalBytes,
+  }) async {
+    if (sessionUri.scheme != 'https' ||
+        !const {
+          'storage.googleapis.com',
+          'www.googleapis.com',
+        }.contains(sessionUri.host)) {
+      throw const ChatFailure('invalid_upload_session');
+    }
+    final end = offset + bytes.length - 1;
+    final request =
+        http.Request('PUT', sessionUri)
+          ..headers.addAll({
+            'content-type': 'application/octet-stream',
+            'content-length': '${bytes.length}',
+            'content-range': 'bytes $offset-$end/$totalBytes',
+          })
+          ..bodyBytes = bytes;
+    try {
+      final response = await client
+          .send(request)
+          .timeout(const Duration(seconds: 60));
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        await response.stream.drain<void>();
+        return totalBytes;
+      }
+      if (response.statusCode == 308) {
+        await response.stream.drain<void>();
+        final range = response.headers['range'] ?? '';
+        final match = RegExp(r'^bytes=0-(\d+)$').firstMatch(range);
+        return match == null ? offset : int.parse(match.group(1)!) + 1;
+      }
+      await response.stream.drain<void>();
+      throw ChatFailure('direct_upload_${response.statusCode}');
+    } on ChatFailure {
+      rethrow;
+    } catch (_) {
+      throw const ChatFailure('connection_interrupted');
+    }
+  }
 }

@@ -32,6 +32,7 @@ class ChatComposerCubit extends Cubit<ChatComposerState> {
   final String channelId;
   Future<void> _writes = Future.value();
   Timer? _typingStop;
+  Timer? _draftSave;
   DateTime? _lastTyping;
 
   Future<void> _restore() async {
@@ -66,7 +67,7 @@ class ChatComposerCubit extends Cubit<ChatComposerState> {
         revision: state.revision,
       ),
     );
-    _persist();
+    _schedulePersist();
     final now = DateTime.now();
     if (_lastTyping == null ||
         now.difference(_lastTyping!) >= const Duration(seconds: 3)) {
@@ -139,6 +140,7 @@ class ChatComposerCubit extends Cubit<ChatComposerState> {
         revision: state.revision,
       ),
     );
+    _draftSave?.cancel();
     _persist();
     await _writes;
   }
@@ -156,7 +158,13 @@ class ChatComposerCubit extends Cubit<ChatComposerState> {
         revision: state.revision,
       ),
     );
+    _draftSave?.cancel();
     _persist();
+  }
+
+  void _schedulePersist() {
+    _draftSave?.cancel();
+    _draftSave = Timer(const Duration(milliseconds: 900), _persist);
   }
 
   void _persist() {
@@ -189,6 +197,8 @@ class ChatComposerCubit extends Cubit<ChatComposerState> {
       return;
     }
     final draft = state;
+    _draftSave?.cancel();
+    _persist();
     emit(
       ChatComposerState(
         body: draft.body,
@@ -233,6 +243,10 @@ class ChatComposerCubit extends Cubit<ChatComposerState> {
 
   @override
   Future<void> close() async {
+    if (_draftSave?.isActive ?? false) {
+      _draftSave!.cancel();
+      _persist();
+    }
     stopTyping();
     await _writes;
     return super.close();

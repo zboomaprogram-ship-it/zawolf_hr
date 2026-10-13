@@ -54,7 +54,7 @@ async function channelFor(db, actor, id, tx, write = false) {
   return { id, ref, data, ...permissions };
 }
 function attachmentDto(id, data) {
-  const dto = { resourceId: id, fileName: data.fileName || data.name || '', mimeType: data.mimeType || 'application/octet-stream', sizeBytes: data.sizeBytes || 0, kind: data.kind || 'file', status: data.status || 'uploaded' };
+  const dto = { resourceId: id, fileName: data.fileName || data.name || '', mimeType: data.mimeType || 'application/octet-stream', sizeBytes: data.sizeBytes || 0, kind: data.kind || 'file', status: data.status || 'uploaded', thumbnailBase64: data.thumbnailBase64 || null };
   for (const key of ['width', 'height', 'durationSeconds']) if (Number.isFinite(data[key])) dto[key] = data[key];
   return dto;
 }

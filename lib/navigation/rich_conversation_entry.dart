@@ -8,6 +8,7 @@ import '../features/conversations/data/chat_transport.dart';
 import '../features/conversations/data/conversation_repository_impl.dart';
 import '../features/conversations/data/local/chat_database.dart';
 import '../features/conversations/data/local/chat_store.dart';
+import '../features/conversations/data/local/platform_chat_blob_store.dart';
 import '../features/conversations/data/rich_chat_repository_impl.dart';
 import '../features/conversations/data/media/chat_media_gateway_impl.dart';
 import '../features/conversations/data/media/chat_recorder_impl.dart';
@@ -87,7 +88,11 @@ class _RichConversationEntryState extends State<RichConversationEntry> {
     final repository = RichChatRepositoryImpl(
       actorId: uid,
       transport: transport,
-      store: ChatStore(ChatDatabase(), uid),
+      store: ChatStore(
+        ChatDatabase(),
+        uid,
+        blobStore: createPlatformChatBlobStore(uid),
+      ),
     );
     _repository = repository;
     RichChannel? channel;

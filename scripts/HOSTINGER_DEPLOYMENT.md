@@ -207,6 +207,22 @@ enabled.
 
 ### Server release package — 2026-10-13
 
+- File: `build/releases/zawolf-hostinger-chat-performance-2026-10-13-v10.zip`
+- SHA-256: see the adjacent `.sha256` file.
+- Release marker: `2026-10-13-chat-performance-v10`.
+- Adds direct resumable Firebase Storage uploads with authenticated proxy
+  fallback, server-side size/type validation, image previews, and keeps legacy
+  Drive attachments readable.
+- Apply `scripts/firebase-storage-cors.json` to the production bucket before
+  expecting browser-to-storage uploads. Mobile uses the direct route without
+  browser CORS, and web safely falls back to the Hostinger proxy if CORS has
+  not been applied.
+
+After extraction, run `npm install`, restart the application, and confirm that
+`/health` reports `2026-10-13-chat-performance-v10`.
+
+### Previous server release package — 2026-10-13
+
 - File: `build/releases/zawolf-hostinger-request-routing-2026-10-13-v6.zip`
 - SHA-256: see the adjacent `.sha256` file.
 - Release marker: `2026-10-13-request-routing-v6`.

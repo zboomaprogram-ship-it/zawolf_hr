@@ -1,0 +1,11 @@
+[
+  {
+    "origin": [
+      "https://zawolf-hr-system-60317.web.app",
+      "https://zawolf-hr-system-60317.firebaseapp.com"
+    ],
+    "method": ["PUT"],
+    "responseHeader": ["Content-Range", "Range", "Content-Type"],
+    "maxAgeSeconds": 3600
+  }
+]

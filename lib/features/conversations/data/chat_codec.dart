@@ -19,6 +19,7 @@ RichAttachment decodeAttachment(Map<String, Object?> v) => RichAttachment(
   width: (v['width'] as num?)?.toDouble(),
   height: (v['height'] as num?)?.toDouble(),
   durationSeconds: (v['durationSeconds'] as num?)?.toDouble(),
+  thumbnailBase64: v['thumbnailBase64'] as String?,
 );
 Map<String, Object?> encodeAttachment(RichAttachment a) => {
   'resourceId': a.resourceId,
@@ -30,6 +31,7 @@ Map<String, Object?> encodeAttachment(RichAttachment a) => {
   'width': a.width,
   'height': a.height,
   'durationSeconds': a.durationSeconds,
+  'thumbnailBase64': a.thumbnailBase64,
 };
 RichMessage decodeMessage(Map<String, Object?> v) => RichMessage(
   id: '${v['id']}',

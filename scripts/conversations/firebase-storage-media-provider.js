@@ -45,6 +45,7 @@ function createFirebaseStorageMediaProvider({ bucket, bucketName } = {}) {
 
   return {
     requiresFolder: false,
+    supportsDirectUpload: true,
     async allocateId() {
       return `${PREFIX}${crypto.randomBytes(18).toString('hex')}`;
     },
@@ -95,6 +96,14 @@ function createFirebaseStorageMediaProvider({ bucket, bucketName } = {}) {
         if (Number(error?.code) === 404) return null;
         throw error;
       }
+    },
+    async sample({ fileId, maxBytes = 4096 }) {
+      const [contents] = await fileFor(fileId).download({
+        start: 0,
+        end: Math.max(0, maxBytes - 1),
+        validation: false,
+      });
+      return contents;
     },
     async download({ fileId }) {
       const metadata = await this.metadata({ fileId });

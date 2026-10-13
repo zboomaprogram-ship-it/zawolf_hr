@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../../theme/theme.dart';
@@ -27,6 +28,18 @@ class _RichAttachmentViewState extends State<RichAttachmentView>
     with AutomaticKeepAliveClientMixin {
   late final ChatMediaCubit _cubit = ChatMediaCubit(widget.download);
   bool get _available => widget.attachment.resourceId.trim().isNotEmpty;
+
+  Uint8List? get _thumbnail {
+    final value = widget.attachment.thumbnailBase64;
+    if (value == null) return null;
+    final separator = value.indexOf(',');
+    if (separator < 0) return null;
+    try {
+      return base64Decode(value.substring(separator + 1));
+    } catch (_) {
+      return null;
+    }
+  }
 
   @override
   bool get wantKeepAlive => true;
@@ -317,6 +330,17 @@ class _RichAttachmentViewState extends State<RichAttachmentView>
                   style: TextStyle(color: secondaryTextColor, fontSize: 11),
                 ),
               ],
+              if (state.loading && isImage && _thumbnail != null)
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: Image.memory(
+                    _thumbnail!,
+                    height: 180,
+                    fit: BoxFit.cover,
+                    filterQuality: FilterQuality.low,
+                    gaplessPlayback: true,
+                  ),
+                ),
               if (state.loading)
                 Padding(
                   padding: const EdgeInsets.symmetric(vertical: 4),

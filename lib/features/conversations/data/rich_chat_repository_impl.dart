@@ -327,6 +327,7 @@ class RichChatRepositoryImpl implements RichChatRepository {
         'sizeBytes': f.bytes.length,
         'kind': f.kind,
         'durationSeconds': f.durationSeconds,
+        'thumbnailBase64': f.thumbnailBase64,
       });
     }
     return result;
@@ -472,6 +473,7 @@ class RichChatRepositoryImpl implements RichChatRepository {
       'sizeBytes': file['sizeBytes'],
       'kind': file['kind'],
       'durationSeconds': file['durationSeconds'],
+      'thumbnailBase64': file['thumbnailBase64'],
     }, '${file['operationId']}');
     final resourceId = '${created['resourceId']}';
     final uploadPath = '$path/${Uri.encodeComponent(resourceId)}';
@@ -482,6 +484,32 @@ class RichChatRepositoryImpl implements RichChatRepository {
       offset = (state['offset'] as num?)?.toInt() ?? 0;
     }
     final bytes = await store.bytes('${file['blobId']}');
+    final directUri = Uri.tryParse('${created['sessionUri'] ?? ''}');
+    if (created['direct'] == true && directUri != null) {
+      try {
+        final directChunkSize =
+            (created['chunkSize'] as num?)?.toInt() ?? 4 * 1024 * 1024;
+        while (offset < bytes.length) {
+          final end = (offset + directChunkSize).clamp(0, bytes.length);
+          final next = await transport.directUploadChunk(
+            sessionUri: directUri,
+            bytes: Uint8List.sublistView(bytes, offset, end),
+            offset: offset,
+            totalBytes: bytes.length,
+          );
+          if (next <= offset || next > bytes.length) {
+            throw const ChatFailure('invalid_upload_offset');
+          }
+          offset = next;
+          await onProgress(offset / bytes.length);
+        }
+      } on ChatFailure {
+        // Ask the authorization boundary for the committed cloud offset, then
+        // continue through the existing proxy without duplicating the object.
+        state = await _get(uploadPath);
+        offset = (state['offset'] as num?)?.toInt() ?? 0;
+      }
+    }
     while (offset < bytes.length) {
       final end = (offset + 1024 * 1024).clamp(0, bytes.length);
       state = await transport.json(
@@ -533,12 +561,42 @@ class RichChatRepositoryImpl implements RichChatRepository {
     List<ChatDraftFile> files, {
     String? replyToMessageId,
   }) => store.transaction(() async {
-    await _clearDraft(channelId);
+    final previous = await store.get(channelId, 'draft', 'draft');
+    final previousFiles = objectList(previous?['files']);
+    final unchangedFiles =
+        previousFiles.length == files.length &&
+        List.generate(files.length, (index) {
+          final old = previousFiles[index];
+          final current = files[index];
+          return old['fileName'] == current.fileName &&
+              old['mimeType'] == current.mimeType &&
+              old['kind'] == current.kind &&
+              old['sizeBytes'] == current.bytes.length &&
+              old['durationSeconds'] == current.durationSeconds &&
+              old['thumbnailBase64'] == current.thumbnailBase64;
+        }).every((same) => same);
+    if (unchangedFiles) {
+      await store.put(channelId, 'draft', 'draft', {
+        'body': body,
+        'replyToMessageId': replyToMessageId,
+        'files': previousFiles,
+      });
+      return;
+    }
+
+    final saved = await _saveFiles('draft-${newChatOperationId()}', files);
     await store.put(channelId, 'draft', 'draft', {
       'body': body,
       'replyToMessageId': replyToMessageId,
-      'files': await _saveFiles('draft-${newChatOperationId()}', files),
+      'files': saved,
     });
+    final retained = saved.map((file) => '${file['blobId']}').toSet();
+    for (final old in previousFiles) {
+      final blobId = '${old['blobId']}';
+      if (blobId.isNotEmpty && !retained.contains(blobId)) {
+        await store.removeBlob(blobId);
+      }
+    }
   });
   @override
   Future<({String body, List<ChatDraftFile> files, String? replyToMessageId})>
@@ -553,6 +611,7 @@ class RichChatRepositoryImpl implements RichChatRepository {
           bytes: await store.bytes('${f['blobId']}'),
           kind: '${f['kind']}',
           durationSeconds: (f['durationSeconds'] as num?)?.toDouble(),
+          thumbnailBase64: f['thumbnailBase64'] as String?,
         ),
       );
     }
@@ -893,6 +952,7 @@ class RichChatRepositoryImpl implements RichChatRepository {
         mimeType: '${meta['mimeType']}',
         kind: '${meta['kind'] ?? 'file'}',
         durationSeconds: (meta['durationSeconds'] as num?)?.toDouble(),
+        thumbnailBase64: meta['thumbnailBase64'] as String?,
         bytes: bytes,
       );
     } catch (_) {
@@ -920,10 +980,13 @@ class RichChatRepositoryImpl implements RichChatRepository {
       'mimeType': file.mimeType,
       'kind': file.kind,
       'durationSeconds': file.durationSeconds,
+      'thumbnailBase64': file.thumbnailBase64,
       'sizeBytes': file.bytes.length,
       'lastAccessedAt': DateTime.now().toUtc().toIso8601String(),
     });
-    final entries = await store.rows(channelId, 'media');
+    // Enforce one actor-wide budget. Per-channel pruning allowed the cache to
+    // grow by 256 MB for every conversation.
+    final entries = await store.rowsByKind('media');
     var total = entries.fold<int>(
       0,
       (sum, value) => sum + ((value['sizeBytes'] as num?)?.toInt() ?? 0),
@@ -936,9 +999,9 @@ class RichChatRepositoryImpl implements RichChatRepository {
       total -= (entry['sizeBytes'] as num?)?.toInt() ?? 0;
       await store.removeBlob('${entry['blobId']}');
       await store.remove(
-        channelId,
+        '${entry['_channel'] ?? channelId}',
         'media',
-        '${entry['resourceId'] ?? entry['id'] ?? ''}',
+        '${entry['resourceId'] ?? entry['_id'] ?? ''}',
       );
     }
   }

@@ -20,10 +20,12 @@ class RichAttachment {
     this.width,
     this.height,
     this.durationSeconds,
+    this.thumbnailBase64,
   });
   final String resourceId, fileName, mimeType, kind, status;
   final int sizeBytes;
   final double? width, height, durationSeconds;
+  final String? thumbnailBase64;
 }
 
 class ChatDraftFile {
@@ -33,10 +35,12 @@ class ChatDraftFile {
     required this.bytes,
     this.kind = 'file',
     this.durationSeconds,
+    this.thumbnailBase64,
   });
   final String fileName, mimeType, kind;
   final Uint8List bytes;
   final double? durationSeconds;
+  final String? thumbnailBase64;
 }
 
 class RichMessage {

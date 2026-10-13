@@ -14,7 +14,9 @@ function normalizeUpload(p={}) {
     !/^[a-z0-9.+-]+\/[a-z0-9.+-]+$/.test(mimeType)||
     !Number.isSafeInteger(sizeBytes)||sizeBytes<1||sizeBytes>MAX_BYTES) throw failure('validation_failed');
   if(p.kind==='voice' && (!Number.isFinite(p.durationSeconds)||p.durationSeconds<=0||p.durationSeconds>300)) throw failure('validation_failed');
-  return {operationId,fileName,mimeType,sizeBytes,kind:p.kind==='voice'?'voice':null,durationSeconds:p.kind==='voice'?p.durationSeconds:null};
+  const thumbnailBase64=p.thumbnailBase64==null?null:String(p.thumbnailBase64);
+  if(thumbnailBase64 && (!/^data:image\/jpeg;base64,[A-Za-z0-9+/=]+$/.test(thumbnailBase64)||thumbnailBase64.length>14*1024)) throw failure('validation_failed');
+  return {operationId,fileName,mimeType,sizeBytes,kind:p.kind==='voice'?'voice':null,durationSeconds:p.kind==='voice'?p.durationSeconds:null,thumbnailBase64};
 }
 function validateChunk(offset,length,total) {
   if(!Number.isSafeInteger(offset)||offset<0||!Number.isSafeInteger(length)||length<1||length>CHUNK_BYTES||offset+length>total||
@@ -42,7 +44,21 @@ function descriptor(id,d) {
   const mime=d.validatedMimeType||d.mimeType||'application/octet-stream';
   return {resourceId:id,fileName:d.fileName||d.name||'download',mimeType:mime,sizeBytes:d.sizeBytes||0,
     kind:d.kind==='voice'?'voice':mime.startsWith('image/')?'image':mime.startsWith('video/')?'video':mime.startsWith('audio/')?'audio':mime==='application/pdf'?'pdf':mime==='text/plain'?'text':'file',
-    durationSeconds:d.durationSeconds||null,status:d.status};
+    durationSeconds:d.durationSeconds||null,thumbnailBase64:d.thumbnailBase64||null,status:d.status};
+}
+async function validateStoredUpload(provider, secret, d) {
+  if (d.validatedMimeType) return d;
+  const bytes = await provider.sample({
+    fileId: secret.externalId,
+    folderId: secret.parentExternalId,
+    maxBytes: 4096,
+  });
+  const validatedMimeType = sniffMime(bytes, d.mimeType);
+  validateVoiceMime(d.kind, validatedMimeType);
+  if (validatedMimeType === 'application/octet-stream' && d.mimeType !== 'application/octet-stream') {
+    throw failure('invalid_attachment_type', 415);
+  }
+  return {...d, validatedMimeType};
 }
 async function readBytes(req) {
   const list=[];let size=0;
@@ -82,8 +98,42 @@ async function handleMedia({req,res,db,actor,channel,parts,payload,sendJson,prov
         if(d.sizeBytes!==input.sizeBytes||d.fileName!==input.fileName||d.mimeType!==input.mimeType) throw failure('operation_conflict',409);
       }else t.create(ref,{...input,conversationId:channel.id,uploaderUserId:actor.uid,status:'pending',offset:0,createdAt:new Date()});
     });
-    const d=(await ref.get()).data();
-    sendJson(res,200,{ok:true,resourceId,offset:d.offset,status:d.status});return true;
+    let response;
+    await leased(db,ref,async()=>{
+      const d=(await ref.get()).data();
+      if(d.status==='uploaded') {
+        response={ok:true,resourceId,offset:d.sizeBytes,status:'uploaded',attachment:descriptor(resourceId,d)};
+        return;
+      }
+      if(!provider.supportsDirectUpload) {
+        response={ok:true,resourceId,offset:d.offset||0,status:d.status};
+        return;
+      }
+      const secretRef=db.collection('workspaceResourceSecrets').doc(resourceId);
+      let secret=(await secretRef.get()).data();
+      if(!secret) {
+        const fileId=await provider.allocateId();
+        secret={externalId:fileId,parentExternalId:'firebase_storage',provider:'firebase_storage'};
+      }
+      const finished=await provider.metadata({fileId:secret.externalId,folderId:secret.parentExternalId});
+      if(finished) {
+        if(Number(finished.size)!==d.sizeBytes)throw failure('upload_size_mismatch',409);
+        const validated=await validateStoredUpload(provider,secret,d);
+        await ref.update({status:'uploaded',offset:d.sizeBytes,validatedMimeType:validated.validatedMimeType});
+        response={ok:true,resourceId,offset:d.sizeBytes,status:'uploaded',attachment:descriptor(resourceId,{...validated,status:'uploaded',offset:d.sizeBytes})};
+        return;
+      }
+      let offset=d.offset||0;
+      if(secret.sessionUri) {
+        try { offset=(await provider.status({sessionUri:secret.sessionUri,sizeBytes:d.sizeBytes})).offset; }
+        catch (_) { secret.sessionUri=null; offset=0; }
+      }
+      if(!secret.sessionUri) secret.sessionUri=await provider.start({fileId:secret.externalId,...d});
+      await secretRef.set(secret);
+      await ref.update({offset});
+      response={ok:true,resourceId,offset,status:d.status,direct:true,sessionUri:secret.sessionUri,chunkSize:4*1024*1024};
+    });
+    sendJson(res,200,response);return true;
   }
   const resourceId=safeId(parts[1]);
   if(!resourceId) throw failure('validation_failed');
@@ -171,7 +221,8 @@ async function handleMedia({req,res,db,actor,channel,parts,payload,sendJson,prov
     const finished=await provider.metadata({fileId:secret.externalId,folderId:secret.parentExternalId});
     if(finished) {
       if(Number(finished.size)!==d.sizeBytes)throw failure('upload_size_mismatch',409);
-      await ref.update({status:'uploaded',offset:d.sizeBytes});d={...d,status:'uploaded',offset:d.sizeBytes};
+      d=await validateStoredUpload(provider,secret,d);
+      await ref.update({status:'uploaded',offset:d.sizeBytes,validatedMimeType:d.validatedMimeType});d={...d,status:'uploaded',offset:d.sizeBytes};
     }else {
       let offset=d.offset||0;
       if(secret.sessionUri) {
@@ -229,6 +280,7 @@ async function handleMedia({req,res,db,actor,channel,parts,payload,sendJson,prov
         if(state.complete) {
           const m=await provider.metadata({fileId:secret.externalId,folderId:secret.parentExternalId});
           if(!m||Number(m.size)!==d.sizeBytes)throw failure('upload_size_mismatch',409);
+          d=await validateStoredUpload(provider,secret,d);
           d={...d,status:'uploaded'};
         }
       }else if(!(req.method==='GET'&&parts.length===2)&&!(req.method==='POST'&&parts[2]==='finalize'))throw failure('not_found',404);
