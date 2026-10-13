@@ -207,9 +207,9 @@ enabled.
 
 ### Server release package — 2026-10-13
 
-- File: `build/releases/zawolf-hostinger-request-routing-2026-10-13-v3.zip`
+- File: `build/releases/zawolf-hostinger-request-routing-2026-10-13-v4.zip`
 - SHA-256: see the adjacent `.sha256` file.
-- Release marker: `2026-10-13-request-routing-v3`.
+- Release marker: `2026-10-13-request-routing-v4`.
 - Includes initial-snapshot suppression for request notification recovery and
   current-approver-only routing, together with chat and attendance dependencies
   and environment-only employee API authentication.
