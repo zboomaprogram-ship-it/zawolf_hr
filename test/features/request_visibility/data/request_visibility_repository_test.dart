@@ -198,6 +198,20 @@ void main() {
     expect(record.occurredAt, DateTime.utc(2026, 8, 24, 9, 30));
   });
 
+  test('preserves whether a history record is related to the active actor', () {
+    final record = RequestVisibilityNormalizer.fromMap({
+      'id': 'reviewed-request',
+      'userId': 'employee-1',
+      'requestType': 'leave',
+      'status': 'approved',
+      'createdAt': '2026-08-24T09:30:00.000Z',
+      '_isRelatedToActor': true,
+    });
+
+    expect(record, isNotNull);
+    expect(record!.isRelatedToActor, isTrue);
+  });
+
   test('recognizes complaint resignation and account deletion sources', () {
     final complaint = RequestVisibilityNormalizer.fromMap({
       'id': 'complaint-1',

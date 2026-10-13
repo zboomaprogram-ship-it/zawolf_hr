@@ -78,6 +78,8 @@ class AttendanceActionResult {
 }
 
 class AttendanceService {
+  static const Duration _liveCheckInRetryWindow = Duration(minutes: 3);
+
   final FirebaseFirestore _db = FirebaseFirestore.instance;
   final GeofenceService _geofenceService = GeofenceService();
   final AttendanceSecurityService _securityService =
@@ -90,6 +92,7 @@ class AttendanceService {
       OfflineAttendanceQueueService.instance;
   final AttendanceGatewayService _attendanceGateway =
       AttendanceGatewayService();
+  final Map<String, DateTime> _liveCheckInRetryStartedAt = <String, DateTime>{};
 
   // Handle employee Check-In or Check-Out
   Future<AttendanceActionResult> handleCheckInOrCheckOut(
@@ -99,6 +102,7 @@ class AttendanceService {
     String? earlyLeavePermissionId,
     DateTime? earlyLeaveCheckoutAllowedFrom,
   }) async {
+    final actionStartedAt = DateTime.now();
     var diagnosticStage = 'security_policy';
     try {
       final securityPolicy =
@@ -106,6 +110,7 @@ class AttendanceService {
               .assertAttendanceClientAllowed();
       final now = DateTime.now();
       final todayStr = DateFormat('yyyy-MM-dd').format(now);
+      final retryKey = '${employee.uid}_$todayStr';
       final online = await _offlineQueue.isOnline();
       if (!online) {
         throw const AttendanceGatewayException(
@@ -354,6 +359,16 @@ class AttendanceService {
 
       if (isCheckIn) {
         // ── CHECK-IN LOGIC ──
+        final retainedAttempt = _liveCheckInRetryStartedAt[retryKey];
+        final checkInEventTime =
+            retainedAttempt != null &&
+                    actionStartedAt.difference(retainedAttempt) <=
+                        _liveCheckInRetryWindow
+                ? retainedAttempt
+                : actionStartedAt;
+        if (retainedAttempt != null && checkInEventTime != retainedAttempt) {
+          _liveCheckInRetryStartedAt.remove(retryKey);
+        }
         final effectiveStartTime = await _effectiveCheckInStartTime(
           employee: employee,
           dateKey: todayStr,
@@ -361,7 +376,7 @@ class AttendanceService {
           now: now,
         );
         final deduction = policyConfig.evaluateLateArrival(
-          arrivalTime: now,
+          arrivalTime: checkInEventTime,
           employeeStartTime: _formatTime(effectiveStartTime),
         );
         final salaryDeductionAmount = policyConfig
@@ -386,7 +401,7 @@ class AttendanceService {
           assignmentVersion: geoResult.assignmentVersion,
           managerId: employee.managerId,
           date: todayStr,
-          eventTime: now,
+          eventTime: checkInEventTime,
           latitude: geoResult.position.latitude,
           longitude: geoResult.position.longitude,
           distanceMeters: geoResult.distanceMeters,
@@ -425,6 +440,10 @@ class AttendanceService {
             if (error is AttendanceGatewayException && !error.isTemporary) {
               rethrow;
             }
+            _liveCheckInRetryStartedAt.putIfAbsent(
+              retryKey,
+              () => checkInEventTime,
+            );
             throw const AttendanceGatewayException(
               'network',
               'تعذر تسجيل الحضور بسبب انقطاع الاتصال بالسيرفر. يرجى التأكد من اتصال الإنترنت والمحاولة مجدداً.',
@@ -434,6 +453,14 @@ class AttendanceService {
           throw const AttendanceGatewayException(
             'network',
             'لا يمكن تسجيل الحضور أثناء عدم الاتصال بالإنترنت. يرجى الاتصال بالإنترنت والمحاولة مجدداً.',
+          );
+        }
+        if (savedOnline) {
+          _liveCheckInRetryStartedAt.remove(retryKey);
+        } else {
+          _liveCheckInRetryStartedAt.putIfAbsent(
+            retryKey,
+            () => checkInEventTime,
           );
         }
         if (savedOnline && deduction.dayFraction > 0) {
@@ -465,7 +492,7 @@ class AttendanceService {
         return AttendanceActionResult(
           action: AttendanceActionIntent.checkIn,
           confirmedOnline: savedOnline,
-          eventTime: now,
+          eventTime: checkInEventTime,
           locationName: geoResult.locationName,
           status: deduction.status,
           lateMinutes: deduction.lateMinutes,
@@ -1325,8 +1352,7 @@ class AttendanceService {
           recipientId: employee.uid,
           type: 'salary_deduction_pending',
           title: 'تنبيه عدم تسجيل الانصراف',
-          body:
-              'تم تسجيل ${missedCheckoutDeduction.label} عن يوم ${log.date}.',
+          body: 'تم تسجيل ${missedCheckoutDeduction.label} عن يوم ${log.date}.',
           data: {'attendanceId': doc.id},
         );
       }

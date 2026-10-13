@@ -42,6 +42,7 @@ const {
 const { recordManualAttendance, recordManualAttendanceBatch, listManualAttendanceEmployees } = require('./manual-attendance');
 const { createHiringRequest, decideHiringRequest, listHiringRequests } = require('./hiring-requests');
 const { overrideAutoApprovedCasualLeave, editCasualLeaveDates } = require('./casual-leave-override');
+const { submitCasualLeave } = require('./casual-leave-submit');
 const { decideManagerRequest } = require('./request-decision-recovery');
 const {
   listRooms,
@@ -188,7 +189,7 @@ const {
 } = require('./request-approval-routing');
 
 const port = Number(process.env.PORT || 3000);
-const notificationRuntimeRelease = '2026-10-13-request-routing-v8';
+const notificationRuntimeRelease = '2026-10-13-request-reliability-v9';
 const dispatchSecret = process.env.NOTIFICATION_DISPATCH_SECRET || '';
 const defaultGoogleWorkspaceOrigins = [
   'https://zawolf-hr-system-60317.web.app',
@@ -4749,6 +4750,20 @@ const server = http.createServer(async (req, res) => {
       });
     }
     return;
+  }
+
+  if (url.pathname === '/operations/leaves/casual' && req.method === 'POST') {
+    const actor = await authorizeWorkspaceRequest(req);
+    if (!actor) return sendJson(res, 401, { ok: false, code: 'session_expired' });
+    try {
+      const result = await submitCasualLeave({
+        db: admin.firestore(initializeFirebase()), admin, actor,
+        body: await readJsonBody(req, 16 * 1024),
+      });
+      return sendJson(res, 201, { ok: true, ...result });
+    } catch (error) {
+      return sendJson(res, 400, { ok: false, code: 'casual_leave_submit_failed', error: String(error.message || error) });
+    }
   }
 
   const casualOverride = url.pathname.match(/^\/operations\/leaves\/([A-Za-z0-9_-]{8,160})\/(?:auto-approval-override|override-casual)$/);

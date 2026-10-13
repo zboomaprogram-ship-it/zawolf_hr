@@ -57,8 +57,7 @@ final class FirestoreRequestVisibilityDataSource
     final role = query.actorScope.role.trim().toLowerCase();
     final isRestrictedCoo = role == 'coo';
     final isExecutive =
-        (query.actorScope.isExecutive && !isRestrictedCoo) ||
-        role == 'ceo';
+        (query.actorScope.isExecutive && !isRestrictedCoo) || role == 'ceo';
     final isHrOrAdmin =
         (isExecutive && !isRestrictedCoo) ||
         const <String>{
@@ -118,10 +117,7 @@ final class FirestoreRequestVisibilityDataSource
                     .limit(limit)
                     .get(),
                 request
-                    .where(
-                      'reviewedBy',
-                      isEqualTo: query.actorScope.actorId,
-                    )
+                    .where('reviewedBy', isEqualTo: query.actorScope.actorId)
                     .limit(limit)
                     .get(),
                 if (empCode.isNotEmpty) ...[
@@ -192,6 +188,10 @@ final class FirestoreRequestVisibilityDataSource
               'id': doc.id,
               'sourceCollection': collection,
               'sourceReference': '$collection/${doc.id}',
+              '_isRelatedToActor': _isRelatedToActor(
+                doc.data(),
+                query.actorScope,
+              ),
             };
             data.putIfAbsent(
               'requestType',
@@ -273,6 +273,36 @@ final class FirestoreRequestVisibilityDataSource
 
   String _normalized(String value) =>
       value.trim().toLowerCase().replaceAll(RegExp(r'\s+'), ' ');
+
+  bool _isRelatedToActor(Map<String, dynamic> data, RequestActorScope actor) {
+    final identities = <String>{
+      actor.actorId.trim().toLowerCase(),
+      if ((actor.employeeCode ?? '').trim().isNotEmpty)
+        actor.employeeCode!.trim().toLowerCase(),
+    };
+    bool containsActor(Object? value) {
+      if (value is String) {
+        return identities.contains(value.trim().toLowerCase());
+      }
+      if (value is Iterable) return value.any(containsActor);
+      if (value is Map) return value.values.any(containsActor);
+      return false;
+    }
+
+    return <Object?>[
+      data['userId'],
+      data['employeeUid'],
+      data['requesterId'],
+      data['requestedById'],
+      data['managerId'],
+      data['managerIds'],
+      data['managerCodes'],
+      data['currentApproverId'],
+      data['reviewedBy'],
+      data['approvalRoute'],
+      data['approvalHistory'],
+    ].any(containsActor);
+  }
 
   Iterable<List<String>> _chunks(List<String> values, int size) sync* {
     for (var start = 0; start < values.length; start += size) {

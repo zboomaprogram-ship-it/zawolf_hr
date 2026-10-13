@@ -207,6 +207,23 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
     required String decision,
     String comment = '',
   }) async {
+    final completed = await _tryRecoverManagerDecision(
+      collection: collection,
+      requestId: requestId,
+      decision: decision,
+      comment: comment,
+    );
+    if (!completed) {
+      throw StateError('هذا الطلب ليس في مرحلة موافقة المدير الحالية.');
+    }
+  }
+
+  Future<bool> _tryRecoverManagerDecision({
+    required String collection,
+    required String requestId,
+    required String decision,
+    String comment = '',
+  }) async {
     final response = await _requestOperations.post(
       Uri.parse(
         'https://notification.zawolf.ai/operations/$collection/$requestId/manager-decision-recovery',
@@ -215,7 +232,9 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
           'manager-decision-$collection-$requestId-$decision-${DateTime.now().microsecondsSinceEpoch}',
       body: <String, Object?>{'decision': decision, 'comment': comment},
     );
-    if (!response.ok) {
+    if (response.ok) return true;
+    if (response.safeCode == 'request_not_pending') return false;
+    {
       final message = response.data['error']?.toString().trim();
       throw StateError(
         message == null || message.isEmpty
@@ -229,32 +248,60 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
     String requestId,
     UserModel reviewer,
   ) async {
-    try {
-      await _leaveService.approveLeave(requestId, reviewer.uid, reviewer.role);
-    } catch (error) {
-      if (!_isFirestorePermissionDenied(error)) rethrow;
-      await _recoverManagerDecision(
-        collection: 'leaves',
-        requestId: requestId,
-        decision: 'approve',
-      );
+    if (await _tryRecoverManagerDecision(
+      collection: 'leaves',
+      requestId: requestId,
+      decision: 'approve',
+    )) {
+      return;
     }
+    await _leaveService.approveLeave(requestId, reviewer.uid, reviewer.role);
   }
 
   Future<void> _approvePermissionWithRecovery(
     String requestId,
     UserModel reviewer,
   ) async {
-    try {
-      await _permissionService.approvePermission(requestId, reviewer.uid);
-    } catch (error) {
-      if (!_isFirestorePermissionDenied(error)) rethrow;
-      await _recoverManagerDecision(
-        collection: 'permissions',
-        requestId: requestId,
-        decision: 'approve',
-      );
+    if (await _tryRecoverManagerDecision(
+      collection: 'permissions',
+      requestId: requestId,
+      decision: 'approve',
+    )) {
+      return;
     }
+    await _permissionService.approvePermission(requestId, reviewer.uid);
+  }
+
+  Future<void> _rejectLeaveWithRecovery(
+    String requestId,
+    UserModel reviewer,
+    String reason,
+  ) async {
+    if (await _tryRecoverManagerDecision(
+      collection: 'leaves',
+      requestId: requestId,
+      decision: 'reject',
+      comment: reason,
+    )) {
+      return;
+    }
+    await _leaveService.rejectLeave(requestId, reviewer.uid, reason);
+  }
+
+  Future<void> _rejectPermissionWithRecovery(
+    String requestId,
+    UserModel reviewer,
+    String reason,
+  ) async {
+    if (await _tryRecoverManagerDecision(
+      collection: 'permissions',
+      requestId: requestId,
+      decision: 'reject',
+      comment: reason,
+    )) {
+      return;
+    }
+    await _permissionService.rejectPermission(requestId, reviewer.uid, reason);
   }
 
   Future<void> _confirmLeaveWithStaffing(
@@ -2328,18 +2375,14 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
             () =>
                 approve
                     ? _approveLeaveWithRecovery(id, manager)
-                    : _leaveService.rejectLeave(id, manager.uid, reason),
+                    : _rejectLeaveWithRecovery(id, manager, reason),
       ),
       ...permIds.map(
         (id) =>
             () =>
                 approve
                     ? _approvePermissionWithRecovery(id, manager)
-                    : _permissionService.rejectPermission(
-                      id,
-                      manager.uid,
-                      reason,
-                    ),
+                    : _rejectPermissionWithRecovery(id, manager, reason),
       ),
       ...advIds.map(
         (id) =>
@@ -2464,13 +2507,29 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
       final reviewerId = authService.currentUser!.uid;
       try {
         if (type == 'leave') {
-          await _leaveService.rejectLeave(requestId, reviewerId, reason);
-        } else if (type == 'permission') {
-          await _permissionService.rejectPermission(
-            requestId,
-            reviewerId,
-            reason,
+          final completed = await _tryRecoverManagerDecision(
+            collection: 'leaves',
+            requestId: requestId,
+            decision: 'reject',
+            comment: reason,
           );
+          if (!completed) {
+            await _leaveService.rejectLeave(requestId, reviewerId, reason);
+          }
+        } else if (type == 'permission') {
+          final completed = await _tryRecoverManagerDecision(
+            collection: 'permissions',
+            requestId: requestId,
+            decision: 'reject',
+            comment: reason,
+          );
+          if (!completed) {
+            await _permissionService.rejectPermission(
+              requestId,
+              reviewerId,
+              reason,
+            );
+          }
         } else if (type == 'advance') {
           await _advanceService.updateAdvanceStatus(
             advanceId: requestId,
@@ -5192,9 +5251,9 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return _buildLoadingState('تحميل طلبات الاجتماعات...');
         }
-        final docs = _newestFirst(snapshot.data?.docs ?? [])
-            .where((d) => !_resolvedRequestIds.contains(d.id))
-            .toList(growable: false);
+        final docs = _newestFirst(
+          _visibleApprovalDocs(snapshot.data?.docs ?? [], reviewer),
+        );
         if (docs.isEmpty) {
           return _buildEmptyState('لا توجد طلبات اجتماعات معلقة');
         }
@@ -5604,7 +5663,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                 ),
               ),
             )
-          else
+          else if (_canActOnApproval(request.toMap(), reviewer))
             Row(
               children: [
                 Expanded(
@@ -5657,6 +5716,21 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                   ),
                 ),
               ],
+            )
+          else
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: ZaWolfColors.surface02,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Text(
+                'هذا الطلب ظاهر في السجل، لكنه ليس بانتظار قرارك حالياً.',
+                textDirection: TextDirection.rtl,
+                textAlign: TextAlign.center,
+                style: TextStyle(color: ZaWolfColors.textSecondary),
+              ),
             ),
         ],
       ),

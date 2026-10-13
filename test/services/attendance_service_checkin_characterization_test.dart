@@ -62,7 +62,14 @@ void main() {
         source,
         contains('salaryDeductionFraction: deduction.dayFraction'),
       );
-      expect(source, contains('eventTime: now'));
+      expect(source, contains('eventTime: checkInEventTime'));
     },
   );
+
+  test('retains only a short live retry timestamp after gateway failure', () {
+    expect(source, contains('_liveCheckInRetryWindow'));
+    expect(source, contains('_liveCheckInRetryStartedAt.putIfAbsent'));
+    expect(source, contains('_liveCheckInRetryStartedAt.remove(retryKey)'));
+    expect(source, isNot(contains('await _offlineQueue.enqueueAction')));
+  });
 }

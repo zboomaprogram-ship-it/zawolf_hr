@@ -30,6 +30,7 @@ final class RequestVisibilityPanel extends StatefulWidget {
 final class _RequestVisibilityPanelState extends State<RequestVisibilityPanel>
     with AutomaticKeepAliveClientMixin {
   RequestLifecycleState? _selectedLifecycle;
+  bool _showAllRequests = true;
   int _currentPage = 1;
   static const int _pageSize = 15;
 
@@ -72,6 +73,31 @@ final class _RequestVisibilityPanelState extends State<RequestVisibilityPanel>
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
       child: Row(
         children: [
+          if (widget.query.tab == RequestViewTab.all ||
+              widget.query.tab == RequestViewTab.history) ...[
+            ChoiceChip(
+              label: const Text('كل الطلبات'),
+              selected: _showAllRequests,
+              onSelected:
+                  (_) => setState(() {
+                    _showAllRequests = true;
+                    _currentPage = 1;
+                  }),
+              selectedColor: ZaWolfColors.primaryCyan.withValues(alpha: 0.2),
+            ),
+            const SizedBox(width: 8),
+            ChoiceChip(
+              label: const Text('طلباتي والطلبات المرتبطة بي'),
+              selected: !_showAllRequests,
+              onSelected:
+                  (_) => setState(() {
+                    _showAllRequests = false;
+                    _currentPage = 1;
+                  }),
+              selectedColor: ZaWolfColors.primaryCyan.withValues(alpha: 0.2),
+            ),
+            const SizedBox(width: 16),
+          ],
           for (final (lifecycle, label) in filters)
             Padding(
               padding: const EdgeInsetsDirectional.only(end: 8),
@@ -277,6 +303,7 @@ final class _RequestVisibilityPanelState extends State<RequestVisibilityPanel>
                     !widget.excludedRecordIds.contains(record.documentId),
               )
               .where((record) => _matchesSearch(record, widget.searchTerm))
+              .where((record) => _showAllRequests || record.isRelatedToActor)
               .where((record) {
                 if (_selectedLifecycle == null) return true;
                 if (_selectedLifecycle == RequestLifecycleState.approved) {

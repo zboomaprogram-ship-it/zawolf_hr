@@ -634,33 +634,11 @@ class LeaveService {
     };
 
     if (isAutoApprovedCasual) {
-      final userRef = _db.collection('users').doc(employee.uid);
-      await _db.runTransaction((transaction) async {
-        final userSnapshot = await transaction.get(userRef);
-        if (!userSnapshot.exists) throw Exception('حساب الموظف غير موجود.');
-        final latestBalance =
-            UserModel.fromFirestore(userSnapshot).leaveBalance;
-        validateBalance(effectiveRequest, latestBalance);
-        transaction.set(reqRef, leaveData);
-        transaction.update(userRef, {
-          'leaveBalance.casual': FieldValue.increment(-req.numberOfDays),
-          'leaveBalance.daysOff': FieldValue.increment(-req.numberOfDays),
-          'lastAutoApprovedCasualLeaveId': reqRef.id,
-        });
-      });
-      try {
-        await _createNotification(
-          recipientId: employee.uid,
-          notificationId: 'leave_auto_approved_${reqRef.id}',
-          type: 'leave_auto_approved',
-          title: 'تم اعتماد الإجازة العارضة',
-          body:
-              'تم اعتماد الإجازة العارضة تلقائياً وخصم ${req.numberOfDays} يوم من رصيد العارضة والرصيد الكلي.',
-          data: {'leaveId': reqRef.id},
-        );
-      } catch (_) {
-        // The approved leave must not be reported as failed after it was saved.
-      }
+      await _submitCasualLeaveThroughServer(
+        leaveId: reqRef.id,
+        request: finalModel,
+        employee: employee,
+      );
       try {
         await _reconciliationService.reconcileApprovedLeave(finalModel);
       } catch (_) {
@@ -744,6 +722,51 @@ class LeaveService {
       } catch (_) {
         // Notification errors must not fail leave submission.
       }
+    }
+  }
+
+  Future<void> _submitCasualLeaveThroughServer({
+    required String leaveId,
+    required LeaveModel request,
+    required UserModel employee,
+  }) async {
+    final token = await FirebaseAuth.instance.currentUser?.getIdToken();
+    if (token == null || token.isEmpty) {
+      throw StateError('انتهت جلسة الدخول. سجّل الدخول ثم أعد المحاولة.');
+    }
+    final operationId =
+        'casual-$leaveId-${DateTime.now().microsecondsSinceEpoch}';
+    final response = await http.post(
+      Uri.parse('https://notification.zawolf.ai/operations/leaves/casual'),
+      headers: {
+        'authorization': 'Bearer $token',
+        'content-type': 'application/json',
+        'x-operation-id': operationId,
+      },
+      body: jsonEncode({
+        'operationId': operationId,
+        'leaveId': leaveId,
+        'startDate': DateFormat('yyyy-MM-dd').format(request.startDate),
+        'endDate': DateFormat('yyyy-MM-dd').format(request.endDate),
+        'numberOfDays': request.numberOfDays,
+        'reason': request.reason,
+        'workHandoverTo': request.workHandoverTo,
+        'attachmentUrl': request.attachmentUrl,
+        'locationId': employee.locationId,
+      }),
+    );
+    final decoded = response.body.isEmpty ? null : jsonDecode(response.body);
+    final data =
+        decoded is Map<String, dynamic> ? decoded : const <String, dynamic>{};
+    if (response.statusCode < 200 ||
+        response.statusCode >= 300 ||
+        data['ok'] != true) {
+      final message = '${data['error'] ?? ''}'.trim();
+      throw StateError(
+        message.isEmpty
+            ? 'تعذر حفظ الإجازة العارضة الآن. أعد المحاولة.'
+            : message,
+      );
     }
   }
 

@@ -144,6 +144,7 @@ abstract final class RequestVisibilityNormalizer {
       employeeName: _text(value['employeeName']),
       employeeCode: _text(value['employeeCode']),
       reason: _text(value['reason']) ?? _text(value['adminReason']),
+      isRelatedToActor: value['_isRelatedToActor'] == true,
     );
   }
 

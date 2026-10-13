@@ -20,7 +20,7 @@ void main() {
   );
 
   test(
-    'retries a temporary failure twice then retains the original action',
+    'retries a temporary failure twice without retaining an offline action',
     () async {
       final outbox = _MemoryOutbox();
       final remote = _FakeRemote(
@@ -36,8 +36,7 @@ void main() {
 
       expect(result.isSuccess, isFalse);
       expect(remote.submissions, 3);
-      expect(outbox.value?.action.actionId, action.actionId);
-      expect(outbox.value?.state, PendingCheckInState.pending);
+      expect(outbox.value, isNull);
     },
   );
 
@@ -78,8 +77,35 @@ void main() {
     final result = await repository.submit(action);
 
     expect(result.failureOrNull?.requiresStatusCheck, isTrue);
-    expect(outbox.value?.state, PendingCheckInState.requiresAttention);
+    expect(outbox.value, isNull);
   });
+
+  test(
+    'discards pending actions created by older application releases',
+    () async {
+      final outbox =
+          _MemoryOutbox()
+            ..value = PendingCheckIn(
+              action: action,
+              state: PendingCheckInState.pending,
+              attemptCount: 1,
+              updatedAt: DateTime.utc(2026, 8, 20),
+            );
+      final remote = _FakeRemote();
+      final repository = AttendanceCheckInRepositoryImpl(
+        remote: remote,
+        outbox: outbox,
+      );
+
+      final result = await repository.synchronizePending(
+        action.employeeScopeId,
+      );
+
+      expect(result, isNull);
+      expect(outbox.value, isNull);
+      expect(remote.submissions, 0);
+    },
+  );
 
   test(
     'records aggregate-only pilot outcomes without employee diagnostics',

@@ -37,6 +37,7 @@ final class RequestVisibilityRecord {
     this.employeeName,
     this.employeeCode,
     this.reason,
+    this.isRelatedToActor = false,
   });
 
   final String stableId;
@@ -49,6 +50,7 @@ final class RequestVisibilityRecord {
   final String? employeeName;
   final String? employeeCode;
   final String? reason;
+  final bool isRelatedToActor;
 
   bool get isHistorical => switch (lifecycleState) {
     RequestLifecycleState.approved ||
