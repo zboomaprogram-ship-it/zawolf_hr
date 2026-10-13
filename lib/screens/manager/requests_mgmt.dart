@@ -260,12 +260,20 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
       requestId: leave.leaveId,
       dialogContext: dialogContext,
       successMessage: 'تم اعتماد طلب الإجازة بنجاح.',
-      run:
-          () => _leaveService.approveLeave(
-            leave.leaveId,
-            reviewer.uid,
-            reviewer.role,
-          ),
+      // Manager-stage decisions are handled by the Hostinger transaction first.
+      // It verifies the exact current approver and writes the next stage in one
+      // operation, avoiding the slow client-side chain of Firestore writes.
+      run: () => leave.status == 'pending_manager'
+          ? _recoverManagerDecision(
+              collection: 'leaves',
+              requestId: leave.leaveId,
+              decision: 'approve',
+            )
+          : _leaveService.approveLeave(
+              leave.leaveId,
+              reviewer.uid,
+              reviewer.role,
+            ),
       recoverPermissionDenied: () => _recoverManagerDecision(
         collection: 'leaves', requestId: leave.leaveId, decision: 'approve'),
     );
@@ -299,11 +307,19 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
       requestId: permission.permissionId,
       dialogContext: dialogContext,
       successMessage: 'تم اعتماد طلب الإذن بنجاح.',
-      run:
-          () => _permissionService.approvePermission(
-            permission.permissionId,
-            reviewer.uid,
-          ),
+      // See the leave path above. Manager-stage permission decisions use the
+      // authoritative server transaction first; HR and final stages retain
+      // their established service behavior.
+      run: () => permission.status == 'pending_manager'
+          ? _recoverManagerDecision(
+              collection: 'permissions',
+              requestId: permission.permissionId,
+              decision: 'approve',
+            )
+          : _permissionService.approvePermission(
+              permission.permissionId,
+              reviewer.uid,
+            ),
       recoverPermissionDenied: () => _recoverManagerDecision(
         collection: 'permissions', requestId: permission.permissionId, decision: 'approve'),
     );

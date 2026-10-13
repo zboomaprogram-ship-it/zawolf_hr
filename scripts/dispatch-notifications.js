@@ -9,6 +9,10 @@ const {
 const { loadCheckoutPolicy } = require('./checkout-policy');
 const { requestStageNotification } = require('./company-os/notifications');
 const { notificationPreferenceId } = require('./conversations/common');
+const {
+  isCurrentApprovalRecipient,
+  requestNotificationReference,
+} = require('./request-notification-reconciliation');
 installFirestoreCompatibility(admin);
 
 function dispatchConfig() {
@@ -427,6 +431,17 @@ async function shouldSkipAttendanceReminder(db, item, checkoutPolicy) {
   return attendanceCompletesReminder(attendance, action);
 }
 
+async function shouldSkipStaleRequestApproval(db, item) {
+  const reference = requestNotificationReference(item.data);
+  if (!reference) return false;
+  const request = await db.collection(reference.collection).doc(reference.requestId).get();
+  if (!request.exists) return true;
+  return !isCurrentApprovalRecipient({
+    request: request.data() || {},
+    recipient: { uid: item.userId, ...(item.recipient || {}) },
+  });
+}
+
 async function shouldSkipMutedConversation(db, item) {
   if (item.data?.type !== 'conversation') return false;
   const channelId = String(item.data?.data?.conversationId || '').trim();
@@ -515,6 +530,7 @@ async function loadPendingNotifications(db) {
     pending.push({
       userId,
       recipientRole: userRoles.get(userId) || 'employee',
+      recipient: userDocs.find((user) => user.id === userId)?.data() || { uid: userId },
       ref: doc.ref,
       id: doc.id,
       data,
@@ -713,6 +729,13 @@ async function dispatchNotifications() {
         await markPushSuppressed(db, item, 'conversation_muted');
         continue;
       }
+      // A request may advance or be reassigned between its notification write
+      // and provider delivery. Recheck the authoritative request here so a
+      // user outside the current approval step never receives a push.
+      if (await shouldSkipStaleRequestApproval(db, item)) {
+        await markSkipped(db, item, 'not_current_request_approver');
+        continue;
+      }
       const result = await sendPushToUsers(
         [item.userId],
         title,
@@ -768,6 +791,7 @@ module.exports = {
   attendanceCompletesReminder,
   shouldSkipAttendanceReminder,
   shouldSkipMutedConversation,
+  shouldSkipStaleRequestApproval,
   markPushSuppressed,
   watchPendingNotifications,
   watchPendingConversationOutboxes,

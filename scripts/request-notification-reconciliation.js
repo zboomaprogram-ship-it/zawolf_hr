@@ -67,6 +67,23 @@ const REQUEST_ID_FIELDS = Object.freeze({
   hiringRequests: ['hiringRequestId', 'requestId'],
 });
 
+// Legacy mobile builds create their own request notifications. Before a push
+// leaves the server, this mapping lets the dispatcher verify that the recipient
+// is still the exact active approver. It is deliberately limited to approval
+// prompts; employee result notifications are never filtered by this policy.
+const REQUEST_COLLECTION_BY_LEGACY_TYPE = Object.freeze({
+  leave: 'leaves',
+  permission: 'permissions',
+  advance: 'advances',
+  administrative: 'administrativeRequests',
+  attendance_correction: 'attendanceCorrectionRequests',
+  resignation: 'resignations',
+  complaint: 'complaints',
+  custom: 'customRequests',
+  meeting: 'meetingRequests',
+  hiring: 'hiringRequests',
+});
+
 const clean = (value) => String(value || '').trim();
 const upper = (value) => clean(value).toUpperCase();
 const unique = (values) => [...new Set(values.map(clean).filter(Boolean))];
@@ -87,6 +104,41 @@ function employeeIdentity(request = {}) {
     request.requestedBy,
     request.createdBy,
   ])[0] || '';
+}
+
+function requestNotificationReference(notification = {}) {
+  const data = notification.data && typeof notification.data === 'object'
+    ? notification.data
+    : {};
+  const type = clean(notification.type).toLowerCase();
+  const isApprovalPrompt = type === 'request_approval_turn' ||
+    (/(?:pending|submitted|approval_turn)/.test(type) &&
+      /(?:leave|permission|advance|administrative|attendance_correction|resignation|complaint|custom|meeting|hiring)/.test(type));
+  if (!isApprovalPrompt) return null;
+
+  let collection = clean(data.requestCollection);
+  if (!REQUEST_COLLECTIONS.includes(collection)) {
+    const prefix = Object.keys(REQUEST_COLLECTION_BY_LEGACY_TYPE)
+      .find((key) => type.includes(key));
+    collection = prefix ? REQUEST_COLLECTION_BY_LEGACY_TYPE[prefix] : '';
+  }
+  if (!collection) return null;
+  const requestId = unique([
+    data.requestId,
+    ...(REQUEST_ID_FIELDS[collection] || []).map((field) => data[field]),
+  ])[0] || '';
+  return requestId ? { collection, requestId } : null;
+}
+
+function isCurrentApprovalRecipient({ request, recipient }) {
+  if (!recipient || !request) return false;
+  const audience = approvalAudience(request);
+  // This guard applies only to actionable approval prompts. A terminal
+  // request cannot legitimately keep an approval prompt in anyone's inbox.
+  if (audience.kind === 'none' || audience.kind === 'employee') return false;
+  const recipientId = clean(recipient.uid || recipient.id);
+  if (!recipientId) return false;
+  return resolveAudienceUsers(audience, [recipient], request).includes(recipientId);
 }
 
 function roleFromApproverType(value) {
@@ -359,6 +411,8 @@ function watchRequestNotifications({ db, admin, onQueued = () => {}, onError = (
 module.exports = {
   REQUEST_COLLECTIONS,
   WATCHED_STATUSES,
+  isCurrentApprovalRecipient,
+  requestNotificationReference,
   approvalAudience,
   currentRouteStage,
   employeeIdentity,

@@ -149,3 +149,28 @@ test('request listener ignores Firestore initial added documents', () => {
   }));
   stop();
 });
+
+test('legacy actionable prompts resolve to their exact request and never a terminal result', () => {
+  const { requestNotificationReference } = require('../request-notification-reconciliation');
+  assert.deepEqual(requestNotificationReference({
+    type: 'leave_request_submitted', data: { leaveId: 'leave-123' },
+  }), { collection: 'leaves', requestId: 'leave-123' });
+  assert.deepEqual(requestNotificationReference({
+    type: 'request_approval_turn', data: { requestCollection: 'permissions', requestId: 'perm-123' },
+  }), { collection: 'permissions', requestId: 'perm-123' });
+  assert.equal(requestNotificationReference({
+    type: 'leave_approved', data: { leaveId: 'leave-123' },
+  }), null);
+});
+
+test('approval delivery eligibility excludes users outside the current approval stage', () => {
+  const { isCurrentApprovalRecipient } = require('../request-notification-reconciliation');
+  const request = {
+    userId: 'employee-1', status: 'pending_manager',
+    managerId: 'manager-2', managerIds: ['manager-1', 'manager-2'],
+    managerApprovalIndex: 1, currentApproverId: 'manager-2',
+  };
+  assert.equal(isCurrentApprovalRecipient({ request, recipient: users[2] }), true);
+  assert.equal(isCurrentApprovalRecipient({ request, recipient: users[1] }), false);
+  assert.equal(isCurrentApprovalRecipient({ request, recipient: users[3] }), false);
+});
