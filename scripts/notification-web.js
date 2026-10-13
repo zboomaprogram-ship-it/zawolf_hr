@@ -42,6 +42,7 @@ const {
 const { recordManualAttendance, recordManualAttendanceBatch, listManualAttendanceEmployees } = require('./manual-attendance');
 const { createHiringRequest, decideHiringRequest, listHiringRequests } = require('./hiring-requests');
 const { overrideAutoApprovedCasualLeave, editCasualLeaveDates } = require('./casual-leave-override');
+const { decideManagerRequest } = require('./request-decision-recovery');
 const {
   listRooms,
   saveRoom,
@@ -187,7 +188,7 @@ const {
 } = require('./request-approval-routing');
 
 const port = Number(process.env.PORT || 3000);
-const notificationRuntimeRelease = '2026-10-13-request-routing-v6';
+const notificationRuntimeRelease = '2026-10-13-request-routing-v7';
 const dispatchSecret = process.env.NOTIFICATION_DISPATCH_SECRET || '';
 const defaultGoogleWorkspaceOrigins = [
   'https://zawolf-hr-system-60317.web.app',
@@ -4774,6 +4775,25 @@ const server = http.createServer(async (req, res) => {
       sendJson(res, /صلاحية/.test(String(error.message || error)) ? 403 : 400, { ok: false, code: 'casual_leave_edit_failed', error: String(error.message || error) });
     }
     return;
+  }
+
+  const recoveredDecision = url.pathname.match(/^\/operations\/(leaves|permissions)\/([A-Za-z0-9_-]{8,160})\/manager-decision-recovery$/);
+  if (recoveredDecision && req.method === 'POST') {
+    const actor = await authorizeWorkspaceRequest(req);
+    if (!actor) return sendJson(res, 401, { ok: false, code: 'session_expired' });
+    try {
+      const result = await decideManagerRequest({
+        db: admin.firestore(initializeFirebase()), admin, actor,
+        collection: recoveredDecision[1], requestId: recoveredDecision[2],
+        body: await readJsonBody(req, 8 * 1024),
+      });
+      return sendJson(res, 200, { ok: true, ...result });
+    } catch (error) {
+      const code = String(error.code || 'request_decision_failed');
+      const status = ['access_denied', 'not_current_approver'].includes(code) ? 403
+        : code === 'not_found' ? 404 : code === 'request_not_pending' ? 409 : 400;
+      return sendJson(res, status, { ok: false, code, error: String(error.message || error) });
+    }
   }
 
   if (url.pathname === '/operations/meeting-rooms' && req.method === 'GET') {

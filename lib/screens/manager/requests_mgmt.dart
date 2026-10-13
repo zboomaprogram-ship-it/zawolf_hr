@@ -135,6 +135,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
     required String requestId,
     BuildContext? dialogContext,
     String successMessage = 'تم اعتماد الطلب بنجاح وتحديث القائمة.',
+    Future<void> Function()? recoverPermissionDenied,
     required Future<void> Function() run,
   }) async {
     if (!mounted) return;
@@ -153,15 +154,74 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
         );
       }
     } catch (error) {
-      _recordRequestDecisionFailure(error);
+      Object effectiveError = error;
+      if (recoverPermissionDenied != null && _isFirestorePermissionDenied(error)) {
+        try {
+          await recoverPermissionDenied();
+          if (mounted) {
+            setState(() => _resolvedRequestIds.add(requestId));
+            if (dialogContext != null && dialogContext.mounted) {
+              Navigator.of(dialogContext).pop();
+            }
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text(successMessage), backgroundColor: ZaWolfColors.success),
+            );
+          }
+          return;
+        } catch (recoveryError) {
+          effectiveError = recoveryError;
+        }
+      }
+      _recordRequestDecisionFailure(effectiveError);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('فشل الإجراء: ${userFacingError(error)}'),
+            content: Text('فشل الإجراء: ${userFacingError(effectiveError)}'),
             backgroundColor: ZaWolfColors.error,
           ),
         );
       }
+    }
+  }
+
+  bool _isFirestorePermissionDenied(Object error) => error is FirebaseException
+      ? error.code == 'permission-denied'
+      : error.toString().toLowerCase().contains('permission-denied');
+
+  Future<void> _recoverManagerDecision({
+    required String collection,
+    required String requestId,
+    required String decision,
+    String comment = '',
+  }) async {
+    final response = await _requestOperations.post(
+      Uri.parse('https://notification.zawolf.ai/operations/$collection/$requestId/manager-decision-recovery'),
+      operationId: 'manager-decision-$collection-$requestId-$decision-${DateTime.now().microsecondsSinceEpoch}',
+      body: <String, Object?>{'decision': decision, 'comment': comment},
+    );
+    if (!response.ok) {
+      final message = response.data['error']?.toString().trim();
+      throw StateError(message == null || message.isEmpty
+          ? 'تعذر إتمام قرار الطلب الآن. أعد المحاولة.'
+          : message);
+    }
+  }
+
+  Future<void> _approveLeaveWithRecovery(String requestId, UserModel reviewer) async {
+    try {
+      await _leaveService.approveLeave(requestId, reviewer.uid, reviewer.role);
+    } catch (error) {
+      if (!_isFirestorePermissionDenied(error)) rethrow;
+      await _recoverManagerDecision(collection: 'leaves', requestId: requestId, decision: 'approve');
+    }
+  }
+
+  Future<void> _approvePermissionWithRecovery(String requestId, UserModel reviewer) async {
+    try {
+      await _permissionService.approvePermission(requestId, reviewer.uid);
+    } catch (error) {
+      if (!_isFirestorePermissionDenied(error)) rethrow;
+      await _recoverManagerDecision(collection: 'permissions', requestId: requestId, decision: 'approve');
     }
   }
 
@@ -199,6 +259,8 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
             reviewer.uid,
             reviewer.role,
           ),
+      recoverPermissionDenied: () => _recoverManagerDecision(
+        collection: 'leaves', requestId: leave.leaveId, decision: 'approve'),
     );
   }
 
@@ -235,6 +297,8 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
             permission.permissionId,
             reviewer.uid,
           ),
+      recoverPermissionDenied: () => _recoverManagerDecision(
+        collection: 'permissions', requestId: permission.permissionId, decision: 'approve'),
     );
   }
 
@@ -2203,14 +2267,14 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
         (id) =>
             () =>
                 approve
-                    ? _leaveService.approveLeave(id, manager.uid, manager.role)
+                    ? _approveLeaveWithRecovery(id, manager)
                     : _leaveService.rejectLeave(id, manager.uid, reason),
       ),
       ...permIds.map(
         (id) =>
             () =>
                 approve
-                    ? _permissionService.approvePermission(id, manager.uid)
+                    ? _approvePermissionWithRecovery(id, manager)
                     : _permissionService.rejectPermission(
                       id,
                       manager.uid,
