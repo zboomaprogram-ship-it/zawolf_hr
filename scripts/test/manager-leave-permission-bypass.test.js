@@ -197,5 +197,23 @@ test("reconcilePendingRequestIntegrity patches missing jobTitle and approvalRout
   assert.equal(result.patchedJobTitles, 1);
   assert.equal(updates.jobTitle, "Developer");
   assert.equal(updates.approvalRouteVersion, 1);
+  assert.equal(updates.currentApproverId, undefined);
 });
 
+
+
+test("reconcilePendingRequestIntegrity restores the current manager route metadata", async () => {
+  const updates = {};
+  const mockDoc = {
+    data: () => ({ status: "pending_manager", managerId: "manager-2", managerName: "Manager Two", managerApprovalIndex: 1 }),
+    ref: { update: async (fields) => Object.assign(updates, fields) },
+  };
+  const db = {
+    collection(name) {
+      if (name === "publicConfig") return { doc: () => ({ get: async () => ({ exists: false }) }) };
+      return { where: () => ({ limit: () => ({ get: async () => ({ docs: name === "leaves" ? [mockDoc] : [] }) }) }) };
+    },
+  };
+  await reconcilePendingRequestIntegrity(db);
+  assert.deepEqual(updates, { approvalRouteVersion: 1, currentApproverId: "manager-2", currentApprovalIndex: 1, currentApproverName: "Manager Two" });
+});

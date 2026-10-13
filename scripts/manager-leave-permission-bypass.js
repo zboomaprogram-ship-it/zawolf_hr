@@ -506,7 +506,26 @@ async function reconcilePendingRequestIntegrity(db) {
           updates.approvalRouteVersion = 1;
         }
 
-        // 3. Handle pending_hr state
+        // 3. Keep legacy and modern route fields in sync. Older clients and
+        // notification deep links still read currentApproverId, while newer
+        // flows use managerId/managerApprovalIndex. Missing fields made a
+        // correctly routed pending-manager request look unauthorized.
+        if (data.status === "pending_manager" && typeof data.managerId === "string" && data.managerId) {
+          const index = Number.isInteger(data.managerApprovalIndex)
+            ? data.managerApprovalIndex
+            : 0;
+          if (data.currentApproverId !== data.managerId) {
+            updates.currentApproverId = data.managerId;
+          }
+          if (data.currentApprovalIndex !== index) {
+            updates.currentApprovalIndex = index;
+          }
+          if (!data.currentApproverName && typeof data.managerName === "string") {
+            updates.currentApproverName = data.managerName;
+          }
+        }
+
+        // 4. Handle pending_hr state
         if (data.status === "pending_hr") {
           const managerIds = Array.isArray(data.managerIds) ? data.managerIds.filter(Boolean) : [];
           const trail = Array.isArray(data.managerApprovalTrail) ? data.managerApprovalTrail : [];
