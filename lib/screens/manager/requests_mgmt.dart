@@ -139,10 +139,13 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
     required Future<void> Function() run,
   }) async {
     if (!mounted) return;
+    // Hide the card before the write begins. A decision can trigger several
+    // Firestore snapshots (route, history, and notification follow-up); waiting
+    // for all of them made an already-decided card flash back into the queue.
+    setState(() => _resolvedRequestIds.add(requestId));
     try {
       await _withRequestGuard(requestId, run);
       if (mounted) {
-        setState(() => _resolvedRequestIds.add(requestId));
         if (dialogContext != null && dialogContext.mounted) {
           Navigator.of(dialogContext).pop();
         }
@@ -159,7 +162,6 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
         try {
           await recoverPermissionDenied();
           if (mounted) {
-            setState(() => _resolvedRequestIds.add(requestId));
             if (dialogContext != null && dialogContext.mounted) {
               Navigator.of(dialogContext).pop();
             }
@@ -171,6 +173,11 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
         } catch (recoveryError) {
           effectiveError = recoveryError;
         }
+      }
+      if (mounted) {
+        // The request is still actionable because neither the normal write nor
+        // the verified server recovery succeeded.
+        setState(() => _resolvedRequestIds.remove(requestId));
       }
       _recordRequestDecisionFailure(effectiveError);
       if (mounted) {
