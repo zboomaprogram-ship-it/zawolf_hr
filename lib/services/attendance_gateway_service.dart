@@ -178,7 +178,7 @@ class AttendanceGatewayService {
         'انتهت جلسة الدخول. سجل الدخول مرة أخرى.',
       );
     }
-    final token = await user.getIdToken(true);
+    final token = await user.getIdToken();
     if (token == null || token.isEmpty) {
       throw const AttendanceGatewayException(
         'unauthenticated',
@@ -205,7 +205,7 @@ class AttendanceGatewayService {
       if (response.statusCode < 200 || response.statusCode >= 300) {
         throw AttendanceGatewayException(
           '${body['code'] ?? 'server_unavailable'}',
-          '${body['error'] ?? 'تعذر تأكيد الحضور الآن. سيتم إعادة المحاولة تلقائياً.'}',
+          '${body['error'] ?? 'تعذر تأكيد الحضور الآن. تحقق من الإنترنت ثم أعد المحاولة.'}',
         );
       }
       return body;
@@ -214,12 +214,12 @@ class AttendanceGatewayService {
     } on TimeoutException {
       throw const AttendanceGatewayException(
         'timeout',
-        'تعذر تأكيد الحضور الآن. تم حفظه للمزامنة التلقائية.',
+        'تعذر تأكيد الحضور الآن. تحقق من الإنترنت ثم أعد المحاولة.',
       );
     } catch (_) {
       throw const AttendanceGatewayException(
         'network',
-        'تعذر تأكيد الحضور الآن. تم حفظه للمزامنة التلقائية.',
+        'تعذر تأكيد الحضور الآن. تحقق من الإنترنت ثم أعد المحاولة.',
       );
     }
   }
@@ -232,7 +232,7 @@ class AttendanceGatewayService {
         'انتهت جلسة الدخول. سجل الدخول مرة أخرى.',
       );
     }
-    final token = await user.getIdToken(true);
+    final token = await user.getIdToken();
     if (token == null || token.isEmpty) {
       throw const AttendanceGatewayException(
         'unauthenticated',

@@ -111,6 +111,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
       }
     });
   }
+
   final Set<String> _busyRequestIds = {};
   // Firestore streams can take a moment to emit after a mobile decision.
   // Hide a committed decision immediately so the reviewer never needs to tap
@@ -158,7 +159,8 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
       }
     } catch (error) {
       Object effectiveError = error;
-      if (recoverPermissionDenied != null && _isFirestorePermissionDenied(error)) {
+      if (recoverPermissionDenied != null &&
+          _isFirestorePermissionDenied(error)) {
         try {
           await recoverPermissionDenied();
           if (mounted) {
@@ -166,7 +168,10 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
               Navigator.of(dialogContext).pop();
             }
             ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text(successMessage), backgroundColor: ZaWolfColors.success),
+              SnackBar(
+                content: Text(successMessage),
+                backgroundColor: ZaWolfColors.success,
+              ),
             );
           }
           return;
@@ -191,9 +196,10 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
     }
   }
 
-  bool _isFirestorePermissionDenied(Object error) => error is FirebaseException
-      ? error.code == 'permission-denied'
-      : error.toString().toLowerCase().contains('permission-denied');
+  bool _isFirestorePermissionDenied(Object error) =>
+      error is FirebaseException
+          ? error.code == 'permission-denied'
+          : error.toString().toLowerCase().contains('permission-denied');
 
   Future<void> _recoverManagerDecision({
     required String collection,
@@ -202,33 +208,52 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
     String comment = '',
   }) async {
     final response = await _requestOperations.post(
-      Uri.parse('https://notification.zawolf.ai/operations/$collection/$requestId/manager-decision-recovery'),
-      operationId: 'manager-decision-$collection-$requestId-$decision-${DateTime.now().microsecondsSinceEpoch}',
+      Uri.parse(
+        'https://notification.zawolf.ai/operations/$collection/$requestId/manager-decision-recovery',
+      ),
+      operationId:
+          'manager-decision-$collection-$requestId-$decision-${DateTime.now().microsecondsSinceEpoch}',
       body: <String, Object?>{'decision': decision, 'comment': comment},
     );
     if (!response.ok) {
       final message = response.data['error']?.toString().trim();
-      throw StateError(message == null || message.isEmpty
-          ? 'تعذر إتمام قرار الطلب الآن. أعد المحاولة.'
-          : message);
+      throw StateError(
+        message == null || message.isEmpty
+            ? 'تعذر إتمام قرار الطلب الآن. أعد المحاولة.'
+            : message,
+      );
     }
   }
 
-  Future<void> _approveLeaveWithRecovery(String requestId, UserModel reviewer) async {
+  Future<void> _approveLeaveWithRecovery(
+    String requestId,
+    UserModel reviewer,
+  ) async {
     try {
       await _leaveService.approveLeave(requestId, reviewer.uid, reviewer.role);
     } catch (error) {
       if (!_isFirestorePermissionDenied(error)) rethrow;
-      await _recoverManagerDecision(collection: 'leaves', requestId: requestId, decision: 'approve');
+      await _recoverManagerDecision(
+        collection: 'leaves',
+        requestId: requestId,
+        decision: 'approve',
+      );
     }
   }
 
-  Future<void> _approvePermissionWithRecovery(String requestId, UserModel reviewer) async {
+  Future<void> _approvePermissionWithRecovery(
+    String requestId,
+    UserModel reviewer,
+  ) async {
     try {
       await _permissionService.approvePermission(requestId, reviewer.uid);
     } catch (error) {
       if (!_isFirestorePermissionDenied(error)) rethrow;
-      await _recoverManagerDecision(collection: 'permissions', requestId: requestId, decision: 'approve');
+      await _recoverManagerDecision(
+        collection: 'permissions',
+        requestId: requestId,
+        decision: 'approve',
+      );
     }
   }
 
@@ -263,19 +288,25 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
       // Manager-stage decisions are handled by the Hostinger transaction first.
       // It verifies the exact current approver and writes the next stage in one
       // operation, avoiding the slow client-side chain of Firestore writes.
-      run: () => leave.status == 'pending_manager'
-          ? _recoverManagerDecision(
-              collection: 'leaves',
-              requestId: leave.leaveId,
-              decision: 'approve',
-            )
-          : _leaveService.approveLeave(
-              leave.leaveId,
-              reviewer.uid,
-              reviewer.role,
-            ),
-      recoverPermissionDenied: () => _recoverManagerDecision(
-        collection: 'leaves', requestId: leave.leaveId, decision: 'approve'),
+      run:
+          () =>
+              leave.status == 'pending_manager'
+                  ? _recoverManagerDecision(
+                    collection: 'leaves',
+                    requestId: leave.leaveId,
+                    decision: 'approve',
+                  )
+                  : _leaveService.approveLeave(
+                    leave.leaveId,
+                    reviewer.uid,
+                    reviewer.role,
+                  ),
+      recoverPermissionDenied:
+          () => _recoverManagerDecision(
+            collection: 'leaves',
+            requestId: leave.leaveId,
+            decision: 'approve',
+          ),
     );
   }
 
@@ -310,18 +341,24 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
       // See the leave path above. Manager-stage permission decisions use the
       // authoritative server transaction first; HR and final stages retain
       // their established service behavior.
-      run: () => permission.status == 'pending_manager'
-          ? _recoverManagerDecision(
-              collection: 'permissions',
-              requestId: permission.permissionId,
-              decision: 'approve',
-            )
-          : _permissionService.approvePermission(
-              permission.permissionId,
-              reviewer.uid,
-            ),
-      recoverPermissionDenied: () => _recoverManagerDecision(
-        collection: 'permissions', requestId: permission.permissionId, decision: 'approve'),
+      run:
+          () =>
+              permission.status == 'pending_manager'
+                  ? _recoverManagerDecision(
+                    collection: 'permissions',
+                    requestId: permission.permissionId,
+                    decision: 'approve',
+                  )
+                  : _permissionService.approvePermission(
+                    permission.permissionId,
+                    reviewer.uid,
+                  ),
+      recoverPermissionDenied:
+          () => _recoverManagerDecision(
+            collection: 'permissions',
+            requestId: permission.permissionId,
+            decision: 'approve',
+          ),
     );
   }
 
@@ -3356,11 +3393,17 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
     final isManual = collection == 'manual_deductions';
     final isPermission = collection == 'permissions';
 
-    final title = record.employeeName ??
-        (data['employeeName'] ?? data['userName'] ?? record.employeeId).toString();
-    final empId = (data['employeeId'] ?? record.employeeCode ?? record.employeeId).toString();
+    final title =
+        record.employeeName ??
+        (data['employeeName'] ?? data['userName'] ?? record.employeeId)
+            .toString();
+    final empId =
+        (data['employeeId'] ?? record.employeeCode ?? record.employeeId)
+            .toString();
     final dept = (data['department'] ?? data['locationName'] ?? '').toString();
-    final date = (data['date'] ?? data['dateKey'] ?? data['requestDate'] ?? '').toString();
+    final date =
+        (data['date'] ?? data['dateKey'] ?? data['requestDate'] ?? '')
+            .toString();
 
     final isHr = EmployeeRole.isHr(reviewer.role);
     final isSuperAdmin = reviewer.role == EmployeeRole.superAdmin;
@@ -3382,7 +3425,8 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
         code,
         fallback: (data['salaryDeductionLabel'] ?? code).toString(),
       );
-      approvalStatus = (data['salaryDeductionApprovalStatus'] ?? 'none').toString();
+      approvalStatus =
+          (data['salaryDeductionApprovalStatus'] ?? 'none').toString();
       reversalReason = (data['salaryDeductionReversalReason'] ?? '').toString();
     } else if (isManual) {
       fraction = (data['dayFraction'] as num?)?.toDouble() ?? 0.0;
@@ -3394,7 +3438,8 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
       amount = (data['salaryDeductionAmount'] as num?)?.toDouble() ?? 0.0;
       currency = (data['salaryCurrency'] ?? 'EGP').toString();
       reason = (data['reason'] ?? '').toString();
-      approvalStatus = (data['salaryDeductionApprovalStatus'] ?? 'none').toString();
+      approvalStatus =
+          (data['salaryDeductionApprovalStatus'] ?? 'none').toString();
       reversalReason = (data['salaryDeductionReversalReason'] ?? '').toString();
     } else {
       approvalStatus = (data['status'] ?? '').toString();
@@ -3402,15 +3447,20 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
     }
 
     final isApproved = approvalStatus == 'approved';
-    final isReversed = approvalStatus == 'reversed' || approvalStatus == 'cancelled';
-    final isPending = approvalStatus == 'pending_hr' || approvalStatus == 'pending_manager' || approvalStatus == 'pending';
+    final isReversed =
+        approvalStatus == 'reversed' || approvalStatus == 'cancelled';
+    final isPending =
+        approvalStatus == 'pending_hr' ||
+        approvalStatus == 'pending_manager' ||
+        approvalStatus == 'pending';
 
     final style = RequestTypeStyle.fromSourceType(record.sourceType);
 
     return WolfCard(
-      borderColor: isReversed
-          ? ZaWolfColors.surface03
-          : (isApproved ? ZaWolfColors.warning : style.borderColor),
+      borderColor:
+          isReversed
+              ? ZaWolfColors.surface03
+              : (isApproved ? ZaWolfColors.warning : style.borderColor),
       shadowColor: style.shadowColor,
       borderWidth: 1.5,
       child: Column(
@@ -3432,7 +3482,10 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
           if (date.isNotEmpty)
             Text(
               'تاريخ الخصم: $date',
-              style: const TextStyle(color: ZaWolfColors.textSecondary, fontSize: 13),
+              style: const TextStyle(
+                color: ZaWolfColors.textSecondary,
+                fontSize: 13,
+              ),
             ),
           if (reason.isNotEmpty) ...[
             const SizedBox(height: 4),
@@ -3475,20 +3528,25 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
           Row(
             children: [
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 4,
+                ),
                 decoration: BoxDecoration(
-                  color: isApproved
-                      ? ZaWolfColors.success.withValues(alpha: 0.15)
-                      : (isReversed
-                          ? ZaWolfColors.error.withValues(alpha: 0.15)
-                          : ZaWolfColors.warning.withValues(alpha: 0.15)),
+                  color:
+                      isApproved
+                          ? ZaWolfColors.success.withValues(alpha: 0.15)
+                          : (isReversed
+                              ? ZaWolfColors.error.withValues(alpha: 0.15)
+                              : ZaWolfColors.warning.withValues(alpha: 0.15)),
                   borderRadius: BorderRadius.circular(6),
                   border: Border.all(
-                    color: isApproved
-                        ? ZaWolfColors.success.withValues(alpha: 0.4)
-                        : (isReversed
-                            ? ZaWolfColors.error.withValues(alpha: 0.4)
-                            : ZaWolfColors.warning.withValues(alpha: 0.4)),
+                    color:
+                        isApproved
+                            ? ZaWolfColors.success.withValues(alpha: 0.4)
+                            : (isReversed
+                                ? ZaWolfColors.error.withValues(alpha: 0.4)
+                                : ZaWolfColors.warning.withValues(alpha: 0.4)),
                   ),
                 ),
                 child: Text(
@@ -3498,9 +3556,12 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                           ? 'ملغى (تم التراجع عن الخصم)'
                           : 'قيد مراجعة الاعتماد'),
                   style: TextStyle(
-                    color: isApproved
-                        ? ZaWolfColors.success
-                        : (isReversed ? ZaWolfColors.error : ZaWolfColors.warning),
+                    color:
+                        isApproved
+                            ? ZaWolfColors.success
+                            : (isReversed
+                                ? ZaWolfColors.error
+                                : ZaWolfColors.warning),
                     fontWeight: FontWeight.bold,
                     fontSize: 12,
                   ),
@@ -3516,7 +3577,9 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
               decoration: BoxDecoration(
                 color: ZaWolfColors.error.withValues(alpha: 0.08),
                 borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: ZaWolfColors.error.withValues(alpha: 0.25)),
+                border: Border.all(
+                  color: ZaWolfColors.error.withValues(alpha: 0.25),
+                ),
               ),
               child: Text(
                 'سبب الإلغاء: $reversalReason',
@@ -3539,29 +3602,48 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                   child: OutlinedButton.icon(
                     style: OutlinedButton.styleFrom(
                       foregroundColor: ZaWolfColors.error,
-                      side: const BorderSide(color: ZaWolfColors.error, width: 1.5),
+                      side: const BorderSide(
+                        color: ZaWolfColors.error,
+                        width: 1.5,
+                      ),
                       padding: const EdgeInsets.symmetric(vertical: 12),
                     ),
                     onPressed: () async {
                       bool success = false;
                       if (isAttendance) {
                         final att = AttendanceModel.fromFirestore(doc);
-                        success = await _reverseSalaryDeduction(attendance: att, reviewer: reviewer);
+                        success = await _reverseSalaryDeduction(
+                          attendance: att,
+                          reviewer: reviewer,
+                        );
                       } else if (isManual) {
-                        final manualItem = ManualDeductionModel.fromFirestore(doc);
-                        success = await _reverseManualDeduction(deduction: manualItem, reviewer: reviewer);
+                        final manualItem = ManualDeductionModel.fromFirestore(
+                          doc,
+                        );
+                        success = await _reverseManualDeduction(
+                          deduction: manualItem,
+                          reviewer: reviewer,
+                        );
                       } else if (isPermission) {
                         final perm = PermissionModel.fromFirestore(doc);
-                        success = await _reversePermissionSalaryDeduction(permission: perm, reviewer: reviewer);
+                        success = await _reversePermissionSalaryDeduction(
+                          permission: perm,
+                          reviewer: reviewer,
+                        );
                       }
-                      if (success && dialogContext != null && dialogContext.mounted) {
+                      if (success &&
+                          dialogContext != null &&
+                          dialogContext.mounted) {
                         Navigator.of(dialogContext).pop();
                       }
                     },
                     icon: const Icon(Icons.undo, color: ZaWolfColors.error),
                     label: const Text(
                       'إلغاء الخصم المعتمد',
-                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 15,
+                      ),
                     ),
                   ),
                 ),
@@ -3571,20 +3653,34 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                     child: OutlinedButton.icon(
                       style: OutlinedButton.styleFrom(
                         foregroundColor: ZaWolfColors.primaryCyan,
-                        side: const BorderSide(color: ZaWolfColors.primaryCyan, width: 1.5),
+                        side: const BorderSide(
+                          color: ZaWolfColors.primaryCyan,
+                          width: 1.5,
+                        ),
                         padding: const EdgeInsets.symmetric(vertical: 12),
                       ),
                       onPressed: () async {
                         final att = AttendanceModel.fromFirestore(doc);
-                        final success = await _reopenSalaryDeduction(attendance: att, reviewer: reviewer);
-                        if (success && dialogContext != null && dialogContext.mounted) {
+                        final success = await _reopenSalaryDeduction(
+                          attendance: att,
+                          reviewer: reviewer,
+                        );
+                        if (success &&
+                            dialogContext != null &&
+                            dialogContext.mounted) {
                           Navigator.of(dialogContext).pop();
                         }
                       },
-                      icon: const Icon(Icons.refresh, color: ZaWolfColors.primaryCyan),
+                      icon: const Icon(
+                        Icons.refresh,
+                        color: ZaWolfColors.primaryCyan,
+                      ),
                       label: const Text(
                         'إعادة للمراجعة',
-                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 15,
+                        ),
                       ),
                     ),
                   ),
@@ -3597,17 +3693,28 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
               child: OutlinedButton.icon(
                 style: OutlinedButton.styleFrom(
                   foregroundColor: ZaWolfColors.primaryCyan,
-                  side: const BorderSide(color: ZaWolfColors.primaryCyan, width: 1.5),
+                  side: const BorderSide(
+                    color: ZaWolfColors.primaryCyan,
+                    width: 1.5,
+                  ),
                   padding: const EdgeInsets.symmetric(vertical: 12),
                 ),
                 onPressed: () async {
                   final att = AttendanceModel.fromFirestore(doc);
-                  final success = await _reopenSalaryDeduction(attendance: att, reviewer: reviewer);
-                  if (success && dialogContext != null && dialogContext.mounted) {
+                  final success = await _reopenSalaryDeduction(
+                    attendance: att,
+                    reviewer: reviewer,
+                  );
+                  if (success &&
+                      dialogContext != null &&
+                      dialogContext.mounted) {
                     Navigator.of(dialogContext).pop();
                   }
                 },
-                icon: const Icon(Icons.refresh, color: ZaWolfColors.primaryCyan),
+                icon: const Icon(
+                  Icons.refresh,
+                  color: ZaWolfColors.primaryCyan,
+                ),
                 label: const Text(
                   'إعادة الخصم إلى قيد المراجعة',
                   style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
@@ -3618,42 +3725,59 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
             if (isAttendance)
               _buildApprovalActions(
                 disabled: _isRequestBusy(doc.id),
-                onApprove: () => _confirmAndRun(
-                  requestId: doc.id,
-                  title: 'اعتماد الخصم',
-                  confirmLabel: 'اعتماد',
-                  run: () => _attendanceService.approveSalaryDeduction(doc.id, reviewer.uid),
-                ),
-                onReject: () => _confirmAndRun(
-                  requestId: doc.id,
-                  title: 'رفض الخصم',
-                  confirmLabel: 'رفض',
-                  destructive: true,
-                  run: () => _attendanceService.rejectSalaryDeduction(doc.id, reviewer.uid),
-                ),
+                onApprove:
+                    () => _confirmAndRun(
+                      requestId: doc.id,
+                      title: 'اعتماد الخصم',
+                      confirmLabel: 'اعتماد',
+                      run:
+                          () => _attendanceService.approveSalaryDeduction(
+                            doc.id,
+                            reviewer.uid,
+                          ),
+                    ),
+                onReject:
+                    () => _confirmAndRun(
+                      requestId: doc.id,
+                      title: 'رفض الخصم',
+                      confirmLabel: 'رفض',
+                      destructive: true,
+                      run:
+                          () => _attendanceService.rejectSalaryDeduction(
+                            doc.id,
+                            reviewer.uid,
+                          ),
+                    ),
               )
             else if (isManual)
               Row(
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
                   OutlinedButton.icon(
-                    onPressed: () => ManualDeductionService().rejectDeduction(
-                      deductionId: doc.id,
-                      reviewer: reviewer,
-                      reason: 'تم الرفض بواسطة ${reviewer.displayName}',
-                    ),
+                    onPressed:
+                        () => ManualDeductionService().rejectDeduction(
+                          deductionId: doc.id,
+                          reviewer: reviewer,
+                          reason: 'تم الرفض بواسطة ${reviewer.displayName}',
+                        ),
                     icon: const Icon(Icons.close, color: ZaWolfColors.error),
-                    label: const Text('رفض', style: TextStyle(color: ZaWolfColors.error)),
+                    label: const Text(
+                      'رفض',
+                      style: TextStyle(color: ZaWolfColors.error),
+                    ),
                   ),
                   const SizedBox(width: 10),
                   FilledButton.icon(
-                    onPressed: () => ManualDeductionService().approveDeduction(
-                      deductionId: doc.id,
-                      reviewer: reviewer,
-                    ),
+                    onPressed:
+                        () => ManualDeductionService().approveDeduction(
+                          deductionId: doc.id,
+                          reviewer: reviewer,
+                        ),
                     icon: const Icon(Icons.check),
                     label: const Text('اعتماد الخصم'),
-                    style: FilledButton.styleFrom(backgroundColor: ZaWolfColors.error),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: ZaWolfColors.error,
+                    ),
                   ),
                 ],
               ),
@@ -3733,12 +3857,8 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
         searchTerm: _searchQuery,
         excludedRecordIds: _resolvedRequestIds,
         onSelectRecord:
-            (record) => _showInPlaceRequestAction(
-              tabContext,
-              record,
-              manager,
-              tabs,
-            ),
+            (record) =>
+                _showInPlaceRequestAction(tabContext, record, manager, tabs),
       ),
       (tabContext) => _buildLeavesTab(manager, theme),
       (tabContext) => _buildPermissionsTab(manager, theme),
@@ -3768,34 +3888,30 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
           searchTerm: _searchQuery,
           excludedRecordIds: _resolvedRequestIds,
           onSelectRecord:
-              (record) => _showInPlaceRequestAction(
-                tabContext,
-                record,
-                manager,
-                tabs,
-              ),
+              (record) =>
+                  _showInPlaceRequestAction(tabContext, record, manager, tabs),
         ),
       (tabContext) => _buildManualDeductionsTab(manager, theme),
       if (canReviewTimeCorrections)
         (tabContext) => _buildAttendanceCorrectionsTab(manager, theme),
       if (canReviewSecurity)
         (tabContext) =>
-            // if (canReviewSecurity) _buildSecurityReviewsTab
-            _buildSecurityReviewsTab(manager, theme),
+        // if (canReviewSecurity) _buildSecurityReviewsTab
+        _buildSecurityReviewsTab(manager, theme),
       (tabContext) => _buildComplaintsTab(manager, theme),
       (tabContext) => _buildResignationsTab(manager, theme),
-      (tabContext) => _buildAdministrativeRequestsTab(manager, theme, widget.initialRequestId),
+      (tabContext) => _buildAdministrativeRequestsTab(
+        manager,
+        theme,
+        widget.initialRequestId,
+      ),
       (tabContext) => RequestVisibilityEntry(
         key: const ValueKey('unified-request-history'),
         query: historyQuery,
         searchTerm: _searchQuery,
         onSelectRecord:
-            (record) => _showInPlaceRequestAction(
-              tabContext,
-              record,
-              manager,
-              tabs,
-            ),
+            (record) =>
+                _showInPlaceRequestAction(tabContext, record, manager, tabs),
       ),
     ];
 
@@ -3909,10 +4025,12 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
             fit: BoxFit.scaleDown,
             child: Text(
               'طلبات الموافقة المعلقة',
-              style: theme.textTheme.titleLarge?.copyWith(
-                fontWeight: FontWeight.bold,
-                color: ZaWolfColors.textPrimary,
-              ) ?? const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+              style:
+                  theme.textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.bold,
+                    color: ZaWolfColors.textPrimary,
+                  ) ??
+                  const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
             ),
           ),
           actions: [
@@ -4397,14 +4515,10 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
   ) {
     final isHr = EmployeeRole.isHr(reviewer.role);
     final isSuperAdmin = reviewer.role == EmployeeRole.superAdmin;
-    final isMyTeam =
-        item.managerIds.contains(reviewer.uid) ||
-        item.managerId == reviewer.uid;
-
-    final canApprove =
-        isSuperAdmin ||
-        (isHr && item.status == 'pending_hr') ||
-        (isMyTeam && item.status == 'pending_manager');
+    final canApprove = _canActOnApproval(
+      item.rawData.isNotEmpty ? item.rawData : item.toFirestore(),
+      reviewer,
+    );
 
     final statusColor = switch (item.status) {
       'approved' => ZaWolfColors.error,
@@ -5439,10 +5553,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
           const SizedBox(height: 8),
           Text('السبب: ${request.reason}'),
           const SizedBox(height: 10),
-          RequestApprovalTimeline(
-            data: request.toMap(),
-            compact: true,
-          ),
+          RequestApprovalTimeline(data: request.toMap(), compact: true),
           const SizedBox(height: 14),
           if (request.status == 'approved' || request.status == 'rejected')
             Padding(
@@ -5729,151 +5840,117 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
   }
 
   bool _canActOnApproval(Map<String, dynamic> data, UserModel reviewer) {
-    final status = '${data['status'] ?? ''}'.trim();
+    final status = '${data['status'] ?? ''}'.trim().toLowerCase();
     if (status.isEmpty ||
-        status == 'approved' ||
-        status == 'rejected' ||
-        status == 'cancelled' ||
-        status == 'canceled') {
+        const {
+          'approved',
+          'accepted',
+          'rejected',
+          'cancelled',
+          'canceled',
+          'closed',
+          'paid',
+        }.contains(status)) {
       return false;
     }
 
     final reviewerCode = reviewer.employeeId.trim().toUpperCase();
     final reviewerUid = reviewer.uid.trim().toUpperCase();
-    final isCompanyCeo = reviewer.canReviewCeoStage ||
-        reviewer.employeeId.trim().toUpperCase() == 'CEO-100';
+    final isCompanyCeo =
+        reviewer.canReviewCeoStage || reviewerCode == 'CEO-100';
     final isCompanyCoo = reviewer.isCompanyCoo;
     final isSuperAdmin =
         reviewer.role == EmployeeRole.superAdmin && !isCompanyCoo;
     final isHrReviewer = EmployeeRole.isHr(reviewer.role) && !isCompanyCoo;
-
     final isAccountant =
         reviewer.isAccountant || reviewer.isAdvanceAccountsApprover;
     final isItMember = reviewer.isItMember;
     final currentApproverId =
         (data['currentApproverId'] ?? '').toString().trim().toUpperCase();
+    final managerId = (data['managerId'] ?? '').toString().trim().toUpperCase();
+    final isExplicitlyAssigned =
+        currentApproverId == reviewerUid ||
+        currentApproverId == reviewerCode ||
+        managerId == reviewerUid ||
+        managerId == reviewerCode;
 
-    // Materialized routes are authoritative. Several existing request types
-    // store only the concrete approver ID and intentionally omit approverType.
-    if (currentApproverId.isNotEmpty &&
-        (currentApproverId == reviewerUid ||
-            currentApproverId == reviewerCode)) {
-      return true;
-    }
-
-    // Check custom approval route if present
-    final route = (data['approvalRoute'] as List<dynamic>?)
+    // The materialized route is authoritative. In particular, never allow a
+    // stale currentApproverId to turn an HR/CEO/COO stage into a manager action.
+    final route =
+        (data['approvalRoute'] as List<dynamic>?)
             ?.map((e) => e is Map ? Map<String, dynamic>.from(e) : null)
             .whereType<Map<String, dynamic>>()
             .toList() ??
         const <Map<String, dynamic>>[];
-
     if (route.isNotEmpty) {
       final currentIdx = (data['currentApprovalIndex'] as num?)?.toInt() ?? 0;
-      if (currentIdx >= 0 && currentIdx < route.length) {
-        final currentStage = route[currentIdx];
-        final approverType = (currentStage['approverType'] as String? ?? '').trim();
-        final stageApproverId =
-            (currentStage['approverId'] as String? ?? '').trim().toUpperCase();
-        final specificUserId = (currentStage['specificUserId'] as String? ?? '').trim().toUpperCase();
-        final stageDept = (currentStage['department'] as String? ?? '').trim().toLowerCase();
-
-        const roleMarkers = {
-          'HR',
-          'ACCOUNTING',
-          'ACCOUNTS',
-          'IT',
-          'CEO',
-          'CEO-100',
-          'COO',
-          'COO-1300',
-          'SUPER_ADMIN',
-        };
-        if (stageApproverId.isNotEmpty &&
-            !roleMarkers.contains(stageApproverId)) {
-          return stageApproverId == reviewerUid ||
-              stageApproverId == reviewerCode;
-        }
-
-        switch (approverType) {
-          case 'direct_manager':
-            final managerId = (data['managerId'] ?? '').toString().trim().toUpperCase();
-            final currentApproverId = (data['currentApproverId'] ?? '').toString().trim().toUpperCase();
-            return managerId == reviewerUid ||
-                managerId == reviewerCode ||
-                currentApproverId == reviewerUid ||
-                currentApproverId == reviewerCode;
-          case 'hr':
-            return isHrReviewer || isSuperAdmin;
-          case 'accounting':
-            return isAccountant;
-          case 'it':
-            return isItMember;
-          case 'ceo':
-            return isCompanyCeo;
-          case 'coo':
-            return isCompanyCoo;
-          case 'specific_user':
-            return specificUserId == reviewerUid || specificUserId == reviewerCode;
-          case 'department_pool':
-            return reviewer.department.trim().toLowerCase() == stageDept;
-          default:
-            return false;
-        }
+      if (currentIdx < 0 || currentIdx >= route.length) return false;
+      final stage = route[currentIdx];
+      final type =
+          (stage['approverType'] ?? stage['type'] ?? '')
+              .toString()
+              .trim()
+              .toLowerCase();
+      final stageId =
+          (stage['approverId'] ?? stage['specificUserId'] ?? '')
+              .toString()
+              .trim()
+              .toUpperCase();
+      const markers = {
+        'HR',
+        'ACCOUNTING',
+        'ACCOUNTS',
+        'IT',
+        'CEO',
+        'CEO-100',
+        'COO',
+        'COO-1300',
+        'SUPER_ADMIN',
+      };
+      if (stageId.isNotEmpty && !markers.contains(stageId)) {
+        return stageId == reviewerUid || stageId == reviewerCode;
       }
-      return false;
+      return switch (type) {
+        'direct_manager' => isExplicitlyAssigned,
+        'hr' || 'hr_pool' || 'human_resources' => isHrReviewer,
+        'accounting' || 'accounts' || 'finance' => isAccountant,
+        'it' => isItMember,
+        'ceo' => isCompanyCeo,
+        'coo' => isCompanyCoo,
+        'super_admin' || 'admin' => isSuperAdmin,
+        'department_pool' =>
+          reviewer.department.trim().toLowerCase() ==
+              (stage['department'] ?? stage['departmentName'] ?? '')
+                  .toString()
+                  .trim()
+                  .toLowerCase(),
+        _ => false,
+      };
     }
 
-    // Standard / legacy status checking
-    if (data['advanceRouteStage'] == 'accounting' && isAccountant) {
-      return true;
-    }
-
-    final managerId = (data['managerId'] ?? '').toString().trim().toUpperCase();
-    final isCurrentAssignedManager =
-        managerId == reviewerUid ||
-        managerId == reviewerCode ||
-        currentApproverId == reviewerUid ||
-        currentApproverId == reviewerCode;
-
-    final isAssignedManager = isCurrentAssignedManager;
+    // Legacy requests without a materialized route still follow the current
+    // status before any legacy identifier. This prevents executives from
+    // acting on a request now waiting for HR just because an old ID remains.
     if (status == 'pending_manager' || status == 'pending_team_leader') {
-      // Only the currently assigned manager for this stage can approve!
-      // HR, CEO, COO, or another manager cannot act out of turn.
-      // Invariant: return isAssignedManager || isSuperAdmin;
-      // Invariant: return isAssignedManager || EmployeeRole.isHr(reviewer.role);
-      return isAssignedManager;
+      return isExplicitlyAssigned;
     }
-
-    if (status == 'pending_hr' ||
-        status == 'pending_hr_manager' ||
-        status == 'pending') {
-      // HR stage
+    if (status == 'pending_hr' || status == 'pending_hr_manager') {
       return isHrReviewer;
     }
-
     if (status == 'pending_ceo') {
       final ceoId = (data['ceoId'] ?? '').toString().trim().toUpperCase();
-      return isCompanyCeo && (ceoId.isEmpty || ceoId == reviewerUid || ceoId == reviewerCode);
+      return isCompanyCeo &&
+          (ceoId.isEmpty || ceoId == reviewerUid || ceoId == reviewerCode);
     }
-
     if (status == 'pending_coo') {
       final cooId = (data['cooId'] ?? '').toString().trim().toUpperCase();
-      return isCompanyCoo && (cooId.isEmpty || cooId == reviewerUid || cooId == reviewerCode);
+      return isCompanyCoo &&
+          (cooId.isEmpty || cooId == reviewerUid || cooId == reviewerCode);
     }
-
-    if (status == 'pending_accounts') {
-      return isAccountant;
-    }
-
-    if (status == 'pending_it') {
-      return isItMember;
-    }
-
-    if (status == 'pending_super_admin') {
-      return isSuperAdmin;
-    }
-
+    if (status == 'pending_accounts') return isAccountant;
+    if (status == 'pending_it') return isItMember;
+    if (status == 'pending_super_admin') return isSuperAdmin;
+    if (status == 'pending') return isExplicitlyAssigned || isHrReviewer;
     return false;
   }
 
@@ -6068,9 +6145,11 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
             ),
             Builder(
               builder: (context) {
-                final cachedDays = data['daysOffInCurrentPeriod'] ??
+                final cachedDays =
+                    data['daysOffInCurrentPeriod'] ??
                     leave.daysOffInCurrentPeriod;
-                final periodRange = data['currentPeriodRange'] ??
+                final periodRange =
+                    data['currentPeriodRange'] ??
                     leave.currentPeriodRange ??
                     PayrollCycle.forDate(leave.startDate).arabicRangeLabel;
 
@@ -6079,14 +6158,16 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                     padding: const EdgeInsets.only(top: 6),
                     child: Container(
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 10, vertical: 6),
+                        horizontal: 10,
+                        vertical: 6,
+                      ),
                       decoration: BoxDecoration(
-                        color:
-                            ZaWolfColors.primaryCyan.withValues(alpha: 0.12),
+                        color: ZaWolfColors.primaryCyan.withValues(alpha: 0.12),
                         borderRadius: BorderRadius.circular(8),
                         border: Border.all(
-                          color:
-                              ZaWolfColors.primaryCyan.withValues(alpha: 0.35),
+                          color: ZaWolfColors.primaryCyan.withValues(
+                            alpha: 0.35,
+                          ),
                         ),
                       ),
                       child: Row(
@@ -6197,7 +6278,12 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                       docId: leave.leaveId,
                       requestTitle: 'طلب الإجازة',
                     ),
-                onApprove: () => _confirmLeaveWithStaffing(leave, reviewer, dialogContext: dialogContext),
+                onApprove:
+                    () => _confirmLeaveWithStaffing(
+                      leave,
+                      reviewer,
+                      dialogContext: dialogContext,
+                    ),
                 onReject:
                     () => _showRejectionDialog(
                       requestId: leave.leaveId,
@@ -6837,7 +6923,12 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                       docId: perm.permissionId,
                       requestTitle: 'طلب الإذن',
                     ),
-                onApprove: () => _confirmPermissionWithStaffing(perm, reviewer, dialogContext: dialogContext),
+                onApprove:
+                    () => _confirmPermissionWithStaffing(
+                      perm,
+                      reviewer,
+                      dialogContext: dialogContext,
+                    ),
                 onReject:
                     () => _showRejectionDialog(
                       requestId: perm.permissionId,
@@ -6971,11 +7062,16 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                 decoration: BoxDecoration(
                   color: ZaWolfColors.error.withValues(alpha: 0.08),
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: ZaWolfColors.error.withValues(alpha: 0.25)),
+                  border: Border.all(
+                    color: ZaWolfColors.error.withValues(alpha: 0.25),
+                  ),
                 ),
                 child: Text(
                   'تم إلغاء أثر الخصم: ${perm.salaryDeductionReversalReason}',
-                  style: const TextStyle(color: ZaWolfColors.error, fontSize: 13),
+                  style: const TextStyle(
+                    color: ZaWolfColors.error,
+                    fontSize: 13,
+                  ),
                 ),
               ),
             ],
@@ -9074,7 +9170,9 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
     } catch (error) {
       if (!mounted) return false;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('تعذر إلغاء خصم الإذن: ${userFacingError(error)}')),
+        SnackBar(
+          content: Text('تعذر إلغاء خصم الإذن: ${userFacingError(error)}'),
+        ),
       );
       return false;
     }
