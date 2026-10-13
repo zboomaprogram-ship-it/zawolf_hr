@@ -22,6 +22,8 @@
 
 3. **Attachment delivery and composer**
    - Retain ordered resumable chunks for each resource.
+   - Store new chat media in private Firebase Storage through the existing authorized Hostinger API; the client never receives a public storage URL.
+   - Preserve legacy Google Drive attachment reads during migration, but do not send new uploads to Drive or Hostinger's transient local disk fallback.
    - Add bounded parallel upload of independent selected resources and per-file progress/retry state.
    - Persist upload jobs and offsets in the outbox so navigation cannot cancel transfers; resume interrupted jobs from the server-confirmed offset.
    - Add web clipboard-image ingestion into the existing `ChatDraftFile` path.
@@ -44,7 +46,7 @@
 - `domain`: add an archive/mute preference contract and active channel alert-suppression contract.
 - `data`: repository implements contracts via existing authenticated conversation transport and local store.
 - `presentation`: focused preference/archive Cubit; inbox and timeline Cubits remain below 300 lines.
-- `scripts/conversations`: server authorizes all preference mutations and computes inbox visibility. `dispatch-notifications.js` respects the same preference.
+- `scripts/conversations`: server authorizes all preference mutations and computes inbox visibility. `dispatch-notifications.js` respects the same preference. The Hostinger Firebase service account receives Storage Object Admin on the chat bucket; it writes and streams private bytes only after conversation authorization.
 
 ## Rollout and rollback
 

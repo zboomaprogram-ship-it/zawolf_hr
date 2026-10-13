@@ -149,14 +149,22 @@ async function handleMedia({req,res,db,actor,channel,parts,payload,sendJson,prov
     }
     let secret=(await secretRef.get()).data();
     if(!secret) {
-      let folderId = '';
-      try {
-        folderId = await ensureFolder();
-      } catch (e) {
-        console.warn('[Uploads] ensureFolder failed, using local storage:', e?.message || e);
-      }
       const fileId=await provider.allocateId();
-      secret={externalId:fileId,parentExternalId:folderId||'local',provider:folderId?'google_workspace':'local'};
+      let folderId = '';
+      if (provider.requiresFolder) {
+        try {
+          folderId = await ensureFolder();
+        } catch (e) {
+          console.warn('[Uploads] attachment folder unavailable:', e?.message || e);
+        }
+      }
+      secret={
+        externalId:fileId,
+        parentExternalId:folderId || 'firebase_storage',
+        provider: typeof provider.providerForId === 'function' && provider.providerForId(fileId).requiresFolder === false
+          ? 'firebase_storage'
+          : (folderId ? 'google_workspace' : 'local'),
+      };
       await secretRef.set(secret);
     }
     // Resolve provider-success / response-loss before creating any new session.

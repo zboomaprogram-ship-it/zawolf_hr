@@ -1611,9 +1611,12 @@ function createGoogleSheetsIntegration({
     downloadWorkspaceDriveFile,
     createWorkspaceDriveFolder,
     uploadWorkspaceDriveFile,
-    createConversationMediaProvider: () => require('./conversations/drive-media-provider').createDriveMediaProvider({
-      request: (options) => request(options, { useDriveUploadOAuth: true }),
-    }),
+    createConversationMediaProvider: () => {
+      const driveProvider = require('./conversations/drive-media-provider').createDriveMediaProvider({
+        request: (options) => request(options, { useDriveUploadOAuth: true }),
+      });
+      return require('./conversations/hybrid-media-provider').createHybridMediaProvider({ driveProvider });
+    },
     renameWorkspaceDriveFile,
     trashWorkspaceDriveFile,
     moveWorkspaceDriveFile,

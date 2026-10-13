@@ -122,3 +122,55 @@ test('drive provider downloads via arraybuffer and follows redirects', async () 
 
 
 
+
+test('hybrid provider writes new media to Firebase Storage and keeps legacy Drive reads', async () => {
+  const { createHybridMediaProvider } = require('../conversations/hybrid-media-provider');
+  const calls = [];
+  const drive = {
+    allocateId: async () => 'drive-new',
+    start: async () => { calls.push('drive-start'); return 'https://www.googleapis.com/upload/drive/v3/files?upload_id=legacy'; },
+    status: async () => ({ offset: 0, complete: false }),
+    chunk: async () => ({ offset: 1, complete: true }),
+    metadata: async ({ fileId }) => { calls.push(`drive-meta:${fileId}`); return { id:fileId, size:'1' }; },
+    download: async ({ fileId }) => { calls.push(`drive-download:${fileId}`); return { contents:Buffer.from('old'), fileName:'old', mimeType:'text/plain' }; },
+    startLocal: async () => 'local://legacy',
+  };
+  const cloud = {
+    requiresFolder:false,
+    allocateId: async () => 'gcs_new',
+    start: async () => { calls.push('cloud-start'); return 'https://storage.googleapis.com/upload/storage/v1/b/bucket/o?upload_id=new'; },
+    status: async () => ({ offset: 0, complete: false }),
+    chunk: async () => ({ offset: 1, complete: true }),
+    metadata: async ({ fileId }) => { calls.push(`cloud-meta:${fileId}`); return { id:fileId, size:'1' }; },
+    download: async ({ fileId }) => { calls.push(`cloud-download:${fileId}`); return { contents:Buffer.from('new'), fileName:'new', mimeType:'text/plain' }; },
+  };
+  const provider = createHybridMediaProvider({ driveProvider:drive, firebaseProvider:cloud });
+  const id = await provider.allocateId();
+  assert.equal(id, 'gcs_new');
+  await provider.start({ fileId:id });
+  await provider.download({ fileId:'legacy-drive-id' });
+  await provider.download({ fileId:id });
+  assert.deepEqual(calls, ['cloud-start', 'drive-download:legacy-drive-id', 'cloud-download:gcs_new']);
+});
+
+test('Firebase media provider uses the explicit modern Firebase bucket', () => {
+  const Module = require('node:module');
+  const originalLoad = Module._load;
+  let requestedBucket = null;
+  Module._load = function (request, parent, isMain) {
+    if (request === 'firebase-admin') {
+      return {
+        app: () => ({ options: { projectId: 'demo-project' } }),
+        storage: () => ({ bucket: (name) => { requestedBucket = name; return { file: () => ({}) }; } }),
+      };
+    }
+    return originalLoad.call(this, request, parent, isMain);
+  };
+  const modulePath = require.resolve('../conversations/firebase-storage-media-provider');
+  delete require.cache[modulePath];
+  const { createFirebaseStorageMediaProvider } = require('../conversations/firebase-storage-media-provider');
+  createFirebaseStorageMediaProvider();
+  assert.equal(requestedBucket, 'demo-project.firebasestorage.app');
+  delete require.cache[modulePath];
+  Module._load = originalLoad;
+});
