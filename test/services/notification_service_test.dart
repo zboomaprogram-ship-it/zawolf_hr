@@ -24,6 +24,7 @@ void main() {
   test('cold-start local notifications preserve their safe deep link', () {
     expect(source, contains("payload.startsWith('notification|')"));
     expect(source, contains('initialRoute = safeRoute'));
+    expect(source, contains('String? takeInitialRoute()'));
   });
 
   test('foreground chat alerts use the packaged chat sound channel', () {

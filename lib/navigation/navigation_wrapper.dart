@@ -62,6 +62,14 @@ class _NavigationWrapperState extends State<NavigationWrapper>
         context.go(route);
       }
     });
+    // A terminated-app push can be delivered before this shell subscribes to
+    // the stream. Consume the retained route after the first frame so chat
+    // and request taps do not stop at the default dashboard.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final route = NotificationService.instance.takeInitialRoute();
+      if (route != null && route.isNotEmpty) context.go(route);
+    });
   }
 
   @override

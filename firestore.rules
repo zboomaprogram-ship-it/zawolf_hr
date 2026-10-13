@@ -58,7 +58,6 @@ service cloud.firestore {
     }
     function isCompanyCoo() {
       return (userDocExists() && userDoc().get('executiveRole', '') == 'coo')
-        || employeeCode() == 'MKT-600'
         || employeeCode() == 'COO-1300';
     }
     function isExecutiveApprover() {
@@ -68,22 +67,42 @@ service cloud.firestore {
     function isCompanyExecutive() {
       return isCompanyCeo() || isCompanyCoo() || isExecutiveApprover();
     }
+    function approvalIdentityMatches(candidate) {
+      return candidate is string && (
+        candidate == uid()
+        || candidate == employeeCode()
+        || (candidate == 'CEO-100' && isCompanyCeo())
+      );
+    }
+    // Only the person at the current route step can make a manager decision.
+    // A previous version accepted every value in managerIds (and all HR or
+    // executives), allowing a later or unrelated manager to approve early.
     function isCurrentApprovalManager() {
-      return (resource != null && resource.data != null) && (
-        resource.data.get('managerId', '') == uid()
-        || resource.data.get('managerId', '') == employeeCode()
-        || (resource.data.get('managerId', '') == 'CEO-100' && isCompanyCeo())
-        || uid() in resource.data.get('managerIds', [])
-        || employeeCode() in resource.data.get('managerIds', [])
-        || ('CEO-100' in resource.data.get('managerIds', []) && isCompanyCeo())
-        || employeeCode() in resource.data.get('managerCodes', [])
-        || ('CEO-100' in resource.data.get('managerCodes', []) && isCompanyCeo())
-        || resource.data.get('currentApproverId', '') == uid()
-        || resource.data.get('currentApproverId', '') == employeeCode()
-        || resource.data.get('teamLeaderId', '') == uid()
-        || resource.data.get('teamLeaderId', '') == employeeCode()
-        || isHR()
-        || isCompanyExecutive()
+      let current = resource.data.get('currentApproverId', '');
+      let managers = resource.data.get('managerIds', []);
+      let index = resource.data.get('managerApprovalIndex', 0);
+      let legacyManager = resource.data.get('managerId', '');
+      let teamLeader = resource.data.get('teamLeaderId', '');
+      return resource != null && resource.data != null && (
+        (managers is list
+          && index is int
+          && index >= 0
+          && index < managers.size()
+          && approvalIdentityMatches(managers[index])
+        )
+        || (
+          (!(managers is list) || managers.size() == 0)
+          && current is string && current.size() > 0
+          && approvalIdentityMatches(current)
+        )
+        || (
+          (!(managers is list) || managers.size() == 0)
+          && approvalIdentityMatches(legacyManager)
+        )
+        || (
+          (!(managers is list) || managers.size() == 0)
+          && approvalIdentityMatches(teamLeader)
+        )
       );
     }
     // Financial approvers are assigned explicitly. Department labels and
@@ -210,82 +229,23 @@ service cloud.firestore {
       let managerIds = resource.data.get('managerIds', []);
       let currentIndex = resource.data.get('managerApprovalIndex', 0);
       let nextIndex = currentIndex + 1;
-      return (
-          (
-            managerIds.size() == 0
-            || !(resource.data.get('managerId', '') in managerIds)
-            || !(uid() in managerIds)
-            || resource.data.get('managerId', '') == uid()
-            || resource.data.get('managerId', '') == employeeCode()
-            || resource.data.get('currentApproverId', '') == uid()
-            || resource.data.get('currentApproverId', '') == employeeCode()
-            || (resource.data.get('managerId', '') == 'CEO-100' && isCompanyCeo())
-            || isHR()
-            || isCompanyExecutive()
+      let hasNext = managerIds is list
+        && currentIndex is int
+        && nextIndex < managerIds.size();
+      return isCurrentApprovalManager()
+        && (
+          request.resource.data.status == 'rejected'
+          || (
+            hasNext
+            && request.resource.data.status == 'pending_manager'
+            && request.resource.data.managerApprovalIndex == nextIndex
+            && request.resource.data.managerId == managerIds[nextIndex]
           )
-          && (
-            resource.data.get('managerId', '') == uid()
-            || resource.data.get('managerId', '') == employeeCode()
-            || resource.data.get('currentApproverId', '') == uid()
-            || resource.data.get('currentApproverId', '') == employeeCode()
-            || (resource.data.get('managerId', '') == 'CEO-100' && isCompanyCeo())
-            || isHR()
-            || isCompanyExecutive()
-          )
-          && request.resource.data.status in ['approved', 'pending_hr', 'pending_ceo', 'pending_manager', 'rejected']
-        )
-        || (
-          currentIndex >= 0
-          && currentIndex < managerIds.size()
-          && (
-            resource.data.get('managerId', '') == managerIds[currentIndex]
-            || (
-              (resource.data.get('managerId', '') == uid() || resource.data.get('managerId', '') == employeeCode() || (resource.data.get('managerId', '') == 'CEO-100' && isCompanyCeo()))
-              && (managerIds[currentIndex] == uid() || managerIds[currentIndex] == employeeCode() || (managerIds[currentIndex] == 'CEO-100' && isCompanyCeo()))
-            )
-            || uid() in managerIds
-            || employeeCode() in managerIds
-            || resource.data.get('managerId', '') == uid()
-            || resource.data.get('managerId', '') == employeeCode()
-            || resource.data.get('currentApproverId', '') == uid()
-            || isHR()
-            || isCompanyExecutive()
-          )
-          && (
-            managerIds.removeAll([managerIds[currentIndex]]).size()
-              == managerIds.size() - 1
-            || true
-          )
-          && (
-            managerIds[currentIndex] == uid()
-            || managerIds[currentIndex] == employeeCode()
-            || (managerIds[currentIndex] == 'CEO-100' && isCompanyCeo())
-            || resource.data.get('managerId', '') == uid()
-            || resource.data.get('managerId', '') == employeeCode()
-            || resource.data.get('currentApproverId', '') == uid()
-            || uid() in managerIds
-            || isHR()
-            || isCompanyExecutive()
-          )
-          && (
-            request.resource.data.status == 'rejected'
-            || (
-              request.resource.data.status in ['pending_manager', 'pending_hr', 'pending_ceo', 'approved']
-              && (
-                (
-                  nextIndex < managerIds.size()
-                  && request.resource.data.managerApprovalIndex == nextIndex
-                  && (
-                    request.resource.data.managerId == managerIds[nextIndex]
-                    || request.resource.data.managerId in managerIds
-                    || request.resource.data.managerId is string
-                  )
-                )
-                || (
-                  request.resource.data.status in ['approved', 'pending_hr', 'pending_ceo']
-                )
-              )
-            )
+          || (
+            !hasNext
+            && request.resource.data.status in [
+              'pending_hr', 'pending_ceo', 'approved'
+            ]
           )
         );
     }

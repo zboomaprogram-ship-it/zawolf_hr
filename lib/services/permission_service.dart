@@ -554,14 +554,7 @@ class PermissionService {
     final isMatchingManager =
         perm.managerId == reviewerId ||
         (reviewerEmployeeId.isNotEmpty &&
-            perm.managerId == reviewerEmployeeId) ||
-        (doc.data()?['managerCodes'] as List<dynamic>?)?.contains(
-              reviewerEmployeeId,
-            ) ==
-            true ||
-        (doc.data()?['managerIds'] as List<dynamic>?)?.contains(reviewerId) ==
-            true ||
-        isExecutive;
+            perm.managerId == reviewerEmployeeId);
     if (perm.status == 'pending_hr' && perm.userId == reviewerId) {
       throw Exception('لا يمكن اعتماد طلبك الشخصي. يجب أن يراجعه HR آخر.');
     }
@@ -829,28 +822,10 @@ class PermissionService {
             ?.trim()
             .toUpperCase() ??
         '';
-    final reviewerExecutiveRole =
-        (reviewerDoc.data()?['executiveRole'] as String?)?.trim().toLowerCase();
-    final reviewerUser = reviewerDoc.exists
-        ? UserModel.fromFirestore(reviewerDoc)
-        : null;
-    final isCompanyCeo = reviewerUser?.isCompanyCeo ??
-        (reviewerExecutiveRole == 'ceo' || reviewerEmployeeId.startsWith('CEO-'));
-    final isCompanyCoo =
-        reviewerUser?.isCompanyCoo ?? (reviewerExecutiveRole == 'coo');
-    final isExecutive = reviewerUser?.canReviewExecutiveStage ??
-        (isCompanyCeo || isCompanyCoo || reviewerRole == EmployeeRole.superAdmin);
     final isMatchingManager =
         perm.managerId == reviewerId ||
         (reviewerEmployeeId.isNotEmpty &&
-            perm.managerId == reviewerEmployeeId) ||
-        (doc.data()?['managerCodes'] as List<dynamic>?)?.contains(
-              reviewerEmployeeId,
-            ) ==
-            true ||
-        (doc.data()?['managerIds'] as List<dynamic>?)?.contains(reviewerId) ==
-            true ||
-        isExecutive;
+            perm.managerId == reviewerEmployeeId);
     final isHrStage = perm.status == 'pending_hr'; // Legacy requests only.
     if (isHrStage && perm.userId == reviewerId) {
       throw Exception('لا يمكن رفض طلبك الشخصي. يجب أن يراجعه HR آخر.');

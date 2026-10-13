@@ -50,6 +50,42 @@ void main() {
     },
   );
   test(
+    'downloaded media is reused by another chat repository without a second fetch',
+    () async {
+      final db = ChatDatabase.forTesting(NativeDatabase.memory());
+      var downloads = 0;
+      final transport = ChatTransport(
+        client: MockClient((request) async {
+          downloads++;
+          return http.Response.bytes(
+            [7, 8, 9],
+            200,
+            headers: {'content-type': 'image/png'},
+          );
+        }),
+        tokenProvider: () async => 'token',
+        baseUri: Uri.parse('https://example.test'),
+      );
+      final first = RichChatRepositoryImpl(
+        actorId: 'employee-a',
+        transport: transport,
+        store: ChatStore(db, 'employee-a'),
+      );
+      expect((await first.download('channel-1', 'media-1')).bytes, [7, 8, 9]);
+      // A second page repository receives the cached attachment rather than
+      // issuing another network request.
+
+      final second = RichChatRepositoryImpl(
+        actorId: 'employee-a',
+        transport: transport,
+        store: ChatStore(db, 'employee-a'),
+      );
+      expect((await second.download('channel-1', 'media-1')).bytes, [7, 8, 9]);
+      expect(downloads, 1);
+      await second.dispose();
+    },
+  );
+  test(
     'uncertain send retains blob and replays stable IDs after upload completes',
     () async {
       final db = ChatDatabase.forTesting(NativeDatabase.memory());

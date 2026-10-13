@@ -316,11 +316,24 @@ function watchRequestNotifications({ db, admin, onQueued = () => {}, onError = (
     return cachedUsers;
   };
   const pendingTimers = new Set();
-  const unsubscribers = REQUEST_COLLECTIONS.map((collection) => db.collection(collection)
+  const unsubscribers = REQUEST_COLLECTIONS.map((collection) => {
+    // Firestore reports every existing matching document as `added` when a
+    // listener starts. Those are historical inbox records, not newly assigned
+    // approval turns. Replaying them was the source of the notification flood
+    // after a Hostinger restart.
+    let initialSnapshot = true;
+    return db.collection(collection)
     .where('status', 'in', WATCHED_STATUSES)
     .limit(100)
     .onSnapshot((snapshot) => {
+      if (initialSnapshot) {
+        initialSnapshot = false;
+        return;
+      }
       for (const change of snapshot.docChanges()) {
+        // After the initial snapshot, `added` is a newly created request and
+        // `modified` is a real stage/decision update. Both resolve one exact
+        // current recipient through approvalAudience().
         if (!['added', 'modified'].includes(change.type)) continue;
         const timer = setTimeout(() => {
           pendingTimers.delete(timer);
@@ -334,7 +347,8 @@ function watchRequestNotifications({ db, admin, onQueued = () => {}, onError = (
         }, 2000);
         pendingTimers.add(timer);
       }
-    }, onError));
+    }, onError);
+  });
   return () => {
     for (const timer of pendingTimers) clearTimeout(timer);
     pendingTimers.clear();

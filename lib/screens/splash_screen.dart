@@ -63,9 +63,8 @@ class _SplashScreenState extends State<SplashScreen>
       }
       final role = authService.currentUser?.role;
 
-      final initialRoute = NotificationService.instance.initialRoute;
+      final initialRoute = NotificationService.instance.takeInitialRoute();
       if (initialRoute != null && initialRoute.isNotEmpty) {
-        NotificationService.instance.initialRoute = null; // consume it
         context.go(initialRoute);
         return;
       }

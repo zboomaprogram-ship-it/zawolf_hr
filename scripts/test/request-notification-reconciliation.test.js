@@ -11,6 +11,7 @@ const {
   notificationIdentity,
   notificationFor,
   resolveAudienceUsers,
+  watchRequestNotifications,
 } = require('../request-notification-reconciliation');
 
 const users = [
@@ -123,4 +124,28 @@ test('Hostinger runtime starts the request-stage reconciliation listener', () =>
   const source = fs.readFileSync(path.join(__dirname, '..', 'notification-web.js'), 'utf8');
   assert.match(source, /watchRequestNotifications\(\{/);
   assert.match(source, /schedulePushDispatch\('request_approval_stage', 0\)/);
+});
+
+test('request listener ignores Firestore initial added documents', () => {
+  const listeners = [];
+  const db = {
+    collection: () => ({
+      where: () => ({
+        limit: () => ({
+          onSnapshot: (listener) => {
+            listeners.push(listener);
+            return () => {};
+          },
+        }),
+      }),
+    }),
+  };
+  const stop = watchRequestNotifications({ db, admin: {} });
+  assert.equal(listeners.length > 0, true);
+  // The initial snapshot contains existing requests as `added`. It must not
+  // schedule recovery notifications after a server restart.
+  assert.doesNotThrow(() => listeners[0]({
+    docChanges: () => [{ type: 'added', doc: { id: 'historic', data: () => ({}) } }],
+  }));
+  stop();
 });

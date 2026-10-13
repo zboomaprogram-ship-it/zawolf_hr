@@ -7,15 +7,17 @@ void main() {
   final screen =
       File('lib/screens/manager/requests_mgmt.dart').readAsStringSync();
 
-  test('legacy employee-code reviewers are authorized consistently', () {
+  test('only the current manager-chain identity is authorized consistently', () {
     expect(rules, contains('function employeeCode()'));
     expect(rules, contains('function isCurrentApprovalManager()'));
     expect(rules, contains("employeeCode() == 'COO-1300'"));
-    expect(rules, contains('managerIds[currentIndex] == employeeCode()'));
-    expect(
-      rules,
-      contains('resource.data.get(\'managerId\', \'\') == employeeCode()'),
+    expect(rules, contains('function approvalIdentityMatches(candidate)'));
+    expect(rules, contains('approvalIdentityMatches(managers[index])'));
+    final approvalManagerRule = rules.substring(
+      rules.indexOf('function isCurrentApprovalManager()'),
+      rules.indexOf('function isAdvanceCeoApprover()'),
     );
+    expect(approvalManagerRule, isNot(contains(' in managers')));
   });
 
   test('CEO and COO can read every request-management collection', () {

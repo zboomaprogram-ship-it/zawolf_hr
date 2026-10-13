@@ -20,9 +20,9 @@ test('permission and leave decisions require the assigned current manager stage'
     rules.indexOf('function sequentialManagerDecision()'),
     rules.indexOf('function isValidSelfCreate()'),
   );
-  assert.match(sequence, /managerIds\[currentIndex\] == uid\(\)/);
-  assert.match(sequence, /resource\.data\.get\('managerId', ''\) == managerIds\[currentIndex\]/);
-  assert.match(sequence, /managerIds\.removeAll\(\[managerIds\[currentIndex\]\]\)\.size\(\)/);
+  assert.match(sequence, /return isCurrentApprovalManager\(\)/);
+  assert.match(sequence, /request\.resource\.data\.managerId == managerIds\[nextIndex\]/);
+  assert.match(sequence, /request\.resource\.data\.managerApprovalIndex == nextIndex/);
   assert.doesNotMatch(sequence, /isSuperAdmin\(\)/);
 
   for (const [collection, next] of [

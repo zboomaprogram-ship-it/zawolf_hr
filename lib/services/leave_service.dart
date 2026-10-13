@@ -886,11 +886,7 @@ class LeaveService {
         (isCompanyCeo || isCompanyCoo || role == EmployeeRole.superAdmin);
     final isMatchingManager =
         leave.managerId == reviewerId ||
-        (reviewerCode.isNotEmpty && leave.managerId == reviewerCode) ||
-        (data['managerCodes'] as List<dynamic>?)?.contains(reviewerCode) ==
-            true ||
-        (data['managerIds'] as List<dynamic>?)?.contains(reviewerId) == true ||
-        isExecutive;
+        (reviewerCode.isNotEmpty && leave.managerId == reviewerCode);
     final requiresCeoApproval =
         (data['requiresCeoApproval'] as bool?) ?? false;
 
@@ -1219,19 +1215,9 @@ class LeaveService {
         : null;
     final isCompanyCeo = reviewerUser?.isCompanyCeo ??
         (reviewerExecutiveRole == 'ceo' || reviewerCode.startsWith('CEO-'));
-    final isCompanyCoo = reviewerUser?.isCompanyCoo ?? (reviewerExecutiveRole == 'coo');
-    final isExecutive = reviewerUser?.canReviewExecutiveStage ??
-        (isCompanyCeo || isCompanyCoo || reviewerRole == EmployeeRole.superAdmin);
     final isMatchingManager =
         leave.managerId == reviewerId ||
-        (reviewerCode.isNotEmpty && leave.managerId == reviewerCode) ||
-        (doc.data()?['managerCodes'] as List<dynamic>?)?.contains(
-              reviewerCode,
-            ) ==
-            true ||
-        (doc.data()?['managerIds'] as List<dynamic>?)?.contains(reviewerId) ==
-            true ||
-        isExecutive;
+        (reviewerCode.isNotEmpty && leave.managerId == reviewerCode);
 
     if (leave.status == 'pending_ceo') {
       final canRejectCeo = reviewerUser?.canReviewCeoStage ?? isCompanyCeo;

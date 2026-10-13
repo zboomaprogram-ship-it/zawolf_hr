@@ -389,12 +389,7 @@ class AdministrativeRequestService {
         (reviewerCode.isNotEmpty && data['managerId'] == reviewerCode) ||
         data['currentApproverId'] == reviewer.uid ||
         (reviewerCode.isNotEmpty &&
-            data['currentApproverId'] == reviewerCode) ||
-        (data['managerCodes'] as List<dynamic>?)?.contains(reviewerCode) ==
-            true ||
-        (data['managerIds'] as List<dynamic>?)?.contains(reviewer.uid) ==
-            true ||
-        reviewer.isExecutiveLeader;
+            data['currentApproverId'] == reviewerCode);
     if (status != 'pending_manager') {
       throw Exception('هذا الطلب ليس في مرحلة موافقة المدير.');
     }
@@ -533,12 +528,7 @@ class AdministrativeRequestService {
         (reviewerCode.isNotEmpty && data['managerId'] == reviewerCode) ||
         data['currentApproverId'] == reviewer.uid ||
         (reviewerCode.isNotEmpty &&
-            data['currentApproverId'] == reviewerCode) ||
-        (data['managerCodes'] as List<dynamic>?)?.contains(reviewerCode) ==
-            true ||
-        (data['managerIds'] as List<dynamic>?)?.contains(reviewer.uid) ==
-            true ||
-        reviewer.isExecutiveLeader;
+            data['currentApproverId'] == reviewerCode);
     final allowed =
         (status == 'pending_manager' && isMatchingManager) ||
         (status == 'pending_ceo' &&

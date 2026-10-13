@@ -30,7 +30,10 @@ class RichChatRepositoryImpl implements RichChatRepository {
   static final Map<String, Future<ChatDraftFile>> _attachmentDownloads = {};
   static int _attachmentCacheBytes = 0;
   static const int _maxAttachmentCacheBytes = 48 * 1024 * 1024;
-  static const int _maxPersistentMediaBytes = 64 * 1024 * 1024;
+  // Keep recently opened chat media across page and application restarts.
+  // The database is already actor-scoped; this budget avoids the old small
+  // cache evicting ordinary conversation history after a few attachments.
+  static const int _maxPersistentMediaBytes = 256 * 1024 * 1024;
   bool _foreground = true, _disposed = false;
   String _channel(String id) => '/channels/${Uri.encodeComponent(id)}';
   String _query(Map<String, String?> values) =>
@@ -824,7 +827,10 @@ class RichChatRepositoryImpl implements RichChatRepository {
   );
   @override
   Future<ChatDraftFile> download(String channelId, String resourceId) {
-    final key = '$channelId:$resourceId';
+    // This map is process-wide, unlike ChatStore. Include the actor so a
+    // sign-out/sign-in switch can never reuse one employee's cached media for
+    // another employee on the same device.
+    final key = '$actorId:$channelId:$resourceId';
     final cached = _attachmentCache.remove(key);
     if (cached != null) {
       _attachmentCache[key] = cached;
@@ -849,7 +855,12 @@ class RichChatRepositoryImpl implements RichChatRepository {
           }
           return file;
         })
-        .whenComplete(() => _attachmentDownloads.remove(key));
+        // Do not return the removed value here. Returning this same in-flight
+        // Future makes whenComplete await itself forever, which left every
+        // attachment download stuck and prevented durable caching.
+        .whenComplete(() {
+          _attachmentDownloads.remove(key);
+        });
   }
 
   Future<ChatDraftFile> _downloadWithCache(
@@ -857,10 +868,12 @@ class RichChatRepositoryImpl implements RichChatRepository {
     String resourceId,
   ) async {
     final cached = await _persistentMedia(channelId, resourceId);
-    return cached ??
-        transport.download(
+    final downloaded =
+        cached ??
+        await transport.download(
           '${_channel(channelId)}/attachments/${Uri.encodeComponent(resourceId)}/download',
         );
+    return downloaded;
   }
 
   Future<ChatDraftFile?> _persistentMedia(
@@ -895,37 +908,39 @@ class RichChatRepositoryImpl implements RichChatRepository {
   ) async {
     if (file.bytes.length > _maxPersistentMediaBytes) return;
     final blobId = 'media:$channelId:$resourceId';
-    await store.transaction(() async {
-      await store.blob(blobId, file.bytes);
-      await store.put(channelId, 'media', resourceId, {
-        'resourceId': resourceId,
-        'blobId': blobId,
-        'fileName': file.fileName,
-        'mimeType': file.mimeType,
-        'kind': file.kind,
-        'durationSeconds': file.durationSeconds,
-        'sizeBytes': file.bytes.length,
-        'lastAccessedAt': DateTime.now().toUtc().toIso8601String(),
-      });
-      final entries = await store.rows(channelId, 'media');
-      var total = entries.fold<int>(
-        0,
-        (sum, value) => sum + ((value['sizeBytes'] as num?)?.toInt() ?? 0),
-      );
-      final oldest = [...entries]..sort(
-        (a, b) => '${a['lastAccessedAt']}'.compareTo('${b['lastAccessedAt']}'),
-      );
-      for (final entry in oldest) {
-        if (total <= _maxPersistentMediaBytes) break;
-        total -= (entry['sizeBytes'] as num?)?.toInt() ?? 0;
-        await store.removeBlob('${entry['blobId']}');
-        await store.remove(
-          channelId,
-          'media',
-          '${entry['resourceId'] ?? entry['id'] ?? ''}',
-        );
-      }
+    // ChatStore owns a Drift database executor. Calling its methods from a
+    // separate database.transaction callback can deadlock the mobile queue,
+    // leaving media uncached and forcing the next chat visit to download it
+    // again. Keep the write order durable without nesting executors.
+    await store.blob(blobId, file.bytes);
+    await store.put(channelId, 'media', resourceId, {
+      'resourceId': resourceId,
+      'blobId': blobId,
+      'fileName': file.fileName,
+      'mimeType': file.mimeType,
+      'kind': file.kind,
+      'durationSeconds': file.durationSeconds,
+      'sizeBytes': file.bytes.length,
+      'lastAccessedAt': DateTime.now().toUtc().toIso8601String(),
     });
+    final entries = await store.rows(channelId, 'media');
+    var total = entries.fold<int>(
+      0,
+      (sum, value) => sum + ((value['sizeBytes'] as num?)?.toInt() ?? 0),
+    );
+    final oldest = [...entries]..sort(
+      (a, b) => '${a['lastAccessedAt']}'.compareTo('${b['lastAccessedAt']}'),
+    );
+    for (final entry in oldest) {
+      if (total <= _maxPersistentMediaBytes) break;
+      total -= (entry['sizeBytes'] as num?)?.toInt() ?? 0;
+      await store.removeBlob('${entry['blobId']}');
+      await store.remove(
+        channelId,
+        'media',
+        '${entry['resourceId'] ?? entry['id'] ?? ''}',
+      );
+    }
   }
 
   @override

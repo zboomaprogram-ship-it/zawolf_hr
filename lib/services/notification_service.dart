@@ -37,6 +37,16 @@ class NotificationService implements InAppNotificationAlerts {
   // Initial route if app was launched via notification
   String? initialRoute;
 
+  /// Returns the pending cold-start destination exactly once.  A push click
+  /// can arrive before the authenticated navigation shell is mounted, so the
+  /// route must survive until either the splash screen or that shell is ready
+  /// to consume it.
+  String? takeInitialRoute() {
+    final route = initialRoute;
+    initialRoute = null;
+    return route;
+  }
+
   String routeForType(String type) {
     return NotificationRoutePolicy.routeForType(type);
   }

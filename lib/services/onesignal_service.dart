@@ -50,11 +50,18 @@ class OneSignalService with WidgetsBindingObserver {
       WidgetsBinding.instance.addObserver(this);
       OneSignal.Notifications.addClickListener((event) {
         final data = event.notification.additionalData ?? {};
+        final nested = data['data'];
+        final payload = nested is Map ? nested : data;
+        String? value(String key) {
+          final raw = payload[key] ?? data[key];
+          return raw is String ? raw : raw?.toString();
+        }
+
         unawaited(
           NotificationService.instance.handleRemoteNotificationData(
-            notificationId: data['notificationId'] as String?,
-            route: data['route'] as String?,
-            type: data['type'] as String? ?? '',
+            notificationId: value('notificationId'),
+            route: value('route'),
+            type: value('type') ?? '',
           ),
         );
       });

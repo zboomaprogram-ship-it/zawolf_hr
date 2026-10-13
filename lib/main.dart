@@ -48,7 +48,8 @@ void main() async {
 
   const sentryDsn = String.fromEnvironment(
     'SENTRY_DSN',
-    defaultValue: 'https://fe357be55546ad24f6fc4e30489b4cfb@o4507000000000000.ingest.us.sentry.io/4507000000000000',
+    defaultValue:
+        'https://fe357be55546ad24f6fc4e30489b4cfb@o4507000000000000.ingest.us.sentry.io/4507000000000000',
   );
 
   await SentryFlutter.init(
@@ -62,14 +63,16 @@ void main() async {
       options.autoSessionTrackingInterval = const Duration(milliseconds: 30000);
       options.environment = kReleaseMode ? 'production' : 'development';
     },
-    appRunner: () => runApp(const MyApp()),
+    appRunner: () {
+      // Register native push click handling before the first route is built.
+      // The work remains non-blocking, so a slow SDK cannot delay launch.
+      unawaited(_initializeAppServices());
+      runApp(const MyApp());
+    },
   );
-
-  unawaited(_initializeAppServicesAfterFirstFrame());
 }
 
-Future<void> _initializeAppServicesAfterFirstFrame() async {
-  await Future<void>.delayed(Duration.zero);
+Future<void> _initializeAppServices() async {
   if (kIsWeb) return;
   try {
     // Initialize the push SDK before the auth session starts. Authentication
