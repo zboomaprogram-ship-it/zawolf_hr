@@ -212,6 +212,10 @@ class PermissionService {
         'managerName':
             nextIndex < managerNames.length ? managerNames[nextIndex] : null,
         'managerApprovalIndex': nextIndex,
+        'currentApprovalIndex': nextIndex,
+        'currentApproverId': managerIds[nextIndex],
+        'currentApproverName':
+            nextIndex < managerNames.length ? managerNames[nextIndex] : '',
         'managerApprovalTrail': FieldValue.arrayUnion([trail]),
         'approvalHistory': FieldValue.arrayUnion([approvalEvent]),
         'reviewedBy': reviewerId,
@@ -224,6 +228,10 @@ class PermissionService {
     return {
       'status': finalStatus,
       'managerApprovalIndex': managerIds.isEmpty ? 0 : managerIds.length - 1,
+      'currentApprovalIndex': managerIds.length,
+      'currentApproverId': '',
+      'currentApproverName':
+          finalStatus == 'pending_hr' ? 'الموارد البشرية' : '',
       'managerApprovalTrail': FieldValue.arrayUnion([trail]),
       'approvalHistory': FieldValue.arrayUnion([approvalEvent]),
       'reviewedBy': reviewerId,
@@ -257,7 +265,8 @@ class PermissionService {
   // Submit permission request with rule audits
   Future<void> submitPermission(PermissionModel req, UserModel employee) async {
     final connectivity = await Connectivity().checkConnectivity();
-    if (connectivity.contains(ConnectivityResult.none) || connectivity.isEmpty) {
+    if (connectivity.contains(ConnectivityResult.none) ||
+        connectivity.isEmpty) {
       throw Exception(
         'لا يمكن تقديم طلب الإذن في وضع عدم الاتصال بالإنترنت. يرجى التأكد من اتصال الهاتف بالإنترنت والمحاولة مجدداً.',
       );
@@ -445,6 +454,9 @@ class PermissionService {
       'managerIds': managerIds,
       'managerNames': managerNames,
       'managerApprovalIndex': 0,
+      'currentApprovalIndex': 0,
+      'currentApproverId': firstManagerId,
+      'currentApproverName': managerNames.isNotEmpty ? managerNames.first : '',
       'managerApprovalTotal': managerIds.length,
       'managerApprovalTrail': <Map<String, dynamic>>[],
       'requiresHrApproval':
@@ -497,7 +509,9 @@ class PermissionService {
         );
       }
     } catch (error) {
-      debugPrint('Permission saved; notification will be reconciled by the server: $error');
+      debugPrint(
+        'Permission saved; notification will be reconciled by the server: $error',
+      );
     }
   }
 
@@ -542,19 +556,22 @@ class PermissionService {
         '';
     final reviewerExecutiveRole =
         (reviewerDoc.data()?['executiveRole'] as String?)?.trim().toLowerCase();
-    final reviewerUser = reviewerDoc.exists
-        ? UserModel.fromFirestore(reviewerDoc)
-        : null;
-    final isCompanyCeo = reviewerUser?.isCompanyCeo ??
-        (reviewerExecutiveRole == 'ceo' || reviewerEmployeeId.startsWith('CEO-'));
+    final reviewerUser =
+        reviewerDoc.exists ? UserModel.fromFirestore(reviewerDoc) : null;
+    final isCompanyCeo =
+        reviewerUser?.isCompanyCeo ??
+        (reviewerExecutiveRole == 'ceo' ||
+            reviewerEmployeeId.startsWith('CEO-'));
     final isCompanyCoo =
         reviewerUser?.isCompanyCoo ?? (reviewerExecutiveRole == 'coo');
-    final isExecutive = reviewerUser?.canReviewExecutiveStage ??
-        (isCompanyCeo || isCompanyCoo || reviewerRole == EmployeeRole.superAdmin);
+    final isExecutive =
+        reviewerUser?.canReviewExecutiveStage ??
+        (isCompanyCeo ||
+            isCompanyCoo ||
+            reviewerRole == EmployeeRole.superAdmin);
     final isMatchingManager =
         perm.managerId == reviewerId ||
-        (reviewerEmployeeId.isNotEmpty &&
-            perm.managerId == reviewerEmployeeId);
+        (reviewerEmployeeId.isNotEmpty && perm.managerId == reviewerEmployeeId);
     if (perm.status == 'pending_hr' && perm.userId == reviewerId) {
       throw Exception('لا يمكن اعتماد طلبك الشخصي. يجب أن يراجعه HR آخر.');
     }
@@ -607,6 +624,11 @@ class PermissionService {
         if (!managersCompleted && managerNames.isNotEmpty)
           'managerName': managerNames.first,
         if (!managersCompleted) 'managerApprovalIndex': 0,
+        if (!managersCompleted) 'currentApprovalIndex': 0,
+        if (!managersCompleted) 'currentApproverId': firstManagerId,
+        if (!managersCompleted)
+          'currentApproverName':
+              managerNames.isNotEmpty ? managerNames.first : '',
         'hrReviewedBy': reviewerId,
         'hrReviewedAt': FieldValue.serverTimestamp(),
         'reviewedBy': reviewerId,
@@ -824,8 +846,7 @@ class PermissionService {
         '';
     final isMatchingManager =
         perm.managerId == reviewerId ||
-        (reviewerEmployeeId.isNotEmpty &&
-            perm.managerId == reviewerEmployeeId);
+        (reviewerEmployeeId.isNotEmpty && perm.managerId == reviewerEmployeeId);
     final isHrStage = perm.status == 'pending_hr'; // Legacy requests only.
     if (isHrStage && perm.userId == reviewerId) {
       throw Exception('لا يمكن رفض طلبك الشخصي. يجب أن يراجعه HR آخر.');
@@ -985,10 +1006,7 @@ class PermissionService {
         type: 'salary_deduction_reversed',
         title: 'تم إلغاء خصم الإذن المعتمد',
         body: 'ألغت الموارد البشرية خصم راتب الإذن. السبب: $normalizedReason',
-        data: {
-          'permissionId': permissionId,
-          'route': '/employee/deductions',
-        },
+        data: {'permissionId': permissionId, 'route': '/employee/deductions'},
       );
     } catch (_) {}
   }

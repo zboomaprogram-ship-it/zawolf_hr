@@ -237,6 +237,10 @@ class LeaveService {
         'managerName':
             nextIndex < managerNames.length ? managerNames[nextIndex] : null,
         'managerApprovalIndex': nextIndex,
+        'currentApprovalIndex': nextIndex,
+        'currentApproverId': managerIds[nextIndex],
+        'currentApproverName':
+            nextIndex < managerNames.length ? managerNames[nextIndex] : '',
         'managerApprovalTrail': FieldValue.arrayUnion([trail]),
         'reviewedBy': reviewerId,
         'reviewedAt': FieldValue.serverTimestamp(),
@@ -252,6 +256,9 @@ class LeaveService {
       // are last in the employee's reporting list.
       'status': 'pending_hr',
       'managerApprovalIndex': managerIds.isEmpty ? 0 : managerIds.length - 1,
+      'currentApprovalIndex': managerIds.length,
+      'currentApproverId': '',
+      'currentApproverName': 'الموارد البشرية',
       'managerApprovalTrail': FieldValue.arrayUnion([trail]),
       'reviewedBy': reviewerId,
       'reviewedAt': FieldValue.serverTimestamp(),
@@ -282,61 +289,68 @@ class LeaveService {
   /// arbitrary manager in the employee's reporting chain.
   Future<({String id, String name})> _assignedCeo() async {
     // 1. Query for user with employeeId == 'CEO-100' (canonical active CEO account, permitted by security rules)
-    var results = await _db
-        .collection('users')
-        .where('employeeId', isEqualTo: 'CEO-100')
-        .where('isActive', isEqualTo: true)
-        .limit(1)
-        .get();
+    var results =
+        await _db
+            .collection('users')
+            .where('employeeId', isEqualTo: 'CEO-100')
+            .where('isActive', isEqualTo: true)
+            .limit(1)
+            .get();
 
     // 2. Query for user with employeeCode == 'CEO-100'
     if (results.docs.isEmpty) {
-      results = await _db
-          .collection('users')
-          .where('employeeCode', isEqualTo: 'CEO-100')
-          .where('isActive', isEqualTo: true)
-          .limit(1)
-          .get();
+      results =
+          await _db
+              .collection('users')
+              .where('employeeCode', isEqualTo: 'CEO-100')
+              .where('isActive', isEqualTo: true)
+              .limit(1)
+              .get();
     }
 
     // 3. Fallback to executiveRole == 'ceo'
     if (results.docs.isEmpty) {
       try {
-        results = await _db
-            .collection('users')
-            .where('executiveRole', isEqualTo: 'ceo')
-            .where('isActive', isEqualTo: true)
-            .limit(1)
-            .get();
+        results =
+            await _db
+                .collection('users')
+                .where('executiveRole', isEqualTo: 'ceo')
+                .where('isActive', isEqualTo: true)
+                .limit(1)
+                .get();
       } catch (_) {}
     }
 
     // 4. Fallback to role == 'ceo'
     if (results.docs.isEmpty) {
       try {
-        results = await _db
-            .collection('users')
-            .where('role', isEqualTo: 'ceo')
-            .where('isActive', isEqualTo: true)
-            .limit(1)
-            .get();
+        results =
+            await _db
+                .collection('users')
+                .where('role', isEqualTo: 'ceo')
+                .where('isActive', isEqualTo: true)
+                .limit(1)
+                .get();
       } catch (_) {}
     }
 
     // 5. Fallback to superAdmin
     if (results.docs.isEmpty) {
       try {
-        results = await _db
-            .collection('users')
-            .where('role', isEqualTo: EmployeeRole.superAdmin)
-            .where('isActive', isEqualTo: true)
-            .limit(1)
-            .get();
+        results =
+            await _db
+                .collection('users')
+                .where('role', isEqualTo: EmployeeRole.superAdmin)
+                .where('isActive', isEqualTo: true)
+                .limit(1)
+                .get();
       } catch (_) {}
     }
 
     if (results.docs.isEmpty) {
-      throw StateError('تعذر تحديد حساب الرئيس التنفيذي (CEO) النشط لمسار الإجازة.');
+      throw StateError(
+        'تعذر تحديد حساب الرئيس التنفيذي (CEO) النشط لمسار الإجازة.',
+      );
     }
     final data = results.docs.first.data();
     return (
@@ -380,7 +394,8 @@ class LeaveService {
   // Submit leave request
   Future<void> submitLeaveRequest(LeaveModel req, UserModel employee) async {
     final connectivity = await Connectivity().checkConnectivity();
-    if (connectivity.contains(ConnectivityResult.none) || connectivity.isEmpty) {
+    if (connectivity.contains(ConnectivityResult.none) ||
+        connectivity.isEmpty) {
       throw Exception(
         'لا يمكن تقديم طلب الإجازة في وضع عدم الاتصال بالإنترنت. يرجى التأكد من اتصال الهاتف بالإنترنت والمحاولة مجدداً.',
       );
@@ -512,15 +527,17 @@ class LeaveService {
     final cycle = PayrollCycle.forDate(req.startDate);
     int daysOffInCurrentPeriod = 0;
     try {
-      final pastLeavesSnap = await _db
-          .collection('leaves')
-          .where('userId', isEqualTo: employee.uid)
-          .get();
-      final records = pastLeavesSnap.docs.map((doc) {
-        final map = Map<String, dynamic>.from(doc.data());
-        map['id'] = doc.id;
-        return map;
-      }).toList();
+      final pastLeavesSnap =
+          await _db
+              .collection('leaves')
+              .where('userId', isEqualTo: employee.uid)
+              .get();
+      final records =
+          pastLeavesSnap.docs.map((doc) {
+            final map = Map<String, dynamic>.from(doc.data());
+            map['id'] = doc.id;
+            return map;
+          }).toList();
       daysOffInCurrentPeriod = countDaysOffInCycle(
         leaveRecords: records,
         targetDate: req.startDate,
@@ -571,6 +588,10 @@ class LeaveService {
       'managerIds': approvalManagerIds,
       'managerNames': approvalManagerNames,
       'managerApprovalIndex': 0,
+      'currentApprovalIndex': 0,
+      'currentApproverId': firstManagerId,
+      'currentApproverName':
+          approvalManagerNames.isNotEmpty ? approvalManagerNames.first : '',
       'managerApprovalTotal': approvalManagerIds.length,
       'managerApprovalTrail': <Map<String, dynamic>>[],
       'requiresHrApproval':
@@ -876,19 +897,20 @@ class LeaveService {
         '';
     final reviewerExecutiveRole =
         (reviewerDoc.data()?['executiveRole'] as String?)?.trim().toLowerCase();
-    final reviewerUser = reviewerDoc.exists
-        ? UserModel.fromFirestore(reviewerDoc)
-        : null;
-    final isCompanyCeo = reviewerUser?.isCompanyCeo ??
+    final reviewerUser =
+        reviewerDoc.exists ? UserModel.fromFirestore(reviewerDoc) : null;
+    final isCompanyCeo =
+        reviewerUser?.isCompanyCeo ??
         (reviewerExecutiveRole == 'ceo' || reviewerCode.startsWith('CEO-'));
-    final isCompanyCoo = reviewerUser?.isCompanyCoo ?? (reviewerExecutiveRole == 'coo');
-    final isExecutive = reviewerUser?.canReviewExecutiveStage ??
+    final isCompanyCoo =
+        reviewerUser?.isCompanyCoo ?? (reviewerExecutiveRole == 'coo');
+    final isExecutive =
+        reviewerUser?.canReviewExecutiveStage ??
         (isCompanyCeo || isCompanyCoo || role == EmployeeRole.superAdmin);
     final isMatchingManager =
         leave.managerId == reviewerId ||
         (reviewerCode.isNotEmpty && leave.managerId == reviewerCode);
-    final requiresCeoApproval =
-        (data['requiresCeoApproval'] as bool?) ?? false;
+    final requiresCeoApproval = (data['requiresCeoApproval'] as bool?) ?? false;
 
     final history =
         (data['approvalHistory'] as List<dynamic>?) ?? const <dynamic>[];
@@ -905,7 +927,9 @@ class LeaveService {
           (data['ceoId'] != null &&
               data['ceoId'] != reviewerId &&
               !canApproveCeo)) {
-        throw Exception('هذه المرحلة متاحة للرئيس التنفيذي (CEO) المعيّن للموظف فقط.');
+        throw Exception(
+          'هذه المرحلة متاحة للرئيس التنفيذي (CEO) المعيّن للموظف فقط.',
+        );
       }
       final event = _approvalEvent(
         stage: 'ceo',
@@ -1014,6 +1038,11 @@ class LeaveService {
           if (!managersCompleted && managerNames.isNotEmpty)
             'managerName': managerNames.first,
           if (!managersCompleted) 'managerApprovalIndex': 0,
+          if (!managersCompleted) 'currentApprovalIndex': 0,
+          if (!managersCompleted) 'currentApproverId': firstManagerId,
+          if (!managersCompleted)
+            'currentApproverName':
+                managerNames.isNotEmpty ? managerNames.first : '',
           'reviewedBy': reviewerId,
           'reviewerName': reviewerName,
           'reviewedAt': FieldValue.serverTimestamp(),
@@ -1106,11 +1135,12 @@ class LeaveService {
       );
     } catch (_) {}
 
-    final periodDaysOff = data['daysOffInCurrentPeriod'] ??
-        leave.daysOffInCurrentPeriod;
-    final periodDaysOffNote = periodDaysOff != null
-        ? ' (إجازات الفترة الحالية: $periodDaysOff يوم)'
-        : '';
+    final periodDaysOff =
+        data['daysOffInCurrentPeriod'] ?? leave.daysOffInCurrentPeriod;
+    final periodDaysOffNote =
+        periodDaysOff != null
+            ? ' (إجازات الفترة الحالية: $periodDaysOff يوم)'
+            : '';
 
     if (update['status'] == 'pending_manager') {
       final nextManagerId = update['managerId'] as String?;
@@ -1120,7 +1150,8 @@ class LeaveService {
             recipientId: nextManagerId,
             type: 'leave_request_submitted',
             title: 'طلب إجازة بانتظار موافقتك',
-            body: '${leave.employeeName} حصل على موافقة سابقة$periodDaysOffNote وينتظر قرارك.',
+            body:
+                '${leave.employeeName} حصل على موافقة سابقة$periodDaysOffNote وينتظر قرارك.',
             data: {'leaveId': leaveId},
           );
         } catch (_) {}
@@ -1210,10 +1241,10 @@ class LeaveService {
         '';
     final reviewerExecutiveRole =
         (reviewerDoc.data()?['executiveRole'] as String?)?.trim().toLowerCase();
-    final reviewerUser = reviewerDoc.exists
-        ? UserModel.fromFirestore(reviewerDoc)
-        : null;
-    final isCompanyCeo = reviewerUser?.isCompanyCeo ??
+    final reviewerUser =
+        reviewerDoc.exists ? UserModel.fromFirestore(reviewerDoc) : null;
+    final isCompanyCeo =
+        reviewerUser?.isCompanyCeo ??
         (reviewerExecutiveRole == 'ceo' || reviewerCode.startsWith('CEO-'));
     final isMatchingManager =
         leave.managerId == reviewerId ||
@@ -1386,15 +1417,17 @@ class LeaveService {
     String? currentLeaveId,
   }) async {
     try {
-      final pastLeavesSnap = await _db
-          .collection('leaves')
-          .where('userId', isEqualTo: userId)
-          .get();
-      final records = pastLeavesSnap.docs.map((doc) {
-        final map = Map<String, dynamic>.from(doc.data());
-        map['id'] = doc.id;
-        return map;
-      }).toList();
+      final pastLeavesSnap =
+          await _db
+              .collection('leaves')
+              .where('userId', isEqualTo: userId)
+              .get();
+      final records =
+          pastLeavesSnap.docs.map((doc) {
+            final map = Map<String, dynamic>.from(doc.data());
+            map['id'] = doc.id;
+            return map;
+          }).toList();
       return countDaysOffInCycle(
         leaveRecords: records,
         targetDate: targetDate,
@@ -1471,9 +1504,10 @@ class LeaveService {
     // 1. Notify direct manager of the team
     try {
       final managerId = employee.managerId?.trim() ?? '';
-      final directManagerId = managerId.isNotEmpty
-          ? managerId
-          : (managerIds.isNotEmpty ? managerIds.first.trim() : '');
+      final directManagerId =
+          managerId.isNotEmpty
+              ? managerId
+              : (managerIds.isNotEmpty ? managerIds.first.trim() : '');
       if (directManagerId.isNotEmpty && directManagerId != employee.uid) {
         await _createNotification(
           recipientId: directManagerId,
