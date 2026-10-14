@@ -241,6 +241,34 @@ test('company messages queue a durable fan-out instead of relying on an open cli
   assert.equal(outboxes[0][1].dispatchStatus, 'pending');
   assert.equal(Object.keys(db.dump()).some(key => key.startsWith('notifications/bob/items/')), false);
 });
+test('department group messages notify every active department member except the sender', async () => {
+  const { promoteConversationNotificationOutbox } = require('../dispatch-notifications');
+  const departmentActor = { ...actor, department: 'Data Analytics' };
+  const db = seed({
+    'conversations/department-room': {
+      kind: 'department', state: 'active', departmentName: 'Data Analytics',
+      purposeAr: 'قناة قسم Data Analytics', revision: 1, changeSequence: 0,
+    },
+    'users/alice': { isActive: true, department: 'Data Analytics' },
+    'users/bob': { isActive: true, department: 'Data Analytics' },
+    'users/charlie': { isActive: true, department: 'Programming' },
+  });
+  await sendMessage({
+    db, actor: departmentActor, channelId: 'department-room',
+    payload: { operationId: 'department-message', body: 'تحديث الفريق' }, now,
+  });
+  const outbox = Object.entries(db.dump())
+    .find(([key]) => key.startsWith('conversationNotificationOutbox/'))[1];
+  assert.equal(outbox.audience, 'department');
+  assert.equal(outbox.departmentName, 'Data Analytics');
+
+  const promoted = await promoteConversationNotificationOutbox(db);
+  assert.deepEqual(promoted, { outboxes: 1, promoted: 1 });
+  const keys = Object.keys(db.dump());
+  assert.equal(keys.some(key => key.startsWith('notifications/bob/items/')), true);
+  assert.equal(keys.some(key => key.startsWith('notifications/alice/items/')), false);
+  assert.equal(keys.some(key => key.startsWith('notifications/charlie/items/')), false);
+});
 test('direct message notification fan-out runs after the message commit', async () => {
   const { promoteConversationNotificationOutbox } = require('../dispatch-notifications');
   const db = seed();

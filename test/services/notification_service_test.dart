@@ -33,4 +33,15 @@ void main() {
     expect(source, contains("'notification_chime'"));
     expect(source, contains("'notification_chime.wav'"));
   });
+
+  test('OneSignal handlers are installed before native SDK initialization', () {
+    final oneSignalSource =
+        File('lib/services/onesignal_service.dart').readAsStringSync();
+    expect(
+      oneSignalSource.indexOf('_installNotificationListeners();'),
+      lessThan(oneSignalSource.indexOf('await OneSignal.initialize(_appId)')),
+    );
+    expect(oneSignalSource, contains('addForegroundWillDisplayListener'));
+    expect(oneSignalSource, contains('event.preventDefault();'));
+  });
 }

@@ -78,10 +78,11 @@ class NotificationService implements InAppNotificationAlerts {
 
   String? _conversationIdFromNotification(Map<String, dynamic> data) {
     final nested = data['data'];
-    if (nested is Map && nested['conversationId'] is String) {
-      return (nested['conversationId'] as String).trim();
+    final payload = nested is Map ? Map<String, dynamic>.from(nested) : data;
+    if (payload['conversationId'] is String) {
+      return (payload['conversationId'] as String).trim();
     }
-    final route = nested is Map ? nested['route'] as String? : null;
+    final route = payload['route']?.toString();
     final uri = route == null ? null : Uri.tryParse(route);
     if (uri == null || uri.pathSegments.length < 3) return null;
     if (uri.pathSegments[0] != 'conversations' ||
@@ -89,6 +90,14 @@ class NotificationService implements InAppNotificationAlerts {
       return null;
     }
     return Uri.decodeComponent(uri.pathSegments[2]);
+  }
+
+  /// OneSignal delivers its additional data as a flat map, while Firestore
+  /// notification documents keep the same payload under `data`. Accept both
+  /// shapes so the open conversation never displays its own push banner.
+  bool isForActiveConversation(Map<String, dynamic> data) {
+    final conversationId = _conversationIdFromNotification(data);
+    return conversationId != null && conversationId == _activeConversationId;
   }
 
   static const Set<String> _supportedNotificationPaths = {

@@ -92,3 +92,6 @@
 - [X] T025 Run full backend test suite `(cd scripts && npm test)` and verify all Node.js tests pass.
 - [X] T026 Make message persistence independent from recipient notification fan-out by queuing bounded explicit recipients in `conversationNotificationOutbox`.
 - [X] T027 Show gallery selections immediately after the native picker returns and accept iPhone HEIC assets in server-side media validation.
+- [X] T028 Suppress OneSignal foreground alerts for the conversation currently visible to the recipient.
+- [X] T029 Register the push-click handler before native SDK initialization so terminated-app deep links retain their destination.
+- [X] T030 Resolve company and department group recipients at dispatch time and notify every active member except the sender.

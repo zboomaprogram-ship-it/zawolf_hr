@@ -145,6 +145,7 @@ function notificationRecipientIds(channel) {
 function notifyChannel(tx, db, channel, senderId, key, title, body, data, now) {
   const id = `chat_${hash(key).slice(0, 40)}`;
   const companyWide = channel.data.kind === 'company';
+  const departmentWide = channel.data.kind === 'department';
   tx.set(db.collection('conversationNotificationOutbox').doc(id), {
     id,
     type: 'conversation',
@@ -153,8 +154,11 @@ function notifyChannel(tx, db, channel, senderId, key, title, body, data, now) {
     title,
     body,
     data,
-    audience: companyWide ? 'company' : 'explicit',
-    recipientUserIds: companyWide
+    audience: companyWide ? 'company' : departmentWide ? 'department' : 'explicit',
+    departmentName: departmentWide
+      ? (channel.data.departmentName || channel.data.department || channel.data.departmentKey || '')
+      : null,
+    recipientUserIds: companyWide || departmentWide
       ? []
       : notificationRecipientIds(channel).filter(userId => userId !== senderId),
     dispatchStatus: 'pending',

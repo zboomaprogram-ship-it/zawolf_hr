@@ -307,10 +307,13 @@ async function promoteConversationNotificationOutbox(db) {
   let promoted = 0;
   for (const doc of snapshot.docs) {
     const outbox = doc.data();
-    const explicitIds = Array.isArray(outbox.recipientUserIds)
+    const explicitIds = outbox.audience === 'explicit' && Array.isArray(outbox.recipientUserIds)
       ? [...new Set(outbox.recipientUserIds.filter(uid =>
         typeof uid === 'string' && uid.length > 0 && uid !== outbox.senderUserId))].slice(0, 200)
       : null;
+    const departmentName = outbox.audience === 'department'
+      ? String(outbox.departmentName || '').trim().toLocaleLowerCase()
+      : '';
     const cursor = String(outbox.cursor || '').trim();
     let users;
     if (explicitIds) {
@@ -320,6 +323,23 @@ async function promoteConversationNotificationOutbox(db) {
       users = {
         docs: userDocs.filter(user => user.exists && user.data()?.isActive !== false),
         size: userDocs.length,
+      };
+    } else if (departmentName) {
+      // Department conversations intentionally resolve current membership at
+      // dispatch time. The channel has no static member list because employee
+      // transfers must take effect immediately without rewriting every room.
+      const active = await db.collection('users')
+        .where('isActive', '==', true)
+        .limit(750)
+        .get();
+      users = {
+        docs: active.docs.filter(user => {
+          const data = user.data() || {};
+          return String(
+            data.department || data.departmentName || data.departmentKey || data.departmentId || data.dept || '',
+          ).trim().toLocaleLowerCase() === departmentName;
+        }),
+        size: 0,
       };
     } else {
       // Backward compatibility for company-wide outboxes created before the
@@ -348,7 +368,7 @@ async function promoteConversationNotificationOutbox(db) {
           unreadNotifications: admin.firestore.FieldValue.increment(1),
         }, { merge: true });
       }
-      const complete = explicitIds !== null || users.size < 100;
+      const complete = explicitIds !== null || departmentName !== '' || users.size < 100;
       transaction.update(doc.ref, {
         dispatchStatus: complete ? 'dispatched' : 'pending',
         cursor: complete

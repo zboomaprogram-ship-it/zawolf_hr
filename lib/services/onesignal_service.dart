@@ -18,6 +18,7 @@ class OneSignalService with WidgetsBindingObserver {
   );
   bool _initialized = false;
   bool _observersInstalled = false;
+  bool _notificationListenersInstalled = false;
   Future<void>? _initializationFuture;
   String? _currentFirebaseUid;
   String? _boundExternalId;
@@ -42,29 +43,17 @@ class OneSignalService with WidgetsBindingObserver {
       return;
     }
     try {
+      // Register click/foreground handlers before SDK initialization. A push
+      // used to be able to launch the terminated app while initialize() was
+      // still awaiting the native SDK, so its click only opened the default
+      // dashboard and the destination was lost.
+      _installNotificationListeners();
       if (kDebugMode) {
         await OneSignal.Debug.setLogLevel(OSLogLevel.verbose);
       }
       await OneSignal.initialize(_appId).timeout(const Duration(seconds: 8));
       _initialized = true;
       WidgetsBinding.instance.addObserver(this);
-      OneSignal.Notifications.addClickListener((event) {
-        final data = event.notification.additionalData ?? {};
-        final nested = data['data'];
-        final payload = nested is Map ? nested : data;
-        String? value(String key) {
-          final raw = payload[key] ?? data[key];
-          return raw is String ? raw : raw?.toString();
-        }
-
-        unawaited(
-          NotificationService.instance.handleRemoteNotificationData(
-            notificationId: value('notificationId'),
-            route: value('route'),
-            type: value('type') ?? '',
-          ),
-        );
-      });
       _installObservers();
       OneSignal.Notifications.addPermissionObserver((granted) {
         if (granted) {
@@ -77,6 +66,34 @@ class OneSignalService with WidgetsBindingObserver {
       _initializationFuture = null;
       if (kDebugMode) debugPrint('OneSignal initialization failed: $e');
     }
+  }
+
+  void _installNotificationListeners() {
+    if (_notificationListenersInstalled) return;
+    _notificationListenersInstalled = true;
+    OneSignal.Notifications.addClickListener((event) {
+      final data = event.notification.additionalData ?? {};
+      final nested = data['data'];
+      final payload = nested is Map ? nested : data;
+      String? value(String key) {
+        final raw = payload[key] ?? data[key];
+        return raw is String ? raw : raw?.toString();
+      }
+
+      unawaited(
+        NotificationService.instance.handleRemoteNotificationData(
+          notificationId: value('notificationId'),
+          route: value('route'),
+          type: value('type') ?? '',
+        ),
+      );
+    });
+    OneSignal.Notifications.addForegroundWillDisplayListener((event) {
+      final data = event.notification.additionalData ?? {};
+      if (NotificationService.instance.isForActiveConversation(data)) {
+        event.preventDefault();
+      }
+    });
   }
 
   Future<void> login(String userId) async {

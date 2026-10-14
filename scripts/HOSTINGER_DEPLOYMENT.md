@@ -205,7 +205,20 @@ cycles. The recovery scan is bounded to 100 permission documents per run and is
 executed by the existing Hostinger scheduler, so no second scheduler should be
 enabled.
 
-### Server release package — 2026-10-14
+### Server release package — 2026-10-14 (v13)
+
+- File: `build/releases/zawolf-hostinger-chat-notification-reliability-2026-10-14-v13.zip`
+- SHA-256: See the adjacent `.sha256` file.
+- Release marker: `2026-10-14-chat-notification-reliability-v13`.
+- This release preserves the v12 message/attachment and request-history fixes,
+  and additionally restores company and department group notification fan-out.
+- Company membership is paged from active users; department membership is
+  resolved from active employee profiles at dispatch time. The sender is never
+  notified for their own message.
+- Upload the ZIP contents to the Hostinger Node application root, restart the
+  application, and verify the new marker through `/health`.
+
+### Previous server release package — 2026-10-14 (v12)
 
 - File: `build/releases/zawolf-hostinger-chat-request-reliability-2026-10-14-v12.zip`
 - SHA-256: see the adjacent `.sha256` file.

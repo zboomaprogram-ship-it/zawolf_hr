@@ -80,6 +80,33 @@ void main() {
     );
   });
 
+  test(
+    'the currently open chat suppresses flat and Firestore push payloads',
+    () {
+      service.setActiveConversation('custom:team-1');
+      expect(
+        service.isForActiveConversation({
+          'conversationId': 'custom:team-1',
+          'route': '/conversations/channel/custom%3Ateam-1',
+        }),
+        isTrue,
+      );
+      expect(
+        service.isForActiveConversation({
+          'data': {'route': '/conversations/channel/custom%3Ateam-1'},
+        }),
+        isTrue,
+      );
+      expect(
+        service.isForActiveConversation({
+          'conversationId': 'custom:another-team',
+        }),
+        isFalse,
+      );
+      service.clearActiveConversation('custom:team-1');
+    },
+  );
+
   test('manager approval notifications preserve the exact request target', () {
     expect(
       NotificationRoutePolicy.dataWithRoute('leave_pending_manager', {
