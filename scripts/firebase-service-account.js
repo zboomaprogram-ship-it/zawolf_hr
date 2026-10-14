@@ -65,8 +65,15 @@ function emulatorProjectId(env = process.env) {
 
 function installFirestoreCompatibility(admin) {
   if (typeof admin.firestore === 'function') return;
-  const { FieldValue, GeoPoint, Timestamp, getFirestore } = require('firebase-admin/firestore');
+  const {
+    FieldPath,
+    FieldValue,
+    GeoPoint,
+    Timestamp,
+    getFirestore,
+  } = require('firebase-admin/firestore');
   admin.firestore = getFirestore;
+  admin.firestore.FieldPath = FieldPath;
   admin.firestore.FieldValue = FieldValue;
   admin.firestore.GeoPoint = GeoPoint;
   admin.firestore.Timestamp = Timestamp;

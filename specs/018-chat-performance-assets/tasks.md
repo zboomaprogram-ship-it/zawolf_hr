@@ -95,3 +95,5 @@
 - [X] T028 Suppress OneSignal foreground alerts for the conversation currently visible to the recipient.
 - [X] T029 Register the push-click handler before native SDK initialization so terminated-app deep links retain their destination.
 - [X] T030 Resolve company and department group recipients at dispatch time and notify every active member except the sender.
+- [X] T031 Replace removed Firebase Admin namespace Storage helpers with the v14 modular API and cover the deployed dependency version.
+- [X] T032 Restore the Firestore `FieldPath` compatibility bridge required by the request-history notification worker on Firebase Admin v14.

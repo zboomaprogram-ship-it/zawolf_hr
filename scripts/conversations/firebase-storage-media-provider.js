@@ -3,7 +3,8 @@
 // Chat media is private: the Hostinger API remains the authorization boundary.
 // Objects are never exposed through Firebase Storage client rules or public URLs.
 const crypto = require('node:crypto');
-const admin = require('firebase-admin');
+const { getApp } = require('firebase-admin/app');
+const { getStorage } = require('firebase-admin/storage');
 const MAX_BYTES = 25 * 1024 * 1024;
 const PREFIX = 'gcs_';
 
@@ -34,13 +35,27 @@ function progress(response, total) {
   return { offset: total, complete: true };
 }
 
-function createFirebaseStorageMediaProvider({ bucket, bucketName } = {}) {
+function createFirebaseStorageMediaProvider({
+  bucket,
+  bucketName,
+  firebaseApp,
+  storage,
+} = {}) {
   // Firebase projects created after October 2024 use the .firebasestorage.app
   // bucket. Keep this explicit so the Hostinger service does not silently target
   // the legacy .appspot.com bucket.
+  const activeApp = firebaseApp || getApp();
+  const projectId = activeApp.options.projectId ||
+    process.env.GCLOUD_PROJECT || process.env.FIREBASE_PROJECT_ID;
+  if (!bucket && !projectId && !bucketName && !process.env.FIREBASE_STORAGE_BUCKET) {
+    throw new Error('firebase_storage_project_missing');
+  }
   const configuredBucket = bucketName || process.env.FIREBASE_STORAGE_BUCKET ||
-    `${admin.app().options.projectId || process.env.GCLOUD_PROJECT || process.env.FIREBASE_PROJECT_ID}.firebasestorage.app`;
-  const storageBucket = bucket || admin.storage().bucket(configuredBucket);
+    `${projectId}.firebasestorage.app`;
+  // firebase-admin v14 removed the legacy admin.app()/admin.storage()
+  // namespace helpers. Use the supported modular APIs so Hostinger can create
+  // the provider instead of rejecting attachment bootstrap requests.
+  const storageBucket = bucket || (storage || getStorage(activeApp)).bucket(configuredBucket);
   const fileFor = (fileId) => storageBucket.file(objectName(fileId));
 
   return {

@@ -205,7 +205,24 @@ cycles. The recovery scan is bounded to 100 permission documents per run and is
 executed by the existing Hostinger scheduler, so no second scheduler should be
 enabled.
 
-### Server release package — 2026-10-14 (v13)
+### Server release package — 2026-10-14 (v14)
+
+- File: `build/releases/zawolf-hostinger-chat-storage-admin-2026-10-14-v14.zip`
+- SHA-256: See the adjacent `.sha256` file.
+- Release marker: `2026-10-14-chat-storage-admin-v14`.
+- Fixes attachment initialization on `firebase-admin` 14 by using the supported
+  modular App and Storage APIs. The removed `admin.app()`/`admin.storage()`
+  helpers previously caused every image, voice, and file upload to fail before
+  a Firebase Storage session could be created.
+- Restores the modular Firestore `FieldPath` bridge used by the bounded request
+  approval-history reconciliation job, removing the `documentId` scheduler
+  error shown by `/health`.
+- Preserves the v13 notification routing and group fan-out fixes.
+- Upload the ZIP contents to the Hostinger Node application root, run
+  `npm install`, restart the application, and verify the marker through
+  `/health` before retrying an attachment.
+
+### Previous server release package — 2026-10-14 (v13)
 
 - File: `build/releases/zawolf-hostinger-chat-notification-reliability-2026-10-14-v13.zip`
 - SHA-256: See the adjacent `.sha256` file.

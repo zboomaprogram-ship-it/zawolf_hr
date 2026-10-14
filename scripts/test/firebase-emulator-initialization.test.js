@@ -5,6 +5,7 @@ const assert = require('node:assert/strict');
 
 const {
   emulatorProjectId,
+  installFirestoreCompatibility,
 } = require('../firebase-service-account');
 
 test('emulator initialization is allowed only when Auth and Firestore use local hosts', () => {
@@ -33,4 +34,12 @@ test('emulator initialization fails closed for missing, remote, or production ho
     FIREBASE_AUTH_EMULATOR_HOST: '127.0.0.1:9099',
     GCLOUD_PROJECT: 'zawolf-hr-system-60317',
   }), null);
+});
+
+test('Firestore compatibility exposes FieldPath for firebase-admin v14 callers', () => {
+  const admin = {};
+  installFirestoreCompatibility(admin);
+  assert.equal(typeof admin.firestore, 'function');
+  assert.equal(typeof admin.firestore.FieldPath.documentId, 'function');
+  assert.equal(typeof admin.firestore.FieldValue.serverTimestamp, 'function');
 });

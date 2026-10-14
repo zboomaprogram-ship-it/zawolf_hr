@@ -159,23 +159,25 @@ test('hybrid provider writes new media to Firebase Storage and keeps legacy Driv
 });
 
 test('Firebase media provider uses the explicit modern Firebase bucket', () => {
-  const Module = require('node:module');
-  const originalLoad = Module._load;
   let requestedBucket = null;
-  Module._load = function (request, parent, isMain) {
-    if (request === 'firebase-admin') {
-      return {
-        app: () => ({ options: { projectId: 'demo-project' } }),
-        storage: () => ({ bucket: (name) => { requestedBucket = name; return { file: () => ({}) }; } }),
-      };
-    }
-    return originalLoad.call(this, request, parent, isMain);
-  };
-  const modulePath = require.resolve('../conversations/firebase-storage-media-provider');
-  delete require.cache[modulePath];
   const { createFirebaseStorageMediaProvider } = require('../conversations/firebase-storage-media-provider');
-  createFirebaseStorageMediaProvider();
+  createFirebaseStorageMediaProvider({
+    firebaseApp: { options: { projectId: 'demo-project' } },
+    storage: {
+      bucket: (name) => {
+        requestedBucket = name;
+        return { file: () => ({}) };
+      },
+    },
+  });
   assert.equal(requestedBucket, 'demo-project.firebasestorage.app');
-  delete require.cache[modulePath];
-  Module._load = originalLoad;
+});
+
+test('Firebase media provider supports the installed firebase-admin modular API', async () => {
+  const { getApps, initializeApp, deleteApp } = require('firebase-admin/app');
+  const { createFirebaseStorageMediaProvider } = require('../conversations/firebase-storage-media-provider');
+  const existing = getApps().find((app) => app.name === 'conversation-media-test');
+  const app = existing || initializeApp({ projectId: 'demo-project' }, 'conversation-media-test');
+  assert.doesNotThrow(() => createFirebaseStorageMediaProvider({ firebaseApp: app }));
+  if (!existing) await deleteApp(app);
 });
