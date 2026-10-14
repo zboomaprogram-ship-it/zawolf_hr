@@ -258,179 +258,220 @@ class _RichChatPageState extends State<RichChatPage>
 
   Future<void> _showInfo() => showModalBottomSheet<void>(
     context: context,
+    useRootNavigator: true,
+    useSafeArea: true,
     isScrollControlled: true,
+    isDismissible: true,
+    enableDrag: true,
+    showDragHandle: true,
     builder:
-        (context) => Directionality(
+        (sheetContext) => Directionality(
           textDirection: TextDirection.rtl,
-          child: SafeArea(
-            child: SizedBox(
-              height: MediaQuery.sizeOf(context).height * .82,
-              child: BlocProvider(
-                create:
-                    (_) => ChatInfoCubit(widget.repository, widget.channel.id),
-                child: BlocBuilder<ChatInfoCubit, ChatInfoState>(
-                  builder: (context, state) {
-                    if (state.error != null) {
-                      return Center(child: Text(chatErrorText(state.error!)));
-                    }
-                    if (state.loading) {
-                      return const Center(child: CircularProgressIndicator());
-                    }
-                    final direct = widget.channel.kind == 'direct';
-                    final members =
-                        direct
-                            ? state.members
-                                .where(
-                                  (member) =>
-                                      member.id != widget.repository.actorId,
-                                )
-                                .toList()
-                            : state.members;
-                    return ListView(
-                      padding: const EdgeInsets.all(20),
+          child: SizedBox(
+            height: MediaQuery.sizeOf(sheetContext).height * .92,
+            child: BlocProvider(
+              create:
+                  (_) => ChatInfoCubit(widget.repository, widget.channel.id),
+              child: Column(
+                children: [
+                  Padding(
+                    padding: const EdgeInsetsDirectional.fromSTEB(12, 0, 12, 4),
+                    child: Row(
                       children: [
-                        Align(
-                          alignment: AlignmentDirectional.centerStart,
-                          child: IconButton(
-                            tooltip: 'إغلاق',
-                            icon: const Icon(Icons.close),
-                            onPressed: () => Navigator.of(context).pop(),
-                          ),
+                        IconButton(
+                          key: const Key('chat-info-close'),
+                          tooltip: 'إغلاق',
+                          icon: const Icon(Icons.close),
+                          onPressed:
+                              () =>
+                                  Navigator.of(
+                                    sheetContext,
+                                    rootNavigator: true,
+                                  ).maybePop(),
                         ),
-                        Center(
-                          child:
-                              direct && members.isNotEmpty
-                                  ? EmployeeAvatar(
-                                    name: members.first.name,
-                                    photoUrl: members.first.photoUrl,
-                                    size: 76,
-                                  )
-                                  : const CircleAvatar(
-                                    radius: 38,
-                                    child: Icon(
-                                      Icons.groups_outlined,
-                                      size: 42,
+                        const Spacer(),
+                        Text(
+                          widget.channel.kind == 'direct'
+                              ? 'معلومات المحادثة'
+                              : 'معلومات الجروب',
+                          style: Theme.of(sheetContext).textTheme.titleMedium,
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Divider(height: 1),
+                  Expanded(
+                    child: BlocBuilder<ChatInfoCubit, ChatInfoState>(
+                      builder: (context, state) {
+                        if (state.error != null) {
+                          return SingleChildScrollView(
+                            padding: const EdgeInsets.all(24),
+                            child: Center(
+                              child: Text(chatErrorText(state.error!)),
+                            ),
+                          );
+                        }
+                        if (state.loading) {
+                          return const Center(
+                            child: CircularProgressIndicator(),
+                          );
+                        }
+                        final direct = widget.channel.kind == 'direct';
+                        final members =
+                            direct
+                                ? state.members
+                                    .where(
+                                      (member) =>
+                                          member.id !=
+                                          widget.repository.actorId,
+                                    )
+                                    .toList()
+                                : state.members;
+                        return ListView(
+                          key: const Key('chat-info-scroll'),
+                          primary: false,
+                          keyboardDismissBehavior:
+                              ScrollViewKeyboardDismissBehavior.onDrag,
+                          padding: const EdgeInsets.all(20),
+                          children: [
+                            Center(
+                              child:
+                                  direct && members.isNotEmpty
+                                      ? EmployeeAvatar(
+                                        name: members.first.name,
+                                        photoUrl: members.first.photoUrl,
+                                        size: 76,
+                                      )
+                                      : const CircleAvatar(
+                                        radius: 38,
+                                        child: Icon(
+                                          Icons.groups_outlined,
+                                          size: 42,
+                                        ),
+                                      ),
+                            ),
+                            const SizedBox(height: 12),
+                            Text(
+                              widget.channel.name,
+                              textAlign: TextAlign.center,
+                              style: Theme.of(context).textTheme.headlineSmall,
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              direct
+                                  ? 'محادثة خاصة'
+                                  : widget.channel.kind == 'department'
+                                  ? 'جميع موظفي القسم · ${state.memberCount} عضو'
+                                  : '${state.memberCount} عضو',
+                              textAlign: TextAlign.center,
+                              style: Theme.of(context).textTheme.bodyMedium,
+                            ),
+                            const SizedBox(height: 20),
+                            Card(
+                              child: Column(
+                                children: [
+                                  ListTile(
+                                    leading: const Icon(Icons.lock_outline),
+                                    title: const Text('الخصوصية والصلاحيات'),
+                                    subtitle: Text(
+                                      widget.channel.canPost
+                                          ? 'يمكنك الإرسال والتفاعل في هذه المحادثة.'
+                                          : 'هذه المحادثة متاحة للقراءة فقط.',
                                     ),
                                   ),
-                        ),
-                        const SizedBox(height: 12),
-                        Text(
-                          widget.channel.name,
-                          textAlign: TextAlign.center,
-                          style: Theme.of(context).textTheme.headlineSmall,
-                        ),
-                        const SizedBox(height: 6),
-                        Text(
-                          direct
-                              ? 'محادثة خاصة'
-                              : widget.channel.kind == 'department'
-                              ? 'جميع موظفي القسم · ${state.memberCount} عضو'
-                              : '${state.memberCount} عضو',
-                          textAlign: TextAlign.center,
-                          style: Theme.of(context).textTheme.bodyMedium,
-                        ),
-                        const SizedBox(height: 20),
-                        Card(
-                          child: Column(
-                            children: [
-                              ListTile(
-                                leading: const Icon(Icons.lock_outline),
-                                title: const Text('الخصوصية والصلاحيات'),
-                                subtitle: Text(
-                                  widget.channel.canPost
-                                      ? 'يمكنك الإرسال والتفاعل في هذه المحادثة.'
-                                      : 'هذه المحادثة متاحة للقراءة فقط.',
+                                  if (widget.channel.hrReadable)
+                                    const ListTile(
+                                      leading: Icon(
+                                        Icons.admin_panel_settings_outlined,
+                                      ),
+                                      title: Text('وصول الموارد البشرية'),
+                                      subtitle: Text(
+                                        'يمكن للموارد البشرية والإدارة مراجعة وإدارة هذا الجروب.',
+                                      ),
+                                    ),
+                                  SwitchListTile(
+                                    secondary: const Icon(
+                                      Icons.notifications_outlined,
+                                    ),
+                                    title: const Text('إشعارات هذه المحادثة'),
+                                    subtitle: Text(
+                                      state.notificationsEnabled
+                                          ? 'سيصلك تنبيه للرسائل الجديدة.'
+                                          : 'تم كتم تنبيهات هذه المحادثة.',
+                                    ),
+                                    value: state.notificationsEnabled,
+                                    onChanged:
+                                        context
+                                            .read<ChatInfoCubit>()
+                                            .setNotificationsEnabled,
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            Text(
+                              'الوسائط والملفات المشتركة',
+                              style: Theme.of(context).textTheme.titleMedium,
+                            ),
+                            const SizedBox(height: 8),
+                            if (state.attachments.isEmpty)
+                              const ListTile(
+                                leading: Icon(Icons.perm_media_outlined),
+                                title: Text(
+                                  'لا توجد ملفات مشتركة في الرسائل المحمّلة.',
+                                ),
+                              )
+                            else
+                              ...state.attachments.map(
+                                (attachment) => Padding(
+                                  padding: const EdgeInsets.only(bottom: 8),
+                                  child: widget.attachmentBuilder(
+                                    context,
+                                    attachment,
+                                  ),
                                 ),
                               ),
-                              if (widget.channel.hrReadable)
-                                const ListTile(
-                                  leading: Icon(
-                                    Icons.admin_panel_settings_outlined,
-                                  ),
-                                  title: Text('وصول الموارد البشرية'),
-                                  subtitle: Text(
-                                    'يمكن للموارد البشرية والإدارة مراجعة وإدارة هذا الجروب.',
-                                  ),
-                                ),
-                              SwitchListTile(
-                                secondary: const Icon(
-                                  Icons.notifications_outlined,
-                                ),
-                                title: const Text('إشعارات هذه المحادثة'),
-                                subtitle: Text(
-                                  state.notificationsEnabled
-                                      ? 'سيصلك تنبيه للرسائل الجديدة.'
-                                      : 'تم كتم تنبيهات هذه المحادثة.',
-                                ),
-                                value: state.notificationsEnabled,
+                            const SizedBox(height: 12),
+                            Text(
+                              direct ? 'المشارك' : 'الأعضاء',
+                              style: Theme.of(context).textTheme.titleMedium,
+                            ),
+                            const SizedBox(height: 8),
+                            if (!direct)
+                              TextField(
                                 onChanged:
-                                    context
-                                        .read<ChatInfoCubit>()
-                                        .setNotificationsEnabled,
+                                    context.read<ChatInfoCubit>().searchMembers,
+                                decoration: const InputDecoration(
+                                  prefixIcon: Icon(Icons.search),
+                                  hintText: 'ابحث في الأعضاء',
+                                  border: OutlineInputBorder(),
+                                ),
                               ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        Text(
-                          'الوسائط والملفات المشتركة',
-                          style: Theme.of(context).textTheme.titleMedium,
-                        ),
-                        const SizedBox(height: 8),
-                        if (state.attachments.isEmpty)
-                          const ListTile(
-                            leading: Icon(Icons.perm_media_outlined),
-                            title: Text(
-                              'لا توجد ملفات مشتركة في الرسائل المحمّلة.',
-                            ),
-                          )
-                        else
-                          ...state.attachments.map(
-                            (attachment) => Padding(
-                              padding: const EdgeInsets.only(bottom: 8),
-                              child: widget.attachmentBuilder(
-                                context,
-                                attachment,
+                            if (!direct) const SizedBox(height: 8),
+                            if (members.isEmpty)
+                              const ListTile(
+                                title: Text(
+                                  'لا توجد أسماء أعضاء متاحة حالياً.',
+                                ),
                               ),
-                            ),
-                          ),
-                        const SizedBox(height: 12),
-                        Text(
-                          direct ? 'المشارك' : 'الأعضاء',
-                          style: Theme.of(context).textTheme.titleMedium,
-                        ),
-                        const SizedBox(height: 8),
-                        if (!direct)
-                          TextField(
-                            onChanged:
-                                context.read<ChatInfoCubit>().searchMembers,
-                            decoration: const InputDecoration(
-                              prefixIcon: Icon(Icons.search),
-                              hintText: 'ابحث في الأعضاء',
-                              border: OutlineInputBorder(),
-                            ),
-                          ),
-                        if (!direct) const SizedBox(height: 8),
-                        if (members.isEmpty)
-                          const ListTile(
-                            title: Text('لا توجد أسماء أعضاء متاحة حالياً.'),
-                          ),
-                        for (final user in members)
-                          ListTile(
-                            leading: EmployeeAvatar(
-                              name: user.name,
-                              photoUrl: user.photoUrl,
-                            ),
-                            title: Text(user.name),
-                            subtitle:
-                                user.department.isEmpty
-                                    ? null
-                                    : Text(user.department),
-                          ),
-                      ],
-                    );
-                  },
-                ),
+                            for (final user in members)
+                              ListTile(
+                                leading: EmployeeAvatar(
+                                  name: user.name,
+                                  photoUrl: user.photoUrl,
+                                ),
+                                title: Text(user.name),
+                                subtitle:
+                                    user.department.isEmpty
+                                        ? null
+                                        : Text(user.department),
+                              ),
+                          ],
+                        );
+                      },
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
@@ -675,14 +716,16 @@ class _RichChatPageState extends State<RichChatPage>
                                                 date: message.sentAt,
                                               ),
                                             KeyedSubtree(
-                                              key: index < 15
-                                                  ? _messageKeys.putIfAbsent(
-                                                      message.id,
-                                                      GlobalKey.new,
-                                                    )
-                                                  : ValueKey<String>(
-                                                      message.id,
-                                                    ),
+                                              key:
+                                                  index < 15
+                                                      ? _messageKeys
+                                                          .putIfAbsent(
+                                                            message.id,
+                                                            GlobalKey.new,
+                                                          )
+                                                      : ValueKey<String>(
+                                                        message.id,
+                                                      ),
                                               child: ChatMessageBubble(
                                                 message: message,
                                                 mine:

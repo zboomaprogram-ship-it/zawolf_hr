@@ -13,6 +13,7 @@ class FakeRichChatRepository implements RichChatRepository {
   String draft = '';
   bool failSend = false;
   bool notificationsEnabled = true;
+  RichChatSnapshot infoHistory = const RichChatSnapshot();
   int sends = 0;
   final channelMembers = const [
     ChatUser(id: 'me', name: 'أنا', department: 'Data Analytics'),
@@ -67,7 +68,7 @@ class FakeRichChatRepository implements RichChatRepository {
       ChatPage(channelMembers);
   @override
   Future<RichChatSnapshot> history(String channelId, {String? before}) async =>
-      const RichChatSnapshot();
+      infoHistory;
   @override
   Future<bool> channelNotificationsEnabled(String channelId) async =>
       notificationsEnabled;
@@ -100,9 +101,12 @@ void main() {
               canPost: true,
             ),
             canReview: false,
-            attachmentBuilder: (_, attachment, [mine = false]) => Text(attachment.fileName),
+            attachmentBuilder:
+                (_, attachment, [mine = false]) => Text(attachment.fileName),
             pickAttachments: (_) async => [],
-            voiceBuilder: (_, callback, {onSend, onRecordingChanged}) => const SizedBox.shrink(),
+            voiceBuilder:
+                (_, callback, {onSend, onRecordingChanged}) =>
+                    const SizedBox.shrink(),
           ),
         ),
       );
@@ -133,9 +137,12 @@ void main() {
           repository: repository,
           channel: const RichChannel(id: 'c', name: 'القناة', canPost: true),
           canReview: false,
-          attachmentBuilder: (_, attachment, [mine = false]) => Text(attachment.fileName),
+          attachmentBuilder:
+              (_, attachment, [mine = false]) => Text(attachment.fileName),
           pickAttachments: (_) async => [],
-          voiceBuilder: (_, callback, {onSend, onRecordingChanged}) => const SizedBox.shrink(),
+          voiceBuilder:
+              (_, callback, {onSend, onRecordingChanged}) =>
+                  const SizedBox.shrink(),
         ),
       ),
     );
@@ -175,9 +182,12 @@ void main() {
               canPost: true,
             ),
             canReview: true,
-            attachmentBuilder: (_, attachment, [mine = false]) => Text(attachment.fileName),
+            attachmentBuilder:
+                (_, attachment, [mine = false]) => Text(attachment.fileName),
             pickAttachments: (_) async => [],
-            voiceBuilder: (_, callback, {onSend, onRecordingChanged}) => const SizedBox.shrink(),
+            voiceBuilder:
+                (_, callback, {onSend, onRecordingChanged}) =>
+                    const SizedBox.shrink(),
           ),
         ),
       );
@@ -207,9 +217,12 @@ void main() {
               canPost: true,
             ),
             canReview: false,
-            attachmentBuilder: (_, attachment, [mine = false]) => Text(attachment.fileName),
+            attachmentBuilder:
+                (_, attachment, [mine = false]) => Text(attachment.fileName),
             pickAttachments: (_) async => [],
-            voiceBuilder: (_, callback, {onSend, onRecordingChanged}) => const SizedBox.shrink(),
+            voiceBuilder:
+                (_, callback, {onSend, onRecordingChanged}) =>
+                    const SizedBox.shrink(),
           ),
         ),
       );
@@ -239,9 +252,12 @@ void main() {
             canPost: true,
           ),
           canReview: false,
-          attachmentBuilder: (_, attachment, [mine = false]) => Text(attachment.fileName),
+          attachmentBuilder:
+              (_, attachment, [mine = false]) => Text(attachment.fileName),
           pickAttachments: (_) async => [],
-          voiceBuilder: (_, callback, {onSend, onRecordingChanged}) => const SizedBox.shrink(),
+          voiceBuilder:
+              (_, callback, {onSend, onRecordingChanged}) =>
+                  const SizedBox.shrink(),
         ),
       ),
     );
@@ -265,9 +281,12 @@ void main() {
             repository: repository,
             channel: const RichChannel(id: 'c', name: 'الجروب', canPost: true),
             canReview: false,
-            attachmentBuilder: (_, attachment, [mine = false]) => Text(attachment.fileName),
+            attachmentBuilder:
+                (_, attachment, [mine = false]) => Text(attachment.fileName),
             pickAttachments: (_) async => [],
-            voiceBuilder: (_, callback, {onSend, onRecordingChanged}) => const SizedBox.shrink(),
+            voiceBuilder:
+                (_, callback, {onSend, onRecordingChanged}) =>
+                    const SizedBox.shrink(),
           ),
         ),
       );
@@ -285,6 +304,84 @@ void main() {
   );
 
   testWidgets(
+    'chat information remains scrollable and its fixed close button dismisses the sheet',
+    (tester) async {
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final repository = FakeRichChatRepository();
+      repository.infoHistory = RichChatSnapshot(
+        messages: [
+          RichMessage(
+            id: 'media-message',
+            conversationId: 'c',
+            senderUserId: 'colleague',
+            body: '',
+            sentAt: DateTime(2026, 10, 14),
+            attachments: const [
+              RichAttachment(
+                resourceId: 'media-resource',
+                fileName: 'large-image.jpg',
+                mimeType: 'image/jpeg',
+                sizeBytes: 1024,
+              ),
+            ],
+          ),
+        ],
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          home: RichChatPage(
+            repository: repository,
+            channel: const RichChannel(
+              id: 'c',
+              name: 'قناة القسم',
+              kind: 'department',
+              canPost: true,
+            ),
+            canReview: false,
+            attachmentBuilder:
+                (_, attachment, [mine = false]) => SizedBox(
+                  height: 560,
+                  child: Center(child: Text(attachment.fileName)),
+                ),
+            pickAttachments: (_) async => [],
+            voiceBuilder:
+                (_, callback, {onSend, onRecordingChanged}) =>
+                    const SizedBox.shrink(),
+          ),
+        ),
+      );
+      repository.snapshots.add(const RichChatSnapshot(canPost: true));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('معلومات الجروب'));
+      await tester.pumpAndSettle();
+
+      final scrollable = find.descendant(
+        of: find.byKey(const Key('chat-info-scroll')),
+        matching: find.byType(Scrollable),
+      );
+      expect(scrollable, findsOneWidget);
+      await tester.drag(
+        find.byKey(const Key('chat-info-scroll')),
+        const Offset(0, -420),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        tester.state<ScrollableState>(scrollable.first).position.pixels,
+        greaterThan(0),
+      );
+      expect(find.byKey(const Key('chat-info-close')), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('chat-info-close')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('chat-info-scroll')), findsNothing);
+      await repository.snapshots.close();
+    },
+  );
+
+  testWidgets(
     'composer has attachment and voice options without camera video record button',
     (tester) async {
       final repository = FakeRichChatRepository();
@@ -294,7 +391,8 @@ void main() {
             repository: repository,
             channel: const RichChannel(id: 'c', name: 'القناة', canPost: true),
             canReview: false,
-            attachmentBuilder: (_, attachment, [mine = false]) => Text(attachment.fileName),
+            attachmentBuilder:
+                (_, attachment, [mine = false]) => Text(attachment.fileName),
             pickAttachments: (_) async => [],
             voiceBuilder:
                 (_, callback, {onSend, onRecordingChanged}) =>
