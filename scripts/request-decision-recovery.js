@@ -1,5 +1,7 @@
 'use strict';
 
+const { withApprovalActor } = require('./request-approval-history');
+
 // Server-authoritative recovery for manager decisions.  Firestore rules remain
 // the normal fast path; this endpoint is only used when an already-assigned
 // manager receives a client permission-denied error.  It verifies the exact
@@ -112,6 +114,7 @@ async function decideManagerRequest({ db, admin, actor, collection, requestId, b
         finalApprovalAt: admin.firestore.FieldValue.serverTimestamp(),
         currentApproverId: '', currentApproverName: '',
         approvalHistory: [...history, event],
+        approvalActorIds: withApprovalActor(data, actor.uid),
       });
       notification = { recipientId: clean(data.userId, 160), kind: 'rejected', employeeName: clean(data.employeeName, 160), comment };
       result = { status: 'rejected' };
@@ -135,6 +138,7 @@ async function decideManagerRequest({ db, admin, actor, collection, requestId, b
       currentApprovalIndex: nextManagerId ? nextIndex : managers.length,
       managerApprovalTrail: [...trail, { managerId: actor.uid, managerName: actorName, approvedAt: new Date().toISOString() }],
       approvalHistory: [...history, event],
+      approvalActorIds: withApprovalActor(data, actor.uid),
       currentApproverId: nextManagerId,
       currentApproverName: nextManagerName,
     };

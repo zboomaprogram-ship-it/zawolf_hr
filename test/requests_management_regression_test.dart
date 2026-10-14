@@ -101,7 +101,10 @@ void main() {
         screenSource,
         contains("whereIn: ['pending_manager', 'pending_ceo']"),
       );
-    expect(screenSource, contains('final isCompanyCeo = reviewer.canReviewCeoStage'));
+      expect(
+        screenSource,
+        contains("reviewer.canReviewCeoStage || reviewerCode == 'CEO-100'"),
+      );
     expect(
       screenSource,
       contains("if (status == 'pending_ceo')"),
@@ -121,7 +124,7 @@ void main() {
     expect(screenSource, contains('_resolvedRequestIds.add(requestId)'));
     expect(screenSource, contains('!_resolvedRequestIds.contains(doc.id)'));
     expect(screenSource, contains('!_resolvedRequestIds.contains(r.resignationId)'));
-    expect(screenSource, contains('!_resolvedRequestIds.contains(d.id)'));
+    expect(screenSource, contains('excludedRecordIds: _resolvedRequestIds'));
     expect(screenSource, contains('_resolvedRequestIds.contains(item.id)'));
     expect(screenSource, contains('تم اعتماد الطلب بنجاح وتحديث القائمة.'));
   });
@@ -185,7 +188,7 @@ void main() {
     );
     expect(
       screenSource,
-      contains("(currentStage['approverId'] as String? ?? '')"),
+      contains("stage['approverId'] ?? stage['specificUserId']"),
     );
     expect(screenSource, contains("status == 'pending_team_leader'"));
     expect(screenSource, contains("status == 'pending_hr_manager'"));

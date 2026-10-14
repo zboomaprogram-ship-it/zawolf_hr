@@ -38,15 +38,15 @@ void main() {
     final cubit = File(
       'lib/features/attendance_checkin/presentation/cubit/checkin_cubit.dart',
     ).readAsStringSync();
-    final repository = File(
-      'lib/features/attendance_checkin/data/attendance_checkin_repository_impl.dart',
+    final gatewayClient = File(
+      'lib/features/attendance_checkin/data/remote/attendance_gateway_checkin_client.dart',
     ).readAsStringSync();
 
     // Access/temporary classifications feed the same structured dashboard UI;
     // duplicates are saved and uncertain delivery requires explicit status.
     expect(mapper, contains("'device_mismatch'"));
     expect(mapper, contains("'server_unavailable'"));
-    expect(repository, contains('CheckInReceiptStatus.alreadyRecorded'));
+    expect(gatewayClient, contains('CheckInReceiptStatus.alreadyRecorded'));
     expect(cubit, contains('CheckInViewStatus.requiresStatusCheck'));
   });
 }

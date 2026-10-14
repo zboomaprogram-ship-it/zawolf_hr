@@ -126,6 +126,7 @@ abstract final class RequestVisibilityNormalizer {
         _date(value['businessEffectiveAt']) ??
         _date(value['effectiveAt']) ??
         _date(value['startDate']) ??
+        _date(value['startAt']) ??
         _date(value['submittedAt']) ??
         _date(value['createdAt']) ??
         _date(value['timestamp']) ??
@@ -141,9 +142,12 @@ abstract final class RequestVisibilityNormalizer {
       lifecycleState: _state(value),
       occurredAt: occurredAt,
       sourceReference: _text(value['sourceReference']) ?? stableId,
-      employeeName: _text(value['employeeName']),
+      employeeName: _text(value['employeeName']) ?? _text(value['requesterName']),
       employeeCode: _text(value['employeeCode']),
-      reason: _text(value['reason']) ?? _text(value['adminReason']),
+      reason: _text(value['reason']) ??
+          _text(value['adminReason']) ??
+          _text(value['description']) ??
+          _text(value['purpose']),
       isRelatedToActor: value['_isRelatedToActor'] == true,
     );
   }
@@ -175,6 +179,12 @@ abstract final class RequestVisibilityNormalizer {
     }
     if (type.contains('administrative')) {
       return RequestSourceType.administrative;
+    }
+    if (type.contains('custom')) {
+      return RequestSourceType.custom;
+    }
+    if (type.contains('meeting')) {
+      return RequestSourceType.meeting;
     }
     if (type.contains('complaint')) {
       return RequestSourceType.complaint;

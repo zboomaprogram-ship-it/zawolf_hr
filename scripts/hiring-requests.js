@@ -2,6 +2,7 @@
 
 const crypto = require('crypto');
 const { isHrOrAdmin } = require('./phase007-authorization');
+const { withApprovalActor } = require('./request-approval-history');
 
 const clean = (value, max = 500) => String(value || '').replace(/\s+/g, ' ').trim().slice(0, max);
 const safeId = (value) => /^[A-Za-z0-9_-]{8,160}$/.test(String(value || ''));
@@ -205,7 +206,12 @@ async function decideHiringRequest({ db, admin, actor, requestId, body }) {
     route[index] = { ...stage, state: decision, actedAt: new Date().toISOString(), decidedBy: actor.uid, decidedByName: userName(actor), comment };
     const history = [...(Array.isArray(data.approvalHistory) ? data.approvalHistory : []), { action: decision, actorId: actor.uid, actorName: userName(actor), comment, at: new Date().toISOString() }];
     const nextIndex = index + 1;
-    const update = { approvalRoute: route, approvalHistory: history, updatedAt: admin.firestore.FieldValue.serverTimestamp() };
+    const update = {
+      approvalRoute: route,
+      approvalHistory: history,
+      approvalActorIds: withApprovalActor(data, actor.uid),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    };
     if (decision === 'rejected') {
       Object.assign(update, { status: 'rejected', currentApproverId: '', currentApproverName: '', rejectedAt: admin.firestore.FieldValue.serverTimestamp(), rejectedBy: actor.uid });
       outcome = { state: 'rejected', data };
@@ -271,6 +277,7 @@ async function listHiringRequests({ db, actor }) {
       queries.push(db.collection('hiringRequests').where('requestedById', '==', actor.uid).limit(100));
     }
     queries.push(db.collection('hiringRequests').where('currentApproverId', '==', actor.uid).limit(100));
+    queries.push(db.collection('hiringRequests').where('approvalActorIds', 'array-contains', actor.uid).limit(100));
     queries.push(db.collection('hiringRequests').where('existingEmployeeUid', '==', actor.uid).limit(100));
     if (isCeo) {
       queries.push(db.collection('hiringRequests').where('status', '==', 'pending_ceo').limit(100));

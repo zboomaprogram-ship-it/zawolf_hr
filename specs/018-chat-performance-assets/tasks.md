@@ -90,3 +90,5 @@
 - [X] T023 Run `flutter analyze` and ensure zero analysis warnings across modified features.
 - [X] T024 Run architecture guard tests `flutter test test/architecture_guard_test.dart test/firestore_query_guard_test.dart`.
 - [X] T025 Run full backend test suite `(cd scripts && npm test)` and verify all Node.js tests pass.
+- [X] T026 Make message persistence independent from recipient notification fan-out by queuing bounded explicit recipients in `conversationNotificationOutbox`.
+- [X] T027 Show gallery selections immediately after the native picker returns and accept iPhone HEIC assets in server-side media validation.

@@ -61,6 +61,18 @@ final class RequestTypeStyle {
       icon: Icons.assignment_outlined,
       label: 'طلب إداري ومهمة',
     ),
+    RequestSourceType.custom => const RequestTypeStyle(
+      borderColor: ZaWolfColors.primaryCyan,
+      shadowColor: Color(0x4745F0FF),
+      icon: Icons.tune_outlined,
+      label: 'طلب مخصص',
+    ),
+    RequestSourceType.meeting => const RequestTypeStyle(
+      borderColor: ZaWolfColors.permissionTeal,
+      shadowColor: Color(0x474FC3B2),
+      icon: Icons.meeting_room_outlined,
+      label: 'اجتماع',
+    ),
     RequestSourceType.complaint => const RequestTypeStyle(
       borderColor: ZaWolfColors.warning,
       shadowColor: Color(0x47E4B55D),

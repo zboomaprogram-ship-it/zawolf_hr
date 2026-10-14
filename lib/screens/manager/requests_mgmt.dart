@@ -2992,6 +2992,8 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
       RequestSourceType.advance => 'السلف',
       RequestSourceType.attendanceCorrection => 'تصحيح الحضور',
       RequestSourceType.administrative => 'إدارية',
+      RequestSourceType.custom => 'الطلبات المخصصة',
+      RequestSourceType.meeting => 'الاجتماعات',
       RequestSourceType.complaint => 'الشكاوى',
       RequestSourceType.resignation => 'الاستقالات',
       RequestSourceType.salaryDeduction ||

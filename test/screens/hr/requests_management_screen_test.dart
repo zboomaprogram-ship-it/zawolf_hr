@@ -24,7 +24,7 @@ void main() {
     expect(source, contains("'pending_ceo'"));
     expect(
       source,
-      contains("reviewer.employeeId.trim().toUpperCase() == 'CEO-100'"),
+      contains("reviewer.canReviewCeoStage || reviewerCode == 'CEO-100'"),
     );
     expect(source, contains('EmployeeRole.isHr(reviewer.role)'));
   });

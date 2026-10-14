@@ -2,6 +2,7 @@
 
 const crypto = require('crypto');
 const { isHrOrAdmin } = require('./phase007-authorization');
+const { withApprovalActor } = require('./request-approval-history');
 
 const clean = (value, max = 500) => String(value || '').replace(/\s+/g, ' ').trim().slice(0, max);
 const safeId = (value) => /^[A-Za-z0-9_-]{3,160}$/.test(String(value || ''));
@@ -177,6 +178,7 @@ async function decideMeeting({ db, admin, actor, requestId, body }) {
     tx.update(ref, { status: decision, currentApproverId: null, currentApprovalIndex: 1,
       approvalRoute: [{ ...request.approvalRoute[0], state: decision, decidedAt: stamp() }],
       approvalHistory: [...(request.approvalHistory || []), { action: decision, actorId: actor.uid, comment: clean(body.comment, 500), at: stamp() }],
+      approvalActorIds: withApprovalActor(request, actor.uid),
       updatedAt: admin.firestore.FieldValue.serverTimestamp() });
     return { requesterId: request.requesterId };
   });
@@ -221,11 +223,13 @@ function serializeMeeting(doc) {
 }
 
 async function listMeetingRequests({ db, actor, queue = false }) {
-  const query = queue
-    ? db.collection('meetingRequests').where('currentApproverId', '==', actor.uid).limit(100)
-    : db.collection('meetingRequests').where('requesterId', '==', actor.uid).limit(100);
-  const snapshot = await query.get();
-  return snapshot.docs.map(serializeMeeting).sort((a, b) => String(b.startAt || '').localeCompare(String(a.startAt || '')));
+  const queries = queue
+    ? [db.collection('meetingRequests').where('currentApproverId', '==', actor.uid).limit(100)]
+    : [db.collection('meetingRequests').where('requesterId', '==', actor.uid).limit(100)];
+  const snapshots = await Promise.all(queries.map((query) => query.get()));
+  const docs = new Map();
+  for (const snapshot of snapshots) for (const doc of snapshot.docs) docs.set(doc.id, doc);
+  return [...docs.values()].map(serializeMeeting).sort((a, b) => String(b.startAt || '').localeCompare(String(a.startAt || '')));
 }
 
 module.exports = { listRooms, saveRoom, createMeeting, decideMeeting, cancelMeeting, listMeetingApprovers, checkAvailability, listMeetingRequests };

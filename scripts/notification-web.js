@@ -34,6 +34,10 @@ const {
   reconcilePendingEarlyLeaves,
 } = require('./early-leave-reconciliation');
 const {
+  withApprovalActor,
+  reconcileRequestApprovalHistory,
+} = require('./request-approval-history');
+const {
   getMyWebAttendanceAccess,
   listWebAttendanceAccessGrants,
   saveWebAttendanceAccessGrant,
@@ -189,7 +193,7 @@ const {
 } = require('./request-approval-routing');
 
 const port = Number(process.env.PORT || 3000);
-const notificationRuntimeRelease = '2026-10-13-chat-performance-v10';
+const notificationRuntimeRelease = '2026-10-14-chat-request-reliability-v12';
 const dispatchSecret = process.env.NOTIFICATION_DISPATCH_SECRET || '';
 const defaultGoogleWorkspaceOrigins = [
   'https://zawolf-hr-system-60317.web.app',
@@ -3794,6 +3798,7 @@ async function decideAdvanceRequest({ db, admin, actor, advanceId, body }) {
       reviewedAt: admin.firestore.FieldValue.serverTimestamp(),
       isRead: false,
       approvalHistory: history,
+      approvalActorIds: withApprovalActor(advance, actor.uid),
       ...(comment ? { reviewerComment: comment } : {}),
     };
 
@@ -4300,6 +4305,7 @@ async function runBackgroundDispatch() {
     let managerLeaveBypasses;
     let attendancePermissionReconciliation;
     let earlyLeaveReconciliation;
+    let requestApprovalHistory;
     try {
       managerLeaveBypasses =
         await processManagerLeavePermissionBypasses();
@@ -4310,6 +4316,10 @@ async function runBackgroundDispatch() {
         await reconcilePendingEarlyLeaves({ admin });
       automaticAttendance = await processAutomaticAttendance();
       await reconcilePendingAdvanceRoutes(admin.firestore());
+      requestApprovalHistory = await reconcileRequestApprovalHistory({
+        db: admin.firestore(),
+        admin,
+      });
       reminders = await queueAttendanceReminders();
     } catch (error) {
       // A reminder query failure must not stop approvals, tasks, and other
@@ -4333,6 +4343,7 @@ async function runBackgroundDispatch() {
       managerLeaveBypasses,
       attendancePermissionReconciliation,
       earlyLeaveReconciliation,
+      requestApprovalHistory,
       automaticAttendance,
       reminders,
     };

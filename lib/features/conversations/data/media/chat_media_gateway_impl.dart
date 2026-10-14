@@ -93,6 +93,20 @@ Future<ChatDraftFile> _imageDraft(
   }
 }
 
+// ImagePicker already constrains gallery/camera images to 1280 px at 75%
+// quality. Return that result immediately so the selected image appears in the
+// composer without waiting for a second isolate decode/encode pass. The more
+// expensive optimizer remains useful for unrestricted images chosen through
+// the document picker.
+ChatDraftFile _pickedImageDraft(String name, String mime, Uint8List bytes) {
+  return ChatDraftFile(
+    fileName: name,
+    mimeType: mime,
+    bytes: bytes,
+    kind: 'image',
+  );
+}
+
 class ChatMediaGatewayImpl implements ChatMediaGateway {
   @override
   Future<List<ChatDraftFile>> pickFiles() async {
@@ -148,7 +162,7 @@ class ChatMediaGatewayImpl implements ChatMediaGateway {
           file.mimeType ??
           lookupMimeType(name, headerBytes: bytes.take(64).toList()) ??
           'image/jpeg';
-      return [await _imageDraft(name, mime, bytes)];
+      return [_pickedImageDraft(name, mime, bytes)];
     } else {
       final files = await picker.pickMultiImage(
         maxWidth: 1280,
@@ -169,7 +183,7 @@ class ChatMediaGatewayImpl implements ChatMediaGateway {
             f.mimeType ??
             lookupMimeType(name, headerBytes: bytes.take(64).toList()) ??
             'image/jpeg';
-        result.add(await _imageDraft(name, mime, bytes));
+        result.add(_pickedImageDraft(name, mime, bytes));
       }
       return result;
     }

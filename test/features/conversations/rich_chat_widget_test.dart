@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -310,4 +311,42 @@ void main() {
       await repository.snapshots.close();
     },
   );
+
+  testWidgets('selected image appears in the composer before it is sent', (
+    tester,
+  ) async {
+    final repository = FakeRichChatRepository();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: RichChatPage(
+          repository: repository,
+          channel: const RichChannel(id: 'c', name: 'القناة', canPost: true),
+          canReview: false,
+          attachmentBuilder:
+              (_, attachment, [mine = false]) => Text(attachment.fileName),
+          pickAttachments:
+              (_) async => [
+                ChatDraftFile(
+                  fileName: 'selected-photo.jpg',
+                  mimeType: 'image/jpeg',
+                  bytes: Uint8List.fromList([0xff, 0xd8, 0xff, 0xd9]),
+                  kind: 'image',
+                ),
+              ],
+          voiceBuilder:
+              (_, callback, {onSend, onRecordingChanged}) =>
+                  const SizedBox.shrink(),
+        ),
+      ),
+    );
+    repository.snapshots.add(const RichChatSnapshot(canPost: true));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('إرفاق صور أو فيديو أو ملف'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('selected-photo.jpg'), findsOneWidget);
+    expect(find.byKey(const Key('chat-send')), findsOneWidget);
+    await tester.pumpWidget(const SizedBox.shrink());
+    await repository.snapshots.close();
+  });
 }

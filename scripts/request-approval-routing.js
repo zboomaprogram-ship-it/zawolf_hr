@@ -3,6 +3,7 @@
 // Server-owned approval routing.  Keeping the transition here means browser
 // clients cannot skip a reviewer by writing a later status directly.
 const crypto = require('crypto');
+const { withApprovalActor } = require('./request-approval-history');
 
 const clean = (value, max = 500) => String(value || '').replace(/\s+/g, ' ').trim().slice(0, max);
 const safeId = (value) => /^[A-Za-z0-9_-]{8,160}$/.test(String(value || ''));
@@ -238,7 +239,7 @@ async function decideFieldMission({ db, admin, actor, requestId, body }) {
     const history = Array.isArray(data.approvalHistory) ? data.approvalHistory : [];
     history.push({ action: decision, actorId: actor.uid, actorName: actor.displayName || actor.name || 'مسؤول موافقة', comment: comment || null, at: stamp(), stage: index + 1 });
     const nextIndex = index + 1;
-    const update = { approvalRoute: route, approvalHistory: history, reviewedBy: actor.uid, reviewerName: actor.displayName || actor.name || '', reviewerComment: comment || null, reviewedAt: admin.firestore.FieldValue.serverTimestamp(), isRead: false };
+    const update = { approvalRoute: route, approvalHistory: history, approvalActorIds: withApprovalActor(data, actor.uid), reviewedBy: actor.uid, reviewerName: actor.displayName || actor.name || '', reviewerComment: comment || null, reviewedAt: admin.firestore.FieldValue.serverTimestamp(), isRead: false };
     if (decision === 'rejected') {
       update.status = 'rejected'; update.currentApproverId = ''; update.currentApproverName = '';
       outcome = { employeeId: data.userId, status: 'rejected', employeeName: data.employeeName };

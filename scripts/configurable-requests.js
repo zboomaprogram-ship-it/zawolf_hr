@@ -2,6 +2,7 @@
 
 const crypto = require('crypto');
 const { isHrOrAdmin } = require('./phase007-authorization');
+const { withApprovalActor } = require('./request-approval-history');
 
 const clean = (value, max = 500) => String(value || '').replace(/\s+/g, ' ').trim().slice(0, max);
 const safeId = (value) => /^[A-Za-z0-9_-]{3,160}$/.test(String(value || ''));
@@ -377,6 +378,7 @@ async function decideCustomRequest({ db, admin, actor, requestId, body }) {
       currentApproverId: next?.approverId || null, currentApprovalIndex: next ? index + 1 : index + 1,
       approvalRoute: nextRoute,
       approvalHistory: [...(request.approvalHistory || []), { action: decision, actorId: actor.uid, comment: clean(body.comment, 500), at: stamp() }],
+      approvalActorIds: withApprovalActor(request, actor.uid),
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     });
 

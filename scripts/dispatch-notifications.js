@@ -307,10 +307,27 @@ async function promoteConversationNotificationOutbox(db) {
   let promoted = 0;
   for (const doc of snapshot.docs) {
     const outbox = doc.data();
+    const explicitIds = Array.isArray(outbox.recipientUserIds)
+      ? [...new Set(outbox.recipientUserIds.filter(uid =>
+        typeof uid === 'string' && uid.length > 0 && uid !== outbox.senderUserId))].slice(0, 200)
+      : null;
     const cursor = String(outbox.cursor || '').trim();
-    let query = db.collection('users').where('isActive', '==', true).orderBy('__name__');
-    if (cursor) query = query.startAfter(cursor);
-    const users = await query.limit(100).get();
+    let users;
+    if (explicitIds) {
+      const userDocs = explicitIds.length
+        ? await db.getAll(...explicitIds.map(uid => db.collection('users').doc(uid)))
+        : [];
+      users = {
+        docs: userDocs.filter(user => user.exists && user.data()?.isActive !== false),
+        size: userDocs.length,
+      };
+    } else {
+      // Backward compatibility for company-wide outboxes created before the
+      // audience field existed.
+      let query = db.collection('users').where('isActive', '==', true).orderBy('__name__');
+      if (cursor) query = query.startAfter(cursor);
+      users = await query.limit(100).get();
+    }
     const recipients = users.docs.map(user => user.id).filter(uid => uid !== outbox.senderUserId);
     await db.runTransaction(async (transaction) => {
       const current = await transaction.get(doc.ref);
@@ -331,10 +348,12 @@ async function promoteConversationNotificationOutbox(db) {
           unreadNotifications: admin.firestore.FieldValue.increment(1),
         }, { merge: true });
       }
-      const complete = users.size < 100;
+      const complete = explicitIds !== null || users.size < 100;
       transaction.update(doc.ref, {
         dispatchStatus: complete ? 'dispatched' : 'pending',
-        cursor: complete ? admin.firestore.FieldValue.delete() : users.docs.at(-1).id,
+        cursor: complete
+          ? admin.firestore.FieldValue.delete()
+          : users.docs.at(-1).id,
         recipientCount: admin.firestore.FieldValue.increment(recipients.length),
         ...(complete ? { dispatchedAt: admin.firestore.FieldValue.serverTimestamp() } : {}),
       });

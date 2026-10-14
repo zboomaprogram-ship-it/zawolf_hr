@@ -21,6 +21,8 @@ final class FirestoreRequestVisibilityDataSource
       'advances',
       'attendanceCorrectionRequests',
       'administrativeRequests',
+      'customRequests',
+      'meetingRequests',
       'complaints',
       'resignations',
       'employeeDeletionRequests',
@@ -120,6 +122,13 @@ final class FirestoreRequestVisibilityDataSource
                     .where('reviewedBy', isEqualTo: query.actorScope.actorId)
                     .limit(limit)
                     .get(),
+                request
+                    .where(
+                      'approvalActorIds',
+                      arrayContains: query.actorScope.actorId,
+                    )
+                    .limit(limit)
+                    .get(),
                 if (empCode.isNotEmpty) ...[
                   request
                       .where('managerId', isEqualTo: empCode)
@@ -214,6 +223,8 @@ final class FirestoreRequestVisibilityDataSource
     'advances' => 'advance',
     'attendanceCorrectionRequests' => 'attendance_correction',
     'administrativeRequests' => 'administrative',
+    'customRequests' => 'custom',
+    'meetingRequests' => 'meeting',
     'complaints' => 'complaint',
     'resignations' => 'resignation',
     'employeeDeletionRequests' => 'employee_deletion',
@@ -299,6 +310,7 @@ final class FirestoreRequestVisibilityDataSource
       data['managerCodes'],
       data['currentApproverId'],
       data['reviewedBy'],
+      data['approvalActorIds'],
       data['approvalRoute'],
       data['approvalHistory'],
     ].any(containsActor);

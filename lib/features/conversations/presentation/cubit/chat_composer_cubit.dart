@@ -137,7 +137,7 @@ class ChatComposerCubit extends Cubit<ChatComposerState> {
         reply: state.reply,
         stickerId: state.stickerId,
         loading: false,
-        revision: state.revision,
+        revision: state.revision + 1,
       ),
     );
     _draftSave?.cancel();

@@ -29,11 +29,16 @@ void main() {
   });
 
   test('inspection does not render an action for another manager stage', () {
-    expect(screen, contains('return isAssignedManager || isSuperAdmin;'));
     expect(
       screen,
-      contains('return isAssignedManager || EmployeeRole.isHr(reviewer.role);'),
+      contains("if (status == 'pending_manager' || status == 'pending_team_leader')"),
     );
+    expect(screen, contains('return isExplicitlyAssigned;'));
+    expect(
+      screen,
+      contains("if (status == 'pending_hr' || status == 'pending_hr_manager')"),
+    );
+    expect(screen, contains('return isHrReviewer;'));
   });
 
   test('COO-1300 request inbox is limited to its assigned approval stage', () {

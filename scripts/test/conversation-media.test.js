@@ -19,6 +19,7 @@ test('chunk offsets and final length cannot exceed declared upload', () => {
   assert.throws(()=>validateChunk(0,1024*1024+1,25*1024*1024));
   assert.throws(()=>validateChunk(1000,25,1024));
   assert.equal(sniffMime(Buffer.from([137,80,78,71,13,10,26,10]),'image/jpeg'),'image/png');
+  assert.equal(sniffMime(Buffer.from([0,0,0,24,102,116,121,112,104,101,105,99]),'image/heic'),'image/heic');
   assert.equal(sniffMime(Buffer.from('<script>bad</script>'),'image/png'),'application/octet-stream');
 });
 test('voice uploads accept formats produced by native and web recorders', () => {

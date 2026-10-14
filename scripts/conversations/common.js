@@ -138,30 +138,13 @@ function notificationRecipientIds(channel) {
     : data.memberUserIds;
   return Array.isArray(candidates) ? candidates : [];
 }
-// Company conversations deliberately do not duplicate every employee id onto
-// the channel document. Fan-out is therefore deferred to the notification
-// runtime, which pages active users and retains a durable cursor/retry state.
-function notifyChannel(tx, db, channel, senderId, key, title, body, data, now, admin) {
-  if (channel.data.kind !== 'company') {
-    // A chat message is authoritative once its message document commits. The
-    // legacy dashboard counter is only a derived convenience value; a corrupt
-    // historical counter must never reject the message itself. The recipient
-    // still receives a durable notification item and push dispatch.
-    notify(
-      tx,
-      db,
-      notificationRecipientIds(channel).filter(id => id !== senderId),
-      key,
-      title,
-      body,
-      data,
-      now,
-      admin,
-      { incrementUnreadCount: false },
-    );
-    return;
-  }
+// Notification fan-out is always deferred through a durable outbox. Message
+// persistence must not depend on the shape of a recipient's historical user or
+// notification documents. Company conversations are expanded by the worker;
+// other channels carry their bounded, authoritative recipient list.
+function notifyChannel(tx, db, channel, senderId, key, title, body, data, now) {
   const id = `chat_${hash(key).slice(0, 40)}`;
+  const companyWide = channel.data.kind === 'company';
   tx.set(db.collection('conversationNotificationOutbox').doc(id), {
     id,
     type: 'conversation',
@@ -170,6 +153,10 @@ function notifyChannel(tx, db, channel, senderId, key, title, body, data, now, a
     title,
     body,
     data,
+    audience: companyWide ? 'company' : 'explicit',
+    recipientUserIds: companyWide
+      ? []
+      : notificationRecipientIds(channel).filter(userId => userId !== senderId),
     dispatchStatus: 'pending',
     cursor: null,
     createdAt: now,

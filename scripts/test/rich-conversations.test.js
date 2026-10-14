@@ -15,13 +15,15 @@ const now = new Date('2026-09-06T10:00:00Z');
 function seed(extra = {}) { return firestore({ 'conversations/room': { kind: 'custom', approved: true, state: 'active', name: 'الفريق', memberUserIds: ['alice','bob'], revision: 1, updatedAt: new Date('2026-09-06T10:00:00Z'), latestActivityAt: new Date('2026-09-06T10:00:00Z'), latestActivityId: 'room' }, 'users/alice': { isActive: true }, 'users/bob': { isActive: true }, 'users/hr': { isActive: true, role: 'hr_manager' }, ...extra }); }
 const send = (db, payload = {operationId:'send',body:'hello'}) => sendMessage({ db, actor, channelId:'room', payload, now });
 const code = expected => error => error.code === expected;
-test('concurrent send and lost-response replay create one message/change/audit/notification', async () => {
+test('concurrent send and lost-response replay create one message/change/audit/notification outbox', async () => {
   const db = seed(); const results = await Promise.all([send(db),send(db)]);
   assert.deepEqual(results[0],results[1]);
   const keys=Object.keys(db.dump());
-  for (const prefix of ['conversations/room/messages/','conversations/room/changes/','conversationAudit/','notifications/bob/items/']) assert.equal(keys.filter(k=>k.startsWith(prefix)).length,1);
-  const notification = Object.entries(db.dump()).find(([key]) => key.startsWith('notifications/bob/items/'))?.[1];
+  for (const prefix of ['conversations/room/messages/','conversations/room/changes/','conversationAudit/','conversationNotificationOutbox/']) assert.equal(keys.filter(k=>k.startsWith(prefix)).length,1);
+  const notification = Object.entries(db.dump()).find(([key]) => key.startsWith('conversationNotificationOutbox/'))?.[1];
+  assert.deepEqual(notification.recipientUserIds, ['bob']);
   assert.equal(notification.data.route, `/conversations/channel/${encodeURIComponent('room')}`);
+  assert.equal(keys.some(key => key.startsWith('notifications/bob/items/')), false);
   await assert.rejects(send(db,{operationId:'send',body:'changed'}),code('operation_conflict'));
 });
 test('attachment-only legacy send enters v2 change feed without synthetic text', async () => {
@@ -239,6 +241,18 @@ test('company messages queue a durable fan-out instead of relying on an open cli
   assert.equal(outboxes[0][1].dispatchStatus, 'pending');
   assert.equal(Object.keys(db.dump()).some(key => key.startsWith('notifications/bob/items/')), false);
 });
+test('direct message notification fan-out runs after the message commit', async () => {
+  const { promoteConversationNotificationOutbox } = require('../dispatch-notifications');
+  const db = seed();
+  const sent = await send(db, {operationId:'deferred-notification', body:'مرحبا'});
+  assert.equal(db.dump()[`conversations/room/messages/${sent.message.id}`].body, 'مرحبا');
+  assert.equal(Object.keys(db.dump()).some(key => key.startsWith('notifications/bob/items/')), false);
+
+  const promoted = await promoteConversationNotificationOutbox(db);
+  assert.deepEqual(promoted, {outboxes:1, promoted:1});
+  assert.equal(Object.keys(db.dump()).filter(key => key.startsWith('notifications/bob/items/chat_')).length, 1);
+  assert.equal(Object.keys(db.dump()).some(key => key.startsWith('notifications/alice/items/')), false);
+});
 test('only bundled sticker identifiers can be sent and forwarded', async () => {
   const db = seed();
   const sent = await sendMessage({db, actor, channelId:'room', payload:{operationId:'sticker', body:'', stickerId:'party'}, now});
@@ -363,7 +377,7 @@ test('posting message to direct channel with encoded colon and admin object succ
   assert.equal(pushWakeups, 1);
 });
 
-test('legacy direct channels without memberUserIds still send and notify the other participant', async () => {
+test('legacy direct channels without memberUserIds still send and queue only the other participant', async () => {
   const db = seed({
     'conversations/direct:legacy': {
       kind: 'direct', state: 'active', participantUserIds: ['alice', 'bob'],
@@ -379,10 +393,11 @@ test('legacy direct channels without memberUserIds still send and notify the oth
     now,
   });
   assert.equal(result.message.body, 'رسالة');
-  assert.equal(
-    Object.keys(db.dump()).filter(key => key.startsWith('notifications/bob/items/chat_')).length,
-    1,
-  );
+  const queued = Object.entries(db.dump())
+    .find(([key]) => key.startsWith('conversationNotificationOutbox/'))?.[1];
+  assert.deepEqual(queued.recipientUserIds, ['bob']);
+  assert.equal(queued.audience, 'explicit');
+  assert.equal(Object.keys(db.dump()).some(key => key.startsWith('notifications/')), false);
   assert.equal(
     Object.keys(db.dump()).some(key => key === 'users/bob' &&
       Object.hasOwn(db.dump()[key], 'unreadNotifications')),

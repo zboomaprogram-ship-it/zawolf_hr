@@ -36,6 +36,7 @@ String chatErrorText(String code) {
     return 'تم إرسال عدد كبير من الرسائل بسرعة. انتظر لحظات ثم أعد المحاولة.';
   }
   if (code.contains('server_error') ||
+      code.contains('operation_failed') ||
       code.contains('http_500') ||
       code.contains('http_502') ||
       code.contains('http_503')) {

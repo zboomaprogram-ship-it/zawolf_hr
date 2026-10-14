@@ -239,6 +239,37 @@ void main() {
     expect(resignation?.sourceType, RequestSourceType.resignation);
     expect(deletion?.sourceType, RequestSourceType.employeeDeletion);
   });
+
+  test('normalizes custom and meeting requests for approver history', () {
+    final custom = RequestVisibilityNormalizer.fromMap({
+      'id': 'custom-1',
+      'requesterId': 'employee-1',
+      'requesterName': 'موظف تجريبي',
+      'requestType': 'custom',
+      'status': 'approved',
+      'description': 'شراء أداة',
+      'createdAt': '2026-10-13T08:00:00.000Z',
+      '_isRelatedToActor': true,
+    });
+    final meeting = RequestVisibilityNormalizer.fromMap({
+      'id': 'meeting-1',
+      'requesterId': 'employee-2',
+      'requesterName': 'موظف آخر',
+      'requestType': 'meeting',
+      'status': 'rejected',
+      'purpose': 'مراجعة الخطة',
+      'startAt': '2026-10-13T09:00:00.000Z',
+      '_isRelatedToActor': true,
+    });
+
+    expect(custom?.sourceType, RequestSourceType.custom);
+    expect(custom?.employeeName, 'موظف تجريبي');
+    expect(custom?.reason, 'شراء أداة');
+    expect(custom?.isRelatedToActor, isTrue);
+    expect(meeting?.sourceType, RequestSourceType.meeting);
+    expect(meeting?.reason, 'مراجعة الخطة');
+    expect(meeting?.occurredAt, DateTime.utc(2026, 10, 13, 9));
+  });
 }
 
 final class _Source implements RequestVisibilityDataSource {

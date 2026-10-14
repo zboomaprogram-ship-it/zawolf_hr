@@ -205,7 +205,38 @@ cycles. The recovery scan is bounded to 100 permission documents per run and is
 executed by the existing Hostinger scheduler, so no second scheduler should be
 enabled.
 
-### Server release package — 2026-10-13
+### Server release package — 2026-10-14
+
+- File: `build/releases/zawolf-hostinger-chat-request-reliability-2026-10-14-v12.zip`
+- SHA-256: see the adjacent `.sha256` file.
+- Release marker: `2026-10-14-chat-request-reliability-v12`.
+- Commits chat messages before expanding recipient notifications, so a stale
+  recipient document cannot roll back text, voice, image, or file sends.
+- Queues direct/group notifications only for the channel's current recipients
+  and preserves company-wide fan-out for the company channel.
+- Accepts iPhone HEIC media validation and retains Firebase Storage direct
+  upload with authenticated proxy fallback.
+- Includes the append-only request approval history and bounded repair from
+  v11.
+
+After extraction, run `npm install`, restart the application, and confirm that
+`/health` reports `2026-10-14-chat-request-reliability-v12`.
+
+### Previous server release package — 2026-10-13
+
+- File: `build/releases/zawolf-hostinger-request-history-2026-10-13-v11.zip`
+- SHA-256: see the adjacent `.sha256` file.
+- Release marker: `2026-10-13-request-history-v11`.
+- Keeps an append-only index of every user who approves or rejects a request,
+  adds decided hiring requests to the acting accountant/IT/CEO history, and
+  runs a bounded idempotent repair for existing approval histories.
+- Retains the chat upload, cache, media, and notification reliability work from
+  v10.
+
+After extraction, run `npm install`, restart the application, and confirm that
+`/health` reports `2026-10-13-request-history-v11`.
+
+### Earlier server release package — 2026-10-13
 
 - File: `build/releases/zawolf-hostinger-chat-performance-2026-10-13-v10.zip`
 - SHA-256: see the adjacent `.sha256` file.
@@ -221,7 +252,7 @@ enabled.
 After extraction, run `npm install`, restart the application, and confirm that
 `/health` reports `2026-10-13-chat-performance-v10`.
 
-### Previous server release package — 2026-10-13
+### Earlier request-routing package — 2026-10-13
 
 - File: `build/releases/zawolf-hostinger-request-routing-2026-10-13-v6.zip`
 - SHA-256: see the adjacent `.sha256` file.

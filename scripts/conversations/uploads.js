@@ -29,7 +29,12 @@ function sniffMime(b,claimed) {
   if(b.toString('ascii',0,4)==='RIFF'&&b.toString('ascii',8,12)==='WEBP') return 'image/webp';
   if(b.toString('ascii',0,4)==='RIFF'&&b.toString('ascii',8,12)==='WAVE') return 'audio/wav';
   if(b.toString('ascii',0,5)==='%PDF-') return 'application/pdf';
-  if(b.toString('ascii',4,8)==='ftyp') return claimed.startsWith('audio/')?'audio/mp4':'video/mp4';
+  if(b.toString('ascii',4,8)==='ftyp') {
+    const brand=b.toString('ascii',8,12).toLowerCase();
+    if(['heic','heix','hevc','hevx','mif1','msf1'].includes(brand)) return 'image/heic';
+    if(['avif','avis'].includes(brand)) return 'image/avif';
+    return claimed.startsWith('audio/')?'audio/mp4':'video/mp4';
+  }
   if(b.toString('ascii',0,3)==='ID3'||(b[0]===255&&(b[1]&224)===224)) return 'audio/mpeg';
   if(b[0]===0x1a&&b[1]===0x45&&b[2]===0xdf&&b[3]===0xa3) return claimed==='audio/webm'?'audio/webm':'video/webm';
   if(b.toString('ascii',0,4)==='OggS') return 'audio/ogg';
