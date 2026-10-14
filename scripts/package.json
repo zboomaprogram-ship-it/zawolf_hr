@@ -19,6 +19,7 @@
     "accept-company-os": "node company-os-acceptance.js",
     "accept-008-009": "node release-008-009-acceptance.js",
     "migrate-hr-role": "node migrate-hr-manager-role.js",
+    "deploy-rules": "node deploy-rules.cjs",
     "test": "node --test test/*.test.js"
   },
   "engines": {

@@ -1,0 +1,2819 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isAuth() { return request.auth != null; }
+    function uid() { return request.auth.uid; }
+    function userPath(userId) {
+      return /databases/$(database)/documents/users/$(userId);
+    }
+    function userDocExists() { return exists(userPath(uid())); }
+    function userDoc() { return get(userPath(uid())).data; }
+    function role() {
+      return userDocExists() ? userDoc().get('role', '') : '';
+    }
+    function isActive() {
+      return userDocExists() && userDoc().get('isActive', true) == true;
+    }
+    function isManagerRole() { return role() == 'manager'; }
+    function isTeamLeaderRole() { return role() == 'team_leader'; }
+    function isHRRole() { return role() in ['hr_admin', 'hr_manager']; }
+    function isHRManagerRole() { return isHRRole(); }
+    function isSuperAdmin() { return role() == 'super_admin'; }
+    function isCompanyCeo() {
+      return (userDocExists() && userDoc().get('executiveRole', '') == 'ceo')
+        || (userDocExists() && employeeCode().matches('^CEO-[A-Za-z0-9_-]+$'));
+    }
+    // Some imported executive accounts use employeeCode while newer accounts
+    // use employeeId.  Approval documents also exist in both UID and employee
+    // code forms, so rules must use the same canonical identity as the app.
+    function employeeCode() {
+      let primary = userDocExists() ? userDoc().get('employeeId', '') : '';
+      return primary != ''
+        ? primary
+        : (userDocExists() ? userDoc().get('employeeCode', '') : '');
+    }
+    function isCompanyCoo() {
+      return (userDocExists() && userDoc().get('executiveRole', '') == 'coo')
+        || employeeCode() == 'MKT-600'
+        || employeeCode() == 'COO-1300';
+    }
+    function isExecutiveApprover() {
+      return isCompanyCeo() || isCompanyCoo()
+        || (userDocExists() && userDoc().get('isExecutiveApprover', false) == true);
+    }
+    function isCompanyExecutive() {
+      return isCompanyCeo() || isCompanyCoo() || isExecutiveApprover();
+    }
+    function isCurrentApprovalManager() {
+      return resource.data.get('managerId', '') == uid()
+        || resource.data.get('managerId', '') == employeeCode()
+        || uid() in resource.data.get('managerIds', [])
+        || employeeCode() in resource.data.get('managerIds', [])
+        || employeeCode() in resource.data.get('managerCodes', []);
+    }
+    // Financial approvers are assigned explicitly. Department labels and
+    // titles are editable display data and must not grant payment authority.
+    function isAdvanceCeoApprover() {
+      return userDocExists() && userDoc().get('isAdvanceCeoApprover', false) == true;
+    }
+    function isAdvanceAccountsApprover() {
+      return userDocExists() && userDoc().get('isAdvanceAccountsApprover', false) == true;
+    }
+    // Workspace control follows the current organisation data, never an
+    // employee code.  Any manager assigned to an IT unit gains the same
+    // controlled access as the next IT manager after a reassignment.
+    function isWorkspaceItManager() {
+      let department = userDoc().get('department', '');
+      let position = userDoc().get('position', '');
+      return isManagerRole()
+        && (
+          department in [
+            'IT', 'Information Technology', 'IT Department',
+            'تكنولوجيا المعلومات', 'تقنية المعلومات', 'قسم تقنية المعلومات'
+          ]
+          || position in [
+            'IT Manager', 'Information Technology Manager',
+            'مدير تكنولوجيا المعلومات', 'مدير تقنية المعلومات'
+          ]
+        );
+    }
+    function isWorkspaceController() {
+      return isSuperAdmin() || isWorkspaceItManager();
+    }
+    function isHR() { return isHRRole() || isHRManagerRole() || isSuperAdmin(); }
+    function isHRStaff() { return isHRRole() || isHRManagerRole(); }
+    function isPrivilegedAdmin() { return isHRRole() || isSuperAdmin(); }
+    function canActAsApprovalManager() {
+      return isTeamLeaderRole() || isManagerRole() || isHRRole() || isHRManagerRole()
+        || isSuperAdmin() || isCompanyCoo();
+    }
+    function isManagerOrAbove() {
+      return isManagerRole() || isHRRole() || isHRManagerRole() || isSuperAdmin();
+    }
+    function canReviewSuggestions() {
+      return isManagerRole() || isHRManagerRole() || isSuperAdmin();
+    }
+    function isOwner(docUserId) { return uid() == docUserId; }
+    function isMyManager(managerId) { return managerId is string && uid() == managerId; }
+    function isAssignedManagerFor(userData) {
+      return canActAsApprovalManager()
+        && (
+          userData.get('managerId', '') == uid()
+          || uid() in userData.get('managerIds', [])
+        );
+    }
+    function isAssignedManagerForUser(userId) {
+      return isAssignedManagerFor(recipientDoc(userId));
+    }
+    function workspaceGrantPath(resourceId, userId) {
+      return /databases/$(database)/documents/workspaceAccessGrants/$(resourceId + '_' + userId);
+    }
+    function hasWorkspaceGrant(resourceId) {
+      let grantPath = workspaceGrantPath(resourceId, uid());
+      return exists(grantPath)
+        && get(grantPath).data.get('isActive', false) == true;
+    }
+    function managesWorkspaceResource(resourceId) {
+      let resourcePath = /databases/$(database)/documents/workspaceResources/$(resourceId);
+      return isManagerRole()
+        && exists(resourcePath)
+        && uid() in get(resourcePath).data.get('managerIds', []);
+    }
+    function isAssignedTeamLeaderFor(userData) {
+      return isTeamLeaderRole()
+        && userData.get('teamLeaderId', '') == uid();
+    }
+    function isAssignedTeamLeaderForUser(userId) {
+      return isAssignedTeamLeaderFor(recipientDoc(userId));
+    }
+    function assignedManagerIds(userId) {
+      let employee = recipientDoc(userId);
+      let legacyManagerId = employee.get('managerId', '');
+      return employee.get('managerIds', []) is list
+          && employee.get('managerIds', []).size() > 0
+        ? employee.get('managerIds', [])
+        : (legacyManagerId is string && legacyManagerId.size() > 0
+          ? [legacyManagerId]
+          : []);
+    }
+    function hasValidAssignedApprovalManagers(userId) {
+      let submittedManagers = request.resource.data.get('managerIds', []);
+      return submittedManagers is list;
+    }
+    function recipientDoc(userId) {
+      return get(userPath(userId)).data;
+    }
+    function attendanceRequiresBiometric() {
+      let companyPath = /databases/$(database)/documents/companies/zawolf;
+      // The Flutter policy service defaults to location-only when the company
+      // policy document has not been created yet. Rules must use the same
+      // default or every valid location-only attendance write is rejected for
+      // having biometricVerified=false.
+      return exists(companyPath)
+        && get(companyPath).data
+          .get('attendancePolicy', {})
+          .get('attendanceVerificationMode', 'location_only') != 'location_only';
+    }
+    function minimumAttendanceSecurityProtocol() {
+      let publicPath = /databases/$(database)/documents/publicConfig/appSecurity;
+      return exists(publicPath)
+        ? get(publicPath).data.get('minimumAttendanceProtocolVersion', 0)
+        : 0;
+    }
+    function attendanceSecurityProtocolAllowed() {
+      return request.resource.data.get('securityProtocolVersion', 0)
+        >= minimumAttendanceSecurityProtocol();
+    }
+    function sequentialManagerDecision() {
+      let managerIds = resource.data.get('managerIds', []);
+      let currentIndex = resource.data.get('managerApprovalIndex', 0);
+      let nextIndex = currentIndex + 1;
+      return (managerIds.size() == 0
+          && (resource.data.get('managerId', '') == uid()
+            || resource.data.get('managerId', '') == employeeCode())
+          && request.resource.data.status in ['approved', 'pending_hr', 'rejected'])
+        || (
+          currentIndex >= 0
+          && currentIndex < managerIds.size()
+          && resource.data.get('managerId', '') == managerIds[currentIndex]
+          && managerIds.removeAll([managerIds[currentIndex]]).size()
+            == managerIds.size() - 1
+          && (
+            managerIds[currentIndex] == uid()
+            || managerIds[currentIndex] == employeeCode()
+          )
+          && (
+            request.resource.data.status == 'rejected'
+            || (
+              request.resource.data.status == 'pending_manager'
+              && nextIndex < managerIds.size()
+              && request.resource.data.managerApprovalIndex == nextIndex
+              && request.resource.data.managerId == managerIds[nextIndex]
+            )
+            || (
+              request.resource.data.status in ['approved', 'pending_hr']
+              && nextIndex >= managerIds.size()
+              && request.resource.data.managerApprovalIndex == currentIndex
+            )
+          )
+        );
+    }
+    function isValidSelfCreate() {
+      // Employee code, name, manager, and branch are mutable reporting
+      // metadata and can be stale in an older installed session. Ownership is
+      // the authenticated Firebase uid; attendance adds device, geofence, and
+      // server-time checks separately below.
+      return request.resource.data.userId == uid();
+    }
+    function permissionDeductionValuesValid() {
+      let deductible = request.resource.data.get('isDeductible', false);
+      return (
+          deductible
+          && request.resource.data.salaryDeductionAmount >= 0
+        ) || (
+          !deductible
+          && request.resource.data.get('salaryDeductionFraction', 0) == 0
+        );
+    }
+    function attendanceDeviceBelongsToCurrentUser(deviceId) {
+      // Installed clients can briefly retain the previous attendance device
+      // id after a profile refresh or device-id migration. The binding
+      // document is authoritative and still enforces one account per device.
+      return deviceId is string
+        && deviceId.size() > 0
+        && exists(/databases/$(database)/documents/attendanceDevices/$(deviceId))
+        && get(/databases/$(database)/documents/attendanceDevices/$(deviceId))
+          .data.userId == uid();
+    }
+    function notificationKeysAreValid() {
+      return request.resource.data.keys().hasOnly([
+        'notificationId', 'type', 'title', 'body', 'data', 'isRead', 'pushSent', 'createdAt'
+      ])
+      && request.resource.data.notificationId is string
+      && request.resource.data.type is string
+      && request.resource.data.title is string
+      && request.resource.data.body is string
+        && request.resource.data.isRead == false
+        && request.resource.data.pushSent == false;
+    }
+    function canNotifyPermissionStageManager(userId) {
+      let permissionId = request.resource.data.get('data', {}).get('permissionId', '');
+      let permissionPath = /databases/$(database)/documents/permissions/$(permissionId);
+      return permissionId is string
+        && permissionId.size() > 0
+        && exists(permissionPath)
+        && get(permissionPath).data.get('userId', '') == uid()
+        && get(permissionPath).data.get('managerId', '') == userId
+        && userId in get(permissionPath).data.get('managerIds', []);
+    }
+    function canNotifyLeaveStageManager(userId) {
+      let leaveId = request.resource.data.get('data', {}).get('leaveId', '');
+      let leavePath = /databases/$(database)/documents/leaves/$(leaveId);
+      return leaveId is string
+        && leaveId.size() > 0
+        && exists(leavePath)
+        && get(leavePath).data.get('userId', '') == uid()
+        && get(leavePath).data.get('managerId', '') == userId
+        && userId in get(leavePath).data.get('managerIds', []);
+    }
+    function canNotifyResignationStageReviewer(userId) {
+      let resignationId = request.resource.data.get(
+        'data',
+        {}
+      ).get('resignationId', '');
+      let resignationPath =
+        /databases/$(database)/documents/resignations/$(resignationId);
+      return resignationId is string
+        && resignationId.size() > 0
+        && exists(resignationPath)
+        && get(resignationPath).data.get('userId', '') == uid()
+        && (
+          get(resignationPath).data.get('managerId', '') == userId
+          || (
+            get(resignationPath).data.get('status', '') == 'pending_hr'
+            && recipientDoc(userId).get('role', '') in ['hr_admin', 'hr_manager']
+          )
+        );
+    }
+    function canCreateNotificationFor(userId) {
+      return uid() == userId
+        || isHR()
+        || (
+          request.resource.data.type == 'hr_announcement'
+          && isTeamLeaderRole()
+          && recipientDoc(userId).get('teamLeaderId', '') == uid()
+        )
+        || (
+          canActAsApprovalManager()
+          && (
+            recipientDoc(userId).get('managerId', '') == uid()
+            || uid() in recipientDoc(userId).get('managerIds', [])
+          )
+        )
+        || userDoc().get('managerId', '') == userId
+        || userId in userDoc().get('managerIds', [])
+        || (
+          request.resource.data.type in [
+            'salary_deduction_pending',
+            'permission_pending_hr',
+            'advance_pending_hr',
+            'leave_request_submitted',
+            'resignation_pending_hr',
+            'warning_dismissal_review',
+            'complaint_new',
+            'administrative_request_submitted',
+            'field_mission_pending_ceo',
+            'attendance_security_review',
+            'attendance_correction_pending_hr'
+          ]
+          && recipientDoc(userId).get('role', '') in ['hr_admin', 'hr_manager', 'super_admin']
+        )
+        || (
+          request.resource.data.type in [
+            'permission_pending_manager',
+            'advance_pending_manager',
+            'leave_request_submitted',
+            'resignation_pending_manager'
+          ]
+          && (
+            userDoc().get('managerId', '') == userId
+            || userId in userDoc().get('managerIds', [])
+            || (
+              request.resource.data.type == 'permission_pending_manager'
+              && canNotifyPermissionStageManager(userId)
+            )
+            || (
+              request.resource.data.type == 'leave_request_submitted'
+              && canNotifyLeaveStageManager(userId)
+            )
+            || (
+              request.resource.data.type == 'resignation_pending_manager'
+              && canNotifyResignationStageReviewer(userId)
+            )
+          )
+        )
+        || (
+          request.resource.data.type == 'suggestion_new'
+          && recipientDoc(userId).get('role', '') in ['manager', 'hr_admin', 'hr_manager', 'super_admin']
+        )
+        || (
+          request.resource.data.type in [
+            'task_assigned', 'task_started', 'task_completed',
+            'task_reviewed', 'task_cancelled', 'task_overdue'
+          ]
+          && (
+            uid() == userId ||
+            isHR() ||
+            (
+              isManagerRole()
+              && (
+                recipientDoc(userId).get('managerId', '') == uid()
+                || uid() in recipientDoc(userId).get('managerIds', [])
+              )
+            )
+          )
+        )
+        || (
+          request.resource.data.type in ['kpi_assigned', 'kpi_progress_updated']
+          && (
+            uid() == userId ||
+            isHR() ||
+            (
+              isManagerRole()
+              && (
+                recipientDoc(userId).get('managerId', '') == uid()
+                || uid() in recipientDoc(userId).get('managerIds', [])
+              )
+            )
+          )
+        )
+        || (
+          request.resource.data.type in [
+            'warning_reward_created', 'warning_final_chance'
+          ]
+          && (
+            isHR() ||
+            (
+              isManagerRole()
+              && (
+                recipientDoc(userId).get('managerId', '') == uid()
+                || uid() in recipientDoc(userId).get('managerIds', [])
+              )
+            )
+          )
+        );
+    }
+    function scopedAnnouncementCreate() {
+      return (isManagerRole() || isTeamLeaderRole())
+        && request.resource.data.get('createdBy', '') == uid()
+        && request.resource.data.get('createdByRole', '') == role()
+        && request.resource.data.get('audienceScope', '') == 'assigned_team'
+        && request.resource.data.get('targetGroup', '') in ['team', 'selected']
+        && request.resource.data.get('targetUserIds', []) is list
+        && request.resource.data.get('targetUserIds', []).size() > 0;
+    }
+    function canIncrementUnreadOnly() {
+      return request.resource.data.diff(resource.data).affectedKeys()
+        .hasOnly(['unreadNotifications'])
+        && request.resource.data.unreadNotifications ==
+          resource.data.get('unreadNotifications', 0) + 1;
+    }
+    function ownerCanReconcileUnread() {
+      return request.resource.data.diff(resource.data).affectedKeys()
+        .hasOnly(['unreadNotifications'])
+        && request.resource.data.unreadNotifications is int
+        && request.resource.data.unreadNotifications >= 0
+        && request.resource.data.unreadNotifications <=
+          resource.data.get('unreadNotifications', 0);
+    }
+    function ownerProfileUpdate() {
+      return request.resource.data.diff(resource.data).affectedKeys()
+        .hasOnly(['passwordChangedAt', 'photoURL', 'notificationTokens', 'updatedAt'])
+        && (!('photoURL' in request.resource.data)
+          || request.resource.data.photoURL == null
+          || (request.resource.data.photoURL is string
+            && request.resource.data.photoURL.size() <= 300000));
+    }
+    function ownerAvatarCustomization() {
+      return request.resource.data.diff(resource.data).affectedKeys()
+        .hasOnly(['avatarGender', 'avatarAccent', 'avatarFaceUrl', 'updatedAt'])
+        && request.resource.data.avatarGender in ['male', 'female']
+        && request.resource.data.avatarAccent in ['cyan', 'violet', 'amber', 'rose']
+        // Face images are resized by the client before being stored. This
+        // bound prevents an avatar preference from approaching Firestore's
+        // document-size limit.
+        && (!('avatarFaceUrl' in request.resource.data)
+          || (request.resource.data.avatarFaceUrl is string
+            && request.resource.data.avatarFaceUrl.size() <= 300000));
+    }
+    function ownerAttendanceDeviceBind() {
+      return request.resource.data.diff(resource.data).affectedKeys()
+        .hasAny([
+          'registeredAttendanceDeviceId',
+          'registeredAttendanceDeviceLabel',
+          'registeredAttendanceDeviceAt'
+        ])
+        && request.resource.data.get('registeredAttendanceDeviceId', '') is string
+        && request.resource.data.get('registeredAttendanceDeviceId', '').size() > 0;
+    }
+    function ownerAttendanceDeviceLegacyMigration() {
+      let oldDeviceId = resource.data.get('registeredAttendanceDeviceId', '');
+      let newDeviceId = request.resource.data.get('registeredAttendanceDeviceId', '');
+      return request.resource.data.diff(resource.data).affectedKeys()
+        .hasOnly([
+          'registeredAttendanceDeviceId',
+          'registeredAttendanceDeviceLabel',
+          'registeredAttendanceDeviceAt'
+        ])
+        && oldDeviceId is string
+        && oldDeviceId.size() > 0
+        && !oldDeviceId.matches('.*-install-.*')
+        && newDeviceId is string
+        && newDeviceId.matches('.*-install-.*')
+        && request.resource.data.get('registeredAttendanceDeviceLabel', '') is string;
+    }
+    function managerBalanceUpdate() {
+      return canActAsApprovalManager()
+        && (
+          resource.data.get('managerId', '') == uid() ||
+          uid() in resource.data.get('managerIds', []) ||
+          resource.data.get('teamLeaderId', '') == uid()
+        )
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly([
+            'permissionBalance',
+            'permissionBalance.usedThisMonth',
+            'permissionBalance.usedHoursThisMonth',
+            'permissionBalance.lastResetMonth',
+            'updatedAt'
+          ])
+        && request.resource.data.permissionBalance.lastResetMonth
+          == resource.data.permissionBalance.lastResetMonth
+        && request.resource.data.permissionBalance.usedThisMonth
+          == resource.data.permissionBalance.usedThisMonth + 1
+        && request.resource.data.permissionBalance.usedHoursThisMonth
+          > resource.data.permissionBalance.usedHoursThisMonth
+        && request.resource.data.permissionBalance.usedHoursThisMonth
+          <= resource.data.permissionBalance.usedHoursThisMonth + 8;
+    }
+    function managerLeaveBalanceUpdate() {
+      return canActAsApprovalManager()
+        && (
+          resource.data.get('managerId', '') == uid() ||
+          uid() in resource.data.get('managerIds', []) ||
+          resource.data.get('teamLeaderId', '') == uid()
+        )
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'leaveBalance', 'leaveBalance.daysOff', 'leaveBalance.casual'
+        ])
+        && request.resource.data.leaveBalance.get('daysOff', 0) >= 0
+        && request.resource.data.leaveBalance.get('casual', 0) >= 0
+        && request.resource.data.leaveBalance.get('daysOff', 0)
+          <= resource.data.leaveBalance.get('daysOff', 0)
+        && request.resource.data.leaveBalance.get('casual', 0)
+          <= resource.data.leaveBalance.get('casual', 0);
+    }
+    function ownerPermissionBalanceRestore() {
+      let requestId = request.resource.data.get('lastPermissionBalanceRestorationId', '');
+      let permissionPath = /databases/$(database)/documents/permissions/$(requestId);
+      return requestId is string && requestId.size() > 0
+        && exists(permissionPath)
+        && get(permissionPath).data.get('userId', '') == uid()
+        && get(permissionPath).data.get('status', '') == 'approved'
+        && get(permissionPath).data.get('expectedTimestamp', request.time) > request.time
+        && getAfter(permissionPath).data.get('status', '') == 'cancelled'
+        && getAfter(permissionPath).data.get('cancelledBy', '') == uid()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'permissionBalance', 'lastPermissionBalanceRestorationId'
+        ])
+        && request.resource.data.permissionBalance.usedThisMonth
+          == resource.data.permissionBalance.usedThisMonth - 1
+        && request.resource.data.permissionBalance.usedHoursThisMonth
+          == resource.data.permissionBalance.usedHoursThisMonth
+            - (get(permissionPath).data.durationMinutes / 60)
+        && request.resource.data.permissionBalance.usedThisMonth >= 0
+        && request.resource.data.permissionBalance.usedHoursThisMonth >= 0;
+    }
+    function ownerLeaveBalanceRestore() {
+      let requestId = request.resource.data.get('lastLeaveBalanceRestorationId', '');
+      let leavePath = /databases/$(database)/documents/leaves/$(requestId);
+      return requestId is string && requestId.size() > 0
+        && exists(leavePath)
+        && get(leavePath).data.get('userId', '') == uid()
+        && get(leavePath).data.get('status', '') == 'approved'
+        && get(leavePath).data.startDate > request.time
+        && getAfter(leavePath).data.get('status', '') == 'cancelled'
+        && getAfter(leavePath).data.get('cancelledBy', '') == uid()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'leaveBalance', 'leaveBalance.daysOff', 'leaveBalance.casual',
+          'lastLeaveBalanceRestorationId'
+        ])
+        && request.resource.data.leaveBalance.daysOff
+          == resource.data.leaveBalance.daysOff + get(leavePath).data.numberOfDays
+        && (
+          get(leavePath).data.get('leaveType', '') != 'casual'
+          || request.resource.data.leaveBalance.casual
+            == resource.data.leaveBalance.casual + get(leavePath).data.numberOfDays
+        );
+    }
+    function ownerCasualLeaveBalanceDeduction() {
+      let leaveId = request.resource.data.get(
+        'lastAutoApprovedCasualLeaveId',
+        ''
+      );
+      let leavePath = /databases/$(database)/documents/leaves/$(leaveId);
+      return leaveId is string
+        && leaveId.size() > 0
+        && existsAfter(leavePath)
+        && getAfter(leavePath).data.get('userId', '') == uid()
+        && getAfter(leavePath).data.get('leaveType', '') == 'casual'
+        && getAfter(leavePath).data.get('status', '') == 'approved'
+        && getAfter(leavePath).data.get('autoApproved', false) == true
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'leaveBalance', 'leaveBalance.daysOff', 'leaveBalance.casual',
+          'lastAutoApprovedCasualLeaveId'
+        ])
+        && request.resource.data.leaveBalance.daysOff
+          == resource.data.leaveBalance.daysOff
+            - getAfter(leavePath).data.numberOfDays
+        && request.resource.data.leaveBalance.casual
+          == resource.data.leaveBalance.casual
+            - getAfter(leavePath).data.numberOfDays
+        && request.resource.data.leaveBalance.daysOff >= 0
+        && request.resource.data.leaveBalance.casual >= 0;
+    }
+    function hrCanWriteUser() {
+      return isHRRole()
+        && !(resource.data.get('role', '') in ['super_admin', 'hr_manager', 'hr_admin'])
+        && request.resource.data.get('role', '') in ['employee', 'team_leader', 'manager']
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'displayName', 'employeeId', 'department', 'position', 'role',
+          'organizationLevel', 'organizationDivisionId', 'organizationOrder',
+          'locationId', 'locationName', 'baseMonthlySalary', 'salaryCurrency',
+          'leaveBalance', 'leaveBalance.daysOff', 'leaveBalance.casual',
+          'permissionBalance', 'permissionBalance.usedThisMonth',
+          'permissionBalance.usedHoursThisMonth', 'permissionBalance.lastResetMonth',
+          'managerId', 'managerName', 'managerIds', 'managerNames',
+          'managerCodes', 'teamLeaderId', 'teamLeaderName',
+          'isActive', 'joinDate', 'workSchedule', 'updatedAt',
+          'leaveEligibleFrom', 'leaveEntitlementQuota',
+          'leaveEntitlementStatus', 'leaveEntitlementPeriodKey',
+          'deactivationReason', 'deactivatedBy', 'deactivatedByName',
+          'deactivatedAt',
+          'registeredAttendanceDeviceId',
+          'registeredAttendanceDeviceLabel',
+          'registeredAttendanceDeviceAt',
+          'salesAnalyticsEnabled', 'salesAnalyticsRole',
+          'salesAnalyticsAgentKey', 'salesAnalyticsCompany',
+          // Recognition-only metadata managed by HR. It is intentionally
+          // separate from payroll, attendance, and performance scoring.
+          'performanceBadgeIds', 'performanceBadgesUpdatedAt'
+        ]);
+    }
+    function validAccountStatusChange() {
+      return request.resource.data.get('isActive', true)
+          == resource.data.get('isActive', true)
+        || (
+          request.resource.data.get('isActive', true) == false
+          && request.resource.data.get('deactivationReason', '') is string
+          && request.resource.data.get('deactivationReason', '').size() > 0
+          && request.resource.data.get('deactivatedBy', '') == uid()
+          && request.resource.data.get('deactivatedByName', '') is string
+          && request.resource.data.get('deactivatedByName', '').size() > 0
+          && request.resource.data.deactivatedAt == request.time
+        )
+        || (
+          request.resource.data.get('isActive', true) == true
+          && !request.resource.data.keys().hasAny([
+            'deactivationReason', 'deactivatedBy', 'deactivatedByName',
+            'deactivatedAt'
+          ])
+        );
+    }
+    function hrCanCreateUser() {
+      return isHRRole()
+        && request.resource.data.get('role', '') in ['employee', 'team_leader', 'manager']
+        && request.resource.data.keys().hasOnly([
+          'email', 'displayName', 'photoURL', 'role', 'employeeId',
+          'department', 'position', 'locationId', 'locationName',
+          'organizationLevel', 'organizationDivisionId', 'organizationOrder',
+          'baseMonthlySalary', 'salaryCurrency', 'managerId', 'managerName',
+          'managerIds', 'managerNames', 'managerCodes', 'isActive',
+          'teamLeaderId', 'teamLeaderName',
+          'joinDate', 'workSchedule', 'leaveBalance', 'leaveBalance.casual', 'permissionBalance',
+          'leaveEligibleFrom', 'leaveEntitlementQuota',
+          'leaveEntitlementStatus', 'leaveEntitlementPeriodKey',
+          'notificationTokens', 'unreadNotifications', 'createdAt',
+          'updatedAt', 'passwordChangedAt'
+        ]);
+    }
+    function attendanceCreateKeys() {
+      return request.resource.data.keys().hasOnly([
+        'userId', 'employeeId', 'employeeName', 'locationId', 'locationName',
+        'managerId', 'date', 'checkInTime', 'checkInLocation',
+        'localCheckInTime', 'isWithinGeofence', 'isLate', 'lateMinutes',
+        'salaryDeductionFraction', 'salaryDeductionAmount',
+        'salaryCurrency', 'salaryDeductionCode', 'salaryDeductionLabel',
+        'salaryDeductionApprovalStatus',
+        'deviceId', 'deviceLabel', 'biometricVerified', 'status',
+        'offlineCaptured', 'offlineCapturedAt', 'offlineDistanceMeters',
+        'offlineAllowedRadiusMeters', 'offlineAccuracyMeters',
+        'securityReviewStatus', 'securityReviewedBy', 'securityReviewedAt',
+        'locationRiskLevel', 'locationRiskReasons', 'locationRiskMessage',
+        'locationAccuracyMeters', 'locationDistanceMeters',
+        'locationAllowedRadiusMeters', 'locationMocked',
+        'locationCapturedOffline', 'securityProtocolVersion'
+      ]);
+    }
+    function attendanceCreateValues() {
+      return request.resource.data.status in [
+        'present', 'late', 'late_quarter_day', 'late_half_day', 'late_full_day', 'absent'
+      ]
+      && request.resource.data.isWithinGeofence == true
+      && (
+        !attendanceRequiresBiometric()
+        || request.resource.data.biometricVerified == true
+      )
+      && request.resource.data.get('locationMocked', false) == false
+      && attendanceSecurityProtocolAllowed()
+      && request.resource.data.get('securityReviewStatus', 'none') in ['none', 'pending_hr']
+      && request.resource.data.get('locationRiskLevel', 'low') in ['low', 'medium', 'high']
+      && request.resource.data.get('locationAccuracyMeters', 0) >= 0
+      && request.resource.data.get('locationDistanceMeters', 0) >= 0
+      && request.resource.data.get('locationAllowedRadiusMeters', 0) >= 0
+      && request.resource.data.salaryDeductionApprovalStatus in ['none', 'pending_hr']
+      && request.resource.data.salaryDeductionFraction >= 0
+      && request.resource.data.salaryDeductionFraction <= 1
+      && request.resource.data.salaryDeductionAmount >= 0
+      && request.resource.data.lateMinutes >= 0
+      && (
+        request.resource.data.get('deviceId', '') == userDoc()
+          .get('registeredAttendanceDeviceId', '')
+        || attendanceDeviceBelongsToCurrentUser(
+          request.resource.data.get('deviceId', '')
+        )
+      )
+      && request.resource.data.get('deviceLabel', '') is string
+      && request.resource.data.checkInTime is timestamp
+      && (
+        attendanceRequiresBiometric()
+        || (
+          request.resource.data.get('locationCapturedOffline', false) == false
+          && request.resource.data.checkInTime >= request.time - duration.value(24, 'h')
+          && request.resource.data.checkInTime <= request.time + duration.value(24, 'h')
+        )
+      );
+    }
+    function attendanceOwnerCheckoutKeys() {
+      return request.resource.data.diff(resource.data).affectedKeys()
+        .hasOnly([
+          'checkOutTime','localCheckOutTime','checkOutLocation',
+          'totalWorkHours', 'checkOutDeviceId', 'checkOutDeviceLabel',
+          'checkOutBiometricVerified',
+          'salaryDeductionFraction', 'salaryDeductionAmount',
+          'salaryCurrency', 'salaryDeductionCode', 'salaryDeductionLabel',
+          'salaryDeductionApprovalStatus', 'salaryDeductionDetectedAt',
+          'offlineCheckoutCaptured', 'offlineCheckoutCapturedAt',
+          'offlineCheckoutDistanceMeters',
+          'offlineCheckoutAllowedRadiusMeters', 'offlineCheckoutAccuracyMeters',
+          'checkoutSecurityReviewStatus',
+          'checkoutLocationRiskLevel', 'checkoutLocationRiskReasons',
+          'checkoutLocationRiskMessage', 'checkoutLocationAccuracyMeters',
+          'checkoutLocationDistanceMeters',
+          'checkoutLocationAllowedRadiusMeters', 'checkoutLocationMocked',
+          'checkoutLocationCapturedOffline', 'securityProtocolVersion'
+        ]);
+    }
+    function attendanceOwnerCheckoutValues() {
+      return (
+          !request.resource.data.diff(resource.data).affectedKeys()
+            .hasAny(['checkOutBiometricVerified'])
+          || !attendanceRequiresBiometric()
+          || request.resource.data.checkOutBiometricVerified == true
+        )
+        && (
+          !request.resource.data.diff(resource.data).affectedKeys()
+            .hasAny(['totalWorkHours'])
+          || request.resource.data.totalWorkHours >= 0
+        )
+        && request.resource.data.get('checkoutLocationMocked', false) == false
+        && attendanceSecurityProtocolAllowed()
+        && request.resource.data.get('checkoutSecurityReviewStatus', 'none') in ['none', 'pending_hr']
+        && request.resource.data.get('checkoutLocationRiskLevel', 'low') in ['low', 'medium', 'high']
+        && request.resource.data.get('checkoutLocationAccuracyMeters', 0) >= 0
+        && request.resource.data.get('checkoutLocationDistanceMeters', 0) >= 0
+        && request.resource.data.get('checkoutLocationAllowedRadiusMeters', 0) >= 0
+        // Attendance records created by older app versions may not contain
+        // deduction fields. Treat missing values as the same safe defaults
+        // used by AttendanceModel instead of blocking a valid checkout.
+        && request.resource.data.get('salaryDeductionFraction', 0) >= 0
+        && request.resource.data.get('salaryDeductionFraction', 0) <= 1
+        && request.resource.data.get('salaryDeductionAmount', 0) >= 0
+        && request.resource.data.get('salaryDeductionApprovalStatus', 'none') in [
+          'none', 'pending_hr', 'approved', 'rejected'
+        ]
+        && (
+          request.resource.data.get('checkOutDeviceId', '') == userDoc()
+            .get('registeredAttendanceDeviceId', '')
+          || (
+            resource.data.get('deviceId', '') != ''
+            && request.resource.data.get('checkOutDeviceId', '') == resource.data.get('deviceId', '')
+          )
+        )
+        && request.resource.data.checkOutTime is timestamp
+        && (
+          attendanceRequiresBiometric()
+          || (
+            request.resource.data.get('checkoutLocationCapturedOffline', false) == false
+            && request.resource.data.checkOutTime >= request.time - duration.value(24, 'h')
+            && request.resource.data.checkOutTime <= request.time + duration.value(24, 'h')
+          )
+        );
+    }
+    function attendanceOwnerCheckInReplacement() {
+      return isOwner(resource.data.userId)
+        && resource.data.get('checkInTime', null) == null
+        && request.resource.data.userId == uid()
+        && request.resource.data.date == resource.data.date
+        && attendanceCreateKeys()
+        && attendanceCreateValues();
+    }
+    function attendanceOwnerMissedCheckoutDeduction() {
+      return isOwner(resource.data.userId)
+        && resource.data.get('checkInTime', null) is timestamp
+        && resource.data.get('checkOutTime', null) == null
+        && resource.data.get('salaryDeductionFraction', 0) < 0.25
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'salaryDeductionFraction', 'salaryDeductionAmount',
+          'salaryCurrency', 'salaryDeductionCode', 'salaryDeductionLabel',
+          'salaryDeductionApprovalStatus', 'salaryDeductionDetectedAt'
+        ])
+        && request.resource.data.salaryDeductionFraction == 0.25
+        && request.resource.data.salaryDeductionAmount >= 0
+        && request.resource.data.salaryCurrency is string
+        && request.resource.data.salaryDeductionCode == 'missed_checkout_quarter_day'
+        && request.resource.data.salaryDeductionLabel == 'خصم ربع يوم - عدم تسجيل الانصراف'
+        && request.resource.data.salaryDeductionApprovalStatus == 'pending_hr'
+        && request.resource.data.salaryDeductionDetectedAt is timestamp
+        && request.resource.data.salaryDeductionDetectedAt >= request.time - duration.value(24, 'h')
+        && request.resource.data.salaryDeductionDetectedAt <= request.time + duration.value(24, 'h');
+    }
+    function attendanceHrDeductionReview() {
+      return request.resource.data.diff(resource.data).affectedKeys()
+        .hasOnly([
+          'salaryDeductionApprovalStatus',
+          'salaryDeductionReviewedBy',
+          'salaryDeductionReviewedAt'
+        ])
+        && resource.data.salaryDeductionApprovalStatus == 'pending_hr'
+        && request.resource.data.salaryDeductionApprovalStatus in ['approved', 'rejected']
+        && request.resource.data.salaryDeductionReviewedBy == uid();
+    }
+    function attendanceHrDeductionReversal() {
+      return request.resource.data.diff(resource.data).affectedKeys()
+        .hasOnly([
+          'salaryDeductionApprovalStatus',
+          'salaryDeductionReversedBy',
+          'salaryDeductionReversedAt',
+          'salaryDeductionReversalReason'
+        ])
+        && resource.data.salaryDeductionApprovalStatus == 'approved'
+        && request.resource.data.salaryDeductionApprovalStatus == 'reversed'
+        && request.resource.data.salaryDeductionReversedBy == uid()
+        && request.resource.data.salaryDeductionReversalReason is string
+        && request.resource.data.salaryDeductionReversalReason.size() >= 5;
+    }
+    function attendanceHrCheckInCorrection() {
+      let changed = request.resource.data.diff(resource.data).affectedKeys();
+      return changed.hasOnly([
+          'checkInTime', 'originalCheckInTime', 'status', 'isLate',
+          'lateMinutes', 'salaryDeductionFraction', 'salaryDeductionAmount',
+          'salaryCurrency', 'salaryDeductionCode', 'salaryDeductionLabel',
+          'salaryDeductionApprovalStatus', 'checkInTimeCorrectedBy',
+          'checkInTimeCorrectedAt', 'checkInTimeCorrectionReason'
+        ])
+        && resource.data.userId != uid()
+        && request.resource.data.checkInTime is timestamp
+        && resource.data.get('checkInTime', null) is timestamp
+        && request.resource.data.checkInTime <= resource.data.checkInTime
+        // Preserve an existing original time. For a legacy attendance record
+        // that does not have it yet, HR may initialise it only to the previous
+        // effective check-in time. The old default-value equality rejected
+        // valid legacy records with mixed timestamp representations.
+        && (
+          !changed.hasAny(['originalCheckInTime'])
+          || (
+            resource.data.get('originalCheckInTime', null) == null
+            && request.resource.data.originalCheckInTime == resource.data.checkInTime
+          )
+        )
+        && request.resource.data.checkInTimeCorrectedBy == uid()
+        && request.resource.data.checkInTimeCorrectedAt == request.time
+        && request.resource.data.checkInTimeCorrectionReason is string
+        && request.resource.data.checkInTimeCorrectionReason.size() > 0
+        // Historical attendance records were created by more than one
+        // version of the app.  Some of them contain legacy deduction values
+        // (for example a string amount or a `reversed` status).  The HR
+        // correction writes the canonical values, but rejecting the entire
+        // update because of an untouched legacy value makes a valid time
+        // correction look like a permissions failure.  The strict allow-list
+        // above is the security boundary: HR can only change correction and
+        // deduction-calculation fields, never employee/attendance ownership
+        // or location evidence.
+        && request.resource.data.isLate is bool
+        && request.resource.data.lateMinutes is int
+        && request.resource.data.lateMinutes >= 0
+        && request.resource.data.salaryDeductionFraction >= 0
+        && request.resource.data.salaryDeductionFraction <= 1
+        && request.resource.data.salaryDeductionAmount >= 0;
+    }
+    function attendanceHrSecurityReview() {
+      return request.resource.data.diff(resource.data).affectedKeys()
+        .hasOnly([
+          'securityReviewStatus',
+          'securityReviewedBy',
+          'securityReviewedAt',
+          'checkoutSecurityReviewStatus',
+          'checkoutSecurityReviewedBy',
+          'checkoutSecurityReviewedAt'
+        ])
+        && (
+          (
+            resource.data.get('securityReviewStatus', 'none') == 'pending_hr'
+            && request.resource.data.get('securityReviewStatus', 'none') in ['approved', 'rejected']
+            && request.resource.data.get('securityReviewedBy', '') == uid()
+          )
+          ||
+          (
+            resource.data.get('checkoutSecurityReviewStatus', 'none') == 'pending_hr'
+            && request.resource.data.get('checkoutSecurityReviewStatus', 'none') in ['approved', 'rejected']
+            && request.resource.data.get('checkoutSecurityReviewedBy', '') == uid()
+          )
+        );
+    }
+    function attendanceApprovalReconciliation() {
+      let permissionId = request.resource.data.get('reconciledPermissionId', '');
+      let leaveId = request.resource.data.get('reconciledLeaveId', '');
+      let permissionPath = /databases/$(database)/documents/permissions/$(permissionId);
+      let leavePath = /databases/$(database)/documents/leaves/$(leaveId);
+      let permissionAllowed = permissionId is string
+        && permissionId.size() > 0
+        && exists(permissionPath)
+        && get(permissionPath).data.get('status', '') == 'approved'
+        && get(permissionPath).data.get('userId', '') == resource.data.userId
+        && get(permissionPath).data.get('requestDate', '') == resource.data.date
+        && (isHR() || uid() in get(permissionPath).data.get('managerIds', []));
+      let leaveAllowed = leaveId is string
+        && leaveId.size() > 0
+        && exists(leavePath)
+        && get(leavePath).data.get('status', '') == 'approved'
+        && get(leavePath).data.get('userId', '') == resource.data.userId
+        && (isHR() || uid() in get(leavePath).data.get('managerIds', []));
+      return canActAsApprovalManager()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'status', 'isLate', 'lateMinutes', 'salaryDeductionFraction',
+          'salaryDeductionAmount', 'salaryCurrency', 'salaryDeductionCode',
+          'salaryDeductionLabel', 'salaryDeductionApprovalStatus',
+          'reconciledPermissionId', 'reconciledLeaveId',
+          'deductionReconciledAt'
+        ])
+        && (permissionAllowed || leaveAllowed)
+        && request.resource.data.get('salaryDeductionFraction', 0)
+          <= resource.data.get('salaryDeductionFraction', 0)
+        && request.resource.data.get('salaryDeductionAmount', 0)
+          <= resource.data.get('salaryDeductionAmount', 0);
+    }
+    function leaveHrReview() {
+      return isHR()
+        && uid() != resource.data.userId
+        && resource.data.get('reviewedBy', '') != uid()
+        && (
+          recipientDoc(resource.data.userId).get('role', '') != 'super_admin'
+          || isHR()
+        )
+        && resource.data.status == 'pending_hr'
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly([
+            'status', 'reviewedBy', 'reviewedAt', 'reviewerComment', 'reviewerName', 'isRead',
+            'managerId', 'managerName', 'managerApprovalIndex',
+            'approvalHistory', 'ceoId', 'ceoName',
+            'finalApproverId', 'finalApproverName', 'finalApprovalAt'
+          ])
+        && request.resource.data.status in [
+          'pending_manager', 'pending_ceo', 'approved', 'rejected'
+        ]
+        && request.resource.data.reviewedBy == uid();
+    }
+    function leaveManagerReview() {
+      return canActAsApprovalManager()
+        && isCurrentApprovalManager()
+        && sequentialManagerDecision()
+        && resource.data.status == 'pending_manager'
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly([
+            'status', 'reviewedBy', 'reviewedAt', 'reviewerComment', 'reviewerName', 'isRead',
+            'managerId', 'managerName', 'managerApprovalIndex',
+            'managerApprovalTrail', 'approvalHistory',
+            'finalApproverId', 'finalApproverName', 'finalApprovalAt'
+          ])
+        && request.resource.data.status in ['pending_manager', 'pending_hr', 'approved', 'rejected']
+        && request.resource.data.reviewedBy == uid();
+    }
+    function leaveCeoReview() {
+      return isCompanyCeo()
+        && resource.data.status == 'pending_ceo'
+        && (
+          resource.data.get('ceoId', '') == uid()
+          || resource.data.get('ceoId', '') == employeeCode()
+        )
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly([
+            'status', 'reviewedBy', 'reviewedAt', 'reviewerComment',
+            'reviewerName', 'approvalHistory', 'finalApproverId',
+            'finalApproverName', 'finalApprovalAt'
+          ])
+        && request.resource.data.status in ['pending_hr', 'approved', 'rejected']
+        && request.resource.data.reviewedBy == uid();
+    }
+    function leaveHrDirectEdit() {
+      return (isHR() || isSuperAdmin())
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly([
+            'startDate', 'endDate', 'numberOfDays', 'leaveType', 'reason',
+            'adminModifiedBy', 'adminModifiedName', 'adminModifiedAt'
+          ])
+        && request.resource.data.adminModifiedBy == uid()
+        && request.resource.data.numberOfDays > 0
+        && request.resource.data.startDate is timestamp
+        && request.resource.data.endDate is timestamp
+        && request.resource.data.endDate >= request.resource.data.startDate;
+    }
+    function permissionHrDirectEdit() {
+      return (isHR() || isSuperAdmin())
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly([
+            'durationMinutes', 'reason',
+            'adminModifiedBy', 'adminModifiedName', 'adminModifiedAt'
+          ])
+        && request.resource.data.adminModifiedBy == uid()
+        && request.resource.data.durationMinutes > 0;
+    }
+    function advanceHrDirectEdit() {
+      return (isHR() || isSuperAdmin())
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly([
+            'amount', 'reason',
+            'adminModifiedBy', 'adminModifiedName', 'adminModifiedAt'
+          ])
+        && request.resource.data.adminModifiedBy == uid()
+        && request.resource.data.amount > 0;
+    }
+    function resignationHrDirectEdit() {
+      return (isHR() || isSuperAdmin())
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly([
+            'resignationDate', 'reason',
+            'adminModifiedBy', 'adminModifiedName', 'adminModifiedAt'
+          ])
+        && request.resource.data.adminModifiedBy == uid()
+        && request.resource.data.resignationDate is timestamp;
+    }
+    function administrativeRequestHrDirectEdit() {
+      return (isHR() || isSuperAdmin())
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly([
+            'notes',
+            'adminModifiedBy', 'adminModifiedName', 'adminModifiedAt'
+          ])
+        && request.resource.data.adminModifiedBy == uid();
+    }
+    function advanceHrReview() {
+      return isHR()
+        && resource.data.status == 'pending_hr'
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly([
+            'status', 'reviewedBy', 'reviewedAt', 'reviewerComment', 'isRead',
+            'managerId', 'managerName', 'managerApprovalIndex',
+            'managerApprovalTrail', 'approvalHistory', 'advanceRouteStage'
+          ])
+        && request.resource.data.status in ['pending_manager', 'approved', 'rejected']
+        && request.resource.data.reviewedBy == uid();
+    }
+    function advanceManagerReview() {
+      return (
+          (
+            isCurrentApprovalManager()
+            && sequentialManagerDecision()
+            && (
+              isManagerRole()
+              || (resource.data.get('advanceRouteStage', '') == 'ceo'
+                && isAdvanceCeoApprover())
+              || (resource.data.get('advanceRouteStage', '') == 'accounting'
+                && isAdvanceAccountsApprover())
+            )
+          ) ||
+          isSuperAdmin()
+        )
+        && resource.data.status == 'pending_manager'
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly([
+            'status', 'reviewedBy', 'reviewedAt', 'reviewerComment', 'isRead',
+            'managerId', 'managerName', 'managerApprovalIndex', 'managerApprovalTrail',
+            'approvalHistory', 'advanceRouteStage'
+          ])
+        && request.resource.data.status in ['pending_manager', 'approved', 'rejected']
+        && request.resource.data.reviewedBy == uid();
+    }
+    function permissionHrReview() {
+      return isHR()
+        && uid() != resource.data.userId
+        && resource.data.get('reviewedBy', '') != uid()
+        && (
+          recipientDoc(resource.data.userId).get('role', '') != 'super_admin'
+          || isHR()
+        )
+        && resource.data.status == 'pending_hr'
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly([
+            'status', 'reviewedBy', 'reviewedAt', 'reviewerComment', 'reviewerName', 'isRead',
+            'hrReviewedBy', 'hrReviewedAt', 'hrReviewerComment',
+            'managerId', 'managerName', 'managerApprovalIndex',
+            'salaryDeductionApprovalStatus', 'approvalHistory',
+            'finalApproverId', 'finalApproverName', 'finalApprovalAt',
+            'checkoutPolicyEnabled', 'checkoutPolicyRevision',
+            'checkoutPolicyEvaluatedAt', 'checkoutPolicyDecisionPoint'
+          ])
+        && request.resource.data.status in ['pending_manager', 'approved', 'rejected']
+        && request.resource.data.reviewedBy == uid()
+        && request.resource.data.hrReviewedBy == uid()
+        && (
+          request.resource.data.status != 'approved'
+          || resource.data.get('isDeductible', false) == false
+          || request.resource.data.salaryDeductionApprovalStatus == 'approved'
+        );
+    }
+    function permissionManagerReview() {
+      return canActAsApprovalManager()
+        && isCurrentApprovalManager()
+        && sequentialManagerDecision()
+        && resource.data.status == 'pending_manager'
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly([
+            'status', 'reviewedBy', 'reviewedAt', 'reviewerComment', 'reviewerName', 'isRead',
+            'managerReviewedBy', 'managerReviewedAt', 'managerReviewerComment',
+            'managerId', 'managerName', 'managerApprovalIndex', 'managerApprovalTrail',
+            'approvalHistory', 'finalApproverId', 'finalApproverName', 'finalApprovalAt',
+            'checkoutPolicyEnabled', 'checkoutPolicyRevision',
+            'checkoutPolicyEvaluatedAt', 'checkoutPolicyDecisionPoint'
+          ])
+        && request.resource.data.status in ['pending_manager', 'pending_hr', 'approved', 'rejected']
+        && request.resource.data.reviewedBy == uid()
+        && request.resource.data.managerReviewedBy == uid()
+        && (
+          resource.data.get('isDeductible', false) == false
+          || request.resource.data.status != 'approved'
+        );
+    }
+    function taskCreateKeys() {
+      return request.resource.data.keys().hasOnly([
+        'title', 'description', 'assigneeId', 'assigneeName',
+        'assigneeEmployeeId', 'department', 'managerId', 'createdBy',
+        'managerIds', 'createdByName', 'priority', 'status', 'dueDate',
+        'createdAt', 'updatedAt', 'isRead'
+      ]);
+    }
+    function taskCreateValues() {
+      return request.resource.data.title is string
+        && request.resource.data.title.size() >= 3
+        && request.resource.data.assigneeId is string
+        && request.resource.data.createdBy == uid()
+        && request.resource.data.priority in ['low', 'medium', 'high', 'urgent']
+        && request.resource.data.status == 'new'
+        && request.resource.data.isRead == false
+        && (
+          isHR() ||
+          (
+            isManagerRole()
+            && uid() in request.resource.data.get('managerIds', [])
+            && (
+              recipientDoc(request.resource.data.assigneeId).get('managerId', '') == uid()
+              || uid() in recipientDoc(request.resource.data.assigneeId).get('managerIds', [])
+            )
+          )
+          ||
+          (
+            isTeamLeaderRole()
+            && uid() in request.resource.data.get('managerIds', [])
+            && recipientDoc(request.resource.data.assigneeId)
+              .get('teamLeaderId', '') == uid()
+          )
+        );
+    }
+    function taskOwnerStatusUpdate() {
+      return isOwner(resource.data.assigneeId)
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['status', 'isRead', 'updatedAt', 'completedAt', 'attachmentUrl'])
+        && request.resource.data.status in ['in_progress', 'done']
+        && request.resource.data.isRead == true;
+    }
+    function taskReviewerUpdate() {
+      return (
+          isHR() ||
+          (
+            isManagerRole()
+            && (
+              resource.data.managerId == uid()
+              || uid() in resource.data.get('managerIds', [])
+            )
+          )
+          ||
+          (
+            isTeamLeaderRole()
+            && uid() in resource.data.get('managerIds', [])
+            && isAssignedTeamLeaderForUser(resource.data.assigneeId)
+          )
+        )
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly([
+            'status', 'qualityScore', 'managerComment', 'updatedAt'
+          ])
+        && (
+          (
+            request.resource.data.diff(resource.data).affectedKeys()
+              .hasOnly(['status', 'updatedAt'])
+            && request.resource.data.status == 'cancelled'
+          )
+          ||
+          (
+            request.resource.data.diff(resource.data).affectedKeys()
+              .hasOnly(['qualityScore', 'managerComment', 'updatedAt'])
+            && resource.data.status == 'done'
+            && request.resource.data.qualityScore >= 0
+            && request.resource.data.qualityScore <= 100
+          )
+        );
+    }
+    function kpiTemplateCreateKeys() {
+      return request.resource.data.keys().hasOnly([
+        'title', 'department', 'companyLocationId', 'companyName',
+        'createdBy', 'createdByName',
+        'isActive', 'metrics', 'createdAt'
+      ]);
+    }
+    function kpiTemplateManagedUpdate() {
+      return (
+          isHR()
+          || (isManagerRole() && resource.data.createdBy == uid())
+        )
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly([
+            'title', 'department', 'companyLocationId', 'companyName',
+            'metrics', 'isActive', 'updatedAt'
+          ])
+        && request.resource.data.title is string
+        && request.resource.data.title.size() >= 3
+        && request.resource.data.department is string
+        && request.resource.data.department.size() > 0
+        && request.resource.data.get('companyLocationId', '') is string
+        && request.resource.data.get('companyName', '') is string
+        && request.resource.data.metrics is list
+        && request.resource.data.metrics.size() > 0
+        && request.resource.data.metrics.size() <= 12
+        && request.resource.data.isActive is bool;
+    }
+    function employeeKpiCreateKeys() {
+      return request.resource.data.keys().hasOnly([
+        'templateId', 'userId', 'employeeId', 'employeeName',
+        'department', 'managerId', 'managerIds', 'teamLeaderId',
+        'monthKey', 'status', 'metrics',
+        'overallProgress', 'createdBy', 'createdAt', 'updatedAt'
+      ]);
+    }
+    function canManageEmployeeKpiFor(userId, managerId) {
+      return isHR()
+        || (
+          isTeamLeaderRole()
+          && recipientDoc(userId).get('teamLeaderId', '') == uid()
+        )
+        || (
+          isManagerRole()
+          && (
+            managerId == uid()
+            || uid() in recipientDoc(userId).get('managerIds', [])
+          )
+          && (
+            recipientDoc(userId).get('managerId', '') == uid()
+            || uid() in recipientDoc(userId).get('managerIds', [])
+          )
+        );
+    }
+    function employeeKpiCreateValues() {
+      return request.resource.data.userId is string
+        && request.resource.data.monthKey is string
+        && request.resource.data.status == 'active'
+        && request.resource.data.overallProgress == 0
+        && request.resource.data.metrics is list
+        && request.resource.data.metrics.size() > 0
+        && request.resource.data.metrics.size() <= 12
+        && request.resource.data.managerIds is list
+        && request.resource.data.createdBy == uid()
+        && canManageEmployeeKpiFor(
+          request.resource.data.userId,
+          request.resource.data.managerId
+        );
+    }
+    function employeeKpiProgressUpdate() {
+      return canManageEmployeeKpiFor(resource.data.userId, resource.data.managerId)
+        && resource.data.status == 'active'
+        && request.resource.data.status == 'active'
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['metrics', 'overallProgress', 'updatedAt'])
+        && request.resource.data.overallProgress >= 0
+        && request.resource.data.overallProgress <= 100;
+    }
+    function employeeKpiLifecycleUpdate() {
+      return canManageEmployeeKpiFor(resource.data.userId, resource.data.managerId)
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['status', 'finalizedBy', 'finalizedAt', 'updatedAt'])
+        && (
+          (
+            resource.data.status == 'active'
+            && request.resource.data.status == 'finalized'
+            && request.resource.data.finalizedBy == uid()
+          )
+          || (
+            isHR()
+            && resource.data.status == 'finalized'
+            && request.resource.data.status == 'active'
+            && !request.resource.data.keys().hasAny(['finalizedBy', 'finalizedAt'])
+          )
+        );
+    }
+    function productivityScoreKeys() {
+      return request.resource.data.keys().hasOnly([
+        'userId', 'employeeId', 'employeeName', 'department', 'managerId',
+        'managerIds',
+        'monthKey', 'attendanceScore', 'punctualityScore',
+        'taskCompletionScore', 'taskQualityScore', 'kpiScore',
+        'behaviorScore', 'attendanceComponentScore',
+        'behaviorUpdatedBy', 'behaviorUpdatedName', 'behaviorReason',
+        'behaviorUpdatedAt',
+        'hasTaskData', 'hasTaskQualityData', 'hasKpiData',
+        'overallScore', 'completedTasks', 'totalTasks', 'overdueTasks',
+        'absentDays', 'lateDays', 'calculatedAt'
+      ]);
+    }
+    function productivityScoreValues() {
+      return request.resource.data.userId is string
+        && request.resource.data.monthKey is string
+        && request.resource.data.get('hasTaskData', true) is bool
+        && request.resource.data.get('hasTaskQualityData', true) is bool
+        && request.resource.data.get('hasKpiData', true) is bool
+        && request.resource.data.get('behaviorScore', 100) >= 0
+        && request.resource.data.get('behaviorScore', 100) <= 100
+        && request.resource.data.overallScore >= 0
+        && request.resource.data.overallScore <= 100
+        && canManageEmployeeKpiFor(
+          request.resource.data.userId,
+          request.resource.data.managerId
+        );
+    }
+    function productivityBehaviorUpdateValid() {
+      return !request.resource.data.diff(resource.data).affectedKeys()
+          .hasAny(['behaviorScore'])
+        || (
+          request.resource.data.behaviorUpdatedBy == uid()
+          && request.resource.data.behaviorUpdatedName is string
+          && request.resource.data.behaviorReason is string
+          && request.resource.data.behaviorReason.size() >= 3
+          && request.resource.data.behaviorUpdatedAt == request.time
+        );
+    }
+    function warningRewardKeys() {
+      return request.resource.data.keys().hasOnly([
+        'userId', 'employeeId', 'employeeName', 'department', 'managerId',
+        'managerIds',
+        'type', 'status', 'title', 'description', 'createdBy',
+        'createdByName', 'source', 'monthKey', 'productivityScore',
+        'amount', 'currency', 'createdAt', 'acknowledgedAt'
+      ]);
+    }
+    function warningRewardCreateValues() {
+      return request.resource.data.userId is string
+        && request.resource.data.createdBy == uid()
+        && request.resource.data.managerIds is list
+        && request.resource.data.type in [
+          'warning', 'notice', 'reward', 'bonus_recommendation', 'follow_up'
+        ]
+        && request.resource.data.status in ['suggested', 'issued']
+        && request.resource.data.title is string
+        && request.resource.data.title.size() >= 3
+        && request.resource.data.get('amount', 0) >= 0
+        && canManageEmployeeKpiFor(
+          request.resource.data.userId,
+          request.resource.data.managerId
+        );
+    }
+    function warningRewardManagerUpdate() {
+      return canManageEmployeeKpiFor(resource.data.userId, resource.data.managerId)
+        && resource.data.status == 'suggested'
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['status'])
+        && request.resource.data.status in ['issued', 'dismissed'];
+    }
+    function warningRewardOwnerAcknowledge() {
+      return isOwner(resource.data.userId)
+        && resource.data.status == 'issued'
+        && request.resource.data.diff(resource.data).affectedKeys()
+        .hasOnly(['status', 'acknowledgedAt'])
+        && request.resource.data.status == 'acknowledged';
+    }
+    function payrollRunKeys() {
+      return request.resource.data.keys().hasOnly([
+        'userId', 'employeeId', 'employeeName', 'department', 'managerId',
+        'monthKey', 'currency', 'baseSalary', 'attendanceDeductions',
+        'rewardsBonus', 'advances', 'netSalary', 'approvedDeductionCount',
+        'bonusRecordCount', 'advanceRecordCount', 'status', 'calculatedAt',
+        'calculatedBy', 'reviewedBy', 'reviewedAt'
+      ]);
+    }
+    function payrollRunValues() {
+      return request.resource.data.userId is string
+        && request.resource.data.monthKey is string
+        && request.resource.data.baseSalary >= 0
+        && request.resource.data.attendanceDeductions >= 0
+        && request.resource.data.rewardsBonus >= 0
+        && request.resource.data.advances >= 0
+        && request.resource.data.netSalary >= 0
+        && request.resource.data.status in ['draft', 'reviewed', 'locked'];
+    }
+
+    match /companies/{companyId} {
+      allow read: if isAuth() && isActive();
+      allow write: if isAuth() && isActive() && isHR();
+    }
+
+    match /customRequestTypes/{typeId} {
+      allow read: if isAuth() && isActive();
+      allow write: if isAuth() && isActive() && (isHR() || isSuperAdmin() || isCompanyExecutive());
+    }
+
+    match /approvalChains/{chainId} {
+      allow read: if isAuth() && isActive();
+      allow write: if isAuth() && isActive() && (isHR() || isSuperAdmin() || isCompanyExecutive());
+    }
+
+    match /customRequests/{requestId} {
+      allow read: if isAuth() && isActive();
+      allow create: if isAuth() && isActive();
+      allow update: if isAuth() && isActive();
+      allow delete: if isAuth() && isActive() && (isHR() || isSuperAdmin());
+    }
+
+    match /publicConfig/{configId} {
+      allow read: if configId == 'appSecurity'
+        || (configId == 'requestApproval' && isAuth() && isActive());
+      allow create, update: if configId == 'appSecurity'
+        && isAuth() && isActive() && isHR();
+      allow create, update: if configId == 'requestApproval'
+        && isAuth() && isActive() && isSuperAdmin()
+        && request.resource.data.keys().hasOnly([
+          'requireHrAfterManagerApproval', 'updatedBy', 'updatedAt'
+        ])
+        && request.resource.data.requireHrAfterManagerApproval is bool
+        && request.resource.data.updatedBy == uid();
+      allow delete: if false;
+    }
+
+    match /locations/{locationId} {
+      allow read: if isAuth() && isActive();
+      allow write: if isAuth() && isActive() && isHR();
+    }
+
+    match /companyDayOffs/{dayOffId} {
+      allow read: if isAuth() && isActive();
+      allow create, update: if isAuth() && isActive() && isHR()
+        && request.resource.data.keys().hasOnly([
+          'date', 'title', 'isActive', 'createdBy', 'createdAt'
+        ]);
+      allow delete: if isAuth() && isActive() && isHR();
+    }
+
+    match /notificationRecipients/{role} {
+      allow read: if isAuth() && isActive();
+      allow write: if isAuth() && isActive() && isHR()
+        && role in ['hr_admin', 'hr_manager', 'manager', 'super_admin']
+        && request.resource.data.keys().hasOnly(['role', 'userIds', 'updatedAt'])
+        && request.resource.data.role == role
+        && request.resource.data.userIds is list;
+    }
+
+    match /users/{userId} {
+      allow get: if isAuth() && (
+        isOwner(userId) || (
+          isActive() && (
+            isHR() || isAssignedManagerFor(resource.data) ||
+            isAssignedTeamLeaderFor(resource.data) ||
+            // Legacy clients may read the direct manager while resolving an
+            // approval route. The public, canonical CEO-100 account is also
+            // readable for that route; no employee-directory browsing is
+            // permitted.
+            userId == userDoc().get('managerId', '') ||
+            userId in userDoc().get('managerIds', []) ||
+            resource.data.get('employeeId', '') == 'CEO-100' ||
+            resource.data.get('employeeCode', '') == 'CEO-100' ||
+            resource.data.get('executiveRole', '') == 'ceo' ||
+            resource.data.get('role', '') == 'ceo'
+          )
+        )
+      );
+      allow list: if isAuth() && isActive() && (
+        isHR() || isAssignedManagerFor(resource.data) ||
+        isAssignedTeamLeaderFor(resource.data) ||
+        resource.data.get('employeeId', '') == 'CEO-100' ||
+        resource.data.get('employeeCode', '') == 'CEO-100' ||
+        resource.data.get('executiveRole', '') == 'ceo' ||
+        resource.data.get('role', '') == 'ceo'
+      );
+      allow update: if isAuth() && isActive() && (
+        (isOwner(userId) && ownerProfileUpdate()) ||
+        (isOwner(userId) && ownerAvatarCustomization()) ||
+        (isOwner(userId) && ownerAttendanceDeviceBind()) ||
+        (isOwner(userId) && ownerAttendanceDeviceLegacyMigration()) ||
+        managerBalanceUpdate() ||
+        managerLeaveBalanceUpdate() ||
+        (isOwner(userId) && ownerPermissionBalanceRestore()) ||
+        (isOwner(userId) && ownerLeaveBalanceRestore()) ||
+        (isOwner(userId) && ownerCasualLeaveBalanceDeduction()) ||
+        canIncrementUnreadOnly() ||
+        (isOwner(userId) && ownerCanReconcileUnread())
+      );
+      allow create: if isAuth() && isActive() && (
+        isPrivilegedAdmin() || hrCanCreateUser()
+      );
+      allow update: if isAuth() && isActive() && (
+        (isPrivilegedAdmin() || hrCanWriteUser())
+        && validAccountStatusChange()
+      );
+      // Employee records are retained for attendance, payroll, and audit.
+      // Account termination is handled by employeeDeletionRequests.
+      allow delete: if false;
+    }
+
+    match /employeeDeletionRequests/{requestId} {
+      allow read: if isAuth() && isActive() && isHR();
+      allow create: if isAuth() && isActive() && isHR()
+        && request.resource.data.requesterId == uid()
+        && request.resource.data.employeeId != uid()
+        && request.resource.data.reason is string
+        && request.resource.data.reason.size() >= 3
+        && request.resource.data.status in [
+          'pending_hr_manager', 'pending_super_admin'
+        ];
+      allow update: if isAuth() && isActive() && (
+        (
+          resource.data.status == 'pending_hr_manager'
+          && isHRManagerRole()
+          && resource.data.requesterId != uid()
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'status', 'approvedBy', 'approvedByName',
+            'rejectedBy', 'rejectedByName', 'reviewedAt',
+            'updatedAt', 'approvalHistory'
+          ])
+          && (
+            (
+              resource.data.requesterRole == 'super_admin'
+              && request.resource.data.status in ['approved', 'rejected']
+            ) || (
+              resource.data.requesterRole != 'super_admin'
+              && request.resource.data.status in [
+                'pending_super_admin', 'rejected'
+              ]
+            )
+          )
+        ) || (
+          resource.data.status == 'pending_super_admin'
+          && isSuperAdmin()
+          && resource.data.requesterId != uid()
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'status', 'approvedBy', 'approvedByName',
+            'rejectedBy', 'rejectedByName', 'reviewedAt',
+            'updatedAt', 'approvalHistory'
+          ])
+          && request.resource.data.status in ['approved', 'rejected']
+        )
+      );
+      allow delete: if false;
+    }
+
+    match /attendanceDevices/{deviceId} {
+      // A first attendance attempt reads this exact document inside a
+      // transaction before it creates the binding. A missing document must be
+      // readable so that first-time binding can proceed, while existing
+      // devices remain visible only to their owner or HR.
+      allow get: if isAuth() && isActive() && (
+        !exists(/databases/$(database)/documents/attendanceDevices/$(deviceId))
+        || isOwner(resource.data.userId)
+        || isHR()
+      );
+      allow list: if isAuth() && isActive() && isHR();
+      allow create: if isAuth() && isActive()
+        && !exists(/databases/$(database)/documents/attendanceDevices/$(deviceId))
+        && request.resource.data.keys().hasOnly([
+          'deviceId', 'userId', 'employeeId', 'employeeName',
+          'deviceLabel', 'registeredAt'
+        ])
+        && request.resource.data.userId == uid()
+        && request.resource.data.employeeId is string
+        && request.resource.data.employeeName is string
+        && request.resource.data.deviceId is string
+        && request.resource.data.deviceId.size() > 0
+        && request.resource.data.deviceLabel is string;
+      allow update: if false;
+      allow delete: if isAuth() && isActive() && isHR();
+    }
+
+    match /autoAttendanceSignals/{signalId} {
+      allow create: if isAuth() && isActive()
+        && request.resource.data.keys().hasOnly([
+          'userId', 'employeeId', 'locationId', 'locationName', 'event',
+          'deviceId', 'deviceLabel', 'latitude', 'longitude', 'accuracyMeters', 'capturedAtMillis',
+          'source', 'status', 'locationMocked', 'createdAt'
+        ])
+        && request.resource.data.userId == uid()
+        && request.resource.data.employeeId is string
+        && (
+          request.resource.data.deviceId == userDoc().get('registeredAttendanceDeviceId', '')
+          || attendanceDeviceBelongsToCurrentUser(request.resource.data.deviceId)
+        )
+        && request.resource.data.locationId is string
+        && request.resource.data.event in ['enter', 'exit']
+        && request.resource.data.source in ['android_geofence', 'ios_region']
+        && request.resource.data.status == 'pending'
+        && request.resource.data.latitude is number
+        && request.resource.data.longitude is number
+        && request.resource.data.accuracyMeters is number
+        && request.resource.data.deviceId is string
+        && request.resource.data.deviceLabel is string
+        && request.resource.data.capturedAtMillis is int
+        && request.resource.data.createdAt == request.time;
+      allow read: if isAuth() && isActive() && (
+        isOwner(resource.data.userId) || isHR()
+      );
+      allow update, delete: if false;
+    }
+
+    match /attendance/{attendanceId} {
+      // The dashboards probe the deterministic daily attendance id before an
+      // employee checks in. A missing document has no resource.data, so the
+      // normal ownership checks below cannot succeed. An empty path has no
+      // record to disclose, so every active signed-in employee may probe it
+      // before the authenticated gateway creates today's record. Existing
+      // attendance records remain protected by assignment/role checks.
+      allow get: if isAuth() && isActive() && (
+        !exists(
+          /databases/$(database)/documents/attendance/$(attendanceId)
+        )
+        || isOwner(resource.data.userId)
+        || isMyManager(resource.data.managerId)
+        || isAssignedManagerForUser(resource.data.userId)
+        || isAssignedTeamLeaderForUser(resource.data.userId)
+        || isHR()
+      );
+      allow list: if isAuth() && isActive() && (
+        isOwner(resource.data.userId) ||
+        isMyManager(resource.data.managerId) ||
+        isAssignedManagerForUser(resource.data.userId) ||
+        isAssignedTeamLeaderForUser(resource.data.userId) ||
+        isHR()
+      );
+      allow create: if isAuth() && isActive() && (
+        (isValidSelfCreate() && attendanceCreateKeys() && attendanceCreateValues())
+        || isHR()
+        || canActAsApprovalManager()
+      );
+      allow update: if isAuth() && isActive() && (
+        attendanceOwnerCheckInReplacement() ||
+        attendanceOwnerMissedCheckoutDeduction() ||
+        (
+          isOwner(resource.data.userId)
+          && attendanceOwnerCheckoutKeys()
+          && attendanceOwnerCheckoutValues()
+        ) ||
+        (isHR() && attendanceHrDeductionReview()) ||
+        (isHR() && attendanceHrDeductionReversal()) ||
+        (isHR() && attendanceHrCheckInCorrection()) ||
+        (isHR() && attendanceHrSecurityReview()) ||
+        attendanceApprovalReconciliation() ||
+        // HR owns attendance correction and payroll review.  Legacy records
+        // can contain fields from older app versions that do not satisfy the
+        // narrow correction validator above; denying those updates prevents
+        // HR from fixing an employee's recorded arrival time at all.
+        isHR() ||
+        isSuperAdmin()
+      );
+      allow delete: if isAuth() && isActive() && isHR();
+    }
+
+    match /attendanceCorrectionRequests/{requestId} {
+      allow read: if isAuth() && isActive() && (
+        isOwner(resource.data.userId) || isHR()
+      );
+      allow create: if isAuth() && isActive()
+        && (
+          request.resource.data.userId == uid()
+          || isHR()
+          || isAssignedManagerForUser(request.resource.data.userId)
+        )
+        && request.resource.data.requestId == requestId
+        && request.resource.data.status == 'pending_hr'
+        && request.resource.data.reason is string
+        && request.resource.data.reason.size() >= 5
+        && request.resource.data.attendanceId is string
+        && exists(
+          /databases/$(database)/documents/attendance/$(request.resource.data.attendanceId)
+        )
+        && get(
+          /databases/$(database)/documents/attendance/$(request.resource.data.attendanceId)
+        ).data.get('userId', '') == request.resource.data.userId
+        && request.resource.data.requestedCheckInTime is timestamp
+        && request.resource.data.originalCheckInTime is timestamp
+        && (
+          request.resource.data.submittedAt == request.time
+          || request.resource.data.submittedAt is timestamp
+        )
+        && request.resource.data.keys().hasOnly([
+          'requestId', 'userId', 'employeeId', 'employeeName', 'department',
+          'attendanceId', 'attendanceDate', 'originalCheckInTime',
+          'requestedCheckInTime', 'reason', 'status', 'submittedAt', 'isRead',
+          'notes', 'createdAt', 'updatedAt'
+        ]);
+      allow update: if isAuth() && isActive() && (
+        (
+          isOwner(resource.data.userId)
+          && resource.data.status == 'pending_hr'
+          && request.resource.data.status == 'cancelled'
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'status', 'cancelledAt', 'cancelledBy'
+          ])
+          && request.resource.data.cancelledBy == uid()
+          && request.resource.data.cancelledAt == request.time
+        )
+        || (
+          isHR()
+          && uid() != resource.data.userId
+          && resource.data.status == 'pending_hr'
+          && request.resource.data.status in ['approved', 'rejected']
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'status', 'reviewedBy', 'reviewerName', 'reviewedAt',
+            'reviewerComment'
+          ])
+          && request.resource.data.reviewedBy == uid()
+          && request.resource.data.reviewedAt == request.time
+          && (
+            request.resource.data.status == 'rejected'
+            || (
+              getAfter(
+                /databases/$(database)/documents/attendance/$(resource.data.attendanceId)
+              ).data.checkInTime == resource.data.requestedCheckInTime
+              && getAfter(
+                /databases/$(database)/documents/attendance/$(resource.data.attendanceId)
+              ).data.checkInTimeCorrectedBy == uid()
+            )
+          )
+        )
+      );
+      allow delete: if isAuth() && isActive() && isHR();
+    }
+
+    match /departments/{deptId} {
+      allow read: if isAuth() && isActive();
+      allow create, update, delete: if isAuth() && isActive() && isHR();
+    }
+
+    match /organization_divisions/{divisionId} {
+      allow read: if isAuth() && isActive();
+      allow create, update, delete: if isAuth() && isActive() && isHR();
+    }
+
+    match /custom_org_trees/{treeId} {
+      allow read: if isAuth() && isActive();
+      allow create, update, delete: if isAuth() && isActive() && isHR();
+    }
+
+    match /job_titles/{jobTitleId} {
+      allow read: if isAuth() && isActive();
+      allow create, update, delete: if isAuth() && isActive() && isHR();
+    }
+
+    match /leaves/{leaveId} {
+      allow read: if isAuth() && isActive() && (
+        isOwner(resource.data.userId) ||
+        isMyManager(resource.data.managerId) ||
+        uid() in resource.data.get('managerIds', []) ||
+        resource.data.get('managerId', '') == employeeCode() ||
+        employeeCode() in resource.data.get('managerIds', []) ||
+        employeeCode() in resource.data.get('managerCodes', []) ||
+        resource.data.get('teamLeaderId', '') == uid() ||
+        isAssignedTeamLeaderForUser(resource.data.userId) ||
+        isHR() ||
+        isCompanyExecutive()
+      );
+      allow create: if isAuth() && isActive()
+        && (
+          isValidSelfCreate()
+          || isHR()
+          || isAssignedManagerForUser(request.resource.data.userId)
+        )
+        && request.resource.data.status in [
+          'pending_manager', 'pending_hr', 'pending_ceo', 'approved'
+        ]
+        && request.resource.data.managerIds is list
+        && (
+          (
+            request.resource.data.leaveType == 'casual'
+            && request.resource.data.status == 'approved'
+            && request.resource.data.get('autoApproved', false) == true
+          )
+          || hasValidAssignedApprovalManagers(request.resource.data.userId)
+        )
+        && (
+          (
+            request.resource.data.status == 'pending_manager'
+            && request.resource.data.managerIds.size() > 0
+            && request.resource.data.managerId == request.resource.data.managerIds[0]
+          )
+          || (
+            request.resource.data.status == 'pending_hr'
+            && (request.resource.data.managerId == '' || request.resource.data.managerId == null || request.resource.data.managerIds.size() >= 0)
+          )
+          || (
+            request.resource.data.status == 'pending_ceo'
+            && (request.resource.data.managerId == '' || request.resource.data.managerId == null || request.resource.data.managerIds.size() >= 0)
+            && request.resource.data.ceoId is string
+            && request.resource.data.ceoId.size() > 0
+          )
+          || (
+            request.resource.data.status == 'approved'
+            && request.resource.data.leaveType == 'casual'
+            && request.resource.data.get('autoApproved', false) == true
+            && request.resource.data.managerIds.size() == 0
+            && request.resource.data.managerId == ''
+          )
+        )
+        && request.resource.data.managerApprovalIndex == 0
+        && request.resource.data.leaveType in ['sick', 'casual', 'day_off', 'unpaid', 'exam', 'paternity', 'remote']
+        && (
+          !request.resource.data.keys().hasAny(['convertToAnnual'])
+          || (
+            request.resource.data.leaveType == 'sick'
+            && request.resource.data.convertToAnnual == true
+          )
+        )
+        && request.resource.data.get(
+          'deductsLeaveBalance',
+          request.resource.data.leaveType in ['casual', 'day_off']
+        ) ==
+          (request.resource.data.leaveType in ['casual', 'day_off'])
+        && request.resource.data.get(
+          'requiresFullDaySalaryDeduction',
+          request.resource.data.leaveType == 'unpaid'
+        ) ==
+          (request.resource.data.leaveType == 'unpaid')
+        && (
+          (
+            request.resource.data.leaveType == 'casual'
+            && (
+              !request.resource.data.keys().hasAny(['leaveBalanceKey'])
+              || request.resource.data.leaveBalanceKey == 'casual'
+            )
+            && (
+              !request.resource.data.keys().hasAny(['leaveBalanceKeys'])
+              || (
+                request.resource.data.get('leaveBalanceKeys', []).size() == 2
+                && 'casual' in request.resource.data.get('leaveBalanceKeys', [])
+                && 'daysOff' in request.resource.data.get('leaveBalanceKeys', [])
+              )
+            )
+            && (
+              isHR()
+              || (
+                request.resource.data.numberOfDays
+                  <= recipientDoc(request.resource.data.userId).get('leaveBalance', {}).get('casual', 7)
+                && request.resource.data.numberOfDays
+                  <= recipientDoc(request.resource.data.userId).get('leaveBalance', {}).get('daysOff', 0)
+              )
+            )
+          )
+          || (
+            request.resource.data.leaveType == 'day_off'
+            && (
+              !request.resource.data.keys().hasAny(['leaveBalanceKey'])
+              || request.resource.data.leaveBalanceKey == 'daysOff'
+            )
+            && (
+              !request.resource.data.keys().hasAny(['leaveBalanceKeys'])
+              || (
+                request.resource.data.get('leaveBalanceKeys', []).size() == 1
+                && 'daysOff' in request.resource.data.get('leaveBalanceKeys', [])
+              )
+            )
+          )
+          || (
+            !(request.resource.data.leaveType in ['casual', 'day_off'])
+            && !request.resource.data.keys().hasAny(['leaveBalanceKey'])
+            && !request.resource.data.keys().hasAny(['leaveBalanceKeys'])
+          )
+        )
+        && request.resource.data.numberOfDays > 0
+        && request.resource.data.reason is string
+        && request.resource.data.reason.size() > 0
+        && (
+          !request.resource.data.keys().hasAny(['workHandoverTo'])
+          || (
+            request.resource.data.workHandoverTo is string
+            && request.resource.data.workHandoverTo.size() > 0
+          )
+        )
+        && request.resource.data.startDate is timestamp
+        && request.resource.data.endDate is timestamp
+        && request.resource.data.endDate >= request.resource.data.startDate
+        && request.resource.data.keys().hasOnly([
+          'userId', 'employeeId', 'employeeName', 'department', 'locationId', 'jobTitle',
+          'managerId', 'leaveType', 'startDate', 'endDate', 'numberOfDays',
+          'reason', 'attachmentUrl', 'workHandoverTo', 'status', 'submittedAt', 'isRead',
+          'managerIds', 'managerNames', 'managerApprovalIndex',
+          'managerApprovalTotal', 'managerApprovalTrail',
+          'deductsLeaveBalance', 'leaveBalanceKey', 'leaveBalanceKeys',
+          'requiresFullDaySalaryDeduction', 'autoApproved',
+          'autoApprovedOverridden', 'autoApprovalOverrideReason',
+          'approvalHistory', 'requiresCeoApproval', 'ceoId', 'ceoName',
+          'ceoApprovalViaManagerChain',
+          'originalLeaveType', 'probationConverted', 'requiresHrApproval',
+          'convertToAnnual',
+          'reviewedAt', 'reviewedBy', 'reviewerName', 'reviewerComment',
+          'daysOffInCurrentPeriod', 'currentPeriodKey', 'currentPeriodRange',
+          'teamLeaderId', 'teamLeaderName', 'hasTeamLeader',
+          'reconciledAt', 'reconciledBy'
+        ]);
+      allow create: if isAuth() && isActive() && isHR()
+        && request.resource.data.get('directHrGrant', false) == true
+        && request.resource.data.get('grantedBy', '') == uid()
+        && request.resource.data.userId != uid()
+        && request.resource.data.status == 'approved'
+        && request.resource.data.leaveType in [
+          'sick', 'casual', 'day_off', 'unpaid', 'exam', 'paternity', 'remote'
+        ]
+        && request.resource.data.numberOfDays > 0
+        && request.resource.data.startDate is timestamp
+        && request.resource.data.endDate is timestamp
+        && request.resource.data.endDate >= request.resource.data.startDate
+        && request.resource.data.keys().hasOnly([
+          'userId', 'employeeId', 'employeeName', 'department', 'locationId',
+          'jobTitle',
+          'managerId', 'leaveType', 'startDate', 'endDate', 'numberOfDays',
+          'reason', 'attachmentUrl', 'workHandoverTo', 'status', 'submittedAt',
+          'isRead', 'reviewedAt', 'reviewedBy', 'reviewerName',
+          'managerIds', 'managerNames', 'managerApprovalIndex',
+          'managerApprovalTotal', 'managerApprovalTrail',
+          'deductsLeaveBalance', 'leaveBalanceKey', 'leaveBalanceKeys',
+          'requiresFullDaySalaryDeduction', 'requiresCeoApproval',
+          'requiresHrApproval', 'directHrGrant', 'grantedBy',
+          'grantedByName', 'approvalHistory', 'convertToAnnual',
+          'daysOffInCurrentPeriod', 'currentPeriodKey', 'currentPeriodRange'
+        ]);
+      allow update: if isAuth() && isActive() && (
+        (
+          isOwner(resource.data.userId)
+          && resource.data.status in [
+            'pending', 'pending_hr', 'pending_manager', 'pending_ceo'
+          ]
+          && request.resource.data.status == 'cancelled'
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'status', 'cancelledAt', 'cancelledBy'
+          ])
+          && request.resource.data.cancelledBy == uid()
+        ) ||
+        leaveHrDirectEdit() ||
+        leaveHrReview() ||
+        leaveManagerReview() ||
+        leaveCeoReview()
+      );
+      allow delete: if isAuth() && isActive() && (isHR() || canActAsApprovalManager());
+    }
+
+    match /permissions/{permissionId} {
+      allow read: if isAuth() && isActive() && (
+        isOwner(resource.data.userId) ||
+        isMyManager(resource.data.managerId) ||
+        uid() in resource.data.get('managerIds', []) ||
+        resource.data.get('managerId', '') == employeeCode() ||
+        employeeCode() in resource.data.get('managerIds', []) ||
+        employeeCode() in resource.data.get('managerCodes', []) ||
+        resource.data.get('teamLeaderId', '') == uid() ||
+        isAssignedTeamLeaderForUser(resource.data.userId) ||
+        isHR() ||
+        isCompanyExecutive()
+      );
+      allow create: if isAuth() && isActive()
+        && (
+          isValidSelfCreate()
+          || isHR()
+          || isAssignedManagerForUser(request.resource.data.userId)
+        )
+        && request.resource.data.status in ['pending_manager', 'pending_hr']
+        && request.resource.data.managerIds is list
+        && hasValidAssignedApprovalManagers(request.resource.data.userId)
+        && (
+          (
+            request.resource.data.status == 'pending_hr'
+            && request.resource.data.managerIds is list
+            && (request.resource.data.managerId == '' || request.resource.data.managerId == null || request.resource.data.managerIds.size() >= 0)
+            && request.resource.data.managerApprovalIndex == 0
+          )
+          || (
+            request.resource.data.managerIds is list
+            && request.resource.data.managerIds.size() > 0
+            && request.resource.data.managerId == request.resource.data.managerIds[0]
+            && request.resource.data.managerApprovalIndex == 0
+          )
+        )
+        && request.resource.data.permissionType in [
+          'early_leave', 'late_arrival', 'mid_shift_exit'
+        ]
+        && request.resource.data.durationMinutes >= 60
+        && request.resource.data.durationMinutes <= 240
+        && permissionDeductionValuesValid()
+        && request.resource.data.keys().hasAll([
+          'userId', 'employeeId', 'employeeName', 'department',
+          'permissionType', 'requestDate', 'status'
+        ]);
+      allow create: if isAuth() && isActive() && isHR()
+        && request.resource.data.get('directHrGrant', false) == true
+        && request.resource.data.get('grantedBy', '') == uid()
+        && request.resource.data.userId != uid()
+        && request.resource.data.status == 'approved'
+        && request.resource.data.permissionType in [
+          'early_leave', 'late_arrival', 'mid_shift_exit'
+        ]
+        && request.resource.data.durationMinutes >= 60
+        && request.resource.data.durationMinutes <= 240
+        && request.resource.data.keys().hasOnly([
+          'userId', 'employeeId', 'employeeName', 'department', 'locationId', 'jobTitle',
+          'managerId', 'permissionType', 'requestDate', 'expectedTime',
+          'requestDateTimestamp', 'expectedTimestamp', 'durationMinutes',
+          'reason', 'status', 'isExceedingQuota', 'isDeductible',
+          'isSubmittedAfterWorkStart', 'salaryDeductionFraction',
+          'salaryDeductionAmount', 'salaryCurrency', 'salaryDeductionCode',
+          'salaryDeductionLabel', 'salaryDeductionApprovalStatus', 'monthKey',
+          'submittedAt', 'isRead', 'reviewedAt', 'reviewedBy', 'reviewerName',
+          'managerIds', 'managerNames', 'managerApprovalIndex',
+          'managerApprovalTotal', 'managerApprovalTrail', 'requiresHrApproval',
+          'directHrGrant', 'grantedBy', 'grantedByName', 'approvalHistory'
+        ]);
+      allow update: if isAuth() && isActive() && (
+        (
+          isOwner(resource.data.userId)
+          && resource.data.status in ['pending_hr', 'pending_manager']
+          && request.resource.data.status == 'cancelled'
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'status', 'cancelledAt', 'cancelledBy'
+          ])
+          && request.resource.data.cancelledBy == uid()
+        ) ||
+        permissionHrDirectEdit() ||
+        permissionHrReview() ||
+        permissionManagerReview()
+      );
+      allow delete: if isAuth() && isActive() && (isHR() || canActAsApprovalManager());
+    }
+
+    match /resignations/{resignationId} {
+      allow read: if isAuth() && isActive() && (
+        isOwner(resource.data.userId)
+        || isMyManager(resource.data.managerId)
+        || resource.data.get('managerId', '') == uid()
+        || resource.data.get('managerId', '') == employeeCode()
+        || uid() in resource.data.get('managerIds', [])
+        || employeeCode() in resource.data.get('managerIds', [])
+        || employeeCode() in resource.data.get('managerCodes', [])
+        || isHR()
+        || isCompanyExecutive()
+      );
+      allow create: if isAuth() && isActive()
+        && (
+          request.resource.data.userId == uid()
+          || isHR()
+          || isAssignedManagerForUser(request.resource.data.userId)
+        )
+        && request.resource.data.reason is string
+        && request.resource.data.reason.size() > 0
+        && request.resource.data.resignationDate is timestamp
+        && request.resource.data.managerIds is list
+        && request.resource.data.keys().hasAll([
+          'userId', 'employeeId', 'employeeName', 'department', 'reason',
+          'resignationDate', 'status'
+        ]);
+      allow update: if isAuth() && isActive() && (
+        // Employee cancels their own pending resignation
+        (
+          isOwner(resource.data.userId)
+          && resource.data.status in ['pending_manager', 'pending_hr']
+          && request.resource.data.status == 'cancelled'
+          && request.resource.data.cancelledBy == uid()
+          && request.resource.data.cancelledAt == request.time
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'status', 'cancelledAt', 'cancelledBy'
+          ])
+        )
+        // Employee links clearance request or updates clearance status
+        || (
+          isOwner(resource.data.userId)
+          && resource.data.status in ['pending_manager', 'pending_hr']
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'clearanceRequestId', 'clearanceStatus'
+          ])
+        )
+        // Manager reviews a pending_manager resignation
+        || (
+          resource.data.status == 'pending_manager'
+          && isCurrentApprovalManager()
+          && request.resource.data.status in [
+            'pending_manager', 'pending_hr', 'rejected'
+          ]
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'status', 'managerId', 'managerName', 'managerApprovalIndex',
+            'managerApprovalTrail', 'reviewedBy', 'reviewerName',
+            'reviewerComment', 'reviewedAt', 'isRead',
+            'clearanceRequestId', 'clearanceStatus'
+          ])
+          && request.resource.data.reviewedBy == uid()
+        )
+        // HR manager gives final decision on pending_hr resignation
+        || (
+          resource.data.status == 'pending_hr'
+          && isHRManagerRole()
+          && uid() != resource.data.userId
+          && request.resource.data.status in ['approved', 'rejected']
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'status', 'clearanceStatus', 'managerId', 'managerName', 'managerApprovalIndex',
+            'managerApprovalTrail', 'reviewedBy', 'reviewerName',
+            'reviewerComment', 'reviewedAt', 'isRead', 'clearanceRequestId'
+          ])
+          && request.resource.data.reviewedBy == uid()
+        )
+        || resignationHrDirectEdit()
+      );
+      allow delete: if isAuth() && isActive() && isHRManagerRole();
+    }
+
+    match /clearances/{clearanceId} {
+      allow read: if isAuth() && isActive() && (
+        isOwner(resource.data.userId)
+        || isHR()
+        || isCompanyExecutive()
+        || isCurrentApprovalManager()
+        || uid() == resource.data.get('currentApproverId', '')
+        || employeeCode() == resource.data.get('currentApproverId', '')
+      );
+      allow create: if isAuth() && isActive() && (
+        isOwner(request.resource.data.userId)
+        || isHR()
+        || isSuperAdmin()
+      );
+      allow update: if isAuth() && isActive() && (
+        isOwner(resource.data.userId)
+        || isHR()
+        || isSuperAdmin()
+        || isCurrentApprovalManager()
+        || uid() == resource.data.get('currentApproverId', '')
+        || employeeCode() == resource.data.get('currentApproverId', '')
+      );
+      allow delete: if isAuth() && isActive() && isSuperAdmin();
+    }
+
+    match /administrativeRequests/{requestId} {
+      allow read: if isAuth() && isActive() && (
+        isOwner(resource.data.userId)
+        || resource.data.managerId == uid()
+        || uid() in resource.data.get('managerIds', [])
+        || resource.data.get('managerId', '') == employeeCode()
+        || employeeCode() in resource.data.get('managerIds', [])
+        || employeeCode() in resource.data.get('managerCodes', [])
+        || isAssignedTeamLeaderForUser(resource.data.userId)
+        || isHR()
+        || isCompanyExecutive()
+      );
+      allow create: if isAuth() && isActive()
+        && (
+          request.resource.data.userId == uid()
+          || isHR()
+          || isAssignedManagerForUser(request.resource.data.userId)
+        )
+        && request.resource.data.category in [
+          'personal_data', 'employment_status', 'software_subscription',
+          'equipment', 'field_mission', 'other', 'company_expenses',
+          'financial', 'reimbursement', 'custody', 'payment', 'other_expense'
+        ]
+        && (
+          (request.resource.data.notes is string && request.resource.data.notes.size() > 0)
+          || (request.resource.data.get('reason', '') is string && request.resource.data.get('reason', '').size() > 0)
+          || (request.resource.data.get('businessReason', '') is string && request.resource.data.get('businessReason', '').size() > 0)
+        )
+        && request.resource.data.managerIds is list
+        && (
+          hasValidAssignedApprovalManagers(request.resource.data.userId)
+          || isHR()
+          || request.resource.data.managerIds.size() == 0
+        )
+        && request.resource.data.status in ['pending_manager', 'pending_hr', 'pending_ceo', 'pending']
+        && (
+          (
+            request.resource.data.managerIds.size() > 0
+            && request.resource.data.status in ['pending_manager', 'pending_ceo']
+            && request.resource.data.managerId
+              == request.resource.data.managerIds[0]
+          )
+          || (
+            request.resource.data.managerIds.size() == 0
+            && request.resource.data.status in ['pending_hr', 'pending']
+            && (request.resource.data.managerId == '' || request.resource.data.managerId == null)
+          )
+          || isHR()
+        )
+        && request.resource.data.keys().hasOnly([
+          'userId', 'employeeId', 'employeeName', 'department', 'category',
+          'categoryLabel', 'notes', 'reason', 'attachmentUrl', 'status', 'managerId',
+          'managerIds', 'managerNames', 'managerApprovalIndex',
+          'managerApprovalTotal', 'managerApprovalTrail', 'approvalHistory',
+          'submittedAt', 'isRead', 'locationId', 'missionDate', 'startTime',
+          'endTime', 'siteName', 'requiresReturnToOffice',
+          'requiresCheckout', 'requiresCeoApproval',
+          'routeKind', 'approvalRouteVersion', 'approvalRoute',
+          'currentApprovalIndex', 'currentApproverId', 'currentApproverName',
+          'managerName', 'createdByHrId', 'createdByHrName', 'operationId',
+          'missionGroupId', 'missionGroupSize', 'amount', 'currency',
+          'businessReason', 'executionDate', 'requestType', 'attachments',
+          'operationalStatus', 'approvalPlan', 'requesterUid', 'costBearing',
+          'version', 'approvalPolicyVersion'
+        ]);
+      allow update: if isAuth() && isActive() && (
+        (
+          isOwner(resource.data.userId)
+          && resource.data.status in [
+            'pending_manager', 'pending_ceo', 'pending_hr', 'pending'
+          ]
+          && request.resource.data.status == 'cancelled'
+          && request.resource.data.cancelledBy == uid()
+          && request.resource.data.cancelledAt == request.time
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'status', 'cancelledAt', 'cancelledBy'
+          ])
+        )
+        || (
+          resource.data.status == 'pending_ceo'
+          && isCompanyCeo()
+          && (
+            resource.data.get('ceoId', '') == uid()
+            || resource.data.get('ceoId', '') == employeeCode()
+          )
+          && request.resource.data.status in ['pending_hr', 'rejected']
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'status', 'approvalHistory', 'reviewedBy', 'reviewerName',
+            'reviewerComment', 'reviewedAt', 'finalApproverId',
+            'finalApproverName', 'finalApprovalAt'
+          ])
+          && request.resource.data.reviewedBy == uid()
+        )
+        || (
+          resource.data.status in ['pending_hr', 'pending']
+          && (isHR() || isCompanyExecutive())
+          && request.resource.data.status in ['approved', 'rejected', 'paid', 'closed']
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'status', 'managerId', 'managerName', 'managerApprovalIndex',
+            'managerApprovalTrail', 'approvalHistory', 'reviewedBy',
+            'reviewerName', 'reviewerComment', 'reviewedAt',
+            'finalApproverId', 'finalApproverName', 'finalApprovalAt',
+            'isRead', 'operationalStatus', 'notes'
+          ])
+          && request.resource.data.reviewedBy == uid()
+        )
+        || (
+          resource.data.status == 'pending_manager'
+          && isCurrentApprovalManager()
+          && sequentialManagerDecision()
+          && request.resource.data.status in [
+            'pending_manager', 'pending_ceo', 'pending_hr', 'rejected'
+          ]
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'status', 'managerId', 'managerName', 'managerApprovalIndex',
+            'managerApprovalTrail', 'approvalHistory', 'reviewedBy',
+            'reviewerName', 'reviewerComment', 'reviewedAt',
+            'finalApproverId', 'finalApproverName', 'finalApprovalAt',
+            'isRead', 'ceoId', 'ceoName'
+          ])
+          && request.resource.data.reviewedBy == uid()
+        )
+        || administrativeRequestHrDirectEdit()
+      );
+      allow delete: if isAuth() && isActive() && (isHR() || canActAsApprovalManager());
+    }
+
+    match /companyOsAuditEvents/{eventId} {
+      allow read: if isAuth() && isActive() && (
+        isHR() || isCompanyExecutive() || isWorkspaceItManager() || resource.data.actorUid == uid()
+      );
+      allow create: if isAuth() && isActive() && (
+        isHR() || isCompanyExecutive() || isSuperAdmin() || request.resource.data.actorUid == uid()
+      );
+      allow update, delete: if false;
+    }
+
+    match /fieldAssignments/{assignmentId} {
+      allow read: if isAuth() && isActive() && (
+        isOwner(resource.data.userId) ||
+        isAssignedManagerForUser(resource.data.userId) ||
+        isHR()
+      );
+      allow create: if isAuth() && isActive() && isHR()
+        && request.resource.data.keys().hasOnly([
+          'userId', 'employeeId', 'employeeName', 'department', 'locationId',
+          'date', 'startTime', 'endTime', 'reason', 'siteName',
+          'requiresReturnToOffice', 'requiresCheckout', 'status', 'createdBy',
+          'createdAt'
+        ])
+        && request.resource.data.status == 'active'
+        && request.resource.data.createdBy == uid();
+      allow update, delete: if isAuth() && isActive() && isHR();
+    }
+
+    match /advances/{advanceId} {
+      allow read: if isAuth() && isActive() && (
+        isOwner(resource.data.userId) ||
+        isMyManager(resource.data.managerId) ||
+        uid() in resource.data.get('managerIds', []) ||
+        resource.data.get('managerId', '') == employeeCode() ||
+        employeeCode() in resource.data.get('managerIds', []) ||
+        employeeCode() in resource.data.get('managerCodes', []) ||
+        isHR() ||
+        isCompanyExecutive()
+      );
+      allow create: if isAuth() && isActive()
+        && (
+          isValidSelfCreate()
+          || isHR()
+          || isAssignedManagerForUser(request.resource.data.userId)
+        )
+        && request.resource.data.status in ['pending_hr', 'pending_manager']
+        && request.resource.data.amount > 0
+        && request.resource.data.keys().hasOnly([
+          'userId', 'employeeId', 'employeeName', 'department', 'locationId',
+          'managerId', 'amount', 'reason', 'status', 'monthKey', 'submittedAt',
+          'isRead', 'managerIds', 'managerNames', 'managerApprovalIndex',
+          'managerApprovalTotal', 'managerApprovalTrail',
+          'jobTitle', 'approvalHistory', 'reviewedAt', 'reviewedBy',
+          'reviewerComment', 'reviewerName'
+        ]);
+      allow update: if isAuth() && isActive() && (
+        (
+          isOwner(resource.data.userId)
+          && resource.data.status in ['pending_hr', 'pending_manager']
+          && request.resource.data.status == 'cancelled'
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
+        ) ||
+        advanceHrDirectEdit() ||
+        advanceHrReview() ||
+        advanceManagerReview() ||
+        isSuperAdmin()
+      );
+      allow delete: if isAuth() && isActive() && isHR();
+    }
+
+    match /suggestions/{suggestionId} {
+      allow read: if isAuth() && isActive() && (
+        isOwner(resource.data.userId) || canReviewSuggestions()
+      );
+      allow create: if isAuth() && isActive()
+        && request.resource.data.userId == uid()
+        && request.resource.data.get('isAnonymous', false) is bool
+        && (
+          (
+            request.resource.data.get('isAnonymous', false) == false
+            && request.resource.data.employeeId == userDoc().get('employeeId', '')
+            && request.resource.data.employeeName == userDoc().get('displayName', '')
+            && request.resource.data.department == userDoc().get('department', '')
+          )
+          ||
+          (
+            request.resource.data.get('isAnonymous', false) == true
+            && request.resource.data.employeeId == ''
+            && request.resource.data.employeeName == 'مجهول'
+            && request.resource.data.department == ''
+          )
+        )
+        && request.resource.data.status == 'new'
+        && request.resource.data.title is string
+        && request.resource.data.title.size() >= 3
+        && request.resource.data.body is string
+        && request.resource.data.body.size() >= 10
+        && request.resource.data.keys().hasOnly([
+          'userId', 'employeeId', 'employeeName', 'department',
+          'title', 'body', 'status', 'submittedAt'
+        ]);
+      allow update: if isAuth() && isActive() && canReviewSuggestions()
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['status', 'reviewedBy', 'reviewedAt'])
+        && request.resource.data.status == 'reviewed'
+        && request.resource.data.reviewedBy == uid();
+      allow delete: if isAuth() && isActive() && isSuperAdmin();
+    }
+
+    match /complaints/{complaintId} {
+      allow read: if isAuth() && isActive() && (
+        isOwner(resource.data.userId) || isHR()
+      );
+      allow create: if isAuth() && isActive()
+        && (
+          request.resource.data.userId == uid()
+          || isHR()
+          || isAssignedManagerForUser(request.resource.data.userId)
+        )
+        && request.resource.data.status == 'new'
+        && request.resource.data.title is string
+        && request.resource.data.title.size() >= 1
+        && request.resource.data.body is string
+        && request.resource.data.body.size() >= 1
+        && request.resource.data.keys().hasOnly([
+          'userId', 'employeeId', 'employeeName', 'department',
+          'title', 'body', 'attachmentUrl', 'isAnonymous', 'status',
+          'submittedAt'
+        ]);
+      allow update: if isAuth() && isActive() && (
+        (
+          isOwner(resource.data.userId)
+          && resource.data.status == 'new'
+          && request.resource.data.status == 'cancelled'
+          && request.resource.data.cancelledBy == uid()
+          && request.resource.data.cancelledAt == request.time
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'status', 'cancelledAt', 'cancelledBy'
+          ])
+        )
+        || (
+          isHR()
+          && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['status', 'reviewedBy', 'reviewedAt'])
+          && request.resource.data.status in ['reviewed', 'closed']
+          && request.resource.data.reviewedBy == uid()
+        )
+      );
+      allow delete: if isAuth() && isActive() && isSuperAdmin();
+    }
+
+    match /tasks/{taskId} {
+      allow read: if isAuth() && isActive() && (
+        isOwner(resource.data.assigneeId) ||
+        isMyManager(resource.data.managerId) ||
+        uid() in resource.data.get('managerIds', []) ||
+        isAssignedTeamLeaderForUser(resource.data.assigneeId) ||
+        isHR()
+      );
+      allow create: if isAuth() && isActive()
+        && taskCreateKeys()
+        && taskCreateValues();
+      allow update: if isAuth() && isActive() && (
+        taskOwnerStatusUpdate() ||
+        taskReviewerUpdate() ||
+        isSuperAdmin()
+      );
+      allow delete: if isAuth() && isActive() && isSuperAdmin();
+    }
+
+    match /kpiTemplates/{templateId} {
+      allow read: if isAuth() && isActive();
+      allow create: if isAuth() && isActive()
+        && isManagerOrAbove()
+        && kpiTemplateCreateKeys()
+        && request.resource.data.createdBy == uid()
+        && request.resource.data.title is string
+        && request.resource.data.title.size() >= 3
+        && request.resource.data.department is string
+        && request.resource.data.department.size() > 0
+        && request.resource.data.get('companyLocationId', '') is string
+        && request.resource.data.get('companyName', '') is string
+        && request.resource.data.metrics is list
+        && request.resource.data.metrics.size() > 0
+        && request.resource.data.metrics.size() <= 12
+        && request.resource.data.isActive == true;
+      allow update: if isAuth() && isActive() && kpiTemplateManagedUpdate();
+      allow delete: if isAuth() && isActive() && (
+        isHR() || (isManagerRole() && resource.data.createdBy == uid())
+      );
+    }
+
+    match /employeeKpis/{employeeKpiId} {
+      allow read: if isAuth() && isActive() && (
+        isOwner(resource.data.userId) ||
+        isMyManager(resource.data.managerId) ||
+        uid() in resource.data.get('managerIds', []) ||
+        resource.data.get('teamLeaderId', '') == uid() ||
+        isAssignedTeamLeaderForUser(resource.data.userId) ||
+        isHR()
+      );
+      allow create: if isAuth() && isActive()
+        && employeeKpiCreateKeys()
+        && employeeKpiCreateValues();
+      allow update: if isAuth() && isActive() && (
+        employeeKpiProgressUpdate() ||
+        employeeKpiLifecycleUpdate() ||
+        isSuperAdmin()
+      );
+      allow delete: if isAuth() && isActive() && (
+        isHR() || (
+          isManagerRole() && (
+            resource.data.managerId == uid()
+            || uid() in resource.data.get('managerIds', [])
+          )
+        )
+      );
+    }
+
+    match /salesKpiSummaries/{summaryId} {
+      allow read: if isAuth() && isActive();
+      allow write: if false;
+    }
+
+    match /salesKpiSnapshots/{snapshotId} {
+      allow read: if isAuth() && isActive();
+      allow write: if isAuth() && isActive() && isHR();
+    }
+
+    match /salesIdentityMappings/{mappingId} {
+      allow read: if isAuth() && isActive();
+      allow create, update, delete: if isAuth() && isActive() && isHR();
+    }
+
+    match /salesKpiSettings/{settingsId} {
+      allow read: if isAuth() && isActive() && isManagerOrAbove();
+      allow create, update: if isAuth() && isActive() && isHR()
+        && settingsId == 'current'
+        && request.resource.data.keys().hasOnly([
+          'periodKey', 'startDate', 'endDate', 'company', 'sales',
+          'teleSales', 'entryChannel', 'salesTarget', 'teleTarget',
+          'idEmp', 'cumulative', 'updatedBy', 'updatedAt'
+        ])
+        && request.resource.data.periodKey is string
+        && request.resource.data.startDate is string
+        && request.resource.data.endDate is string
+        && request.resource.data.company is string
+        && (request.resource.data.sales is string
+          || request.resource.data.sales is list)
+        && (request.resource.data.teleSales is string
+          || request.resource.data.teleSales is list)
+        && request.resource.data.entryChannel is string
+        && request.resource.data.salesTarget is number
+        && request.resource.data.teleTarget is number
+        && request.resource.data.idEmp is string
+        && request.resource.data.cumulative is bool
+        && request.resource.data.updatedBy == uid();
+      allow delete: if false;
+    }
+
+    match /productivityScores/{scoreId} {
+      allow read: if isAuth() && isActive() && (
+        isOwner(resource.data.userId) ||
+        isMyManager(resource.data.get('managerId', '')) ||
+        uid() in resource.data.get('managerIds', []) ||
+        isAssignedManagerForUser(resource.data.userId) ||
+        isAssignedTeamLeaderForUser(resource.data.userId) ||
+        isHR()
+      );
+      allow create, update: if isAuth() && isActive() && (
+        isHR() ||
+        isAssignedManagerForUser(request.resource.data.userId) ||
+        isAssignedTeamLeaderForUser(request.resource.data.userId) ||
+        request.resource.data.get('managerId', '') == uid() ||
+        uid() in request.resource.data.get('managerIds', [])
+      );
+      allow delete: if isAuth() && isActive() && isSuperAdmin();
+    }
+
+    match /warningsRewards/{recordId} {
+      allow read: if isAuth() && isActive() && (
+        isOwner(resource.data.userId) ||
+        isMyManager(resource.data.managerId) ||
+        uid() in resource.data.get('managerIds', []) ||
+        isAssignedManagerForUser(resource.data.userId) ||
+        isHR()
+      );
+      allow create: if isAuth() && isActive()
+        && warningRewardKeys()
+        && warningRewardCreateValues();
+      allow update: if isAuth() && isActive() && (
+        warningRewardManagerUpdate() ||
+        warningRewardOwnerAcknowledge() ||
+        isSuperAdmin()
+      );
+      allow delete: if isAuth() && isActive() && isSuperAdmin();
+    }
+
+    match /payrollRuns/{payrollId} {
+      allow read: if isAuth() && isActive() && (
+        isOwner(resource.data.userId) || isHR()
+      );
+      allow create, update: if isAuth() && isActive() && isHR()
+        && payrollRunKeys()
+        && payrollRunValues();
+      allow delete: if isAuth() && isActive() && isSuperAdmin();
+    }
+
+    match /payrollCycles/{cycleKey} {
+      allow read: if isAuth() && isActive() && isHR();
+      allow write: if false;
+    }
+
+    match /performance/{performanceId} {
+      allow read: if isAuth() && isActive() && (
+        isOwner(resource.data.userId) ||
+        isMyManager(resource.data.managerId) ||
+        isAssignedManagerForUser(resource.data.userId) ||
+        isAssignedTeamLeaderForUser(resource.data.userId) ||
+        isHR()
+      );
+      allow create, update: if isAuth() && isActive()
+        && (
+          isHR() ||
+          (
+            isManagerRole()
+            && request.resource.data.managerId == uid()
+            && isAssignedManagerForUser(request.resource.data.userId)
+          )
+        );
+      allow delete: if isAuth() && isActive() && isHR();
+    }
+
+    match /notifications/{userId}/items/{notificationId} {
+      allow read: if isAuth() && isActive() && uid() == userId;
+      allow create: if isAuth() && isActive()
+        && notificationKeysAreValid()
+        && canCreateNotificationFor(userId);
+      allow update: if isAuth() && isActive() && uid() == userId
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isRead'])
+        && request.resource.data.isRead is bool;
+      allow delete: if isAuth() && isActive() && uid() == userId;
+    }
+
+    match /announcements/{announcementId} {
+      allow read: if isAuth() && isActive();
+      allow create: if isAuth() && isActive()
+        && (isHR() || scopedAnnouncementCreate());
+      allow update, delete: if isAuth() && isActive() && isHR();
+    }
+
+    match /polls/{pollId} {
+      allow read: if isAuth() && isActive() && (
+        isHR() || uid() in resource.data.get('targetUserIds', [])
+      );
+      allow create: if isAuth() && isActive() && isHR()
+        && request.resource.data.keys().hasOnly([
+          'pollId', 'title', 'description', 'options', 'targetUserIds',
+          'status', 'createdBy', 'createdAt'
+        ])
+        && request.resource.data.pollId == pollId
+        && request.resource.data.createdBy == uid()
+        && request.resource.data.title is string
+        && request.resource.data.title.size() > 0
+        && request.resource.data.options is list
+        && request.resource.data.options.size() >= 2
+        && request.resource.data.targetUserIds is list
+        && request.resource.data.targetUserIds.size() > 0
+        && request.resource.data.status == 'open';
+      allow update: if isAuth() && isActive() && isHR()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
+        && request.resource.data.status == 'closed';
+      allow delete: if isAuth() && isActive() && isHR();
+
+      match /votes/{voterId} {
+        allow read: if isAuth() && isActive() && (isHR() || uid() == voterId);
+        allow create: if isAuth() && isActive()
+          && uid() == voterId
+          && uid() in get(/databases/$(database)/documents/polls/$(pollId)).data.get('targetUserIds', [])
+          && get(/databases/$(database)/documents/polls/$(pollId)).data.status == 'open'
+          && request.resource.data.keys().hasOnly(['userId', 'optionId', 'votedAt'])
+          && request.resource.data.userId == uid()
+          && request.resource.data.optionId is string;
+        allow update, delete: if false;
+      }
+    }
+
+    match /auditLogs/{auditId} {
+      allow read: if isAuth() && isActive() && isHR();
+      allow create: if isAuth() && isActive() && request.resource.data.actorId == uid();
+      allow update, delete: if false;
+    }
+
+    match /workspaceResources/{resourceId} {
+      allow read: if isAuth() && isActive() && (
+        isWorkspaceController()
+        || uid() in resource.data.get('managerIds', [])
+        || hasWorkspaceGrant(resourceId)
+      );
+      allow create, update: if isAuth() && isActive() && isSuperAdmin()
+        && request.resource.data.keys().hasAll([
+          'name', 'type', 'provider', 'managerIds', 'isActive',
+          'createdBy', 'updatedBy', 'updatedAt'
+        ])
+        && request.resource.data.type in ['sheet', 'folder', 'file']
+        && request.resource.data.provider == 'google_workspace'
+        && request.resource.data.updatedBy == uid();
+      allow delete: if false;
+    }
+
+    // Google file IDs are deliberately separated from employee-visible
+    // metadata. Only the system administrator can read or write them.
+    match /workspaceResourceSecrets/{resourceId} {
+      allow read, create, update: if isAuth() && isActive() && isSuperAdmin();
+      allow delete: if false;
+    }
+
+    match /workspaceSchemaProfiles/{profileId} {
+      allow read: if isAuth() && isActive();
+      allow create, update: if isAuth() && isActive() && isSuperAdmin()
+        && request.resource.data.keys().hasAll([
+          'name', 'headerRow', 'keyColumn', 'columnMappings',
+          'editableFields', 'updatedBy', 'updatedAt'
+        ])
+        && request.resource.data.headerRow is int
+        && request.resource.data.headerRow >= 1
+        && request.resource.data.updatedBy == uid();
+      allow delete: if false;
+    }
+
+    match /workspaceAccessTemplates/{templateId} {
+      allow read: if isAuth() && isActive();
+      allow create, update: if isAuth() && isActive() && isSuperAdmin()
+        && request.resource.data.keys().hasAll([
+          'name', 'scopeType', 'permission', 'isActive',
+          'createdBy', 'createdAt', 'updatedBy', 'updatedAt'
+        ])
+        && request.resource.data.scopeType in [
+          'employee', 'department', 'manager_team'
+        ]
+        && request.resource.data.permission in ['view', 'download', 'edit']
+        && request.resource.data.updatedBy == uid();
+      allow delete: if false;
+    }
+
+    match /workspaceAccessGrants/{grantId} {
+      allow read: if isAuth() && isActive() && (
+        isWorkspaceController()
+        || resource.data.userId == uid()
+        || resource.data.grantedBy == uid()
+      );
+      allow create: if isAuth() && isActive()
+        && request.resource.data.keys().hasAll([
+          'resourceId', 'resourceName', 'userId', 'permission',
+          'grantedBy', 'isActive', 'createdAt', 'updatedAt'
+        ])
+        && grantId == request.resource.data.resourceId + '_' + request.resource.data.userId
+        && request.resource.data.permission in ['view', 'download', 'edit']
+        && request.resource.data.grantedBy == uid()
+        && request.resource.data.isActive == true
+        && (
+          isWorkspaceController()
+          || (
+            managesWorkspaceResource(request.resource.data.resourceId)
+            && isAssignedManagerForUser(request.resource.data.userId)
+          )
+        );
+      allow update: if isAuth() && isActive()
+        && request.resource.data.resourceId == resource.data.resourceId
+        && request.resource.data.userId == resource.data.userId
+        && request.resource.data.grantedBy == resource.data.grantedBy
+        && (
+          isWorkspaceController()
+          || (
+            resource.data.grantedBy == uid()
+            && managesWorkspaceResource(resource.data.resourceId)
+          )
+        )
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'resourceName', 'userName', 'employeeCode', 'department',
+          'permission', 'grantedByName', 'managerId', 'isActive',
+          'createdAt', 'revokedBy', 'revokedAt', 'updatedAt'
+        ])
+        && request.resource.data.permission in ['view', 'download', 'edit'];
+      allow delete: if false;
+    }
+
+    match /workspaceAuditLogs/{auditId} {
+      allow read: if isAuth() && isActive() && (
+        isWorkspaceController() || isHR() || (isManagerRole() && resource.data.managerId == uid())
+      );
+      allow create: if isAuth() && isActive()
+        && request.resource.data.actorId == uid()
+        && request.resource.data.action in [
+          'resource_created', 'resource_updated', 'access_granted',
+          'access_revoked', 'resource_viewed', 'resource_edited',
+          'resource_downloaded', 'file_uploaded', 'folder_created',
+          'file_renamed', 'file_deleted'
+        ];
+      allow update, delete: if false;
+    }
+
+    match /manual_deductions/{deductionId} {
+      allow read: if isAuth() && isActive() && (
+        isOwner(resource.data.userId) ||
+        isHR() ||
+        isMyManager(resource.data.managerId) ||
+        uid() in resource.data.get('managerIds', []) ||
+        resource.data.createdBy == uid()
+      );
+      allow create: if isAuth() && isActive() && (isHR() || isManagerRole());
+      allow update: if isAuth() && isActive() && (
+        isHR() ||
+        isMyManager(resource.data.managerId) ||
+        uid() in resource.data.get('managerIds', [])
+      );
+      allow delete: if isAuth() && isActive() && isSuperAdmin();
+    }
+
+    match /it_tickets/{ticketId} {
+      allow read: if isAuth() && isActive() && (
+        resource.data.requesterUid == uid() || isHR() || isWorkspaceItManager()
+      );
+      allow create: if isAuth() && isActive() && request.resource.data.requesterUid == uid();
+      allow update, delete: if isAuth() && isActive() && (
+        resource.data.requesterUid == uid() || isHR() || isWorkspaceItManager()
+      );
+    }
+
+    match /knowledge_articles/{articleId} {
+      allow read: if isAuth() && isActive();
+      allow write: if isAuth() && isActive() && (isHR() || isWorkspaceItManager());
+    }
+
+    match /company_assets/{assetId} {
+      allow read: if isAuth() && isActive();
+      allow write: if isAuth() && isActive() && (isHR() || isWorkspaceItManager());
+    }
+
+    match /software_licenses/{licenseId} {
+      allow read: if isAuth() && isActive();
+      allow write: if isAuth() && isActive() && (isHR() || isWorkspaceItManager());
+    }
+
+    match /conversations/{conversationId} {
+      allow read: if isAuth() && isActive() && (
+        uid() in resource.data.get('participantUserIds', []) ||
+        uid() in resource.data.get('memberUserIds', []) ||
+        isHR() || isGeneralManager()
+      );
+      allow create: if isAuth() && isActive() && (
+        uid() in request.resource.data.get('participantUserIds', []) ||
+        uid() in request.resource.data.get('memberUserIds', []) ||
+        isHR()
+      );
+      allow update: if isAuth() && isActive() && (
+        uid() in resource.data.get('participantUserIds', []) ||
+        uid() in resource.data.get('memberUserIds', []) ||
+        isHR()
+      );
+
+      match /messages/{messageId} {
+        allow read: if isAuth() && isActive() && (
+          uid() in get(/databases/$(database)/documents/conversations/$(conversationId)).data.get('participantUserIds', []) ||
+          uid() in get(/databases/$(database)/documents/conversations/$(conversationId)).data.get('memberUserIds', []) ||
+          isHR() || isGeneralManager()
+        );
+        allow create: if isAuth() && isActive() && (
+          request.resource.data.senderUserId == uid()
+        );
+        allow update, delete: if isAuth() && isActive() && (
+          resource.data.senderUserId == uid() || isHR()
+        );
+      }
+    }
+  }
+}

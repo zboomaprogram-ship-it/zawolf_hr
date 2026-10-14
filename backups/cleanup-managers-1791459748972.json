@@ -1,0 +1,3638 @@
+[
+  {
+    "uid": "9ClFPZLwLOO6eOS4Ag6r3685cWl2",
+    "code": "KM-1401",
+    "name": "جمال الدين محسن محمد",
+    "before": {
+      "baseMonthlySalary": {
+        "integerValue": "0"
+      },
+      "workSchedule": {
+        "mapValue": {
+          "fields": {
+            "workDays": {
+              "arrayValue": {
+                "values": [
+                  {
+                    "integerValue": "6"
+                  },
+                  {
+                    "integerValue": "7"
+                  },
+                  {
+                    "integerValue": "1"
+                  },
+                  {
+                    "integerValue": "2"
+                  },
+                  {
+                    "integerValue": "3"
+                  },
+                  {
+                    "integerValue": "4"
+                  }
+                ]
+              }
+            },
+            "startTime": {
+              "stringValue": "09:00"
+            },
+            "endTime": {
+              "stringValue": "17:00"
+            }
+          }
+        }
+      },
+      "displayName": {
+        "stringValue": "جمال الدين محسن محمد"
+      },
+      "salaryCurrency": {
+        "stringValue": "EGP"
+      },
+      "employeeId": {
+        "stringValue": "KM-1401"
+      },
+      "isActive": {
+        "booleanValue": true
+      },
+      "uid": {
+        "stringValue": "9ClFPZLwLOO6eOS4Ag6r3685cWl2"
+      },
+      "notificationTokens": {
+        "arrayValue": {}
+      },
+      "position": {
+        "stringValue": "SEO"
+      },
+      "department": {
+        "stringValue": "Kitchen Marketing"
+      },
+      "createdAt": {
+        "timestampValue": "2026-07-07T14:07:23.800Z"
+      },
+      "locationName": {
+        "stringValue": "SEG"
+      },
+      "locationId": {
+        "stringValue": "SEG"
+      },
+      "emailUpdatedAt": {
+        "timestampValue": "2026-07-09T08:42:11.391Z"
+      },
+      "previousEmail": {
+        "stringValue": "km-1401@zawolf.com"
+      },
+      "email": {
+        "stringValue": "gamal.mohsen@seginvest.com"
+      },
+      "passwordChangedAt": {
+        "timestampValue": "2026-07-18T14:04:43.719Z"
+      },
+      "leaveUsageBaseline": {
+        "mapValue": {
+          "fields": {
+            "importedAt": {
+              "timestampValue": "2026-07-20T13:00:03.626Z"
+            },
+            "totalUsed": {
+              "integerValue": "0"
+            },
+            "annualUsed": {
+              "integerValue": "0"
+            },
+            "source": {
+              "stringValue": "seg_leave_warning_import_2026"
+            },
+            "casualUsed": {
+              "integerValue": "0"
+            }
+          }
+        }
+      },
+      "role": {
+        "stringValue": "team_leader"
+      },
+      "teamLeaderName": {
+        "nullValue": null
+      },
+      "teamLeaderId": {
+        "nullValue": null
+      },
+      "leaveEntitlementQuota": {
+        "integerValue": "15"
+      },
+      "joinDate": {
+        "timestampValue": "2025-12-31T22:00:00Z"
+      },
+      "leaveEntitlementStatus": {
+        "stringValue": "eligible"
+      },
+      "hiringDateMigratedAt": {
+        "timestampValue": "2026-07-26T08:03:26.052Z"
+      },
+      "leaveEntitlementUpdatedAt": {
+        "timestampValue": "2026-07-27T08:19:21.654Z"
+      },
+      "leaveRenewedAt": {
+        "timestampValue": "2026-07-27T08:19:21.654Z"
+      },
+      "leaveEntitlementPeriodKey": {
+        "stringValue": "2026-06-30"
+      },
+      "leaveCarryOverDays": {
+        "integerValue": "0"
+      },
+      "leaveEligibleFrom": {
+        "timestampValue": "2026-06-30T00:00:00Z"
+      },
+      "registeredAttendanceDeviceLabel": {
+        "stringValue": "OPPO CPH2159"
+      },
+      "registeredAttendanceDeviceId": {
+        "stringValue": "android-install-6578408309ea4-67e055562e03b08569de659f0c95aa82"
+      },
+      "multiTreeMigrationVersion": {
+        "integerValue": "1"
+      },
+      "primaryOrganizationTreeId": {
+        "stringValue": "tree-1787646836276000"
+      },
+      "primaryOrganizationMembershipId": {
+        "stringValue": "tree-1787646836276000_9ClFPZLwLOO6eOS4Ag6r3685cWl2_department_1b3ffd80c84d07880460b8eb"
+      },
+      "lastAutoApprovedCasualLeaveId": {
+        "stringValue": "CUzGCePoDvbCR0Lxv0lA"
+      },
+      "permissionBalance": {
+        "mapValue": {
+          "fields": {
+            "lastResetMonth": {
+              "stringValue": "2026-09"
+            },
+            "usedThisMonth": {
+              "integerValue": "2"
+            },
+            "usedHoursThisMonth": {
+              "doubleValue": 5
+            }
+          }
+        }
+      },
+      "leaveBalance": {
+        "mapValue": {
+          "fields": {
+            "sick": {
+              "integerValue": "14"
+            },
+            "annual": {
+              "integerValue": "15"
+            },
+            "casual": {
+              "integerValue": "6"
+            },
+            "daysOff": {
+              "integerValue": "11"
+            }
+          }
+        }
+      },
+      "managerIds": {
+        "arrayValue": {
+          "values": [
+            {
+              "stringValue": "qDZAXfORAQfGaLvyoyIGSH71bbK2"
+            }
+          ]
+        }
+      },
+      "managerCodes": {
+        "arrayValue": {
+          "values": [
+            {
+              "stringValue": "MKT-600"
+            }
+          ]
+        }
+      },
+      "managerId": {
+        "stringValue": "qDZAXfORAQfGaLvyoyIGSH71bbK2"
+      },
+      "managerNames": {
+        "arrayValue": {
+          "values": [
+            {
+              "stringValue": "محمد منير جمال"
+            },
+            {
+              "stringValue": "اشرف عبد الرازق"
+            }
+          ]
+        }
+      },
+      "managerName": {
+        "stringValue": "اشرف عبد الرازق"
+      },
+      "unreadNotifications": {
+        "integerValue": "321"
+      },
+      "registeredAttendanceDeviceAt": {
+        "timestampValue": "2026-10-07T14:07:35.632Z"
+      },
+      "updatedAt": {
+        "timestampValue": "2026-10-07T14:07:35.632Z"
+      }
+    }
+  },
+  {
+    "uid": "BpKvaL9HsgWeHk7I8JodS83IF383",
+    "code": "KM-1405",
+    "name": "احمد رضا المسلماني",
+    "before": {
+      "role": {
+        "stringValue": "employee"
+      },
+      "baseMonthlySalary": {
+        "integerValue": "0"
+      },
+      "displayName": {
+        "stringValue": "احمد رضا المسلماني"
+      },
+      "salaryCurrency": {
+        "stringValue": "EGP"
+      },
+      "employeeId": {
+        "stringValue": "KM-1405"
+      },
+      "isActive": {
+        "booleanValue": true
+      },
+      "uid": {
+        "stringValue": "BpKvaL9HsgWeHk7I8JodS83IF383"
+      },
+      "notificationTokens": {
+        "arrayValue": {}
+      },
+      "position": {
+        "stringValue": "Media Buyer"
+      },
+      "department": {
+        "stringValue": "Kitchen Marketing"
+      },
+      "createdAt": {
+        "timestampValue": "2026-07-07T14:07:24.032Z"
+      },
+      "locationName": {
+        "stringValue": "SEG"
+      },
+      "locationId": {
+        "stringValue": "SEG"
+      },
+      "emailUpdatedAt": {
+        "timestampValue": "2026-07-09T08:41:58.541Z"
+      },
+      "previousEmail": {
+        "stringValue": "km-1405@zawolf.com"
+      },
+      "email": {
+        "stringValue": "ahmed.moslimany@seginvest.com"
+      },
+      "leaveUsageBaseline": {
+        "mapValue": {
+          "fields": {
+            "importedAt": {
+              "timestampValue": "2026-07-20T13:00:06.125Z"
+            },
+            "totalUsed": {
+              "integerValue": "0"
+            },
+            "annualUsed": {
+              "integerValue": "0"
+            },
+            "source": {
+              "stringValue": "seg_leave_warning_import_2026"
+            },
+            "casualUsed": {
+              "integerValue": "0"
+            }
+          }
+        }
+      },
+      "registeredAttendanceDeviceLabel": {
+        "stringValue": "samsung SM-A057F"
+      },
+      "registeredAttendanceDeviceId": {
+        "stringValue": "android-install-6573125e1440f-58bec57470e4a3b605e88b8546adb5c3"
+      },
+      "leaveEntitlementQuota": {
+        "integerValue": "15"
+      },
+      "joinDate": {
+        "timestampValue": "2025-12-31T22:00:00Z"
+      },
+      "leaveEntitlementStatus": {
+        "stringValue": "eligible"
+      },
+      "hiringDateMigratedAt": {
+        "timestampValue": "2026-07-26T08:03:26.052Z"
+      },
+      "leaveEntitlementUpdatedAt": {
+        "timestampValue": "2026-07-27T08:19:21.654Z"
+      },
+      "leaveRenewedAt": {
+        "timestampValue": "2026-07-27T08:19:21.654Z"
+      },
+      "leaveEntitlementPeriodKey": {
+        "stringValue": "2026-06-30"
+      },
+      "leaveCarryOverDays": {
+        "integerValue": "0"
+      },
+      "leaveEligibleFrom": {
+        "timestampValue": "2026-06-30T00:00:00Z"
+      },
+      "salesAnalyticsEnabled": {
+        "booleanValue": false
+      },
+      "teamLeaderName": {
+        "nullValue": null
+      },
+      "organizationOrder": {
+        "integerValue": "999"
+      },
+      "salesAnalyticsAgentKey": {
+        "stringValue": ""
+      },
+      "salesAnalyticsRole": {
+        "stringValue": ""
+      },
+      "managerId": {
+        "stringValue": "qDZAXfORAQfGaLvyoyIGSH71bbK2"
+      },
+      "managerName": {
+        "stringValue": "اشرف عبد الرازق"
+      },
+      "organizationDivisionId": {
+        "stringValue": "administration"
+      },
+      "teamLeaderId": {
+        "nullValue": null
+      },
+      "organizationLevel": {
+        "stringValue": "employee"
+      },
+      "salesAnalyticsCompany": {
+        "stringValue": ""
+      },
+      "permissionBalance": {
+        "mapValue": {
+          "fields": {
+            "usedThisMonth": {
+              "integerValue": "0"
+            },
+            "lastResetMonth": {
+              "stringValue": "2026-09"
+            },
+            "usedHoursThisMonth": {
+              "integerValue": "0"
+            }
+          }
+        }
+      },
+      "multiTreeMigrationVersion": {
+        "integerValue": "1"
+      },
+      "primaryOrganizationTreeId": {
+        "stringValue": "tree-1787646836276000"
+      },
+      "primaryOrganizationMembershipId": {
+        "stringValue": "tree-1787646836276000_BpKvaL9HsgWeHk7I8JodS83IF383_department_1b3ffd80c84d07880460b8eb"
+      },
+      "excludeFromAttendanceReports": {
+        "booleanValue": false
+      },
+      "workSchedule": {
+        "mapValue": {
+          "fields": {
+            "startTime": {
+              "stringValue": "09:30"
+            },
+            "endTime": {
+              "stringValue": "17:00"
+            },
+            "workDays": {
+              "arrayValue": {
+                "values": [
+                  {
+                    "integerValue": "6"
+                  },
+                  {
+                    "integerValue": "7"
+                  },
+                  {
+                    "integerValue": "1"
+                  },
+                  {
+                    "integerValue": "2"
+                  },
+                  {
+                    "integerValue": "3"
+                  },
+                  {
+                    "integerValue": "4"
+                  }
+                ]
+              }
+            }
+          }
+        }
+      },
+      "leaveBalance": {
+        "mapValue": {
+          "fields": {
+            "casual": {
+              "integerValue": "7"
+            },
+            "sick": {
+              "integerValue": "14"
+            },
+            "annual": {
+              "integerValue": "15"
+            },
+            "daysOff": {
+              "integerValue": "12"
+            }
+          }
+        }
+      },
+      "managerIds": {
+        "arrayValue": {
+          "values": [
+            {
+              "stringValue": "qDZAXfORAQfGaLvyoyIGSH71bbK2"
+            },
+            {
+              "stringValue": "qDZAXfORAQfGaLvyoyIGSH71bbK2"
+            }
+          ]
+        }
+      },
+      "managerCodes": {
+        "arrayValue": {
+          "values": [
+            {
+              "stringValue": "MKT-600"
+            },
+            {
+              "stringValue": "MKT-600"
+            }
+          ]
+        }
+      },
+      "managerNames": {
+        "arrayValue": {
+          "values": [
+            {
+              "stringValue": "اشرف عبد الرازق"
+            },
+            {
+              "stringValue": "اشرف عبد الرازق"
+            }
+          ]
+        }
+      },
+      "registeredAttendanceDeviceAt": {
+        "timestampValue": "2026-10-07T14:00:13.472Z"
+      },
+      "updatedAt": {
+        "timestampValue": "2026-10-07T14:00:13.472Z"
+      },
+      "unreadNotifications": {
+        "integerValue": "297"
+      }
+    }
+  },
+  {
+    "uid": "DEaXB1EenPf1zclSX8kVT9mHVqg2",
+    "code": "KM-1412",
+    "name": "اسراء عماد مصطفي مصطفي",
+    "before": {
+      "role": {
+        "stringValue": "employee"
+      },
+      "baseMonthlySalary": {
+        "integerValue": "0"
+      },
+      "workSchedule": {
+        "mapValue": {
+          "fields": {
+            "workDays": {
+              "arrayValue": {
+                "values": [
+                  {
+                    "integerValue": "6"
+                  },
+                  {
+                    "integerValue": "7"
+                  },
+                  {
+                    "integerValue": "1"
+                  },
+                  {
+                    "integerValue": "2"
+                  },
+                  {
+                    "integerValue": "3"
+                  },
+                  {
+                    "integerValue": "4"
+                  }
+                ]
+              }
+            },
+            "startTime": {
+              "stringValue": "09:00"
+            },
+            "endTime": {
+              "stringValue": "17:00"
+            }
+          }
+        }
+      },
+      "displayName": {
+        "stringValue": "اسراء عماد مصطفي مصطفي"
+      },
+      "salaryCurrency": {
+        "stringValue": "EGP"
+      },
+      "employeeId": {
+        "stringValue": "KM-1412"
+      },
+      "uid": {
+        "stringValue": "DEaXB1EenPf1zclSX8kVT9mHVqg2"
+      },
+      "notificationTokens": {
+        "arrayValue": {}
+      },
+      "position": {
+        "stringValue": "SEO Specialist"
+      },
+      "department": {
+        "stringValue": "Kitchen Marketing"
+      },
+      "email": {
+        "stringValue": "km-1412@zawolf.com"
+      },
+      "createdAt": {
+        "timestampValue": "2026-07-07T14:07:24.937Z"
+      },
+      "locationName": {
+        "stringValue": "SEG"
+      },
+      "locationId": {
+        "stringValue": "SEG"
+      },
+      "registeredAttendanceDeviceLabel": {
+        "stringValue": "TECNO TECNO KL7"
+      },
+      "registeredAttendanceDeviceId": {
+        "stringValue": "android-install-656f143aa62d6-6356e2d05405b5a139c5fb8d67a62a99"
+      },
+      "registeredAttendanceDeviceAt": {
+        "timestampValue": "2026-07-19T06:54:44.935Z"
+      },
+      "leaveUsageBaseline": {
+        "mapValue": {
+          "fields": {
+            "importedAt": {
+              "timestampValue": "2026-07-20T13:00:15.082Z"
+            },
+            "totalUsed": {
+              "integerValue": "2"
+            },
+            "annualUsed": {
+              "integerValue": "2"
+            },
+            "source": {
+              "stringValue": "seg_leave_warning_import_2026"
+            },
+            "casualUsed": {
+              "integerValue": "0"
+            }
+          }
+        }
+      },
+      "teamLeaderName": {
+        "stringValue": "جمال الدين محسن محمد"
+      },
+      "teamLeaderId": {
+        "stringValue": "9ClFPZLwLOO6eOS4Ag6r3685cWl2"
+      },
+      "permissionBalance": {
+        "mapValue": {
+          "fields": {
+            "usedThisMonth": {
+              "integerValue": "0"
+            },
+            "lastResetMonth": {
+              "stringValue": "2026-08"
+            },
+            "usedHoursThisMonth": {
+              "integerValue": "0"
+            }
+          }
+        }
+      },
+      "leaveEntitlementQuota": {
+        "integerValue": "15"
+      },
+      "joinDate": {
+        "timestampValue": "2025-12-31T22:00:00Z"
+      },
+      "leaveEntitlementStatus": {
+        "stringValue": "eligible"
+      },
+      "hiringDateMigratedAt": {
+        "timestampValue": "2026-07-26T08:03:26.052Z"
+      },
+      "leaveEntitlementUpdatedAt": {
+        "timestampValue": "2026-07-27T08:19:21.654Z"
+      },
+      "leaveRenewedAt": {
+        "timestampValue": "2026-07-27T08:19:21.654Z"
+      },
+      "leaveEntitlementPeriodKey": {
+        "stringValue": "2026-06-30"
+      },
+      "leaveBalance": {
+        "mapValue": {
+          "fields": {
+            "casual": {
+              "integerValue": "7"
+            },
+            "sick": {
+              "integerValue": "14"
+            },
+            "annual": {
+              "integerValue": "15"
+            },
+            "daysOff": {
+              "integerValue": "15"
+            }
+          }
+        }
+      },
+      "leaveCarryOverDays": {
+        "integerValue": "0"
+      },
+      "leaveEligibleFrom": {
+        "timestampValue": "2026-06-30T00:00:00Z"
+      },
+      "unreadNotifications": {
+        "integerValue": "76"
+      },
+      "deactivationReason": {
+        "stringValue": "اخلاء يوم الخميس 6/8/2026"
+      },
+      "deactivatedAt": {
+        "timestampValue": "2026-08-10T07:10:47.764Z"
+      },
+      "isActive": {
+        "booleanValue": false
+      },
+      "deactivatedByName": {
+        "stringValue": "محمد منير الجمل"
+      },
+      "deactivatedBy": {
+        "stringValue": "6qhpYQzP51b1PpOYAwZ5bOF0DI53"
+      },
+      "updatedAt": {
+        "timestampValue": "2026-08-10T07:10:47.764Z"
+      },
+      "managerIds": {
+        "arrayValue": {
+          "values": [
+            {
+              "stringValue": "qDZAXfORAQfGaLvyoyIGSH71bbK2"
+            }
+          ]
+        }
+      },
+      "managerCodes": {
+        "arrayValue": {
+          "values": [
+            {
+              "stringValue": "MKT-600"
+            }
+          ]
+        }
+      },
+      "managerId": {
+        "stringValue": "qDZAXfORAQfGaLvyoyIGSH71bbK2"
+      },
+      "managerNames": {
+        "arrayValue": {
+          "values": [
+            {
+              "stringValue": "محمد منير جمال"
+            },
+            {
+              "stringValue": "اشرف عبد الرازق"
+            }
+          ]
+        }
+      },
+      "managerName": {
+        "stringValue": "اشرف عبد الرازق"
+      }
+    }
+  },
+  {
+    "uid": "GpFqweQVOTOIxaz4iu1ElTFP8up1",
+    "code": "0004",
+    "name": "ceo",
+    "before": {
+      "role": {
+        "stringValue": "super_admin"
+      },
+      "locationName": {
+        "stringValue": "seg"
+      },
+      "baseMonthlySalary": {
+        "doubleValue": 10000000000
+      },
+      "workSchedule": {
+        "mapValue": {
+          "fields": {
+            "workDays": {
+              "arrayValue": {
+                "values": [
+                  {
+                    "integerValue": "6"
+                  },
+                  {
+                    "integerValue": "7"
+                  },
+                  {
+                    "integerValue": "1"
+                  },
+                  {
+                    "integerValue": "2"
+                  },
+                  {
+                    "integerValue": "3"
+                  },
+                  {
+                    "integerValue": "4"
+                  }
+                ]
+              }
+            },
+            "startTime": {
+              "stringValue": "09:00"
+            },
+            "endTime": {
+              "stringValue": "17:00"
+            }
+          }
+        }
+      },
+      "displayName": {
+        "stringValue": "ceo"
+      },
+      "salaryCurrency": {
+        "stringValue": "EGP"
+      },
+      "employeeId": {
+        "stringValue": "0004"
+      },
+      "managerId": {
+        "stringValue": "T035XLomPCTFSFcceOaKuiHPltH2"
+      },
+      "managerName": {
+        "stringValue": "manger1"
+      },
+      "locationId": {
+        "stringValue": "JBZd2wE0OsuyYee46cmr"
+      },
+      "notificationTokens": {
+        "arrayValue": {}
+      },
+      "position": {
+        "stringValue": "ceo"
+      },
+      "department": {
+        "stringValue": "ceo"
+      },
+      "createdAt": {
+        "timestampValue": "2026-07-04T09:01:35.387Z"
+      },
+      "email": {
+        "stringValue": "ceo@zawolf.com"
+      },
+      "permissionBalance": {
+        "mapValue": {
+          "fields": {
+            "usedThisMonth": {
+              "integerValue": "0"
+            },
+            "lastResetMonth": {
+              "stringValue": "2026-08"
+            },
+            "usedHoursThisMonth": {
+              "integerValue": "0"
+            }
+          }
+        }
+      },
+      "leaveEntitlementQuota": {
+        "integerValue": "15"
+      },
+      "joinDate": {
+        "timestampValue": "2025-12-31T22:00:00Z"
+      },
+      "leaveEntitlementStatus": {
+        "stringValue": "eligible"
+      },
+      "hiringDateMigratedAt": {
+        "timestampValue": "2026-07-26T08:03:26.052Z"
+      },
+      "leaveEntitlementUpdatedAt": {
+        "timestampValue": "2026-07-27T08:19:21.654Z"
+      },
+      "leaveRenewedAt": {
+        "timestampValue": "2026-07-27T08:19:21.654Z"
+      },
+      "leaveEntitlementPeriodKey": {
+        "stringValue": "2026-06-30"
+      },
+      "leaveBalance": {
+        "mapValue": {
+          "fields": {
+            "casual": {
+              "integerValue": "7"
+            },
+            "sick": {
+              "integerValue": "15"
+            },
+            "annual": {
+              "integerValue": "15"
+            },
+            "daysOff": {
+              "integerValue": "15"
+            }
+          }
+        }
+      },
+      "leaveCarryOverDays": {
+        "integerValue": "0"
+      },
+      "leaveEligibleFrom": {
+        "timestampValue": "2026-06-30T00:00:00Z"
+      },
+      "deactivationReason": {
+        "stringValue": "jjjj"
+      },
+      "deactivatedAt": {
+        "timestampValue": "2026-08-13T09:08:49.528Z"
+      },
+      "isActive": {
+        "booleanValue": false
+      },
+      "deactivatedByName": {
+        "stringValue": "سامي المتولي المتولي"
+      },
+      "deactivatedBy": {
+        "stringValue": "lna3lpI4slboaUykFw3JlNTNjLN2"
+      },
+      "updatedAt": {
+        "timestampValue": "2026-08-13T09:08:49.528Z"
+      },
+      "unreadNotifications": {
+        "integerValue": "677"
+      }
+    }
+  },
+  {
+    "uid": "HrEWCBYhGuYHict8xDfEBnau4wV2",
+    "code": "KM-1402",
+    "name": "ايه عادل البنداري",
+    "before": {
+      "role": {
+        "stringValue": "employee"
+      },
+      "baseMonthlySalary": {
+        "integerValue": "0"
+      },
+      "workSchedule": {
+        "mapValue": {
+          "fields": {
+            "workDays": {
+              "arrayValue": {
+                "values": [
+                  {
+                    "integerValue": "6"
+                  },
+                  {
+                    "integerValue": "7"
+                  },
+                  {
+                    "integerValue": "1"
+                  },
+                  {
+                    "integerValue": "2"
+                  },
+                  {
+                    "integerValue": "3"
+                  },
+                  {
+                    "integerValue": "4"
+                  }
+                ]
+              }
+            },
+            "startTime": {
+              "stringValue": "09:00"
+            },
+            "endTime": {
+              "stringValue": "17:00"
+            }
+          }
+        }
+      },
+      "displayName": {
+        "stringValue": "ايه عادل البنداري"
+      },
+      "salaryCurrency": {
+        "stringValue": "EGP"
+      },
+      "employeeId": {
+        "stringValue": "KM-1402"
+      },
+      "uid": {
+        "stringValue": "HrEWCBYhGuYHict8xDfEBnau4wV2"
+      },
+      "notificationTokens": {
+        "arrayValue": {}
+      },
+      "position": {
+        "stringValue": "SEO"
+      },
+      "department": {
+        "stringValue": "Kitchen Marketing"
+      },
+      "createdAt": {
+        "timestampValue": "2026-07-07T14:07:23.727Z"
+      },
+      "locationName": {
+        "stringValue": "SEG"
+      },
+      "locationId": {
+        "stringValue": "SEG"
+      },
+      "emailUpdatedAt": {
+        "timestampValue": "2026-07-09T08:42:13.016Z"
+      },
+      "previousEmail": {
+        "stringValue": "km-1402@zawolf.com"
+      },
+      "email": {
+        "stringValue": "aya.albandari@seginvest.com"
+      },
+      "leaveUsageBaseline": {
+        "mapValue": {
+          "fields": {
+            "importedAt": {
+              "timestampValue": "2026-07-20T13:00:04.130Z"
+            },
+            "totalUsed": {
+              "integerValue": "10"
+            },
+            "annualUsed": {
+              "integerValue": "10"
+            },
+            "source": {
+              "stringValue": "seg_leave_warning_import_2026"
+            },
+            "casualUsed": {
+              "integerValue": "0"
+            }
+          }
+        }
+      },
+      "teamLeaderName": {
+        "stringValue": "جمال الدين محسن محمد"
+      },
+      "teamLeaderId": {
+        "stringValue": "9ClFPZLwLOO6eOS4Ag6r3685cWl2"
+      },
+      "permissionBalance": {
+        "mapValue": {
+          "fields": {
+            "usedThisMonth": {
+              "integerValue": "0"
+            },
+            "usedHoursThisMonth": {
+              "integerValue": "0"
+            },
+            "lastResetMonth": {
+              "stringValue": "2026-08"
+            }
+          }
+        }
+      },
+      "leaveEntitlementQuota": {
+        "integerValue": "15"
+      },
+      "joinDate": {
+        "timestampValue": "2025-12-31T22:00:00Z"
+      },
+      "leaveEntitlementStatus": {
+        "stringValue": "eligible"
+      },
+      "hiringDateMigratedAt": {
+        "timestampValue": "2026-07-26T08:03:26.052Z"
+      },
+      "leaveEntitlementUpdatedAt": {
+        "timestampValue": "2026-07-27T08:19:21.654Z"
+      },
+      "leaveRenewedAt": {
+        "timestampValue": "2026-07-27T08:19:21.654Z"
+      },
+      "leaveEntitlementPeriodKey": {
+        "stringValue": "2026-06-30"
+      },
+      "leaveBalance": {
+        "mapValue": {
+          "fields": {
+            "casual": {
+              "integerValue": "7"
+            },
+            "sick": {
+              "integerValue": "14"
+            },
+            "annual": {
+              "integerValue": "15"
+            },
+            "daysOff": {
+              "integerValue": "15"
+            }
+          }
+        }
+      },
+      "leaveCarryOverDays": {
+        "integerValue": "0"
+      },
+      "leaveEligibleFrom": {
+        "timestampValue": "2026-06-30T00:00:00Z"
+      },
+      "unreadNotifications": {
+        "integerValue": "56"
+      },
+      "deactivationReason": {
+        "stringValue": "مشكله في كلاود الفون"
+      },
+      "deactivatedAt": {
+        "timestampValue": "2026-08-02T09:40:45.797Z"
+      },
+      "isActive": {
+        "booleanValue": false
+      },
+      "deactivatedByName": {
+        "stringValue": "سامي المتولي المتولي"
+      },
+      "deactivatedBy": {
+        "stringValue": "lna3lpI4slboaUykFw3JlNTNjLN2"
+      },
+      "updatedAt": {
+        "timestampValue": "2026-08-02T09:40:45.797Z"
+      },
+      "managerIds": {
+        "arrayValue": {
+          "values": [
+            {
+              "stringValue": "qDZAXfORAQfGaLvyoyIGSH71bbK2"
+            }
+          ]
+        }
+      },
+      "managerCodes": {
+        "arrayValue": {
+          "values": [
+            {
+              "stringValue": "MKT-600"
+            }
+          ]
+        }
+      },
+      "managerId": {
+        "stringValue": "qDZAXfORAQfGaLvyoyIGSH71bbK2"
+      },
+      "managerNames": {
+        "arrayValue": {
+          "values": [
+            {
+              "stringValue": "محمد منير جمال"
+            },
+            {
+              "stringValue": "اشرف عبد الرازق"
+            }
+          ]
+        }
+      },
+      "managerName": {
+        "stringValue": "اشرف عبد الرازق"
+      }
+    }
+  },
+  {
+    "uid": "ICBjgpsjXkdD5CLqDs9bDxymIZN2",
+    "code": "KM-1400",
+    "name": "فريد يوسف",
+    "before": {
+      "role": {
+        "stringValue": "manager"
+      },
+      "baseMonthlySalary": {
+        "integerValue": "0"
+      },
+      "workSchedule": {
+        "mapValue": {
+          "fields": {
+            "workDays": {
+              "arrayValue": {
+                "values": [
+                  {
+                    "integerValue": "6"
+                  },
+                  {
+                    "integerValue": "7"
+                  },
+                  {
+                    "integerValue": "1"
+                  },
+                  {
+                    "integerValue": "2"
+                  },
+                  {
+                    "integerValue": "3"
+                  },
+                  {
+                    "integerValue": "4"
+                  }
+                ]
+              }
+            },
+            "startTime": {
+              "stringValue": "09:00"
+            },
+            "endTime": {
+              "stringValue": "17:00"
+            }
+          }
+        }
+      },
+      "displayName": {
+        "stringValue": "فريد يوسف"
+      },
+      "salaryCurrency": {
+        "stringValue": "EGP"
+      },
+      "employeeId": {
+        "stringValue": "KM-1400"
+      },
+      "isActive": {
+        "booleanValue": true
+      },
+      "uid": {
+        "stringValue": "ICBjgpsjXkdD5CLqDs9bDxymIZN2"
+      },
+      "notificationTokens": {
+        "arrayValue": {}
+      },
+      "position": {
+        "stringValue": "Creative Director"
+      },
+      "department": {
+        "stringValue": "Kitchen Marketing"
+      },
+      "createdAt": {
+        "timestampValue": "2026-07-07T14:07:23.412Z"
+      },
+      "locationName": {
+        "stringValue": "SEG"
+      },
+      "locationId": {
+        "stringValue": "SEG"
+      },
+      "emailUpdatedAt": {
+        "timestampValue": "2026-07-09T08:41:47.181Z"
+      },
+      "previousEmail": {
+        "stringValue": "km-1400@zawolf.com"
+      },
+      "email": {
+        "stringValue": "farid.mohamed@seginvest.com"
+      },
+      "registeredAttendanceDeviceLabel": {
+        "stringValue": "samsung SM-S928B"
+      },
+      "registeredAttendanceDeviceId": {
+        "stringValue": "android-install-656f668cc66ee-272584cf15d547c26ed151a853fca028"
+      },
+      "leaveUsageBaseline": {
+        "mapValue": {
+          "fields": {
+            "importedAt": {
+              "timestampValue": "2026-07-20T13:00:03.349Z"
+            },
+            "totalUsed": {
+              "integerValue": "2"
+            },
+            "annualUsed": {
+              "integerValue": "2"
+            },
+            "source": {
+              "stringValue": "seg_leave_warning_import_2026"
+            },
+            "casualUsed": {
+              "integerValue": "0"
+            }
+          }
+        }
+      },
+      "leaveEntitlementQuota": {
+        "integerValue": "15"
+      },
+      "joinDate": {
+        "timestampValue": "2025-12-31T22:00:00Z"
+      },
+      "leaveEntitlementStatus": {
+        "stringValue": "eligible"
+      },
+      "hiringDateMigratedAt": {
+        "timestampValue": "2026-07-26T08:03:26.052Z"
+      },
+      "leaveEntitlementUpdatedAt": {
+        "timestampValue": "2026-07-27T08:19:21.654Z"
+      },
+      "leaveRenewedAt": {
+        "timestampValue": "2026-07-27T08:19:21.654Z"
+      },
+      "leaveEntitlementPeriodKey": {
+        "stringValue": "2026-06-30"
+      },
+      "leaveCarryOverDays": {
+        "integerValue": "0"
+      },
+      "leaveEligibleFrom": {
+        "timestampValue": "2026-06-30T00:00:00Z"
+      },
+      "lastAutoApprovedCasualLeaveId": {
+        "stringValue": "ebQBVHukH1XXSLDEVzDM"
+      },
+      "multiTreeMigrationVersion": {
+        "integerValue": "1"
+      },
+      "primaryOrganizationTreeId": {
+        "stringValue": "tree-1787646836276000"
+      },
+      "primaryOrganizationMembershipId": {
+        "stringValue": "tree-1787646836276000_ICBjgpsjXkdD5CLqDs9bDxymIZN2_department_1b3ffd80c84d07880460b8eb"
+      },
+      "permissionBalance": {
+        "mapValue": {
+          "fields": {
+            "lastResetMonth": {
+              "stringValue": "2026-09"
+            },
+            "usedThisMonth": {
+              "integerValue": "2"
+            },
+            "usedHoursThisMonth": {
+              "integerValue": "5"
+            }
+          }
+        }
+      },
+      "leaveBalance": {
+        "mapValue": {
+          "fields": {
+            "sick": {
+              "integerValue": "14"
+            },
+            "annual": {
+              "integerValue": "15"
+            },
+            "casual": {
+              "integerValue": "6"
+            },
+            "daysOff": {
+              "integerValue": "13"
+            }
+          }
+        }
+      },
+      "managerIds": {
+        "arrayValue": {
+          "values": [
+            {
+              "stringValue": "qDZAXfORAQfGaLvyoyIGSH71bbK2"
+            }
+          ]
+        }
+      },
+      "managerCodes": {
+        "arrayValue": {
+          "values": [
+            {
+              "stringValue": "MKT-600"
+            }
+          ]
+        }
+      },
+      "managerId": {
+        "stringValue": "qDZAXfORAQfGaLvyoyIGSH71bbK2"
+      },
+      "managerNames": {
+        "arrayValue": {
+          "values": [
+            {
+              "stringValue": "محمد منير جمال"
+            },
+            {
+              "stringValue": "اشرف عبد الرازق"
+            }
+          ]
+        }
+      },
+      "managerName": {
+        "stringValue": "اشرف عبد الرازق"
+      },
+      "unreadNotifications": {
+        "integerValue": "214"
+      },
+      "registeredAttendanceDeviceAt": {
+        "timestampValue": "2026-10-08T05:44:51.500Z"
+      },
+      "updatedAt": {
+        "timestampValue": "2026-10-08T05:44:51.500Z"
+      }
+    }
+  },
+  {
+    "uid": "P2yUfFnd1mb3gNZmuKHkINguFDF3",
+    "code": "KM-1404",
+    "name": "محمود علام محمود محمد",
+    "before": {
+      "role": {
+        "stringValue": "employee"
+      },
+      "baseMonthlySalary": {
+        "integerValue": "0"
+      },
+      "workSchedule": {
+        "mapValue": {
+          "fields": {
+            "workDays": {
+              "arrayValue": {
+                "values": [
+                  {
+                    "integerValue": "6"
+                  },
+                  {
+                    "integerValue": "7"
+                  },
+                  {
+                    "integerValue": "1"
+                  },
+                  {
+                    "integerValue": "2"
+                  },
+                  {
+                    "integerValue": "3"
+                  },
+                  {
+                    "integerValue": "4"
+                  }
+                ]
+              }
+            },
+            "startTime": {
+              "stringValue": "09:00"
+            },
+            "endTime": {
+              "stringValue": "17:00"
+            }
+          }
+        }
+      },
+      "displayName": {
+        "stringValue": "محمود علام محمود محمد"
+      },
+      "salaryCurrency": {
+        "stringValue": "EGP"
+      },
+      "employeeId": {
+        "stringValue": "KM-1404"
+      },
+      "isActive": {
+        "booleanValue": true
+      },
+      "uid": {
+        "stringValue": "P2yUfFnd1mb3gNZmuKHkINguFDF3"
+      },
+      "notificationTokens": {
+        "arrayValue": {}
+      },
+      "position": {
+        "stringValue": "Media Buyer"
+      },
+      "department": {
+        "stringValue": "Kitchen Marketing"
+      },
+      "createdAt": {
+        "timestampValue": "2026-07-07T14:07:23.958Z"
+      },
+      "locationName": {
+        "stringValue": "SEG"
+      },
+      "locationId": {
+        "stringValue": "SEG"
+      },
+      "emailUpdatedAt": {
+        "timestampValue": "2026-07-09T08:41:31.468Z"
+      },
+      "previousEmail": {
+        "stringValue": "km-1404@zawolf.com"
+      },
+      "email": {
+        "stringValue": "mahmoud.allam@seginvest.com"
+      },
+      "leaveUsageBaseline": {
+        "mapValue": {
+          "fields": {
+            "importedAt": {
+              "timestampValue": "2026-07-20T13:00:05.577Z"
+            },
+            "totalUsed": {
+              "integerValue": "6"
+            },
+            "annualUsed": {
+              "integerValue": "4"
+            },
+            "source": {
+              "stringValue": "seg_leave_warning_import_2026"
+            },
+            "casualUsed": {
+              "integerValue": "2"
+            }
+          }
+        }
+      },
+      "registeredAttendanceDeviceLabel": {
+        "stringValue": "samsung SM-A556E"
+      },
+      "registeredAttendanceDeviceId": {
+        "stringValue": "android-install-6570b2748a3d7-4c87a2494f7c1c9e4854bc9c750210e8"
+      },
+      "leaveEntitlementQuota": {
+        "integerValue": "15"
+      },
+      "joinDate": {
+        "timestampValue": "2025-12-31T22:00:00Z"
+      },
+      "leaveEntitlementStatus": {
+        "stringValue": "eligible"
+      },
+      "hiringDateMigratedAt": {
+        "timestampValue": "2026-07-26T08:03:26.052Z"
+      },
+      "leaveEntitlementUpdatedAt": {
+        "timestampValue": "2026-07-27T08:19:21.654Z"
+      },
+      "leaveRenewedAt": {
+        "timestampValue": "2026-07-27T08:19:21.654Z"
+      },
+      "leaveEntitlementPeriodKey": {
+        "stringValue": "2026-06-30"
+      },
+      "leaveCarryOverDays": {
+        "integerValue": "0"
+      },
+      "leaveEligibleFrom": {
+        "timestampValue": "2026-06-30T00:00:00Z"
+      },
+      "salesAnalyticsEnabled": {
+        "booleanValue": false
+      },
+      "teamLeaderName": {
+        "nullValue": null
+      },
+      "organizationOrder": {
+        "integerValue": "999"
+      },
+      "salesAnalyticsAgentKey": {
+        "stringValue": ""
+      },
+      "salesAnalyticsRole": {
+        "stringValue": ""
+      },
+      "managerId": {
+        "stringValue": "qDZAXfORAQfGaLvyoyIGSH71bbK2"
+      },
+      "managerName": {
+        "stringValue": "اشرف عبد الرازق"
+      },
+      "organizationDivisionId": {
+        "stringValue": "administration"
+      },
+      "teamLeaderId": {
+        "nullValue": null
+      },
+      "organizationLevel": {
+        "stringValue": "employee"
+      },
+      "salesAnalyticsCompany": {
+        "stringValue": ""
+      },
+      "multiTreeMigrationVersion": {
+        "integerValue": "1"
+      },
+      "primaryOrganizationTreeId": {
+        "stringValue": "tree-1787646836276000"
+      },
+      "primaryOrganizationMembershipId": {
+        "stringValue": "tree-1787646836276000_P2yUfFnd1mb3gNZmuKHkINguFDF3_department_1b3ffd80c84d07880460b8eb"
+      },
+      "permissionBalance": {
+        "mapValue": {
+          "fields": {
+            "lastResetMonth": {
+              "stringValue": "2026-09"
+            },
+            "usedThisMonth": {
+              "integerValue": "2"
+            },
+            "usedHoursThisMonth": {
+              "doubleValue": 5
+            }
+          }
+        }
+      },
+      "lastAutoApprovedCasualLeaveId": {
+        "stringValue": "FtnOxzptcPgVUdrHh1R5"
+      },
+      "excludeFromAttendanceReports": {
+        "booleanValue": false
+      },
+      "managerIds": {
+        "arrayValue": {
+          "values": [
+            {
+              "stringValue": "qDZAXfORAQfGaLvyoyIGSH71bbK2"
+            },
+            {
+              "stringValue": "qDZAXfORAQfGaLvyoyIGSH71bbK2"
+            }
+          ]
+        }
+      },
+      "managerCodes": {
+        "arrayValue": {
+          "values": [
+            {
+              "stringValue": "MKT-600"
+            },
+            {
+              "stringValue": "MKT-600"
+            }
+          ]
+        }
+      },
+      "managerNames": {
+        "arrayValue": {
+          "values": [
+            {
+              "stringValue": "اشرف عبد الرازق"
+            },
+            {
+              "stringValue": "اشرف عبد الرازق"
+            }
+          ]
+        }
+      },
+      "registeredAttendanceDeviceAt": {
+        "timestampValue": "2026-10-08T06:50:16.911Z"
+      },
+      "updatedAt": {
+        "timestampValue": "2026-10-08T06:50:16.911Z"
+      },
+      "leaveBalance": {
+        "mapValue": {
+          "fields": {
+            "sick": {
+              "integerValue": "14"
+            },
+            "annual": {
+              "integerValue": "15"
+            },
+            "casual": {
+              "integerValue": "3"
+            },
+            "daysOff": {
+              "integerValue": "5"
+            }
+          }
+        }
+      },
+      "unreadNotifications": {
+        "integerValue": "320"
+      }
+    }
+  },
+  {
+    "uid": "Twb742HJQKg2zeIxU5vvRCKkNj72",
+    "code": "ACC-301",
+    "name": "حازم ايمن على سيد احمد الميناوى",
+    "before": {
+      "locationName": {
+        "stringValue": "SEG"
+      },
+      "role": {
+        "stringValue": "employee"
+      },
+      "baseMonthlySalary": {
+        "integerValue": "0"
+      },
+      "workSchedule": {
+        "mapValue": {
+          "fields": {
+            "workDays": {
+              "arrayValue": {
+                "values": [
+                  {
+                    "integerValue": "6"
+                  },
+                  {
+                    "integerValue": "7"
+                  },
+                  {
+                    "integerValue": "1"
+                  },
+                  {
+                    "integerValue": "2"
+                  },
+                  {
+                    "integerValue": "3"
+                  },
+                  {
+                    "integerValue": "4"
+                  }
+                ]
+              }
+            },
+            "startTime": {
+              "stringValue": "09:00"
+            },
+            "endTime": {
+              "stringValue": "17:00"
+            }
+          }
+        }
+      },
+      "displayName": {
+        "stringValue": "حازم ايمن على سيد احمد الميناوى"
+      },
+      "salaryCurrency": {
+        "stringValue": "EGP"
+      },
+      "employeeId": {
+        "stringValue": "ACC-301"
+      },
+      "managerId": {
+        "stringValue": "WhzEDqmHGiQXObOdgO0JHd9ccIX2"
+      },
+      "isActive": {
+        "booleanValue": true
+      },
+      "managerName": {
+        "stringValue": "مصطفي رضا الشربيني ابراهيم"
+      },
+      "managerNames": {
+        "arrayValue": {
+          "values": [
+            {
+              "stringValue": "مصطفي رضا الشربيني اب��اهيم"
+            }
+          ]
+        }
+      },
+      "uid": {
+        "stringValue": "Twb742HJQKg2zeIxU5vvRCKkNj72"
+      },
+      "managerIds": {
+        "arrayValue": {
+          "values": [
+            {
+              "stringValue": "WhzEDqmHGiQXObOdgO0JHd9ccIX2"
+            }
+          ]
+        }
+      },
+      "locationId": {
+        "stringValue": "SEG"
+      },
+      "notificationTokens": {
+        "arrayValue": {}
+      },
+      "managerCodes": {
+        "arrayValue": {
+          "values": [
+            {
+              "stringValue": "ACC-300"
+            }
+          ]
+        }
+      },
+      "position": {
+        "stringValue": "Accountant"
+      },
+      "department": {
+        "stringValue": "Accounting"
+      },
+      "createdAt": {
+        "timestampValue": "2026-07-07T14:07:21.412Z"
+      },
+      "emailUpdatedAt": {
+        "timestampValue": "2026-07-09T08:41:40.675Z"
+      },
+      "previousEmail": {
+        "stringValue": "acc-301@seg.com"
+      },
+      "email": {
+        "stringValue": "hazem.meniawy@seginvest.com"
+      },
+      "registeredAttendanceDeviceLabel": {
+        "stringValue": "vivo V2029"
+      },
+      "registeredAttendanceDeviceId": {
+        "stringValue": "android-install-6570480a9a814-1877e7b33deae0d7218673090dbbda70"
+      },
+      "leaveUsageBaseline": {
+        "mapValue": {
+          "fields": {
+            "importedAt": {
+              "timestampValue": "2026-07-20T12:59:45.200Z"
+            },
+            "totalUsed": {
+              "integerValue": "0"
+            },
+            "annualUsed": {
+              "integerValue": "0"
+            },
+            "source": {
+              "stringValue": "seg_leave_warning_import_2026"
+            },
+            "casualUsed": {
+              "integerValue": "0"
+            }
+          }
+        }
+      },
+      "leaveEntitlementQuota": {
+        "integerValue": "15"
+      },
+      "joinDate": {
+        "timestampValue": "2025-12-31T22:00:00Z"
+      },
+      "leaveEntitlementStatus": {
+        "stringValue": "eligible"
+      },
+      "hiringDateMigratedAt": {
+        "timestampValue": "2026-07-26T08:03:26.052Z"
+      },
+      "leaveEntitlementUpdatedAt": {
+        "timestampValue": "2026-07-27T08:19:21.654Z"
+      },
+      "leaveRenewedAt": {
+        "timestampValue": "2026-07-27T08:19:21.654Z"
+      },
+      "leaveEntitlementPeriodKey": {
+        "stringValue": "2026-06-30"
+      },
+      "leaveCarryOverDays": {
+        "integerValue": "0"
+      },
+      "leaveEligibleFrom": {
+        "timestampValue": "2026-06-30T00:00:00Z"
+      },
+      "permissionBalance": {
+        "mapValue": {
+          "fields": {
+            "usedThisMonth": {
+              "integerValue": "0"
+            },
+            "usedHoursThisMonth": {
+              "integerValue": "0"
+            },
+            "lastResetMonth": {
+              "stringValue": "2026-09"
+            }
+          }
+        }
+      },
+      "multiTreeMigrationVersion": {
+        "integerValue": "1"
+      },
+      "primaryOrganizationTreeId": {
+        "stringValue": "tree-1787646836276000"
+      },
+      "primaryOrganizationMembershipId": {
+        "stringValue": "tree-1787646836276000_Twb742HJQKg2zeIxU5vvRCKkNj72_department_38efef3ef937769a3bc255fe"
+      },
+      "isAdvanceAccountsApprover": {
+        "booleanValue": true
+      },
+      "lastAutoApprovedCasualLeaveId": {
+        "stringValue": "W8BrBeIaQbkHrG5inNVz"
+      },
+      "leaveBalance": {
+        "mapValue": {
+          "fields": {
+            "sick": {
+              "integerValue": "14"
+            },
+            "annual": {
+              "integerValue": "15"
+            },
+            "casual": {
+              "integerValue": "6"
+            },
+            "daysOff": {
+              "integerValue": "12"
+            }
+          }
+        }
+      },
+      "unreadNotifications": {
+        "integerValue": "254"
+      },
+      "registeredAttendanceDeviceAt": {
+        "timestampValue": "2026-10-08T06:06:20.629Z"
+      },
+      "updatedAt": {
+        "timestampValue": "2026-10-08T06:06:20.629Z"
+      }
+    }
+  },
+  {
+    "uid": "XGJQDaVEVATEdm3jSu9d4Rjw9Gr1",
+    "code": "KM-1403",
+    "name": "رينال اشرف حجي",
+    "before": {
+      "role": {
+        "stringValue": "employee"
+      },
+      "baseMonthlySalary": {
+        "integerValue": "0"
+      },
+      "workSchedule": {
+        "mapValue": {
+          "fields": {
+            "workDays": {
+              "arrayValue": {
+                "values": [
+                  {
+                    "integerValue": "6"
+                  },
+                  {
+                    "integerValue": "7"
+                  },
+                  {
+                    "integerValue": "1"
+                  },
+                  {
+                    "integerValue": "2"
+                  },
+                  {
+                    "integerValue": "3"
+                  },
+                  {
+                    "integerValue": "4"
+                  }
+                ]
+              }
+            },
+            "startTime": {
+              "stringValue": "09:00"
+            },
+            "endTime": {
+              "stringValue": "17:00"
+            }
+          }
+        }
+      },
+      "displayName": {
+        "stringValue": "رينال اشرف حجي"
+      },
+      "salaryCurrency": {
+        "stringValue": "EGP"
+      },
+      "employeeId": {
+        "stringValue": "KM-1403"
+      },
+      "isActive": {
+        "booleanValue": true
+      },
+      "uid": {
+        "stringValue": "XGJQDaVEVATEdm3jSu9d4Rjw9Gr1"
+      },
+      "notificationTokens": {
+        "arrayValue": {}
+      },
+      "position": {
+        "stringValue": "Social Media"
+      },
+      "department": {
+        "stringValue": "Kitchen Marketing"
+      },
+      "createdAt": {
+        "timestampValue": "2026-07-07T14:07:23.862Z"
+      },
+      "locationName": {
+        "stringValue": "SEG"
+      },
+      "locationId": {
+        "stringValue": "SEG"
+      },
+      "emailUpdatedAt": {
+        "timestampValue": "2026-07-09T08:41:57.675Z"
+      },
+      "previousEmail": {
+        "stringValue": "km-1403@zawolf.com"
+      },
+      "email": {
+        "stringValue": "renal.hegy@seginvest.com"
+      },
+      "registeredAttendanceDeviceLabel": {
+        "stringValue": "iPhone iPhone"
+      },
+      "registeredAttendanceDeviceId": {
+        "stringValue": "228DA805-4A43-4739-8B7C-9B7A053EC466"
+      },
+      "teamLeaderName": {
+        "nullValue": null
+      },
+      "teamLeaderId": {
+        "nullValue": null
+      },
+      "leaveUsageBaseline": {
+        "mapValue": {
+          "fields": {
+            "importedAt": {
+              "timestampValue": "2026-07-20T13:00:04.474Z"
+            },
+            "totalUsed": {
+              "integerValue": "5"
+            },
+            "annualUsed": {
+              "integerValue": "5"
+            },
+            "source": {
+              "stringValue": "seg_leave_warning_import_2026"
+            },
+            "casualUsed": {
+              "integerValue": "0"
+            }
+          }
+        }
+      },
+      "managerId": {
+        "stringValue": "ICBjgpsjXkdD5CLqDs9bDxymIZN2"
+      },
+      "managerName": {
+        "stringValue": "فريد يوسف"
+      },
+      "managerNames": {
+        "arrayValue": {
+          "values": [
+            {
+              "stringValue": "فريد يوسف"
+            },
+            {
+              "stringValue": "محمد منير جمال"
+            }
+          ]
+        }
+      },
+      "leaveEntitlementQuota": {
+        "integerValue": "15"
+      },
+      "joinDate": {
+        "timestampValue": "2025-12-31T22:00:00Z"
+      },
+      "leaveEntitlementStatus": {
+        "stringValue": "eligible"
+      },
+      "hiringDateMigratedAt": {
+        "timestampValue": "2026-07-26T08:03:26.052Z"
+      },
+      "leaveEntitlementUpdatedAt": {
+        "timestampValue": "2026-07-27T08:19:21.654Z"
+      },
+      "leaveRenewedAt": {
+        "timestampValue": "2026-07-27T08:19:21.654Z"
+      },
+      "leaveEntitlementPeriodKey": {
+        "stringValue": "2026-06-30"
+      },
+      "leaveCarryOverDays": {
+        "integerValue": "0"
+      },
+      "leaveEligibleFrom": {
+        "timestampValue": "2026-06-30T00:00:00Z"
+      },
+      "lastAutoApprovedCasualLeaveId": {
+        "stringValue": "409L5hsNtUtmHEjiQOUj"
+      },
+      "leaveBalance": {
+        "mapValue": {
+          "fields": {
+            "sick": {
+              "integerValue": "14"
+            },
+            "annual": {
+              "integerValue": "15"
+            },
+            "casual": {
+              "integerValue": "5"
+            },
+            "daysOff": {
+              "integerValue": "10"
+            }
+          }
+        }
+      },
+      "multiTreeMigrationVersion": {
+        "integerValue": "1"
+      },
+      "primaryOrganizationTreeId": {
+        "stringValue": "tree-1787646836276000"
+      },
+      "primaryOrganizationMembershipId": {
+        "stringValue": "tree-1787646836276000_XGJQDaVEVATEdm3jSu9d4Rjw9Gr1_department_1b3ffd80c84d07880460b8eb"
+      },
+      "permissionBalance": {
+        "mapValue": {
+          "fields": {
+            "lastResetMonth": {
+              "stringValue": "2026-09"
+            },
+            "usedThisMonth": {
+              "integerValue": "2"
+            },
+            "usedHoursThisMonth": {
+              "doubleValue": 5
+            }
+          }
+        }
+      },
+      "managerIds": {
+        "arrayValue": {
+          "values": [
+            {
+              "stringValue": "ICBjgpsjXkdD5CLqDs9bDxymIZN2"
+            },
+            {
+              "stringValue": "qDZAXfORAQfGaLvyoyIGSH71bbK2"
+            }
+          ]
+        }
+      },
+      "managerCodes": {
+        "arrayValue": {
+          "values": [
+            {
+              "stringValue": "KM-1400"
+            },
+            {
+              "stringValue": "MKT-600"
+            }
+          ]
+        }
+      },
+      "unreadNotifications": {
+        "integerValue": "321"
+      },
+      "registeredAttendanceDeviceAt": {
+        "timestampValue": "2026-10-08T06:23:27.218Z"
+      },
+      "updatedAt": {
+        "timestampValue": "2026-10-08T06:23:27.218Z"
+      }
+    }
+  },
+  {
+    "uid": "c5PEvCGFWxRzmcIBAXIoEZ7t8v63",
+    "code": "CS-508",
+    "name": "ياسمين رضا السيد",
+    "before": {
+      "role": {
+        "stringValue": "employee"
+      },
+      "baseMonthlySalary": {
+        "integerValue": "0"
+      },
+      "workSchedule": {
+        "mapValue": {
+          "fields": {
+            "workDays": {
+              "arrayValue": {
+                "values": [
+                  {
+                    "integerValue": "6"
+                  },
+                  {
+                    "integerValue": "7"
+                  },
+                  {
+                    "integerValue": "1"
+                  },
+                  {
+                    "integerValue": "2"
+                  },
+                  {
+                    "integerValue": "3"
+                  },
+                  {
+                    "integerValue": "4"
+                  }
+                ]
+              }
+            },
+            "startTime": {
+              "stringValue": "09:00"
+            },
+            "endTime": {
+              "stringValue": "17:00"
+            }
+          }
+        }
+      },
+      "displayName": {
+        "stringValue": "ياسمين رضا السيد"
+      },
+      "salaryCurrency": {
+        "stringValue": "EGP"
+      },
+      "employeeId": {
+        "stringValue": "CS-508"
+      },
+      "uid": {
+        "stringValue": "c5PEvCGFWxRzmcIBAXIoEZ7t8v63"
+      },
+      "notificationTokens": {
+        "arrayValue": {}
+      },
+      "position": {
+        "stringValue": "Accounts Manager"
+      },
+      "department": {
+        "stringValue": "Account Management"
+      },
+      "email": {
+        "stringValue": "cs-508@zawolf.com"
+      },
+      "createdAt": {
+        "timestampValue": "2026-07-07T14:07:25.195Z"
+      },
+      "locationName": {
+        "stringValue": "SEG"
+      },
+      "locationId": {
+        "stringValue": "SEG"
+      },
+      "registeredAttendanceDeviceLabel": {
+        "stringValue": "iPhone iPhone"
+      },
+      "registeredAttendanceDeviceId": {
+        "stringValue": "F3D30721-1039-4115-92AA-CFFFE210785E"
+      },
+      "registeredAttendanceDeviceAt": {
+        "timestampValue": "2026-07-19T12:32:36.712Z"
+      },
+      "leaveUsageBaseline": {
+        "mapValue": {
+          "fields": {
+            "importedAt": {
+              "timestampValue": "2026-07-20T13:00:16.599Z"
+            },
+            "totalUsed": {
+              "integerValue": "0"
+            },
+            "annualUsed": {
+              "integerValue": "0"
+            },
+            "source": {
+              "stringValue": "seg_leave_warning_import_2026"
+            },
+            "casualUsed": {
+              "integerValue": "0"
+            }
+          }
+        }
+      },
+      "permissionBalance": {
+        "mapValue": {
+          "fields": {
+            "usedThisMonth": {
+              "integerValue": "0"
+            },
+            "usedHoursThisMonth": {
+              "integerValue": "0"
+            },
+            "lastResetMonth": {
+              "stringValue": "2026-08"
+            }
+          }
+        }
+      },
+      "leaveEntitlementQuota": {
+        "integerValue": "15"
+      },
+      "joinDate": {
+        "timestampValue": "2025-12-31T22:00:00Z"
+      },
+      "leaveEntitlementStatus": {
+        "stringValue": "eligible"
+      },
+      "hiringDateMigratedAt": {
+        "timestampValue": "2026-07-26T08:03:26.052Z"
+      },
+      "leaveEntitlementUpdatedAt": {
+        "timestampValue": "2026-07-27T08:19:21.654Z"
+      },
+      "leaveRenewedAt": {
+        "timestampValue": "2026-07-27T08:19:21.654Z"
+      },
+      "leaveEntitlementPeriodKey": {
+        "stringValue": "2026-06-30"
+      },
+      "leaveBalance": {
+        "mapValue": {
+          "fields": {
+            "casual": {
+              "integerValue": "7"
+            },
+            "sick": {
+              "integerValue": "14"
+            },
+            "annual": {
+              "integerValue": "15"
+            },
+            "daysOff": {
+              "integerValue": "15"
+            }
+          }
+        }
+      },
+      "leaveCarryOverDays": {
+        "integerValue": "0"
+      },
+      "leaveEligibleFrom": {
+        "timestampValue": "2026-06-30T00:00:00Z"
+      },
+      "unreadNotifications": {
+        "integerValue": "47"
+      },
+      "deactivationReason": {
+        "stringValue": "استقاله \nاخلاء طرف بتاريخ 30/7/2026"
+      },
+      "deactivatedAt": {
+        "timestampValue": "2026-08-02T09:40:52.349Z"
+      },
+      "isActive": {
+        "booleanValue": false
+      },
+      "deactivatedByName": {
+        "stringValue": "سامي المتولي المتولي"
+      },
+      "deactivatedBy": {
+        "stringValue": "lna3lpI4slboaUykFw3JlNTNjLN2"
+      },
+      "updatedAt": {
+        "timestampValue": "2026-08-02T09:40:52.349Z"
+      },
+      "managerIds": {
+        "arrayValue": {
+          "values": [
+            {
+              "stringValue": "qDZAXfORAQfGaLvyoyIGSH71bbK2"
+            }
+          ]
+        }
+      },
+      "managerCodes": {
+        "arrayValue": {
+          "values": [
+            {
+              "stringValue": "MKT-600"
+            }
+          ]
+        }
+      },
+      "managerId": {
+        "stringValue": "qDZAXfORAQfGaLvyoyIGSH71bbK2"
+      },
+      "managerNames": {
+        "arrayValue": {
+          "values": [
+            {
+              "stringValue": "محمد منير جمال"
+            },
+            {
+              "stringValue": "اشرف عبد الرازق"
+            }
+          ]
+        }
+      },
+      "managerName": {
+        "stringValue": "اشرف عبد الرازق"
+      }
+    }
+  },
+  {
+    "uid": "ch9233F5eRX9Mva4TP2tmgC25uh1",
+    "code": "BD-1205",
+    "name": "مازن محمد ابراهيم ملح",
+    "before": {
+      "locationName": {
+        "stringValue": "SEG"
+      },
+      "role": {
+        "stringValue": "employee"
+      },
+      "baseMonthlySalary": {
+        "integerValue": "0"
+      },
+      "workSchedule": {
+        "mapValue": {
+          "fields": {
+            "workDays": {
+              "arrayValue": {
+                "values": [
+                  {
+                    "integerValue": "6"
+                  },
+                  {
+                    "integerValue": "7"
+                  },
+                  {
+                    "integerValue": "1"
+                  },
+                  {
+                    "integerValue": "2"
+                  },
+                  {
+                    "integerValue": "3"
+                  },
+                  {
+                    "integerValue": "4"
+                  }
+                ]
+              }
+            },
+            "startTime": {
+              "stringValue": "09:00"
+            },
+            "endTime": {
+              "stringValue": "17:00"
+            }
+          }
+        }
+      },
+      "displayName": {
+        "stringValue": "مازن محمد ابراهيم ملح"
+      },
+      "salaryCurrency": {
+        "stringValue": "EGP"
+      },
+      "employeeId": {
+        "stringValue": "BD-1205"
+      },
+      "managerId": {
+        "stringValue": "zSgf6A6YlmMHgUqQ1SPYui9NETv2"
+      },
+      "managerName": {
+        "stringValue": "ميرنا إبراهيم مناويل معوض"
+      },
+      "managerNames": {
+        "arrayValue": {
+          "values": [
+            {
+              "stringValue": "ميرنا إبراهيم مناويل معوض"
+            },
+            {
+              "stringValue": "محمد منير جمال"
+            }
+          ]
+        }
+      },
+      "uid": {
+        "stringValue": "ch9233F5eRX9Mva4TP2tmgC25uh1"
+      },
+      "locationId": {
+        "stringValue": "SEG"
+      },
+      "notificationTokens": {
+        "arrayValue": {}
+      },
+      "position": {
+        "stringValue": "BD"
+      },
+      "department": {
+        "stringValue": "BD"
+      },
+      "createdAt": {
+        "timestampValue": "2026-07-07T14:07:22.948Z"
+      },
+      "emailUpdatedAt": {
+        "timestampValue": "2026-07-09T08:42:05.547Z"
+      },
+      "previousEmail": {
+        "stringValue": "bd-1205@seg.com"
+      },
+      "email": {
+        "stringValue": "mazen.mohamed@seginvest.com"
+      },
+      "registeredAttendanceDeviceLabel": {
+        "stringValue": "iPhone iPhone"
+      },
+      "registeredAttendanceDeviceId": {
+        "stringValue": "CDCEE340-5F04-46E3-AC9B-2E766012369B"
+      },
+      "registeredAttendanceDeviceAt": {
+        "timestampValue": "2026-07-20T07:37:09.092Z"
+      },
+      "leaveUsageBaseline": {
+        "mapValue": {
+          "fields": {
+            "importedAt": {
+              "timestampValue": "2026-07-20T13:00:00.008Z"
+            },
+            "totalUsed": {
+              "integerValue": "2"
+            },
+            "annualUsed": {
+              "integerValue": "2"
+            },
+            "source": {
+              "stringValue": "seg_leave_warning_import_2026"
+            },
+            "casualUsed": {
+              "integerValue": "0"
+            }
+          }
+        }
+      },
+      "leaveEntitlementQuota": {
+        "integerValue": "15"
+      },
+      "joinDate": {
+        "timestampValue": "2025-12-31T22:00:00Z"
+      },
+      "leaveEntitlementStatus": {
+        "stringValue": "eligible"
+      },
+      "hiringDateMigratedAt": {
+        "timestampValue": "2026-07-26T08:03:26.052Z"
+      },
+      "leaveEntitlementUpdatedAt": {
+        "timestampValue": "2026-07-27T08:19:21.654Z"
+      },
+      "leaveRenewedAt": {
+        "timestampValue": "2026-07-27T08:19:21.654Z"
+      },
+      "leaveEntitlementPeriodKey": {
+        "stringValue": "2026-06-30"
+      },
+      "leaveCarryOverDays": {
+        "integerValue": "0"
+      },
+      "leaveEligibleFrom": {
+        "timestampValue": "2026-06-30T00:00:00Z"
+      },
+      "leaveBalance": {
+        "mapValue": {
+          "fields": {
+            "sick": {
+              "integerValue": "14"
+            },
+            "annual": {
+              "integerValue": "15"
+            },
+            "casual": {
+              "integerValue": "5"
+            },
+            "daysOff": {
+              "integerValue": "13"
+            }
+          }
+        }
+      },
+      "multiTreeMigrationVersion": {
+        "integerValue": "1"
+      },
+      "primaryOrganizationTreeId": {
+        "stringValue": "tree-1787646836276000"
+      },
+      "primaryOrganizationMembershipId": {
+        "stringValue": "tree-1787646836276000_ch9233F5eRX9Mva4TP2tmgC25uh1_department_cb3f2e3b0a2bd5889e8b793b"
+      },
+      "permissionBalance": {
+        "mapValue": {
+          "fields": {
+            "lastResetMonth": {
+              "stringValue": "2026-09"
+            },
+            "usedThisMonth": {
+              "integerValue": "2"
+            },
+            "usedHoursThisMonth": {
+              "integerValue": "2"
+            }
+          }
+        }
+      },
+      "isActive": {
+        "booleanValue": false
+      },
+      "deactivatedByName": {
+        "stringValue": "سامي المتولي المتولي"
+      },
+      "deactivatedBy": {
+        "stringValue": "lna3lpI4slboaUykFw3JlNTNjLN2"
+      },
+      "deactivationReason": {
+        "stringValue": "لوت"
+      },
+      "deactivatedAt": {
+        "timestampValue": "2026-09-03T06:52:36.845Z"
+      },
+      "updatedAt": {
+        "timestampValue": "2026-09-03T06:52:36.845Z"
+      },
+      "managerIds": {
+        "arrayValue": {
+          "values": [
+            {
+              "stringValue": "zSgf6A6YlmMHgUqQ1SPYui9NETv2"
+            },
+            {
+              "stringValue": "qDZAXfORAQfGaLvyoyIGSH71bbK2"
+            }
+          ]
+        }
+      },
+      "managerCodes": {
+        "arrayValue": {
+          "values": [
+            {
+              "stringValue": "BD-1200"
+            },
+            {
+              "stringValue": "MKT-600"
+            }
+          ]
+        }
+      },
+      "unreadNotifications": {
+        "integerValue": "6"
+      }
+    }
+  },
+  {
+    "uid": "hhLUyYv7G5QDFYJra6VXj3WZ2Ji2",
+    "code": "KM-1413",
+    "name": "اسراء محمد عبد الحليم",
+    "before": {
+      "role": {
+        "stringValue": "employee"
+      },
+      "baseMonthlySalary": {
+        "integerValue": "0"
+      },
+      "workSchedule": {
+        "mapValue": {
+          "fields": {
+            "workDays": {
+              "arrayValue": {
+                "values": [
+                  {
+                    "integerValue": "6"
+                  },
+                  {
+                    "integerValue": "7"
+                  },
+                  {
+                    "integerValue": "1"
+                  },
+                  {
+                    "integerValue": "2"
+                  },
+                  {
+                    "integerValue": "3"
+                  },
+                  {
+                    "integerValue": "4"
+                  }
+                ]
+              }
+            },
+            "startTime": {
+              "stringValue": "09:00"
+            },
+            "endTime": {
+              "stringValue": "17:00"
+            }
+          }
+        }
+      },
+      "displayName": {
+        "stringValue": "اسراء محمد عبد الحليم"
+      },
+      "salaryCurrency": {
+        "stringValue": "EGP"
+      },
+      "employeeId": {
+        "stringValue": "KM-1413"
+      },
+      "isActive": {
+        "booleanValue": true
+      },
+      "uid": {
+        "stringValue": "hhLUyYv7G5QDFYJra6VXj3WZ2Ji2"
+      },
+      "notificationTokens": {
+        "arrayValue": {}
+      },
+      "position": {
+        "stringValue": "SEO Specialist"
+      },
+      "department": {
+        "stringValue": "Kitchen Marketing"
+      },
+      "email": {
+        "stringValue": "km-1413@zawolf.com"
+      },
+      "createdAt": {
+        "timestampValue": "2026-07-07T14:07:25.004Z"
+      },
+      "locationName": {
+        "stringValue": "SEG"
+      },
+      "locationId": {
+        "stringValue": "SEG"
+      },
+      "registeredAttendanceDeviceLabel": {
+        "stringValue": "OPPO CPH2375"
+      },
+      "registeredAttendanceDeviceId": {
+        "stringValue": "android-install-656efc9868f39-02ee81851a333fe44c6a554b242ff738"
+      },
+      "leaveUsageBaseline": {
+        "mapValue": {
+          "fields": {
+            "importedAt": {
+              "timestampValue": "2026-07-20T13:00:15.481Z"
+            },
+            "totalUsed": {
+              "integerValue": "1"
+            },
+            "annualUsed": {
+              "integerValue": "1"
+            },
+            "source": {
+              "stringValue": "seg_leave_warning_import_2026"
+            },
+            "casualUsed": {
+              "integerValue": "0"
+            }
+          }
+        }
+      },
+      "teamLeaderName": {
+        "stringValue": "جمال الدين محسن محمد"
+      },
+      "teamLeaderId": {
+        "stringValue": "9ClFPZLwLOO6eOS4Ag6r3685cWl2"
+      },
+      "leaveEntitlementQuota": {
+        "integerValue": "15"
+      },
+      "joinDate": {
+        "timestampValue": "2025-12-31T22:00:00Z"
+      },
+      "leaveEntitlementStatus": {
+        "stringValue": "eligible"
+      },
+      "hiringDateMigratedAt": {
+        "timestampValue": "2026-07-26T08:03:26.052Z"
+      },
+      "leaveEntitlementUpdatedAt": {
+        "timestampValue": "2026-07-27T08:19:21.654Z"
+      },
+      "leaveRenewedAt": {
+        "timestampValue": "2026-07-27T08:19:21.654Z"
+      },
+      "leaveEntitlementPeriodKey": {
+        "stringValue": "2026-06-30"
+      },
+      "leaveCarryOverDays": {
+        "integerValue": "0"
+      },
+      "leaveEligibleFrom": {
+        "timestampValue": "2026-06-30T00:00:00Z"
+      },
+      "multiTreeMigrationVersion": {
+        "integerValue": "1"
+      },
+      "primaryOrganizationTreeId": {
+        "stringValue": "tree-1787646836276000"
+      },
+      "primaryOrganizationMembershipId": {
+        "stringValue": "tree-1787646836276000_hhLUyYv7G5QDFYJra6VXj3WZ2Ji2_department_1b3ffd80c84d07880460b8eb"
+      },
+      "permissionBalance": {
+        "mapValue": {
+          "fields": {
+            "lastResetMonth": {
+              "stringValue": "2026-09"
+            },
+            "usedThisMonth": {
+              "integerValue": "2"
+            },
+            "usedHoursThisMonth": {
+              "integerValue": "4"
+            }
+          }
+        }
+      },
+      "lastAutoApprovedCasualLeaveId": {
+        "stringValue": "qa1onUDObohQ8wF12OJN"
+      },
+      "photoURL": {
+        "stringValue": "data:image/jpeg;base64,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"
+      },
+      "managerIds": {
+        "arrayValue": {
+          "values": [
+            {
+              "stringValue": "qDZAXfORAQfGaLvyoyIGSH71bbK2"
+            }
+          ]
+        }
+      },
+      "managerCodes": {
+        "arrayValue": {
+          "values": [
+            {
+              "stringValue": "MKT-600"
+            }
+          ]
+        }
+      },
+      "managerId": {
+        "stringValue": "qDZAXfORAQfGaLvyoyIGSH71bbK2"
+      },
+      "managerNames": {
+        "arrayValue": {
+          "values": [
+            {
+              "stringValue": "محمد منير جمال"
+            },
+            {
+              "stringValue": "اشرف عبد الرازق"
+            }
+          ]
+        }
+      },
+      "managerName": {
+        "stringValue": "اشرف عبد الرازق"
+      },
+      "registeredAttendanceDeviceAt": {
+        "timestampValue": "2026-10-08T05:45:13.682Z"
+      },
+      "updatedAt": {
+        "timestampValue": "2026-10-08T05:45:13.682Z"
+      },
+      "leaveBalance": {
+        "mapValue": {
+          "fields": {
+            "sick": {
+              "integerValue": "14"
+            },
+            "annual": {
+              "integerValue": "15"
+            },
+            "casual": {
+              "integerValue": "6"
+            },
+            "daysOff": {
+              "integerValue": "10"
+            }
+          }
+        }
+      },
+      "unreadNotifications": {
+        "integerValue": "42"
+      }
+    }
+  },
+  {
+    "uid": "hhy3ZIz3AeQJWIOU8umRUai8eGz2",
+    "code": "CS-507B",
+    "name": "أسماء حامد عبده عطيه",
+    "before": {
+      "role": {
+        "stringValue": "employee"
+      },
+      "baseMonthlySalary": {
+        "integerValue": "0"
+      },
+      "workSchedule": {
+        "mapValue": {
+          "fields": {
+            "workDays": {
+              "arrayValue": {
+                "values": [
+                  {
+                    "integerValue": "6"
+                  },
+                  {
+                    "integerValue": "7"
+                  },
+                  {
+                    "integerValue": "1"
+                  },
+                  {
+                    "integerValue": "2"
+                  },
+                  {
+                    "integerValue": "3"
+                  },
+                  {
+                    "integerValue": "4"
+                  }
+                ]
+              }
+            },
+            "startTime": {
+              "stringValue": "09:00"
+            },
+            "endTime": {
+              "stringValue": "17:00"
+            }
+          }
+        }
+      },
+      "displayName": {
+        "stringValue": "أسماء حامد عبده عطيه"
+      },
+      "salaryCurrency": {
+        "stringValue": "EGP"
+      },
+      "employeeId": {
+        "stringValue": "CS-507B"
+      },
+      "uid": {
+        "stringValue": "hhy3ZIz3AeQJWIOU8umRUai8eGz2"
+      },
+      "notificationTokens": {
+        "arrayValue": {}
+      },
+      "position": {
+        "stringValue": "Accounts Manager"
+      },
+      "department": {
+        "stringValue": "Account Management"
+      },
+      "email": {
+        "stringValue": "cs-507b@zawolf.com"
+      },
+      "createdAt": {
+        "timestampValue": "2026-07-07T14:07:25.111Z"
+      },
+      "locationName": {
+        "stringValue": "SEG"
+      },
+      "locationId": {
+        "stringValue": "SEG"
+      },
+      "registeredAttendanceDeviceLabel": {
+        "stringValue": "OPPO CPH2185"
+      },
+      "registeredAttendanceDeviceId": {
+        "stringValue": "android-install-657054cd7a9c3-5d31fb5315535fa83b9180c7365aa9b8"
+      },
+      "registeredAttendanceDeviceAt": {
+        "timestampValue": "2026-07-20T06:48:57.092Z"
+      },
+      "leaveUsageBaseline": {
+        "mapValue": {
+          "fields": {
+            "importedAt": {
+              "timestampValue": "2026-07-20T13:00:16.130Z"
+            },
+            "totalUsed": {
+              "integerValue": "0"
+            },
+            "annualUsed": {
+              "integerValue": "0"
+            },
+            "source": {
+              "stringValue": "seg_leave_warning_import_2026"
+            },
+            "casualUsed": {
+              "integerValue": "0"
+            }
+          }
+        }
+      },
+      "permissionBalance": {
+        "mapValue": {
+          "fields": {
+            "usedThisMonth": {
+              "integerValue": "0"
+            },
+            "usedHoursThisMonth": {
+              "integerValue": "0"
+            },
+            "lastResetMonth": {
+              "stringValue": "2026-08"
+            }
+          }
+        }
+      },
+      "leaveEntitlementQuota": {
+        "integerValue": "15"
+      },
+      "joinDate": {
+        "timestampValue": "2025-12-31T22:00:00Z"
+      },
+      "leaveEntitlementStatus": {
+        "stringValue": "eligible"
+      },
+      "hiringDateMigratedAt": {
+        "timestampValue": "2026-07-26T08:03:26.052Z"
+      },
+      "leaveEntitlementUpdatedAt": {
+        "timestampValue": "2026-07-27T08:19:21.654Z"
+      },
+      "leaveRenewedAt": {
+        "timestampValue": "2026-07-27T08:19:21.654Z"
+      },
+      "leaveEntitlementPeriodKey": {
+        "stringValue": "2026-06-30"
+      },
+      "leaveBalance": {
+        "mapValue": {
+          "fields": {
+            "casual": {
+              "integerValue": "7"
+            },
+            "sick": {
+              "integerValue": "14"
+            },
+            "annual": {
+              "integerValue": "15"
+            },
+            "daysOff": {
+              "integerValue": "15"
+            }
+          }
+        }
+      },
+      "leaveCarryOverDays": {
+        "integerValue": "0"
+      },
+      "leaveEligibleFrom": {
+        "timestampValue": "2026-06-30T00:00:00Z"
+      },
+      "unreadNotifications": {
+        "integerValue": "67"
+      },
+      "deactivationReason": {
+        "stringValue": "تمت الاستقاله و اخلاء طرفها"
+      },
+      "deactivatedAt": {
+        "timestampValue": "2026-08-10T07:10:52.411Z"
+      },
+      "isActive": {
+        "booleanValue": false
+      },
+      "deactivatedByName": {
+        "stringValue": "محمد منير الجمل"
+      },
+      "deactivatedBy": {
+        "stringValue": "6qhpYQzP51b1PpOYAwZ5bOF0DI53"
+      },
+      "updatedAt": {
+        "timestampValue": "2026-08-10T07:10:52.411Z"
+      },
+      "managerIds": {
+        "arrayValue": {
+          "values": [
+            {
+              "stringValue": "qDZAXfORAQfGaLvyoyIGSH71bbK2"
+            }
+          ]
+        }
+      },
+      "managerCodes": {
+        "arrayValue": {
+          "values": [
+            {
+              "stringValue": "MKT-600"
+            }
+          ]
+        }
+      },
+      "managerId": {
+        "stringValue": "qDZAXfORAQfGaLvyoyIGSH71bbK2"
+      },
+      "managerNames": {
+        "arrayValue": {
+          "values": [
+            {
+              "stringValue": "محمد منير جمال"
+            },
+            {
+              "stringValue": "اشرف عبد الرازق"
+            }
+          ]
+        }
+      },
+      "managerName": {
+        "stringValue": "اشرف عبد الرازق"
+      }
+    }
+  },
+  {
+    "uid": "kOnA9JQlTsVqWDsOEmbj4HoXx2w1",
+    "code": "PRG-1116",
+    "name": "نورهان عمر عبد اللطيف",
+    "before": {
+      "baseMonthlySalary": {
+        "integerValue": "0"
+      },
+      "displayName": {
+        "stringValue": "نورهان عمر عبد اللطيف"
+      },
+      "salaryCurrency": {
+        "stringValue": "EGP"
+      },
+      "employeeId": {
+        "stringValue": "PRG-1116"
+      },
+      "isActive": {
+        "booleanValue": true
+      },
+      "uid": {
+        "stringValue": "kOnA9JQlTsVqWDsOEmbj4HoXx2w1"
+      },
+      "notificationTokens": {
+        "arrayValue": {}
+      },
+      "position": {
+        "stringValue": "WordPress"
+      },
+      "department": {
+        "stringValue": "Programming"
+      },
+      "email": {
+        "stringValue": "prg-1116@zawolf.com"
+      },
+      "createdAt": {
+        "timestampValue": "2026-07-07T14:07:24.806Z"
+      },
+      "locationName": {
+        "stringValue": "SEG"
+      },
+      "locationId": {
+        "stringValue": "SEG"
+      },
+      "leaveUsageBaseline": {
+        "mapValue": {
+          "fields": {
+            "importedAt": {
+              "timestampValue": "2026-07-20T13:00:14.248Z"
+            },
+            "totalUsed": {
+              "integerValue": "8"
+            },
+            "annualUsed": {
+              "integerValue": "8"
+            },
+            "source": {
+              "stringValue": "seg_leave_warning_import_2026"
+            },
+            "casualUsed": {
+              "integerValue": "0"
+            }
+          }
+        }
+      },
+      "leaveEntitlementQuota": {
+        "integerValue": "15"
+      },
+      "joinDate": {
+        "timestampValue": "2025-12-31T22:00:00Z"
+      },
+      "leaveEntitlementStatus": {
+        "stringValue": "eligible"
+      },
+      "hiringDateMigratedAt": {
+        "timestampValue": "2026-07-26T08:03:26.052Z"
+      },
+      "role": {
+        "stringValue": "team_leader"
+      },
+      "teamLeaderName": {
+        "nullValue": null
+      },
+      "teamLeaderId": {
+        "nullValue": null
+      },
+      "leaveEntitlementUpdatedAt": {
+        "timestampValue": "2026-07-27T08:19:21.654Z"
+      },
+      "leaveRenewedAt": {
+        "timestampValue": "2026-07-27T08:19:21.654Z"
+      },
+      "leaveEntitlementPeriodKey": {
+        "stringValue": "2026-06-30"
+      },
+      "leaveCarryOverDays": {
+        "integerValue": "0"
+      },
+      "leaveEligibleFrom": {
+        "timestampValue": "2026-06-30T00:00:00Z"
+      },
+      "registeredAttendanceDeviceLabel": {
+        "stringValue": "OPPO CPH2801"
+      },
+      "registeredAttendanceDeviceId": {
+        "stringValue": "android-install-65810deae0581-5c0f5e505b1415284e43730a26966a6e"
+      },
+      "multiTreeMigrationVersion": {
+        "integerValue": "1"
+      },
+      "primaryOrganizationTreeId": {
+        "stringValue": "tree-1787646836276000"
+      },
+      "primaryOrganizationMembershipId": {
+        "stringValue": "tree-1787646836276000_kOnA9JQlTsVqWDsOEmbj4HoXx2w1_department_8cc7e09419a10565bcc88f18"
+      },
+      "performanceBadgeIds": {
+        "arrayValue": {
+          "values": [
+            {
+              "stringValue": "customer_care"
+            },
+            {
+              "stringValue": "growth_mindset"
+            },
+            {
+              "stringValue": "ideal_employee"
+            },
+            {
+              "stringValue": "punctuality_champion"
+            },
+            {
+              "stringValue": "quality_guardian"
+            },
+            {
+              "stringValue": "task_achievement"
+            },
+            {
+              "stringValue": "team_player"
+            }
+          ]
+        }
+      },
+      "performanceBadgesUpdatedAt": {
+        "timestampValue": "2026-09-08T13:33:11.718Z"
+      },
+      "salesAnalyticsEnabled": {
+        "booleanValue": false
+      },
+      "excludeFromAttendanceReports": {
+        "booleanValue": false
+      },
+      "workSchedule": {
+        "mapValue": {
+          "fields": {
+            "workDays": {
+              "arrayValue": {
+                "values": [
+                  {
+                    "integerValue": "6"
+                  },
+                  {
+                    "integerValue": "7"
+                  },
+                  {
+                    "integerValue": "1"
+                  },
+                  {
+                    "integerValue": "2"
+                  },
+                  {
+                    "integerValue": "3"
+                  },
+                  {
+                    "integerValue": "4"
+                  }
+                ]
+              }
+            },
+            "endTime": {
+              "stringValue": "17:00"
+            },
+            "startTime": {
+              "stringValue": "09:30"
+            }
+          }
+        }
+      },
+      "organizationOrder": {
+        "integerValue": "999"
+      },
+      "salesAnalyticsAgentKey": {
+        "stringValue": ""
+      },
+      "salesAnalyticsRole": {
+        "stringValue": ""
+      },
+      "organizationLevel": {
+        "stringValue": "team_leader"
+      },
+      "salesAnalyticsCompany": {
+        "stringValue": ""
+      },
+      "organizationDivisionId": {
+        "stringValue": "operations"
+      },
+      "permissionBalance": {
+        "mapValue": {
+          "fields": {
+            "lastResetMonth": {
+              "stringValue": "2026-09"
+            },
+            "usedThisMonth": {
+              "integerValue": "2"
+            },
+            "usedHoursThisMonth": {
+              "doubleValue": 5
+            }
+          }
+        }
+      },
+      "lastAutoApprovedCasualLeaveId": {
+        "stringValue": "Jacp2mgHgo4Y234yXPeu"
+      },
+      "leaveBalance": {
+        "mapValue": {
+          "fields": {
+            "sick": {
+              "integerValue": "14"
+            },
+            "annual": {
+              "integerValue": "15"
+            },
+            "casual": {
+              "integerValue": "5"
+            },
+            "daysOff": {
+              "integerValue": "11"
+            }
+          }
+        }
+      },
+      "managerIds": {
+        "arrayValue": {
+          "values": [
+            {
+              "stringValue": "qDZAXfORAQfGaLvyoyIGSH71bbK2"
+            }
+          ]
+        }
+      },
+      "managerCodes": {
+        "arrayValue": {
+          "values": [
+            {
+              "stringValue": "MKT-600"
+            }
+          ]
+        }
+      },
+      "managerId": {
+        "stringValue": "qDZAXfORAQfGaLvyoyIGSH71bbK2"
+      },
+      "managerNames": {
+        "arrayValue": {
+          "values": [
+            {
+              "stringValue": "محمد منير ال��مل"
+            },
+            {
+              "stringValue": "اشرف عبد الرازق"
+            }
+          ]
+        }
+      },
+      "managerName": {
+        "stringValue": "اشرف عبد الرازق"
+      },
+      "unreadNotifications": {
+        "integerValue": "17"
+      },
+      "registeredAttendanceDeviceAt": {
+        "timestampValue": "2026-10-08T05:47:57.610Z"
+      },
+      "updatedAt": {
+        "timestampValue": "2026-10-08T05:47:57.610Z"
+      }
+    }
+  },
+  {
+    "uid": "pZ75XLuXgKWBrnFvHxEWBgG2ehR2",
+    "code": "KM-1406",
+    "name": "محمد خالد جمال",
+    "before": {
+      "role": {
+        "stringValue": "employee"
+      },
+      "baseMonthlySalary": {
+        "integerValue": "0"
+      },
+      "workSchedule": {
+        "mapValue": {
+          "fields": {
+            "workDays": {
+              "arrayValue": {
+                "values": [
+                  {
+                    "integerValue": "6"
+                  },
+                  {
+                    "integerValue": "7"
+                  },
+                  {
+                    "integerValue": "1"
+                  },
+                  {
+                    "integerValue": "2"
+                  },
+                  {
+                    "integerValue": "3"
+                  },
+                  {
+                    "integerValue": "4"
+                  }
+                ]
+              }
+            },
+            "startTime": {
+              "stringValue": "09:00"
+            },
+            "endTime": {
+              "stringValue": "17:00"
+            }
+          }
+        }
+      },
+      "displayName": {
+        "stringValue": "محمد خالد جمال"
+      },
+      "salaryCurrency": {
+        "stringValue": "EGP"
+      },
+      "employeeId": {
+        "stringValue": "KM-1406"
+      },
+      "isActive": {
+        "booleanValue": true
+      },
+      "uid": {
+        "stringValue": "pZ75XLuXgKWBrnFvHxEWBgG2ehR2"
+      },
+      "notificationTokens": {
+        "arrayValue": {}
+      },
+      "position": {
+        "stringValue": "Media Buyer"
+      },
+      "department": {
+        "stringValue": "Kitchen Marketing"
+      },
+      "createdAt": {
+        "timestampValue": "2026-07-07T14:07:24.089Z"
+      },
+      "locationName": {
+        "stringValue": "SEG"
+      },
+      "locationId": {
+        "stringValue": "SEG"
+      },
+      "emailUpdatedAt": {
+        "timestampValue": "2026-07-09T08:41:59.406Z"
+      },
+      "previousEmail": {
+        "stringValue": "km-1406@zawolf.com"
+      },
+      "email": {
+        "stringValue": "mohamed.khaled@seginvest.com"
+      },
+      "registeredAttendanceDeviceLabel": {
+        "stringValue": "iPhone iPhone"
+      },
+      "registeredAttendanceDeviceId": {
+        "stringValue": "2104535C-2A94-4D5C-BDAD-6AC1727E70E2"
+      },
+      "leaveUsageBaseline": {
+        "mapValue": {
+          "fields": {
+            "importedAt": {
+              "timestampValue": "2026-07-20T13:00:06.672Z"
+            },
+            "totalUsed": {
+              "integerValue": "5"
+            },
+            "annualUsed": {
+              "integerValue": "5"
+            },
+            "source": {
+              "stringValue": "seg_leave_warning_import_2026"
+            },
+            "casualUsed": {
+              "integerValue": "0"
+            }
+          }
+        }
+      },
+      "leaveEntitlementQuota": {
+        "integerValue": "15"
+      },
+      "joinDate": {
+        "timestampValue": "2025-12-31T22:00:00Z"
+      },
+      "leaveEntitlementStatus": {
+        "stringValue": "eligible"
+      },
+      "hiringDateMigratedAt": {
+        "timestampValue": "2026-07-26T08:03:26.052Z"
+      },
+      "leaveEntitlementUpdatedAt": {
+        "timestampValue": "2026-07-27T08:19:21.654Z"
+      },
+      "leaveRenewedAt": {
+        "timestampValue": "2026-07-27T08:19:21.654Z"
+      },
+      "leaveEntitlementPeriodKey": {
+        "stringValue": "2026-06-30"
+      },
+      "leaveCarryOverDays": {
+        "integerValue": "0"
+      },
+      "leaveEligibleFrom": {
+        "timestampValue": "2026-06-30T00:00:00Z"
+      },
+      "salesAnalyticsEnabled": {
+        "booleanValue": false
+      },
+      "teamLeaderName": {
+        "nullValue": null
+      },
+      "organizationOrder": {
+        "integerValue": "999"
+      },
+      "salesAnalyticsAgentKey": {
+        "stringValue": ""
+      },
+      "salesAnalyticsRole": {
+        "stringValue": ""
+      },
+      "managerId": {
+        "stringValue": "qDZAXfORAQfGaLvyoyIGSH71bbK2"
+      },
+      "managerName": {
+        "stringValue": "اشرف عبد الرازق"
+      },
+      "organizationDivisionId": {
+        "stringValue": "administration"
+      },
+      "teamLeaderId": {
+        "nullValue": null
+      },
+      "organizationLevel": {
+        "stringValue": "employee"
+      },
+      "salesAnalyticsCompany": {
+        "stringValue": ""
+      },
+      "multiTreeMigrationVersion": {
+        "integerValue": "1"
+      },
+      "primaryOrganizationTreeId": {
+        "stringValue": "tree-1787646836276000"
+      },
+      "primaryOrganizationMembershipId": {
+        "stringValue": "tree-1787646836276000_pZ75XLuXgKWBrnFvHxEWBgG2ehR2_department_1b3ffd80c84d07880460b8eb"
+      },
+      "permissionBalance": {
+        "mapValue": {
+          "fields": {
+            "lastResetMonth": {
+              "stringValue": "2026-09"
+            },
+            "usedThisMonth": {
+              "integerValue": "2"
+            },
+            "usedHoursThisMonth": {
+              "integerValue": "5"
+            }
+          }
+        }
+      },
+      "lastAutoApprovedCasualLeaveId": {
+        "stringValue": "CEeciEjaJ670F76h5rYF"
+      },
+      "leaveBalance": {
+        "mapValue": {
+          "fields": {
+            "sick": {
+              "integerValue": "14"
+            },
+            "annual": {
+              "integerValue": "15"
+            },
+            "casual": {
+              "integerValue": "4"
+            },
+            "daysOff": {
+              "integerValue": "9"
+            }
+          }
+        }
+      },
+      "managerIds": {
+        "arrayValue": {
+          "values": [
+            {
+              "stringValue": "qDZAXfORAQfGaLvyoyIGSH71bbK2"
+            },
+            {
+              "stringValue": "qDZAXfORAQfGaLvyoyIGSH71bbK2"
+            }
+          ]
+        }
+      },
+      "managerCodes": {
+        "arrayValue": {
+          "values": [
+            {
+              "stringValue": "MKT-600"
+            },
+            {
+              "stringValue": "MKT-600"
+            }
+          ]
+        }
+      },
+      "managerNames": {
+        "arrayValue": {
+          "values": [
+            {
+              "stringValue": "اشرف عبد الرازق"
+            },
+            {
+              "stringValue": "اشرف عبد الرازق"
+            }
+          ]
+        }
+      },
+      "registeredAttendanceDeviceAt": {
+        "timestampValue": "2026-10-07T14:02:38.200Z"
+      },
+      "updatedAt": {
+        "timestampValue": "2026-10-07T14:02:38.200Z"
+      },
+      "unreadNotifications": {
+        "integerValue": "294"
+      }
+    }
+  }
+]
