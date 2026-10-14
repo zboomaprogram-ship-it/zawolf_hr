@@ -97,3 +97,4 @@
 - [X] T030 Resolve company and department group recipients at dispatch time and notify every active member except the sender.
 - [X] T031 Replace removed Firebase Admin namespace Storage helpers with the v14 modular API and cover the deployed dependency version.
 - [X] T032 Restore the Firestore `FieldPath` compatibility bridge required by the request-history notification worker on Firebase Admin v14.
+- [X] T033 Initialize Firebase Admin with service-account-derived `projectId` and `storageBucket` so Hostinger can create Storage sessions without extra environment variables.

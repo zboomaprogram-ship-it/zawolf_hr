@@ -44,6 +44,16 @@ function getExistingFirebaseApp(admin) {
   return apps.length > 0 ? apps[0] : null;
 }
 
+function firebaseAppOptions(admin, serviceAccount) {
+  const projectId = String(serviceAccount?.project_id || '').trim();
+  if (!projectId) throw new Error('Firebase project id is missing.');
+  return {
+    credential: admin.cert(serviceAccount),
+    projectId,
+    storageBucket: `${projectId}.firebasestorage.app`,
+  };
+}
+
 function isLocalEmulatorHost(value) {
   const host = String(value || '').trim().split(':')[0].toLowerCase();
   return host === 'localhost' || host === '127.0.0.1';
@@ -81,6 +91,7 @@ function installFirestoreCompatibility(admin) {
 
 module.exports = {
   emulatorProjectId,
+  firebaseAppOptions,
   getExistingFirebaseApp,
   installFirestoreCompatibility,
   parseFirebaseServiceAccount,

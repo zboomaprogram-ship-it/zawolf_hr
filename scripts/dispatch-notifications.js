@@ -2,6 +2,7 @@ const admin = require('firebase-admin');
 const { isOneSignalConfigured, sendPushToUsers } = require('./onesignal');
 const {
   emulatorProjectId,
+  firebaseAppOptions,
   getExistingFirebaseApp,
   installFirestoreCompatibility,
   parseFirebaseServiceAccount,
@@ -49,9 +50,7 @@ function initializeFirebase() {
     process.env.FIREBASE_SERVICE_ACCOUNT,
   );
 
-  const app = admin.initializeApp({
-    credential: admin.cert(serviceAccount),
-  });
+  const app = admin.initializeApp(firebaseAppOptions(admin, serviceAccount));
 
   console.log(`Using Firebase service account: ${serviceAccount.client_email}`);
   console.log(`Firebase project id: ${serviceAccount.project_id}`);

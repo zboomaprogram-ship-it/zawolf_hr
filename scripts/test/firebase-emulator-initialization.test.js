@@ -5,6 +5,7 @@ const assert = require('node:assert/strict');
 
 const {
   emulatorProjectId,
+  firebaseAppOptions,
   installFirestoreCompatibility,
 } = require('../firebase-service-account');
 
@@ -42,4 +43,18 @@ test('Firestore compatibility exposes FieldPath for firebase-admin v14 callers',
   assert.equal(typeof admin.firestore, 'function');
   assert.equal(typeof admin.firestore.FieldPath.documentId, 'function');
   assert.equal(typeof admin.firestore.FieldValue.serverTimestamp, 'function');
+});
+
+test('production Firebase options include project and modern Storage bucket', () => {
+  const serviceAccount = { project_id: 'demo-project' };
+  const credential = { kind: 'credential' };
+  const options = firebaseAppOptions({ cert: (value) => {
+    assert.equal(value, serviceAccount);
+    return credential;
+  } }, serviceAccount);
+  assert.deepEqual(options, {
+    credential,
+    projectId: 'demo-project',
+    storageBucket: 'demo-project.firebasestorage.app',
+  });
 });

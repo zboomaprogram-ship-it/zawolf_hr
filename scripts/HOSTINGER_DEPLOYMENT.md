@@ -205,7 +205,20 @@ cycles. The recovery scan is bounded to 100 permission documents per run and is
 executed by the existing Hostinger scheduler, so no second scheduler should be
 enabled.
 
-### Server release package — 2026-10-14 (v14)
+### Server release package — 2026-10-14 (v15)
+
+- File: `build/releases/zawolf-hostinger-chat-storage-project-2026-10-14-v15.zip`
+- SHA-256: See the adjacent `.sha256` file.
+- Release marker: `2026-10-14-chat-storage-project-v15`.
+- Initializes Firebase Admin with the `projectId` and modern Storage bucket
+  derived from the existing `FIREBASE_SERVICE_ACCOUNT`. This fixes
+  `firebase_storage_project_missing` without adding a Hostinger variable.
+- Preserves the modular Storage, notification fan-out, deep-link payload, and
+  request-history worker fixes from v14/v13.
+- Upload the ZIP contents, run `npm install`, restart the Node application, and
+  verify the v15 marker through `/health`.
+
+### Previous server release package — 2026-10-14 (v14)
 
 - File: `build/releases/zawolf-hostinger-chat-storage-admin-2026-10-14-v14.zip`
 - SHA-256: See the adjacent `.sha256` file.

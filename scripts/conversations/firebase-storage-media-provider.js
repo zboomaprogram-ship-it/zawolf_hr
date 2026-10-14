@@ -47,10 +47,13 @@ function createFirebaseStorageMediaProvider({
   const activeApp = firebaseApp || getApp();
   const projectId = activeApp.options.projectId ||
     process.env.GCLOUD_PROJECT || process.env.FIREBASE_PROJECT_ID;
-  if (!bucket && !projectId && !bucketName && !process.env.FIREBASE_STORAGE_BUCKET) {
+  const appBucket = activeApp.options.storageBucket;
+  if (!bucket && !projectId && !bucketName &&
+      !process.env.FIREBASE_STORAGE_BUCKET && !appBucket) {
     throw new Error('firebase_storage_project_missing');
   }
   const configuredBucket = bucketName || process.env.FIREBASE_STORAGE_BUCKET ||
+    appBucket ||
     `${projectId}.firebasestorage.app`;
   // firebase-admin v14 removed the legacy admin.app()/admin.storage()
   // namespace helpers. Use the supported modular APIs so Hostinger can create
