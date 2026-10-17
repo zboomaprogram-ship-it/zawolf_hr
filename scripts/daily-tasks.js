@@ -1,4 +1,5 @@
 const admin = require('firebase-admin');
+const { shouldCreateNotification } = require('./deduction-notification-policy');
 const { installFirestoreCompatibility } = require('./firebase-service-account');
 const { resolveCheckoutPolicyAt } = require('./checkout-policy');
 installFirestoreCompatibility(admin);
@@ -417,6 +418,7 @@ async function runDailyTasks() {
   }
 
   async function notifyReviewers(type, title, body, data) {
+    if (!shouldCreateNotification(type)) return;
     for (const reviewerId of reviewerIds) {
       const notifRef = db.collection('notifications').doc(reviewerId).collection('items').doc();
       batch.set(notifRef, {
@@ -439,6 +441,7 @@ async function runDailyTasks() {
   }
 
   async function notifyEmployee(userId, type, title, body, data) {
+    if (!shouldCreateNotification(type)) return;
     if (!userId) return;
     const notifRef = db.collection('notifications').doc(userId).collection('items').doc();
     batch.set(notifRef, {

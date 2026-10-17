@@ -1,5 +1,7 @@
 'use strict';
 
+const { shouldCreateNotification } = require('./deduction-notification-policy');
+
 const ALLOWED_STATUSES = new Set(['pending_manager', 'pending_hr', 'approved', 'rejected']);
 const VALID_DURATIONS = new Set([60, 120, 180, 240]);
 
@@ -191,6 +193,7 @@ function notificationRef(db, recipientId, notificationId) {
 }
 
 async function queueNotification({ admin, recipientId, notificationId, type, title, body, data }) {
+  if (!shouldCreateNotification(type)) return;
   if (!recipientId) return;
   const db = admin.firestore();
   const ref = notificationRef(db, recipientId, notificationId);

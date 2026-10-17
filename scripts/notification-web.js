@@ -2,6 +2,7 @@ const http = require('http');
 const crypto = require('crypto');
 const { URL } = require('url');
 const admin = require('firebase-admin');
+const { shouldCreateNotification } = require('./deduction-notification-policy');
 const { getAuth } = require('firebase-admin/auth');
 const {
   dispatchNotifications,
@@ -193,7 +194,7 @@ const {
 } = require('./request-approval-routing');
 
 const port = Number(process.env.PORT || 3000);
-const notificationRuntimeRelease = '2026-10-14-chat-storage-project-v15';
+const notificationRuntimeRelease = '2026-10-17-deduction-notification-policy-v16';
 const dispatchSecret = process.env.NOTIFICATION_DISPATCH_SECRET || '';
 const defaultGoogleWorkspaceOrigins = [
   'https://zawolf-hr-system-60317.web.app',
@@ -1092,7 +1093,7 @@ async function handleAttendanceSecurityReview(req, res) {
           targetId: attendanceId,
           createdAt: admin.firestore.FieldValue.serverTimestamp(),
         }, { merge: true });
-      if (userId) {
+      if (userId && shouldCreateNotification('attendance_security_reviewed')) {
         const notificationRef = db.collection('notifications').doc(userId)
           .collection('items')
           .doc(`attendance_security_${attendanceId}_${operationKey}`);

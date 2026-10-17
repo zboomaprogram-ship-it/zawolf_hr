@@ -1,4 +1,5 @@
 const admin = require('firebase-admin');
+const { shouldCreateNotification } = require('./deduction-notification-policy');
 const { isOneSignalConfigured, sendPushToUsers } = require('./onesignal');
 const {
   emulatorProjectId,
@@ -66,7 +67,8 @@ function routeForNotification(type) {
   if (value === 'attendance_security_review') return '/manager/requests';
   if (value === 'attendance_security_reviewed') return '/employee/dashboard';
   if (value === 'salary_deduction_pending') return '/manager/requests';
-  if (value === 'salary_deduction_reviewed') return '/employee/deductions';
+  if (value === 'salary_deduction_approved' ||
+      value === 'early_leave_deduction_approved') return '/employee/deductions';
   if (value === 'complaint_new') return '/manager/requests';
   if (
     value === 'administrative_request_submitted' ||
@@ -513,6 +515,24 @@ async function markPushSuppressed(db, item, reason) {
   });
 }
 
+// These records are created by older mobile clients before the Hostinger
+// dispatcher sees them. Remove them from the inbox as well as from push
+// delivery so a reviewer never sees a pending deduction or security alert.
+async function discardSuppressedNotification(db, item) {
+  await db.runTransaction(async (transaction) => {
+    const notification = await transaction.get(item.ref);
+    if (!notification.exists) return;
+    const data = notification.data() || {};
+    const userRef = db.collection('users').doc(item.userId);
+    const user = await transaction.get(userRef);
+    if (user.exists && data.isRead === false) {
+      const unread = Math.max(0, Number(user.data()?.unreadNotifications || 0));
+      transaction.update(userRef, { unreadNotifications: Math.max(0, unread - 1) });
+    }
+    transaction.delete(item.ref);
+  });
+}
+
 async function loadPendingNotifications(db) {
   const { batchSize, perUserLimit, maxAttempts } = dispatchConfig();
   // A collection-group query avoids scanning every user and then every user's
@@ -555,12 +575,8 @@ async function loadPendingNotifications(db) {
     ) {
       continue;
     }
-    if (data.type === 'attendance_security_review') {
-      await doc.ref.update({
-        pushSent: true,
-        pushDeliveryStatus: 'suppressed',
-        pushSentAt: admin.firestore.FieldValue.serverTimestamp(),
-      });
+    if (!shouldCreateNotification(data.type, data)) {
+      await discardSuppressedNotification(db, { ref: doc.ref, userId });
       continue;
     }
     const claimed = await claimNotification(db, doc.ref);

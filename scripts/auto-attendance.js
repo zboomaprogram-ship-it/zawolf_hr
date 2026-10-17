@@ -1,4 +1,5 @@
 const admin = require('firebase-admin');
+const { shouldCreateNotification } = require('./deduction-notification-policy');
 const {
   getExistingFirebaseApp,
   installFirestoreCompatibility,
@@ -139,6 +140,7 @@ function deductionFor(nowMinutes, startMinutes, policy, salary, currency) {
 }
 
 async function writeHrNotification(db, title, body, data, type = 'salary_deduction_pending') {
+  if (!shouldCreateNotification(type)) return;
   const hrUsers = await db.collection('users').get();
   const batch = db.batch();
   let count = 0;
@@ -161,6 +163,7 @@ async function writeHrNotification(db, title, body, data, type = 'salary_deducti
 }
 
 async function writeUserNotification(db, userId, title, body, data, type = 'salary_deduction_pending') {
+  if (!shouldCreateNotification(type)) return;
   if (!userId) return;
   const userRef = db.collection('users').doc(userId);
   const notification = db.collection('notifications').doc(userId).collection('items').doc();
