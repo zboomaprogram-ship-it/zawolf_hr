@@ -255,11 +255,17 @@ function resolveAudienceUsers(audience, users, request = {}) {
   return unique(matches.map((user) => user.uid || user.id));
 }
 
-function notificationIdentity({ collection, requestId, request, recipientId }) {
+function notificationIdentity({ collection, requestId, request, recipientId, kind = 'approval' }) {
   const status = clean(request.status).toLowerCase() || 'unknown';
   const index = Math.max(0, Number(request.currentApprovalIndex ?? request.managerApprovalIndex ?? 0));
+  // Keep the legacy approval-turn identity unchanged. Awareness notifications
+  // are a separate, informational event and must never replace the current
+  // approver's actionable notification.
+  const identityParts = kind === 'approval'
+    ? [collection, requestId, status, index, recipientId]
+    : [kind, collection, requestId, recipientId];
   const digest = crypto.createHash('sha256')
-    .update([collection, requestId, status, index, recipientId].join('\u001f'))
+    .update(identityParts.join('\u001f'))
     .digest('hex').slice(0, 40);
   return `request-stage-${digest}`;
 }
@@ -300,6 +306,79 @@ function notificationFor({ collection, requestId, request, recipientId, audience
   };
 }
 
+function requestTypeLabel(collection, request = {}) {
+  const leaveType = clean(request.leaveType);
+  if (collection === 'leaves') {
+    return {
+      casual: 'إجازة عارضة',
+      day_off: 'إجازة اعتيادية',
+      annual: 'إجازة اعتيادية',
+      sick: 'إجازة مرضية',
+      unpaid: 'إجازة بدون راتب',
+      exam: 'إجازة امتحان',
+      paternity: 'إجازة خاصة',
+      remote: 'يوم عمل عن بعد',
+    }[leaveType] || 'طلب إجازة';
+  }
+  return {
+    permissions: 'طلب إذن',
+    advances: 'طلب سلفة',
+    administrativeRequests: 'طلب إداري',
+    attendanceCorrectionRequests: 'طلب تصحيح حضور',
+    resignations: 'طلب استقالة',
+    employeeDeletionRequests: 'طلب شؤون موظفين',
+    complaints: 'شكوى',
+    customRequests: 'طلب مخصص',
+    meetingRequests: 'طلب اجتماع',
+    hiringRequests: 'طلب تعيين',
+  }[collection] || 'طلب جديد';
+}
+
+function submittedAt(request = {}) {
+  const value = request.submittedAt || request.createdAt || request.requestedAt;
+  return value?.toDate?.() || (value instanceof Date ? value : null);
+}
+
+function isRecentSubmission(request = {}, now = Date.now()) {
+  const occurredAt = submittedAt(request);
+  return occurredAt instanceof Date &&
+    Math.abs(now - occurredAt.getTime()) <= 2 * 24 * 60 * 60 * 1000;
+}
+
+function shouldNotifyHrOfSubmission({ collection, request }) {
+  // Casual leave is committed through the dedicated endpoint, which creates
+  // one durable information notification for HR and every route member in the
+  // same operation. Do not duplicate that event through the generic listener.
+  if (collection === 'leaves' && request?.autoApproved === true &&
+      clean(request?.leaveType).toLowerCase() === 'casual') {
+    return false;
+  }
+  return isRecentSubmission(request);
+}
+
+function hrSubmissionNotification({ collection, requestId, request, recipientId }) {
+  const employeeName = clean(
+    request.employeeName || request.requesterName || request.proposedEmployeeName || 'موظف',
+  );
+  return {
+    notificationId: notificationIdentity({
+      collection, requestId, request, recipientId, kind: 'hr_submission',
+    }),
+    type: 'request_hr_submission_notice',
+    title: 'طلب جديد للموارد البشرية',
+    body: `${employeeName} أرسل ${requestTypeLabel(collection, request)}.`,
+    data: {
+      route: requestRoute(collection, requestId, false),
+      requestCollection: collection,
+      requestId,
+      actionRequired: 'view_request',
+      notificationScope: 'hr_awareness',
+    },
+    isRead: false,
+    pushSent: false,
+  };
+}
+
 async function loadActiveUsers(db) {
   const snapshot = await db.collection('users').where('isActive', '==', true).limit(500).get();
   return snapshot.docs.map((doc) => ({ uid: doc.id, ...doc.data() }));
@@ -331,7 +410,6 @@ async function hasExistingActionNotification({ db, collection, requestId, recipi
 
 async function reconcileRequestNotification({ db, admin, collection, requestId, request, users }) {
   const audience = approvalAudience(request);
-  if (audience.kind === 'none') return { found: 0, created: 0 };
   if (audience.kind === 'employee') {
     const value = request.finalApprovalAt || request.reviewedAt || request.updatedAt || request.cancelledAt || request.submittedAt;
     const occurredAt = value?.toDate?.() || (value instanceof Date ? value : null);
@@ -342,7 +420,9 @@ async function reconcileRequestNotification({ db, admin, collection, requestId, 
     }
   }
   const directory = users || await loadActiveUsers(db);
-  const recipients = resolveAudienceUsers(audience, directory, request);
+  const recipients = audience.kind === 'none'
+    ? []
+    : resolveAudienceUsers(audience, directory, request);
   let created = 0;
   for (const recipientId of recipients) {
     // Current mobile builds still attempt the first notification directly
@@ -353,6 +433,17 @@ async function reconcileRequestNotification({ db, admin, collection, requestId, 
     })) continue;
     const notification = notificationFor({ collection, requestId, request, recipientId, audience });
     if (await queueOnce({ db, admin, recipientId, notification })) created += 1;
+  }
+
+  if (shouldNotifyHrOfSubmission({ collection, request })) {
+    const hrAudience = { kind: 'role', role: 'hr', ids: [], status: 'submitted' };
+    const hrRecipients = resolveAudienceUsers(hrAudience, directory, request);
+    for (const recipientId of hrRecipients) {
+      const notification = hrSubmissionNotification({
+        collection, requestId, request, recipientId,
+      });
+      if (await queueOnce({ db, admin, recipientId, notification })) created += 1;
+    }
   }
   return { found: recipients.length, created };
 }
@@ -419,8 +510,11 @@ module.exports = {
   hasExistingActionNotification,
   notificationFor,
   notificationIdentity,
+  hrSubmissionNotification,
+  isRecentSubmission,
   resolveAudienceUsers,
   reconcileRequestNotification,
+  shouldNotifyHrOfSubmission,
   userMatchesRole,
   watchRequestNotifications,
 };

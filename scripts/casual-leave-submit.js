@@ -18,6 +18,70 @@ function operationKey(actorId, operationId) {
   return crypto.createHash('sha256').update(`${actorId}|${operationId}`).digest('hex').slice(0, 40);
 }
 
+function uniqueIds(values) {
+  return [...new Set(values.map((value) => clean(value, 160)).filter(Boolean))];
+}
+
+function isHrUser(user = {}) {
+  const role = clean(user.role, 80).toLowerCase();
+  const department = clean(user.department || user.departmentName, 160).toLowerCase();
+  return ['hr', 'hr_admin', 'hr_manager', 'hr_specialist', 'hr_officer', 'hr_staff'].includes(role) ||
+    user.isHr === true || department.includes('human resource') || department.includes('الموارد البشرية');
+}
+
+async function queueNotification({ db, admin, recipientId, notification }) {
+  const ref = db.collection('notifications').doc(recipientId).collection('items').doc(notification.notificationId);
+  return db.runTransaction(async (tx) => {
+    if ((await tx.get(ref)).exists) return false;
+    tx.create(ref, {
+      ...notification,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+    tx.set(db.collection('users').doc(recipientId), {
+      unreadNotifications: admin.firestore.FieldValue.increment(1),
+    }, { merge: true });
+    return true;
+  });
+}
+
+async function notifyCasualLeaveAudience({ db, admin, actor, leaveId, user, numberOfDays, startDate }) {
+  const activeUsers = await db.collection('users').where('isActive', '==', true).limit(500).get();
+  const routeIds = uniqueIds([
+    user.teamLeaderId,
+    ...(Array.isArray(user.managerIds) ? user.managerIds : []),
+    user.managerId,
+  ]).filter((id) => id !== actor.uid);
+  const hrIds = activeUsers.docs
+    .filter((doc) => doc.id !== actor.uid && isHrUser(doc.data() || {}))
+    .map((doc) => doc.id);
+  const recipientIds = uniqueIds([...routeIds, ...hrIds]);
+  const employeeName = clean(user.displayName || user.name, 160) || 'الموظف';
+  const dateLabel = startDate.toISOString().slice(0, 10);
+
+  await Promise.allSettled(recipientIds.map((recipientId) => queueNotification({
+    db,
+    admin,
+    recipientId,
+    notification: {
+      notificationId: `casual-leave-awareness-${leaveId}-${recipientId}`,
+      type: 'casual_leave_notification',
+      title: `إشعار إجازة عارضة - ${employeeName}`,
+      body: `سجل ${employeeName} إجازة عارضة معتمدة تلقائياً لمدة ${numberOfDays} يوم بدءاً من ${dateLabel}.`,
+      data: {
+        leaveId,
+        requestId: leaveId,
+        requestCollection: 'leaves',
+        category: 'leave',
+        route: `/manager/requests?category=leaves&requestId=${encodeURIComponent(leaveId)}`,
+        actionRequired: 'view_request',
+        notificationScope: 'casual_leave_awareness',
+      },
+      isRead: false,
+      pushSent: false,
+    },
+  })));
+}
+
 async function submitCasualLeave({ db, admin, actor, body = {} }) {
   const operationId = clean(body.operationId, 160);
   const leaveId = clean(body.leaveId, 160);
@@ -108,8 +172,26 @@ async function submitCasualLeave({ db, admin, actor, body = {} }) {
       });
       tx.set(userRef, { unreadNotifications: admin.firestore.FieldValue.increment(1) }, { merge: true });
     });
+    // A casual leave is approved by policy, so its route members have no
+    // decision to make. They still need one durable, informational alert.
+    // Keep this server-owned so it reaches every approver even on older apps.
+    try {
+      const userSnapshot = await userRef.get();
+      await notifyCasualLeaveAudience({
+        db, admin, actor, leaveId, user: userSnapshot.data() || {}, numberOfDays, startDate,
+      });
+    } catch (_) {
+      // The leave is already committed. The employee must not retry because a
+      // best-effort awareness notification is temporarily unavailable.
+    }
   }
   return { leaveId, status: 'approved', replayed };
 }
 
-module.exports = { submitCasualLeave, parseDay, operationKey };
+module.exports = {
+  submitCasualLeave,
+  parseDay,
+  operationKey,
+  isHrUser,
+  uniqueIds,
+};

@@ -43,7 +43,8 @@ class DashboardAttendanceSummary {
 
   int get attended => present + late + fieldMission;
 
-  int get accounted => present + late + permission + dayOff + notAttended + fieldMission;
+  int get accounted =>
+      present + late + permission + dayOff + notAttended + fieldMission;
 
   double percentOf(int value) {
     if (totalEmployees == 0) return 0;
@@ -59,6 +60,10 @@ class DashboardAttendancePerson {
   final int lateMinutes;
   final bool? checkoutPolicyEnabled;
 
+  /// The approved leave type for [status] == `day_off`, when the absence is
+  /// an employee leave rather than a scheduled/company day off.
+  final String? leaveType;
+
   const DashboardAttendancePerson({
     required this.employee,
     required this.status,
@@ -66,6 +71,7 @@ class DashboardAttendancePerson {
     this.checkOutTime,
     this.lateMinutes = 0,
     this.checkoutPolicyEnabled,
+    this.leaveType,
   });
 
   bool get needsCheckout =>
@@ -188,12 +194,12 @@ class DashboardAttendanceSummaryService {
                       !end.isBefore(DateTime(date.year, date.month, date.day));
                 }).toList(),
               ),
-              _SummaryQueryResult(
-                [
-                  ...all[3].docs.where((doc) => doc.data()?['date'] == key),
-                  ...all[4].docs.where((doc) => doc.data()?['missionDate'] == key),
-                ],
-              ),
+              _SummaryQueryResult([
+                ...all[3].docs.where((doc) => doc.data()?['date'] == key),
+                ...all[4].docs.where(
+                  (doc) => doc.data()?['missionDate'] == key,
+                ),
+              ]),
             ],
           ).then((details) => details.summary);
         }),
@@ -228,7 +234,9 @@ class DashboardAttendanceSummaryService {
     final last = DateTime(end.year, end.month, end.day);
     final dayCount = last.difference(first).inDays + 1;
     if (dayCount < 1 || dayCount > 31) {
-      throw ArgumentError('Dashboard attendance ranges must contain 1 to 31 days.');
+      throw ArgumentError(
+        'Dashboard attendance ranges must contain 1 to 31 days.',
+      );
     }
     final today = DateTime.now();
     final normalizedToday = DateTime(today.year, today.month, today.day);
@@ -245,11 +253,13 @@ class DashboardAttendanceSummaryService {
     const batchSize = 3;
     for (var offset = 0; offset < dates.length; offset += batchSize) {
       final batchEnd = (offset + batchSize).clamp(0, dates.length);
-      summaries.addAll(await Future.wait(
-        dates.sublist(offset, batchEnd).map(
-          (date) => _buildSummaryForDate(reviewer, employees, date),
+      summaries.addAll(
+        await Future.wait(
+          dates
+              .sublist(offset, batchEnd)
+              .map((date) => _buildSummaryForDate(reviewer, employees, date)),
         ),
-      ));
+      );
     }
     return summaries;
   }
@@ -337,6 +347,7 @@ class DashboardAttendanceSummaryService {
     }
 
     final dayOffUsers = <String>{};
+    final leaveTypeByUser = <String, String>{};
     final startOfToday = DateTime(date.year, date.month, date.day);
     for (final doc in results[2].docs) {
       final data = doc.data();
@@ -345,11 +356,12 @@ class DashboardAttendanceSummaryService {
       if (!employeeIds.contains(userId)) continue;
       final endDate = (data['endDate'] as Timestamp?)?.toDate();
       if (endDate == null) continue;
-      if (dashboardLeaveOverlapsDate(
-        leaveEnd: endDate,
-        date: startOfToday,
-      )) {
+      if (dashboardLeaveOverlapsDate(leaveEnd: endDate, date: startOfToday)) {
         dayOffUsers.add(userId);
+        final leaveType = (data['leaveType'] as String?)?.trim();
+        if (leaveType != null && leaveType.isNotEmpty) {
+          leaveTypeByUser[userId] = leaveType;
+        }
       }
     }
 
@@ -372,6 +384,7 @@ class DashboardAttendanceSummaryService {
       DateTime? checkOutTime;
       var lateMinutes = 0;
       bool? checkoutPolicyEnabled;
+      String? leaveType;
       if (fieldMissionUsers.contains(employee.uid) ||
           (attendance != null && attendance['status'] == 'field_mission')) {
         status = 'field_mission';
@@ -380,6 +393,7 @@ class DashboardAttendanceSummaryService {
         checkoutPolicyEnabled = attendance?['checkoutPolicyEnabled'] as bool?;
       } else if (dayOffUsers.contains(employee.uid)) {
         status = 'day_off';
+        leaveType = leaveTypeByUser[employee.uid];
       } else if (permissionUsers.contains(employee.uid)) {
         // An approved time permission remains visible in the company status
         // even when the employee has already checked in for that day.
@@ -397,12 +411,14 @@ class DashboardAttendanceSummaryService {
         checkoutPolicyEnabled = attendance['checkoutPolicyEnabled'] as bool?;
         if (attendanceStatus == 'on-leave') {
           status = 'day_off';
+          leaveType = (attendance['leaveType'] as String?)?.trim();
         } else if (attendanceStatus == 'absent') {
           status = 'not_attended';
         } else if (!hasRealCheckIn) {
-          status = employee.workSchedule.isWorkDay(date)
-              ? 'not_attended'
-              : 'day_off';
+          status =
+              employee.workSchedule.isWorkDay(date)
+                  ? 'not_attended'
+                  : 'day_off';
         } else if (isLate || _isLateStatus(attendanceStatus)) {
           status = 'late';
         } else {
@@ -419,6 +435,7 @@ class DashboardAttendanceSummaryService {
           checkOutTime: checkOutTime,
           lateMinutes: lateMinutes,
           checkoutPolicyEnabled: checkoutPolicyEnabled,
+          leaveType: leaveType,
         ),
       );
     }
@@ -491,10 +508,8 @@ class DashboardAttendanceSummaryService {
       return byId.values.toList();
     }
 
-    final snap = await _db
-        .collection('users')
-        .where('isActive', isEqualTo: true)
-        .get();
+    final snap =
+        await _db.collection('users').where('isActive', isEqualTo: true).get();
     return snap.docs
         .map(UserModel.fromFirestore)
         .where(
@@ -594,7 +609,8 @@ class DashboardAttendanceSummaryService {
       ),
       _SummaryQueryResult(
         allMissionDocs,
-        isComplete: assignmentSnaps.every((snapshot) => snapshot.isComplete) &&
+        isComplete:
+            assignmentSnaps.every((snapshot) => snapshot.isComplete) &&
             adminMissionSnaps.every((snapshot) => snapshot.isComplete),
       ),
     ];
@@ -646,10 +662,7 @@ class DashboardAttendanceSummaryService {
             .where('missionDate', isEqualTo: dateKey),
       ),
     ]);
-    final missionDocs = [
-      ...results[3].docs,
-      ...results[4].docs,
-    ];
+    final missionDocs = [...results[3].docs, ...results[4].docs];
     return [
       results[0],
       results[1],

@@ -37,6 +37,16 @@ void main() {
     expect(person.checkoutNotRequired, isTrue);
   });
 
+  test('day-off detail retains the employee requested leave type', () {
+    final person = DashboardAttendancePerson(
+      employee: _employee(),
+      status: 'day_off',
+      leaveType: 'casual',
+    );
+
+    expect(person.leaveType, 'casual');
+  });
+
   test(
     'legacy attendance without a policy snapshot retains missing checkout',
     () {
@@ -97,23 +107,20 @@ void main() {
     },
   );
 
-  test(
-    'active attendance deductions lower discipline percentage',
-    () {
-      final summary = AttendancePeriodSummary([
-        _periodDay(
-          dateKey: '2026-08-16',
-          isLate: true,
-          deductionFraction: 0.25,
-          approvalStatus: 'pending_hr',
-        ),
-        _periodDay(dateKey: '2026-08-17'),
-      ]);
+  test('active attendance deductions lower discipline percentage', () {
+    final summary = AttendancePeriodSummary([
+      _periodDay(
+        dateKey: '2026-08-16',
+        isLate: true,
+        deductionFraction: 0.25,
+        approvalStatus: 'pending_hr',
+      ),
+      _periodDay(dateKey: '2026-08-17'),
+    ]);
 
-      expect(summary.lateDays, 1);
-      expect(summary.disciplinePercentage, 87.5);
-    },
-  );
+    expect(summary.lateDays, 1);
+    expect(summary.disciplinePercentage, 87.5);
+  });
 
   test(
     'rejected or reversed deductions do not lower discipline percentage',

@@ -194,7 +194,7 @@ const {
 } = require('./request-approval-routing');
 
 const port = Number(process.env.PORT || 3000);
-const notificationRuntimeRelease = '2026-10-17-deduction-notification-policy-v16';
+const notificationRuntimeRelease = '2026-10-18-request-notification-awareness-v17';
 const dispatchSecret = process.env.NOTIFICATION_DISPATCH_SECRET || '';
 const defaultGoogleWorkspaceOrigins = [
   'https://zawolf-hr-system-60317.web.app',
@@ -4772,6 +4772,7 @@ const server = http.createServer(async (req, res) => {
         db: admin.firestore(initializeFirebase()), admin, actor,
         body: await readJsonBody(req, 16 * 1024),
       });
+      schedulePushDispatch('casual_leave_submission', 0);
       return sendJson(res, 201, { ok: true, ...result });
     } catch (error) {
       return sendJson(res, 400, { ok: false, code: 'casual_leave_submit_failed', error: String(error.message || error) });

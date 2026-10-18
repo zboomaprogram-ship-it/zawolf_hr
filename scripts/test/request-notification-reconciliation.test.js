@@ -10,7 +10,9 @@ const {
   hasExistingActionNotification,
   notificationIdentity,
   notificationFor,
+  hrSubmissionNotification,
   resolveAudienceUsers,
+  shouldNotifyHrOfSubmission,
   watchRequestNotifications,
 } = require('../request-notification-reconciliation');
 
@@ -63,6 +65,32 @@ test('HR stage reaches active HR only without super admin spam', () => {
   const request = { userId: 'employee-1', status: 'pending_hr' };
   const recipients = resolveAudienceUsers(approvalAudience(request), users, request);
   assert.deepEqual(recipients.sort(), ['hr-1']);
+});
+
+test('HR receives one informational notification when a recent request is submitted', () => {
+  const request = {
+    userId: 'employee-1',
+    employeeName: 'Employee One',
+    status: 'pending_manager',
+    submittedAt: new Date(),
+  };
+  assert.equal(shouldNotifyHrOfSubmission({ collection: 'permissions', request }), true);
+  const notification = hrSubmissionNotification({
+    collection: 'permissions', requestId: 'permission-1', request, recipientId: 'hr-1',
+  });
+  assert.equal(notification.type, 'request_hr_submission_notice');
+  assert.equal(notification.data.actionRequired, 'view_request');
+  assert.match(notification.body, /Employee One/);
+});
+
+test('automatic casual leave uses its dedicated HR and route notification path once', () => {
+  const request = {
+    userId: 'employee-1',
+    leaveType: 'casual',
+    autoApproved: true,
+    submittedAt: new Date(),
+  };
+  assert.equal(shouldNotifyHrOfSubmission({ collection: 'leaves', request }), false);
 });
 
 test('role stages resolve the accounting pool without notifying HR or managers', () => {

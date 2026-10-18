@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../components/wolf_card.dart';
+import '../../models/leave_type_policy.dart';
 import '../../models/user_model.dart';
 import '../../services/auth_service.dart';
 import '../../services/dashboard_attendance_summary_service.dart';
@@ -186,7 +187,10 @@ class _DaySummaryCard extends StatelessWidget {
                 ),
                 Text(
                   '${summary.totalEmployees} موظف',
-                  style: const TextStyle(color: ZaWolfColors.textMuted, fontSize: 13),
+                  style: const TextStyle(
+                    color: ZaWolfColors.textMuted,
+                    fontSize: 13,
+                  ),
                 ),
                 const SizedBox(width: 8),
                 Icon(
@@ -508,6 +512,13 @@ class _AttendancePeopleSection extends StatelessWidget {
 
   String _timeText(DashboardAttendancePerson person, DateFormat timeFormat) {
     final parts = <String>[];
+    if (person.status == 'day_off' &&
+        person.leaveType != null &&
+        person.leaveType!.isNotEmpty) {
+      parts.add(
+        'نوع الإجازة: ${LeaveTypePolicy.arabicLabel(person.leaveType!)}',
+      );
+    }
     if (person.checkInTime != null) {
       parts.add('حضور ${timeFormat.format(person.checkInTime!)}');
     }
