@@ -432,10 +432,10 @@ async function reconcilePendingAdvanceRoutes(db) {
       }
     }
 
-    // Repair the older shape where HR was represented as a literal manager
-    // while the document remained `pending_manager`. Without this repair, the
-    // timeline says HR but the action guard sees a manager stage and hides the
-    // HR approve/reject controls.
+    // Repair the old client shape that wrote a new advance as
+    // `pending_manager` without its route stage. The approved route starts at
+    // HR; without this repair the timeline says HR but the action guard sees a
+    // manager stage and hides HR approve/reject controls.
     const legacyHrSnap = await db.collection('advances')
       .where('status', '==', 'pending_manager')
       .limit(50)
@@ -501,7 +501,27 @@ function watchPendingAdvances({ db }) {
             }
           }
         });
-      }, (err) => console.warn('[Advance Listener Error]', err?.message || err));
+      }, (err) => console.warn('[Advance HR Listener Error]', err?.message || err));
+
+    // The legacy client creates advances before it can persist the explicit
+    // route stage. Convert that first, unreviewed manager-shaped document as
+    // soon as it arrives instead of making HR wait for the periodic repair.
+    const legacyUnsubscribe = db.collection('advances')
+      .where('status', '==', 'pending_manager')
+      .onSnapshot((snapshot) => {
+        snapshot.docChanges().forEach((change) => {
+          if (change.type !== 'added' && change.type !== 'modified') return;
+          const patch = legacyHrAdvancePatch(change.doc.data() || {});
+          if (!patch) return;
+          change.doc.ref.update(patch)
+            .catch((e) => console.warn('[Advance Route Listener Update Error]', e?.message || e));
+        });
+      }, (err) => console.warn('[Advance Route Listener Error]', err?.message || err));
+
+    return () => {
+      hrUnsubscribe();
+      legacyUnsubscribe();
+    };
   } catch (e) {
     console.warn('[watchPendingAdvances setup error]', e?.message || e);
     return null;
