@@ -412,12 +412,31 @@ const CEO_100_NAME = 'سامي المتولي المتولي';
 
 async function reconcilePendingAdvanceRoutes(db) {
   try {
-    const snap = await db.collection('advances')
-      .where('status', '==', 'pending_hr')
-      .limit(50)
-      .get();
+    const scanPending = async (status, onDocument) => {
+      const pageSize = 100;
+      const maxPages = 20;
+      let cursor = null;
+      let found = 0;
+      let changed = 0;
+      for (let page = 0; page < maxPages; page++) {
+        let query = db.collection('advances')
+          .where('status', '==', status)
+          .orderBy(admin.firestore.FieldPath.documentId())
+          .limit(pageSize);
+        if (cursor) query = query.startAfter(cursor);
+        const pageSnapshot = await query.get();
+        found += pageSnapshot.docs.length;
+        for (const doc of pageSnapshot.docs) {
+          if (await onDocument(doc)) changed++;
+        }
+        if (pageSnapshot.docs.length < pageSize) break;
+        cursor = pageSnapshot.docs[pageSnapshot.docs.length - 1];
+      }
+      return { found, changed };
+    };
+
     let updated = 0;
-    for (const doc of snap.docs) {
+    const hrScan = await scanPending('pending_hr', async (doc) => {
       const data = doc.data();
       if (!data.advanceRouteStage || data.advanceRouteStage !== 'hr') {
         await doc.ref.update({
@@ -428,34 +447,34 @@ async function reconcilePendingAdvanceRoutes(db) {
           managerIds: ['HR', CEO_100_UID],
           managerNames: ['الموارد البشرية', CEO_100_NAME],
         });
-        updated++;
+        return true;
       }
-    }
+      return false;
+    });
+    updated += hrScan.changed;
 
     // Repair the old client shape that wrote a new advance as
     // `pending_manager` without its route stage. The approved route starts at
     // HR; without this repair the timeline says HR but the action guard sees a
     // manager stage and hides HR approve/reject controls.
-    const legacyHrSnap = await db.collection('advances')
-      .where('status', '==', 'pending_manager')
-      .limit(50)
-      .get();
-    for (const doc of legacyHrSnap.docs) {
+    const legacyScan = await scanPending('pending_manager', async (doc) => {
       const patch = legacyHrAdvancePatch(doc.data() || {});
       if (patch) {
         await doc.ref.update(patch);
-        updated++;
+        return true;
       }
-    }
+      return false;
+    });
+    updated += legacyScan.changed;
 
-    const accSnap = await db.collection('advances')
-      .where('status', '==', 'pending_manager')
-      .limit(50)
-      .get();
-    const { accountantUids, accountantCodes } = await getActiveAccountantUids(db);
-    const accUidList = Array.from(accountantUids);
-    const accCodeList = Array.from(accountantCodes);
-    for (const doc of accSnap.docs) {
+    // Keep the optional accountant recipient repair isolated. A temporary
+    // accountant-directory read failure must never stop the HR-stage repair.
+    let accountingScan = { found: 0, changed: 0 };
+    try {
+      const { accountantUids, accountantCodes } = await getActiveAccountantUids(db);
+      const accUidList = Array.from(accountantUids);
+      const accCodeList = Array.from(accountantCodes);
+      accountingScan = await scanPending('pending_manager', async (doc) => {
       const data = doc.data();
       if (data.advanceRouteStage === 'accounting' && accUidList.length > 0) {
         const currentIds = Array.isArray(data.managerIds) ? data.managerIds : [];
@@ -469,12 +488,17 @@ async function reconcilePendingAdvanceRoutes(db) {
             managerIds: mergedIds,
             managerCodes: mergedCodes,
           });
-          updated++;
+          return true;
         }
       }
+      return false;
+      });
+      updated += accountingScan.changed;
+    } catch (error) {
+      console.warn('[Advance Accounting Recipient Reconciliation Error]', error?.message || error);
     }
 
-    return { found: snap.docs.length + legacyHrSnap.docs.length + accSnap.docs.length, updated };
+    return { found: hrScan.found + legacyScan.found + accountingScan.found, updated };
   } catch (error) {
     console.error('[AdvanceReconciliation Error]', error);
     return { error: String(error.message || error) };
@@ -483,7 +507,7 @@ async function reconcilePendingAdvanceRoutes(db) {
 
 function watchPendingAdvances({ db }) {
   try {
-    return db.collection('advances')
+    const hrUnsubscribe = db.collection('advances')
       .where('status', '==', 'pending_hr')
       .onSnapshot((snapshot) => {
         snapshot.docChanges().forEach((change) => {
@@ -6001,6 +6025,14 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(port, '0.0.0.0', () => {
   console.log(`ZaWolf notification dispatcher listening on port ${port}`);
+  // Advance routing is a compatibility repair, not an attendance job. Run it
+  // at each startup even when the optional background attendance scheduler is
+  // disabled, so an active HR reviewer is never blocked behind a stale route.
+  setTimeout(() => {
+    void reconcilePendingAdvanceRoutes(admin.firestore())
+      .then((result) => console.log('Advance route reconciliation:', JSON.stringify(result)))
+      .catch((error) => console.error('[AdvanceReconciliation Startup Error]', error));
+  }, 1000);
   // Firestore wakes the push dispatcher as soon as a notification document is
   // created. Scheduled work remains on a five-minute clock for attendance.
   if (notificationListenerEnabled) {
