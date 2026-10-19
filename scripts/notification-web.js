@@ -195,7 +195,7 @@ const {
 } = require('./request-approval-routing');
 
 const port = Number(process.env.PORT || 3000);
-const notificationRuntimeRelease = '2026-10-18-request-notification-awareness-v17';
+const notificationRuntimeRelease = '2026-10-19-advance-hr-route-repair-v25';
 const dispatchSecret = process.env.NOTIFICATION_DISPATCH_SECRET || '';
 const defaultGoogleWorkspaceOrigins = [
   'https://zawolf-hr-system-60317.web.app',
@@ -294,6 +294,7 @@ const diagnostics = {
   lastReminderResult: null,
   lastSalesKpiAt: null,
   lastSalesKpiResult: null,
+  advanceRouteReconciliation: { lastAt: null, result: null },
   listenerError: null,
   lastGoogleWorkspaceAuthError: null,
   // Safe operational metadata only. Detailed provider errors stay in private
@@ -4368,6 +4369,7 @@ async function runBackgroundDispatch() {
     let attendancePermissionReconciliation;
     let earlyLeaveReconciliation;
     let requestApprovalHistory;
+    let advanceRouteReconciliation;
     try {
       managerLeaveBypasses =
         await processManagerLeavePermissionBypasses();
@@ -4377,7 +4379,11 @@ async function runBackgroundDispatch() {
       earlyLeaveReconciliation =
         await reconcilePendingEarlyLeaves({ admin });
       automaticAttendance = await processAutomaticAttendance();
-      await reconcilePendingAdvanceRoutes(admin.firestore());
+      advanceRouteReconciliation = await reconcilePendingAdvanceRoutes(admin.firestore());
+      diagnostics.advanceRouteReconciliation = {
+        lastAt: new Date().toISOString(),
+        result: advanceRouteReconciliation,
+      };
       requestApprovalHistory = await reconcileRequestApprovalHistory({
         db: admin.firestore(),
         admin,
@@ -4405,6 +4411,7 @@ async function runBackgroundDispatch() {
       managerLeaveBypasses,
       attendancePermissionReconciliation,
       earlyLeaveReconciliation,
+      advanceRouteReconciliation,
       requestApprovalHistory,
       automaticAttendance,
       reminders,
@@ -6030,7 +6037,13 @@ server.listen(port, '0.0.0.0', () => {
   // disabled, so an active HR reviewer is never blocked behind a stale route.
   setTimeout(() => {
     void reconcilePendingAdvanceRoutes(admin.firestore())
-      .then((result) => console.log('Advance route reconciliation:', JSON.stringify(result)))
+      .then((result) => {
+        diagnostics.advanceRouteReconciliation = {
+          lastAt: new Date().toISOString(),
+          result,
+        };
+        console.log('Advance route reconciliation:', JSON.stringify(result));
+      })
       .catch((error) => console.error('[AdvanceReconciliation Startup Error]', error));
   }, 1000);
   // Firestore wakes the push dispatcher as soon as a notification document is
