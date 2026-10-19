@@ -161,6 +161,28 @@ test('private chat policy enforces employee, manager, HR/admin, and IT boundarie
   assert.equal(P.canDirect(employee, { id: 'manager', role: 'manager' }, { employeeCanChatWithDirectManager: false }), false);
   assert.equal(P.canDirect(employee, { id: 'hr', role: 'hr_manager' }, { employeeCanChatWithHr: false }), false);
 });
+test('Account Management employee titles remain available as direct-chat peers', () => {
+  const employee = { uid: 'employee', role: 'employee', department: 'Programming' };
+  const accountManager = {
+    id: 'account-manager',
+    role: 'employee',
+    department: 'Account Management',
+    position: 'Account Manager',
+  };
+  const arabicAccountManager = {
+    id: 'arabic-account-manager',
+    role: 'employee',
+    department: 'Account Management',
+    jobTitle: 'مدير حساب',
+  };
+
+  assert.equal(P.isManager(accountManager), false);
+  assert.equal(P.isManager(arabicAccountManager), false);
+  assert.equal(P.canDirect(employee, accountManager), true);
+  assert.equal(P.canDirect(employee, arabicAccountManager), true);
+  // An actual authority role remains protected by the manager policy.
+  assert.equal(P.canDirect(employee, { ...accountManager, id: 'authority', role: 'manager' }), false);
+});
 test('direct creation is deterministic, participant-only, and rejects forged targets', async () => {
   const db = seed({
     'users/alice': { isActive: true, role: 'employee', managerId: 'manager' },

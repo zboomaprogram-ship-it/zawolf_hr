@@ -10,7 +10,17 @@ const isAdmin = user => ['super_admin', 'owner', 'admin', 'administrator'].inclu
 // The shared authorization helper intentionally treats admins as HR for
 // administrative operations, which is broader than this contact policy.
 const isHr = user => ['hr', 'hr_admin', 'hr_manager'].includes(role(user));
-const isManager = user => ['manager', 'general_manager', 'gm', 'ceo', 'coo'].includes(role(user)) || user?.isManager === true || /manager|مدير/i.test(String(user?.position || user?.jobTitle || ''));
+const jobTitle = user => String(user?.position || user?.jobTitle || '').trim();
+// "Account Manager" (and its Arabic equivalent) is a client-facing employee
+// title, not an organisational approval/management role. Treating any title
+// containing "manager" as an authority role hid Account Management employees
+// from normal employees' direct-chat picker.
+const isAccountManagementTitle = user => /\baccount\s*(?:manager|management|executive)\b|(?:مدير\s*حساب|إدارة\s*الحسابات)/i.test(jobTitle(user));
+const isManager = user => {
+  if (['manager', 'general_manager', 'gm', 'ceo', 'coo'].includes(role(user)) || user?.isManager === true) return true;
+  if (isAccountManagementTitle(user)) return false;
+  return /(?:^|\s)(?:general\s+|department\s+|team\s+)?manager(?:\s|$)|(?:مدير\s*(?:عام|قسم|إدارة)|قائد\s*فريق)/i.test(jobTitle(user));
+};
 const isIt = user => /^(it|information technology)$/i.test(department(user)) || /\bit\b|تقنية المعلومات|تكنولوجيا المعلومات/i.test(`${user?.position || ''} ${user?.jobTitle || ''}`);
 function managerIds(user) {
   return new Set([user?.managerId, user?.teamLeaderId, ...(Array.isArray(user?.managerIds) ? user.managerIds : [])].filter(id => typeof id === 'string' && id));
@@ -74,4 +84,3 @@ function departments(users, actor, policy = {}) {
   return [...new Set(users.filter(user => canDirect(actor, user, policy)).map(department).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'ar'));
 }
 module.exports = { department, isActive, isAdmin, isHr, isManager, isIt, managerIds, canDirect, departments, loadPolicy };
-
