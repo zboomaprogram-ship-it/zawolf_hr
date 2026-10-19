@@ -175,11 +175,20 @@ test('Account Management employee titles remain available as direct-chat peers',
     department: 'Account Management',
     jobTitle: 'مدير حساب',
   };
+  const accountsManager = {
+    id: 'accounts-manager',
+    role: 'employee',
+    department: 'Account Management',
+    // This is the title used by the existing Account Management profiles.
+    position: 'Accounts Manager',
+  };
 
   assert.equal(P.isManager(accountManager), false);
   assert.equal(P.isManager(arabicAccountManager), false);
+  assert.equal(P.isManager(accountsManager), false);
   assert.equal(P.canDirect(employee, accountManager), true);
   assert.equal(P.canDirect(employee, arabicAccountManager), true);
+  assert.equal(P.canDirect(employee, accountsManager), true);
   // An actual authority role remains protected by the manager policy.
   assert.equal(P.canDirect(employee, { ...accountManager, id: 'authority', role: 'manager' }), false);
 });

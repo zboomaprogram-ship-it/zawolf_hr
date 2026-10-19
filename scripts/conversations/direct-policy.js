@@ -15,7 +15,7 @@ const jobTitle = user => String(user?.position || user?.jobTitle || '').trim();
 // title, not an organisational approval/management role. Treating any title
 // containing "manager" as an authority role hid Account Management employees
 // from normal employees' direct-chat picker.
-const isAccountManagementTitle = user => /\baccount\s*(?:manager|management|executive)\b|(?:مدير\s*حساب|إدارة\s*الحسابات)/i.test(jobTitle(user));
+const isAccountManagementTitle = user => /\baccounts?\s*(?:manager|management|executive)\b|(?:مدير\s*حساب|إدارة\s*الحسابات)/i.test(jobTitle(user));
 const isManager = user => {
   if (['manager', 'general_manager', 'gm', 'ceo', 'coo'].includes(role(user)) || user?.isManager === true) return true;
   if (isAccountManagementTitle(user)) return false;
