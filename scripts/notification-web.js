@@ -68,6 +68,7 @@ const {
   listCustomRequests,
   getActiveAccountantUids,
 } = require('./configurable-requests');
+const { legacyHrAdvancePatch } = require('./advance-route-reconciliation');
 const {
   listAssignments: listAttendanceLocationAssignments,
   previewAssignments: previewAttendanceLocationAssignments,
@@ -431,6 +432,22 @@ async function reconcilePendingAdvanceRoutes(db) {
       }
     }
 
+    // Repair the older shape where HR was represented as a literal manager
+    // while the document remained `pending_manager`. Without this repair, the
+    // timeline says HR but the action guard sees a manager stage and hides the
+    // HR approve/reject controls.
+    const legacyHrSnap = await db.collection('advances')
+      .where('status', '==', 'pending_manager')
+      .limit(50)
+      .get();
+    for (const doc of legacyHrSnap.docs) {
+      const patch = legacyHrAdvancePatch(doc.data() || {});
+      if (patch) {
+        await doc.ref.update(patch);
+        updated++;
+      }
+    }
+
     const accSnap = await db.collection('advances')
       .where('status', '==', 'pending_manager')
       .limit(50)
@@ -457,7 +474,7 @@ async function reconcilePendingAdvanceRoutes(db) {
       }
     }
 
-    return { found: snap.docs.length + accSnap.docs.length, updated };
+    return { found: snap.docs.length + legacyHrSnap.docs.length + accSnap.docs.length, updated };
   } catch (error) {
     console.error('[AdvanceReconciliation Error]', error);
     return { error: String(error.message || error) };
