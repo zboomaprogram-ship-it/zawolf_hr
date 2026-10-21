@@ -19,10 +19,34 @@ installFirestoreCompatibility(admin);
 
 function dispatchConfig() {
   return {
-    batchSize: Number(process.env.NOTIFICATION_DISPATCH_BATCH_SIZE || 50),
+    batchSize: Number(process.env.NOTIFICATION_DISPATCH_BATCH_SIZE || 250),
     perUserLimit: Number(process.env.NOTIFICATION_DISPATCH_PER_USER_LIMIT || 10),
     maxAttempts: Number(process.env.NOTIFICATION_DISPATCH_MAX_ATTEMPTS || 3),
   };
+}
+
+function firestoreDate(value) {
+  if (!value) return null;
+  if (value instanceof Date) return value;
+  if (typeof value.toDate === 'function') return value.toDate();
+  if (typeof value.toMillis === 'function') return new Date(value.toMillis());
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function isAnnouncementPushExpired(data, now = new Date()) {
+  if (data?.type !== 'hr_announcement') return false;
+  const explicitExpiry = firestoreDate(data.pushExpiresAt);
+  if (explicitExpiry) return explicitExpiry.getTime() <= now.getTime();
+  const createdAt = firestoreDate(data.createdAt);
+  // A legacy announcement without a trustworthy creation time must never be
+  // emitted as a fresh lock-screen alert after a delayed queue drain.
+  if (!createdAt) return true;
+  const maxAgeMinutes = Math.max(
+    1,
+    Number(process.env.ANNOUNCEMENT_PUSH_MAX_AGE_MINUTES || 6 * 60),
+  );
+  return createdAt.getTime() + maxAgeMinutes * 60 * 1000 <= now.getTime();
 }
 
 function isUnsubscribedDeviceError(error) {
@@ -547,7 +571,9 @@ async function loadPendingNotifications(db) {
     ? await db.getAll(...userIds.map((userId) => db.collection('users').doc(userId)))
     : [];
   const activeUsers = new Set(
-    userDocs.filter((doc) => doc.exists && doc.data()?.isActive === true).map((doc) => doc.id),
+    // UserModel treats a missing legacy isActive field as active. Keep the
+    // server dispatcher aligned so those users receive both inbox and push.
+    userDocs.filter((doc) => doc.exists && doc.data()?.isActive !== false).map((doc) => doc.id),
   );
   const userRoles = new Map(
     userDocs
@@ -577,6 +603,10 @@ async function loadPendingNotifications(db) {
     }
     if (!shouldCreateNotification(data.type, data)) {
       await discardSuppressedNotification(db, { ref: doc.ref, userId });
+      continue;
+    }
+    if (isAnnouncementPushExpired(data)) {
+      await markPushSuppressed(db, { ref: doc.ref }, 'announcement_expired');
       continue;
     }
     const claimed = await claimNotification(db, doc.ref);
@@ -761,7 +791,72 @@ async function dispatchNotifications() {
   // revalidate them at delivery time before any OneSignal call.
   const checkoutPolicy = await loadCheckoutPolicy(db);
 
+  // Group broadcast announcements together so a single bulk OneSignal request delivers to all users.
+  const announcementGroups = new Map();
+  const standardItems = [];
+
   for (const item of pending) {
+    if (item.data.type === 'hr_announcement') {
+      const key = `${item.data.data?.announcementId || ''}_${item.data.title || ''}_${item.data.body || ''}`;
+      if (!announcementGroups.has(key)) {
+        announcementGroups.set(key, []);
+      }
+      announcementGroups.get(key).push(item);
+    } else {
+      standardItems.push(item);
+    }
+  }
+
+  for (const group of announcementGroups.values()) {
+    const sampleItem = group[0];
+    const title = sampleItem.data.title || 'إعلان إداري';
+    const body = sampleItem.data.body || '';
+    const payload = notificationPayload(sampleItem, sampleItem.data, sampleItem.recipientRole);
+    const userIds = group.map((i) => i.userId);
+
+    try {
+      const result = await sendPushToUsers(
+        userIds,
+        title,
+        body,
+        payload,
+        { idempotencyKey: `announcement:${sampleItem.data.data?.announcementId || sampleItem.id}` },
+      );
+      if (result.sent) {
+        const invalidSet = new Set(result.invalidUserIds || []);
+        const successfulItems = group.filter((i) => !invalidSet.has(i.userId));
+        const invalidItems = group.filter((i) => invalidSet.has(i.userId));
+
+        if (successfulItems.length) {
+          await markSent(db, successfulItems, result);
+          sent += successfulItems.length;
+        }
+        if (invalidItems.length) {
+          await markWaitingForSubscription(
+            db,
+            invalidItems,
+            new Error(`OneSignal reported invalid aliases: ${[...invalidSet].join(', ')}`),
+          );
+          failed += invalidItems.length;
+        }
+      } else {
+        await markFailed(db, group, new Error(result.reason || 'Push was not sent.'));
+        failed += group.length;
+      }
+    } catch (error) {
+      if (isUnsubscribedDeviceError(error)) {
+        await markWaitingForSubscription(db, group, error);
+      } else {
+        await markFailed(db, group, error);
+      }
+      failed += group.length;
+      console.warn(
+        `Failed to push bulk announcement (${group.length} users): ${error.message}`,
+      );
+    }
+  }
+
+  for (const item of standardItems) {
     const title = item.data.title || 'تنبيه جديد';
     const body = item.data.body || '';
     const payload = notificationPayload(item, item.data, item.recipientRole);
@@ -798,8 +893,17 @@ async function dispatchNotifications() {
         { idempotencyKey: `${item.userId}:${item.id}` },
       );
       if (result.sent) {
-        await markSent(db, [item], result);
-        sent++;
+        if (result.invalidUserIds && result.invalidUserIds.includes(item.userId)) {
+          await markWaitingForSubscription(
+            db,
+            [item],
+            new Error(`OneSignal reported invalid alias: ${item.userId}`),
+          );
+          failed++;
+        } else {
+          await markSent(db, [item], result);
+          sent++;
+        }
       } else {
         await markFailed(db, [item], new Error(result.reason || 'Push was not sent.'));
         failed++;
@@ -847,6 +951,7 @@ module.exports = {
   shouldSkipMutedConversation,
   shouldSkipStaleRequestApproval,
   markPushSuppressed,
+  isAnnouncementPushExpired,
   watchPendingNotifications,
   watchPendingConversationOutboxes,
   companyOsOutboxRecipients,

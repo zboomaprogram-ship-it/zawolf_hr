@@ -147,6 +147,10 @@ const {
 const {
   watchRequestNotifications,
 } = require('./request-notification-reconciliation');
+const {
+  reconcileRecentAnnouncements,
+  watchAnnouncements,
+} = require('./announcement-notification-reconciliation');
 const { isEmployeeApiTokenAllowed } = require('./employee-api-auth');
 const {
   canManageDeveloperTools,
@@ -272,6 +276,8 @@ let notificationListenerOwner = false;
 let conversationOutboxUnsubscribe = null;
 let requestNotificationsUnsubscribe = null;
 let advanceRouteUnsubscribe = null;
+let announcementUnsubscribe = null;
+let announcementStartupReconciled = false;
 let runtimeLease = null;
 let googleSheetsIntegration = null;
 const googleSheetsRoleCache = new Map();
@@ -564,10 +570,12 @@ async function ensureNotificationListenerLeader() {
       if (conversationOutboxUnsubscribe) conversationOutboxUnsubscribe();
       if (requestNotificationsUnsubscribe) requestNotificationsUnsubscribe();
       if (advanceRouteUnsubscribe) advanceRouteUnsubscribe();
+      if (announcementUnsubscribe) announcementUnsubscribe();
       notificationUnsubscribe = null;
       conversationOutboxUnsubscribe = null;
       requestNotificationsUnsubscribe = null;
       advanceRouteUnsubscribe = null;
+      announcementUnsubscribe = null;
       notificationListenerOwner = false;
       return;
     }
@@ -575,6 +583,34 @@ async function ensureNotificationListenerLeader() {
     if (!advanceRouteUnsubscribe) {
       advanceRouteUnsubscribe = watchPendingAdvances({ db: admin.firestore() });
     }
+    if (!announcementStartupReconciled) {
+      announcementStartupReconciled = true;
+      try {
+        const repaired = await reconcileRecentAnnouncements({
+          db: admin.firestore(), admin, limit: 50,
+        });
+        const created = repaired.reduce((sum, item) => sum + item.created, 0);
+        console.log(`Announcement notification reconciliation: checked ${repaired.length}, restored ${created}.`);
+        if (created > 0) schedulePushDispatch('announcement_reconciliation', 0);
+      } catch (error) {
+        announcementStartupReconciled = false;
+        console.error('Announcement notification reconciliation failed:', error);
+      }
+    }
+    if (!announcementUnsubscribe) announcementUnsubscribe = watchAnnouncements({
+      db: admin.firestore(),
+      admin,
+      onReconciled: (result) => {
+        console.log('Announcement notification fanout:', JSON.stringify(result));
+        if (result.created > 0) schedulePushDispatch('announcement_fanout', 0);
+      },
+      onError: (error) => {
+        diagnostics.listenerError = String(error.message || error);
+        console.error('Announcement listener failed:', error);
+        announcementUnsubscribe = null;
+        setTimeout(() => void ensureNotificationListenerLeader(), 60 * 1000);
+      },
+    });
     if (!notificationUnsubscribe) notificationUnsubscribe = watchPendingNotifications({
       onPending: (count) => {
         diagnostics.listenerError = null;
@@ -628,6 +664,7 @@ async function ensureNotificationListenerLeader() {
     conversationOutboxUnsubscribe = null;
     requestNotificationsUnsubscribe = null;
     advanceRouteUnsubscribe = null;
+    announcementUnsubscribe = null;
     setTimeout(() => void ensureNotificationListenerLeader(), 60 * 1000);
   }
 }
@@ -3819,44 +3856,70 @@ async function handleRequestManagementNotification(req, res) {
 
 async function decideAdvanceRequest({ db, admin, actor, advanceId, body }) {
   const decision = body?.decision === 'approved' ? 'approved' : body?.decision === 'rejected' ? 'rejected' : '';
-  const comment = String(body?.comment || '').trim();
+  const comment = String(body?.comment || '').trim().slice(0, 500);
   if (!decision) throw new Error('قرار السلفة غير صالح.');
 
   const docRef = db.collection('advances').doc(advanceId);
-  const snap = await docRef.get();
-  if (!snap.exists) throw new Error('طلب السلفة غير موجود.');
-  const advance = snap.data() || {};
+  const initial = await docRef.get();
+  if (!initial.exists) throw new Error('طلب السلفة غير موجود.');
 
   const isActorAccountant = actor.isAdvanceAccountsApprover === true ||
     /account|حساب/i.test(actor.department || '') ||
     actor.role === 'accountant' ||
     /محاسب/i.test(actor.jobTitle || actor.position || '');
-
   const isSuperAdmin = actor.role === 'super_admin';
   const isCeo = isSuperAdmin || actor.employeeId === 'CEO-100' || actor.employeeCode === 'CEO-100';
+  const isHr = isHrOrAdmin(actor);
+  const policy = (await db.collection('publicConfig').doc('requestApproval').get()).data() || {};
+  const requireCeo = policy.requireCeoApprovalForAdvance !== false;
+  const { accountantUids, accountantCodes } = await getActiveAccountantUids(db);
+  const accountantIds = [...accountantUids];
+  const accountantCodeList = [...accountantCodes];
 
-  const stage = advance.advanceRouteStage || '';
-  if (stage === 'accounting') {
-    if (!isActorAccountant && !isSuperAdmin && !isCeo) {
-      throw new Error('ليست لديك صلاحية مراجعة واعتماد الحسابات للسلفة.');
-    }
-    if (advance.status !== 'pending_manager') {
+  let result = null;
+  await db.runTransaction(async (transaction) => {
+    const snap = await transaction.get(docRef);
+    if (!snap.exists) throw new Error('طلب السلفة غير موجود.');
+    const stored = snap.data() || {};
+    const legacyPatch = legacyHrAdvancePatch(stored);
+    const advance = legacyPatch ? { ...stored, ...legacyPatch } : stored;
+    const stage = String(advance.advanceRouteStage || (advance.status === 'pending_hr' ? 'hr' : '')).trim();
+    const status = String(advance.status || '').trim();
+    if (!['pending_hr', 'pending_manager'].includes(status)) {
       throw new Error('طلب السلفة لم يعد قيد الانتظار.');
     }
 
-    const history = Array.isArray(advance.approvalHistory) ? advance.approvalHistory : [];
+    let currentStage = stage;
+    if (!currentStage && legacyPatch) currentStage = 'hr';
+    if (currentStage === 'hr') {
+      if (!isHr) throw new Error('ليست لديك صلاحية مراجعة الموارد البشرية للسلفة.');
+    } else if (currentStage === 'ceo') {
+      const expectedCeo = String(advance.ceoId || CEO_100_UID);
+      if (!isCeo || (!isSuperAdmin && actor.uid !== expectedCeo && actor.employeeId !== 'CEO-100' && actor.employeeCode !== 'CEO-100')) {
+        throw new Error('ليست لديك صلاحية موافقة الرئيس التنفيذي للسلفة.');
+      }
+    } else if (currentStage === 'accounting') {
+      if (!isActorAccountant && !isSuperAdmin && !isCeo) {
+        throw new Error('ليست لديك صلاحية مراجعة واعتماد الحسابات للسلفة.');
+      }
+    } else {
+      throw new Error('مسار السلفة غير مكتمل. أعد المحاولة.');
+    }
+
+    const history = Array.isArray(advance.approvalHistory) ? [...advance.approvalHistory] : [];
     history.push({
+      stage: currentStage,
+      status: decision,
       action: decision,
       actorId: actor.uid,
-      actorName: actor.displayName || actor.name || 'الحسابات',
-      role: 'accounting',
+      actorName: actor.displayName || actor.name || (currentStage === 'hr' ? 'الموارد البشرية' : currentStage === 'accounting' ? 'الحسابات' : CEO_100_NAME),
+      role: currentStage,
       comment: comment || null,
       at: new Date().toISOString(),
     });
 
-    const update = {
-      status: decision === 'approved' ? 'approved' : 'rejected',
-      advanceRouteStage: decision === 'approved' ? 'completed' : 'accounting',
+    const common = {
+      ...legacyPatch,
       reviewedBy: actor.uid,
       reviewedAt: admin.firestore.FieldValue.serverTimestamp(),
       isRead: false,
@@ -3864,37 +3927,98 @@ async function decideAdvanceRequest({ db, admin, actor, advanceId, body }) {
       approvalActorIds: withApprovalActor(advance, actor.uid),
       ...(comment ? { reviewerComment: comment } : {}),
     };
+    let update;
+    if (decision === 'rejected') {
+      update = {
+        ...common,
+        status: 'rejected',
+        advanceRouteStage: currentStage,
+      };
+    } else if (currentStage === 'hr' && requireCeo) {
+      update = {
+        ...common,
+        status: 'pending_manager',
+        advanceRouteStage: 'ceo',
+        ceoId: CEO_100_UID,
+        ceoName: CEO_100_NAME,
+        managerId: CEO_100_UID,
+        managerName: CEO_100_NAME,
+        managerIds: [CEO_100_UID],
+        managerNames: [CEO_100_NAME],
+      };
+    } else if (currentStage === 'hr' || currentStage === 'ceo') {
+      if (!accountantIds.length) {
+        throw new Error('لا يوجد مسؤول حسابات مفعّل لمسار السلف.');
+      }
+      update = {
+        ...common,
+        status: 'pending_manager',
+        advanceRouteStage: 'accounting',
+        managerId: accountantIds[0],
+        managerName: 'قسم الحسابات',
+        accountantName: 'قسم الحسابات',
+        managerIds: accountantIds,
+        managerCodes: accountantCodeList,
+      };
+    } else {
+      update = {
+        ...common,
+        status: 'approved',
+        advanceRouteStage: 'completed',
+      };
+    }
+    transaction.update(docRef, update);
+    result = { advance, stage: currentStage, status: update.status, update };
+  });
 
-    await docRef.update(update);
+  await db.collection('auditLogs').add({
+    actorId: actor.uid,
+    action: 'advance_request_reviewed',
+    targetCollection: 'advances',
+    targetId: advanceId,
+    metadata: { newStatus: result.status, stage: result.stage, decision },
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+  });
 
-    await db.collection('auditLogs').add({
-      actorId: actor.uid,
-      action: 'advance_request_reviewed',
-      targetCollection: 'advances',
-      targetId: advanceId,
-      metadata: { newStatus: update.status, stage: 'accounting', decision },
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
-    });
-
-    if (advance.userId) {
-      const notifId = `advance-decision-${advanceId}-${Date.now()}`;
-      await db.collection('notifications').doc(advance.userId).collection('items').doc(notifId).set({
-        notificationId: notifId,
-        type: decision === 'approved' ? 'advance_approved' : 'advance_rejected',
-        title: decision === 'approved' ? 'تم قبول طلب السلفة ✅' : 'تم رفض طلب السلفة ❌',
-        body: decision === 'approved'
-          ? `تمت الموافقة على طلب السلفة بقيمة ${(advance.amount || 0).toFixed(2)} بواسطة الحسابات.`
-          : `تم رفض طلب السلفة${comment ? `. السبب: ${comment}` : '.'}`,
+  const recipientIds = new Set();
+  let notification = null;
+  if (result.status === 'pending_manager' && result.update.advanceRouteStage === 'ceo') {
+    recipientIds.add(CEO_100_UID);
+    notification = {
+      type: 'advance_pending_ceo',
+      title: 'طلب سلفة بانتظار موافقتك',
+      body: `${result.advance.employeeName || 'موظف'} حصل على موافقة HR وينتظر قرار الرئيس التنفيذي.`,
+    };
+  } else if (result.status === 'pending_manager' && result.update.advanceRouteStage === 'accounting') {
+    accountantIds.forEach((id) => recipientIds.add(id));
+    notification = {
+      type: 'advance_pending_accounting',
+      title: 'طلب سلفة بانتظار موافقتك',
+      body: `${result.advance.employeeName || 'موظف'} ينتظر اعتماد الحسابات.`,
+    };
+  } else if ((result.status === 'approved' || result.status === 'rejected') && result.advance.userId) {
+    recipientIds.add(result.advance.userId);
+    notification = {
+      type: result.status === 'approved' ? 'advance_approved' : 'advance_rejected',
+      title: result.status === 'approved' ? 'تم قبول طلب السلفة ✅' : 'تم رفض طلب السلفة ❌',
+      body: result.status === 'approved'
+        ? `تمت الموافقة على طلب السلفة بقيمة ${(result.advance.amount || 0).toFixed(2)}.`
+        : `تم رفض طلب السلفة${comment ? `. السبب: ${comment}` : '.'}`,
+    };
+  }
+  if (notification) {
+    await Promise.all([...recipientIds].map(async (recipientId) => {
+      const notificationId = `advance-${advanceId}-${result.stage}-${decision}-${recipientId}-${Date.now()}`;
+      await db.collection('notifications').doc(recipientId).collection('items').doc(notificationId).set({
+        notificationId,
+        ...notification,
         data: { advanceId },
         isRead: false,
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
       });
-    }
-
-    return { advanceId, status: update.status };
+    }));
   }
-
-  throw new Error('هذه السلفة ليست في مرحلة مراجعة الحسابات.');
+  return { advanceId, status: result.status, stage: result.update.advanceRouteStage };
 }
 
 async function handleOperationalVisibilityRequest(req, res, url) {
@@ -4780,6 +4904,7 @@ const server = http.createServer(async (req, res) => {
         db: admin.firestore(initializeFirebase()),
         actor,
         query: url.searchParams.get('query') || '',
+        date: url.searchParams.get('date') || '',
       });
       sendJson(res, 200, { ok: true, employees });
     } catch (error) {

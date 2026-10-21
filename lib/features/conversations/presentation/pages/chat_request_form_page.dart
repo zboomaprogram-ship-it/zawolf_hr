@@ -24,6 +24,7 @@ class _ChatRequestFormPageState extends State<ChatRequestFormPage> {
   final _form = GlobalKey<FormState>();
   late final TextEditingController _name, _reason;
   late final ChatRequestFormCubit _cubit;
+  final Map<String, String> _memberNames = {};
   bool get _editable =>
       widget.request == null ||
       (widget.canReview && widget.request!.status == 'pending');
@@ -32,10 +33,26 @@ class _ChatRequestFormPageState extends State<ChatRequestFormPage> {
     super.initState();
     _name = TextEditingController(text: widget.request?.name ?? '');
     _reason = TextEditingController(text: widget.request?.reason ?? '');
+    if (widget.request?.memberNames != null) {
+      _memberNames.addAll(widget.request!.memberNames);
+    }
     _cubit = ChatRequestFormCubit(
       widget.repository,
       widget.request?.memberUserIds ?? [widget.repository.actorId],
     );
+    _loadMemberNames();
+  }
+
+  Future<void> _loadMemberNames() async {
+    try {
+      final page = await widget.repository.users();
+      if (!mounted) return;
+      setState(() {
+        for (final user in page.items) {
+          _memberNames[user.id] = user.name;
+        }
+      });
+    } catch (_) {}
   }
 
   Future<void> _submit({
@@ -164,10 +181,12 @@ class _ChatRequestFormPageState extends State<ChatRequestFormPage> {
                                       : 'سبب إنشاء الجروب',
                             ),
                             validator:
-                                (value) =>
-                                    (value ?? '').trim().isEmpty
-                                        ? 'أدخل سبب الطلب'
-                                        : null,
+                                widget.request != null
+                                    ? null
+                                    : (value) =>
+                                        (value ?? '').trim().isEmpty
+                                            ? 'أدخل سبب الطلب'
+                                            : null,
                           ),
                         ],
                       ),
@@ -182,12 +201,16 @@ class _ChatRequestFormPageState extends State<ChatRequestFormPage> {
                                   context,
                                   widget.repository,
                                   selected: state.members,
+                                  initialNames: _memberNames,
                                   locked: {
                                     widget.request?.requesterId ??
                                         widget.repository.actorId,
                                   },
                                 );
-                                if (selected != null) _cubit.members(selected);
+                                if (selected != null) {
+                                  _cubit.members(selected);
+                                  _loadMemberNames();
+                                }
                               },
                       icon: const Icon(Icons.group_add_outlined),
                       label: Text(
@@ -197,18 +220,67 @@ class _ChatRequestFormPageState extends State<ChatRequestFormPage> {
                     const Text('من عضوين إلى 100 عضو، بما في ذلك صاحب الطلب.'),
                     Wrap(
                       spacing: 8,
+                      runSpacing: 8,
                       children:
-                          state.members
-                              .map(
-                                (member) => Chip(
-                                  label: Text(
-                                    member == widget.repository.actorId
-                                        ? 'أنت'
-                                        : member,
+                          state.members.map((member) {
+                            final isMe = member == widget.repository.actorId;
+                            final isRequester =
+                                member == widget.request?.requesterId;
+                            final resolvedName = _memberNames[member];
+                            final displayName =
+                                isMe
+                                    ? 'أنت'
+                                    : (resolvedName != null &&
+                                            resolvedName.trim().isNotEmpty
+                                        ? resolvedName.trim()
+                                        : (member.length > 10
+                                            ? '${member.substring(0, 8)}...'
+                                            : member));
+                            final initial =
+                                (resolvedName != null &&
+                                        resolvedName.trim().isNotEmpty)
+                                    ? resolvedName.trim().characters.first
+                                    : (isMe ? 'أ' : '?');
+                            return InputChip(
+                              avatar: CircleAvatar(
+                                radius: 12,
+                                backgroundColor:
+                                    Theme.of(
+                                      context,
+                                    ).colorScheme.primaryContainer,
+                                child: Text(
+                                  initial,
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.bold,
+                                    color:
+                                        Theme.of(
+                                          context,
+                                        ).colorScheme.onPrimaryContainer,
                                   ),
                                 ),
-                              )
-                              .toList(),
+                              ),
+                              label: Text(
+                                displayName,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                              tooltip: resolvedName ?? member,
+                              onDeleted:
+                                  (_editable &&
+                                          !state.busy &&
+                                          !isRequester &&
+                                          state.members.length > 2)
+                                      ? () {
+                                        final updated =
+                                            List<String>.from(state.members)
+                                              ..remove(member);
+                                        _cubit.members(updated);
+                                      }
+                                      : null,
+                            );
+                          }).toList(),
                     ),
                     if (state.error != null)
                       ChatFeedback(text: chatErrorText(state.error!)),

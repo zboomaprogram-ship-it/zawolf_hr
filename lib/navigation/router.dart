@@ -24,6 +24,7 @@ import '../screens/employee/employee_tasks_screen.dart';
 import '../screens/employee/employee_warnings_rewards_screen.dart';
 import '../screens/employee/employee_payroll_screen.dart';
 import '../screens/employee/employee_deductions_screen.dart';
+import '../screens/employee/employee_attendance_history_screen.dart';
 import '../screens/employee/profile_settings.dart';
 import '../screens/employee/performance_view.dart';
 import '../screens/employee/suggestions_screen.dart';
@@ -529,6 +530,11 @@ class ZaWolfRouter {
                   initialCycleKey: state.uri.queryParameters['cycle'],
                 );
               },
+            ),
+            GoRoute(
+              path: '/employee/attendance-history',
+              builder:
+                  (context, state) => const EmployeeAttendanceHistoryScreen(),
             ),
             GoRoute(
               path: '/assistant',

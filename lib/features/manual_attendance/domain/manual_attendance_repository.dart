@@ -45,7 +45,10 @@ class ManualAttendanceBatchEmployeeResult {
 }
 
 abstract interface class ManualAttendanceRepository {
-  Future<List<ManualAttendanceEmployee>> findEmployees(String query);
+  Future<List<ManualAttendanceEmployee>> findEmployees(
+    String query, {
+    DateTime? date,
+  });
 
   Future<ManualAttendanceBatchResult> recordBatch({
     required List<String> employeeIds,

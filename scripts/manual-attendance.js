@@ -2,6 +2,7 @@
 
 const crypto = require('crypto');
 const { isHrOrAdmin } = require('./phase007-authorization');
+const { keyForDateParts } = require('./payroll-cycle');
 
 const CAIRO_TIME_ZONE = 'Africa/Cairo';
 const clean = (value, max = 500) => String(value || '').replace(/\s+/g, ' ').trim().slice(0, max);
@@ -97,10 +98,15 @@ async function recordManualAttendance({ db, admin, actor, body }) {
     throw new Error('أكمل الموظف ونوع الحضور والوقت والسبب بصورة صحيحة.');
   }
   const now = new Date();
-  const current = cairoParts(now);
   const effective = cairoParts(effectiveAt);
-  if (effective.dateKey !== current.dateKey || effectiveAt.getTime() > now.getTime() + 5 * 60 * 1000) {
-    throw new Error('يسمح بتسجيل حضور اليوم فقط وفي وقت حالي أو سابق.');
+  if (effectiveAt.getTime() > now.getTime() + 5 * 60 * 1000) {
+    throw new Error('لا يمكن تسجيل حضور في تاريخ أو وقت مستقبلي.');
+  }
+  const [effYear, effMonth, effDay] = effective.dateKey.split('-');
+  const cycleKey = keyForDateParts(effYear, effMonth, effDay);
+  const cycleSnap = await db.collection('payrollCycles').doc(cycleKey).get();
+  if (cycleSnap.exists && cycleSnap.data()?.status === 'finalized') {
+    throw new Error(`لا يمكن تعديل حضور في دورة رواتب مغلقة (${cycleKey}).`);
   }
   const employeeRef = db.collection('users').doc(employeeId);
   const attendanceId = `${employeeId}_${effective.dateKey}`;
@@ -191,7 +197,7 @@ async function recordManualAttendanceBatch({ db, admin, actor, body }) {
   };
 }
 
-async function listManualAttendanceEmployees({ db, actor, query }) {
+async function listManualAttendanceEmployees({ db, actor, query, date }) {
   if (!canManageManualAttendance(actor)) {
     throw new Error('لا تملك صلاحية عرض حالة الحضور اليدوي.');
   }
@@ -215,7 +221,7 @@ async function listManualAttendanceEmployees({ db, actor, query }) {
       `${employee.name} ${employee.employeeCode} ${employee.department} ${employee.email}`,
     ).includes(queryText))
     .slice(0, 50);
-  const dateKey = cairoParts().dateKey;
+  const dateKey = /^\d{4}-\d{2}-\d{2}$/.test(String(date || '')) ? date : cairoParts().dateKey;
   const statuses = await Promise.all(employees.map(async (employee) => {
     const attendance = (await db.collection('attendance').doc(`${employee.id}_${dateKey}`).get()).data() || {};
     const checkIn = attendance.checkInTime?.toDate?.() || null;

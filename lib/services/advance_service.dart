@@ -66,8 +66,11 @@ class AdvanceService {
     if (employee.hiringDate == null ||
         now.difference(employee.hiringDate!).inDays < probationPeriodDays) {
       final months = (probationPeriodDays / 30).round();
-      final monthLabel = months > 0 ? '$months أشهر' : '$probationPeriodDays يوم';
-      throw Exception('لا يمكن طلب سلفة قبل قضاء $monthLabel على الأقل في الخدمة.');
+      final monthLabel =
+          months > 0 ? '$months أشهر' : '$probationPeriodDays يوم';
+      throw Exception(
+        'لا يمكن طلب سلفة قبل قضاء $monthLabel على الأقل في الخدمة.',
+      );
     }
     // Note: Advances can now be requested anytime during the month per updated policy.
     if (amount <= 0) {
@@ -165,11 +168,13 @@ class AdvanceService {
       advanceMaxSalaryPercentage: approvalPolicy.advanceMaxSalaryPercentage,
     );
     final ref = _db.collection('advances').doc();
-    final managerIds = _approvalManagerIds(employee, req.managerId);
-    final managerNames = _approvalManagerNames(employee, employee.managerName);
-    final initialStatus = (managerIds.isNotEmpty && req.status == 'pending_manager')
-        ? 'pending_manager'
-        : (req.status == 'pending_hr' || managerIds.isEmpty ? 'pending_hr' : 'pending_manager');
+    // The approved advance route always starts with HR, then goes to CEO and
+    // finally Accounts. Do not derive the first stage from the employee's
+    // reporting manager; that was the source of unstaged `pending_manager`
+    // records that looked like HR requests but could not be actioned by HR.
+    const initialStatus = 'pending_hr';
+    const initialManagerId = 'HR';
+    const initialManagerName = 'الموارد البشرية';
 
     final newReq = AdvanceModel(
       advanceId: ref.id,
@@ -178,7 +183,7 @@ class AdvanceService {
       employeeName: req.employeeName,
       department: req.department,
       locationId: req.locationId,
-      managerId: req.managerId,
+      managerId: initialManagerId,
       amount: req.amount,
       reason: req.reason,
       status: initialStatus,
@@ -187,10 +192,13 @@ class AdvanceService {
 
     await ref.set({
       ...newReq.toFirestore(),
-      'managerIds': managerIds,
-      'managerNames': managerNames,
+      'advanceRouteStage': 'hr',
+      'managerId': initialManagerId,
+      'managerName': initialManagerName,
+      'managerIds': const <String>[initialManagerId],
+      'managerNames': const <String>[initialManagerName],
       'managerApprovalIndex': 0,
-      'managerApprovalTotal': managerIds.length,
+      'managerApprovalTotal': 1,
       'managerApprovalTrail': <Map<String, dynamic>>[],
     });
 
@@ -206,25 +214,14 @@ class AdvanceService {
     }
 
     try {
-      if (initialStatus == 'pending_manager' && managerIds.isNotEmpty) {
-        await _createNotification(
-          recipientId: managerIds.first,
-          type: 'advance_pending_manager',
-          title: 'طلب سلفة بانتظار موافقتك',
-          body:
-              '${req.employeeName} يطلب سلفة بقيمة ${req.amount.toStringAsFixed(2)} ${employee.salaryCurrency}.',
-          data: {'advanceId': ref.id},
-        );
-      } else {
-        await _notifyRole(
-          role: EmployeeRole.hrAdmin,
-          type: 'advance_pending_hr',
-          title: 'طلب سلفة بانتظار HR',
-          body:
-              '${req.employeeName} يطلب سلفة بقيمة ${req.amount.toStringAsFixed(2)} ${employee.salaryCurrency}.',
-          data: {'advanceId': ref.id},
-        );
-      }
+      await _notifyRole(
+        role: EmployeeRole.hrAdmin,
+        type: 'advance_pending_hr',
+        title: 'طلب سلفة بانتظار HR',
+        body:
+            '${req.employeeName} يطلب سلفة بقيمة ${req.amount.toStringAsFixed(2)} ${employee.salaryCurrency}.',
+        data: {'advanceId': ref.id},
+      );
     } catch (e) {
       debugPrint('Notification advance error: $e');
     }
@@ -271,13 +268,20 @@ class AdvanceService {
     final advance = AdvanceModel.fromFirestore(doc);
     final data = doc.data() ?? <String, dynamic>{};
 
-    if (status == 'rejected' && data['advanceRouteStage'] == 'accounting') {
-      final backendOk = await _tryBackendAdvanceDecision(
-        advanceId: advanceId,
-        decision: 'rejected',
-        comment: comment,
-      );
-      if (backendOk) return;
+    final backendOk = await _tryBackendAdvanceDecision(
+      advanceId: advanceId,
+      decision: status,
+      comment: comment,
+    );
+    if (backendOk) return;
+
+    final isLegacyHrStage =
+        advance.status == 'pending_manager' &&
+        (data['advanceRouteStage'] ?? '').toString().trim().isEmpty &&
+        ((data['managerApprovalTrail'] as List<dynamic>?)?.isEmpty ?? true) &&
+        ((data['approvalHistory'] as List<dynamic>?)?.isEmpty ?? true);
+    if (isLegacyHrStage) {
+      throw StateError('تعذر الاتصال بخدمة اعتماد السلف. أعد المحاولة.');
     }
 
     await docRef.update({
@@ -324,6 +328,21 @@ class AdvanceService {
     if (!doc.exists) throw Exception('طلب السلفة غير موجود');
     final advance = AdvanceModel.fromFirestore(doc);
     final data = doc.data() ?? <String, dynamic>{};
+    final backendOk = await _tryBackendAdvanceDecision(
+      advanceId: advanceId,
+      decision: 'approved',
+    );
+    if (backendOk) return;
+
+    final isLegacyHrStage =
+        advance.status == 'pending_manager' &&
+        (data['advanceRouteStage'] ?? '').toString().trim().isEmpty &&
+        ((data['managerApprovalTrail'] as List<dynamic>?)?.isEmpty ?? true) &&
+        ((data['approvalHistory'] as List<dynamic>?)?.isEmpty ?? true);
+    if (isLegacyHrStage) {
+      throw StateError('تعذر الاتصال بخدمة اعتماد السلف. أعد المحاولة.');
+    }
+
     final reviewerCode = reviewer.employeeId.trim().toUpperCase();
     final isCompanyCeo = reviewer.isCompanyCeo;
     final isExecutive = reviewer.canReviewExecutiveStage;
@@ -360,11 +379,12 @@ class AdvanceService {
         final accountants = await _findAdvanceAccountants();
         final accountant = accountants.first;
         final accountantUids = accountants.map((a) => a.uid).toSet().toList();
-        final accountantCodes = accountants
-            .map((a) => a.employeeId.trim().toUpperCase())
-            .where((c) => c.isNotEmpty)
-            .toSet()
-            .toList();
+        final accountantCodes =
+            accountants
+                .map((a) => a.employeeId.trim().toUpperCase())
+                .where((c) => c.isNotEmpty)
+                .toSet()
+                .toList();
 
         update = {
           'status': 'pending_manager',
@@ -418,12 +438,6 @@ class AdvanceService {
             (data['managerIds'] as List<dynamic>?)?.contains(reviewer.uid) ==
                 true ||
             isExecutive)) {
-      final backendOk = await _tryBackendAdvanceDecision(
-        advanceId: advanceId,
-        decision: 'approved',
-      );
-      if (backendOk) return;
-
       update = {
         'status': 'approved',
         'advanceRouteStage': 'completed',
@@ -529,7 +543,8 @@ class AdvanceService {
       final doc = await _db.collection('users').doc(current).get();
       if (!doc.exists) continue;
       final user = UserModel.fromFirestore(doc);
-      final isCeo = user.isCompanyCeo ||
+      final isCeo =
+          user.isCompanyCeo ||
           user.employeeId.trim().toUpperCase().startsWith('CEO-');
       final canApproveAdvance =
           doc.data()?['isAdvanceCeoApprover'] == true ||
@@ -557,7 +572,9 @@ class AdvanceService {
     final candidates =
         snapshot.docs
             .map(UserModel.fromFirestore)
-            .where((user) => user.isAdvanceAccountsApprover || user.isAccountant)
+            .where(
+              (user) => user.isAdvanceAccountsApprover || user.isAccountant,
+            )
             .toList()
           ..sort((a, b) => a.employeeId.compareTo(b.employeeId));
     if (candidates.isNotEmpty) return candidates;

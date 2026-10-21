@@ -19,6 +19,7 @@ class WolfInputField extends StatefulWidget {
   final String? helperText;
   final String? errorText;
   final AutovalidateMode? autovalidateMode;
+  final Iterable<String>? autofillHints;
 
   const WolfInputField({
     super.key,
@@ -39,6 +40,7 @@ class WolfInputField extends StatefulWidget {
     this.helperText,
     this.errorText,
     this.autovalidateMode,
+    this.autofillHints,
   });
 
   @override
@@ -116,6 +118,7 @@ class _WolfInputFieldState extends State<WolfInputField> {
             ),
             child: TextFormField(
               controller: _effectiveController,
+              autofillHints: widget.autofillHints,
               obscureText: widget.isPassword ? _obscureText : false,
               keyboardType: widget.keyboardType,
               readOnly: widget.readOnly,

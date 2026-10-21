@@ -23,16 +23,22 @@ class ManualAttendanceRepositoryImpl implements ManualAttendanceRepository {
       ).join();
 
   @override
-  Future<List<ManualAttendanceEmployee>> findEmployees(String query) async {
+  Future<List<ManualAttendanceEmployee>> findEmployees(
+    String query, {
+    DateTime? date,
+  }) async {
     // Refresh before this privileged read. A recently changed HR role or an
     // expired browser token otherwise appears as a generic loading failure.
     final token = await _auth.currentUser?.getIdToken(true);
     if (token == null || token.isEmpty) {
       throw StateError('انتهت الجلسة، سجل الدخول مرة أخرى.');
     }
+    final dateParam = date != null
+        ? '&date=${date.year.toString().padLeft(4, '0')}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}'
+        : '';
     final response = await _client.get(
       Uri.parse(
-        '$_baseUrl/operations/manual-attendance/employees?query=${Uri.encodeQueryComponent(query)}',
+        '$_baseUrl/operations/manual-attendance/employees?query=${Uri.encodeQueryComponent(query)}$dateParam',
       ),
       headers: {'Authorization': 'Bearer $token'},
     );

@@ -7,7 +7,23 @@ const {
   buildPushPayload,
   oneSignalConfiguration,
 } = require('../onesignal');
-const { isUnsubscribedDeviceError } = require('../dispatch-notifications');
+const {
+  isUnsubscribedDeviceError,
+  isAnnouncementPushExpired,
+} = require('../dispatch-notifications');
+
+test('announcement push expires while other notification types remain eligible', () => {
+  const now = new Date('2026-10-21T12:00:00Z');
+  assert.equal(isAnnouncementPushExpired({
+    type: 'hr_announcement', createdAt: new Date('2026-10-21T05:00:00Z'),
+  }, now), true);
+  assert.equal(isAnnouncementPushExpired({
+    type: 'hr_announcement', createdAt: new Date('2026-10-21T11:00:00Z'),
+  }, now), false);
+  assert.equal(isAnnouncementPushExpired({
+    type: 'conversation', createdAt: new Date('2026-10-20T00:00:00Z'),
+  }, now), false);
+});
 
 test('formatOneSignalAuthHeader prefixes app key with Basic', () => {
   assert.equal(

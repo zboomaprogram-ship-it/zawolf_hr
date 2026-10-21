@@ -40,6 +40,15 @@ test('text-only message persists a null sticker rather than an undefined Firesto
   const raw = db.dump()[`conversations/room/messages/${result.message.id}`];
   assert.equal(raw.stickerId, null);
 });
+test('user-authored Google Drive links are sent as ordinary message text', async () => {
+  const db = seed();
+  const body = 'الملف https://drive.google.com/file/d/example/view?usp=sharing';
+  const result = await send(db, { operationId: 'drive-link', body });
+  const raw = db.dump()[`conversations/room/messages/${result.message.id}`];
+  assert.equal(result.message.body, body);
+  assert.equal(raw.body, body);
+  assert.deepEqual(raw.attachmentResourceIds, []);
+});
 test('HR/admin can participate in approved custom groups without becoming listed members', async () => {
   const db=seed(); const message=(await send(db)).message;
   assert.equal((await C.channelFor(db,hr,'room')).canPost,true);
@@ -81,14 +90,17 @@ test('forward checks both channels and creates destination-bound private referen
   assert.equal(JSON.stringify(forwarded).includes('private-provider-id'),false);
   await assert.rejects(messageAction({...args,payload:{...args.payload,operationId:'denied',destinationId:'unknown'}}),code('access_denied'));
 });
-test('read positions never regress and typing false clears current actor',async()=>{
+test('read positions never regress and typing is isolated from the message document',async()=>{
   const db=seed();const a=(await send(db)).message;
   const b=(await sendMessage({db,actor,channelId:'room',payload:{operationId:'second',body:'second'},now:new Date(now.getTime()+1000)})).message;
   for(const [operationId,messageId] of [['read-b',b.id],['read-a',a.id]]) await presence({db,actor,channelId:'room',payload:{operationId,messageId},now});
-  assert.equal(db.dump()['conversations/room'].readers.alice.messageId,b.id);
+  const receipt=Object.entries(db.dump()).find(([key])=>key.startsWith('conversationReadReceipts/'))?.[1];
+  assert.equal(receipt.messageId,b.id);
   await presence({db,actor,channelId:'room',typing:true,payload:{operationId:'type-on',typing:true},now});
   await presence({db,actor,channelId:'room',typing:true,payload:{operationId:'type-off',typing:false},now});
-  assert.deepEqual(db.dump()['conversations/room'].typing,{});
+  const typing=Object.entries(db.dump()).find(([key])=>key.startsWith('conversationPresence/'))?.[1];
+  assert.equal(Date.parse(typing.expiresAt),now.getTime());
+  assert.equal(Object.hasOwn(db.dump()['conversations/room'],'typing'),false);
 });
 test('concurrent review decisions create exactly one channel and replay the winner',async()=>{
   const db=seed(); const request=(await createRequest({db,actor,payload:{operationId:'request',name:'فريق',reason:'عمل',memberUserIds:['bob']},now})).request;

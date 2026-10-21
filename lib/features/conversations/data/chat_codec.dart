@@ -106,6 +106,11 @@ ChannelRequest decodeRequest(Map<String, Object?> v) => ChannelRequest(
   requesterId: '${v['requesterId'] ?? ''}',
   status: '${v['status'] ?? 'pending'}',
   memberUserIds: strings(v['memberUserIds']),
+  memberNames: (v['memberNames'] as Map?)?.map(
+        (key, value) => MapEntry('$key', '$value'),
+      ) ??
+      const {},
+  requesterName: v['requesterName'] as String?,
   revision: (v['revision'] as num?)?.toInt() ?? 0,
   rejectionReason: v['rejectionReason'] as String?,
   conversationId: v['conversationId'] as String?,

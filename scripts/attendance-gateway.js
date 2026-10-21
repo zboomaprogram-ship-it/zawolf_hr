@@ -120,6 +120,57 @@ async function bindTrustedDevice({ db, admin, actor, action, userRef, user, deve
   });
 }
 
+function isExecutiveAttendanceAccount(user = {}) {
+  const empCode = String(user.employeeId || user.employeeCode || '').trim().toUpperCase();
+  return empCode === 'CEO-100' || empCode === 'COO-1300' || empCode === 'MKT-600' ||
+    user.role === 'super_admin' || user.executiveRole === 'coo' ||
+    user.executiveRole === 'ceo' || Boolean(user.isExecutiveApprover);
+}
+
+function attendanceDeviceRefs({ db, action, user }) {
+  const deviceRef = db.collection('attendanceDevices').doc(action.deviceId.replaceAll('/', '_'));
+  const registered = asString(user.registeredAttendanceDeviceId);
+  const registeredRef = registered && registered !== action.deviceId
+    ? db.collection('attendanceDevices').doc(registered.replaceAll('/', '_'))
+    : null;
+  return { deviceRef, registered, registeredRef };
+}
+
+async function readDeviceBinding({ transaction, deviceRef, registeredRef }) {
+  const reads = [transaction.get(deviceRef)];
+  if (registeredRef) reads.push(transaction.get(registeredRef));
+  const [deviceSnap, registeredSnap = null] = await Promise.all(reads);
+  return { deviceSnap, registeredSnap };
+}
+
+function validateAndWriteDeviceBinding({
+  transaction, admin, actor, action, userRef, user, developerDeviceOverride,
+  deviceRef, registered, deviceSnap, registeredSnap,
+}) {
+  if (deviceSnap.exists && deviceSnap.data()?.userId !== actor.uid) {
+    throw gatewayError('هذا الجهاز مربوط بحساب موظف آخر.', 'device_conflict');
+  }
+  if (registered && registered !== action.deviceId &&
+      registeredSnap?.exists && registeredSnap.data()?.userId === actor.uid &&
+      !isExecutiveAttendanceAccount(user) && !developerDeviceOverride) {
+    throw gatewayError('هذا الحساب مربوط بجهاز حضور آخر. اطلب من HR إعادة ضبط الجهاز.', 'device_mismatch');
+  }
+  transaction.set(deviceRef, {
+    deviceId: action.deviceId,
+    userId: actor.uid,
+    employeeId: asString(user.employeeId),
+    employeeName: asString(user.displayName),
+    deviceLabel: asString(action.raw.deviceLabel, 'Unknown device'),
+    registeredAt: admin.firestore.FieldValue.serverTimestamp(),
+  }, { merge: true });
+  transaction.set(userRef, {
+    registeredAttendanceDeviceId: action.deviceId,
+    registeredAttendanceDeviceLabel: asString(action.raw.deviceLabel, 'Unknown device'),
+    registeredAttendanceDeviceAt: admin.firestore.FieldValue.serverTimestamp(),
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  }, { merge: true });
+}
+
 async function hasDeveloperDeviceOverride(db, userId) {
   const entitlement = await db.collection('developerToolEntitlements').doc(userId).get();
   if (!entitlement.exists) return false;
@@ -249,49 +300,53 @@ async function submitAttendanceAction({ admin, actor, rawAction }) {
     ? await assertWebAttendanceAccess({ admin, actor })
     : null;
   const webLocationExempt = webGrant?.allowAnyLocation === true;
-  // Keep this guard in the write gateway itself.  HTTP handlers, workers, or
-  // future API routes must not be able to bypass the company check-out policy.
-  // This happens before device binding or attendance mutation.
-  if (action.type === 'checkOut') {
-    const checkoutPolicy = await loadCheckoutPolicy(db);
-    if (!checkoutPolicy.enabled) {
-      return checkoutDisabledResult({
-        attendanceId: `${actor.uid}_${action.date}`,
-        policy: checkoutPolicy,
-      });
-    }
-  }
   const userRef = db.collection('users').doc(actor.uid);
-  const userSnap = await userRef.get();
-  const user = userSnap.data() || {};
-  if (!userSnap.exists || user.isActive === false) throw gatewayError('حساب الموظف غير نشط.', 'account_inactive');
   const expectedId = `${actor.uid}_${action.date}`;
   if (asString(rawAction.attendanceId) !== expectedId) throw gatewayError('Attendance identity is invalid.');
   const ref = db.collection('attendance').doc(expectedId);
-  const developerDeviceOverride = await hasDeveloperDeviceOverride(db, actor.uid);
   const receivedAt = new Date();
   if (action.type === 'checkIn') {
+    // These reads are independent. Running them together removes two network
+    // round trips from the most common mobile attendance path.
+    const [userSnap, duplicate, multiLocationEnabled] = await Promise.all([
+      userRef.get(),
+      ref.get(),
+      loadMultiLocationFlag(db, actor.uid),
+    ]);
+    const user = userSnap.data() || {};
+    if (!userSnap.exists || user.isActive === false) {
+      throw gatewayError('حساب الموظف غير نشط.', 'account_inactive');
+    }
     // A retry must converge even when the employee's assignments changed after
     // the original successful event. Location is evidence, not record identity.
-    const duplicate = await ref.get();
     if (duplicate.exists && duplicate.data()?.checkInTime) {
       return { action: 'check_in', status: 'already_recorded', attendanceId: expectedId };
     }
-    const multiLocationEnabled = await loadMultiLocationFlag(db, actor.uid);
     const locationEvidence = multiLocationEnabled && !webLocationExempt
       ? await validateAssignedLocation({
         db, actorUid: actor.uid, rawAction, eventTime: action.eventTime,
       })
       : null;
-    await bindTrustedDevice({ db, admin, actor, action, userRef, user, developerDeviceOverride });
-    // Use a transaction for the canonical Cairo-day identity. Two retries (or
-    // an automatic/manual race) therefore converge to one record and a
-    // semantic receipt instead of leaking an "already exists" error.
+    const deviceBinding = attendanceDeviceRefs({ db, action, user });
+    const developerDeviceOverride = deviceBinding.registeredRef &&
+      !isExecutiveAttendanceAccount(user)
+      ? await hasDeveloperDeviceOverride(db, actor.uid)
+      : false;
+    // Device binding and the canonical attendance record commit atomically in
+    // one transaction. This keeps retries idempotent without paying for two
+    // serialized transactions on every tap.
     const status = await db.runTransaction(async (transaction) => {
-      const existing = await transaction.get(ref);
+      const [existing, bindingState] = await Promise.all([
+        transaction.get(ref),
+        readDeviceBinding({ transaction, ...deviceBinding }),
+      ]);
       if (existing.exists && existing.data()?.checkInTime) {
         return 'already_recorded';
       }
+      validateAndWriteDeviceBinding({
+        transaction, admin, actor, action, userRef, user,
+        developerDeviceOverride, ...deviceBinding, ...bindingState,
+      });
       transaction.set(ref, actionData({
         admin, action, user, receivedAt, locationEvidence,
         webLocationExempt, webGrantRevision: webGrant?.revision ?? null,
@@ -302,7 +357,24 @@ async function submitAttendanceAction({ admin, actor, rawAction }) {
     });
     return { action: 'check_in', status, attendanceId: expectedId };
   }
-  await bindTrustedDevice({ db, admin, actor, action, userRef, user, developerDeviceOverride });
+  // Check-out policy and account state are independent reads. Keep the policy
+  // guard inside the gateway, but do not serialize it ahead of user loading.
+  const [checkoutPolicy, userSnap] = await Promise.all([
+    loadCheckoutPolicy(db),
+    userRef.get(),
+  ]);
+  if (!checkoutPolicy.enabled) {
+    return checkoutDisabledResult({ attendanceId: expectedId, policy: checkoutPolicy });
+  }
+  const user = userSnap.data() || {};
+  if (!userSnap.exists || user.isActive === false) {
+    throw gatewayError('حساب الموظف غير نشط.', 'account_inactive');
+  }
+  const deviceBinding = attendanceDeviceRefs({ db, action, user });
+  const developerDeviceOverride = deviceBinding.registeredRef &&
+    !isExecutiveAttendanceAccount(user)
+    ? await hasDeveloperDeviceOverride(db, actor.uid)
+    : false;
 
   let earlyLeave = null;
   let permissionRef = null;
@@ -330,7 +402,10 @@ async function submitAttendanceAction({ admin, actor, rawAction }) {
   }
 
   const result = await db.runTransaction(async (transaction) => {
-    const existing = await transaction.get(ref);
+    const [existing, bindingState] = await Promise.all([
+      transaction.get(ref),
+      readDeviceBinding({ transaction, ...deviceBinding }),
+    ]);
     if (!existing.exists || !existing.data()?.checkInTime) {
       throw gatewayError('سجل الحضور غير موجود بعد.', 'checkin_missing');
     }
@@ -341,6 +416,10 @@ async function submitAttendanceAction({ admin, actor, rawAction }) {
       }
       return { status: 'already_recorded', evidence: existing.data()?.earlyLeaveCheckoutEvidence };
     }
+    validateAndWriteDeviceBinding({
+      transaction, admin, actor, action, userRef, user,
+      developerDeviceOverride, ...deviceBinding, ...bindingState,
+    });
     const patch = actionData({ admin, action, user, receivedAt,
       webLocationExempt, webGrantRevision: webGrant?.revision ?? null });
     let evidence = null;

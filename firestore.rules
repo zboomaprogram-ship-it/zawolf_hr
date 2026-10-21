@@ -1429,7 +1429,7 @@ service cloud.firestore {
 
     match /companies/{companyId} {
       allow read: if isAuth() && isActive();
-      allow write: if isAuth() && isActive() && isHR();
+      allow write: if isAuth() && isActive() && (isHR() || isSuperAdmin() || isCompanyExecutive());
     }
 
     match /customRequestTypes/{typeId} {
@@ -1466,17 +1466,10 @@ service cloud.firestore {
     }
 
     match /publicConfig/{configId} {
-      allow read: if configId == 'appSecurity'
-        || (configId == 'requestApproval' && isAuth() && isActive());
-      allow create, update: if configId == 'appSecurity'
-        && isAuth() && isActive() && isHR();
-      allow create, update: if configId == 'requestApproval'
-        && isAuth() && isActive() && isSuperAdmin()
-        && request.resource.data.keys().hasOnly([
-          'requireHrAfterManagerApproval', 'updatedBy', 'updatedAt'
-        ])
-        && request.resource.data.requireHrAfterManagerApproval is bool
-        && request.resource.data.updatedBy == uid();
+      allow read: if configId in ['appSecurity', 'requestApproval', 'chatPolicy']
+        || (isAuth() && isActive());
+      allow create, update: if configId in ['appSecurity', 'requestApproval', 'chatPolicy']
+        && isAuth() && isActive() && (isHR() || isSuperAdmin() || isCompanyExecutive());
       allow delete: if false;
     }
 

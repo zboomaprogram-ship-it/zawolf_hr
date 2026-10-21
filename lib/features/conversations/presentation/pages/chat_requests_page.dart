@@ -102,7 +102,7 @@ class ChatRequestsPage extends StatelessWidget {
                                               ),
                                               title: Text(request.name),
                                               subtitle: Text(
-                                                '${chatRequestStatus(request.status)}\n${request.reason}',
+                                                '${chatRequestStatus(request.status)}${request.requesterName != null && request.requesterName!.isNotEmpty ? ' • مقدم الطلب: ${request.requesterName}' : ''}\n${request.reason}',
                                               ),
                                               isThreeLine: true,
                                               trailing: const Icon(

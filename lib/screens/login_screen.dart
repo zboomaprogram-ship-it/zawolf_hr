@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -86,6 +87,7 @@ class _LoginScreenState extends State<LoginScreen> {
         _passwordController.text,
       );
       await _saveRememberedAccount();
+      TextInput.finishAutofillContext(shouldSave: true);
 
       if (!mounted) return;
 
@@ -277,123 +279,135 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                       ],
                     ),
-                    child: Form(
-                      key: _formKey,
-                      autovalidateMode: _errorMessage != null
-                          ? AutovalidateMode.onUserInteraction
-                          : AutovalidateMode.disabled,
-                      child: Column(
-                        children: [
-                          WolfInputField(
-                            controller: _emailController,
-                            labelText: 'البريد الإلكتروني',
-                            hintText: 'user@zawolf.com',
-                            prefixIcon: Icons.alternate_email,
-                            keyboardType: TextInputType.emailAddress,
-                            textDirection: TextDirection.ltr,
-                            onChanged: (_) {
-                              if (_errorMessage != null) {
-                                setState(() => _errorMessage = null);
-                              }
-                            },
-                            validator: (val) {
-                              if (val == null || val.isEmpty) {
-                                return 'يرجى إدخال البريد الإلكتروني';
-                              }
-                              return null;
-                            },
-                          ),
-                          const SizedBox(height: 18),
+                    child: AutofillGroup(
+                      child: Form(
+                        key: _formKey,
+                        autovalidateMode: _errorMessage != null
+                            ? AutovalidateMode.onUserInteraction
+                            : AutovalidateMode.disabled,
+                        child: Column(
+                          children: [
+                            WolfInputField(
+                              controller: _emailController,
+                              labelText: 'البريد الإلكتروني',
+                              hintText: 'user@zawolf.com',
+                              prefixIcon: Icons.alternate_email,
+                              keyboardType: TextInputType.emailAddress,
+                              autofillHints: const [
+                                AutofillHints.email,
+                                AutofillHints.username,
+                              ],
+                              textDirection: TextDirection.ltr,
+                              onChanged: (_) {
+                                if (_errorMessage != null) {
+                                  setState(() => _errorMessage = null);
+                                }
+                              },
+                              validator: (val) {
+                                if (val == null || val.isEmpty) {
+                                  return 'يرجى إدخال البريد الإلكتروني';
+                                }
+                                return null;
+                              },
+                            ),
+                            const SizedBox(height: 18),
 
-                          WolfInputField(
-                            controller: _passwordController,
-                            labelText: 'كلمة المرور',
-                            hintText: '••••••••',
-                            prefixIcon: Icons.lock_outline,
-                            isPassword: true,
-                            textDirection: TextDirection.ltr,
-                            onChanged: (_) {
-                              if (_errorMessage != null) {
-                                setState(() => _errorMessage = null);
-                              }
-                            },
-                            validator: (val) {
-                              if (val == null || val.isEmpty) {
-                                return 'يرجى إدخال كلمة المرور';
-                              }
-                              return null;
-                            },
-                          ),
-                          const SizedBox(height: 14),
+                            WolfInputField(
+                              controller: _passwordController,
+                              labelText: 'كلمة المرور',
+                              hintText: '••••••••',
+                              prefixIcon: Icons.lock_outline,
+                              isPassword: true,
+                              autofillHints: const [AutofillHints.password],
+                              textDirection: TextDirection.ltr,
+                              onSubmitted: (_) {
+                                if (!_isLoading) {
+                                  _handleLogin();
+                                }
+                              },
+                              onChanged: (_) {
+                                if (_errorMessage != null) {
+                                  setState(() => _errorMessage = null);
+                                }
+                              },
+                              validator: (val) {
+                                if (val == null || val.isEmpty) {
+                                  return 'يرجى إدخال كلمة المرور';
+                                }
+                                return null;
+                              },
+                            ),
+                            const SizedBox(height: 14),
 
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Flexible(
-                                child: Text(
-                                  'لا تملك حساباً؟ تواصل مع الإدارة',
-                                  style: theme.textTheme.bodySmall!.copyWith(
-                                    color: ZaWolfColors.textMuted,
-                                  ),
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                              Row(
-                                children: [
-                                  Text(
-                                    'تذكرني',
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Flexible(
+                                  child: Text(
+                                    'لا تملك حساباً؟ تواصل مع الإدارة',
                                     style: theme.textTheme.bodySmall!.copyWith(
-                                      color: ZaWolfColors.textSecondary,
+                                      color: ZaWolfColors.textMuted,
                                     ),
+                                    overflow: TextOverflow.ellipsis,
                                   ),
-                                  const SizedBox(width: 8),
-                                  SizedBox(
-                                    width: 22,
-                                    height: 22,
-                                    child: Checkbox(
-                                      value: _rememberMe,
-                                      activeColor: ZaWolfColors.primaryCyan,
-                                      onChanged: (val) {
-                                        setState(() {
-                                          _rememberMe = val ?? false;
-                                        });
-                                      },
-                                      shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(4),
+                                ),
+                                Row(
+                                  children: [
+                                    Text(
+                                      'تذكرني',
+                                      style: theme.textTheme.bodySmall!.copyWith(
+                                        color: ZaWolfColors.textSecondary,
                                       ),
                                     ),
-                                  ),
-                                ],
-                              ),
-                            ],
-                          ),
-                          Align(
-                            alignment: AlignmentDirectional.centerEnd,
-                            child: TextButton.icon(
-                              onPressed: _isLoading
-                                  ? null
-                                  : _handlePasswordReset,
-                              icon: const Icon(
-                                Icons.mark_email_read_outlined,
-                                size: 18,
-                              ),
-                              label: const Text('نسيت كلمة المرور؟'),
-                              style: TextButton.styleFrom(
-                                foregroundColor: ZaWolfColors.primaryCyan,
-                                padding: EdgeInsets.zero,
-                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                    const SizedBox(width: 8),
+                                    SizedBox(
+                                      width: 22,
+                                      height: 22,
+                                      child: Checkbox(
+                                        value: _rememberMe,
+                                        activeColor: ZaWolfColors.primaryCyan,
+                                        onChanged: (val) {
+                                          setState(() {
+                                            _rememberMe = val ?? false;
+                                          });
+                                        },
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(4),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                            Align(
+                              alignment: AlignmentDirectional.centerEnd,
+                              child: TextButton.icon(
+                                onPressed: _isLoading
+                                    ? null
+                                    : _handlePasswordReset,
+                                icon: const Icon(
+                                  Icons.mark_email_read_outlined,
+                                  size: 18,
+                                ),
+                                label: const Text('نسيت كلمة المرور؟'),
+                                style: TextButton.styleFrom(
+                                  foregroundColor: ZaWolfColors.primaryCyan,
+                                  padding: EdgeInsets.zero,
+                                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                ),
                               ),
                             ),
-                          ),
-                          const SizedBox(height: 26),
+                            const SizedBox(height: 26),
 
-                          WolfButton(
-                            onPressed: _handleLogin,
-                            text: 'نعم، دخول النظام',
-                            secondaryText: 'SIGN IN',
-                            loading: _isLoading,
-                          ),
-                        ],
+                            WolfButton(
+                              onPressed: _handleLogin,
+                              text: 'نعم، دخول النظام',
+                              secondaryText: 'SIGN IN',
+                              loading: _isLoading,
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ),

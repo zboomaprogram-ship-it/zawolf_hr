@@ -59,7 +59,7 @@ function normalizeMessageInput(input) {
   if ((input?.attachmentResourceIds !== undefined && (!Array.isArray(input.attachmentResourceIds) || input.attachmentResourceIds.some((id) => !safeId(id)))) ||
       !operationId || (!body && !attachmentResourceIds.length && !stickerId) || body.length > 4000 ||
       (stickerId != null && !STICKER_IDS.has(stickerId)) ||
-      attachmentResourceIds.length > 10 || containsExternalDriveLink(body)) {
+      attachmentResourceIds.length > 10) {
     return null;
   }
   return { operationId, body, attachmentResourceIds, ...(stickerId ? { stickerId } : {}) };

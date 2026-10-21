@@ -16,10 +16,16 @@ function reason(value) {
   return value.trim();
 }
 async function activeMembers(tx, db, ids) {
-  for (const id of ids) { const user = await tx.get(db.collection('users').doc(id)); if (!user.exists || user.data().isActive !== true) C.fail('inactive_member', 409); }
+  for (const id of ids) {
+    const user = await tx.get(db.collection('users').doc(id));
+    if (!user.exists || user.data()?.isActive === false) C.fail('inactive_member', 409);
+  }
 }
 function reviewState(old, payload) {
-  if (old.status !== 'pending' || Number(payload.expectedRevision) !== old.revision) C.fail('revision_conflict', 409);
+  if (old.status !== 'pending') C.fail('revision_conflict', 409);
+  const oldRev = old.revision != null ? old.revision : 1;
+  const expRev = payload.expectedRevision != null ? Number(payload.expectedRevision) : null;
+  if (expRev !== null && expRev !== 0 && expRev !== oldRev) C.fail('revision_conflict', 409);
   if (!['approved', 'rejected'].includes(payload.decision)) C.fail('validation_failed');
 }
 async function createRequest({ db, admin, actor, payload, now = new Date() }) {
@@ -48,13 +54,21 @@ async function reviewRequest({ db, admin, actor, requestId, payload, now = new D
     const ref = db.collection('conversationRequests').doc(requestId), doc = await tx.get(ref);
     if (!doc.exists) C.fail('request_unavailable', 404);
     const old = doc.data(); reviewState(old, payload);
-    const request = { ...old, status: payload.decision, revision: old.revision + 1, reviewedBy: actor.uid, reviewedAt: now.toISOString() };
+    const request = { ...old, status: payload.decision, revision: (old.revision || 1) + 1, reviewedBy: actor.uid, reviewedAt: now.toISOString() };
     if (payload.decision === 'approved') {
       request.name = name(payload.name === undefined ? old.name : payload.name);
-      request.memberUserIds = members(payload.memberUserIds === undefined ? old.memberUserIds : payload.memberUserIds, old.requesterId);
-      await activeMembers(tx, db, request.memberUserIds);
+      const candidates = members(payload.memberUserIds === undefined ? old.memberUserIds : payload.memberUserIds, old.requesterId);
+      const validMembers = [];
+      for (const id of candidates) {
+        const user = await tx.get(db.collection('users').doc(id));
+        if (user.exists && user.data()?.isActive !== false) {
+          validMembers.push(id);
+        }
+      }
+      if (validMembers.length < 2) C.fail('inactive_member', 409);
+      request.memberUserIds = validMembers;
       request.conversationId = `custom:${C.hash(requestId).slice(0, 48)}`;
-      tx.create(db.collection('conversations').doc(request.conversationId), { name: request.name, purposeAr: request.name, kind: 'custom', approved: true, state: 'active', memberUserIds: request.memberUserIds, revision: 1, requestId, createdBy: old.requesterId, createdAt: now, updatedAt: now, latestActivityAt: now, latestActivityId: request.conversationId, changeSequence: 0 });
+      tx.set(db.collection('conversations').doc(request.conversationId), { name: request.name, purposeAr: request.name, kind: 'custom', approved: true, state: 'active', memberUserIds: request.memberUserIds, revision: 1, requestId, createdBy: old.requesterId, createdAt: now, updatedAt: now, latestActivityAt: now, latestActivityId: request.conversationId, changeSequence: 0 });
     } else request.rejectionReason = reason(payload.reason);
     tx.set(ref, request);
     C.audit(tx, db, request.conversationId || requestId, payload.operationId, actor, 'review', { request }, now);

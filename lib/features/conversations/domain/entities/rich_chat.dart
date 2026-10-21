@@ -133,12 +133,16 @@ class ChannelRequest {
     required this.requesterId,
     required this.status,
     this.memberUserIds = const [],
+    this.memberNames = const {},
+    this.requesterName,
     this.revision = 0,
     this.rejectionReason,
     this.conversationId,
   });
   final String id, name, reason, requesterId, status;
   final List<String> memberUserIds;
+  final Map<String, String> memberNames;
+  final String? requesterName;
   final int revision;
   final String? rejectionReason, conversationId;
 }

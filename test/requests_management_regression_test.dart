@@ -67,19 +67,31 @@ void main() {
     },
   );
 
-  test('CEO-stage visibility is assigned to CEO-100, not every super admin', () {
-    final userModelSource = File('lib/models/user_model.dart').readAsStringSync();
-    expect(userModelSource, contains('bool get canReviewCeoStage => isCompanyCeo;'));
-    expect(
-      administrativeServiceSource,
-      contains("status != 'pending_manager' || data['managerId'] != reviewer.uid"),
-    );
-    expect(
-      administrativeServiceSource,
-      isNot(contains("data['managerId'] != reviewer.uid && !isCeo")),
-    );
-    expect(screenSource, isNot(contains('final isSystemOwner = reviewer.role')));
-  });
+  test(
+    'CEO-stage visibility is assigned to CEO-100, not every super admin',
+    () {
+      final userModelSource =
+          File('lib/models/user_model.dart').readAsStringSync();
+      expect(
+        userModelSource,
+        contains('bool get canReviewCeoStage => isCompanyCeo;'),
+      );
+      expect(
+        administrativeServiceSource,
+        contains(
+          "status != 'pending_manager' || data['managerId'] != reviewer.uid",
+        ),
+      );
+      expect(
+        administrativeServiceSource,
+        isNot(contains("data['managerId'] != reviewer.uid && !isCeo")),
+      );
+      expect(
+        screenSource,
+        isNot(contains('final isSystemOwner = reviewer.role')),
+      );
+    },
+  );
 
   test('super admin can perform HR-stage reviews but cannot self approve', () {
     expect(EmployeeRole.isHr(EmployeeRole.superAdmin), isTrue);
@@ -105,10 +117,7 @@ void main() {
         screenSource,
         contains("reviewer.canReviewCeoStage || reviewerCode == 'CEO-100'"),
       );
-    expect(
-      screenSource,
-      contains("if (status == 'pending_ceo')"),
-      );
+      expect(screenSource, contains("if (status == 'pending_ceo')"));
       expect(
         screenSource,
         isNot(contains("collection == 'leaves' && employeeId == 'CEO-100'")),
@@ -116,108 +125,169 @@ void main() {
     },
   );
 
-  test('a saved mobile decision leaves the pending list immediately across all tabs', () {
-    expect(
-      screenSource,
-      contains('final Set<String> _resolvedRequestIds = {};'),
-    );
-    expect(screenSource, contains('_resolvedRequestIds.add(requestId)'));
-    expect(screenSource, contains('!_resolvedRequestIds.contains(doc.id)'));
-    expect(screenSource, contains('!_resolvedRequestIds.contains(r.resignationId)'));
-    expect(screenSource, contains('excludedRecordIds: _resolvedRequestIds'));
-    expect(screenSource, contains('_resolvedRequestIds.contains(item.id)'));
-    expect(screenSource, contains('تم اعتماد الطلب بنجاح وتحديث القائمة.'));
-  });
+  test(
+    'a saved mobile decision leaves the pending list immediately across all tabs',
+    () {
+      expect(
+        screenSource,
+        contains('final Set<String> _resolvedRequestIds = {};'),
+      );
+      expect(screenSource, contains('_resolvedRequestIds.add(requestId)'));
+      expect(screenSource, contains('!_resolvedRequestIds.contains(doc.id)'));
+      expect(
+        screenSource,
+        contains('!_resolvedRequestIds.contains(r.resignationId)'),
+      );
+      expect(screenSource, contains('excludedRecordIds: _resolvedRequestIds'));
+      expect(screenSource, contains('_resolvedRequestIds.contains(item.id)'));
+      expect(screenSource, contains('تم اعتماد الطلب بنجاح وتحديث القائمة.'));
+    },
+  );
 
   test('management web shell keeps attendance and request shortcuts', () {
     final navWrapperSource =
         File('lib/navigation/navigation_wrapper.dart').readAsStringSync();
-    expect(
-      navWrapperSource,
-      contains("item.path == '/employee/dashboard'"),
-    );
-    expect(
-      navWrapperSource,
-      contains("item.path == '/employee/requests'"),
-    );
+    expect(navWrapperSource, contains("item.path == '/employee/dashboard'"));
+    expect(navWrapperSource, contains("item.path == '/employee/requests'"));
   });
 
-  test('geofence allows super admin to record attendance at any active location', () {
-    final geofenceSource =
-        File('lib/services/geofence_service.dart').readAsStringSync();
-    expect(
-      geofenceSource,
-      contains('employee.role == EmployeeRole.superAdmin'),
-    );
-    expect(
-      geofenceSource,
-      contains("where('isActive', isEqualTo: true)"),
-    );
-  });
+  test(
+    'geofence allows super admin to record attendance at any active location',
+    () {
+      final geofenceSource =
+          File('lib/services/geofence_service.dart').readAsStringSync();
+      expect(
+        geofenceSource,
+        contains('employee.role == EmployeeRole.superAdmin'),
+      );
+      expect(geofenceSource, contains("where('isActive', isEqualTo: true)"));
+    },
+  );
 
   test('latest HR salary deductions are not hidden by the bounded query', () {
     expect(screenSource, contains("isEqualTo: 'pending_hr'"));
     expect(screenSource, contains('reversal:\$reversalOnly'));
-  });
-
-  test('all requests tab provides unified visibility with distinctive type styling', () {
-    expect(screenSource, contains("const Tab(text: 'الكل')"));
-    expect(screenSource, contains("key: const ValueKey('unified-all-requests')"));
-    expect(screenSource, contains('_navigateToRecordCategory'));
-    expect(screenSource, contains("RequestTypeStyle.leave.borderColor"));
-    expect(screenSource, contains("RequestTypeStyle.leave.shadowColor"));
-    expect(screenSource, contains("RequestTypeStyle.permission.borderColor"));
-    expect(screenSource, contains("RequestTypeStyle.permission.shadowColor"));
-    expect(screenSource, contains("RequestTypeStyle.advance.borderColor"));
-    expect(screenSource, contains("RequestTypeStyle.advance.shadowColor"));
-    expect(screenSource, contains("RequestTypeStyle.administrative.borderColor"));
-    expect(screenSource, contains("RequestTypeStyle.resignation.borderColor"));
-    expect(screenSource, contains("RequestTypeStyle.complaint.borderColor"));
-    expect(screenSource, contains("RequestTypeStyle.attendanceCorrection.borderColor"));
-    expect(screenSource, contains("RequestTypeStyle.salaryDeduction.borderColor"));
-  });
-
-  test('all reviewers only see requests belonging to their active approval stage', () {
     expect(
       screenSource,
-      contains('.where((doc) => _canActOnApproval(doc.data(), reviewer))'),
+      contains('deductionsQuery.limit(_salaryDeductionReadLimit)'),
     );
+    expect(screenSource, isNot(contains('deductionsQuery.limit(40)')));
+    expect(screenSource, contains('تحميل سجلات خصم أقدم'));
     expect(
       screenSource,
-      isNot(contains('reviewer.role != EmployeeRole.superAdmin && !EmployeeRole.isHr(reviewer.role)')),
+      contains('_salaryDeductionReadLimit += _salaryDeductionPageSize'),
     );
-    expect(
-      screenSource,
-      contains("stage['approverId'] ?? stage['specificUserId']"),
-    );
-    expect(screenSource, contains("status == 'pending_team_leader'"));
-    expect(screenSource, contains("status == 'pending_hr_manager'"));
-    expect(screenSource, contains("status == 'pending_it'"));
-    expect(screenSource, contains("status == 'pending_super_admin'"));
   });
 
-  test('saved requests do not fail when direct notification delivery fails', () {
-    final permissionServiceSource =
-        File('lib/services/permission_service.dart').readAsStringSync();
+  test('employee deduction search expands through every bounded page', () {
+    expect(screenSource, contains('_expandDeductionSearchIfNeeded('));
+    expect(screenSource, contains("if (_searchQuery.isEmpty || !hasMore)"));
     expect(
-      permissionServiceSource,
-      contains('Permission saved; notification will be reconciled by the server'),
-    );
-    expect(
-      administrativeServiceSource,
-      contains('Administrative request saved; server will reconcile notification'),
-    );
-    expect(
-      administrativeServiceSource,
-      contains('Field mission saved; server will reconcile notification'),
-    );
-    expect(
-      File('lib/services/complaint_service.dart').readAsStringSync(),
-      contains('Complaint saved; server will reconcile notification'),
-    );
-    expect(
-      File('lib/services/employee_deletion_request_service.dart').readAsStringSync(),
-      contains('Deletion request saved; server will reconcile notification'),
+      screenSource,
+      contains('_confirmedDeductionReadLimit += _salaryDeductionPageSize'),
     );
   });
+
+  test('confirmed deduction tab uses the complete three-source register', () {
+    expect(
+      screenSource,
+      contains('(tabContext) => _buildConfirmedDeductionsTab(manager, theme)'),
+    );
+    expect(screenSource, contains('.limit(_confirmedDeductionReadLimit)'));
+  });
+
+  test(
+    'all requests tab provides unified visibility with distinctive type styling',
+    () {
+      expect(screenSource, contains("const Tab(text: 'الكل')"));
+      expect(
+        screenSource,
+        contains("key: const ValueKey('unified-all-requests')"),
+      );
+      expect(screenSource, contains('_navigateToRecordCategory'));
+      expect(screenSource, contains("RequestTypeStyle.leave.borderColor"));
+      expect(screenSource, contains("RequestTypeStyle.leave.shadowColor"));
+      expect(screenSource, contains("RequestTypeStyle.permission.borderColor"));
+      expect(screenSource, contains("RequestTypeStyle.permission.shadowColor"));
+      expect(screenSource, contains("RequestTypeStyle.advance.borderColor"));
+      expect(screenSource, contains("RequestTypeStyle.advance.shadowColor"));
+      expect(
+        screenSource,
+        contains("RequestTypeStyle.administrative.borderColor"),
+      );
+      expect(
+        screenSource,
+        contains("RequestTypeStyle.resignation.borderColor"),
+      );
+      expect(screenSource, contains("RequestTypeStyle.complaint.borderColor"));
+      expect(
+        screenSource,
+        contains("RequestTypeStyle.attendanceCorrection.borderColor"),
+      );
+      expect(
+        screenSource,
+        contains("RequestTypeStyle.salaryDeduction.borderColor"),
+      );
+    },
+  );
+
+  test(
+    'all reviewers only see requests belonging to their active approval stage',
+    () {
+      expect(
+        screenSource,
+        contains('.where((doc) => _canActOnApproval(doc.data(), reviewer))'),
+      );
+      expect(
+        screenSource,
+        isNot(
+          contains(
+            'reviewer.role != EmployeeRole.superAdmin && !EmployeeRole.isHr(reviewer.role)',
+          ),
+        ),
+      );
+      expect(
+        screenSource,
+        contains("stage['approverId'] ?? stage['specificUserId']"),
+      );
+      expect(screenSource, contains("status == 'pending_team_leader'"));
+      expect(screenSource, contains("status == 'pending_hr_manager'"));
+      expect(screenSource, contains("status == 'pending_it'"));
+      expect(screenSource, contains("status == 'pending_super_admin'"));
+    },
+  );
+
+  test(
+    'saved requests do not fail when direct notification delivery fails',
+    () {
+      final permissionServiceSource =
+          File('lib/services/permission_service.dart').readAsStringSync();
+      expect(
+        permissionServiceSource,
+        contains(
+          'Permission saved; notification will be reconciled by the server',
+        ),
+      );
+      expect(
+        administrativeServiceSource,
+        contains(
+          'Administrative request saved; server will reconcile notification',
+        ),
+      );
+      expect(
+        administrativeServiceSource,
+        contains('Field mission saved; server will reconcile notification'),
+      );
+      expect(
+        File('lib/services/complaint_service.dart').readAsStringSync(),
+        contains('Complaint saved; server will reconcile notification'),
+      );
+      expect(
+        File(
+          'lib/services/employee_deletion_request_service.dart',
+        ).readAsStringSync(),
+        contains('Deletion request saved; server will reconcile notification'),
+      );
+    },
+  );
 }

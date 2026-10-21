@@ -108,31 +108,40 @@ async function messageAction({ db, admin, actor, channelId, messageId, payload, 
   });
 }
 async function presence({ db, actor, channelId, payload, typing = false, now = new Date() }) {
-  const op = C.operation(db, actor, `${typing ? 'typing' : 'read'}:${channelId}`, payload);
-  return db.runTransaction(async tx => {
-    const channel = await C.channelFor(db, actor, channelId, tx, true);
-    const previous = C.replay(await tx.get(op.ref), op); if (previous) return previous;
-    if (typing) {
-      if (typeof payload.typing !== 'boolean') C.fail('validation_failed');
-      const current = channel.data.typing || {};
-      const next = { ...current, [actor.uid]: { userId: actor.uid, name: displayName(actor), expiresAt: new Date(now.getTime() + (payload.typing ? 10000 : 0)).toISOString() } };
-      for (const [uid, entry] of Object.entries(next)) if (Date.parse(entry.expiresAt) <= now.getTime()) delete next[uid];
-      tx.update(channel.ref, { typing: next });
-      C.change(tx, channel, 'typing', {}, now);
-      return C.receipt(tx, op, { ok: true }, now);
-    }
-    if (!safeId(payload.messageId)) C.fail('validation_failed');
-    const message = await tx.get(channel.ref.collection('messages').doc(payload.messageId));
-    if (!message.exists) C.fail('message_unavailable', 404);
-    const readers = { ...(channel.data.readers || {}) };
-    const sentAt = C.iso(message.data().sentAt);
-    const old = readers[actor.uid];
-    if (!old || sentAt > old.sentAt || (sentAt === old.sentAt && payload.messageId > old.messageId)) {
-      readers[actor.uid] = { messageId: payload.messageId, readAt: now.toISOString(), sentAt, name: displayName(actor) };
-      tx.set(channel.ref, { readers }, { merge: true });
-      C.change(tx, channel, 'read', {}, now);
-    }
-    return C.receipt(tx, op, { readers }, now);
-  });
+  // Presence is deliberately stored outside the conversation document. The
+  // document is also written by every message transaction, so putting typing
+  // and read receipts there made active chats retry sends under contention.
+  const channel = await C.channelFor(db, actor, channelId, null, true);
+  if (typing) {
+    if (typeof payload.typing !== 'boolean') C.fail('validation_failed');
+    await db.collection('conversationPresence').doc(C.hash(channel.id, actor.uid)).set({
+      conversationId: channel.id,
+      userId: actor.uid,
+      name: displayName(actor),
+      expiresAt: new Date(now.getTime() + (payload.typing ? 10000 : 0)).toISOString(),
+      updatedAt: now,
+    });
+    return { ok: true };
+  }
+  if (!safeId(payload.messageId)) C.fail('validation_failed');
+  const message = await channel.ref.collection('messages').doc(payload.messageId).get();
+  if (!message.exists) C.fail('message_unavailable', 404);
+  const sentAt = C.iso(message.data().sentAt);
+  const receiptRef = db.collection('conversationReadReceipts').doc(C.hash(channel.id, actor.uid));
+  const current = await receiptRef.get();
+  const old = current.exists ? current.data() : null;
+  if (!old || sentAt > old.sentAt || (sentAt === old.sentAt && payload.messageId > old.messageId)) {
+    await receiptRef.set({
+      conversationId: channel.id,
+      userId: actor.uid,
+      messageId: payload.messageId,
+      readAt: now.toISOString(),
+      sentAt,
+      name: displayName(actor),
+      updatedAt: now,
+    });
+  }
+  return { readers: {} };
 }
+
 module.exports = { sendMessage, messageAction, presence, validateSenderAction, notificationTitle, notificationBody };

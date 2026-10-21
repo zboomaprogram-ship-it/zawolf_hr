@@ -40,6 +40,35 @@ class _ManualAttendanceViewState extends State<_ManualAttendanceView> {
     super.dispose();
   }
 
+  Future<void> _pickDate() async {
+    final now = DateTime.now();
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _effectiveAt.isAfter(now) ? now : _effectiveAt,
+      firstDate: DateTime(now.year - 1, 1, 1),
+      lastDate: now,
+    );
+    if (picked == null) return;
+    final candidate = DateTime(
+      picked.year,
+      picked.month,
+      picked.day,
+      _effectiveAt.hour,
+      _effectiveAt.minute,
+    );
+    final adjusted = candidate.isAfter(now.add(const Duration(minutes: 1)))
+        ? DateTime(picked.year, picked.month, picked.day, now.hour, now.minute)
+        : candidate;
+
+    setState(() {
+      _effectiveAt = adjusted;
+      _selectedEmployeeIds.clear();
+    });
+    if (mounted) {
+      context.read<ManualAttendanceCubit>().changeDate(picked);
+    }
+  }
+
   Future<void> _pickTime() async {
     final picked = await showTimePicker(
       context: context,
@@ -54,15 +83,12 @@ class _ManualAttendanceViewState extends State<_ManualAttendanceView> {
       picked.hour,
       picked.minute,
     );
-    // Manual attendance is intentionally limited to today and a current (or
-    // earlier) time.  Catching this here avoids sending an invalid operation
-    // to the server and, more importantly, makes the rule clear to HR.
     if (candidate.isAfter(now.add(const Duration(minutes: 1)))) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
-            'يمكن تسجيل حضور اليوم في الوقت الحالي أو وقت سابق فقط.',
+            'لا يمكن تسجيل وقت في المستقبل.',
           ),
         ),
       );
@@ -130,12 +156,12 @@ class _ManualAttendanceViewState extends State<_ManualAttendanceView> {
                       ),
                       ButtonSegment(
                         value: 'not_checked_in',
-                        label: Text('لم يسجلوا الحضور اليوم'),
+                        label: Text('لم يسجلوا الحضور'),
                         icon: Icon(Icons.person_off_outlined),
                       ),
                       ButtonSegment(
                         value: 'checked_in',
-                        label: Text('الحاضرين الآن'),
+                        label: Text('حاضرين (بدون انصراف)'),
                         icon: Icon(Icons.person_pin_circle_outlined),
                       ),
                     ],
@@ -239,12 +265,28 @@ class _ManualAttendanceViewState extends State<_ManualAttendanceView> {
                             setState(() => _eventType = selected.first),
                   ),
                   const SizedBox(height: 12),
-                  OutlinedButton.icon(
-                    onPressed: _pickTime,
-                    icon: const Icon(Icons.schedule),
-                    label: Text(
-                      'الوقت: ${DateFormat('yyyy/MM/dd – hh:mm a', 'ar').format(_effectiveAt)}',
-                    ),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: _pickDate,
+                          icon: const Icon(Icons.event_outlined),
+                          label: Text(
+                            'التاريخ: ${DateFormat('yyyy/MM/dd', 'ar').format(_effectiveAt)}',
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: _pickTime,
+                          icon: const Icon(Icons.schedule),
+                          label: Text(
+                            'الوقت: ${DateFormat('hh:mm a', 'ar').format(_effectiveAt)}',
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                   const SizedBox(height: 12),
                   TextField(
@@ -279,7 +321,7 @@ class _ManualAttendanceViewState extends State<_ManualAttendanceView> {
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   const SnackBar(
                                     content: Text(
-                                      'يمكن تسجيل حضور اليوم في الوقت الحالي أو وقت سابق فقط.',
+                                      'لا يمكن تسجيل الحضور في تاريخ أو وقت مستقبلي.',
                                     ),
                                   ),
                                 );
@@ -314,8 +356,25 @@ class _ManualAttendanceViewState extends State<_ManualAttendanceView> {
   }
 
   String _attendanceLabel(ManualAttendanceEmployee employee) {
-    if (employee.isCheckedOut) return 'سجل الحضور والانصراف اليوم';
-    if (employee.isCheckedIn) return 'حاضر الآن — لم يسجل الانصراف بعد';
-    return 'لم يسجل الحضور حتى الآن';
+    final isToday = DateUtils.isSameDay(_effectiveAt, DateTime.now());
+    if (employee.isCheckedOut) {
+      final timeStr = employee.checkOutAt != null
+          ? ' (انصراف: ${DateFormat('hh:mm a', 'ar').format(employee.checkOutAt!.toLocal())})'
+          : '';
+      return isToday
+          ? 'سجل الحضور والانصراف اليوم$timeStr'
+          : 'سجل الحضور والانصراف$timeStr';
+    }
+    if (employee.isCheckedIn) {
+      final timeStr = employee.checkInAt != null
+          ? ' (حضور: ${DateFormat('hh:mm a', 'ar').format(employee.checkInAt!.toLocal())})'
+          : '';
+      return isToday
+          ? 'حاضر الآن — لم يسجل الانصراف بعد$timeStr'
+          : 'حاضر — لم يسجل الانصراف$timeStr';
+    }
+    return isToday
+        ? 'لم يسجل الحضور حتى الآن'
+        : 'غائب / لم يسجل حضور في هذا اليوم';
   }
 }

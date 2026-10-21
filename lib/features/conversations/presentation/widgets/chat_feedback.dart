@@ -22,10 +22,13 @@ String chatErrorText(String code) {
   if (code.contains('window_expired') || code.contains('window')) {
     return 'انتهت مهلة التعديل أو الحذف (15 دقيقة).';
   }
+  if (code.contains('inactive_member')) {
+    return 'أحد الأعضاء المحددين حسابه غير نشط أو تم تعطيله. يرجى إزالة العضو غير النشط ثم إعادة المحاولة.';
+  }
   if (code.contains('access') ||
       code.contains('forbidden') ||
       code.contains('http_403')) {
-    return 'لم يعد لديك إذن لهذه العملية. حدّث المحادثة.';
+    return 'لم يعد لديك إذن لهذه العملية أو تم تغيير صلاحيات الحساب.';
   }
   if (code.contains('not_found') || code.contains('http_404')) {
     return 'المحادثة أو الرسالة المطلوبة لم تعد موجودة.';

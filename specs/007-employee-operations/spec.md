@@ -153,7 +153,7 @@ the existing policy; revoke/expire the grant and verify the menu disappears.
 - **FR-005**: The system MUST keep notification badge state synchronized after individual and bulk read actions.
 - **FR-006**: The system MUST route every notification to a role-authorized target screen; approvers MUST be routed to the management context.
 - **FR-007**: The system MUST provide an Arabic employee assistant limited to authorized system guidance and the employee's permitted task/discipline context; it MUST not make HR, payroll, disciplinary, or management decisions.
-- **FR-008**: The system MUST provide authorized employee-to-management conversations with membership checks, Arabic safe states, and governed attachment storage in Company Drive; it MUST not expose raw Drive links or credentials.
+- **FR-008**: The system MUST provide authorized employee-to-management conversations with membership checks, Arabic safe states, and governed attachment storage in Company Drive. Backend-managed attachments MUST NOT expose raw Drive links or credentials. User-authored Drive and Docs hyperlinks in message text are allowed and remain ordinary untrusted links.
 - **FR-009**: Authorized HR/admin users MUST be able to hide and restore non-operational accounts from default attendance analytics while retaining audit visibility.
 - **FR-010**: Authorized leaders MUST be able to view one employee's attendance, requests, corrections, leave/permissions, and deductions for a selected business-effective period.
 - **FR-011**: Request and deduction management screens MUST return all role-authorized records across pending, approved, rejected, cancelled, confirmed, and historical states without duplicate rows or indefinite loaders.

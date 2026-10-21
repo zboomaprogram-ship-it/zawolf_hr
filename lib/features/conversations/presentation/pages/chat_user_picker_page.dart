@@ -9,6 +9,7 @@ Future<List<String>?> pickChatUsers(
   RichChatRepository repository, {
   required List<String> selected,
   Set<String> locked = const {},
+  Map<String, String> initialNames = const {},
 }) => Navigator.of(context).push<List<String>>(
   MaterialPageRoute(
     builder:
@@ -16,6 +17,7 @@ Future<List<String>?> pickChatUsers(
           repository: repository,
           selected: selected,
           locked: locked,
+          initialNames: initialNames,
         ),
   ),
 );
@@ -26,10 +28,12 @@ class ChatUserPickerPage extends StatelessWidget {
     required this.repository,
     required this.selected,
     this.locked = const {},
+    this.initialNames = const {},
   });
   final RichChatRepository repository;
   final List<String> selected;
   final Set<String> locked;
+  final Map<String, String> initialNames;
   @override
   Widget build(BuildContext context) => BlocProvider(
     create:
@@ -41,7 +45,10 @@ class ChatUserPickerPage extends StatelessWidget {
       child: BlocBuilder<ChatUserPickerCubit, ChatUserPickerState>(
         builder: (context, state) {
           final cubit = context.read<ChatUserPickerCubit>();
-          final names = {for (final user in state.users) user.id: user.name};
+          final names = {
+            ...initialNames,
+            for (final user in state.users) user.id: user.name,
+          };
           return Scaffold(
             appBar: AppBar(
               title: const Text('اختيار الزملاء'),

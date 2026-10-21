@@ -49,12 +49,16 @@ test('employees can start only with their own manager, HR, or admin', () => {
   }), false);
 });
 
-test('messages reject raw Drive links and keep opaque attachment references', () => {
+test('messages allow user-authored Drive links and keep attachment references opaque', () => {
   assert.equal(containsExternalDriveLink('https://drive.google.com/file/d/secret'), true);
-  assert.equal(normalizeMessageInput({
+  assert.deepEqual(normalizeMessageInput({
     operationId: 'message-1',
     body: 'الرابط https://docs.google.com/spreadsheets/d/secret',
-  }), null);
+  }), {
+    operationId: 'message-1',
+    body: 'الرابط https://docs.google.com/spreadsheets/d/secret',
+    attachmentResourceIds: [],
+  });
   assert.deepEqual(normalizeMessageInput({
     operationId: 'message-1',
     body: 'تم إرفاق الملف',

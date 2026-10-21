@@ -73,10 +73,21 @@ async function sendPushToUsers(userIds, title, body, data = {}, options = {}) {
   if (!response.ok) {
     throw new Error(`OneSignal push failed (${response.status}): ${JSON.stringify(json)}`);
   }
-  if (json.errors) {
+
+  const invalidAliases = Array.isArray(json.errors?.invalid_aliases?.external_id)
+    ? json.errors.invalid_aliases.external_id
+    : [];
+
+  // When all recipients failed or errors occurred with 0 recipients reached
+  if (json.errors && (!json.recipients || json.recipients === 0)) {
     throw new Error(`OneSignal push returned errors: ${JSON.stringify(json.errors)}`);
   }
-  return { sent: true, response: json };
+
+  return {
+    sent: true,
+    response: json,
+    invalidUserIds: invalidAliases,
+  };
 }
 
 module.exports = {

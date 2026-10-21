@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../domain/entities/rich_chat.dart';
 import '../cubit/chat_composer_cubit.dart';
 import 'chat_feedback.dart';
 import 'chat_stickers.dart';
+import 'chat_web_paste.dart';
 
 typedef ChatVoiceBuilder = Widget Function(
   BuildContext context,
@@ -28,11 +30,46 @@ class RichChatComposer extends StatefulWidget {
 
 class _RichChatComposerState extends State<RichChatComposer> {
   late final TextEditingController _text;
+  late final FocusNode _focusNode;
+  late final ChatWebPasteListener _pasteListener;
   bool _isVoiceRecording = false;
+
   @override
   void initState() {
     super.initState();
     _text = TextEditingController(text: widget.cubit.state.body);
+    _focusNode = FocusNode(onKeyEvent: _handleKeyEvent);
+    _pasteListener = ChatWebPasteListener(
+      onImagePasted: (file) {
+        if (mounted) {
+          widget.cubit.addFiles([file]);
+          if (!_focusNode.hasFocus) {
+            _focusNode.requestFocus();
+          }
+        }
+      },
+      isEnabled: () =>
+          mounted && !widget.cubit.state.loading && !widget.cubit.state.sending,
+    )..attach();
+  }
+
+  KeyEventResult _handleKeyEvent(FocusNode node, KeyEvent event) {
+    if (event is KeyDownEvent && event.logicalKey == LogicalKeyboardKey.enter) {
+      if (HardwareKeyboard.instance.isShiftPressed) {
+        return KeyEventResult.ignored;
+      }
+      final state = widget.cubit.state;
+      final canSend = !state.loading &&
+          !state.sending &&
+          (state.body.trim().isNotEmpty ||
+              state.files.isNotEmpty ||
+              state.stickerId != null);
+      if (canSend) {
+        widget.cubit.send();
+      }
+      return KeyEventResult.handled;
+    }
+    return KeyEventResult.ignored;
   }
 
   @override
@@ -85,6 +122,17 @@ class _RichChatComposerState extends State<RichChatComposer> {
                             Padding(
                               padding: const EdgeInsetsDirectional.only(end: 6),
                               child: InputChip(
+                                avatar: state.files[i].kind == 'image'
+                                    ? ClipRRect(
+                                        borderRadius: BorderRadius.circular(4),
+                                        child: Image.memory(
+                                          state.files[i].bytes,
+                                          width: 24,
+                                          height: 24,
+                                          fit: BoxFit.cover,
+                                        ),
+                                      )
+                                    : const Icon(Icons.attach_file, size: 16),
                                 label: Text(state.files[i].fileName),
                                 onDeleted:
                                     state.sending
@@ -161,6 +209,7 @@ class _RichChatComposerState extends State<RichChatComposer> {
                           child: TextField(
                             key: const Key('chat-composer'),
                             controller: _text,
+                            focusNode: _focusNode,
                             enabled: !state.loading && !state.sending,
                             onChanged: widget.cubit.changeBody,
                             minLines: 1,
@@ -246,6 +295,8 @@ class _RichChatComposerState extends State<RichChatComposer> {
   );
   @override
   void dispose() {
+    _pasteListener.dispose();
+    _focusNode.dispose();
     _text.dispose();
     super.dispose();
   }

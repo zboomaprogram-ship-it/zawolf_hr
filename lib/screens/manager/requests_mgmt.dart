@@ -63,6 +63,9 @@ import '../shared/requests_log_screen.dart';
 // Approval requests use cards on every viewport. The old desktop master/detail
 // table hid request fields and reserved a large blank detail pane.
 const bool _requestMasterDetailEnabled = false;
+// Keep each deduction read bounded for Firestore cost. Reviewers can request
+// older pages explicitly instead of silently losing records after a fixed cap.
+const int _salaryDeductionPageSize = 300;
 
 class RequestsManagementScreen extends StatefulWidget {
   const RequestsManagementScreen({
@@ -100,6 +103,10 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
   bool _isSavingApprovalPolicy = false;
   bool _isBulkReviewing = false;
   String _salaryDeductionFilter = 'all';
+  int _salaryDeductionReadLimit = _salaryDeductionPageSize;
+  int _confirmedDeductionReadLimit = _salaryDeductionPageSize;
+  bool _salaryDeductionSearchExpansionScheduled = false;
+  bool _confirmedDeductionSearchExpansionScheduled = false;
   String _searchQuery = '';
   Timer? _searchDebounceTimer;
 
@@ -107,8 +114,44 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
     _searchDebounceTimer?.cancel();
     _searchDebounceTimer = Timer(const Duration(milliseconds: 250), () {
       if (mounted) {
-        setState(() => _searchQuery = value.trim().toLowerCase());
+        setState(() {
+          _searchQuery = value.trim().toLowerCase();
+          // A new employee search starts from a small bounded page, then the
+          // active deduction tab expands until every matching source record
+          // has participated in the client-side name/code search.
+          _salaryDeductionReadLimit = _salaryDeductionPageSize;
+          _confirmedDeductionReadLimit = _salaryDeductionPageSize;
+        });
       }
+    });
+  }
+
+  void _expandDeductionSearchIfNeeded({
+    required bool confirmed,
+    required bool hasMore,
+  }) {
+    if (_searchQuery.isEmpty || !hasMore) return;
+    if (confirmed) {
+      if (_confirmedDeductionSearchExpansionScheduled) return;
+      _confirmedDeductionSearchExpansionScheduled = true;
+    } else {
+      if (_salaryDeductionSearchExpansionScheduled) return;
+      _salaryDeductionSearchExpansionScheduled = true;
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (confirmed) {
+        _confirmedDeductionSearchExpansionScheduled = false;
+      } else {
+        _salaryDeductionSearchExpansionScheduled = false;
+      }
+      if (!mounted || _searchQuery.isEmpty) return;
+      setState(() {
+        if (confirmed) {
+          _confirmedDeductionReadLimit += _salaryDeductionPageSize;
+        } else {
+          _salaryDeductionReadLimit += _salaryDeductionPageSize;
+        }
+      });
     });
   }
 
@@ -3884,13 +3927,6 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
       toDate: DateTime.now().toUtc().add(const Duration(days: 366)),
       searchTerm: _searchQuery,
     );
-    final deductionQuery = RequestViewQuery(
-      actorScope: actorScope,
-      tab: RequestViewTab.deductions,
-      fromDate: historyQuery.fromDate,
-      toDate: historyQuery.toDate,
-      searchTerm: _searchQuery,
-    );
     final tabs = <Tab>[
       const Tab(text: 'الكل'),
       const Tab(text: 'الإجازات'),
@@ -3943,15 +3979,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
           absenceOnly: true,
         ),
       if (canReviewSalaryDeductions)
-        (tabContext) => RequestVisibilityEntry(
-          key: const ValueKey('unified-deductions'),
-          query: deductionQuery,
-          searchTerm: _searchQuery,
-          excludedRecordIds: _resolvedRequestIds,
-          onSelectRecord:
-              (record) =>
-                  _showInPlaceRequestAction(tabContext, record, manager, tabs),
-        ),
+        (tabContext) => _buildConfirmedDeductionsTab(manager, theme),
       (tabContext) => _buildManualDeductionsTab(manager, theme),
       if (canReviewTimeCorrections)
         (tabContext) => _buildAttendanceCorrectionsTab(manager, theme),
@@ -6004,6 +6032,19 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
       };
     }
 
+    // Old advance requests could be saved as `pending_manager` before their
+    // HR route was materialized. Their timeline already identifies HR as the
+    // current reviewer, so let HR invoke the server-side canonical repair and
+    // decision. A manager never gains access through this exception.
+    final isLegacyAdvanceHrStage =
+        status == 'pending_manager' &&
+        (data['advanceRouteStage'] ?? '').toString().trim().isEmpty &&
+        data.containsKey('amount') &&
+        data.containsKey('monthKey') &&
+        ((data['managerApprovalTrail'] as List<dynamic>?)?.isEmpty ?? true) &&
+        ((data['approvalHistory'] as List<dynamic>?)?.isEmpty ?? true);
+    if (isLegacyAdvanceHrStage && isHrReviewer) return true;
+
     // Legacy requests without a materialized route still follow the current
     // status before any legacy identifier. This prevents executives from
     // acting on a request now waiting for HR just because an old ID remains.
@@ -7442,7 +7483,13 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
     if (status == 'approved') return 'تم اعتماد السلفة نهائياً';
     if (status == 'rejected') return 'الطلب مرفوض';
     if (status == 'cancelled') return 'تم إلغاء الطلب';
-    if (status == 'pending_hr') return 'مراجعة HR';
+    if (status == 'pending_hr' ||
+        (status == 'pending_manager' &&
+            (data['advanceRouteStage'] ?? '').toString().trim().isEmpty &&
+            data.containsKey('amount') &&
+            data.containsKey('monthKey'))) {
+      return 'مراجعة HR';
+    }
     switch (data['advanceRouteStage']) {
       case 'ceo':
         return 'موافقة الرئيس التنفيذي';
@@ -7665,25 +7712,25 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
   // ignore: unused_element
   Widget _buildConfirmedDeductionsTab(UserModel reviewer, ThemeData theme) {
     final attendanceStream = _cachedStream(
-      'attendance|salary-deduction|${reviewer.uid}|confirmed',
+      'attendance|salary-deduction|${reviewer.uid}|confirmed|limit:$_confirmedDeductionReadLimit',
       _db
           .collection('attendance')
           .where('salaryDeductionApprovalStatus', isEqualTo: 'approved')
-          .limit(300),
+          .limit(_confirmedDeductionReadLimit),
     );
     final permissionStream = _cachedStream(
-      'permissions|salary-deduction|${reviewer.uid}|confirmed',
+      'permissions|salary-deduction|${reviewer.uid}|confirmed|limit:$_confirmedDeductionReadLimit',
       _db
           .collection('permissions')
           .where('status', isEqualTo: 'approved')
-          .limit(300),
+          .limit(_confirmedDeductionReadLimit),
     );
     final manualStream = _cachedStream(
-      'manual-deductions|${reviewer.uid}|confirmed',
+      'manual-deductions|${reviewer.uid}|confirmed|limit:$_confirmedDeductionReadLimit',
       _db
           .collection('manual_deductions')
           .where('status', isEqualTo: 'approved')
-          .limit(300),
+          .limit(_confirmedDeductionReadLimit),
     );
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
       stream: attendanceStream,
@@ -7734,6 +7781,17 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                         (manualSnapshot.data?.docs ?? const [])
                             .map(ManualDeductionModel.fromFirestore)
                             .toList();
+                    final canLoadOlder =
+                        (attendanceSnapshot.data?.docs.length ?? 0) >=
+                            _confirmedDeductionReadLimit ||
+                        (permissionSnapshot.data?.docs.length ?? 0) >=
+                            _confirmedDeductionReadLimit ||
+                        (manualSnapshot.data?.docs.length ?? 0) >=
+                            _confirmedDeductionReadLimit;
+                    _expandDeductionSearchIfNeeded(
+                      confirmed: true,
+                      hasMore: canLoadOlder,
+                    );
                     final items =
                         <_ConfirmedDeductionItem>[
                             ...attendance.map(
@@ -7817,23 +7875,32 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                         ),
                     ];
                     final itemById = {for (final item in items) item.id: item};
-
                     return LayoutBuilder(
                       builder: (context, constraints) {
                         if (!_requestMasterDetailEnabled ||
                             constraints.maxWidth < 980) {
                           return ListView.separated(
                             padding: const EdgeInsets.all(16),
-                            itemCount: items.length,
+                            itemCount: items.length + (canLoadOlder ? 1 : 0),
                             separatorBuilder:
                                 (_, __) => const SizedBox(height: 12),
-                            itemBuilder:
-                                (context, index) =>
-                                    _buildConfirmedDeductionCard(
-                                      item: items[index],
-                                      reviewer: reviewer,
-                                      theme: theme,
-                                    ),
+                            itemBuilder: (context, index) {
+                              if (index == items.length) {
+                                return _buildLoadOlderDeductionsButton(
+                                  onPressed: () {
+                                    setState(() {
+                                      _confirmedDeductionReadLimit +=
+                                          _salaryDeductionPageSize;
+                                    });
+                                  },
+                                );
+                              }
+                              return _buildConfirmedDeductionCard(
+                                item: items[index],
+                                reviewer: reviewer,
+                                theme: theme,
+                              );
+                            },
                           );
                         }
                         return DsMasterDetailView(
@@ -7943,8 +8010,8 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
     deductionsQuery = deductionsQuery.orderBy('date', descending: true);
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
       stream: _cachedStream(
-        'attendance|salary-deduction|${reviewer.uid}|reversal:$reversalOnly|absence:$absenceOnly',
-        deductionsQuery.limit(40),
+        'attendance|salary-deduction|${reviewer.uid}|reversal:$reversalOnly|absence:$absenceOnly|limit:$_salaryDeductionReadLimit',
+        deductionsQuery.limit(_salaryDeductionReadLimit),
       ),
       builder: (context, snapshot) {
         if (snapshot.hasError) {
@@ -7977,6 +8044,9 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
             }).toList();
         allItems.sort((a, b) => b.date.compareTo(a.date));
         final items = _filterSalaryDeductions(allItems);
+        final canLoadOlder =
+            (snapshot.data?.docs.length ?? 0) >= _salaryDeductionReadLimit;
+        _expandDeductionSearchIfNeeded(confirmed: false, hasMore: canLoadOlder);
 
         if (allItems.isEmpty && (reversalOnly || absenceOnly)) {
           return Column(
@@ -8197,9 +8267,27 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                   ),
                 );
               }),
+            if (canLoadOlder) ...[
+              const SizedBox(height: 4),
+              _buildLoadOlderDeductionsButton(
+                onPressed: () {
+                  setState(() {
+                    _salaryDeductionReadLimit += _salaryDeductionPageSize;
+                  });
+                },
+              ),
+            ],
           ],
         );
       },
+    );
+  }
+
+  Widget _buildLoadOlderDeductionsButton({required VoidCallback onPressed}) {
+    return OutlinedButton.icon(
+      onPressed: onPressed,
+      icon: const Icon(Icons.expand_more),
+      label: const Text('تحميل سجلات خصم أقدم'),
     );
   }
 

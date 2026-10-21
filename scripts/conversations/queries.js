@@ -6,8 +6,28 @@ const { ensureGeneral } = require('./company');
 const { channelDto } = require('./requests');
 const pageSize = (value, max) => Math.min(max, Math.max(1, Number.parseInt(value, 10) || max));
 const inboxUnreadConcurrency = 8;
-function presenceDto(channel, now = new Date()) {
-  return { readers: channel.data?.readers || {}, typing: Object.values(channel.data?.typing || {}).filter(v => Date.parse(v.expiresAt) > now.getTime()), canPost: channel.canPost };
+async function presenceDto(db, channel, now = new Date()) {
+  // New presence records avoid write contention with messages. Keep the old
+  // fields as a safe fallback while historical clients drain naturally.
+  const [receipt, presence] = await Promise.all([
+    db.collection('conversationReadReceipts').where('conversationId', '==', channel.id).limit(100).get(),
+    db.collection('conversationPresence').where('conversationId', '==', channel.id).limit(100).get(),
+  ]);
+  const readers = { ...(channel.data?.readers || {}) };
+  for (const doc of receipt.docs) {
+    const data = doc.data() || {};
+    if (data.userId && data.messageId) readers[data.userId] = {
+      messageId: data.messageId,
+      readAt: data.readAt,
+      sentAt: data.sentAt,
+      name: data.name || '',
+    };
+  }
+  const typing = presence.docs
+    .map(doc => doc.data() || {})
+    .filter(value => Date.parse(value.expiresAt) > now.getTime())
+    .map(value => ({ userId: value.userId, name: value.name || '', expiresAt: value.expiresAt }));
+  return { readers, typing, canPost: channel.canPost };
 }
 function pageById(query, value, limit) {
   if (value && !safeId(value)) C.fail('invalid_cursor');
@@ -15,8 +35,9 @@ function pageById(query, value, limit) {
   if (value) query = query.startAfter(value);
   return query.limit(limit);
 }
-async function unreadCount(channel, actor) {
-  const read = channel.data.readers?.[actor.uid];
+async function unreadCount(db, channel, actor) {
+  const receipt = await db.collection('conversationReadReceipts').doc(C.hash(channel.id, actor.uid)).get();
+  const read = receipt.exists ? receipt.data() : channel.data.readers?.[actor.uid];
   const lastActivityAt = channel.data.latestActivityAt;
   const lastActivityId = channel.data.latestActivityId;
   if (read?.sentAt && lastActivityAt && lastActivityId && read.messageId === lastActivityId) {
@@ -109,7 +130,7 @@ async function channels({db, actor, params}) {
   const visible = accessible.filter(channel => isVisibleDirect(channel, actor, fullActor, names));
   const result = await boundedMap(visible, inboxUnreadConcurrency, async item => {
     const channel = directPostPermission(item, actor, names);
-    return channelDto(channel, actor, await unreadCount(channel, actor), directName(channel, actor, names));
+    return channelDto(channel, actor, await unreadCount(db, channel, actor), directName(channel, actor, names));
   });
   result.sort((a, b) => `${b.latestActivityAt || ''}`.localeCompare(`${a.latestActivityAt || ''}`) || `${b.latestActivityId || b.id}`.localeCompare(`${a.latestActivityId || a.id}`));
   return { channels: result, nextCursor: docs.size === 50 ? docs.docs.at(-1).id : null };
@@ -145,7 +166,7 @@ async function sectionChannels({db, actor, params, section}) {
   const visible = allowed.filter(channel => isVisibleDirect(channel, actor, fullActor, names));
   const result = await boundedMap(visible, inboxUnreadConcurrency, async item => {
     const channel = directPostPermission(item, actor, names);
-    return channelDto(channel, actor, await unreadCount(channel, actor), directName(channel, actor, names));
+    return channelDto(channel, actor, await unreadCount(db, channel, actor), directName(channel, actor, names));
   });
   return { channels: result, nextCursor: docs.size === 50 ? activityCursor(docs.docs.at(-1)) : null };
 }
@@ -226,7 +247,7 @@ async function users({db, params}) {
   return {
     users: docs.docs.map(doc => ({
       id: doc.id,
-      name: doc.data().displayName || doc.data().name || '',
+      name: doc.data().displayName || doc.data().name || doc.data().employeeName || doc.id,
       department: doc.data().department || '',
       photoUrl: typeof doc.data().photoURL === 'string' ? doc.data().photoURL : null,
     })).filter(user => !q || `${user.name} ${user.department}`.toLocaleLowerCase().includes(q)),
@@ -237,7 +258,28 @@ async function requests({db, actor, params}) {
   let query = db.collection('conversationRequests');
   if (!C.isHrOrAdmin(actor)) query = query.where('requesterId', '==', actor.uid);
   const docs = await pageById(query, params.get('cursor'), 50).get();
-  return { requests: docs.docs.map(doc => ({ ...doc.data(), id: doc.id })), nextCursor: docs.size === 50 ? docs.docs.at(-1).id : null };
+  const rawRequests = docs.docs.map(doc => ({ ...doc.data(), id: doc.id }));
+  const allUserIds = [...new Set(rawRequests.flatMap(r => [...(r.memberUserIds || []), r.requesterId]).filter(Boolean))];
+  const userDocs = allUserIds.length > 0 && typeof db.getAll === 'function'
+    ? await db.getAll(...allUserIds.map(id => db.collection('users').doc(id)))
+    : [];
+  const memberNames = {};
+  for (const doc of userDocs) {
+    if (doc && doc.exists) {
+      const d = doc.data() || {};
+      memberNames[doc.id] = d.displayName || d.name || d.employeeName || doc.id;
+    }
+  }
+  return {
+    requests: rawRequests.map(r => ({
+      ...r,
+      memberNames: Object.fromEntries(
+        (r.memberUserIds || []).map(id => [id, memberNames[id] || id])
+      ),
+      requesterName: memberNames[r.requesterId] || r.requesterId,
+    })),
+    nextCursor: docs.size === 50 ? docs.docs.at(-1).id : null,
+  };
 }
 async function historyQuery(channel, before) {
   let query = channel.ref.collection('messages').orderBy('sentAt', 'desc');
@@ -253,7 +295,7 @@ async function history({db, channel, params}) {
   const limit = pageSize(params.get('limit'), 50);
   const q = await historyQuery(channel, params.get('before'));
   const docs = await q.limit(limit).get();
-  return { messages: await C.hydrate(db, docs.docs.map(doc => C.messageDto(doc.id, doc.data()))), nextCursor: docs.size === limit ? C.encodeCursor(docs.docs.at(-1)) : null, changeCursor: String(channel.data?.changeSequence || 0), ...presenceDto(channel) };
+  return { messages: await C.hydrate(db, docs.docs.map(doc => C.messageDto(doc.id, doc.data()))), nextCursor: docs.size === limit ? C.encodeCursor(docs.docs.at(-1)) : null, changeCursor: String(channel.data?.changeSequence || 0), ...(await presenceDto(db, channel)) };
 }
 async function changes({db, channel, params}) {
   const after = params.get('after') || '0';
@@ -263,7 +305,7 @@ async function changes({db, channel, params}) {
   const ids = [...new Set(docs.docs.map(doc => doc.data().messageId).filter(safeId))];
   const snapshots = ids.length ? await db.getAll(...ids.map(id => channel.ref.collection('messages').doc(id))) : [];
   const position = docs.size ? docs.docs.at(-1).data().sequence : Number(after);
-  return { messages: await C.hydrate(db, snapshots.filter(d => d.exists).map(d => C.messageDto(d.id, d.data()))), ...presenceDto(channel), changeCursor: String(position), hasMore: position < (channel.data?.changeSequence || 0) || docs.size === limit };
+  return { messages: await C.hydrate(db, snapshots.filter(d => d.exists).map(d => C.messageDto(d.id, d.data()))), ...(await presenceDto(db, channel)), changeCursor: String(position), hasMore: position < (channel.data?.changeSequence || 0) || docs.size === limit };
 }
 async function search({db, channel, params}) {
   const q = (params.get('q') || '').trim().toLocaleLowerCase(); if (!q || q.length > 200) C.fail('validation_failed');

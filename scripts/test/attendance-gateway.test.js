@@ -8,6 +8,7 @@ const {
 
 function fakeAdmin(initialDocs = {}) {
   const docs = new Map(Object.entries(initialDocs));
+  let transactionCount = 0;
   const doc = (path) => ({
     async get() {
       const value = docs.get(path);
@@ -36,6 +37,7 @@ function fakeAdmin(initialDocs = {}) {
       return { doc: (id) => doc(`${name}/${id}`) };
     },
     async runTransaction(callback) {
+      transactionCount += 1;
       return callback({
         get: (reference) => reference.get(),
         set(reference, value, { merge } = {}) {
@@ -69,6 +71,7 @@ function fakeAdmin(initialDocs = {}) {
     }),
   };
   admin.__testDocs = docs;
+  admin.__transactionCount = () => transactionCount;
   return admin;
 }
 
@@ -101,6 +104,22 @@ test('check-in returns recorded then already_recorded for the same deterministic
   assert.deepEqual(second, {
     action: 'check_in', status: 'already_recorded', attendanceId: action.attendanceId,
   });
+});
+
+test('a new check-in commits device binding and attendance in one transaction', async () => {
+  const admin = fakeAdmin();
+  const actor = { uid: 'employee-fast-checkin' };
+  const action = actionFor(actor.uid);
+
+  const result = await submitAttendanceAction({ admin, actor, rawAction: action });
+
+  assert.equal(result.status, 'recorded');
+  assert.equal(admin.__transactionCount(), 1);
+  assert.equal(
+    admin.__testDocs.get(`attendanceDevices/${action.deviceId}`).userId,
+    actor.uid,
+  );
+  assert.ok(admin.__testDocs.get(`attendance/${action.attendanceId}`).checkInTime);
 });
 
 test('explicit web-anywhere grant saves no fabricated GPS coordinate', async () => {

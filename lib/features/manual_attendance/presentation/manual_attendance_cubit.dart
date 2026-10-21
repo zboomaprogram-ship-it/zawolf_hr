@@ -8,6 +8,7 @@ class ManualAttendanceState {
     this.employees = const [],
     this.loadingEmployees = false,
     this.submitting = false,
+    this.selectedDate,
     this.error,
     this.success,
   });
@@ -15,6 +16,7 @@ class ManualAttendanceState {
   final List<ManualAttendanceEmployee> employees;
   final bool loadingEmployees;
   final bool submitting;
+  final DateTime? selectedDate;
   final String? error;
   final String? success;
 
@@ -22,6 +24,7 @@ class ManualAttendanceState {
     List<ManualAttendanceEmployee>? employees,
     bool? loadingEmployees,
     bool? submitting,
+    DateTime? selectedDate,
     String? error,
     String? success,
     bool clearError = false,
@@ -30,6 +33,7 @@ class ManualAttendanceState {
     employees: employees ?? this.employees,
     loadingEmployees: loadingEmployees ?? this.loadingEmployees,
     submitting: submitting ?? this.submitting,
+    selectedDate: selectedDate ?? this.selectedDate,
     error: clearError ? null : error ?? this.error,
     success: clearSuccess ? null : success ?? this.success,
   );
@@ -40,13 +44,47 @@ class ManualAttendanceCubit extends Cubit<ManualAttendanceState> {
     : super(const ManualAttendanceState());
 
   final ManualAttendanceRepository _repository;
+  String _currentQuery = '';
 
   Future<void> search(String query) async {
+    _currentQuery = query;
     emit(state.copyWith(loadingEmployees: true, clearError: true));
     try {
       emit(
         state.copyWith(
-          employees: await _repository.findEmployees(query),
+          employees: await _repository.findEmployees(
+            query,
+            date: state.selectedDate,
+          ),
+          loadingEmployees: false,
+        ),
+      );
+    } catch (_) {
+      emit(
+        state.copyWith(
+          loadingEmployees: false,
+          error:
+              'تعذر تحميل الموظفين. تحقق من اتصال الإنترنت وصلاحية حساب HR ثم أعد المحاولة.',
+        ),
+      );
+    }
+  }
+
+  Future<void> changeDate(DateTime date) async {
+    emit(
+      state.copyWith(
+        selectedDate: date,
+        loadingEmployees: true,
+        clearError: true,
+      ),
+    );
+    try {
+      emit(
+        state.copyWith(
+          employees: await _repository.findEmployees(
+            _currentQuery,
+            date: date,
+          ),
           loadingEmployees: false,
         ),
       );
@@ -83,7 +121,10 @@ class ManualAttendanceCubit extends Cubit<ManualAttendanceState> {
         effectiveAt: effectiveAt,
         reason: reason,
       );
-      final updatedEmployees = await _repository.findEmployees('');
+      final updatedEmployees = await _repository.findEmployees(
+        _currentQuery,
+        date: state.selectedDate ?? effectiveAt,
+      );
       final suffix =
           result.failed == 0
               ? 'وإشعار الموظفين.'
@@ -124,7 +165,10 @@ class ManualAttendanceCubit extends Cubit<ManualAttendanceState> {
         effectiveAt: effectiveAt,
         reason: reason,
       );
-      final updatedEmployees = await _repository.findEmployees('');
+      final updatedEmployees = await _repository.findEmployees(
+        _currentQuery,
+        date: state.selectedDate ?? effectiveAt,
+      );
       final actionLabel = switch (eventType) {
         'checkIn' => 'الحضور اليدوي',
         'checkOut' => 'الانصراف اليدوي',

@@ -8,7 +8,7 @@ on:
       batch_size:
         description: Maximum notifications to push in this run
         required: false
-        default: '100'
+        default: '250'
         type: string
 
 jobs:
