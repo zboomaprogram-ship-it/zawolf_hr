@@ -2,7 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart' as intl;
 
 import '../../models/productivity_score_model.dart';
+import '../../models/user_model.dart';
+import '../../services/department_report_service.dart';
 import '../../theme/theme.dart';
+import 'performance_report_export_dialog.dart';
 
 typedef BehaviorScoreUpdater =
     Future<void> Function(
@@ -14,6 +17,7 @@ typedef BehaviorScoreUpdater =
 Future<void> showProductivityScoreDetails(
   BuildContext context,
   ProductivityScoreModel score, {
+  UserModel? reviewer,
   BehaviorScoreUpdater? onUpdateBehavior,
 }) {
   return showModalBottomSheet<void>(
@@ -21,8 +25,11 @@ Future<void> showProductivityScoreDetails(
     isScrollControlled: true,
     backgroundColor: ZaWolfColors.surface01,
     useSafeArea: true,
-    builder: (context) =>
-        _ScoreDetailsSheet(score: score, onUpdateBehavior: onUpdateBehavior),
+    builder: (context) => _ScoreDetailsSheet(
+      score: score,
+      reviewer: reviewer,
+      onUpdateBehavior: onUpdateBehavior,
+    ),
   );
 }
 
@@ -30,28 +37,261 @@ Future<void> showDepartmentProductivityDetails(
   BuildContext context, {
   required String department,
   required List<ProductivityScoreModel> scores,
+  UserModel? reviewer,
+  String? monthKey,
   BehaviorScoreUpdater? onUpdateBehavior,
 }) {
-  final sorted = [...scores]
-    ..sort((a, b) => b.overallScore.compareTo(a.overallScore));
   return showModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
     backgroundColor: ZaWolfColors.surface01,
     useSafeArea: true,
-    builder: (context) => DraggableScrollableSheet(
+    builder: (context) => _DepartmentProductivitySheet(
+      department: department,
+      scores: scores,
+      reviewer: reviewer,
+      monthKey: monthKey,
+      onUpdateBehavior: onUpdateBehavior,
+    ),
+  );
+}
+
+class _DepartmentProductivitySheet extends StatefulWidget {
+  const _DepartmentProductivitySheet({
+    required this.department,
+    required this.scores,
+    this.reviewer,
+    this.monthKey,
+    this.onUpdateBehavior,
+  });
+
+  final String department;
+  final List<ProductivityScoreModel> scores;
+  final UserModel? reviewer;
+  final String? monthKey;
+  final BehaviorScoreUpdater? onUpdateBehavior;
+
+  @override
+  State<_DepartmentProductivitySheet> createState() =>
+      _DepartmentProductivitySheetState();
+}
+
+class _DepartmentProductivitySheetState
+    extends State<_DepartmentProductivitySheet> {
+  Map<String, DepartmentAnalyticsDetail>? _detailsMap;
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadDetails();
+  }
+
+  Future<void> _loadDetails() async {
+    try {
+      final res = await DepartmentReportService.instance.loadDepartmentDetails(
+        scores: widget.scores,
+        reviewer: widget.reviewer,
+        monthKey: widget.monthKey,
+      );
+      if (mounted) {
+        setState(() {
+          _detailsMap = res;
+          _loading = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  void _openExportDialog({String? specificEmployeeId}) {
+    if (widget.reviewer == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('بيانات المراجع غير متوفرة للتصدير.')),
+      );
+      return;
+    }
+    showPerformanceExportDialog(
+      context,
+      scores: widget.scores,
+      reviewer: widget.reviewer!,
+      initialDepartment: widget.department,
+      initialEmployeeId: specificEmployeeId,
+      monthKey: widget.monthKey,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final sorted = [...widget.scores]
+      ..sort((a, b) => b.overallScore.compareTo(a.overallScore));
+
+    final totalEmployees = widget.scores.length;
+    final totalAbsent =
+        widget.scores.fold<int>(0, (sum, s) => sum + s.absentDays);
+    final totalLate =
+        widget.scores.fold<int>(0, (sum, s) => sum + s.lateDays);
+    final avgScore = widget.scores.isEmpty
+        ? 0.0
+        : widget.scores.fold<double>(0, (sum, s) => sum + s.overallScore) /
+            widget.scores.length;
+    final totalCompletedTasks =
+        widget.scores.fold<int>(0, (sum, s) => sum + s.completedTasks);
+    final totalOverdueTasks =
+        widget.scores.fold<int>(0, (sum, s) => sum + s.overdueTasks);
+
+    double totalDeductionsDays = 0;
+    int totalDeductionsCount = 0;
+    int totalRequests = 0;
+    int totalLeaves = 0;
+    int totalPermissions = 0;
+
+    if (_detailsMap != null) {
+      for (final detail in _detailsMap!.values) {
+        totalDeductionsDays += detail.totalDeductionDays;
+        totalDeductionsCount += detail.deductionCount;
+        totalRequests += detail.requestsCount;
+        totalLeaves += detail.leavesCount;
+        totalPermissions += detail.permissionsCount;
+      }
+    }
+
+    return DraggableScrollableSheet(
       expand: false,
-      initialChildSize: 0.78,
+      initialChildSize: 0.85,
       minChildSize: 0.5,
-      maxChildSize: 0.95,
+      maxChildSize: 0.96,
       builder: (context, controller) => Directionality(
         textDirection: TextDirection.rtl,
         child: Column(
           children: [
             _SheetHeader(
-              title: department,
-              subtitle: '${scores.length} موظف · تفاصيل الأداء',
+              title: widget.department,
+              subtitle:
+                  '$totalEmployees موظف · دورة ${widget.monthKey ?? 'الحالية'}',
+              actions: [
+                if (widget.reviewer != null)
+                  IconButton(
+                    tooltip: 'تصدير تقرير القسم (Excel / CSV)',
+                    icon: const Icon(
+                      Icons.file_download_outlined,
+                      color: ZaWolfColors.primaryCyan,
+                    ),
+                    onPressed: () => _openExportDialog(),
+                  ),
+              ],
             ),
+
+            // Top Department KPI and Summary Card
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+              child: Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: ZaWolfColors.surface02,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: ZaWolfColors.surface03),
+                ),
+                child: Column(
+                  children: [
+                    Row(
+                      children: [
+                        _ScoreCircle(value: avgScore, size: 52),
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'متوسط أداء القسم: ${avgScore.toStringAsFixed(1)}%',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 15,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                'إجمالي الموظفين: $totalEmployees · المهام المكتملة: $totalCompletedTasks (متأخرة: $totalOverdueTasks)',
+                                style: const TextStyle(
+                                  color: ZaWolfColors.textSecondary,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        if (widget.reviewer != null)
+                          FilledButton.icon(
+                            style: FilledButton.styleFrom(
+                              backgroundColor: ZaWolfColors.primaryCyan,
+                              foregroundColor: Colors.black,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 8,
+                              ),
+                              textStyle: const TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            onPressed: () => _openExportDialog(),
+                            icon: const Icon(Icons.download, size: 16),
+                            label: const Text('تقرير القسم'),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    const Divider(height: 1, color: ZaWolfColors.surface03),
+                    const SizedBox(height: 10),
+                    // Metrics Row
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceAround,
+                      children: [
+                        _SummaryStatItem(
+                          label: 'الغياب',
+                          value: '$totalAbsent يوم',
+                          color: totalAbsent > 0
+                              ? ZaWolfColors.error
+                              : ZaWolfColors.success,
+                          icon: Icons.person_off_outlined,
+                        ),
+                        _SummaryStatItem(
+                          label: 'الخصومات',
+                          value: _loading
+                              ? '...'
+                              : '${totalDeductionsDays.toStringAsFixed(2)} يوم'
+                                  '${totalDeductionsCount > 0 ? ' ($totalDeductionsCount)' : ''}',
+                          color: totalDeductionsDays > 0
+                              ? ZaWolfColors.warning
+                              : ZaWolfColors.success,
+                          icon: Icons.remove_circle_outline,
+                        ),
+                        _SummaryStatItem(
+                          label: 'التأخيرات',
+                          value: '$totalLate يوم',
+                          color: totalLate > 0
+                              ? ZaWolfColors.warning
+                              : ZaWolfColors.success,
+                          icon: Icons.timer_outlined,
+                        ),
+                        _SummaryStatItem(
+                          label: 'الطلبات',
+                          value: _loading
+                              ? '...'
+                              : '$totalRequests ($totalLeaves إجازة · $totalPermissions إذن)',
+                          color: ZaWolfColors.primaryCyan,
+                          icon: Icons.receipt_long_outlined,
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+            // Employee List with enhanced cards
             Expanded(
               child: ListView.separated(
                 controller: controller,
@@ -61,25 +301,367 @@ Future<void> showDepartmentProductivityDetails(
                     const Divider(height: 1, color: ZaWolfColors.surface03),
                 itemBuilder: (context, index) {
                   final score = sorted[index];
+                  final detail = _detailsMap?[score.userId];
+
                   return ExpansionTile(
-                    tilePadding: const EdgeInsets.symmetric(horizontal: 4),
-                    childrenPadding: const EdgeInsets.only(bottom: 14),
+                    tilePadding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
+                    childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 16),
                     leading: _ScoreCircle(value: score.overallScore),
                     title: Text(
                       score.employeeName,
                       style: const TextStyle(
                         color: Colors.white,
                         fontWeight: FontWeight.bold,
+                        fontSize: 15,
                       ),
                     ),
-                    subtitle: Text(
-                      '${score.employeeId} · ${score.statusLabel}',
+                    subtitle: Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '${score.employeeId} · ${score.statusLabel}',
+                            style: const TextStyle(
+                              color: ZaWolfColors.textSecondary,
+                              fontSize: 12,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Wrap(
+                            spacing: 6,
+                            runSpacing: 4,
+                            children: [
+                              _MiniBadge(
+                                label: 'غياب: ${score.absentDays} يوم',
+                                color: score.absentDays > 0
+                                    ? ZaWolfColors.error
+                                    : ZaWolfColors.textMuted,
+                              ),
+                              _MiniBadge(
+                                label: detail != null
+                                    ? (detail.totalDeductionDays > 0
+                                        ? 'خصم: ${detail.totalDeductionDays.toStringAsFixed(2)} يوم'
+                                        : (detail.deductionCount > 0
+                                            ? 'خصم: ${detail.deductionCount} مرة'
+                                            : 'خصم: 0'))
+                                    : 'خصم: ...',
+                                color: (detail?.totalDeductionDays ?? 0) > 0
+                                    ? ZaWolfColors.warning
+                                    : ZaWolfColors.textMuted,
+                              ),
+                              _MiniBadge(
+                                label: 'تأخير: ${score.lateDays} يوم',
+                                color: score.lateDays > 0
+                                    ? ZaWolfColors.warning
+                                    : ZaWolfColors.textMuted,
+                              ),
+                              _MiniBadge(
+                                label: detail != null
+                                    ? 'طلبات: ${detail.requestsCount}'
+                                    : 'طلبات: ...',
+                                color: (detail?.requestsCount ?? 0) > 0
+                                    ? ZaWolfColors.primaryCyan
+                                    : ZaWolfColors.textMuted,
+                              ),
+                              _MiniBadge(
+                                label:
+                                    'مهام: ${score.completedTasks}/${score.totalTasks}',
+                                color: score.overdueTasks > 0
+                                    ? ZaWolfColors.warning
+                                    : ZaWolfColors.success,
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
                     ),
                     children: [
+                      const SizedBox(height: 8),
+                      // 1. Performance breakdown bars
                       _ScoreBreakdown(
                         score: score,
-                        onUpdateBehavior: onUpdateBehavior,
+                        onUpdateBehavior: widget.onUpdateBehavior,
                       ),
+                      const Divider(color: ZaWolfColors.surface03),
+
+                      // 2. Attendance & Tasks metrics
+                      _SectionHeader(title: 'ملخص الحضور والمهام'),
+                      _MetricLine(
+                        label: 'أيام الغياب',
+                        value: '${score.absentDays} يوم',
+                      ),
+                      _MetricLine(
+                        label: 'أيام التأخير',
+                        value: '${score.lateDays} يوم',
+                      ),
+                      _MetricLine(
+                        label: 'المهام المكتملة',
+                        value:
+                            '${score.completedTasks} من أصل ${score.totalTasks}',
+                      ),
+                      _MetricLine(
+                        label: 'المهام المتأخرة',
+                        value: '${score.overdueTasks}',
+                      ),
+                      const SizedBox(height: 10),
+
+                      // 3. Deductions breakdown
+                      _SectionHeader(title: 'سجل الخصومات والتأخيرات'),
+                      if (detail == null && _loading)
+                        const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 8),
+                          child: Center(
+                            child: SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            ),
+                          ),
+                        )
+                      else if (detail != null && detail.deductions.isNotEmpty)
+                        Column(
+                          children: detail.deductions.map((ded) {
+                            return Container(
+                              margin: const EdgeInsets.only(bottom: 6),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 8,
+                              ),
+                              decoration: BoxDecoration(
+                                color: ZaWolfColors.surface02,
+                                borderRadius: BorderRadius.circular(8),
+                                border:
+                                    Border.all(color: ZaWolfColors.surface03),
+                              ),
+                              child: Row(
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.all(6),
+                                    decoration: BoxDecoration(
+                                      color: ZaWolfColors.warning
+                                          .withValues(alpha: 0.15),
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: const Icon(
+                                      Icons.money_off,
+                                      size: 16,
+                                      color: ZaWolfColors.warning,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          ded.reasonLabel,
+                                          style: const TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 13,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                        Text(
+                                          '${ded.date} · المصدر: ${ded.sourceLabel}',
+                                          style: const TextStyle(
+                                            color: ZaWolfColors.textSecondary,
+                                            fontSize: 11,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  Column(
+                                    crossAxisAlignment: CrossAxisAlignment.end,
+                                    children: [
+                                      Text(
+                                        ded.fractionLabel,
+                                        style: const TextStyle(
+                                          color: ZaWolfColors.warning,
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 12,
+                                        ),
+                                      ),
+                                      Text(
+                                        ded.approvalLabel,
+                                        style: TextStyle(
+                                          color: ded.approvalStatus == 'approved'
+                                              ? ZaWolfColors.success
+                                              : ZaWolfColors.textMuted,
+                                          fontSize: 10,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                            );
+                          }).toList(),
+                        )
+                      else
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color:
+                                ZaWolfColors.success.withValues(alpha: 0.08),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: const Text(
+                            '✓ لا توجد خصومات مسجلة على الموظف في هذه الدورة',
+                            style: TextStyle(
+                              color: ZaWolfColors.success,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ),
+
+                      const SizedBox(height: 12),
+
+                      // 4. Requests breakdown
+                      _SectionHeader(title: 'سجل الطلبات (إجازات / أذونات / مأموريات)'),
+                      if (detail == null && _loading)
+                        const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 8),
+                          child: Center(
+                            child: SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            ),
+                          ),
+                        )
+                      else if (detail != null && detail.requests.isNotEmpty)
+                        Column(
+                          children: detail.requests.map((req) {
+                            return Container(
+                              margin: const EdgeInsets.only(bottom: 6),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 8,
+                              ),
+                              decoration: BoxDecoration(
+                                color: ZaWolfColors.surface02,
+                                borderRadius: BorderRadius.circular(8),
+                                border:
+                                    Border.all(color: ZaWolfColors.surface03),
+                              ),
+                              child: Row(
+                                children: [
+                                  Icon(
+                                    req.type == 'leave'
+                                        ? Icons.beach_access
+                                        : (req.type == 'permission'
+                                            ? Icons.access_time
+                                            : Icons.assignment_outlined),
+                                    size: 18,
+                                    color: ZaWolfColors.primaryCyan,
+                                  ),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          req.requestType,
+                                          style: const TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 13,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                        Text(
+                                          '${req.details} · ${intl.DateFormat('yyyy/MM/dd').format(req.occursAt ?? req.submittedAt)}',
+                                          style: const TextStyle(
+                                            color: ZaWolfColors.textSecondary,
+                                            fontSize: 11,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                      vertical: 3,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: (req.status == 'approved'
+                                              ? ZaWolfColors.success
+                                              : (req.isPending
+                                                  ? ZaWolfColors.warning
+                                                  : ZaWolfColors.error))
+                                          .withValues(alpha: 0.15),
+                                      borderRadius: BorderRadius.circular(6),
+                                    ),
+                                    child: Text(
+                                      req.statusLabel,
+                                      style: TextStyle(
+                                        color: req.status == 'approved'
+                                            ? ZaWolfColors.success
+                                            : (req.isPending
+                                                ? ZaWolfColors.warning
+                                                : ZaWolfColors.error),
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            );
+                          }).toList(),
+                        )
+                      else
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: ZaWolfColors.surface02,
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: const Text(
+                            'لا توجد طلبات مسجلة للموظف في هذه الدورة',
+                            style: TextStyle(
+                              color: ZaWolfColors.textSecondary,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ),
+
+                      const SizedBox(height: 14),
+
+                      // 5. Download Employee Report Button
+                      if (widget.reviewer != null)
+                        Align(
+                          alignment: AlignmentDirectional.centerEnd,
+                          child: OutlinedButton.icon(
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: ZaWolfColors.primaryCyan,
+                              side: const BorderSide(
+                                color: ZaWolfColors.primaryCyan,
+                              ),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 6,
+                              ),
+                            ),
+                            onPressed: () => _openExportDialog(
+                              specificEmployeeId: score.employeeId,
+                            ),
+                            icon: const Icon(Icons.download, size: 16),
+                            label: Text(
+                              'تصدير تقرير ${score.employeeName}',
+                              style: const TextStyle(fontSize: 12),
+                            ),
+                          ),
+                        ),
                     ],
                   );
                 },
@@ -88,14 +670,115 @@ Future<void> showDepartmentProductivityDetails(
           ],
         ),
       ),
-    ),
-  );
+    );
+  }
+}
+
+class _SummaryStatItem extends StatelessWidget {
+  const _SummaryStatItem({
+    required this.label,
+    required this.value,
+    required this.color,
+    required this.icon,
+  });
+
+  final String label;
+  final String value;
+  final Color color;
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 14, color: color),
+            const SizedBox(width: 4),
+            Text(
+              label,
+              style: const TextStyle(
+                color: ZaWolfColors.textSecondary,
+                fontSize: 11,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 4),
+        Text(
+          value,
+          style: TextStyle(
+            color: color,
+            fontWeight: FontWeight.bold,
+            fontSize: 13,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _MiniBadge extends StatelessWidget {
+  const _MiniBadge({required this.label, required this.color});
+
+  final String label;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: color.withValues(alpha: 0.3)),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: color,
+          fontSize: 11,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
+  }
+}
+
+class _SectionHeader extends StatelessWidget {
+  const _SectionHeader({required this.title});
+
+  final String title;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Align(
+        alignment: AlignmentDirectional.centerStart,
+        child: Text(
+          title,
+          style: const TextStyle(
+            color: ZaWolfColors.primaryCyan,
+            fontSize: 13,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class _ScoreDetailsSheet extends StatelessWidget {
-  const _ScoreDetailsSheet({required this.score, this.onUpdateBehavior});
+  const _ScoreDetailsSheet({
+    required this.score,
+    this.reviewer,
+    this.onUpdateBehavior,
+  });
 
   final ProductivityScoreModel score;
+  final UserModel? reviewer;
   final BehaviorScoreUpdater? onUpdateBehavior;
 
   @override
@@ -115,6 +798,26 @@ class _ScoreDetailsSheet extends StatelessWidget {
             _SheetHeader(
               title: score.employeeName,
               subtitle: '${score.department} · ${score.employeeId}',
+              actions: [
+                if (reviewer != null)
+                  IconButton(
+                    tooltip: 'تصدير تقرير الموظف',
+                    icon: const Icon(
+                      Icons.file_download_outlined,
+                      color: ZaWolfColors.primaryCyan,
+                    ),
+                    onPressed: () {
+                      showPerformanceExportDialog(
+                        context,
+                        scores: [score],
+                        reviewer: reviewer!,
+                        initialDepartment: score.department,
+                        initialEmployeeId: score.employeeId,
+                        monthKey: score.monthKey,
+                      );
+                    },
+                  ),
+              ],
             ),
             Expanded(
               child: ListView(
@@ -205,10 +908,15 @@ class _ScoreDetailsSheet extends StatelessWidget {
 }
 
 class _SheetHeader extends StatelessWidget {
-  const _SheetHeader({required this.title, required this.subtitle});
+  const _SheetHeader({
+    required this.title,
+    required this.subtitle,
+    this.actions,
+  });
 
   final String title;
   final String subtitle;
+  final List<Widget>? actions;
 
   @override
   Widget build(BuildContext context) {
@@ -245,6 +953,7 @@ class _SheetHeader extends StatelessWidget {
                   ],
                 ),
               ),
+              if (actions != null) ...actions!,
               IconButton(
                 tooltip: 'إغلاق',
                 onPressed: () => Navigator.pop(context),

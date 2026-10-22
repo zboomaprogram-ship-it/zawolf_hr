@@ -18,6 +18,7 @@ import '../../theme/theme.dart';
 import '../../features/profile_images/presentation/employee_avatar.dart';
 import '../../utils/payroll_cycle.dart';
 import '../shared/productivity_score_details_sheet.dart';
+import '../shared/performance_report_export_dialog.dart';
 import '../../design_system/components/rtl_navigation.dart';
 import '../../design_system/components/skeletons.dart' show SkeletonList;
 
@@ -222,7 +223,27 @@ class _DepartmentPerformanceScreenState
             ),
           ),
           actions: [
-            if (!(organizationTabSelected && _showOrganizationTrees))
+            if (!(organizationTabSelected && _showOrganizationTrees)) ...[
+              if (!organizationTabSelected)
+                IconButton(
+                  tooltip: 'تصدير تقرير أداء الأقسام (Excel / CSV)',
+                  icon: const Icon(
+                    Icons.file_download_outlined,
+                    color: ZaWolfColors.primaryCyan,
+                  ),
+                  onPressed: () {
+                    _service.watchRanking(reviewer, _monthKey).first.then((scores) {
+                      if (context.mounted) {
+                        showPerformanceExportDialog(
+                          context,
+                          scores: scores,
+                          reviewer: reviewer,
+                          monthKey: _monthKey,
+                        );
+                      }
+                    });
+                  },
+                ),
               IconButton(
                 tooltip:
                     organizationTabSelected
@@ -250,6 +271,7 @@ class _DepartmentPerformanceScreenState
                           color: ZaWolfColors.primaryCyan,
                         ),
               ),
+            ],
           ],
           bottom: TabBar(
             controller: _tabController,
@@ -364,6 +386,8 @@ class _DepartmentPerformanceScreenState
                                         dept.departmentName,
                                   )
                                   .toList(),
+                          reviewer: reviewer,
+                          monthKey: _monthKey,
                           onUpdateBehavior: (score, value, reason) async {
                             await _service.updateBehaviorScore(
                               employeeUserId: score.userId,
@@ -519,6 +543,43 @@ class _DepartmentPerformanceScreenState
                     ),
                   const SizedBox(height: 16),
                 ],
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 14),
+                  child: Row(
+                    children: [
+                      Text(
+                        'أداء الأقسام والموظفين',
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const Spacer(),
+                      FilledButton.icon(
+                        style: FilledButton.styleFrom(
+                          backgroundColor: ZaWolfColors.primaryCyan,
+                          foregroundColor: Colors.black,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 8,
+                          ),
+                          textStyle: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 13,
+                          ),
+                        ),
+                        onPressed: () => showPerformanceExportDialog(
+                          context,
+                          scores: scores,
+                          reviewer: reviewer,
+                          monthKey: _monthKey,
+                        ),
+                        icon: const Icon(Icons.file_download_outlined, size: 18),
+                        label: const Text('تصدير تقرير شامل'),
+                      ),
+                    ],
+                  ),
+                ),
                 if (!isDesktop || deptCards.length <= 1)
                   ...deptCards.map(
                     (c) => Padding(

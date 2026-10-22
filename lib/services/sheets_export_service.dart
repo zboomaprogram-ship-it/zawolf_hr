@@ -426,4 +426,105 @@ class SheetsExportService {
         return type;
     }
   }
+
+  Future<String> exportDepartmentPerformanceReport({
+    required String periodLabel,
+    required List<DepartmentPerformanceExportRow> rows,
+  }) async {
+    final csvRows = <List<Object?>>[
+      [
+        'الكود التعريفي (Employee ID)',
+        'اسم الموظف (Name)',
+        'القسم (Department)',
+        'نسبة الأداء العام (%)',
+        'تقييم KPI (%)',
+        'الحضور والانضباط (%)',
+        'تقييم السلوك (%)',
+        'أيام الغياب',
+        'أيام التأخير',
+        'عدد الخصومات',
+        'إجمالي أيام الخصم',
+        'إجمالي مبالغ الخصم',
+        'إجمالي الطلبات',
+        'عدد الإجازات',
+        'عدد الأذونات',
+        'طلبات أخرى',
+        'المهام المكتملة',
+        'إجمالي المهام',
+        'المهام المتأخرة',
+        'فترة التقرير',
+      ],
+      ...rows.map(
+        (r) => [
+          r.employeeId,
+          r.employeeName,
+          r.department,
+          '${r.overallScore.toStringAsFixed(1)}%',
+          '${r.kpiScore.toStringAsFixed(1)}%',
+          '${r.attendanceScore.toStringAsFixed(1)}%',
+          '${r.behaviorScore.toStringAsFixed(1)}%',
+          r.absentDays,
+          r.lateDays,
+          r.deductionCount,
+          r.deductionDays.toStringAsFixed(2),
+          r.deductionAmount > 0 ? r.deductionAmount.toStringAsFixed(2) : '-',
+          r.requestsCount,
+          r.leavesCount,
+          r.permissionsCount,
+          r.otherRequestsCount,
+          r.completedTasks,
+          r.totalTasks,
+          r.overdueTasks,
+          r.period,
+        ],
+      ),
+    ];
+    return _toCsv(csvRows);
+  }
+}
+
+class DepartmentPerformanceExportRow {
+  final String employeeId;
+  final String employeeName;
+  final String department;
+  final double overallScore;
+  final double kpiScore;
+  final double attendanceScore;
+  final double behaviorScore;
+  final int absentDays;
+  final int lateDays;
+  final int deductionCount;
+  final double deductionDays;
+  final double deductionAmount;
+  final int requestsCount;
+  final int leavesCount;
+  final int permissionsCount;
+  final int otherRequestsCount;
+  final int completedTasks;
+  final int totalTasks;
+  final int overdueTasks;
+  final String period;
+
+  const DepartmentPerformanceExportRow({
+    required this.employeeId,
+    required this.employeeName,
+    required this.department,
+    required this.overallScore,
+    required this.kpiScore,
+    required this.attendanceScore,
+    required this.behaviorScore,
+    required this.absentDays,
+    required this.lateDays,
+    required this.deductionCount,
+    required this.deductionDays,
+    this.deductionAmount = 0.0,
+    required this.requestsCount,
+    required this.leavesCount,
+    required this.permissionsCount,
+    this.otherRequestsCount = 0,
+    required this.completedTasks,
+    required this.totalTasks,
+    required this.overdueTasks,
+    required this.period,
+  });
 }

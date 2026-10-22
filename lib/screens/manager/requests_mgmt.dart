@@ -115,7 +115,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
     _searchDebounceTimer = Timer(const Duration(milliseconds: 250), () {
       if (mounted) {
         setState(() {
-          _searchQuery = value.trim().toLowerCase();
+          _searchQuery = _normalizeSearchText(value);
           // A new employee search starts from a small bounded page, then the
           // active deduction tab expands until every matching source record
           // has participated in the client-side name/code search.
@@ -10008,8 +10008,20 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
   bool _matchesSearch(Iterable<Object?> values) {
     if (_searchQuery.isEmpty) return true;
     return values.any(
-      (value) => (value ?? '').toString().toLowerCase().contains(_searchQuery),
+      (value) => _normalizeSearchText(value).contains(_searchQuery),
     );
+  }
+
+  String _normalizeSearchText(Object? value) {
+    return (value ?? '')
+        .toString()
+        .trim()
+        .toLowerCase()
+        .replaceAll(RegExp(r'[\u064B-\u065F\u0670\u06D6-\u06ED]'), '')
+        .replaceAll('ـ', '')
+        .replaceAll(RegExp('[أإآٱ]'), 'ا')
+        .replaceAll('ى', 'ي')
+        .replaceAll('ة', 'ه');
   }
 }
 
@@ -10109,6 +10121,15 @@ class _LazyRequestTabState extends State<_LazyRequestTab>
 
   @override
   bool get wantKeepAlive => _child != null;
+
+  @override
+  void didUpdateWidget(covariant _LazyRequestTab oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // The parent builder closes over live search, filter, and pagination
+    // values. Keeping the first child forever left every active tab displaying
+    // stale results after those values changed.
+    _child = null;
+  }
 
   @override
   Widget build(BuildContext context) {

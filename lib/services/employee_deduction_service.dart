@@ -186,6 +186,80 @@ class EmployeeDeductionService {
     });
   }
 
+  Future<List<EmployeeDeductionEntry>> getDeductionsForRange({
+    required String userId,
+    required String startDateKey,
+    required String endDateKey,
+    String? monthKey,
+  }) async {
+    final results = await Future.wait([
+      _db
+          .collection('attendance')
+          .where('userId', isEqualTo: userId)
+          .where('date', isGreaterThanOrEqualTo: startDateKey)
+          .where('date', isLessThanOrEqualTo: endDateKey)
+          .get()
+          .then((s) => s.docs.map(AttendanceModel.fromFirestore).toList())
+          .catchError((_) => <AttendanceModel>[]),
+      _db
+          .collection('permissions')
+          .where('userId', isEqualTo: userId)
+          .get()
+          .then((s) => s.docs.map(PermissionModel.fromFirestore).toList())
+          .catchError((_) => <PermissionModel>[]),
+      _db
+          .collection('manual_deductions')
+          .where('userId', isEqualTo: userId)
+          .get()
+          .then((s) => s.docs.map(ManualDeductionModel.fromFirestore).toList())
+          .catchError((_) => <ManualDeductionModel>[]),
+    ]);
+
+    final attendance = results[0] as List<AttendanceModel>;
+    final permissions = results[1] as List<PermissionModel>;
+    final manualDeductions = results[2] as List<ManualDeductionModel>;
+
+    final entries = <EmployeeDeductionEntry>[
+      ...attendance
+          .where(
+            (item) =>
+                item.salaryDeductionFraction > 0 ||
+                item.status == 'absent' ||
+                item.salaryDeductionCode == 'ABSENCE' ||
+                item.salaryDeductionCode == 'full_day',
+          )
+          .map(_fromAttendance),
+      ...permissions
+          .where((item) {
+            final inRange =
+                item.requestDate.compareTo(startDateKey) >= 0 &&
+                item.requestDate.compareTo(endDateKey) <= 0;
+            final isMonthMatch =
+                monthKey == null || item.monthKey == monthKey;
+            return (inRange || isMonthMatch) &&
+                ((item.isDeductible && item.salaryDeductionFraction > 0) ||
+                    ((item.rejectionConsequence?['dayFraction'] as num?)
+                                ?.toDouble() ??
+                            0) >
+                        0);
+          })
+          .map(_fromPermission),
+      ...manualDeductions
+          .where((item) {
+            final inRange =
+                item.dateKey.compareTo(startDateKey) >= 0 &&
+                item.dateKey.compareTo(endDateKey) <= 0;
+            final isMonthMatch =
+                monthKey == null || item.monthKey == monthKey;
+            return inRange || isMonthMatch;
+          })
+          .map(_fromManualDeduction),
+    ]..sort((a, b) => b.date.compareTo(a.date));
+
+    return entries;
+  }
+
+
   void _reconcileApprovedLatePermissions(List<PermissionModel> permissions) {
     for (final permission in permissions) {
       if (permission.status != 'approved' ||

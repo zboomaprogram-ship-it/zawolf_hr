@@ -188,6 +188,19 @@ void main() {
     );
   });
 
+  test('lazy request tabs refresh when search or page limits change', () {
+    expect(
+      screenSource,
+      contains('void didUpdateWidget(covariant _LazyRequestTab oldWidget)'),
+    );
+    expect(screenSource, contains('_child = null;'));
+  });
+
+  test('employee search normalizes common Arabic spelling variants', () {
+    expect(screenSource, contains('_normalizeSearchText(value)'));
+    expect(screenSource, contains(".replaceAll(RegExp('[أإآٱ]'), 'ا')"));
+  });
+
   test('confirmed deduction tab uses the complete three-source register', () {
     expect(
       screenSource,
