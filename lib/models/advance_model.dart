@@ -10,6 +10,7 @@ class AdvanceModel {
   final String managerId;
   final double amount;
   final String? reason;
+  final String? subtype;
   final String status; // 'pending' | 'approved' | 'rejected' | 'cancelled'
   final String monthKey; // YYYY-MM
   final DateTime? submittedAt;
@@ -28,6 +29,7 @@ class AdvanceModel {
     required this.managerId,
     required this.amount,
     this.reason,
+    this.subtype,
     required this.status,
     required this.monthKey,
     this.submittedAt,
@@ -49,6 +51,7 @@ class AdvanceModel {
       managerId: data['managerId'] as String? ?? '',
       amount: (data['amount'] as num?)?.toDouble() ?? 0.0,
       reason: data['reason'] as String?,
+      subtype: data['subtype'] as String? ?? 'سلفة راتب شهرية',
       status: data['status'] as String? ?? 'pending',
       monthKey: data['monthKey'] as String? ?? '',
       submittedAt: (data['submittedAt'] as Timestamp?)?.toDate(),
@@ -69,6 +72,7 @@ class AdvanceModel {
       'managerId': managerId,
       'amount': amount,
       if (reason != null) 'reason': reason,
+      if (subtype != null) 'subtype': subtype,
       'status': status,
       'monthKey': monthKey,
       'submittedAt': submittedAt == null

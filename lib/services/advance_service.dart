@@ -9,11 +9,34 @@ import '../models/employee_role.dart';
 import 'audit_log_service.dart';
 import 'role_notification_service.dart';
 import 'request_approval_policy_service.dart';
+import '../features/request_approval_routing/domain/entities/custom_request_template.dart';
+import '../features/request_approval_routing/data/custom_request_template_repository_impl.dart';
 
 class AdvanceService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
   final RequestApprovalPolicyService _approvalPolicyService =
       RequestApprovalPolicyService();
+
+  Stream<CustomRequestType> watchAdvanceTemplate() {
+    return _db
+        .collection('customRequestTypes')
+        .snapshots()
+        .map((snapshot) {
+      final matches = snapshot.docs
+          .map((d) => CustomRequestType.fromMap(d.data(), d.id))
+          .where((t) => t.id == 'core_advances' || t.category == 'financial')
+          .toList();
+      if (matches.isNotEmpty) {
+        return matches.firstWhere(
+          (m) => m.id == 'core_advances',
+          orElse: () => matches.first,
+        );
+      }
+      return CustomRequestTemplateRepositoryImpl.defaultCoreRequestTypes.firstWhere(
+        (t) => t.id == 'core_advances',
+      );
+    });
+  }
 
   Future<bool> _tryBackendAdvanceDecision({
     required String advanceId,
@@ -85,22 +108,6 @@ class AdvanceService {
         );
       }
     }
-  }
-
-  List<String> _approvalManagerIds(UserModel employee, String fallbackId) {
-    final ids =
-        employee.managerIds.where((id) => id.trim().isNotEmpty).toList();
-    if (ids.isNotEmpty) return ids;
-    return fallbackId.trim().isEmpty ? <String>[] : <String>[fallbackId];
-  }
-
-  List<String> _approvalManagerNames(UserModel employee, String? fallbackName) {
-    final names =
-        employee.managerNames.where((name) => name.trim().isNotEmpty).toList();
-    if (names.isNotEmpty) return names;
-    return fallbackName == null || fallbackName.trim().isEmpty
-        ? <String>[]
-        : <String>[fallbackName];
   }
 
   Map<String, dynamic> _nextManagerApprovalUpdate({

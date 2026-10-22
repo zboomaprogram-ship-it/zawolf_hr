@@ -18,24 +18,67 @@ class LeaveTypePolicy {
     remote,
   };
 
+  static bool isSupported(String type) => type.trim().isNotEmpty;
+
+  static String normalize(String? type) {
+    if (type == null) return normal;
+    if (isNormal(type)) return normal;
+    if (isSick(type)) return sick;
+    if (isCasual(type)) return casual;
+    if (isUnpaid(type)) return unpaid;
+    if (isExam(type)) return exam;
+    if (isRemote(type)) return remote;
+    if (type == paternity ||
+        type == special ||
+        type == 'إجازة خاصة' ||
+        type == 'خاصة' ||
+        type == 'إجازة حج / عمرة' ||
+        type == 'إجازة وضع / رعاية') {
+      return paternity;
+    }
+    return type.trim();
+  }
+
+  static bool isNormal(String type) {
+    return type == normal ||
+        type == 'day_off' ||
+        type == 'annual' ||
+        type == 'إجازة عادية' ||
+        type == 'إجازة سنوية (اعتيادية)';
+  }
+
+  static bool isCasual(String type) {
+    return type == casual || type == 'إجازة عارضة';
+  }
+
+  static bool isSick(String type) {
+    return type == sick || type == 'إجازة مرضية';
+  }
+
+  static bool isUnpaid(String type) {
+    return type == unpaid || type == 'إجازة بدون راتب';
+  }
+
+  static bool isExam(String type) {
+    return type == exam || type == 'إجازة امتحان' || type == 'امتحان';
+  }
+
+  static bool isRemote(String type) {
+    return type == remote || type == 'عمل عن بعد' || type == 'يوم عمل عن بعد';
+  }
+
   static String arabicLabel(String type) {
+    if (isNormal(type)) return 'إجازة عادية';
+    if (isSick(type)) return 'إجازة مرضية';
+    if (isCasual(type)) return 'إجازة عارضة';
+    if (isUnpaid(type)) return 'إجازة بدون راتب';
+    if (isExam(type)) return 'إجازة امتحان';
+    if (isRemote(type)) return 'يوم عمل عن بعد';
     switch (type) {
-      case normal:
-        return 'إجازة عادية';
-      case sick:
-        return 'إجازة مرضية';
-      case casual:
-        return 'إجازة عارضة';
-      case unpaid:
-        return 'إجازة بدون راتب';
-      case exam:
-        return 'إجازة امتحان';
       case paternity:
         return 'إجازة خاصة';
-      case remote:
-        return 'يوم عمل عن بعد';
       default:
-        return type;
+        return type.isNotEmpty ? type : 'إجازة';
     }
   }
 
@@ -61,32 +104,22 @@ class LeaveTypePolicy {
   }
 
   static String? balanceKey(String type) {
-    switch (type) {
-      case normal:
-        return 'daysOff';
-      case casual:
-        return 'casual';
-      default:
-        return null;
-    }
+    if (isNormal(type)) return 'daysOff';
+    if (isCasual(type)) return 'casual';
+    return null;
   }
 
   static List<String> balanceKeys(String type) {
-    switch (type) {
-      case normal:
-        return const ['daysOff'];
-      case casual:
-        return const ['casual', 'daysOff'];
-      default:
-        return const [];
-    }
+    if (isNormal(type)) return const ['daysOff'];
+    if (isCasual(type)) return const ['casual', 'daysOff'];
+    return const [];
   }
 
   static bool get requiresReason => true;
   static bool requiresNotice(String type, {int noticeDays = 2}) =>
-      type == normal && noticeDays > 0;
+      isNormal(type) && noticeDays > 0;
   static bool requiresTwoDayNotice(String type) => requiresNotice(type, noticeDays: 2);
-  static bool requiresFullDaySalaryDeduction(String type) => type == unpaid;
+  static bool requiresFullDaySalaryDeduction(String type) => isUnpaid(type);
 
   /// Dynamic CEO approval evaluation.
   /// If [thresholdDays] is > 0, leaves with days >= [thresholdDays] require CEO.

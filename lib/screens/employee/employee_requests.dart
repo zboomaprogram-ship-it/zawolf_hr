@@ -50,6 +50,7 @@ import '../../utils/payroll_cycle.dart';
 import '../../utils/permission_cycle_accounting.dart';
 import '../../features/company_os/domain/entities/operational_request_category.dart';
 import '../../features/request_approval_routing/domain/entities/custom_request_template.dart';
+import '../../features/request_approval_routing/data/custom_request_template_repository_impl.dart';
 import '../../navigation/company_os_requests_entry.dart';
 import 'widgets/virtual_office_game_widget.dart';
 
@@ -114,6 +115,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
   final _formKeyAdvance = GlobalKey<FormState>();
   final _advanceAmountController = TextEditingController();
   final _advanceReasonController = TextEditingController();
+  String _selectedAdvanceType = 'سلفة راتب شهرية';
 
   final _complaintTitleController = TextEditingController();
   final _complaintBodyController = TextEditingController();
@@ -123,7 +125,9 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
   final _resignationReasonController = TextEditingController();
   DateTime _resignationDate = DateTime.now().add(const Duration(days: 30));
   DateTime? _lastWorkingDay;
+  String _selectedResignationType = 'استقالة عادية مع فترة إشعار';
   String _administrativeCategory = AdministrativeRequestCategory.personalData;
+  String? _administrativeCategoryLabel;
   final _administrativeNotesController = TextEditingController();
   final _administrativeAttachmentController = TextEditingController();
   String? _administrativeAttachmentUrl;
@@ -545,7 +549,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
     final firstAllowed =
-        type == LeaveTypePolicy.normal
+        LeaveTypePolicy.isNormal(type)
             ? today.add(const Duration(days: 2))
             : today;
     setState(() {
@@ -834,6 +838,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
         await service.submit(
           employee: employee,
           category: _administrativeCategory,
+          categoryLabel: _administrativeCategoryLabel,
           notes: _administrativeNotesController.text,
           attachmentUrl: _administrativeAttachmentUrl,
         );
@@ -1049,7 +1054,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
       return;
     }
 
-    if (leaveType == LeaveTypePolicy.normal && employee.leaveBalance.daysOff < days) {
+    if (LeaveTypePolicy.isNormal(leaveType) && employee.leaveBalance.daysOff < days) {
       _onValidationFailed(
         customMessage:
             'رصيد الإجازات العادية غير كافٍ (المتاح: ${employee.leaveBalance.daysOff} يوم، المطلوب: $days يوم).',
@@ -1057,7 +1062,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
       return;
     }
 
-    if (leaveType == LeaveTypePolicy.casual) {
+    if (LeaveTypePolicy.isCasual(leaveType)) {
       if (days > 2) {
         _onValidationFailed(
           customMessage: 'الحد الأقصى للإجازة العارضة يومان متتاليان في المرة الواحدة.',
@@ -1191,6 +1196,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
         managerId: employee.managerId ?? '',
         amount: double.parse(_advanceAmountController.text),
         reason: _advanceReasonController.text.trim(),
+        subtype: _selectedAdvanceType,
         status: 'pending',
         monthKey: monthKey,
       );
@@ -1289,6 +1295,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
         reason: _resignationReasonController.text,
         resignationDate: _resignationDate,
         lastWorkingDay: effectiveLastDay,
+        subtype: _selectedResignationType,
       );
       if (!mounted) return;
       _resignationReasonController.clear();
@@ -2068,20 +2075,34 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
             style: theme.textTheme.bodyMedium,
           ),
           const SizedBox(height: 16),
-          _buildRequestTypeSelector(theme),
-          const SizedBox(height: 16),
-          _buildLeaveBalanceSummary(user, theme),
-          const SizedBox(height: 18),
-          if (_formErrorMessage != null) ...[
-            _buildFormErrorBanner(theme),
-            const SizedBox(height: 16),
-          ],
-          AnimatedSwitcher(
-            duration: const Duration(milliseconds: 180),
-            child: KeyedSubtree(
-              key: ValueKey(_requestTypeIndex),
-              child: _buildFormForIndex(user, theme, _requestTypes(context)),
+          StreamBuilder<List<CustomRequestType>>(
+            stream: _cachedStream(
+              'all-custom-request-templates',
+              () => CustomRequestTemplateRepositoryImpl().watchAllTemplates(),
             ),
+            builder: (context, snapshot) {
+              final types = _requestTypes(context, snapshot.data);
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _buildRequestTypeSelector(theme, types),
+                  const SizedBox(height: 16),
+                  _buildLeaveBalanceSummary(user, theme),
+                  const SizedBox(height: 18),
+                  if (_formErrorMessage != null) ...[
+                    _buildFormErrorBanner(theme),
+                    const SizedBox(height: 16),
+                  ],
+                  AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 180),
+                    child: KeyedSubtree(
+                      key: ValueKey(_requestTypeIndex),
+                      child: _buildFormForIndex(user, theme, types),
+                    ),
+                  ),
+                ],
+              );
+            },
           ),
         ],
       ),
@@ -2089,8 +2110,8 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
   }
 
   List<({String id, String label, IconData icon, Color color, String? route})>
-  _requestTypes(BuildContext context) {
-    return <({String id, String label, IconData icon, Color color, String? route})>[
+  _requestTypes(BuildContext context, [List<CustomRequestType>? dynamicTemplates]) {
+    final list = <({String id, String label, IconData icon, Color color, String? route})>[
       (
         id: 'permission',
         label: 'إذن',
@@ -2169,6 +2190,33 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
         route: null,
       ),
     ];
+
+    if (dynamicTemplates != null) {
+      final coreIds = {
+        'core_permissions',
+        'core_leaves',
+        'core_advances',
+        'core_resignations',
+        'core_complaints',
+        'core_exit',
+        'core_clearance',
+      };
+      for (final tmpl in dynamicTemplates) {
+        if (!tmpl.isActive) continue;
+        if (coreIds.contains(tmpl.id)) continue;
+        if (tmpl.category == 'administrative') continue;
+        if (list.any((item) => item.id == tmpl.id)) continue;
+        list.add((
+          id: tmpl.id,
+          label: tmpl.nameAr.isNotEmpty ? tmpl.nameAr : tmpl.id,
+          icon: Icons.assignment_turned_in_outlined,
+          color: const Color(0xFF38BDF8),
+          route: null,
+        ));
+      }
+    }
+
+    return list;
   }
 
   Widget _buildFormForIndex(
@@ -2213,12 +2261,14 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
           if (mounted) setState(() => _requestCentreView = 1);
         },
       ),
-      _ => _buildPermissionForm(user, theme),
+      _ => CustomRequestSubmissionScreen(
+        repository: ConfigurableRequestsRepositoryImpl(),
+      ),
     };
   }
 
-  Widget _buildRequestTypeSelector(ThemeData theme) {
-    final types = _requestTypes(context);
+  Widget _buildRequestTypeSelector(ThemeData theme, [List<({String id, String label, IconData icon, Color color, String? route})>? overrideTypes]) {
+    final types = overrideTypes ?? _requestTypes(context);
     return LayoutBuilder(
       builder: (context, constraints) {
         final itemWidth = (constraints.maxWidth - 10) / 2;
@@ -2975,7 +3025,91 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
     );
   }
 
+  Widget _buildSubtypeChip({
+    required String label,
+    required bool isSelected,
+    required Color accentColor,
+    required VoidCallback onSelected,
+  }) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onSelected,
+        borderRadius: BorderRadius.circular(20),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+          decoration: BoxDecoration(
+            color: isSelected
+                ? accentColor.withValues(alpha: 0.20)
+                : ZaWolfColors.surface01,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: isSelected ? accentColor : accentColor.withValues(alpha: 0.40),
+              width: isSelected ? 1.8 : 1.0,
+            ),
+            boxShadow: isSelected
+                ? [
+                    BoxShadow(
+                      color: accentColor.withValues(alpha: 0.25),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    ),
+                  ]
+                : null,
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (isSelected) ...[
+                Icon(
+                  Icons.check_circle,
+                  size: 15,
+                  color: accentColor,
+                ),
+                const SizedBox(width: 6),
+              ] else ...[
+                Container(
+                  width: 8,
+                  height: 8,
+                  decoration: BoxDecoration(
+                    color: accentColor,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+                const SizedBox(width: 6),
+              ],
+              Text(
+                label,
+                style: TextStyle(
+                  color: isSelected ? Colors.white : ZaWolfColors.textPrimary,
+                  fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                  fontSize: 12.5,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildLeaveForm(UserModel user, ThemeData theme) {
+    return StreamBuilder<CustomRequestType>(
+      stream: _cachedStream<CustomRequestType>(
+        'leave-template',
+        () => LeaveService().watchLeaveTemplate(),
+      ),
+      builder: (context, snapshot) =>
+          _buildLeaveFormWithTemplate(user, theme, snapshot.data),
+    );
+  }
+
+  Widget _buildLeaveFormWithTemplate(
+    UserModel user,
+    ThemeData theme,
+    CustomRequestType? template,
+  ) {
     final requestedDays = _leaveEnd.difference(_leaveStart).inDays + 1;
     final isOnProbation = LeaveEntitlementPolicy.isOnProbation(
       user.hiringDate,
@@ -2984,6 +3118,23 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
     final selectedLeaveType =
         isOnProbation ? LeaveTypePolicy.unpaid : _leaveType;
     final leaveColor = _getLeaveTypeColor(selectedLeaveType);
+
+    final List<({String key, String label})> availableSubtypes;
+    if (template != null && template.subtypes.isNotEmpty) {
+      availableSubtypes = template.subtypes
+          .map((s) => (key: s, label: s))
+          .toList();
+    } else {
+      availableSubtypes = [
+        (key: LeaveTypePolicy.sick, label: 'مرضية'),
+        (key: LeaveTypePolicy.casual, label: 'عارضة'),
+        (key: LeaveTypePolicy.paternity, label: 'إجازة خاصة'),
+        (key: LeaveTypePolicy.normal, label: 'إجازة عادية'),
+        (key: LeaveTypePolicy.unpaid, label: 'بدون راتب'),
+        (key: LeaveTypePolicy.exam, label: 'امتحان'),
+        (key: LeaveTypePolicy.remote, label: 'عمل عن بعد'),
+      ];
+    }
 
     return Form(
       key: _formKeyLeave,
@@ -2994,69 +3145,34 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-            // Leave type selection row
+            // Dynamic leave subtype selection row
             Wrap(
               spacing: 8,
               runSpacing: 8,
-              children: [
-                if (!isOnProbation) ...[
-                  _buildLeaveChip(
-                    typeKey: LeaveTypePolicy.sick,
-                    label: 'مرضية',
-                    isSelected: selectedLeaveType == 'sick',
-                    onSelected: () => _setLeaveType(LeaveTypePolicy.sick),
-                  ),
-                  _buildLeaveChip(
-                    typeKey: LeaveTypePolicy.casual,
-                    label: 'عارضة',
-                    isSelected: selectedLeaveType == 'casual',
-                    onSelected: () => _setLeaveType(LeaveTypePolicy.casual),
-                  ),
-                  _buildLeaveChip(
-                    typeKey: LeaveTypePolicy.paternity,
-                    label: 'إجازة خاصة',
-                    isSelected: selectedLeaveType == LeaveTypePolicy.paternity,
-                    onSelected: () => _setLeaveType(LeaveTypePolicy.paternity),
-                  ),
-                  _buildLeaveChip(
-                    typeKey: LeaveTypePolicy.normal,
-                    label: 'إجازة عادية',
-                    isSelected: selectedLeaveType == 'day_off',
-                    onSelected: () => _setLeaveType(LeaveTypePolicy.normal),
-                  ),
-                ],
-                _buildLeaveChip(
-                  typeKey: LeaveTypePolicy.unpaid,
-                  label: 'بدون راتب',
-                  isSelected: selectedLeaveType == LeaveTypePolicy.unpaid,
-                  onSelected: () {
-                    if (!isOnProbation) {
-                      _setLeaveType(LeaveTypePolicy.unpaid);
-                    }
-                  },
-                ),
-                if (!isOnProbation) ...[
-                  _buildLeaveChip(
-                    typeKey: LeaveTypePolicy.exam,
-                    label: 'امتحان',
-                    isSelected: selectedLeaveType == LeaveTypePolicy.exam,
-                    onSelected: () => _setLeaveType(LeaveTypePolicy.exam),
-                  ),
-                  _buildLeaveChip(
-                    typeKey: LeaveTypePolicy.remote,
-                    label: 'عمل عن بعد',
-                    isSelected: selectedLeaveType == LeaveTypePolicy.remote,
-                    onSelected: () => _setLeaveType(LeaveTypePolicy.remote),
-                  ),
-                ],
-              ],
+              children: availableSubtypes.map((sub) {
+                final isUnpaid = LeaveTypePolicy.isUnpaid(sub.key);
+                if (isOnProbation && !isUnpaid) {
+                  return const SizedBox.shrink();
+                }
+                final isSelected =
+                    LeaveTypePolicy.normalize(selectedLeaveType) ==
+                    LeaveTypePolicy.normalize(sub.key);
+                return _buildLeaveChip(
+                  typeKey: sub.key,
+                  label: sub.label,
+                  isSelected: isSelected,
+                  onSelected: () => _setLeaveType(sub.key),
+                );
+              }).toList(),
             ),
             const SizedBox(height: 8),
 
             Text(
               isOnProbation
                   ? 'خلال أول 6 أشهر تكون الإجازة بدون راتب. تظل أذونات الوقت متاحة بصورة طبيعية.'
-                  : LeaveTypePolicy.description(selectedLeaveType),
+                  : (template?.descriptionAr.isNotEmpty ?? false)
+                      ? template!.descriptionAr
+                      : LeaveTypePolicy.description(selectedLeaveType),
               style: theme.textTheme.bodySmall,
               textDirection: TextDirection.rtl,
             ),
@@ -3269,88 +3385,119 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
   }
 
   Widget _buildAdvanceForm(UserModel user, ThemeData theme) {
-    final now = DateTime.now();
-    final hasConfiguredSalary = user.baseMonthlySalary > 0;
-    final maximum = user.baseMonthlySalary * .5;
-    final maxLabel = hasConfiguredSalary
-        ? '${maximum.toStringAsFixed(0)} ${user.salaryCurrency}'
-        : 'يخضع لتقدير الإدارة (الراتب غير مسجل)';
-    final tenureEligible =
-        user.hiringDate != null &&
-        now.difference(user.hiringDate!).inDays >= 90;
-    return Form(
-      key: _formKeyAdvance,
-      autovalidateMode:
-          _autoValidate
-              ? AutovalidateMode.onUserInteraction
-              : AutovalidateMode.disabled,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: ZaWolfColors.warning.withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(
-                 color: ZaWolfColors.warning.withValues(alpha: 0.3),
-              ),
-            ),
-            child: Text(
-              'سيتم خصم مبلغ السلفة من راتب الشهر الحالي بعد موافقة الإدارة.',
-              style: theme.textTheme.bodySmall!.copyWith(
-                color: ZaWolfColors.warning,
-                fontWeight: FontWeight.bold,
-              ),
-              textDirection: TextDirection.rtl,
-            ),
-          ),
-          const SizedBox(height: 16),
-          Text(
-            'الحد الأقصى: $maxLabel · ${tenureEligible ? 'مدة الخدمة مكتملة' : 'لم تكتمل 3 أشهر خدمة'} · متاح طوال الشهر',
-            textDirection: TextDirection.rtl,
-            style: theme.textTheme.bodySmall?.copyWith(
-              color:
-                  tenureEligible
-                      ? ZaWolfColors.success
-                      : ZaWolfColors.warning,
-            ),
-          ),
-          const SizedBox(height: 10),
-          WolfInputField(
-            controller: _advanceAmountController,
-            labelText: 'المبلغ المطلوب (${user.salaryCurrency})',
-            englishLabel: 'Amount',
-            hintText: 'مثال: 500',
-            keyboardType: TextInputType.number,
-            validator: (val) {
-              if (val == null || val.isEmpty) return 'المبلغ مطلوب';
-              final amt = double.tryParse(val);
-              if (amt == null || amt <= 0) return 'مبلغ غير صحيح';
-              if (hasConfiguredSalary && amt > maximum) {
-                return 'الحد الأقصى المتاح ${maximum.toStringAsFixed(0)} ${user.salaryCurrency}.';
-              }
-              return null;
-            },
-          ),
-          const SizedBox(height: 16),
-          WolfInputField(
-            controller: _advanceReasonController,
-            labelText: 'سبب طلب السلفة (اختياري)',
-            englishLabel: 'Reason',
-            hintText: 'تفاصيل إضافية...',
-            maxLines: 2,
-          ),
-          const SizedBox(height: 20),
-          _buildSubmitButtonArea(
-            onPressed: () => _submitAdvance(user),
-            text: 'تقديم طلب سلفة',
-            secondaryText: 'SUBMIT ADVANCE REQUEST',
-            accentColor: const Color(0xFFF59E0B),
-            loading: _loading,
-          ),
-        ],
+    return StreamBuilder<CustomRequestType>(
+      stream: _cachedStream<CustomRequestType>(
+        'advance-template',
+        () => AdvanceService().watchAdvanceTemplate(),
       ),
+      builder: (context, snapshot) {
+        final template = snapshot.data;
+        final subtypes = (template != null && template.subtypes.isNotEmpty)
+            ? template.subtypes
+            : const ['سلفة راتب شهرية', 'سلفة علاجية / طارئة', 'سلفة شراء أجهزة'];
+        if (!subtypes.contains(_selectedAdvanceType)) {
+          _selectedAdvanceType = subtypes.first;
+        }
+
+        final now = DateTime.now();
+        final hasConfiguredSalary = user.baseMonthlySalary > 0;
+        final maximum = user.baseMonthlySalary * .5;
+        final maxLabel = hasConfiguredSalary
+            ? '${maximum.toStringAsFixed(0)} ${user.salaryCurrency}'
+            : 'يخضع لتقدير الإدارة (الراتب غير مسجل)';
+        final tenureEligible =
+            user.hiringDate != null &&
+            now.difference(user.hiringDate!).inDays >= 90;
+
+        return Form(
+          key: _formKeyAdvance,
+          autovalidateMode:
+              _autoValidate
+                  ? AutovalidateMode.onUserInteraction
+                  : AutovalidateMode.disabled,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: subtypes.map((st) {
+                  final isSelected = _selectedAdvanceType == st;
+                  return _buildSubtypeChip(
+                    label: st,
+                    isSelected: isSelected,
+                    accentColor: const Color(0xFFF59E0B),
+                    onSelected: () => setState(() => _selectedAdvanceType = st),
+                  );
+                }).toList(),
+              ),
+              const SizedBox(height: 14),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: ZaWolfColors.warning.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                     color: ZaWolfColors.warning.withValues(alpha: 0.3),
+                  ),
+                ),
+                child: Text(
+                  'سيتم خصم مبلغ السلفة من راتب الشهر الحالي بعد موافقة الإدارة.',
+                  style: theme.textTheme.bodySmall!.copyWith(
+                    color: ZaWolfColors.warning,
+                    fontWeight: FontWeight.bold,
+                  ),
+                  textDirection: TextDirection.rtl,
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'الحد الأقصى: $maxLabel · ${tenureEligible ? 'مدة الخدمة مكتملة' : 'لم تكتمل 3 أشهر خدمة'} · متاح طوال الشهر',
+                textDirection: TextDirection.rtl,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color:
+                      tenureEligible
+                          ? ZaWolfColors.success
+                          : ZaWolfColors.warning,
+                ),
+              ),
+              const SizedBox(height: 10),
+              WolfInputField(
+                controller: _advanceAmountController,
+                labelText: 'المبلغ المطلوب (${user.salaryCurrency})',
+                englishLabel: 'Amount',
+                hintText: 'مثال: 500',
+                keyboardType: TextInputType.number,
+                validator: (val) {
+                  if (val == null || val.isEmpty) return 'المبلغ مطلوب';
+                  final amt = double.tryParse(val);
+                  if (amt == null || amt <= 0) return 'مبلغ غير صحيح';
+                  if (hasConfiguredSalary && amt > maximum) {
+                    return 'الحد الأقصى المتاح ${maximum.toStringAsFixed(0)} ${user.salaryCurrency}.';
+                  }
+                  return null;
+                },
+              ),
+              const SizedBox(height: 16),
+              WolfInputField(
+                controller: _advanceReasonController,
+                labelText: 'سبب طلب السلفة (اختياري)',
+                englishLabel: 'Reason',
+                hintText: 'تفاصيل إضافية...',
+                maxLines: 2,
+              ),
+              const SizedBox(height: 20),
+              _buildSubmitButtonArea(
+                onPressed: () => _submitAdvance(user),
+                text: 'تقديم طلب سلفة',
+                secondaryText: 'SUBMIT ADVANCE REQUEST',
+                accentColor: const Color(0xFFF59E0B),
+                loading: _loading,
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 
@@ -3893,29 +4040,50 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          DropdownButtonFormField<String>(
-            initialValue: _administrativeCategory,
-            decoration: const InputDecoration(labelText: 'نوع الطلب الإداري'),
-            dropdownColor: ZaWolfColors.surface01,
-            items:
-                AdministrativeRequestCategory.values
-                    .where(
-                      (value) =>
-                          value != AdministrativeRequestCategory.fieldMission,
-                    )
-                    .map(
-                      (value) => DropdownMenuItem(
-                        value: value,
-                        child: Text(
-                          AdministrativeRequestCategory.arabicLabel(value),
-                        ),
-                      ),
-                    )
-                    .toList(),
-            onChanged: (value) {
-              if (value != null) {
-                setState(() => _administrativeCategory = value);
+          StreamBuilder<List<CustomRequestType>>(
+            stream: _cachedStream(
+              'admin-request-templates',
+              () => AdministrativeRequestService().watchAdministrativeTemplates(),
+            ),
+            builder: (context, snapshot) {
+              final customTemplates = snapshot.data ?? const <CustomRequestType>[];
+              final itemsMap = <String, String>{};
+              for (final cat in AdministrativeRequestCategory.values) {
+                if (cat == AdministrativeRequestCategory.fieldMission) continue;
+                itemsMap[cat] = AdministrativeRequestCategory.arabicLabel(cat);
               }
+              for (final t in customTemplates) {
+                if (t.subtypes.isNotEmpty) {
+                  for (final st in t.subtypes) {
+                    itemsMap[st] = st;
+                  }
+                } else if (t.nameAr.isNotEmpty) {
+                  itemsMap[t.id] = t.nameAr;
+                }
+              }
+              final currentVal = itemsMap.containsKey(_administrativeCategory)
+                  ? _administrativeCategory
+                  : itemsMap.keys.first;
+
+              return DropdownButtonFormField<String>(
+                initialValue: currentVal,
+                decoration: const InputDecoration(labelText: 'نوع الطلب الإداري'),
+                dropdownColor: ZaWolfColors.surface01,
+                items: itemsMap.entries.map((e) {
+                  return DropdownMenuItem<String>(
+                    value: e.key,
+                    child: Text(e.value),
+                  );
+                }).toList(),
+                onChanged: (value) {
+                  if (value != null) {
+                    setState(() {
+                      _administrativeCategory = value;
+                      _administrativeCategoryLabel = itemsMap[value];
+                    });
+                  }
+                },
+              );
             },
           ),
           const SizedBox(height: 14),
@@ -4391,103 +4559,139 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
   }
 
   Widget _buildResignationForm(UserModel user, ThemeData theme) {
-    return Form(
-      key: _formKeyResignation,
-      autovalidateMode:
-          _autoValidate
-              ? AutovalidateMode.onUserInteraction
-              : AutovalidateMode.disabled,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Container(
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: ZaWolfColors.error.withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(
-                color: ZaWolfColors.error.withValues(alpha: 0.45),
-              ),
-            ),
-            child: const Text(
-              'يُرسل الطلب إلى قائد الفريق ثم المديرين بالترتيب، وبعدهم HR للقرار النهائي.',
-              textAlign: TextAlign.center,
-              textDirection: TextDirection.rtl,
-            ),
-          ),
-          const SizedBox(height: 16),
-          ListTile(
-            contentPadding: EdgeInsets.zero,
-            title: const Text('تاريخ الاستقالة'),
-            subtitle: Text(DateFormat('yyyy/MM/dd').format(_resignationDate)),
-            trailing: const Icon(
-              Icons.calendar_month,
-              color: ZaWolfColors.primaryCyan,
-            ),
-            onTap: () async {
-              final picked = await showDatePicker(
-                context: context,
-                initialDate: _resignationDate,
-                firstDate: DateTime.now(),
-                lastDate: DateTime.now().add(const Duration(days: 730)),
-              );
-              if (picked != null && mounted) {
-                setState(() {
-                  _resignationDate = picked;
-                  _lastWorkingDay ??= picked;
-                });
-              }
-            },
-          ),
-          const SizedBox(height: 8),
-          ListTile(
-            contentPadding: EdgeInsets.zero,
-            title: const Text('آخر يوم عمل متوقع (اختياري)'),
-            subtitle: Text(
-              DateFormat('yyyy/MM/dd').format(_lastWorkingDay ?? _resignationDate),
-            ),
-            trailing: const Icon(
-              Icons.event_available,
-              color: ZaWolfColors.primaryCyan,
-            ),
-            onTap: () async {
-              final picked = await showDatePicker(
-                context: context,
-                initialDate: _lastWorkingDay ?? _resignationDate,
-                firstDate: DateTime.now(),
-                lastDate: DateTime.now().add(const Duration(days: 730)),
-              );
-              if (picked != null && mounted) {
-                setState(() => _lastWorkingDay = picked);
-              }
-            },
-          ),
-          const SizedBox(height: 12),
-          TextFormField(
-            controller: _resignationReasonController,
-            minLines: 4,
-            maxLines: 7,
-            textDirection: TextDirection.rtl,
-            decoration: const InputDecoration(
-              labelText: 'سبب الاستقالة',
-              hintText: 'اكتب سبب الاستقالة بوضوح...',
-            ),
-            validator:
-                (value) =>
-                    (value?.trim().isEmpty ?? true)
-                        ? 'سبب الاستقالة مطلوب'
-                        : null,
-          ),
-          const SizedBox(height: 20),
-          _buildSubmitButtonArea(
-            onPressed: () => _submitResignation(user),
-            text: 'إرسال طلب الاستقالة',
-            secondaryText: 'SUBMIT RESIGNATION',
-            accentColor: const Color(0xFFF43F5E),
-            loading: _loading,
-          ),
-        ],
+    return StreamBuilder<CustomRequestType>(
+      stream: _cachedStream<CustomRequestType>(
+        'resignation-template',
+        () => ResignationService().watchResignationTemplate(),
       ),
+      builder: (context, snapshot) {
+        final template = snapshot.data;
+        final subtypes = (template != null && template.subtypes.isNotEmpty)
+            ? template.subtypes
+            : const [
+                'استقالة عادية مع فترة إشعار',
+                'إنهاء تعاقد فوري بالتراضي',
+                'عدم الرغبة في تجديد العقد السنوي',
+              ];
+        if (!subtypes.contains(_selectedResignationType)) {
+          _selectedResignationType = subtypes.first;
+        }
+
+        return Form(
+          key: _formKeyResignation,
+          autovalidateMode:
+              _autoValidate
+                  ? AutovalidateMode.onUserInteraction
+                  : AutovalidateMode.disabled,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: subtypes.map((st) {
+                  final isSelected = _selectedResignationType == st;
+                  return _buildSubtypeChip(
+                    label: st,
+                    isSelected: isSelected,
+                    accentColor: const Color(0xFFF43F5E),
+                    onSelected: () => setState(() => _selectedResignationType = st),
+                  );
+                }).toList(),
+              ),
+              const SizedBox(height: 14),
+              Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: ZaWolfColors.error.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: ZaWolfColors.error.withValues(alpha: 0.45),
+                  ),
+                ),
+                child: Text(
+                  (template?.descriptionAr.isNotEmpty ?? false)
+                      ? template!.descriptionAr
+                      : 'يُرسل الطلب إلى قائد الفريق ثم المديرين بالترتيب، وبعدهم HR للقرار النهائي.',
+                  textAlign: TextAlign.center,
+                  textDirection: TextDirection.rtl,
+                ),
+              ),
+              const SizedBox(height: 16),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('تاريخ الاستقالة'),
+                subtitle: Text(DateFormat('yyyy/MM/dd').format(_resignationDate)),
+                trailing: const Icon(
+                  Icons.calendar_month,
+                  color: ZaWolfColors.primaryCyan,
+                ),
+                onTap: () async {
+                  final picked = await showDatePicker(
+                    context: context,
+                    initialDate: _resignationDate,
+                    firstDate: DateTime.now(),
+                    lastDate: DateTime.now().add(const Duration(days: 730)),
+                  );
+                  if (picked != null && mounted) {
+                    setState(() {
+                      _resignationDate = picked;
+                      _lastWorkingDay ??= picked;
+                    });
+                  }
+                },
+              ),
+              const SizedBox(height: 8),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('آخر يوم عمل متوقع (اختياري)'),
+                subtitle: Text(
+                  DateFormat('yyyy/MM/dd').format(_lastWorkingDay ?? _resignationDate),
+                ),
+                trailing: const Icon(
+                  Icons.event_available,
+                  color: ZaWolfColors.primaryCyan,
+                ),
+                onTap: () async {
+                  final picked = await showDatePicker(
+                    context: context,
+                    initialDate: _lastWorkingDay ?? _resignationDate,
+                    firstDate: DateTime.now(),
+                    lastDate: DateTime.now().add(const Duration(days: 730)),
+                  );
+                  if (picked != null && mounted) {
+                    setState(() => _lastWorkingDay = picked);
+                  }
+                },
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: _resignationReasonController,
+                minLines: 4,
+                maxLines: 7,
+                textDirection: TextDirection.rtl,
+                decoration: const InputDecoration(
+                  labelText: 'سبب الاستقالة',
+                  hintText: 'اكتب سبب الاستقالة بوضوح...',
+                ),
+                validator:
+                    (value) =>
+                        (value?.trim().isEmpty ?? true)
+                            ? 'سبب الاستقالة مطلوب'
+                            : null,
+              ),
+              const SizedBox(height: 20),
+              _buildSubmitButtonArea(
+                onPressed: () => _submitResignation(user),
+                text: 'إرسال طلب الاستقالة',
+                secondaryText: 'SUBMIT RESIGNATION',
+                accentColor: const Color(0xFFF43F5E),
+                loading: _loading,
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 

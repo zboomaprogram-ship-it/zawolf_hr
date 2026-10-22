@@ -7,6 +7,7 @@ class ResignationModel {
   final String employeeName;
   final String department;
   final String reason;
+  final String? subtype;
   final DateTime resignationDate;
   final String status;
   final String managerId;
@@ -30,6 +31,7 @@ class ResignationModel {
     required this.employeeName,
     required this.department,
     required this.reason,
+    this.subtype,
     required this.resignationDate,
     required this.status,
     required this.managerId,
@@ -60,6 +62,7 @@ class ResignationModel {
       employeeName: data['employeeName'] as String? ?? '',
       department: data['department'] as String? ?? '',
       reason: data['reason'] as String? ?? '',
+      subtype: data['subtype'] as String? ?? 'استقالة عادية مع فترة إشعار',
       resignationDate:
           (data['resignationDate'] as Timestamp?)?.toDate() ?? DateTime.now(),
       status: data['status'] as String? ?? 'pending_manager',
@@ -92,6 +95,7 @@ class ResignationModel {
       'employeeName': employeeName,
       'department': department,
       'reason': reason,
+      if (subtype != null) 'subtype': subtype,
       'resignationDate': resignationDate,
       if (lastWorkingDay != null) 'lastWorkingDay': lastWorkingDay,
       if (clearanceRequestId != null) 'clearanceRequestId': clearanceRequestId,

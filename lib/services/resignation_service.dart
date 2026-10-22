@@ -13,6 +13,27 @@ import 'role_notification_service.dart';
 class ResignationService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
 
+  Stream<CustomRequestType> watchResignationTemplate() {
+    return _db
+        .collection('customRequestTypes')
+        .snapshots()
+        .map((snapshot) {
+      final matches = snapshot.docs
+          .map((d) => CustomRequestType.fromMap(d.data(), d.id))
+          .where((t) => t.id == 'core_resignations' || t.id == 'core_exit')
+          .toList();
+      if (matches.isNotEmpty) {
+        return matches.firstWhere(
+          (m) => m.id == 'core_resignations',
+          orElse: () => matches.first,
+        );
+      }
+      return CustomRequestTemplateRepositoryImpl.defaultCoreRequestTypes.firstWhere(
+        (t) => t.id == 'core_resignations',
+      );
+    });
+  }
+
   Stream<List<ResignationModel>> watchMine(String userId) {
     return _db
         .collection('resignations')
@@ -62,6 +83,7 @@ class ResignationService {
     required String reason,
     required DateTime resignationDate,
     DateTime? lastWorkingDay,
+    String? subtype,
   }) async {
     final cleanReason = reason.trim();
     final today = DateTime.now();
@@ -96,6 +118,7 @@ class ResignationService {
       'employeeName': employee.displayName,
       'department': employee.department,
       'reason': cleanReason,
+      'subtype': subtype ?? 'استقالة عادية مع فترة إشعار',
       'resignationDate': Timestamp.fromDate(resignationDate),
       'lastWorkingDay': Timestamp.fromDate(effectiveLastWorkingDay),
       'status': managerIds.isEmpty ? 'pending_hr' : 'pending_manager',

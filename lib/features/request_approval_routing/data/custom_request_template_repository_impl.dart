@@ -308,5 +308,87 @@ class CustomRequestTemplateRepositoryImpl implements CustomRequestTemplateReposi
     } catch (_) {}
     return defaultCoreRequestTypes.firstWhere((t) => t.id == 'core_permissions');
   }
+
+  @override
+  Stream<CustomRequestType> watchLeaveTemplate() {
+    return _firestore
+        .collection('customRequestTypes')
+        .snapshots()
+        .map((snapshot) {
+      final matches = snapshot.docs
+          .map((d) => CustomRequestType.fromMap(d.data(), d.id))
+          .where((t) => t.id == 'core_leaves' || t.category == 'leave')
+          .toList();
+      if (matches.isNotEmpty) {
+        return matches.firstWhere(
+          (m) => m.id == 'core_leaves',
+          orElse: () => matches.first,
+        );
+      }
+      return defaultCoreRequestTypes.firstWhere(
+        (t) => t.id == 'core_leaves',
+      );
+    });
+  }
+
+  @override
+  Stream<CustomRequestType> watchAdvanceTemplate() {
+    return _firestore
+        .collection('customRequestTypes')
+        .snapshots()
+        .map((snapshot) {
+      final matches = snapshot.docs
+          .map((d) => CustomRequestType.fromMap(d.data(), d.id))
+          .where((t) => t.id == 'core_advances' || t.category == 'financial')
+          .toList();
+      if (matches.isNotEmpty) {
+        return matches.firstWhere(
+          (m) => m.id == 'core_advances',
+          orElse: () => matches.first,
+        );
+      }
+      return defaultCoreRequestTypes.firstWhere(
+        (t) => t.id == 'core_advances',
+      );
+    });
+  }
+
+  @override
+  Stream<CustomRequestType> watchResignationTemplate() {
+    return _firestore
+        .collection('customRequestTypes')
+        .snapshots()
+        .map((snapshot) {
+      final matches = snapshot.docs
+          .map((d) => CustomRequestType.fromMap(d.data(), d.id))
+          .where((t) => t.id == 'core_resignations' || t.id == 'core_exit')
+          .toList();
+      if (matches.isNotEmpty) {
+        return matches.firstWhere(
+          (m) => m.id == 'core_resignations',
+          orElse: () => matches.first,
+        );
+      }
+      return defaultCoreRequestTypes.firstWhere(
+        (t) => t.id == 'core_resignations',
+      );
+    });
+  }
+
+  @override
+  Stream<List<CustomRequestType>> watchAllTemplates() {
+    return _firestore
+        .collection('customRequestTypes')
+        .snapshots()
+        .map((snapshot) {
+      final list = snapshot.docs
+          .map((d) => CustomRequestType.fromMap(d.data(), d.id))
+          .toList();
+      if (list.isEmpty) {
+        return defaultCoreRequestTypes;
+      }
+      return list;
+    });
+  }
 }
 

@@ -19,6 +19,8 @@ import 'request_approval_policy_service.dart';
 import 'role_notification_service.dart';
 import 'attendance_reconciliation_service.dart';
 import '../features/request_staffing_alerts/data/request_staffing_conflict_service.dart';
+import '../features/request_approval_routing/domain/entities/custom_request_template.dart';
+import '../features/request_approval_routing/data/custom_request_template_repository_impl.dart';
 
 class LeaveService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
@@ -29,8 +31,29 @@ class LeaveService {
   final AttendanceReconciliationService _reconciliationService =
       AttendanceReconciliationService();
 
+  Stream<CustomRequestType> watchLeaveTemplate() {
+    return _db
+        .collection('customRequestTypes')
+        .snapshots()
+        .map((snapshot) {
+      final matches = snapshot.docs
+          .map((d) => CustomRequestType.fromMap(d.data(), d.id))
+          .where((t) => t.id == 'core_leaves' || t.category == 'leave')
+          .toList();
+      if (matches.isNotEmpty) {
+        return matches.firstWhere(
+          (m) => m.id == 'core_leaves',
+          orElse: () => matches.first,
+        );
+      }
+      return CustomRequestTemplateRepositoryImpl.defaultCoreRequestTypes.firstWhere(
+        (t) => t.id == 'core_leaves',
+      );
+    });
+  }
+
   static void validateRequest(LeaveModel request, {DateTime? now}) {
-    if (!LeaveTypePolicy.supportedTypes.contains(request.leaveType)) {
+    if (!LeaveTypePolicy.isSupported(request.leaveType)) {
       throw Exception('اختر نوع إجازة صحيحاً.');
     }
     if ((request.reason ?? '').trim().isEmpty) {
@@ -63,7 +86,7 @@ class LeaveService {
         'الإجازة العادية يجب تقديمها قبل موعدها بيومين على الأقل.',
       );
     }
-    if (request.leaveType == LeaveTypePolicy.exam) {
+    if (LeaveTypePolicy.isExam(request.leaveType)) {
       if (start.difference(today).inDays < 10) {
         throw Exception(
           'يجب تقديم طلب إجازة الامتحان قبل موعد الامتحان بعشرة أيام على الأقل.',
@@ -78,11 +101,11 @@ class LeaveService {
   }
 
   static void validateBalance(LeaveModel request, LeaveBalance balance) {
-    if (request.leaveType == LeaveTypePolicy.normal &&
+    if (LeaveTypePolicy.isNormal(request.leaveType) &&
         request.numberOfDays > balance.daysOff) {
       throw Exception('رصيد الإجازات الكلي غير كافٍ.');
     }
-    if (request.leaveType == LeaveTypePolicy.casual) {
+    if (LeaveTypePolicy.isCasual(request.leaveType)) {
       if (request.numberOfDays > 2) {
         throw Exception(
           'الحد الأقصى للإجازة العارضة يومان متتاليان في المرة الواحدة.',

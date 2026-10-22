@@ -26,8 +26,11 @@ class AdministrativeRequestCategory {
     equipment => 'جهاز أو معدات',
     fieldMission => 'مهمة ميدانية',
     companyExpenses => 'مصروفات ومدفوعات الشركة',
-    _ => 'طلب إداري آخر',
+    _ => value.trim().isNotEmpty ? value : 'طلب إداري آخر',
   };
+
+  static bool isSupported(String value) =>
+      values.contains(value) || value.trim().isNotEmpty;
 }
 
 class AdministrativeRequestModel {

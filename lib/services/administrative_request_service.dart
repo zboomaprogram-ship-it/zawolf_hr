@@ -7,6 +7,7 @@ import '../models/employee_role.dart';
 import '../models/manager_approval_chain.dart';
 import '../models/user_model.dart';
 import '../features/request_approval_routing/data/request_approval_routing_gateway.dart';
+import '../features/request_approval_routing/domain/entities/custom_request_template.dart';
 import 'attendance_reconciliation_service.dart';
 import 'role_notification_service.dart';
 
@@ -20,6 +21,19 @@ class AdministrativeRequestService {
   final RequestApprovalRoutingGateway _routingGateway =
       RequestApprovalRoutingGateway();
   final AttendanceReconciliationService _reconciliationService;
+
+  Stream<List<CustomRequestType>> watchAdministrativeTemplates() {
+    return _db.collection('customRequestTypes').snapshots().map((snap) {
+      return snap.docs
+          .map((d) => CustomRequestType.fromMap(d.data(), d.id))
+          .where((t) =>
+              t.category == 'administrative' ||
+              t.category == 'general' ||
+              t.id == 'core_clearance' ||
+              t.id.startsWith('core_admin'))
+          .toList();
+    });
+  }
 
   Map<String, dynamic> _event({
     required String stage,
@@ -40,9 +54,10 @@ class AdministrativeRequestService {
     required UserModel employee,
     required String category,
     required String notes,
+    String? categoryLabel,
     String? attachmentUrl,
   }) async {
-    if (!AdministrativeRequestCategory.values.contains(category)) {
+    if (!AdministrativeRequestCategory.isSupported(category)) {
       throw Exception('نوع الطلب الإداري غير صالح.');
     }
     if (notes.trim().isEmpty) throw Exception('تفاصيل الطلب مطلوبة.');
@@ -74,7 +89,10 @@ class AdministrativeRequestService {
       'employeeName': employee.displayName,
       'department': employee.department,
       'category': category,
-      'categoryLabel': AdministrativeRequestCategory.arabicLabel(category),
+      'categoryLabel':
+          (categoryLabel != null && categoryLabel.trim().isNotEmpty)
+              ? categoryLabel.trim()
+              : AdministrativeRequestCategory.arabicLabel(category),
       'notes': notes.trim(),
       'attachmentUrl': attachmentUrl?.trim(),
       'status': usesHrFallback ? 'pending_hr' : 'pending_manager',

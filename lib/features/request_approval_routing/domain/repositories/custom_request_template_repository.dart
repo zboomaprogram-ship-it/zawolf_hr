@@ -6,4 +6,8 @@ abstract interface class CustomRequestTemplateRepository {
   Future<void> deleteRequestType(String id);
   Stream<CustomRequestType> watchPermissionTemplate();
   Future<CustomRequestType> getPermissionTemplate();
+  Stream<CustomRequestType> watchLeaveTemplate();
+  Stream<CustomRequestType> watchAdvanceTemplate();
+  Stream<CustomRequestType> watchResignationTemplate();
+  Stream<List<CustomRequestType>> watchAllTemplates();
 }
