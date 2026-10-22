@@ -17,6 +17,7 @@ class PermissionModel {
   status; // 'pending_hr' | 'pending_manager' | 'approved' | 'rejected' | 'cancelled' | 'invalid_late'
   final bool isExceedingQuota;
   final bool isDeductible;
+  final bool isQuotaExempt;
   final bool isSubmittedAfterWorkStart;
   final double salaryDeductionFraction;
   final double salaryDeductionAmount;
@@ -56,6 +57,7 @@ class PermissionModel {
     required this.status,
     required this.isExceedingQuota,
     this.isDeductible = false,
+    this.isQuotaExempt = false,
     required this.isSubmittedAfterWorkStart,
     this.salaryDeductionFraction = 0,
     this.salaryDeductionAmount = 0,
@@ -98,6 +100,7 @@ class PermissionModel {
       status: data['status'] as String? ?? 'pending_hr',
       isExceedingQuota: data['isExceedingQuota'] as bool? ?? false,
       isDeductible: data['isDeductible'] as bool? ?? false,
+      isQuotaExempt: data['isQuotaExempt'] as bool? ?? false,
       isSubmittedAfterWorkStart:
           data['isSubmittedAfterWorkStart'] as bool? ?? false,
       salaryDeductionFraction:
@@ -150,6 +153,7 @@ class PermissionModel {
       'status': status,
       'isExceedingQuota': isExceedingQuota,
       'isDeductible': isDeductible,
+      'isQuotaExempt': isQuotaExempt,
       'isSubmittedAfterWorkStart': isSubmittedAfterWorkStart,
       'salaryDeductionFraction': salaryDeductionFraction,
       'salaryDeductionAmount': salaryDeductionAmount,

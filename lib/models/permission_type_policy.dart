@@ -7,6 +7,25 @@ class PermissionTypePolicy {
   static const int minimumDurationHours = 1;
   static const int maximumDurationHours = 4;
 
+  static bool isLateArrival(String type) {
+    return type == lateArrival ||
+        type == 'إذن تأخير صباحي' ||
+        type == 'تأخير حضور';
+  }
+
+  static bool isEarlyLeave(String type) {
+    return type == earlyLeave ||
+        type == 'إذن انصراف مبكر' ||
+        type == 'مغادرة مبكرة';
+  }
+
+  static bool isMidShiftExit(String type) {
+    return type == midShiftExit ||
+        type == 'إذن خروج مؤقت أثناء العمل' ||
+        type == 'مغادرة والعودة' ||
+        type == 'مغادرة والعودة أثناء الدوام';
+  }
+
   static int resolveExpectedMinutes({
     required String permissionType,
     required int durationMinutes,
@@ -18,27 +37,30 @@ class PermissionTypePolicy {
         durationMinutes > maximumDurationHours * 60) {
       throw ArgumentError.value(durationMinutes, 'durationMinutes');
     }
-    final resolved = switch (permissionType) {
-      lateArrival => workStartMinutes + durationMinutes,
-      earlyLeave => workEndMinutes - durationMinutes,
-      _ => selectedMinutes,
-    };
-    return resolved.clamp(0, 1439);
+    if (isLateArrival(permissionType)) {
+      return (workStartMinutes + durationMinutes).clamp(0, 1439);
+    }
+    if (isEarlyLeave(permissionType)) {
+      return (workEndMinutes - durationMinutes).clamp(0, 1439);
+    }
+    return selectedMinutes.clamp(0, 1439);
   }
 
   static bool isRegularQuotaExhausted({
     required int usedCount,
     required double usedHours,
+    int countLimit = regularPermissionCountLimit,
+    double hoursLimit = regularPermissionHoursLimit,
   }) {
-    return usedCount >= regularPermissionCountLimit ||
-        usedHours >= regularPermissionHoursLimit;
+    return usedCount >= countLimit || usedHours >= hoursLimit;
   }
 
   static bool exceedsRemainingRegularHours({
     required double usedHours,
     required int requestedMinutes,
+    double hoursLimit = regularPermissionHoursLimit,
   }) {
-    return usedHours + (requestedMinutes / 60) > regularPermissionHoursLimit;
+    return usedHours + (requestedMinutes / 60) > hoursLimit;
   }
 
   static double deductibleDayFraction(int durationMinutes) {
@@ -65,13 +87,9 @@ class PermissionTypePolicy {
   }
 
   static String arabicLabel(String type) {
-    switch (type) {
-      case lateArrival:
-        return 'تأخير حضور';
-      case midShiftExit:
-        return 'مغادرة والعودة أثناء الدوام';
-      default:
-        return 'مغادرة مبكرة';
-    }
+    if (isLateArrival(type)) return 'تأخير حضور';
+    if (isMidShiftExit(type)) return 'مغادرة والعودة أثناء الدوام';
+    if (isEarlyLeave(type)) return 'مغادرة مبكرة';
+    return type.isNotEmpty ? type : 'إذن';
   }
 }

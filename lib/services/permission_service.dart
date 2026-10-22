@@ -16,6 +16,8 @@ import '../features/request_staffing_alerts/data/request_staffing_conflict_servi
 import 'attendance_gateway_service.dart';
 import '../utils/payroll_cycle.dart';
 import '../utils/permission_cycle_accounting.dart';
+import '../features/request_approval_routing/domain/entities/custom_request_template.dart';
+import '../features/request_approval_routing/data/custom_request_template_repository_impl.dart';
 
 class PermissionService {
   PermissionService({AttendanceGatewayService? attendanceGateway})
@@ -77,7 +79,8 @@ class PermissionService {
     for (final doc in docs) {
       final data = doc.data();
       if (!_quotaStatuses.contains('${data['status']}') ||
-          data['isDeductible'] == true) {
+          data['isDeductible'] == true ||
+          data['isQuotaExempt'] == true) {
         continue;
       }
       count++;
@@ -96,6 +99,46 @@ class PermissionService {
         .where('monthKey', isEqualTo: cycleKey)
         .snapshots()
         .map((snapshot) => _usageFromDocs(snapshot.docs));
+  }
+
+  Stream<CustomRequestType> watchPermissionTemplate() {
+    return _db
+        .collection('customRequestTypes')
+        .snapshots()
+        .map((snapshot) {
+      final matches = snapshot.docs
+          .map((d) => CustomRequestType.fromMap(d.data(), d.id))
+          .where((t) => t.id == 'core_permissions' || t.category == 'permission')
+          .toList();
+      if (matches.isNotEmpty) {
+        return matches.firstWhere(
+          (m) => m.id == 'core_permissions',
+          orElse: () => matches.first,
+        );
+      }
+      return CustomRequestTemplateRepositoryImpl.defaultCoreRequestTypes.firstWhere(
+        (t) => t.id == 'core_permissions',
+      );
+    });
+  }
+
+  Future<CustomRequestType> getPermissionTemplate() async {
+    try {
+      final snap = await _db.collection('customRequestTypes').get();
+      final matches = snap.docs
+          .map((d) => CustomRequestType.fromMap(d.data(), d.id))
+          .where((t) => t.id == 'core_permissions' || t.category == 'permission')
+          .toList();
+      if (matches.isNotEmpty) {
+        return matches.firstWhere(
+          (m) => m.id == 'core_permissions',
+          orElse: () => matches.first,
+        );
+      }
+    } catch (_) {}
+    return CustomRequestTemplateRepositoryImpl.defaultCoreRequestTypes.firstWhere(
+      (t) => t.id == 'core_permissions',
+    );
   }
 
   bool _updatesActiveBalance(
@@ -306,36 +349,38 @@ class PermissionService {
     final usedCount = cycleUsage.usedCount;
     final usedHours = cycleUsage.usedHours;
 
-    final quotaExhausted = PermissionTypePolicy.isRegularQuotaExhausted(
-      usedCount: usedCount,
-      usedHours: usedHours,
-    );
-    if (req.isDeductible && !quotaExhausted) {
-      throw Exception(
-        'الإذن الاستقطاعي يتاح فقط بعد استهلاك رصيد الأذونات العادية.',
+    if (!req.isQuotaExempt) {
+      final quotaExhausted = PermissionTypePolicy.isRegularQuotaExhausted(
+        usedCount: usedCount,
+        usedHours: usedHours,
       );
-    }
-    if (!req.isDeductible && quotaExhausted) {
-      throw Exception(
-        'تم استهلاك رصيد الأذونات العادية. اختر إذن استقطاعي للمتابعة.',
-      );
-    }
-    if (!req.isDeductible &&
-        PermissionTypePolicy.exceedsRemainingRegularHours(
-          usedHours: usedHours,
-          requestedMinutes: req.durationMinutes,
-        )) {
-      final remaining =
-          PermissionTypePolicy.regularPermissionHoursLimit - usedHours;
-      throw Exception(
-        'المدة تتجاوز الرصيد المتبقي (${remaining.toStringAsFixed(0)} ساعات).',
-      );
+      if (req.isDeductible && !quotaExhausted) {
+        throw Exception(
+          'الإذن الاستقطاعي يتاح فقط بعد استهلاك رصيد الأذونات العادية.',
+        );
+      }
+      if (!req.isDeductible && quotaExhausted) {
+        throw Exception(
+          'تم استهلاك رصيد الأذونات العادية. اختر إذن استقطاعي للمتابعة.',
+        );
+      }
+      if (!req.isDeductible &&
+          PermissionTypePolicy.exceedsRemainingRegularHours(
+            usedHours: usedHours,
+            requestedMinutes: req.durationMinutes,
+          )) {
+        final remaining =
+            PermissionTypePolicy.regularPermissionHoursLimit - usedHours;
+        throw Exception(
+          'المدة تتجاوز الرصيد المتبقي (${remaining.toStringAsFixed(0)} ساعات).',
+        );
+      }
     }
 
     // A late-arrival request can be submitted before or after the scheduled start,
     // but cannot amend a day that already has an actual check-in.
     var isLateSubmission = false;
-    if (req.permissionType == 'late_arrival') {
+    if (PermissionTypePolicy.isLateArrival(req.permissionType)) {
       final workStartStr =
           employee.workSchedule.startTime ?? policyConfig.defaultStartTime;
       final attendance =
@@ -356,8 +401,9 @@ class PermissionService {
       );
     }
 
+    final isDeductibleFinal = !req.isQuotaExempt && req.isDeductible;
     final deduction =
-        req.isDeductible
+        isDeductibleFinal
             ? AttendanceDeduction(
               dayFraction: PermissionTypePolicy.deductibleDayFraction(
                 req.durationMinutes,
@@ -412,15 +458,16 @@ class PermissionService {
       durationMinutes: req.durationMinutes,
       reason: req.reason,
       status: finalStatus,
-      isExceedingQuota: req.isDeductible,
-      isDeductible: req.isDeductible,
+      isExceedingQuota: req.isQuotaExempt ? false : req.isDeductible,
+      isDeductible: isDeductibleFinal,
+      isQuotaExempt: req.isQuotaExempt,
       isSubmittedAfterWorkStart: isLateSubmission,
       salaryDeductionFraction: deduction.dayFraction,
       salaryDeductionAmount: salaryDeductionAmount,
       salaryCurrency: employee.salaryCurrency,
       salaryDeductionCode: deduction.code,
       salaryDeductionLabel: deduction.arabicLabel,
-      salaryDeductionApprovalStatus: req.isDeductible ? 'pending_hr' : 'none',
+      salaryDeductionApprovalStatus: isDeductibleFinal ? 'pending_hr' : 'none',
       monthKey: monthKey,
       submittedAt: now,
       isRead: false,

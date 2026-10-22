@@ -49,6 +49,7 @@ import '../shared/requests_log_screen.dart';
 import '../../utils/payroll_cycle.dart';
 import '../../utils/permission_cycle_accounting.dart';
 import '../../features/company_os/domain/entities/operational_request_category.dart';
+import '../../features/request_approval_routing/domain/entities/custom_request_template.dart';
 import '../../navigation/company_os_requests_entry.dart';
 import 'widgets/virtual_office_game_widget.dart';
 
@@ -692,8 +693,9 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
   // Submission handlers
   Future<void> _submitPermission(
     UserModel employee,
-    PermissionCycleUsage cycleUsage,
-  ) async {
+    PermissionCycleUsage cycleUsage, [
+    CustomRequestType? template,
+  ]) async {
     if (!_formKeyPermission.currentState!.validate()) {
       _onValidationFailed();
       return;
@@ -715,9 +717,40 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
       final expectedTimeStr =
           '${expectedTime.hour.toString().padLeft(2, '0')}:${expectedTime.minute.toString().padLeft(2, '0')}';
 
+      final matchingConfig = template?.subtypeConfigs.where((c) {
+        if (c.nameAr == _permissionType) {
+          return true;
+        }
+        if (_permissionType == PermissionTypePolicy.earlyLeave &&
+            PermissionTypePolicy.isEarlyLeave(c.nameAr)) {
+          return true;
+        }
+        if (_permissionType == PermissionTypePolicy.midShiftExit &&
+            PermissionTypePolicy.isMidShiftExit(c.nameAr)) {
+          return true;
+        }
+        if (_permissionType == PermissionTypePolicy.lateArrival &&
+            PermissionTypePolicy.isLateArrival(c.nameAr)) {
+          return true;
+        }
+        return false;
+      }).firstOrNull;
+
+      final isQuotaExempt =
+          matchingConfig != null && !matchingConfig.deductsFromQuota;
+
+      final quotaCountLimit =
+          template?.monthlyQuotaCount ??
+          PermissionTypePolicy.regularPermissionCountLimit;
+      final quotaHoursLimit =
+          template?.monthlyQuotaHours ??
+          PermissionTypePolicy.regularPermissionHoursLimit;
+
       final quotaExhausted = PermissionTypePolicy.isRegularQuotaExhausted(
         usedCount: cycleUsage.usedCount,
         usedHours: cycleUsage.usedHours,
+        countLimit: quotaCountLimit,
+        hoursLimit: quotaHoursLimit,
       );
 
       final req = PermissionModel(
@@ -734,8 +767,10 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
         durationMinutes: _permissionDurationHours * 60,
         reason: _permissionReasonController.text.trim(),
         status: 'pending',
-        isExceedingQuota: quotaExhausted,
-        isDeductible: _isDeductiblePermission || quotaExhausted,
+        isExceedingQuota: isQuotaExempt ? false : quotaExhausted,
+        isDeductible:
+            isQuotaExempt ? false : (_isDeductiblePermission || quotaExhausted),
+        isQuotaExempt: isQuotaExempt,
         isSubmittedAfterWorkStart: false,
         monthKey: monthKey,
       );
@@ -2378,24 +2413,32 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
 
   Widget _buildPermissionForm(UserModel user, ThemeData theme) {
     final cycle = PayrollCycle.forDate(_permissionDate);
-    return StreamBuilder<PermissionCycleUsage>(
-      stream: _cachedStream<PermissionCycleUsage>(
-        'permission-usage:${user.uid}:${cycle.key}',
-        () => PermissionService().watchCycleUsage(
-          userId: user.uid,
-          cycleKey: cycle.key,
-        ),
+    return StreamBuilder<CustomRequestType>(
+      stream: _cachedStream<CustomRequestType>(
+        'permission-template',
+        () => PermissionService().watchPermissionTemplate(),
       ),
-      // The legacy user counter can be polluted by an approval from an older
-      // cycle. Permission documents for this cycle are the source of truth.
-      initialData: PermissionCycleUsage.zero,
-      builder:
-          (context, snapshot) => _buildPermissionFormForCycle(
-            user,
-            theme,
-            cycle,
-            snapshot.data ?? PermissionCycleUsage.zero,
+      builder: (context, templateSnapshot) {
+        final template = templateSnapshot.data;
+        return StreamBuilder<PermissionCycleUsage>(
+          stream: _cachedStream<PermissionCycleUsage>(
+            'permission-usage:${user.uid}:${cycle.key}',
+            () => PermissionService().watchCycleUsage(
+              userId: user.uid,
+              cycleKey: cycle.key,
+            ),
           ),
+          initialData: PermissionCycleUsage.zero,
+          builder:
+              (context, snapshot) => _buildPermissionFormForCycle(
+                user,
+                theme,
+                cycle,
+                snapshot.data ?? PermissionCycleUsage.zero,
+                template,
+              ),
+        );
+      },
     );
   }
 
@@ -2404,12 +2447,71 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
     ThemeData theme,
     PayrollCycle cycle,
     PermissionCycleUsage usage,
+    CustomRequestType? template,
   ) {
+    final quotaCountLimit =
+        template?.monthlyQuotaCount ??
+        PermissionTypePolicy.regularPermissionCountLimit;
+    final quotaHoursLimit =
+        template?.monthlyQuotaHours ??
+        PermissionTypePolicy.regularPermissionHoursLimit;
+
     final quotaExhausted = PermissionTypePolicy.isRegularQuotaExhausted(
       usedCount: usage.usedCount,
       usedHours: usage.usedHours,
+      countLimit: quotaCountLimit,
+      hoursLimit: quotaHoursLimit,
     );
-    final deductibleSelected = quotaExhausted || _isDeductiblePermission;
+
+    final List<CustomSubtypeConfig> availableSubtypes;
+    if (template != null && template.subtypeConfigs.isNotEmpty) {
+      availableSubtypes = template.subtypeConfigs;
+    } else if (template != null && template.subtypes.isNotEmpty) {
+      availableSubtypes =
+          template.subtypes
+              .map(
+                (s) => CustomSubtypeConfig(nameAr: s, deductsFromQuota: true),
+              )
+              .toList();
+    } else {
+      availableSubtypes = const [
+        CustomSubtypeConfig(nameAr: 'مغادرة مبكرة', deductsFromQuota: true),
+        CustomSubtypeConfig(nameAr: 'مغادرة والعودة', deductsFromQuota: true),
+        CustomSubtypeConfig(nameAr: 'تأخير حضور', deductsFromQuota: true),
+      ];
+    }
+
+    bool isSubtypeSelected(CustomSubtypeConfig config) {
+      if (_permissionType == config.nameAr) return true;
+      if (_permissionType == 'early_leave' &&
+          PermissionTypePolicy.isEarlyLeave(config.nameAr)) {
+        return true;
+      }
+      if (_permissionType == PermissionTypePolicy.earlyLeave &&
+          PermissionTypePolicy.isEarlyLeave(config.nameAr)) {
+        return true;
+      }
+      if (_permissionType == PermissionTypePolicy.midShiftExit &&
+          PermissionTypePolicy.isMidShiftExit(config.nameAr)) {
+        return true;
+      }
+      if (_permissionType == PermissionTypePolicy.lateArrival &&
+          PermissionTypePolicy.isLateArrival(config.nameAr)) {
+        return true;
+      }
+      return false;
+    }
+
+    final isCurrentSubtypeExempt = availableSubtypes.any(
+      (c) => isSubtypeSelected(c) && !c.deductsFromQuota,
+    );
+
+    final deductibleSelected =
+        !isCurrentSubtypeExempt && (quotaExhausted || _isDeductiblePermission);
+
+    final isLate = PermissionTypePolicy.isLateArrival(_permissionType);
+    final isEarly = PermissionTypePolicy.isEarlyLeave(_permissionType);
+    final isMid = PermissionTypePolicy.isMidShiftExit(_permissionType);
 
     return Form(
       key: _formKeyPermission,
@@ -2459,7 +2561,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
                               ),
                             ),
                             Text(
-                              '${usage.usedCount} / 2 أذونات',
+                              '${usage.usedCount} / $quotaCountLimit أذونات',
                               style: theme.textTheme.bodySmall!.copyWith(
                                 color: ZaWolfColors.permissionTeal,
                                 fontWeight: FontWeight.bold,
@@ -2478,7 +2580,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
                               ),
                             ),
                             Text(
-                              '${usage.usedHours.toStringAsFixed(1)} / 5 ساعات',
+                              '${usage.usedHours.toStringAsFixed(1)} / ${quotaHoursLimit.toStringAsFixed(quotaHoursLimit.truncateToDouble() == quotaHoursLimit ? 0 : 1)} ساعات',
                               style: theme.textTheme.bodySmall!.copyWith(
                                 color: Colors.white,
                                 fontWeight: FontWeight.bold,
@@ -2498,45 +2600,58 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
             Wrap(
               spacing: 10,
               runSpacing: 10,
-              children: [
-                ChoiceChip(
-                  label: const Center(child: Text('مغادرة مبكرة')),
-                  selected: _permissionType == 'early_leave',
-                  onSelected: (val) {
-                    if (val) setState(() => _permissionType = 'early_leave');
-                  },
-                  selectedColor: ZaWolfColors.permissionTeal,
-                  checkmarkColor: ZaWolfColors.textPrimary,
-                ),
-                ChoiceChip(
-                  label: const Center(child: Text('مغادرة والعودة')),
-                  selected:
-                      _permissionType == PermissionTypePolicy.midShiftExit,
+              children: availableSubtypes.map((config) {
+                final selected = isSubtypeSelected(config);
+                return ChoiceChip(
+                  label: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(config.nameAr),
+                      if (!config.deductsFromQuota) ...[
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 2,
+                          ),
+                          decoration: BoxDecoration(
+                            color: ZaWolfColors.success.withValues(
+                              alpha: 0.2,
+                            ),
+                            borderRadius: BorderRadius.circular(4),
+                            border: Border.all(
+                              color: ZaWolfColors.success.withValues(
+                                alpha: 0.6,
+                              ),
+                              width: 0.8,
+                            ),
+                          ),
+                          child: const Text(
+                            'بدون خصم',
+                            style: TextStyle(
+                              fontSize: 10,
+                              color: ZaWolfColors.success,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                  selected: selected,
                   onSelected: (val) {
                     if (val) {
-                      setState(
-                        () =>
-                            _permissionType = PermissionTypePolicy.midShiftExit,
-                      );
+                      setState(() => _permissionType = config.nameAr);
                     }
                   },
                   selectedColor: ZaWolfColors.permissionTeal,
                   checkmarkColor: ZaWolfColors.textPrimary,
-                ),
-                ChoiceChip(
-                  label: const Center(child: Text('تأخير حضور')),
-                  selected: _permissionType == 'late_arrival',
-                  onSelected: (val) {
-                    if (val) setState(() => _permissionType = 'late_arrival');
-                  },
-                  selectedColor: ZaWolfColors.permissionTeal,
-                  checkmarkColor: ZaWolfColors.textPrimary,
-                ),
-              ],
+                );
+              }).toList(),
             ),
             const SizedBox(height: 16),
 
-            if (quotaExhausted) ...[
+            if (quotaExhausted && !isCurrentSubtypeExempt) ...[
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
@@ -2572,7 +2687,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
             ],
 
             // Late arrival policy if selected
-            if (_permissionType == 'late_arrival') ...[
+            if (isLate) ...[
               Container(
                 padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
@@ -2629,12 +2744,10 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
-                  _permissionType == PermissionTypePolicy.lateArrival
-                      ? 'وقت الحضور المتوقع:'
-                      : 'وقت المغادرة المتوقع:',
+                  isLate ? 'وقت الحضور المتوقع:' : 'وقت المغادرة المتوقع:',
                   style: theme.textTheme.bodyMedium,
                 ),
-                if (_permissionType == PermissionTypePolicy.midShiftExit)
+                if (!isLate && !isEarly)
                   TextButton.icon(
                     icon: const Icon(
                       Icons.alarm,
@@ -2659,7 +2772,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
                   ),
               ],
             ),
-            if (_permissionType != PermissionTypePolicy.midShiftExit)
+            if (isLate || isEarly)
               Text(
                 'يتم حساب الوقت تلقائياً من جدول عملك والمدة المختارة.',
                 style: theme.textTheme.bodySmall?.copyWith(
@@ -2668,7 +2781,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
                 textDirection: TextDirection.rtl,
               ),
             const Divider(color: ZaWolfColors.surface02),
-            if (_permissionType == PermissionTypePolicy.midShiftExit) ...[
+            if (isMid) ...[
               Builder(
                 builder: (context) {
                   final departureMinutes =
@@ -2762,7 +2875,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
             ),
             const SizedBox(height: 20),
 
-            if (quotaExhausted) ...[
+            if (quotaExhausted && !isCurrentSubtypeExempt) ...[
               Container(
                 padding: const EdgeInsets.all(8),
                 margin: const EdgeInsets.only(bottom: 12),
@@ -2781,7 +2894,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
             ],
 
             _buildSubmitButtonArea(
-              onPressed: () => _submitPermission(user, usage),
+              onPressed: () => _submitPermission(user, usage, template),
               text: 'تقديم طلب الإذن',
               secondaryText: 'SUBMIT PERMISSION',
               accentColor: const Color(0xFF00B4D8),

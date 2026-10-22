@@ -268,4 +268,45 @@ class CustomRequestTemplateRepositoryImpl implements CustomRequestTemplateReposi
   Future<void> deleteRequestType(String id) async {
     await _firestore.collection('customRequestTypes').doc(id).delete();
   }
+
+  @override
+  Stream<CustomRequestType> watchPermissionTemplate() {
+    return _firestore
+        .collection('customRequestTypes')
+        .snapshots()
+        .map((snapshot) {
+      final matches = snapshot.docs
+          .map((d) => CustomRequestType.fromMap(d.data(), d.id))
+          .where((t) => t.id == 'core_permissions' || t.category == 'permission')
+          .toList();
+      if (matches.isNotEmpty) {
+        return matches.firstWhere(
+          (m) => m.id == 'core_permissions',
+          orElse: () => matches.first,
+        );
+      }
+      return defaultCoreRequestTypes.firstWhere(
+        (t) => t.id == 'core_permissions',
+      );
+    });
+  }
+
+  @override
+  Future<CustomRequestType> getPermissionTemplate() async {
+    try {
+      final snap = await _firestore.collection('customRequestTypes').get();
+      final matches = snap.docs
+          .map((d) => CustomRequestType.fromMap(d.data(), d.id))
+          .where((t) => t.id == 'core_permissions' || t.category == 'permission')
+          .toList();
+      if (matches.isNotEmpty) {
+        return matches.firstWhere(
+          (m) => m.id == 'core_permissions',
+          orElse: () => matches.first,
+        );
+      }
+    } catch (_) {}
+    return defaultCoreRequestTypes.firstWhere((t) => t.id == 'core_permissions');
+  }
 }
+

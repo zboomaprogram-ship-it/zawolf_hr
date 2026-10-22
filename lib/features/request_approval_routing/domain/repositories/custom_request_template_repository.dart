@@ -4,4 +4,6 @@ abstract interface class CustomRequestTemplateRepository {
   Future<List<CustomRequestType>> loadRequestTypes();
   Future<void> saveRequestType(CustomRequestType requestType);
   Future<void> deleteRequestType(String id);
+  Stream<CustomRequestType> watchPermissionTemplate();
+  Future<CustomRequestType> getPermissionTemplate();
 }
