@@ -2592,8 +2592,19 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
     final deductibleSelected =
         !isCurrentSubtypeExempt && (quotaExhausted || _isDeductiblePermission);
 
-    final isExamType = PermissionTypePolicy.isExam(_permissionType);
-    final effectiveType = isExamType ? _examTimingMode : _permissionType;
+    final selectedConfig = availableSubtypes.where((c) => isSubtypeSelected(c)).firstOrNull;
+    final explicitCanonical = selectedConfig?.permissionCanonicalType;
+    final isExplicitFixed = explicitCanonical != null && explicitCanonical != 'flexible';
+    final isFlexible = !isExplicitFixed &&
+        (explicitCanonical == 'flexible' ||
+            PermissionTypePolicy.isExam(_permissionType) ||
+            (selectedConfig != null &&
+                PermissionTypePolicy.isExam(selectedConfig.nameAr)));
+
+    final effectiveType = isExplicitFixed
+        ? explicitCanonical
+        : (isFlexible ? _examTimingMode : _permissionType);
+
     final isLate = PermissionTypePolicy.isLateArrival(effectiveType);
     final isEarly = PermissionTypePolicy.isEarlyLeave(effectiveType);
     final isMid = PermissionTypePolicy.resolveCanonicalType(effectiveType) ==
@@ -2737,7 +2748,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
             ),
             const SizedBox(height: 16),
 
-            if (isExamType) ...[
+            if (isFlexible) ...[
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(

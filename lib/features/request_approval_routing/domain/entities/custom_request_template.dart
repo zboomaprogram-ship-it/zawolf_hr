@@ -2,9 +2,10 @@
 class CustomSubtypeConfig {
   final String nameAr;
   final bool deductsFromQuota;
-  final String quotaKey; // 'daysOff', 'casual', 'none'
+  final String quotaKey; // 'daysOff', 'casual', 'permissions', 'none'
   final bool requiresAttachment;
   final int? maxDays;
+  final String? permissionCanonicalType; // 'flexible', 'early_leave', 'late_arrival', 'mid_shift_exit'
 
   const CustomSubtypeConfig({
     required this.nameAr,
@@ -12,6 +13,7 @@ class CustomSubtypeConfig {
     this.quotaKey = 'daysOff',
     this.requiresAttachment = false,
     this.maxDays,
+    this.permissionCanonicalType,
   });
 
   Map<String, dynamic> toMap() => {
@@ -20,6 +22,8 @@ class CustomSubtypeConfig {
     'quotaKey': quotaKey,
     'requiresAttachment': requiresAttachment,
     'maxDays': maxDays,
+    if (permissionCanonicalType != null)
+      'permissionCanonicalType': permissionCanonicalType,
   };
 
   factory CustomSubtypeConfig.fromMap(Map<String, dynamic> map) => CustomSubtypeConfig(
@@ -28,6 +32,7 @@ class CustomSubtypeConfig {
     quotaKey: map['quotaKey'] as String? ?? 'daysOff',
     requiresAttachment: map['requiresAttachment'] as bool? ?? false,
     maxDays: (map['maxDays'] as num?)?.toInt(),
+    permissionCanonicalType: map['permissionCanonicalType'] as String?,
   );
 }
 

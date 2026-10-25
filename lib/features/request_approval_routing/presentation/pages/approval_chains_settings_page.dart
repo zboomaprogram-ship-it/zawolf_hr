@@ -482,11 +482,13 @@ class _EditRequestTypeDialogState extends State<_EditRequestTypeDialog> {
       };
 
   void _openSubtypeConfigDialog(CustomSubtypeConfig? existing, int? index) {
+    final isPermission = _category == 'permission' || widget.existing?.id == 'core_permissions';
     final nameCtrl = TextEditingController(text: existing?.nameAr ?? '');
     bool deducts = existing?.deductsFromQuota ?? true;
-    String quotaKey = existing?.quotaKey ?? (_category == 'permission' ? 'permissions' : 'daysOff');
+    String quotaKey = existing?.quotaKey ?? (isPermission ? 'permissions' : 'daysOff');
     bool reqAttach = existing?.requiresAttachment ?? false;
     final maxDaysCtrl = TextEditingController(text: existing?.maxDays?.toString() ?? '');
+    String permissionCanonicalType = existing?.permissionCanonicalType ?? 'flexible';
 
     showDialog(
       context: context,
@@ -509,6 +511,36 @@ class _EditRequestTypeDialogState extends State<_EditRequestTypeDialog> {
                       ),
                     ),
                     const SizedBox(height: 12),
+                    if (isPermission) ...[
+                      DropdownButtonFormField<String>(
+                        initialValue: permissionCanonicalType,
+                        decoration: const InputDecoration(
+                          labelText: 'سلوك وتوقيت الإذن في النظام',
+                          border: OutlineInputBorder(),
+                          helperText: 'يحدد نوع الإذن ومواعيده المقبولة لدى قواعد أمان النظام',
+                        ),
+                        items: const [
+                          DropdownMenuItem(
+                            value: 'flexible',
+                            child: Text('مرن (يحدد الموظف: مبكر / تأخير / خروج مؤقت)'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'early_leave',
+                            child: Text('انصراف مبكر دائماً'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'late_arrival',
+                            child: Text('تأخير صباحي دائماً'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'mid_shift_exit',
+                            child: Text('خروج مؤقت وعودة أثناء الدوام'),
+                          ),
+                        ],
+                        onChanged: (val) => setDlgState(() => permissionCanonicalType = val ?? 'flexible'),
+                      ),
+                      const SizedBox(height: 12),
+                    ],
                     SwitchListTile(
                       title: const Text('يخصم من الرصيد'),
                       subtitle: const Text('هل يتم احتساب هذا النوع وخصمه من الرصيد الدوري؟'),
@@ -565,6 +597,8 @@ class _EditRequestTypeDialogState extends State<_EditRequestTypeDialog> {
                     quotaKey: quotaKey,
                     requiresAttachment: reqAttach,
                     maxDays: maxDays,
+                    permissionCanonicalType:
+                        isPermission ? permissionCanonicalType : null,
                   );
                   setState(() {
                     if (index != null && index >= 0 && index < _subtypeConfigs.length) {
@@ -637,6 +671,20 @@ class _EditRequestTypeDialogState extends State<_EditRequestTypeDialog> {
                         visualDensity: VisualDensity.compact,
                         avatar: const Icon(Icons.calendar_today, size: 14),
                         label: Text('الحد: ${item.maxDays} يوم', style: TextStyle(fontSize: 10)),
+                      ),
+                    if (item.permissionCanonicalType != null)
+                      Chip(
+                        visualDensity: VisualDensity.compact,
+                        avatar: const Icon(Icons.tune, size: 14),
+                        label: Text(
+                          switch (item.permissionCanonicalType) {
+                            'early_leave' => 'انصراف مبكر',
+                            'late_arrival' => 'تأخير صباحي',
+                            'mid_shift_exit' => 'خروج مؤقت وعودة',
+                            _ => 'توقيت مرن',
+                          },
+                          style: const TextStyle(fontSize: 10),
+                        ),
                       ),
                   ],
                 ),
