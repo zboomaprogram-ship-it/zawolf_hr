@@ -79,6 +79,7 @@ void main() {
 
   test('exam permission maps canonically to mid_shift_exit and is quota exempt', () {
     expect(PermissionTypePolicy.isExam('إذن امتحان'), isTrue);
+    expect(PermissionTypePolicy.isExam('اذن امتحان'), isTrue);
     expect(PermissionTypePolicy.isExam('امتحان'), isTrue);
     expect(PermissionTypePolicy.isQuotaExemptType('إذن امتحان'), isTrue);
     expect(

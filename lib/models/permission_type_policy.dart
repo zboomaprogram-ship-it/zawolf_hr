@@ -20,10 +20,16 @@ class PermissionTypePolicy {
   }
 
   static bool isExam(String type) {
-    return type == 'إذن امتحان' ||
-        type == 'امتحان' ||
-        type == 'exam' ||
-        type == 'إذن امتحانات';
+    final normalized = type
+        .replaceAll('أ', 'ا')
+        .replaceAll('إ', 'ا')
+        .replaceAll('آ', 'ا')
+        .trim();
+    return normalized == 'اذن امتحان' ||
+        normalized == 'امتحان' ||
+        normalized == 'exam' ||
+        normalized == 'اذن امتحانات' ||
+        normalized.contains('امتحان');
   }
 
   static bool isQuotaExemptType(String type) {

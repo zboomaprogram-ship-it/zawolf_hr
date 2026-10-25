@@ -85,6 +85,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
 
   // Permission form fields
   String _permissionType = PermissionTypePolicy.earlyLeave;
+  String _examTimingMode = PermissionTypePolicy.earlyLeave;
   DateTime _permissionDate = DateTime.now();
   TimeOfDay _selectedTime = const TimeOfDay(hour: 14, minute: 0);
   int _permissionDurationHours = 2;
@@ -366,8 +367,11 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
       employee.workSchedule.endTime,
       const TimeOfDay(hour: 17, minute: 0),
     );
+    final effectiveType = PermissionTypePolicy.isExam(_permissionType)
+        ? _examTimingMode
+        : _permissionType;
     final minutes = PermissionTypePolicy.resolveExpectedMinutes(
-      permissionType: _permissionType,
+      permissionType: effectiveType,
       durationMinutes: _permissionDurationHours * 60,
       workStartMinutes: start.hour * 60 + start.minute,
       workEndMinutes: end.hour * 60 + end.minute,
@@ -764,8 +768,9 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
         hoursLimit: quotaHoursLimit,
       );
 
-      final canonicalType =
-          PermissionTypePolicy.resolveCanonicalType(_permissionType);
+      final canonicalType = PermissionTypePolicy.isExam(_permissionType)
+          ? _examTimingMode
+          : PermissionTypePolicy.resolveCanonicalType(_permissionType);
 
       final req = PermissionModel(
         permissionId: '',
@@ -2587,9 +2592,11 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
     final deductibleSelected =
         !isCurrentSubtypeExempt && (quotaExhausted || _isDeductiblePermission);
 
-    final isLate = PermissionTypePolicy.isLateArrival(_permissionType);
-    final isEarly = PermissionTypePolicy.isEarlyLeave(_permissionType);
-    final isMid = PermissionTypePolicy.resolveCanonicalType(_permissionType) ==
+    final isExamType = PermissionTypePolicy.isExam(_permissionType);
+    final effectiveType = isExamType ? _examTimingMode : _permissionType;
+    final isLate = PermissionTypePolicy.isLateArrival(effectiveType);
+    final isEarly = PermissionTypePolicy.isEarlyLeave(effectiveType);
+    final isMid = PermissionTypePolicy.resolveCanonicalType(effectiveType) ==
         PermissionTypePolicy.midShiftExit;
 
     return Form(
@@ -2729,6 +2736,99 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
               }).toList(),
             ),
             const SizedBox(height: 16),
+
+            if (isExamType) ...[
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: ZaWolfColors.surface02,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color: ZaWolfColors.permissionTeal.withValues(alpha: 0.35),
+                  ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(
+                          Icons.school_outlined,
+                          color: ZaWolfColors.permissionTeal,
+                          size: 18,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          'توقيت إذن الامتحان:',
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        ChoiceChip(
+                          label: const Text('انصراف مبكر'),
+                          selected:
+                              _examTimingMode == PermissionTypePolicy.earlyLeave,
+                          onSelected: (val) {
+                            if (val) {
+                              setState(
+                                () =>
+                                    _examTimingMode =
+                                        PermissionTypePolicy.earlyLeave,
+                              );
+                            }
+                          },
+                          selectedColor: ZaWolfColors.permissionTeal,
+                          checkmarkColor: ZaWolfColors.textPrimary,
+                        ),
+                        ChoiceChip(
+                          label: const Text('تأخير صباحي'),
+                          selected:
+                              _examTimingMode ==
+                              PermissionTypePolicy.lateArrival,
+                          onSelected: (val) {
+                            if (val) {
+                              setState(
+                                () =>
+                                    _examTimingMode =
+                                        PermissionTypePolicy.lateArrival,
+                              );
+                            }
+                          },
+                          selectedColor: ZaWolfColors.permissionTeal,
+                          checkmarkColor: ZaWolfColors.textPrimary,
+                        ),
+                        ChoiceChip(
+                          label: const Text('خروج مؤقت وعودة'),
+                          selected:
+                              _examTimingMode ==
+                              PermissionTypePolicy.midShiftExit,
+                          onSelected: (val) {
+                            if (val) {
+                              setState(
+                                () =>
+                                    _examTimingMode =
+                                        PermissionTypePolicy.midShiftExit,
+                              );
+                            }
+                          },
+                          selectedColor: ZaWolfColors.permissionTeal,
+                          checkmarkColor: ZaWolfColors.textPrimary,
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+            ],
 
             if (quotaExhausted && !isCurrentSubtypeExempt) ...[
               Container(
