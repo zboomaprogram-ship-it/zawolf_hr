@@ -24,6 +24,9 @@ class EmployeeDeductionEntry {
   final String? attendanceStatus;
   final DateTime? checkInTime;
   final DateTime? checkOutTime;
+  final int? lateMinutes;
+  final String? detailedExplanation;
+  final String? policyRule;
 
   const EmployeeDeductionEntry({
     required this.id,
@@ -39,6 +42,9 @@ class EmployeeDeductionEntry {
     this.attendanceStatus,
     this.checkInTime,
     this.checkOutTime,
+    this.lateMinutes,
+    this.detailedExplanation,
+    this.policyRule,
   });
 
   bool get hasCompleteDetails =>
@@ -50,11 +56,17 @@ class EmployeeDeductionEntry {
   List<String> get detailLines => [
     'المصدر: ${_orFallback(sourceLabel, 'غير محدد')}',
     'السبب: ${_orFallback(reasonLabel, 'غير مسجل في السجل التاريخي')}',
+    if (detailedExplanation != null && detailedExplanation!.trim().isNotEmpty)
+      'التفاصيل: $detailedExplanation',
     if (attendanceStatus != null) 'حالة الحضور: $attendanceStatus',
+    if (lateMinutes != null && lateMinutes! > 0)
+      'مقدار التأخير: $lateMinutes دقيقة',
     if (checkInTime != null)
       'وقت الحضور: ${DateFormat('hh:mm a', 'ar').format(checkInTime!)}',
     if (checkOutTime != null)
       'وقت الانصراف: ${DateFormat('hh:mm a', 'ar').format(checkOutTime!)}',
+    if (policyRule != null && policyRule!.trim().isNotEmpty)
+      'لائحة الخصم: $policyRule',
     'تاريخ الاستحقاق: ${_orFallback(date, 'غير متاح')}',
     'الخصم: $fractionLabel',
     'القيمة: ${_amountLabel()}',
@@ -305,6 +317,47 @@ class EmployeeDeductionService {
                       ? item.salaryDeductionLabel
                       : fallbackReason,
             );
+    // Compute detailed explanation and policy rule
+    String? explanation;
+    String? rule;
+    if (isAbsent) {
+      explanation =
+          'غياب كامل: لم يتم تسجيل أي بصمة حضور خلال ساعات العمل المقررة وبدون إجازة رسمية مسجلة.';
+      rule =
+          'المادة 12 من لائحة العمل: غياب يوم كامل بدون إذن مسبق = خصم يوم كامل (1.00) من الراتب.';
+    } else if (item.lateMinutes > 0) {
+      final timeStr = item.checkInTime != null
+          ? DateFormat('hh:mm a', 'ar').format(item.checkInTime!)
+          : '';
+      if (item.lateMinutes <= 30) {
+        explanation = timeStr.isNotEmpty
+            ? 'تأخر في الحضور بمقدار ${item.lateMinutes} دقيقة (تم تسجيل الحضور الساعة $timeStr بعد موعد بداية العمل 09:00 ص).'
+            : 'تأخر في الحضور بمقدار ${item.lateMinutes} دقيقة عن بداية وردية العمل.';
+        rule =
+            'لائحة الحضور: تأخير من 16 إلى 30 دقيقة (بعد فترة السماح 15 دقيقة) = خصم ربع يوم (0.25).';
+      } else if (item.lateMinutes <= 60) {
+        explanation = timeStr.isNotEmpty
+            ? 'تأخر في الحضور بمقدار ${item.lateMinutes} دقيقة (تم تسجيل الحضور الساعة $timeStr بعد موعد بداية العمل 09:00 ص).'
+            : 'تأخر في الحضور بمقدار ${item.lateMinutes} دقيقة عن بداية وردية العمل.';
+        rule =
+            'لائحة الحضور: تأخير من 31 إلى 60 دقيقة = خصم نصف يوم (0.50).';
+      } else {
+        explanation = timeStr.isNotEmpty
+            ? 'تأخر كبير في الحضور بمقدار ${item.lateMinutes} دقيقة (تم تسجيل الحضور الساعة $timeStr).'
+            : 'تأخر في الحضور بمقدار ${item.lateMinutes} دقيقة (أكثر من ساعة كاملة).';
+        rule =
+            'لائحة الحضور: تأخير أكثر من 60 دقيقة = خصم يوم كامل (1.00).';
+      }
+    } else if (item.checkOutTime == null &&
+        (item.salaryDeductionCode.toLowerCase().contains('checkout') ||
+            fraction == 0.25)) {
+      explanation = 'عدم تسجيل بصمة الانصراف عند نهاية وردية العمل.';
+      rule =
+          'لائحة الحضور: عدم تسجيل بصمة الانصراف بدون عذر = خصم ربع يوم (0.25).';
+    } else if (item.salaryDeductionLabel.trim().isNotEmpty) {
+      explanation = item.salaryDeductionLabel.trim();
+    }
+
     return EmployeeDeductionEntry(
       id: item.attendanceId,
       date: item.date,
@@ -326,6 +379,9 @@ class EmployeeDeductionService {
               : 'حضور وانصراف',
       checkInTime: item.checkInTime,
       checkOutTime: item.checkOutTime,
+      lateMinutes: item.lateMinutes > 0 ? item.lateMinutes : null,
+      detailedExplanation: explanation,
+      policyRule: rule,
     );
   }
 
@@ -338,12 +394,14 @@ class EmployeeDeductionService {
               item.durationMinutes) ~/
           60;
       final checkout = consequence['actualCheckoutAt'];
+      final rejectionReason =
+          (consequence['rejectionReason'] as String?)?.trim();
       return EmployeeDeductionEntry(
         id: '${item.permissionId}:early_leave_rejection',
         date: item.requestDate,
         sourceLabel: 'إذن مغادرة مبكرة مرفوض',
         reasonLabel:
-            '${consequence['reasonLabel'] ?? 'استخدام مغادرة مبكرة بعد رفض الإذن'} · المطلوب $requestedHours ساعة${(consequence['rejectionReason'] as String?)?.trim().isNotEmpty == true ? ' · سبب الرفض: ${consequence['rejectionReason']}' : ''}',
+            '${consequence['reasonLabel'] ?? 'استخدام مغادرة مبكرة بعد رفض الإذن'} · المطلوب $requestedHours ساعة${rejectionReason != null && rejectionReason.isNotEmpty ? ' · سبب الرفض: $rejectionReason' : ''}',
         dayFraction: (consequence['dayFraction'] as num?)?.toDouble() ?? 0,
         approvalStatus: _normalizedStatus(
           '${consequence['status'] ?? 'pending_hr'}',
@@ -356,6 +414,10 @@ class EmployeeDeductionService {
                 : checkout is DateTime
                 ? checkout
                 : null,
+        detailedExplanation:
+            'مغادرة مقر العمل مبكراً بعد رفض طلب الإذن الرسمي أو دون موافقة الإدارة (مدة $requestedHours ساعة).',
+        policyRule:
+            'لائحة العمل: الانصراف المبكر دون إذن معتمد يستوجب خصم ساعات الغياب من الراتب.',
       );
     }
     final status =
@@ -373,6 +435,12 @@ class EmployeeDeductionService {
       currency: item.salaryCurrency,
       approvedAt: item.reviewedAt ?? item.hrReviewedAt,
       approvedByName: item.reviewerName ?? item.reviewedBy,
+      detailedExplanation:
+          item.reason.trim().isNotEmpty
+              ? 'إذن خروج استقطاعي من الراتب: ${item.reason.trim()}'
+              : 'إذن خروج استقطاعي من الراتب (${item.durationMinutes ~/ 60} ساعة).',
+      policyRule:
+          'استقطاع ساعات الإذن من الراتب وفقاً لرصيد الأذونات المستنفد.',
     );
   }
 
@@ -390,6 +458,9 @@ class EmployeeDeductionService {
       currency: null,
       approvedAt: item.approvedAt ?? item.createdAt,
       approvedByName: item.approvedByName ?? item.createdByName,
+      detailedExplanation:
+          'قرار خصم إداري صادر من إدارة الموارد البشرية: ${item.reason}',
+      policyRule: 'عقوبة / جزاء إداري معتمد في ملف الموظف.',
     );
   }
 

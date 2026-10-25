@@ -422,87 +422,331 @@ class _DepartmentProductivitySheetState
                             ),
                           ),
                         )
-                      else if (detail != null && detail.deductions.isNotEmpty)
-                        Column(
-                          children: detail.deductions.map((ded) {
+                      else if (detail != null && detail.deductions.isNotEmpty) ...[
+                        Builder(
+                          builder: (context) {
+                            final totalDays = detail.totalDeductionDays;
+                            final lateItems = detail.deductions.where(
+                              (d) =>
+                                  d.reasonLabel.contains('تأخير') ||
+                                  (d.lateMinutes != null && d.lateMinutes! > 0),
+                            );
+                            final lateDays = lateItems.fold(
+                              0.0,
+                              (sum, d) => sum + d.dayFraction,
+                            );
+                            final absentItems = detail.deductions.where(
+                              (d) =>
+                                  d.sourceLabel.contains('غياب') ||
+                                  d.reasonLabel.contains('غياب') ||
+                                  d.dayFraction >= 1.0,
+                            );
+                            final absentDays = absentItems.fold(
+                              0.0,
+                              (sum, d) => sum + d.dayFraction,
+                            );
+                            final otherItems = detail.deductions.where(
+                              (d) =>
+                                  !lateItems.contains(d) &&
+                                  !absentItems.contains(d),
+                            );
+                            final otherDays = otherItems.fold(
+                              0.0,
+                              (sum, d) => sum + d.dayFraction,
+                            );
+
                             return Container(
-                              margin: const EdgeInsets.only(bottom: 6),
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 10,
-                                vertical: 8,
-                              ),
+                              margin: const EdgeInsets.only(bottom: 12),
+                              padding: const EdgeInsets.all(12),
                               decoration: BoxDecoration(
-                                color: ZaWolfColors.surface02,
-                                borderRadius: BorderRadius.circular(8),
-                                border:
-                                    Border.all(color: ZaWolfColors.surface03),
+                                color: ZaWolfColors.warning.withValues(alpha: 0.08),
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(
+                                  color: ZaWolfColors.warning.withValues(alpha: 0.35),
+                                ),
                               ),
-                              child: Row(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Container(
-                                    padding: const EdgeInsets.all(6),
-                                    decoration: BoxDecoration(
-                                      color: ZaWolfColors.warning
-                                          .withValues(alpha: 0.15),
-                                      shape: BoxShape.circle,
-                                    ),
-                                    child: const Icon(
-                                      Icons.money_off,
-                                      size: 16,
-                                      color: ZaWolfColors.warning,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 10),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          ded.reasonLabel,
-                                          style: const TextStyle(
-                                            color: Colors.white,
-                                            fontSize: 13,
-                                            fontWeight: FontWeight.w600,
-                                          ),
-                                        ),
-                                        Text(
-                                          '${ded.date} · المصدر: ${ded.sourceLabel}',
-                                          style: const TextStyle(
-                                            color: ZaWolfColors.textSecondary,
-                                            fontSize: 11,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                  Column(
-                                    crossAxisAlignment: CrossAxisAlignment.end,
+                                  Row(
+                                    mainAxisAlignment:
+                                        MainAxisAlignment.spaceBetween,
                                     children: [
-                                      Text(
-                                        ded.fractionLabel,
-                                        style: const TextStyle(
+                                      Row(
+                                        children: [
+                                          const Icon(
+                                            Icons.summarize_outlined,
+                                            size: 18,
+                                            color: ZaWolfColors.warning,
+                                          ),
+                                          const SizedBox(width: 8),
+                                          const Text(
+                                            'إجمالي الخصومات المسجلة على الموظف',
+                                            style: TextStyle(
+                                              color: Colors.white,
+                                              fontWeight: FontWeight.bold,
+                                              fontSize: 13,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 10,
+                                          vertical: 4,
+                                        ),
+                                        decoration: BoxDecoration(
                                           color: ZaWolfColors.warning,
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 12,
+                                          borderRadius: BorderRadius.circular(8),
+                                        ),
+                                        child: Text(
+                                          '${totalDays.toStringAsFixed(2)} يوم (${detail.deductions.length} إجراء)',
+                                          style: const TextStyle(
+                                            color: Colors.black,
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 12,
+                                          ),
                                         ),
                                       ),
-                                      Text(
-                                        ded.approvalLabel,
-                                        style: TextStyle(
-                                          color: ded.approvalStatus == 'approved'
-                                              ? ZaWolfColors.success
-                                              : ZaWolfColors.textMuted,
-                                          fontSize: 10,
+                                    ],
+                                  ),
+                                  const SizedBox(height: 8),
+                                  const Divider(height: 1, color: ZaWolfColors.surface03),
+                                  const SizedBox(height: 8),
+                                  Wrap(
+                                    spacing: 8,
+                                    runSpacing: 6,
+                                    children: [
+                                      if (lateDays > 0)
+                                        _MiniBadge(
+                                          label:
+                                              'تأخيرات: ${lateDays.toStringAsFixed(2)} يوم (${lateItems.length})',
+                                          color: ZaWolfColors.warning,
                                         ),
-                                      ),
+                                      if (absentDays > 0)
+                                        _MiniBadge(
+                                          label:
+                                              'غياب: ${absentDays.toStringAsFixed(2)} يوم (${absentItems.length})',
+                                          color: ZaWolfColors.error,
+                                        ),
+                                      if (otherDays > 0)
+                                        _MiniBadge(
+                                          label:
+                                              'أخرى / جزاءات: ${otherDays.toStringAsFixed(2)} يوم (${otherItems.length})',
+                                          color: ZaWolfColors.primaryCyan,
+                                        ),
+                                      if (detail.totalDeductionAmount > 0)
+                                        _MiniBadge(
+                                          label:
+                                              'القيمة المالية: ${detail.totalDeductionAmount.toStringAsFixed(2)} ج.م',
+                                          color: Colors.amberAccent,
+                                        ),
                                     ],
                                   ),
                                 ],
                               ),
                             );
+                          },
+                        ),
+                        Column(
+                          children: detail.deductions.map((ded) {
+                            return Container(
+                              margin: const EdgeInsets.only(bottom: 8),
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: ZaWolfColors.surface02,
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(
+                                  color: ZaWolfColors.surface03,
+                                ),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Container(
+                                        padding: const EdgeInsets.all(6),
+                                        decoration: BoxDecoration(
+                                          color: ZaWolfColors.warning
+                                              .withValues(alpha: 0.15),
+                                          shape: BoxShape.circle,
+                                        ),
+                                        child: const Icon(
+                                          Icons.money_off,
+                                          size: 16,
+                                          color: ZaWolfColors.warning,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 10),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              ded.reasonLabel,
+                                              style: const TextStyle(
+                                                color: Colors.white,
+                                                fontSize: 13,
+                                                fontWeight: FontWeight.bold,
+                                              ),
+                                            ),
+                                            const SizedBox(height: 2),
+                                            Text(
+                                              '${ded.date} · المصدر: ${ded.sourceLabel}',
+                                              style: const TextStyle(
+                                                color: ZaWolfColors.textSecondary,
+                                                fontSize: 11,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      Column(
+                                        crossAxisAlignment: CrossAxisAlignment.end,
+                                        children: [
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 8,
+                                              vertical: 2,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: ZaWolfColors.warning
+                                                  .withValues(alpha: 0.15),
+                                              borderRadius:
+                                                  BorderRadius.circular(6),
+                                              border: Border.all(
+                                                color: ZaWolfColors.warning
+                                                    .withValues(alpha: 0.4),
+                                              ),
+                                            ),
+                                            child: Text(
+                                              ded.fractionLabel,
+                                              style: const TextStyle(
+                                                color: ZaWolfColors.warning,
+                                                fontWeight: FontWeight.bold,
+                                                fontSize: 11,
+                                              ),
+                                            ),
+                                          ),
+                                          const SizedBox(height: 4),
+                                          Text(
+                                            ded.approvalLabel,
+                                            style: TextStyle(
+                                              color: ded.approvalStatus == 'approved'
+                                                  ? ZaWolfColors.success
+                                                  : ZaWolfColors.textMuted,
+                                              fontSize: 10,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ],
+                                  ),
+                                  if (ded.detailedExplanation != null &&
+                                      ded.detailedExplanation!.trim().isNotEmpty) ...[
+                                    const SizedBox(height: 8),
+                                    Container(
+                                      width: double.infinity,
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 10,
+                                        vertical: 8,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: Colors.black.withValues(alpha: 0.25),
+                                        borderRadius: BorderRadius.circular(6),
+                                        border: Border.all(
+                                          color: ZaWolfColors.surface03,
+                                        ),
+                                      ),
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Row(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              const Icon(
+                                                Icons.info_outline,
+                                                size: 14,
+                                                color: ZaWolfColors.primaryCyan,
+                                              ),
+                                              const SizedBox(width: 6),
+                                              Expanded(
+                                                child: Text(
+                                                  ded.detailedExplanation!,
+                                                  style: const TextStyle(
+                                                    color: Colors.white,
+                                                    fontSize: 12,
+                                                    height: 1.35,
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                          if (ded.policyRule != null &&
+                                              ded.policyRule!.trim().isNotEmpty) ...[
+                                            const SizedBox(height: 4),
+                                            Text(
+                                              '📌 ${ded.policyRule}',
+                                              style: const TextStyle(
+                                                color: ZaWolfColors.textMuted,
+                                                fontSize: 11,
+                                              ),
+                                            ),
+                                          ],
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                  if (ded.checkInTime != null ||
+                                      ded.checkOutTime != null ||
+                                      (ded.lateMinutes != null &&
+                                          ded.lateMinutes! > 0) ||
+                                      ded.approvedByName != null) ...[
+                                    const SizedBox(height: 8),
+                                    Wrap(
+                                      spacing: 6,
+                                      runSpacing: 4,
+                                      children: [
+                                        if (ded.checkInTime != null)
+                                          _MiniBadge(
+                                            label:
+                                                'حضور: ${intl.DateFormat('hh:mm a', 'ar').format(ded.checkInTime!)}',
+                                            color: ZaWolfColors.primaryCyan,
+                                          ),
+                                        if (ded.lateMinutes != null &&
+                                            ded.lateMinutes! > 0)
+                                          _MiniBadge(
+                                            label:
+                                                'تأخير: ${ded.lateMinutes} دقيقة',
+                                            color: ZaWolfColors.warning,
+                                          ),
+                                        if (ded.checkOutTime != null)
+                                          _MiniBadge(
+                                            label:
+                                                'انصراف: ${intl.DateFormat('hh:mm a', 'ar').format(ded.checkOutTime!)}',
+                                            color: ZaWolfColors.textSecondary,
+                                          ),
+                                        if (ded.approvedByName != null &&
+                                            ded.approvedByName!.isNotEmpty)
+                                          _MiniBadge(
+                                            label:
+                                                'المعتمد: ${ded.approvedByName}',
+                                            color: ZaWolfColors.textMuted,
+                                          ),
+                                      ],
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            );
                           }).toList(),
-                        )
+                        ),
+                      ]
                       else
                         Container(
                           width: double.infinity,
