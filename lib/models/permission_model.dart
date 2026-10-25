@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'permission_type_policy.dart';
 
 class PermissionModel {
   final String permissionId;
@@ -9,6 +10,7 @@ class PermissionModel {
   final String locationId;
   final String managerId;
   final String permissionType; // early_leave | late_arrival | mid_shift_exit
+  final String? subtype; // Custom subtype name (e.g. 'اذن امتحان')
   final String requestDate; // YYYY-MM-DD
   final String expectedTime; // HH:mm
   final int durationMinutes;
@@ -50,6 +52,7 @@ class PermissionModel {
     required this.locationId,
     required this.managerId,
     required this.permissionType,
+    this.subtype,
     required this.requestDate,
     required this.expectedTime,
     required this.durationMinutes,
@@ -82,6 +85,11 @@ class PermissionModel {
     this.rejectionConsequence,
   });
 
+  String get displayType =>
+      (subtype != null && subtype!.trim().isNotEmpty)
+          ? subtype!.trim()
+          : PermissionTypePolicy.arabicLabel(permissionType);
+
   factory PermissionModel.fromFirestore(DocumentSnapshot doc) {
     final data = doc.data() as Map<String, dynamic>;
     return PermissionModel(
@@ -93,6 +101,7 @@ class PermissionModel {
       locationId: data['locationId'] as String? ?? '',
       managerId: data['managerId'] as String? ?? '',
       permissionType: data['permissionType'] as String? ?? 'early_leave',
+      subtype: data['subtype'] as String?,
       requestDate: data['requestDate'] as String? ?? '',
       expectedTime: data['expectedTime'] as String? ?? '',
       durationMinutes: data['durationMinutes'] as int? ?? 0,
@@ -146,6 +155,8 @@ class PermissionModel {
       'locationId': locationId,
       'managerId': managerId,
       'permissionType': permissionType,
+      if (subtype != null && subtype!.trim().isNotEmpty)
+        'subtype': subtype!.trim(),
       'requestDate': requestDate,
       'expectedTime': expectedTime,
       'durationMinutes': durationMinutes,

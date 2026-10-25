@@ -76,4 +76,15 @@ void main() {
       13 * 60 + 30,
     );
   });
+
+  test('exam permission maps canonically to mid_shift_exit and is quota exempt', () {
+    expect(PermissionTypePolicy.isExam('إذن امتحان'), isTrue);
+    expect(PermissionTypePolicy.isExam('امتحان'), isTrue);
+    expect(PermissionTypePolicy.isQuotaExemptType('إذن امتحان'), isTrue);
+    expect(
+      PermissionTypePolicy.resolveCanonicalType('إذن امتحان'),
+      PermissionTypePolicy.midShiftExit,
+    );
+    expect(PermissionTypePolicy.arabicLabel('إذن امتحان'), 'إذن امتحان');
+  });
 }

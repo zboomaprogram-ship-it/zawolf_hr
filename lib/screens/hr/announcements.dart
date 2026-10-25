@@ -98,11 +98,11 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
   }
 
   Future<List<UserModel>> _fetchAllActiveEmployees() async {
-    final snapshot = await _db
-        .collection('users')
-        .where('isActive', isEqualTo: true)
-        .get();
-    final employees = snapshot.docs.map(UserModel.fromFirestore).toList()
+    final snapshot = await _db.collection('users').get();
+    final employees = snapshot.docs
+        .map(UserModel.fromFirestore)
+        .where((user) => user.isActive)
+        .toList()
       ..sort((a, b) => a.displayName.compareTo(b.displayName));
     return employees;
   }
@@ -395,8 +395,10 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
         'targetUserIds': recipientIds,
         'recipientCount': recipientIds.length,
         'audienceScope': _isScopedSender ? 'assigned_team' : 'organization',
-        if (_targetGroup == 'location')
+        if (_targetGroup == 'location') ...{
           'targetLocationName': _selectedLocationName,
+          'targetLocationId': _selectedLocationId,
+        },
         if (_targetGroup == 'department')
           'targetDepartments': _selectedDepartments.toList(),
         'createdBy': actor.uid,

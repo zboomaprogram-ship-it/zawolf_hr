@@ -19,11 +19,29 @@ class PermissionTypePolicy {
         type == 'مغادرة مبكرة';
   }
 
+  static bool isExam(String type) {
+    return type == 'إذن امتحان' ||
+        type == 'امتحان' ||
+        type == 'exam' ||
+        type == 'إذن امتحانات';
+  }
+
+  static bool isQuotaExemptType(String type) {
+    return isExam(type);
+  }
+
   static bool isMidShiftExit(String type) {
     return type == midShiftExit ||
         type == 'إذن خروج مؤقت أثناء العمل' ||
         type == 'مغادرة والعودة' ||
-        type == 'مغادرة والعودة أثناء الدوام';
+        type == 'مغادرة والعودة أثناء الدوام' ||
+        isExam(type);
+  }
+
+  static String resolveCanonicalType(String type) {
+    if (isLateArrival(type)) return lateArrival;
+    if (isEarlyLeave(type)) return earlyLeave;
+    return midShiftExit;
   }
 
   static int resolveExpectedMinutes({
@@ -87,6 +105,7 @@ class PermissionTypePolicy {
   }
 
   static String arabicLabel(String type) {
+    if (isExam(type)) return 'إذن امتحان';
     if (isLateArrival(type)) return 'تأخير حضور';
     if (isMidShiftExit(type)) return 'مغادرة والعودة أثناء الدوام';
     if (isEarlyLeave(type)) return 'مغادرة مبكرة';

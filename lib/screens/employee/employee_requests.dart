@@ -377,7 +377,13 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
   }
 
   String? _permissionTimeError(UserModel employee) {
-    if (_permissionType != PermissionTypePolicy.midShiftExit) return null;
+    if (PermissionTypePolicy.isExam(_permissionType)) {
+      return null;
+    }
+    if (PermissionTypePolicy.resolveCanonicalType(_permissionType) !=
+        PermissionTypePolicy.midShiftExit) {
+      return null;
+    }
     final workStart = _workTime(
       employee.workSchedule.startTime,
       const TimeOfDay(hour: 9, minute: 0),
@@ -741,7 +747,8 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
       }).firstOrNull;
 
       final isQuotaExempt =
-          matchingConfig != null && !matchingConfig.deductsFromQuota;
+          PermissionTypePolicy.isQuotaExemptType(_permissionType) ||
+          (matchingConfig != null && !matchingConfig.deductsFromQuota);
 
       final quotaCountLimit =
           template?.monthlyQuotaCount ??
@@ -757,6 +764,9 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
         hoursLimit: quotaHoursLimit,
       );
 
+      final canonicalType =
+          PermissionTypePolicy.resolveCanonicalType(_permissionType);
+
       final req = PermissionModel(
         permissionId: '',
         userId: employee.uid,
@@ -765,7 +775,8 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
         department: employee.department,
         locationId: employee.locationId,
         managerId: employee.managerId ?? '',
-        permissionType: _permissionType,
+        permissionType: canonicalType,
+        subtype: _permissionType,
         requestDate: dateStr,
         expectedTime: expectedTimeStr,
         durationMinutes: _permissionDurationHours * 60,
@@ -2515,7 +2526,8 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
 
     final List<CustomSubtypeConfig> availableSubtypes;
     if (template != null && template.subtypeConfigs.isNotEmpty) {
-      availableSubtypes = template.subtypeConfigs;
+      availableSubtypes =
+          List<CustomSubtypeConfig>.from(template.subtypeConfigs);
     } else if (template != null && template.subtypes.isNotEmpty) {
       availableSubtypes =
           template.subtypes
@@ -2524,15 +2536,30 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
               )
               .toList();
     } else {
-      availableSubtypes = const [
-        CustomSubtypeConfig(nameAr: 'مغادرة مبكرة', deductsFromQuota: true),
-        CustomSubtypeConfig(nameAr: 'مغادرة والعودة', deductsFromQuota: true),
-        CustomSubtypeConfig(nameAr: 'تأخير حضور', deductsFromQuota: true),
+      availableSubtypes = [
+        const CustomSubtypeConfig(nameAr: 'مغادرة مبكرة', deductsFromQuota: true),
+        const CustomSubtypeConfig(nameAr: 'مغادرة والعودة', deductsFromQuota: true),
+        const CustomSubtypeConfig(nameAr: 'تأخير حضور', deductsFromQuota: true),
+        const CustomSubtypeConfig(nameAr: 'إذن امتحان', deductsFromQuota: false),
       ];
+    }
+
+    if (!availableSubtypes.any((s) => PermissionTypePolicy.isExam(s.nameAr))) {
+      availableSubtypes.add(
+        const CustomSubtypeConfig(
+          nameAr: 'إذن امتحان',
+          deductsFromQuota: false,
+          quotaKey: 'none',
+        ),
+      );
     }
 
     bool isSubtypeSelected(CustomSubtypeConfig config) {
       if (_permissionType == config.nameAr) return true;
+      if (PermissionTypePolicy.isExam(_permissionType) &&
+          PermissionTypePolicy.isExam(config.nameAr)) {
+        return true;
+      }
       if (_permissionType == 'early_leave' &&
           PermissionTypePolicy.isEarlyLeave(config.nameAr)) {
         return true;
@@ -2545,7 +2572,8 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
           PermissionTypePolicy.isMidShiftExit(config.nameAr)) {
         return true;
       }
-      if (_permissionType == PermissionTypePolicy.lateArrival &&
+      if ((_permissionType == 'late_arrival' ||
+              _permissionType == PermissionTypePolicy.lateArrival) &&
           PermissionTypePolicy.isLateArrival(config.nameAr)) {
         return true;
       }
@@ -2561,7 +2589,8 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
 
     final isLate = PermissionTypePolicy.isLateArrival(_permissionType);
     final isEarly = PermissionTypePolicy.isEarlyLeave(_permissionType);
-    final isMid = PermissionTypePolicy.isMidShiftExit(_permissionType);
+    final isMid = PermissionTypePolicy.resolveCanonicalType(_permissionType) ==
+        PermissionTypePolicy.midShiftExit;
 
     return Form(
       key: _formKeyPermission,
@@ -3117,6 +3146,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
     );
     final selectedLeaveType =
         isOnProbation ? LeaveTypePolicy.unpaid : _leaveType;
+    // Note: selectedLeaveType == 'day_off' is supported as standard normal leave.
     final leaveColor = _getLeaveTypeColor(selectedLeaveType);
 
     final List<({String key, String label})> availableSubtypes;
@@ -5447,7 +5477,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
                           ),
                           const SizedBox(width: 8),
                           Text(
-                            '${PermissionTypePolicy.arabicLabel(req.permissionType)}${req.isDeductible ? ' - استقطاعي' : ''}',
+                            '${req.displayType}${req.isDeductible ? ' - استقطاعي' : ''}',
                             style: theme.textTheme.titleMedium!.copyWith(
                               color: Colors.white,
                               fontWeight: FontWeight.bold,

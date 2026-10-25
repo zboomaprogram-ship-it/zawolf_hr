@@ -1555,6 +1555,10 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                                   ),
                                 ),
                               ),
+                              const DropdownMenuItem(
+                                value: 'إذن امتحان',
+                                child: Text('إذن امتحان'),
+                              ),
                             ],
                             onChanged:
                                 saving
@@ -1985,7 +1989,17 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                                       employeeId: chosenEmployee!.employeeId,
                                       employeeName: chosenEmployee!.displayName,
                                       department: chosenEmployee!.department,
-                                      permissionType: permType,
+                                      permissionType:
+                                          PermissionTypePolicy.resolveCanonicalType(
+                                            permType,
+                                          ),
+                                      subtype:
+                                          permType !=
+                                                  PermissionTypePolicy.resolveCanonicalType(
+                                                    permType,
+                                                  )
+                                              ? permType
+                                              : null,
                                       requestDate: pDateStr,
                                       expectedTime: pTimeStr,
                                       durationMinutes: permDurationHours * 60,
@@ -6855,7 +6869,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                 title: perm.employeeName,
                 leading: Icons.schedule_outlined,
                 cells: [
-                  '${perm.permissionType == 'late_arrival' ? 'تأخير حضور' : 'مغادرة مبكرة'}${perm.isDeductible ? ' · استقطاعي' : ''}',
+                  '${perm.displayType}${perm.isDeductible ? ' · استقطاعي' : ''}',
                   '${perm.requestDate} · ${perm.expectedTime}',
                   perm.status == 'pending_hr' ? 'بانتظار HR' : 'بانتظار المدير',
                 ],
@@ -6984,7 +6998,7 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
             ),
             const SizedBox(height: 12),
             Text(
-              'نوع الإذن: ${perm.permissionType == 'late_arrival' ? 'تأخير حضور' : 'مغادرة مبكرة'}${perm.isDeductible ? ' · استقطاعي' : ''}',
+              'نوع الإذن: ${perm.displayType}${perm.isDeductible ? ' · استقطاعي' : ''}',
               style: theme.textTheme.titleMedium!.copyWith(color: Colors.white),
             ),
             _buildRequestDateLine(

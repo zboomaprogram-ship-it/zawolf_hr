@@ -43,11 +43,12 @@ class CustomRequestTemplateRepositoryImpl implements CustomRequestTemplateReposi
       isActive: true,
       monthlyQuotaCount: 2,
       monthlyQuotaHours: 4.0,
-      subtypes: ['إذن تأخير صباحي', 'إذن انصراف مبكر', 'إذن خروج مؤقت أثناء العمل'],
+      subtypes: ['إذن تأخير صباحي', 'إذن انصراف مبكر', 'إذن خروج مؤقت أثناء العمل', 'إذن امتحان'],
       subtypeConfigs: [
         CustomSubtypeConfig(nameAr: 'إذن تأخير صباحي', deductsFromQuota: true, quotaKey: 'permissions'),
         CustomSubtypeConfig(nameAr: 'إذن انصراف مبكر', deductsFromQuota: true, quotaKey: 'permissions'),
         CustomSubtypeConfig(nameAr: 'إذن خروج مؤقت أثناء العمل', deductsFromQuota: true, quotaKey: 'permissions'),
+        CustomSubtypeConfig(nameAr: 'إذن امتحان', deductsFromQuota: false, quotaKey: 'none'),
       ],
       fields: [
         CustomRequestField(key: 'date', labelAr: 'تاريخ الإذن', type: 'date', isRequired: true),

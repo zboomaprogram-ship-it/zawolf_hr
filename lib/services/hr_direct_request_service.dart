@@ -182,7 +182,13 @@ class HrDirectRequestService {
       department: employee.department,
       locationId: employee.locationId,
       managerId: '',
-      permissionType: permissionType,
+      permissionType:
+          PermissionTypePolicy.resolveCanonicalType(permissionType),
+      subtype:
+          permissionType !=
+                  PermissionTypePolicy.resolveCanonicalType(permissionType)
+              ? permissionType
+              : null,
       requestDate: dateKey,
       expectedTime: expectedTime,
       durationMinutes: durationMinutes,

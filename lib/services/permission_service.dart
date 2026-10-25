@@ -111,13 +111,16 @@ class PermissionService {
           .where((t) => t.id == 'core_permissions' || t.category == 'permission')
           .toList();
       if (matches.isNotEmpty) {
-        return matches.firstWhere(
+        final t = matches.firstWhere(
           (m) => m.id == 'core_permissions',
           orElse: () => matches.first,
         );
+        return _ensureExamSubtype(t);
       }
-      return CustomRequestTemplateRepositoryImpl.defaultCoreRequestTypes.firstWhere(
-        (t) => t.id == 'core_permissions',
+      return _ensureExamSubtype(
+        CustomRequestTemplateRepositoryImpl.defaultCoreRequestTypes.firstWhere(
+          (t) => t.id == 'core_permissions',
+        ),
       );
     });
   }
@@ -130,14 +133,57 @@ class PermissionService {
           .where((t) => t.id == 'core_permissions' || t.category == 'permission')
           .toList();
       if (matches.isNotEmpty) {
-        return matches.firstWhere(
+        final t = matches.firstWhere(
           (m) => m.id == 'core_permissions',
           orElse: () => matches.first,
         );
+        return _ensureExamSubtype(t);
       }
     } catch (_) {}
-    return CustomRequestTemplateRepositoryImpl.defaultCoreRequestTypes.firstWhere(
-      (t) => t.id == 'core_permissions',
+    return _ensureExamSubtype(
+      CustomRequestTemplateRepositoryImpl.defaultCoreRequestTypes.firstWhere(
+        (t) => t.id == 'core_permissions',
+      ),
+    );
+  }
+
+  static CustomRequestType _ensureExamSubtype(CustomRequestType template) {
+    final hasExamConfig = template.subtypeConfigs.any(
+      (c) => PermissionTypePolicy.isExam(c.nameAr),
+    );
+    final hasExamSubtype = template.subtypes.any(
+      (s) => PermissionTypePolicy.isExam(s),
+    );
+    if (hasExamConfig && hasExamSubtype) {
+      return template;
+    }
+    final configs = List<CustomSubtypeConfig>.from(template.subtypeConfigs);
+    if (!hasExamConfig) {
+      configs.add(
+        const CustomSubtypeConfig(
+          nameAr: 'إذن امتحان',
+          deductsFromQuota: false,
+          quotaKey: 'none',
+        ),
+      );
+    }
+    final subtypes = List<String>.from(template.subtypes);
+    if (!hasExamSubtype) {
+      subtypes.add('إذن امتحان');
+    }
+    return CustomRequestType(
+      id: template.id,
+      nameAr: template.nameAr,
+      category: template.category,
+      descriptionAr: template.descriptionAr,
+      isActive: template.isActive,
+      subtypes: subtypes,
+      subtypeConfigs: configs,
+      fields: template.fields,
+      approvalSteps: template.approvalSteps,
+      monthlyQuotaCount: template.monthlyQuotaCount,
+      monthlyQuotaHours: template.monthlyQuotaHours,
+      updatedAt: template.updatedAt,
     );
   }
 
@@ -325,6 +371,17 @@ class PermissionService {
       throw Exception('مدة الإذن يجب أن تكون من ساعة إلى 4 ساعات كحد أقصى.');
     }
 
+    final canonicalPermissionType =
+        PermissionTypePolicy.resolveCanonicalType(req.permissionType);
+    final effectiveSubtype = req.subtype ??
+        (req.permissionType != canonicalPermissionType
+            ? req.permissionType
+            : null);
+    final isExempt = req.isQuotaExempt ||
+        PermissionTypePolicy.isQuotaExemptType(req.permissionType) ||
+        (effectiveSubtype != null &&
+            PermissionTypePolicy.isQuotaExemptType(effectiveSubtype));
+
     // Only free permissions consume the regular monthly allowance. Deductible
     // permissions remain separate so they cannot expand or corrupt that quota.
     final monthlyDocs =
@@ -349,7 +406,7 @@ class PermissionService {
     final usedCount = cycleUsage.usedCount;
     final usedHours = cycleUsage.usedHours;
 
-    if (!req.isQuotaExempt) {
+    if (!isExempt) {
       final quotaExhausted = PermissionTypePolicy.isRegularQuotaExhausted(
         usedCount: usedCount,
         usedHours: usedHours,
@@ -380,7 +437,7 @@ class PermissionService {
     // A late-arrival request can be submitted before or after the scheduled start,
     // but cannot amend a day that already has an actual check-in.
     var isLateSubmission = false;
-    if (PermissionTypePolicy.isLateArrival(req.permissionType)) {
+    if (PermissionTypePolicy.isLateArrival(canonicalPermissionType)) {
       final workStartStr =
           employee.workSchedule.startTime ?? policyConfig.defaultStartTime;
       final attendance =
@@ -401,7 +458,7 @@ class PermissionService {
       );
     }
 
-    final isDeductibleFinal = !req.isQuotaExempt && req.isDeductible;
+    final isDeductibleFinal = !isExempt && req.isDeductible;
     final deduction =
         isDeductibleFinal
             ? AttendanceDeduction(
@@ -452,15 +509,16 @@ class PermissionService {
       department: req.department,
       locationId: req.locationId,
       managerId: firstManagerId,
-      permissionType: req.permissionType,
+      permissionType: canonicalPermissionType,
+      subtype: effectiveSubtype,
       requestDate: req.requestDate,
       expectedTime: req.expectedTime,
       durationMinutes: req.durationMinutes,
       reason: req.reason,
       status: finalStatus,
-      isExceedingQuota: req.isQuotaExempt ? false : req.isDeductible,
+      isExceedingQuota: isExempt ? false : req.isDeductible,
       isDeductible: isDeductibleFinal,
-      isQuotaExempt: req.isQuotaExempt,
+      isQuotaExempt: isExempt,
       isSubmittedAfterWorkStart: isLateSubmission,
       salaryDeductionFraction: deduction.dayFraction,
       salaryDeductionAmount: salaryDeductionAmount,
@@ -550,7 +608,7 @@ class PermissionService {
           type: 'permission_pending_manager',
           title: 'طلب إذن بانتظار موافقتك',
           body:
-              '${req.employeeName} يطلب إذن ${PermissionTypePolicy.arabicLabel(req.permissionType)}.'
+              '${req.employeeName} يطلب إذن ${req.displayType}.'
               '${req.isDeductible ? " (إذن استقطاعي: ${deduction.arabicLabel})" : ""}',
           data: {'permissionId': permRef.id},
         );
