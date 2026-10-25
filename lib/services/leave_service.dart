@@ -484,7 +484,31 @@ class LeaveService {
       submittedAt: req.submittedAt,
       convertToAnnual: req.convertToAnnual,
     );
-    validateBalance(effectiveRequest, employee.leaveBalance);
+
+    final template = await _db
+        .collection('customRequestTypes')
+        .doc('core_leaves')
+        .get()
+        .then((doc) => doc.exists ? CustomRequestType.fromMap(doc.data()!, doc.id) : null)
+        .catchError((_) => null);
+
+    final subtypeConfig = template?.subtypeConfigs.where(
+      (c) => c.nameAr == req.leaveType || LeaveTypePolicy.normalize(c.nameAr) == LeaveTypePolicy.normalize(req.leaveType),
+    ).firstOrNull;
+
+    final deducts = subtypeConfig != null
+        ? subtypeConfig.deductsFromQuota
+        : (!LeaveTypePolicy.isExam(effectiveType) && !LeaveTypePolicy.isUnpaid(effectiveType));
+
+    if (subtypeConfig != null && subtypeConfig.requiresAttachment) {
+      if ((req.attachmentUrl ?? '').trim().isEmpty) {
+        throw Exception('يجب إرفاق المستند المؤيد للطلب لإتمام التقديم.');
+      }
+    }
+
+    if (deducts) {
+      validateBalance(effectiveRequest, employee.leaveBalance);
+    }
 
     // 1. Validate overlaps (basic check against other active leaves)
     final overlaps =
@@ -601,7 +625,9 @@ class LeaveService {
       'currentPeriodKey': cycle.key,
       'currentPeriodRange': cycle.arabicRangeLabel,
       'deductsLeaveBalance':
-          LeaveTypePolicy.balanceKeys(effectiveType).isNotEmpty,
+          deducts && LeaveTypePolicy.balanceKeys(effectiveType).isNotEmpty,
+      'isQuotaExempt': !deducts,
+      if (subtypeConfig != null) 'subtypeConfigSnapshot': subtypeConfig.toMap(),
       if (LeaveTypePolicy.balanceKey(effectiveType) != null)
         'leaveBalanceKey': LeaveTypePolicy.balanceKey(effectiveType),
       if (LeaveTypePolicy.balanceKeys(effectiveType).isNotEmpty)

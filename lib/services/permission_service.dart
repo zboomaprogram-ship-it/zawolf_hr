@@ -382,6 +382,25 @@ class PermissionService {
         (effectiveSubtype != null &&
             PermissionTypePolicy.isQuotaExemptType(effectiveSubtype));
 
+    final template = await _db
+        .collection('customRequestTypes')
+        .doc('core_permissions')
+        .get()
+        .then((doc) => doc.exists ? CustomRequestType.fromMap(doc.data()!, doc.id) : null)
+        .catchError((_) => null);
+
+    final subtypeConfig = template?.subtypeConfigs.where(
+      (c) => c.nameAr == req.permissionType || c.nameAr == effectiveSubtype,
+    ).firstOrNull;
+
+    final isTrulyExempt = isExempt || (subtypeConfig != null && !subtypeConfig.deductsFromQuota);
+
+    if (subtypeConfig != null && subtypeConfig.requiresAttachment) {
+      if ((req.attachmentUrl ?? '').trim().isEmpty) {
+        throw Exception('يجب إرفاق المستند المؤيد للطلب لإتمام التقديم.');
+      }
+    }
+
     // Only free permissions consume the regular monthly allowance. Deductible
     // permissions remain separate so they cannot expand or corrupt that quota.
     final monthlyDocs =
@@ -406,7 +425,7 @@ class PermissionService {
     final usedCount = cycleUsage.usedCount;
     final usedHours = cycleUsage.usedHours;
 
-    if (!isExempt) {
+    if (!isTrulyExempt) {
       final quotaExhausted = PermissionTypePolicy.isRegularQuotaExhausted(
         usedCount: usedCount,
         usedHours: usedHours,
@@ -458,7 +477,7 @@ class PermissionService {
       );
     }
 
-    final isDeductibleFinal = !isExempt && req.isDeductible;
+    final isDeductibleFinal = !isTrulyExempt && req.isDeductible;
     final deduction =
         isDeductibleFinal
             ? AttendanceDeduction(

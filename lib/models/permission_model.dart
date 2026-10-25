@@ -41,6 +41,7 @@ class PermissionModel {
   final String? managerReviewedBy;
   final String? managerReviewerComment;
   final bool isRead;
+  final String? attachmentUrl;
   final Map<String, dynamic>? rejectionConsequence;
 
   PermissionModel({
@@ -53,6 +54,7 @@ class PermissionModel {
     required this.managerId,
     required this.permissionType,
     this.subtype,
+    this.attachmentUrl,
     required this.requestDate,
     required this.expectedTime,
     required this.durationMinutes,
@@ -137,6 +139,7 @@ class PermissionModel {
       managerReviewedBy: data['managerReviewedBy'] as String?,
       managerReviewerComment: data['managerReviewerComment'] as String?,
       isRead: data['isRead'] as bool? ?? false,
+      attachmentUrl: data['attachmentUrl'] as String?,
       rejectionConsequence:
           data['rejectionConsequence'] is Map
               ? Map<String, dynamic>.from(
@@ -157,6 +160,8 @@ class PermissionModel {
       'permissionType': permissionType,
       if (subtype != null && subtype!.trim().isNotEmpty)
         'subtype': subtype!.trim(),
+      if (attachmentUrl != null && attachmentUrl!.trim().isNotEmpty)
+        'attachmentUrl': attachmentUrl!.trim(),
       'requestDate': requestDate,
       'expectedTime': expectedTime,
       'durationMinutes': durationMinutes,

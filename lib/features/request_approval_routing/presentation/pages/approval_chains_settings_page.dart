@@ -741,70 +741,105 @@ class _EditRequestTypeDialogState extends State<_EditRequestTypeDialog> {
             margin: const EdgeInsets.symmetric(vertical: 4),
             child: Padding(
               padding: const EdgeInsets.all(8.0),
-              child: Row(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Expanded(
-                    flex: 3,
-                    child: TextFormField(
-                      initialValue: f.labelAr,
-                      decoration: const InputDecoration(labelText: 'عنوان الحقل'),
-                      onChanged: (val) {
-                        _fields[idx] = CustomRequestField(
-                          key: f.key,
-                          labelAr: val,
-                          type: f.type,
-                          isRequired: f.isRequired,
-                          dropdownOptions: f.dropdownOptions,
-                        );
-                      },
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  DropdownButton<String>(
-                    value: f.type,
-                    items: const [
-                      DropdownMenuItem(value: 'text', child: Text('نص')),
-                      DropdownMenuItem(value: 'number', child: Text('رقم')),
-                      DropdownMenuItem(value: 'date', child: Text('تاريخ / أيام')),
-                      DropdownMenuItem(value: 'checkbox', child: Text('موافقة / نعم-لا')),
-                      DropdownMenuItem(value: 'upload', child: Text('مرفق ملف')),
-                    ],
-                    onChanged: (val) {
-                      setState(() {
-                        _fields[idx] = CustomRequestField(
-                          key: f.key,
-                          labelAr: f.labelAr,
-                          type: val ?? 'text',
-                          isRequired: f.isRequired,
-                          dropdownOptions: f.dropdownOptions,
-                        );
-                      });
-                    },
-                  ),
-                  const SizedBox(width: 8),
                   Row(
                     children: [
-                      const Text('إلزامي'),
-                      Checkbox(
-                        value: f.isRequired,
+                      Expanded(
+                        flex: 3,
+                        child: TextFormField(
+                          initialValue: f.labelAr,
+                          decoration: const InputDecoration(labelText: 'عنوان الحقل'),
+                          onChanged: (val) {
+                            _fields[idx] = CustomRequestField(
+                              key: f.key,
+                              labelAr: val,
+                              type: f.type,
+                              isRequired: f.isRequired,
+                              dropdownOptions: f.dropdownOptions,
+                            );
+                          },
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      DropdownButton<String>(
+                        value: const ['text', 'number', 'date', 'date_range', 'select', 'dropdown', 'checkbox', 'file', 'upload'].contains(f.type)
+                            ? (f.type == 'dropdown' ? 'select' : f.type == 'upload' ? 'file' : f.type)
+                            : 'text',
+                        items: const [
+                          DropdownMenuItem(value: 'text', child: Text('نص عادي')),
+                          DropdownMenuItem(value: 'number', child: Text('رقم / كمية')),
+                          DropdownMenuItem(value: 'date', child: Text('تاريخ محدد')),
+                          DropdownMenuItem(value: 'date_range', child: Text('فترة تواريخ')),
+                          DropdownMenuItem(value: 'select', child: Text('قائمة اختيارات')),
+                          DropdownMenuItem(value: 'checkbox', child: Text('موافقة / نعم-لا')),
+                          DropdownMenuItem(value: 'file', child: Text('مرفق ملف / مستند')),
+                        ],
                         onChanged: (val) {
                           setState(() {
                             _fields[idx] = CustomRequestField(
                               key: f.key,
                               labelAr: f.labelAr,
-                              type: f.type,
-                              isRequired: val ?? false,
+                              type: val ?? 'text',
+                              isRequired: f.isRequired,
                               dropdownOptions: f.dropdownOptions,
                             );
                           });
                         },
                       ),
+                      const SizedBox(width: 8),
+                      Row(
+                        children: [
+                          const Text('إلزامي'),
+                          Checkbox(
+                            value: f.isRequired,
+                            onChanged: (val) {
+                              setState(() {
+                                _fields[idx] = CustomRequestField(
+                                  key: f.key,
+                                  labelAr: f.labelAr,
+                                  type: f.type,
+                                  isRequired: val ?? false,
+                                  dropdownOptions: f.dropdownOptions,
+                                );
+                              });
+                            },
+                          ),
+                        ],
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.delete, color: Colors.red, size: 20),
+                        onPressed: () => setState(() => _fields.removeAt(idx)),
+                      ),
                     ],
                   ),
-                  IconButton(
-                    icon: const Icon(Icons.delete, color: Colors.red, size: 20),
-                    onPressed: () => setState(() => _fields.removeAt(idx)),
-                  ),
+                  if (f.type == 'select' || f.type == 'dropdown') ...[
+                    const SizedBox(height: 6),
+                    TextFormField(
+                      initialValue: f.dropdownOptions.join('، '),
+                      decoration: const InputDecoration(
+                        labelText: 'خيارات القائمة (مفصولة بفاصلة ، أو ,)',
+                        hintText: 'مثال: صباحي، مسائي، دوام كامل',
+                        isDense: true,
+                        border: OutlineInputBorder(),
+                      ),
+                      onChanged: (val) {
+                        final split = val
+                            .split(RegExp('[,،]'))
+                            .map((s) => s.trim())
+                            .where((s) => s.isNotEmpty)
+                            .toList();
+                        _fields[idx] = CustomRequestField(
+                          key: f.key,
+                          labelAr: f.labelAr,
+                          type: f.type,
+                          isRequired: f.isRequired,
+                          dropdownOptions: split,
+                        );
+                      },
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -861,7 +896,7 @@ class _EditRequestTypeDialogState extends State<_EditRequestTypeDialog> {
                         flex: 3,
                         child: DropdownButton<String>(
                           isExpanded: true,
-                          value: const ['direct_manager', 'it', 'hr', 'accounting', 'legal', 'department_pool', 'coo', 'ceo'].contains(s.approverType)
+                          value: const ['direct_manager', 'it', 'hr', 'accounting', 'legal', 'department_pool', 'coo', 'ceo', 'specific_user'].contains(s.approverType)
                               ? s.approverType
                               : 'direct_manager',
                           items: const [
@@ -872,6 +907,7 @@ class _EditRequestTypeDialogState extends State<_EditRequestTypeDialog> {
                             DropdownMenuItem(value: 'legal', child: Text('الشؤون القانونية (Legal Department)')),
                             DropdownMenuItem(value: 'coo', child: Text('المدير التنفيذي للعمليات (COO)')),
                             DropdownMenuItem(value: 'ceo', child: Text('الرئيس التنفيذي (CEO)')),
+                            DropdownMenuItem(value: 'specific_user', child: Text('شخص محدد بالاسم / الكود')),
                             DropdownMenuItem(value: 'department_pool', child: Text('أي موظف في قسم مخصص (Pool)')),
                           ],
                           onChanged: (val) {
@@ -892,6 +928,7 @@ class _EditRequestTypeDialogState extends State<_EditRequestTypeDialog> {
                               'legal' => 'الشؤون القانونية (Legal)',
                               'coo' => 'المدير التنفيذي للعمليات (COO)',
                               'ceo' => 'الرئيس التنفيذي (CEO)',
+                              'specific_user' => 'شخص محدد',
                               'department_pool' => 'قسم محدد',
                               _ => 'المدير المباشر',
                             };
@@ -902,6 +939,8 @@ class _EditRequestTypeDialogState extends State<_EditRequestTypeDialog> {
                                 approverType: type,
                                 labelAr: defaultLabel,
                                 department: dept,
+                                specificUserId: s.specificUserId,
+                                specificUserName: s.specificUserName,
                                 conditionType: s.conditionType,
                                 minDays: s.minDays,
                                 maxDays: s.maxDays,
@@ -943,6 +982,37 @@ class _EditRequestTypeDialogState extends State<_EditRequestTypeDialog> {
                           },
                         ),
                       ),
+                      if (s.approverType == 'specific_user') ...[
+                        const SizedBox(width: 8),
+                        Expanded(
+                          flex: 2,
+                          child: TextFormField(
+                            key: ValueKey('user_${s.stepId}'),
+                            initialValue: s.specificUserName ?? s.specificUserId ?? '',
+                            decoration: const InputDecoration(
+                              labelText: 'اسم / كود الشخص',
+                              contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                            ),
+                            onChanged: (val) {
+                              _approvalSteps[idx] = ApprovalChainStep(
+                                stepId: s.stepId,
+                                order: s.order,
+                                approverType: s.approverType,
+                                labelAr: s.labelAr,
+                                department: s.department,
+                                specificUserId: val.trim(),
+                                specificUserName: val.trim(),
+                                conditionType: s.conditionType,
+                                minDays: s.minDays,
+                                maxDays: s.maxDays,
+                                minAmount: s.minAmount,
+                                maxAmount: s.maxAmount,
+                                applicableSubtypes: s.applicableSubtypes,
+                              );
+                            },
+                          ),
+                        ),
+                      ],
                       if (s.approverType == 'department_pool') ...[
                         const SizedBox(width: 8),
                         Expanded(

@@ -39,7 +39,7 @@ class CustomSubtypeConfig {
 class CustomRequestField {
   final String key;
   final String labelAr;
-  final String type; // 'text', 'number', 'date', 'checkbox', 'dropdown', 'upload'
+  final String type; // 'text', 'number', 'date', 'date_range', 'select', 'dropdown', 'checkbox', 'file', 'upload'
   final bool isRequired;
   final List<String> dropdownOptions;
 
@@ -59,13 +59,18 @@ class CustomRequestField {
     'dropdownOptions': dropdownOptions,
   };
 
-  factory CustomRequestField.fromMap(Map<String, dynamic> map) => CustomRequestField(
-    key: map['key'] as String? ?? '',
-    labelAr: map['labelAr'] as String? ?? '',
-    type: map['type'] as String? ?? 'text',
-    isRequired: map['isRequired'] as bool? ?? false,
-    dropdownOptions: (map['dropdownOptions'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? const [],
-  );
+  factory CustomRequestField.fromMap(Map<String, dynamic> map) {
+    final opts = (map['dropdownOptions'] as List<dynamic>?)?.map((e) => e.toString()).toList() ??
+        (map['options'] as List<dynamic>?)?.map((e) => e.toString()).toList() ??
+        const <String>[];
+    return CustomRequestField(
+      key: map['key'] as String? ?? '',
+      labelAr: map['labelAr'] as String? ?? '',
+      type: map['type'] as String? ?? 'text',
+      isRequired: map['isRequired'] as bool? ?? false,
+      dropdownOptions: opts,
+    );
+  }
 }
 
 class ApprovalChainStep {
@@ -137,6 +142,7 @@ class CustomRequestType {
   final String nameAr;
   final String category; // 'leave', 'permission', 'general', 'financial', 'administrative'
   final String descriptionAr;
+  final String? icon;
   final bool isActive;
   final List<String> subtypes;
   final List<CustomSubtypeConfig> subtypeConfigs;
@@ -151,6 +157,7 @@ class CustomRequestType {
     required this.nameAr,
     required this.category,
     this.descriptionAr = '',
+    this.icon,
     this.isActive = true,
     this.subtypes = const [],
     this.subtypeConfigs = const [],
@@ -166,6 +173,7 @@ class CustomRequestType {
     'nameAr': nameAr,
     'category': category,
     'descriptionAr': descriptionAr,
+    if (icon != null) 'icon': icon,
     'isActive': isActive,
     'subtypes': subtypes.isNotEmpty ? subtypes : subtypeConfigs.map((s) => s.nameAr).toList(),
     'subtypeConfigs': subtypeConfigs.map((s) => s.toMap()).toList(),
@@ -179,8 +187,8 @@ class CustomRequestType {
   factory CustomRequestType.fromMap(Map<String, dynamic> map, String docId) {
     final rawSubtypes = (map['subtypes'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? const <String>[];
     final rawConfigs = (map['subtypeConfigs'] as List<dynamic>?)
-        ?.whereType<Map<String, dynamic>>()
-        .map((c) => CustomSubtypeConfig.fromMap(c))
+        ?.whereType<Map>()
+        .map((c) => CustomSubtypeConfig.fromMap(Map<String, dynamic>.from(c)))
         .toList();
 
     List<CustomSubtypeConfig> configs;
@@ -199,17 +207,18 @@ class CustomRequestType {
       nameAr: map['nameAr'] as String? ?? '',
       category: map['category'] as String? ?? 'general',
       descriptionAr: map['descriptionAr'] as String? ?? '',
+      icon: map['icon'] as String?,
       isActive: map['isActive'] as bool? ?? true,
       subtypes: subtypesList,
       subtypeConfigs: configs,
       fields: (map['fields'] as List<dynamic>?)
-              ?.whereType<Map<String, dynamic>>()
-              .map((f) => CustomRequestField.fromMap(f))
+              ?.whereType<Map>()
+              .map((f) => CustomRequestField.fromMap(Map<String, dynamic>.from(f)))
               .toList() ??
           const [],
       approvalSteps: (map['approvalSteps'] as List<dynamic>?)
-              ?.whereType<Map<String, dynamic>>()
-              .map((s) => ApprovalChainStep.fromMap(s))
+              ?.whereType<Map>()
+              .map((s) => ApprovalChainStep.fromMap(Map<String, dynamic>.from(s)))
               .toList() ??
           const [],
       monthlyQuotaCount: (map['monthlyQuotaCount'] as num?)?.toInt(),
@@ -218,3 +227,4 @@ class CustomRequestType {
     );
   }
 }
+

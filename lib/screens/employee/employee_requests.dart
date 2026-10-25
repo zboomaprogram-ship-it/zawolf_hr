@@ -51,6 +51,7 @@ import '../../utils/permission_cycle_accounting.dart';
 import '../../features/company_os/domain/entities/operational_request_category.dart';
 import '../../features/request_approval_routing/domain/entities/custom_request_template.dart';
 import '../../features/request_approval_routing/data/custom_request_template_repository_impl.dart';
+import '../../features/request_approval_routing/presentation/widgets/dynamic_form_fields_widget.dart';
 import '../../navigation/company_os_requests_entry.dart';
 import 'widgets/virtual_office_game_widget.dart';
 
@@ -132,6 +133,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
   final _administrativeNotesController = TextEditingController();
   final _administrativeAttachmentController = TextEditingController();
   String? _administrativeAttachmentUrl;
+  Map<String, dynamic> _customFieldValues = {};
   final _fieldMissionSiteController = TextEditingController();
   final _fieldMissionReasonController = TextEditingController();
   final _formKeyFieldMission = GlobalKey<FormState>();
@@ -3082,6 +3084,16 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
                 ),
               ),
             ],
+            if (template != null && template.fields.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              DynamicFormFieldsWidget(
+                fields: template.fields,
+                values: _customFieldValues,
+                isEnabled: !_loading,
+                onChanged: (map) => setState(() => _customFieldValues = map),
+              ),
+            ],
+            const SizedBox(height: 8),
 
             _buildSubmitButtonArea(
               onPressed: () => _submitPermission(user, usage, template),
@@ -3511,6 +3523,15 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
                         onStored: (uri) => setState(() => _attachmentUrl = uri),
                       ),
             ),
+            if (template != null && template.fields.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              DynamicFormFieldsWidget(
+                fields: template.fields,
+                values: _customFieldValues,
+                isEnabled: !_loading,
+                onChanged: (map) => setState(() => _customFieldValues = map),
+              ),
+            ],
             const SizedBox(height: 16),
 
             _buildSubmitButtonArea(
