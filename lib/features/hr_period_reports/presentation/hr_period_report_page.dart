@@ -7,9 +7,30 @@ import '../../../components/wolf_card.dart';
 import '../../../theme/theme.dart';
 import '../domain/hr_period_report.dart';
 import 'hr_period_report_cubit.dart';
+import 'hr_report_pdf_export.dart';
+import 'hr_report_pdf_generator.dart';
 
-class HrPeriodReportPage extends StatelessWidget {
+class HrPeriodReportPage extends StatefulWidget {
   const HrPeriodReportPage({super.key});
+
+  @override
+  State<HrPeriodReportPage> createState() => _HrPeriodReportPageState();
+}
+
+class _HrPeriodReportPageState extends State<HrPeriodReportPage> {
+  final TextEditingController _searchCtrl = TextEditingController();
+  String _searchQuery = '';
+  String? _selectedDepartment;
+  String _deductionFilter = 'all'; // 'all', 'with_deductions', 'late', 'absence', 'no_deductions'
+  String _sortBy = 'deductions_desc'; // 'deductions_desc', 'late_desc', 'absent_desc', 'name_asc'
+  bool _exportingPdf = false;
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) => Directionality(
     textDirection: TextDirection.rtl,
@@ -78,13 +99,15 @@ class HrPeriodReportPage extends StatelessWidget {
         ),
         if (state.report != null)
           SizedBox(
-            width: 260,
+            width: 220,
             child: DropdownButtonFormField<String?>(
               initialValue: state.employeeId,
               isExpanded: true,
               decoration: const InputDecoration(
                 labelText: 'الموظف',
                 border: OutlineInputBorder(),
+                isDense: true,
+                contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
               ),
               items: [
                 const DropdownMenuItem<String?>(
@@ -101,6 +124,27 @@ class HrPeriodReportPage extends StatelessWidget {
               onChanged: context.read<HrPeriodReportCubit>().selectEmployee,
             ),
           ),
+        FilledButton.icon(
+          style: FilledButton.styleFrom(
+            backgroundColor: ZaWolfColors.primaryCyan,
+            foregroundColor: Colors.black,
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          ),
+          onPressed: _exportingPdf || state.report == null
+              ? null
+              : () => _exportPdf(context, state.report!, state.period),
+          icon: _exportingPdf
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black),
+                )
+              : const Icon(Icons.picture_as_pdf_outlined, size: 18),
+          label: const Text(
+            'تحميل / طباعة تقرير PDF',
+            style: TextStyle(fontWeight: FontWeight.bold),
+          ),
+        ),
       ],
     ),
   );
@@ -237,6 +281,8 @@ class HrPeriodReportPage extends StatelessWidget {
           ],
         ),
       ),
+      const SizedBox(height: 22),
+      _allEmployeesDeductionsSection(context, report),
       const SizedBox(height: 18),
       Text('السجل التفصيلي', style: Theme.of(context).textTheme.headlineSmall),
       const SizedBox(height: 8),
@@ -505,6 +551,7 @@ class HrPeriodReportPage extends StatelessWidget {
 
   static String _date(DateTime date) =>
       DateFormat('yyyy/MM/dd', 'ar').format(date);
+
   static String _status(String value) =>
       {
         'present': 'حاضر',
@@ -513,9 +560,609 @@ class HrPeriodReportPage extends StatelessWidget {
         'day_off': 'راحة أسبوعية / يوم غير مجدول',
         'field_mission': 'مهمة ميدانية',
         'not_attended': 'غياب دون تسجيل',
+        'absent': 'غياب',
       }[value] ??
       value;
+
+  Widget _allEmployeesDeductionsSection(
+    BuildContext context,
+    HrPeriodReport report,
+  ) {
+    final allItems = report.employees
+        .map((e) => EmployeeDeductionSummaryItem.fromReport(employee: e, report: report))
+        .toList();
+
+    final departments = report.employees
+        .map((e) => e.department.trim())
+        .where((d) => d.isNotEmpty)
+        .toSet()
+        .toList()
+      ..sort();
+
+    var filtered = allItems.where((item) {
+      if (_selectedDepartment != null &&
+          _selectedDepartment!.isNotEmpty &&
+          item.employee.department.trim() != _selectedDepartment) {
+        return false;
+      }
+      if (_searchQuery.trim().isNotEmpty) {
+        final q = _searchQuery.trim().toLowerCase();
+        final matchName = item.employee.name.toLowerCase().contains(q);
+        final matchCode = item.employee.code.toLowerCase().contains(q);
+        if (!matchName && !matchCode) return false;
+      }
+      switch (_deductionFilter) {
+        case 'with_deductions':
+          return item.totalDeductionDays > 0 || item.deductionCount > 0;
+        case 'late':
+          return item.lateDeductionDays > 0 || item.lateDays > 0;
+        case 'absence':
+          return item.absentDeductionDays > 0 || item.absentDays > 0;
+        case 'no_deductions':
+          return item.totalDeductionDays == 0 && item.deductionCount == 0;
+        case 'all':
+        default:
+          return true;
+      }
+    }).toList();
+
+    switch (_sortBy) {
+      case 'deductions_desc':
+        filtered.sort((a, b) => b.totalDeductionDays.compareTo(a.totalDeductionDays));
+        break;
+      case 'late_desc':
+        filtered.sort((a, b) => b.lateDays.compareTo(a.lateDays));
+        break;
+      case 'absent_desc':
+        filtered.sort((a, b) => b.absentDays.compareTo(a.absentDays));
+        break;
+      case 'name_asc':
+        filtered.sort((a, b) => a.employee.name.compareTo(b.employee.name));
+        break;
+    }
+
+    final totalDeductionsSum = filtered.fold<double>(0.0, (s, e) => s + e.totalDeductionDays);
+    final totalActionsSum = filtered.fold<int>(0, (s, e) => s + e.deductionCount);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'جدول حصر الخصومات وحضور جميع الموظفين',
+                  style: Theme.of(context).textTheme.headlineSmall,
+                ),
+                const SizedBox(height: 2),
+                const Text(
+                  'بيان شامل بخصومات وتأخيرات وغياب الموظفين مع إمكانية الفلترة والتفاصيل والطباعة.',
+                  style: TextStyle(color: ZaWolfColors.textSecondary, fontSize: 13),
+                ),
+              ],
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: ZaWolfColors.primaryCyan.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: ZaWolfColors.primaryCyan.withValues(alpha: 0.4)),
+              ),
+              child: Text(
+                'عرض ${filtered.length} من ${allItems.length} موظف · إجمالي: ${totalDeductionsSum.toStringAsFixed(2)} يوم ($totalActionsSum إجراء)',
+                style: const TextStyle(
+                  color: ZaWolfColors.primaryCyan,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 12,
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        WolfCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Wrap(
+                spacing: 12,
+                runSpacing: 10,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  SizedBox(
+                    width: 250,
+                    child: TextField(
+                      controller: _searchCtrl,
+                      decoration: InputDecoration(
+                        hintText: 'بحث باسم الموظف أو الكود...',
+                        prefixIcon: const Icon(Icons.search, size: 18),
+                        suffixIcon: _searchQuery.isNotEmpty
+                            ? IconButton(
+                                icon: const Icon(Icons.clear, size: 16),
+                                onPressed: () {
+                                  _searchCtrl.clear();
+                                  setState(() => _searchQuery = '');
+                                },
+                              )
+                            : null,
+                        isDense: true,
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                        border: const OutlineInputBorder(),
+                      ),
+                      onChanged: (val) => setState(() => _searchQuery = val),
+                    ),
+                  ),
+                  SizedBox(
+                    width: 200,
+                    child: DropdownButtonFormField<String?>(
+                      initialValue: _selectedDepartment,
+                      isExpanded: true,
+                      decoration: const InputDecoration(
+                        labelText: 'القسم',
+                        isDense: true,
+                        contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                        border: OutlineInputBorder(),
+                      ),
+                      items: [
+                        const DropdownMenuItem<String?>(value: null, child: Text('كل الأقسام')),
+                        ...departments.map(
+                          (dept) => DropdownMenuItem<String?>(value: dept, child: Text(dept)),
+                        ),
+                      ],
+                      onChanged: (val) => setState(() => _selectedDepartment = val),
+                    ),
+                  ),
+                  SizedBox(
+                    width: 190,
+                    child: DropdownButtonFormField<String>(
+                      initialValue: _sortBy,
+                      isExpanded: true,
+                      decoration: const InputDecoration(
+                        labelText: 'ترتيب حسب',
+                        isDense: true,
+                        contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                        border: OutlineInputBorder(),
+                      ),
+                      items: const [
+                        DropdownMenuItem(value: 'deductions_desc', child: Text('الأعلى خصماً')),
+                        DropdownMenuItem(value: 'late_desc', child: Text('الأعلى تأخيراً')),
+                        DropdownMenuItem(value: 'absent_desc', child: Text('الأعلى غياباً')),
+                        DropdownMenuItem(value: 'name_asc', child: Text('أبجدياً بالاسم')),
+                      ],
+                      onChanged: (val) => setState(() => _sortBy = val ?? 'deductions_desc'),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              const Divider(height: 1, color: ZaWolfColors.surface03),
+              const SizedBox(height: 10),
+              Wrap(
+                spacing: 8,
+                runSpacing: 6,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  const Text('فلترة الخصم: ', style: TextStyle(color: ZaWolfColors.textSecondary, fontSize: 12)),
+                  ChoiceChip(
+                    label: const Text('كل الموظفين'),
+                    selected: _deductionFilter == 'all',
+                    onSelected: (_) => setState(() => _deductionFilter = 'all'),
+                  ),
+                  ChoiceChip(
+                    label: const Text('عليهم خصومات فقط'),
+                    selected: _deductionFilter == 'with_deductions',
+                    onSelected: (_) => setState(() => _deductionFilter = 'with_deductions'),
+                  ),
+                  ChoiceChip(
+                    label: const Text('تأخيرات فقط'),
+                    selected: _deductionFilter == 'late',
+                    onSelected: (_) => setState(() => _deductionFilter = 'late'),
+                  ),
+                  ChoiceChip(
+                    label: const Text('غياب فقط'),
+                    selected: _deductionFilter == 'absence',
+                    onSelected: (_) => setState(() => _deductionFilter = 'absence'),
+                  ),
+                  ChoiceChip(
+                    label: const Text('بدون خصومات'),
+                    selected: _deductionFilter == 'no_deductions',
+                    onSelected: (_) => setState(() => _deductionFilter = 'no_deductions'),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        WolfCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (filtered.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.all(32),
+                  child: Center(
+                    child: Text('لا يوجد موظفون يطابقون شروط البحث أو الفلترة المحددة.'),
+                  ),
+                )
+              else
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: DataTable(
+                    columnSpacing: 16,
+                    horizontalMargin: 12,
+                    headingRowColor: WidgetStateProperty.all(ZaWolfColors.surface02),
+                    columns: const [
+                      DataColumn(label: Text('#')),
+                      DataColumn(label: Text('الموظف والكود')),
+                      DataColumn(label: Text('القسم')),
+                      DataColumn(label: Text('الحضور')),
+                      DataColumn(label: Text('التأخير')),
+                      DataColumn(label: Text('الغياب')),
+                      DataColumn(label: Text('إجمالي الخصم')),
+                      DataColumn(label: Text('عدد الإجراءات')),
+                      DataColumn(label: Text('تفصيل الخصومات')),
+                      DataColumn(label: Text('المبلغ المقدر')),
+                      DataColumn(label: Text('التفاصيل')),
+                    ],
+                    rows: filtered.asMap().entries.map((entry) {
+                      final index = entry.key + 1;
+                      final item = entry.value;
+                      final hasDed = item.totalDeductionDays > 0;
+
+                      return DataRow(
+                        cells: [
+                          DataCell(Text('$index')),
+                          DataCell(
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Text(
+                                  item.employee.name,
+                                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                                ),
+                                Text(
+                                  item.employee.code,
+                                  style: const TextStyle(color: ZaWolfColors.textSecondary, fontSize: 11),
+                                ),
+                              ],
+                            ),
+                          ),
+                          DataCell(Text(item.employee.department)),
+                          DataCell(Text('${item.presentDays} يوم')),
+                          DataCell(
+                            Text(
+                              '${item.lateDays} يوم${item.lateMinutes > 0 ? ' (${item.lateMinutes}د)' : ''}',
+                              style: TextStyle(
+                                color: item.lateDays > 0 ? ZaWolfColors.warning : ZaWolfColors.textPrimary,
+                              ),
+                            ),
+                          ),
+                          DataCell(
+                            Text(
+                              '${item.absentDays} يوم',
+                              style: TextStyle(
+                                color: item.absentDays > 0 ? ZaWolfColors.error : ZaWolfColors.textPrimary,
+                                fontWeight: item.absentDays > 0 ? FontWeight.bold : FontWeight.normal,
+                              ),
+                            ),
+                          ),
+                          DataCell(
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: hasDed
+                                    ? ZaWolfColors.error.withValues(alpha: 0.15)
+                                    : ZaWolfColors.success.withValues(alpha: 0.12),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Text(
+                                '${item.totalDeductionDays.toStringAsFixed(2)} يوم',
+                                style: TextStyle(
+                                  color: hasDed ? ZaWolfColors.error : ZaWolfColors.success,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ),
+                          ),
+                          DataCell(Text('${item.deductionCount}')),
+                          DataCell(
+                            Wrap(
+                              spacing: 4,
+                              runSpacing: 2,
+                              children: [
+                                if (item.lateDeductionDays > 0)
+                                  _MiniChip(
+                                    label: 'تأخير: ${item.lateDeductionDays.toStringAsFixed(2)}',
+                                    color: ZaWolfColors.warning,
+                                  ),
+                                if (item.absentDeductionDays > 0)
+                                  _MiniChip(
+                                    label: 'غياب: ${item.absentDeductionDays.toStringAsFixed(2)}',
+                                    color: ZaWolfColors.error,
+                                  ),
+                                if (item.otherDeductionDays > 0)
+                                  _MiniChip(
+                                    label: 'أخرى: ${item.otherDeductionDays.toStringAsFixed(2)}',
+                                    color: ZaWolfColors.primaryCyan,
+                                  ),
+                                if (item.totalDeductionDays == 0)
+                                  const Text('لا يوجد خصم', style: TextStyle(color: ZaWolfColors.textMuted, fontSize: 11)),
+                              ],
+                            ),
+                          ),
+                          DataCell(
+                            Text(
+                              item.totalAmount > 0 ? '${item.totalAmount.toStringAsFixed(2)} ج.م' : '—',
+                              style: const TextStyle(fontSize: 12),
+                            ),
+                          ),
+                          DataCell(
+                            OutlinedButton.icon(
+                              style: OutlinedButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                textStyle: const TextStyle(fontSize: 11),
+                              ),
+                              icon: const Icon(Icons.visibility_outlined, size: 14),
+                              label: const Text('عرض التفاصيل'),
+                              onPressed: () => _showEmployeeDeductionDetailsModal(context, item),
+                            ),
+                          ),
+                        ],
+                      );
+                    }).toList(),
+                  ),
+                ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 24),
+      ],
+    );
+  }
+
+  void _showEmployeeDeductionDetailsModal(
+    BuildContext context,
+    EmployeeDeductionSummaryItem item,
+  ) {
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: Dialog(
+          backgroundColor: ZaWolfColors.surface01,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          child: Container(
+            width: 700,
+            constraints: const BoxConstraints(maxHeight: 650),
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(Icons.badge_outlined, color: ZaWolfColors.primaryCyan),
+                        const SizedBox(width: 8),
+                        Text(
+                          'تفاصيل خصومات: ${item.employee.name}',
+                          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white),
+                        ),
+                      ],
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close),
+                      onPressed: () => Navigator.pop(ctx),
+                    ),
+                  ],
+                ),
+                Text(
+                  'كود: ${item.employee.code} · القسم: ${item.employee.department}',
+                  style: const TextStyle(color: ZaWolfColors.textSecondary, fontSize: 13),
+                ),
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: ZaWolfColors.surface02,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: ZaWolfColors.surface03),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceAround,
+                    children: [
+                      _kpiItem('إجمالي الخصم', '${item.totalDeductionDays.toStringAsFixed(2)} يوم', ZaWolfColors.error),
+                      _kpiItem('عدد الإجراءات', '${item.deductionCount}', ZaWolfColors.warning),
+                      _kpiItem('أيام التأخير', '${item.lateDays} (${item.lateMinutes}د)', ZaWolfColors.warning),
+                      _kpiItem('أيام الغياب', '${item.absentDays} يوم', ZaWolfColors.error),
+                      if (item.totalAmount > 0)
+                        _kpiItem('المبلغ التقديري', '${item.totalAmount.toStringAsFixed(2)} ج.م', Colors.amberAccent),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+                const Text(
+                  'سجل إجراءات الخصم بالتفصيل:',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.white),
+                ),
+                const SizedBox(height: 8),
+                Expanded(
+                  child: item.deductions.isEmpty
+                      ? const Center(
+                          child: Text(
+                            '✓ لا توجد أي خصومات مسجلة على الموظف في هذه الفترة.',
+                            style: TextStyle(color: ZaWolfColors.success, fontSize: 14),
+                          ),
+                        )
+                      : ListView.separated(
+                          itemCount: item.deductions.length,
+                          separatorBuilder: (_, __) => const SizedBox(height: 8),
+                          itemBuilder: (context, idx) {
+                            final ded = item.deductions[idx];
+                            return Container(
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: ZaWolfColors.surface02,
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(color: ZaWolfColors.surface03),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      Expanded(
+                                        child: Text(
+                                          ded.reason,
+                                          style: const TextStyle(
+                                            color: Colors.white,
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 13,
+                                          ),
+                                        ),
+                                      ),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                        decoration: BoxDecoration(
+                                          color: ZaWolfColors.warning.withValues(alpha: 0.15),
+                                          borderRadius: BorderRadius.circular(6),
+                                          border: Border.all(color: ZaWolfColors.warning.withValues(alpha: 0.4)),
+                                        ),
+                                        child: Text(
+                                          ded.fraction > 0 ? '${(ded.fraction * 100).toStringAsFixed(0)}% يوم' : 'مبلغ',
+                                          style: const TextStyle(
+                                            color: ZaWolfColors.warning,
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 11,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    '${_date(ded.date)} · المصدر: ${ded.source} · القيمة: ${ded.resolvedAmount().toStringAsFixed(2)} ${ded.employee.salaryCurrency}',
+                                    style: const TextStyle(color: ZaWolfColors.textSecondary, fontSize: 11),
+                                  ),
+                                  if (ded.detail != null && ded.detail!.trim().isNotEmpty) ...[
+                                    const SizedBox(height: 6),
+                                    Container(
+                                      padding: const EdgeInsets.all(8),
+                                      decoration: BoxDecoration(
+                                        color: Colors.black.withValues(alpha: 0.25),
+                                        borderRadius: BorderRadius.circular(6),
+                                      ),
+                                      child: Row(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          const Icon(Icons.info_outline, size: 14, color: ZaWolfColors.primaryCyan),
+                                          const SizedBox(width: 6),
+                                          Expanded(
+                                            child: Text(
+                                              ded.detail!,
+                                              style: const TextStyle(color: Colors.white, fontSize: 12),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            );
+                          },
+                        ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _exportPdf(
+    BuildContext context,
+    HrPeriodReport report,
+    HrReportPeriod period,
+  ) async {
+    setState(() => _exportingPdf = true);
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final allSummaries = report.employees
+          .map((e) => EmployeeDeductionSummaryItem.fromReport(employee: e, report: report))
+          .toList();
+
+      final htmlContent = HrReportPdfGenerator.generateHtml(
+        report: report,
+        period: period,
+        items: allSummaries,
+      );
+
+      final fileName = 'HR_Deductions_Report_${DateFormat('yyyyMMdd').format(period.start)}_${DateFormat('yyyyMMdd').format(period.end)}';
+
+      final success = await printOrDownloadPdfReport(
+        htmlContent: htmlContent,
+        fileName: fileName,
+      );
+
+      if (success) {
+        messenger.showSnackBar(
+          const SnackBar(
+            content: Text('تم فتح نافذة الطباعة / تنزيل التقرير بتنسيق PDF بنجاح.'),
+          ),
+        );
+      } else {
+        messenger.showSnackBar(
+          const SnackBar(
+            content: Text('تعذر استخراج ملف التقرير، يرجى المحاولة مرة أخرى.'),
+          ),
+        );
+      }
+    } catch (e) {
+      messenger.showSnackBar(
+        SnackBar(content: Text('حدث خطأ أثناء إعداد التقرير: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _exportingPdf = false);
+    }
+  }
 }
+
+class _MiniChip extends StatelessWidget {
+  const _MiniChip({required this.label, required this.color});
+  final String label;
+  final Color color;
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(4),
+          border: Border.all(color: color.withValues(alpha: 0.35)),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(color: color, fontSize: 10.5, fontWeight: FontWeight.bold),
+        ),
+      );
+}
+
+Widget _kpiItem(String title, String val, Color color) => Column(
+      children: [
+        Text(val, style: TextStyle(color: color, fontWeight: FontWeight.bold, fontSize: 14)),
+        const SizedBox(height: 2),
+        Text(title, style: const TextStyle(color: ZaWolfColors.textSecondary, fontSize: 11)),
+      ],
+    );
 
 class _LoadingReport extends StatelessWidget {
   const _LoadingReport();
