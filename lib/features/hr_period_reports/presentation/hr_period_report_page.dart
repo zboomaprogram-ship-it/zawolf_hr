@@ -802,6 +802,8 @@ class _HrPeriodReportPageState extends State<HrPeriodReportPage> {
                       DataColumn(label: Text('الحضور')),
                       DataColumn(label: Text('التأخير')),
                       DataColumn(label: Text('الغياب')),
+                      DataColumn(label: Text('الأذونات')),
+                      DataColumn(label: Text('الإجازات')),
                       DataColumn(label: Text('إجمالي الخصم')),
                       DataColumn(label: Text('عدد الإجراءات')),
                       DataColumn(label: Text('تفصيل الخصومات')),
@@ -848,6 +850,29 @@ class _HrPeriodReportPageState extends State<HrPeriodReportPage> {
                               style: TextStyle(
                                 color: item.absentDays > 0 ? ZaWolfColors.error : ZaWolfColors.textPrimary,
                                 fontWeight: item.absentDays > 0 ? FontWeight.bold : FontWeight.normal,
+                              ),
+                            ),
+                          ),
+                          DataCell(
+                            Text(
+                              item.permissionCount > 0
+                                  ? '${item.permissionCount}${item.permissionMinutes > 0 ? ' (${(item.permissionMinutes / 60).toStringAsFixed(1)}س)' : ''}'
+                                  : '—',
+                              style: TextStyle(
+                                color: item.permissionCount > 0 ? ZaWolfColors.primaryCyan : ZaWolfColors.textMuted,
+                                fontWeight: item.permissionCount > 0 ? FontWeight.bold : FontWeight.normal,
+                              ),
+                            ),
+                          ),
+                          DataCell(
+                            Text(
+                              item.leaveDays > 0
+                                  ? '${item.leaveDays} يوم${item.leaveRequestsCount > 0 ? ' (${item.leaveRequestsCount})' : ''}'
+                                  : (item.leaveRequestsCount > 0 ? '${item.leaveRequestsCount} طلب' : '—'),
+                              style: TextStyle(
+                                color: (item.leaveDays > 0 || item.leaveRequestsCount > 0)
+                                    ? Colors.lightBlueAccent
+                                    : ZaWolfColors.textMuted,
                               ),
                             ),
                           ),
@@ -910,7 +935,7 @@ class _HrPeriodReportPageState extends State<HrPeriodReportPage> {
                               ),
                               icon: const Icon(Icons.visibility_outlined, size: 14),
                               label: const Text('عرض التفاصيل'),
-                              onPressed: () => _showEmployeeDeductionDetailsModal(context, item),
+                              onPressed: () => _showEmployeeDeductionDetailsModal(context, item, report),
                             ),
                           ),
                         ],
@@ -929,7 +954,13 @@ class _HrPeriodReportPageState extends State<HrPeriodReportPage> {
   void _showEmployeeDeductionDetailsModal(
     BuildContext context,
     EmployeeDeductionSummaryItem item,
+    HrPeriodReport report,
   ) {
+    final employeeRecords = report.forEmployee(item.employee.id).toList()
+      ..sort((a, b) => a.date.compareTo(b.date));
+    final timeFormat = DateFormat('hh:mm a', 'ar');
+    final dayFormat = DateFormat('EEEE، yyyy/MM/dd', 'ar');
+
     showDialog<void>(
       context: context,
       builder: (ctx) => Directionality(
@@ -938,150 +969,357 @@ class _HrPeriodReportPageState extends State<HrPeriodReportPage> {
           backgroundColor: ZaWolfColors.surface01,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           child: Container(
-            width: 700,
-            constraints: const BoxConstraints(maxHeight: 650),
+            width: 780,
+            constraints: const BoxConstraints(maxHeight: 700),
             padding: const EdgeInsets.all(20),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Row(
-                      children: [
-                        const Icon(Icons.badge_outlined, color: ZaWolfColors.primaryCyan),
-                        const SizedBox(width: 8),
-                        Text(
-                          'تفاصيل خصومات: ${item.employee.name}',
-                          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white),
-                        ),
-                      ],
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.close),
-                      onPressed: () => Navigator.pop(ctx),
-                    ),
-                  ],
-                ),
-                Text(
-                  'كود: ${item.employee.code} · القسم: ${item.employee.department}',
-                  style: const TextStyle(color: ZaWolfColors.textSecondary, fontSize: 13),
-                ),
-                const SizedBox(height: 12),
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: ZaWolfColors.surface02,
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: ZaWolfColors.surface03),
-                  ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceAround,
+            child: DefaultTabController(
+              length: 2,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      _kpiItem('إجمالي الخصم', '${item.totalDeductionDays.toStringAsFixed(2)} يوم', ZaWolfColors.error),
-                      _kpiItem('عدد الإجراءات', '${item.deductionCount}', ZaWolfColors.warning),
-                      _kpiItem('أيام التأخير', '${item.lateDays} (${item.lateMinutes}د)', ZaWolfColors.warning),
-                      _kpiItem('أيام الغياب', '${item.absentDays} يوم', ZaWolfColors.error),
-                      if (item.totalAmount > 0)
-                        _kpiItem('المبلغ التقديري', '${item.totalAmount.toStringAsFixed(2)} ج.م', Colors.amberAccent),
+                      Row(
+                        children: [
+                          const Icon(Icons.badge_outlined, color: ZaWolfColors.primaryCyan),
+                          const SizedBox(width: 8),
+                          Text(
+                            'تفاصيل الموظف: ${item.employee.name}',
+                            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white),
+                          ),
+                        ],
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.close),
+                        onPressed: () => Navigator.pop(ctx),
+                      ),
                     ],
                   ),
-                ),
-                const SizedBox(height: 16),
-                const Text(
-                  'سجل إجراءات الخصم بالتفصيل:',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.white),
-                ),
-                const SizedBox(height: 8),
-                Expanded(
-                  child: item.deductions.isEmpty
-                      ? const Center(
-                          child: Text(
-                            '✓ لا توجد أي خصومات مسجلة على الموظف في هذه الفترة.',
-                            style: TextStyle(color: ZaWolfColors.success, fontSize: 14),
-                          ),
-                        )
-                      : ListView.separated(
-                          itemCount: item.deductions.length,
-                          separatorBuilder: (_, __) => const SizedBox(height: 8),
-                          itemBuilder: (context, idx) {
-                            final ded = item.deductions[idx];
-                            return Container(
-                              padding: const EdgeInsets.all(12),
-                              decoration: BoxDecoration(
-                                color: ZaWolfColors.surface02,
-                                borderRadius: BorderRadius.circular(8),
-                                border: Border.all(color: ZaWolfColors.surface03),
-                              ),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Row(
-                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                    children: [
-                                      Expanded(
-                                        child: Text(
-                                          ded.reason,
-                                          style: const TextStyle(
-                                            color: Colors.white,
-                                            fontWeight: FontWeight.bold,
-                                            fontSize: 13,
-                                          ),
+                  Text(
+                    'كود: ${item.employee.code} · القسم: ${item.employee.department}',
+                    style: const TextStyle(color: ZaWolfColors.textSecondary, fontSize: 13),
+                  ),
+                  const SizedBox(height: 12),
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: ZaWolfColors.surface02,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: ZaWolfColors.surface03),
+                    ),
+                    child: SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceAround,
+                        children: [
+                          _kpiItem('إجمالي الخصم', '${item.totalDeductionDays.toStringAsFixed(2)} يوم', ZaWolfColors.error),
+                          const SizedBox(width: 16),
+                          _kpiItem('عدد الإجراءات', '${item.deductionCount}', ZaWolfColors.warning),
+                          const SizedBox(width: 16),
+                          _kpiItem('أيام التأخير', '${item.lateDays} (${item.lateMinutes}د)', ZaWolfColors.warning),
+                          const SizedBox(width: 16),
+                          _kpiItem('أيام الغياب', '${item.absentDays} يوم', ZaWolfColors.error),
+                          const SizedBox(width: 16),
+                          _kpiItem('الأذونات', '${item.permissionCount}${item.permissionMinutes > 0 ? ' (${(item.permissionMinutes / 60).toStringAsFixed(1)}س)' : ''}', ZaWolfColors.primaryCyan),
+                          const SizedBox(width: 16),
+                          _kpiItem('الإجازات', '${item.leaveDays} يوم', Colors.lightBlueAccent),
+                          if (item.totalAmount > 0) ...[
+                            const SizedBox(width: 16),
+                            _kpiItem('المبلغ التقديري', '${item.totalAmount.toStringAsFixed(2)} ج.م', Colors.amberAccent),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TabBar(
+                    indicatorColor: ZaWolfColors.primaryCyan,
+                    labelColor: ZaWolfColors.primaryCyan,
+                    unselectedLabelColor: ZaWolfColors.textSecondary,
+                    tabs: const [
+                      Tab(
+                        icon: Icon(Icons.money_off_outlined, size: 16),
+                        text: 'تفاصيل الخصومات (تأخير وغياب)',
+                      ),
+                      Tab(
+                        icon: Icon(Icons.access_time_outlined, size: 16),
+                        text: 'سجل وأوقات الحضور اليومي',
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Expanded(
+                    child: TabBarView(
+                      children: [
+                        // TAB 1: DEDUCTIONS (Late & Absent only)
+                        item.deductions.isEmpty
+                            ? const Center(
+                                child: Text(
+                                  '✓ لا توجد أي خصومات مسجلة (تأخير أو غياب) على الموظف في هذه الفترة.',
+                                  style: TextStyle(color: ZaWolfColors.success, fontSize: 14),
+                                ),
+                              )
+                            : ListView.separated(
+                                itemCount: item.deductions.length,
+                                separatorBuilder: (_, __) => const SizedBox(height: 8),
+                                itemBuilder: (context, idx) {
+                                  final ded = item.deductions[idx];
+                                  return Container(
+                                    padding: const EdgeInsets.all(12),
+                                    decoration: BoxDecoration(
+                                      color: ZaWolfColors.surface02,
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(color: ZaWolfColors.surface03),
+                                    ),
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Row(
+                                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                          children: [
+                                            Expanded(
+                                              child: Text(
+                                                ded.reason,
+                                                style: const TextStyle(
+                                                  color: Colors.white,
+                                                  fontWeight: FontWeight.bold,
+                                                  fontSize: 13,
+                                                ),
+                                              ),
+                                            ),
+                                            Container(
+                                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                              decoration: BoxDecoration(
+                                                color: ZaWolfColors.warning.withValues(alpha: 0.15),
+                                                borderRadius: BorderRadius.circular(6),
+                                                border: Border.all(color: ZaWolfColors.warning.withValues(alpha: 0.4)),
+                                              ),
+                                              child: Text(
+                                                ded.fraction > 0 ? '${(ded.fraction * 100).toStringAsFixed(0)}% يوم' : 'مبلغ',
+                                                style: const TextStyle(
+                                                  color: ZaWolfColors.warning,
+                                                  fontWeight: FontWeight.bold,
+                                                  fontSize: 11,
+                                                ),
+                                              ),
+                                            ),
+                                          ],
                                         ),
-                                      ),
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                                        decoration: BoxDecoration(
-                                          color: ZaWolfColors.warning.withValues(alpha: 0.15),
-                                          borderRadius: BorderRadius.circular(6),
-                                          border: Border.all(color: ZaWolfColors.warning.withValues(alpha: 0.4)),
+                                        const SizedBox(height: 4),
+                                        Text(
+                                          '${_date(ded.date)} · المصدر: ${ded.source} · القيمة: ${ded.resolvedAmount().toStringAsFixed(2)} ${ded.employee.salaryCurrency}',
+                                          style: const TextStyle(color: ZaWolfColors.textSecondary, fontSize: 11),
                                         ),
-                                        child: Text(
-                                          ded.fraction > 0 ? '${(ded.fraction * 100).toStringAsFixed(0)}% يوم' : 'مبلغ',
-                                          style: const TextStyle(
-                                            color: ZaWolfColors.warning,
-                                            fontWeight: FontWeight.bold,
-                                            fontSize: 11,
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    '${_date(ded.date)} · المصدر: ${ded.source} · القيمة: ${ded.resolvedAmount().toStringAsFixed(2)} ${ded.employee.salaryCurrency}',
-                                    style: const TextStyle(color: ZaWolfColors.textSecondary, fontSize: 11),
-                                  ),
-                                  if (ded.detail != null && ded.detail!.trim().isNotEmpty) ...[
-                                    const SizedBox(height: 6),
-                                    Container(
-                                      padding: const EdgeInsets.all(8),
-                                      decoration: BoxDecoration(
-                                        color: Colors.black.withValues(alpha: 0.25),
-                                        borderRadius: BorderRadius.circular(6),
-                                      ),
-                                      child: Row(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                          const Icon(Icons.info_outline, size: 14, color: ZaWolfColors.primaryCyan),
-                                          const SizedBox(width: 6),
-                                          Expanded(
-                                            child: Text(
-                                              ded.detail!,
-                                              style: const TextStyle(color: Colors.white, fontSize: 12),
+                                        if (ded.detail != null && ded.detail!.trim().isNotEmpty) ...[
+                                          const SizedBox(height: 6),
+                                          Container(
+                                            padding: const EdgeInsets.all(8),
+                                            decoration: BoxDecoration(
+                                              color: Colors.black.withValues(alpha: 0.25),
+                                              borderRadius: BorderRadius.circular(6),
+                                            ),
+                                            child: Row(
+                                              crossAxisAlignment: CrossAxisAlignment.start,
+                                              children: [
+                                                const Icon(Icons.info_outline, size: 14, color: ZaWolfColors.primaryCyan),
+                                                const SizedBox(width: 6),
+                                                Expanded(
+                                                  child: Text(
+                                                    ded.detail!,
+                                                    style: const TextStyle(color: Colors.white, fontSize: 12),
+                                                  ),
+                                                ),
+                                              ],
                                             ),
                                           ),
                                         ],
+                                      ],
+                                    ),
+                                  );
+                                },
+                              ),
+
+                        // TAB 2: DAILY ATTENDANCE & PUNCH TIMES
+                        employeeRecords.isEmpty
+                            ? const Center(
+                                child: Text(
+                                  'لا توجد سجلات حضور مسجلة لهذا الموظف خلال الفترة.',
+                                  style: TextStyle(color: ZaWolfColors.textMuted, fontSize: 14),
+                                ),
+                              )
+                            : ListView.separated(
+                                itemCount: employeeRecords.length,
+                                separatorBuilder: (_, __) => const SizedBox(height: 8),
+                                itemBuilder: (context, idx) {
+                                  final r = employeeRecords[idx];
+                                  final checkInStr = r.checkIn != null ? timeFormat.format(r.checkIn!) : null;
+                                  final checkOutStr = r.checkOut != null ? timeFormat.format(r.checkOut!) : null;
+
+                                  Color statusColor;
+                                  String statusLabel;
+                                  switch (r.status) {
+                                    case 'present':
+                                      statusColor = ZaWolfColors.success;
+                                      statusLabel = 'حاضر';
+                                      break;
+                                    case 'late':
+                                      statusColor = ZaWolfColors.warning;
+                                      statusLabel = 'متأخر';
+                                      break;
+                                    case 'not_attended':
+                                      statusColor = ZaWolfColors.error;
+                                      statusLabel = 'غائب';
+                                      break;
+                                    case 'day_off':
+                                      statusColor = (r.statusDetail?.startsWith('إجازة') == true || r.statusDetail == 'عمل عن بعد')
+                                          ? Colors.lightBlueAccent
+                                          : ZaWolfColors.textMuted;
+                                      statusLabel = r.statusDetail ?? 'عطلة / راحة';
+                                      break;
+                                    case 'permission':
+                                      statusColor = ZaWolfColors.primaryCyan;
+                                      statusLabel = 'إذن وقتي';
+                                      break;
+                                    case 'field_mission':
+                                      statusColor = Colors.tealAccent;
+                                      statusLabel = 'مأمورية';
+                                      break;
+                                    default:
+                                      statusColor = ZaWolfColors.textSecondary;
+                                      statusLabel = r.status;
+                                  }
+
+                                  return Container(
+                                    padding: const EdgeInsets.all(12),
+                                    decoration: BoxDecoration(
+                                      color: ZaWolfColors.surface02,
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(
+                                        color: r.status == 'late'
+                                            ? ZaWolfColors.warning.withValues(alpha: 0.3)
+                                            : (r.status == 'not_attended'
+                                                ? ZaWolfColors.error.withValues(alpha: 0.3)
+                                                : ZaWolfColors.surface03),
                                       ),
                                     ),
-                                  ],
-                                ],
+                                    child: Row(
+                                      children: [
+                                        // Date & Day
+                                        Expanded(
+                                          flex: 3,
+                                          child: Column(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                dayFormat.format(r.date),
+                                                style: const TextStyle(
+                                                  color: Colors.white,
+                                                  fontWeight: FontWeight.bold,
+                                                  fontSize: 13,
+                                                ),
+                                              ),
+                                              if (r.statusDetail != null && r.statusDetail != statusLabel)
+                                                Text(
+                                                  r.statusDetail!,
+                                                  style: const TextStyle(color: ZaWolfColors.textSecondary, fontSize: 11),
+                                                ),
+                                            ],
+                                          ),
+                                        ),
+                                        // Status badge
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                          decoration: BoxDecoration(
+                                            color: statusColor.withValues(alpha: 0.15),
+                                            borderRadius: BorderRadius.circular(6),
+                                            border: Border.all(color: statusColor.withValues(alpha: 0.4)),
+                                          ),
+                                          child: Text(
+                                            statusLabel,
+                                            style: TextStyle(color: statusColor, fontSize: 11, fontWeight: FontWeight.bold),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 12),
+                                        // Check-in
+                                        Expanded(
+                                          flex: 2,
+                                          child: Row(
+                                            children: [
+                                              Icon(
+                                                Icons.login_outlined,
+                                                size: 14,
+                                                color: checkInStr != null ? ZaWolfColors.success : ZaWolfColors.textMuted,
+                                              ),
+                                              const SizedBox(width: 4),
+                                              Column(
+                                                crossAxisAlignment: CrossAxisAlignment.start,
+                                                children: [
+                                                  const Text('الحضور', style: TextStyle(color: ZaWolfColors.textSecondary, fontSize: 10)),
+                                                  Text(
+                                                    checkInStr ?? 'لم يسجل',
+                                                    style: TextStyle(
+                                                      color: checkInStr != null ? Colors.white : ZaWolfColors.textMuted,
+                                                      fontSize: 11,
+                                                      fontWeight: FontWeight.w600,
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                        // Check-out
+                                        Expanded(
+                                          flex: 2,
+                                          child: Row(
+                                            children: [
+                                              Icon(
+                                                Icons.logout_outlined,
+                                                size: 14,
+                                                color: checkOutStr != null ? Colors.lightBlueAccent : ZaWolfColors.textMuted,
+                                              ),
+                                              const SizedBox(width: 4),
+                                              Column(
+                                                crossAxisAlignment: CrossAxisAlignment.start,
+                                                children: [
+                                                  const Text('الانصراف', style: TextStyle(color: ZaWolfColors.textSecondary, fontSize: 10)),
+                                                  Text(
+                                                    checkOutStr ?? 'لم يسجل',
+                                                    style: TextStyle(
+                                                      color: checkOutStr != null ? Colors.white : ZaWolfColors.textMuted,
+                                                      fontSize: 11,
+                                                      fontWeight: FontWeight.w600,
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                        // Late minutes if any
+                                        if (r.lateMinutes > 0)
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                            decoration: BoxDecoration(
+                                              color: ZaWolfColors.warning.withValues(alpha: 0.15),
+                                              borderRadius: BorderRadius.circular(4),
+                                            ),
+                                            child: Text(
+                                              'تأخير ${r.lateMinutes}د',
+                                              style: const TextStyle(color: ZaWolfColors.warning, fontSize: 11, fontWeight: FontWeight.bold),
+                                            ),
+                                          ),
+                                      ],
+                                    ),
+                                  );
+                                },
                               ),
-                            );
-                          },
-                        ),
-                ),
-              ],
+                      ],
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ),

@@ -419,14 +419,6 @@ List<NavigationItem> _operationalAdminItems() => [
     domain: NavDomain.people,
   ),
   NavigationItem(
-    icon: Icons.folder_shared_outlined,
-    activeIcon: Icons.folder_shared,
-    label: 'مركز ملفات الشركة',
-    englishLabel: 'Company Workspace',
-    path: '/workspace',
-    domain: NavDomain.people,
-  ),
-  NavigationItem(
     icon: Icons.developer_mode_outlined,
     activeIcon: Icons.developer_mode,
     label: 'إدارة أدوات المطوّر',
@@ -687,11 +679,11 @@ List<NavigationItem> _hrItems() {
       domain: NavDomain.time,
     ),
     NavigationItem(
-      icon: Icons.assessment_outlined,
-      activeIcon: Icons.assessment,
-      label: 'التقارير',
-      englishLabel: 'Reports',
-      path: '/hr/reports',
+      icon: Icons.date_range_outlined,
+      activeIcon: Icons.date_range,
+      label: 'تقرير الموارد البشرية للفترة',
+      englishLabel: 'HR Period Report',
+      path: '/hr/period-reports',
       domain: NavDomain.payroll,
     ),
     NavigationItem(
@@ -881,11 +873,11 @@ List<NavigationItem> _superAdminItems() {
       domain: NavDomain.people,
     ),
     NavigationItem(
-      icon: Icons.assessment_outlined,
-      activeIcon: Icons.assessment,
-      label: 'التقارير',
-      englishLabel: 'Reports',
-      path: '/hr/reports',
+      icon: Icons.date_range_outlined,
+      activeIcon: Icons.date_range,
+      label: 'تقرير الموارد البشرية للفترة',
+      englishLabel: 'HR Period Report',
+      path: '/hr/period-reports',
       domain: NavDomain.payroll,
     ),
     NavigationItem(

@@ -111,6 +111,7 @@ class HrRequestRecord {
     required this.status,
     this.reason,
     this.endDate,
+    this.durationMinutes,
   });
   final HrReportEmployee employee;
   final DateTime date;
@@ -118,6 +119,7 @@ class HrRequestRecord {
   final String type;
   final String status;
   final String? reason;
+  final int? durationMinutes;
 }
 
 class HrDeductionRecord {

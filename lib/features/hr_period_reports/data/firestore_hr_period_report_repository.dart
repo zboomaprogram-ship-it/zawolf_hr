@@ -260,6 +260,7 @@ final class FirestoreHrPeriodReportRepository
           type: type,
           status: _status(item['status']),
           reason: reason,
+          durationMinutes: (item['durationMinutes'] as num?)?.toInt(),
         ),
       );
     }
@@ -417,16 +418,27 @@ final class FirestoreHrPeriodReportRepository
         amount =
             employee.baseMonthlySalary / payrollWorkDaysPerMonth * fraction;
       }
+      final reason = _deductionReason(item, source);
+      final detail = _deductionDetail(item, source);
+      final combined = '$reason ${detail ?? ''} $source'.toLowerCase();
+      if (combined.contains('انصراف') || combined.contains('خروج مبكر')) {
+        return;
+      }
+      final isLate = combined.contains('تأخير') || ((item['lateMinutes'] as num?)?.toInt() ?? 0) > 0;
+      final isAbsent = combined.contains('غياب') || item['checkInTime'] == null || fraction >= 1.0;
+      if (!isLate && !isAbsent) {
+        return;
+      }
       output.add(
         HrDeductionRecord(
           employee: employee,
           date: date,
-          reason: _deductionReason(item, source),
+          reason: reason,
           status: status,
           amount: amount,
           fraction: fraction,
           source: source,
-          detail: _deductionDetail(item, source),
+          detail: detail,
         ),
       );
     }
@@ -595,14 +607,11 @@ final class FirestoreHrPeriodReportRepository
         _string(item['reason']);
     if (cause == null && source == 'الحضور والانصراف') {
       final checkIn = _dateTime(item['checkInTime']);
-      final checkOut = _dateTime(item['checkOutTime']);
       final lateMinutes = (item['lateMinutes'] as num?)?.toInt() ?? 0;
       if (checkIn == null) {
         cause = 'غياب دون تسجيل حضور';
       } else if (lateMinutes > 0) {
         cause = 'تأخير حضور $lateMinutes دقيقة';
-      } else if (checkOut == null) {
-        cause = 'عدم تسجيل الانصراف';
       }
     }
     final parts = <String>[];

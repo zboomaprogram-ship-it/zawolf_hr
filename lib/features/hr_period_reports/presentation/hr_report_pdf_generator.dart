@@ -9,6 +9,9 @@ class EmployeeDeductionSummaryItem {
   final int lateMinutes;
   final int absentDays;
   final int leaveDays;
+  final int permissionCount;
+  final int permissionMinutes;
+  final int leaveRequestsCount;
   final double totalDeductionDays;
   final double approvedDeductionDays;
   final int deductionCount;
@@ -26,6 +29,9 @@ class EmployeeDeductionSummaryItem {
     required this.lateMinutes,
     required this.absentDays,
     required this.leaveDays,
+    required this.permissionCount,
+    required this.permissionMinutes,
+    required this.leaveRequestsCount,
     required this.totalDeductionDays,
     required this.approvedDeductionDays,
     required this.deductionCount,
@@ -41,7 +47,19 @@ class EmployeeDeductionSummaryItem {
     required HrPeriodReport report,
   }) {
     final records = report.forEmployee(employee.id);
-    final deductions = report.deductionsForEmployee(employee.id);
+    final rawDeductions = report.deductionsForEmployee(employee.id);
+
+    // User requirement: In deductions do NOT add sign out deductions.
+    // Only sign in attended late and absent deductions are included.
+    final deductions = rawDeductions.where((d) {
+      final combined = '${d.reason} ${d.detail ?? ''} ${d.source}'.toLowerCase();
+      if (combined.contains('انصراف') || combined.contains('خروج مبكر')) {
+        return false;
+      }
+      final isLate = combined.contains('تأخير');
+      final isAbsent = combined.contains('غياب') || d.fraction >= 1.0;
+      return isLate || isAbsent;
+    }).toList();
 
     final scheduled = records.where((r) => r.status != 'day_off').length;
     final present = records
@@ -64,6 +82,17 @@ class EmployeeDeductionSummaryItem {
                   r.statusDetail == 'عمل عن بعد'),
         )
         .length;
+
+    final empRequests = report.requestsForEmployee(employee.id);
+    final permRequests = empRequests.where((r) => r.type.contains('إذن')).toList();
+    final permissionAttendanceCount = records.where((r) => r.status == 'permission').length;
+    final permCount = permRequests.length > permissionAttendanceCount
+        ? permRequests.length
+        : permissionAttendanceCount;
+    final permMinutes = permRequests.fold<int>(0, (sum, r) => sum + (r.durationMinutes ?? 0));
+
+    final leaveRequests = empRequests.where((r) => r.type.contains('إجازة') || r.type.contains('راحة') || r.type == 'عمل عن بعد').toList();
+    final leaveReqCount = leaveRequests.length;
 
     final totalDedDays = deductions.fold<double>(
       0.0,
@@ -108,6 +137,9 @@ class EmployeeDeductionSummaryItem {
       lateMinutes: lateMins,
       absentDays: absent,
       leaveDays: leave,
+      permissionCount: permCount,
+      permissionMinutes: permMinutes,
+      leaveRequestsCount: leaveReqCount,
       totalDeductionDays: totalDedDays,
       approvedDeductionDays: approvedDedDays,
       deductionCount: deductions.length,
@@ -158,6 +190,8 @@ class HrReportPdfGenerator {
         <td style="text-align: center;">${item.presentDays}</td>
         <td style="text-align: center;">${item.lateDays}${item.lateMinutes > 0 ? ' <small>(${item.lateMinutes}د)</small>' : ''}</td>
         <td style="text-align: center; color: ${item.absentDays > 0 ? '#b91c1c' : '#334155'}; font-weight: ${item.absentDays > 0 ? 'bold' : 'normal'};">${item.absentDays}</td>
+        <td style="text-align: center;">${item.permissionCount > 0 ? '${item.permissionCount}${item.permissionMinutes > 0 ? ' <small>(${(item.permissionMinutes / 60).toStringAsFixed(1)}س)</small>' : ''}' : '—'}</td>
+        <td style="text-align: center;">${item.leaveDays > 0 ? '${item.leaveDays} يوم' : (item.leaveRequestsCount > 0 ? '${item.leaveRequestsCount} طلب' : '—')}</td>
         <td style="text-align: center; background-color: $dedBg; color: $dedColor; font-weight: bold;">
           ${item.totalDeductionDays.toStringAsFixed(2)} يوم
         </td>
@@ -325,6 +359,8 @@ class HrReportPdfGenerator {
         <th style="width: 50px;">الحضور</th>
         <th style="width: 65px;">التأخير</th>
         <th style="width: 50px;">الغياب</th>
+        <th style="width: 65px;">الأذونات</th>
+        <th style="width: 65px;">الإجازات</th>
         <th style="width: 80px;">إجمالي الخصم</th>
         <th style="width: 65px;">عدد الإجراءات</th>
         <th style="text-align: right;">تفصيل الخصومات والبنود</th>

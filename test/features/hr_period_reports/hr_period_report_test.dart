@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zawolf_hr/features/hr_period_reports/domain/hr_period_report.dart';
+import 'package:zawolf_hr/features/hr_period_reports/presentation/hr_report_pdf_generator.dart';
 
 void main() {
   test(
@@ -113,5 +114,104 @@ void main() {
     expect(trend.last.scheduled, 1);
     expect(trend.last.attendanceRate, 1);
     expect(trend.last.lateRate, 1);
+  });
+
+  test('EmployeeDeductionSummaryItem excludes sign-out deductions and tallies permissions/leaves', () {
+    const employee = HrReportEmployee(
+      id: 'u5',
+      name: 'أحمد علي',
+      code: 'E-5',
+      department: 'IT',
+      baseMonthlySalary: 26000,
+    );
+    final report = HrPeriodReport(
+      period: HrReportPeriod.custom(DateTime(2026, 9, 1), DateTime(2026, 9, 5)),
+      employees: const [employee],
+      records: [
+        HrAttendanceRecord(
+          employee: employee,
+          date: DateTime(2026, 9, 1),
+          status: 'present',
+          checkIn: DateTime(2026, 9, 1, 9, 0),
+          checkOut: DateTime(2026, 9, 1, 17, 0),
+        ),
+        HrAttendanceRecord(
+          employee: employee,
+          date: DateTime(2026, 9, 2),
+          status: 'late',
+          lateMinutes: 30,
+          checkIn: DateTime(2026, 9, 2, 9, 30),
+          checkOut: DateTime(2026, 9, 2, 17, 0),
+        ),
+        HrAttendanceRecord(
+          employee: employee,
+          date: DateTime(2026, 9, 3),
+          status: 'not_attended',
+        ),
+        HrAttendanceRecord(
+          employee: employee,
+          date: DateTime(2026, 9, 4),
+          status: 'day_off',
+          statusDetail: 'إجازة اعتيادية',
+        ),
+      ],
+      requests: [
+        HrRequestRecord(
+          employee: employee,
+          date: DateTime(2026, 9, 2),
+          type: 'إذن تأخير حضور',
+          status: 'approved',
+          durationMinutes: 60,
+        ),
+        HrRequestRecord(
+          employee: employee,
+          date: DateTime(2026, 9, 4),
+          type: 'إجازة اعتيادية',
+          status: 'approved',
+        ),
+      ],
+      deductions: [
+        HrDeductionRecord(
+          employee: employee,
+          date: DateTime(2026, 9, 2),
+          reason: 'تأخير حضور 30 دقيقة',
+          status: 'approved',
+          fraction: 0.25,
+        ),
+        HrDeductionRecord(
+          employee: employee,
+          date: DateTime(2026, 9, 3),
+          reason: 'غياب دون تسجيل حضور',
+          status: 'approved',
+          fraction: 1.0,
+        ),
+        HrDeductionRecord(
+          employee: employee,
+          date: DateTime(2026, 9, 1),
+          reason: 'عدم تسجيل الانصراف',
+          status: 'approved',
+          fraction: 0.25,
+        ),
+      ],
+    );
+
+    final summary = EmployeeDeductionSummaryItem.fromReport(
+      employee: employee,
+      report: report,
+    );
+
+    // Sign out deduction is excluded! Only late (0.25) and absence (1.0) are included.
+    expect(summary.totalDeductionDays, 1.25);
+    expect(summary.lateDeductionDays, 0.25);
+    expect(summary.absentDeductionDays, 1.0);
+    expect(summary.otherDeductionDays, 0.0);
+    expect(summary.deductions.length, 2);
+    expect(summary.deductions.any((d) => d.reason.contains('انصراف')), isFalse);
+
+    // Permissions & Leaves counts
+    expect(summary.permissionCount, 1);
+    expect(summary.permissionMinutes, 60);
+    expect(summary.leaveDays, 1);
+    expect(summary.leaveRequestsCount, 1);
   });
 }
