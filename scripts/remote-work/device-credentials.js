@@ -2,6 +2,7 @@
 
 const crypto = require('node:crypto');
 const { CHALLENGE_TTL_SECONDS } = require('./security-bounds');
+const { markVerifiedProof } = require('./verified-proofs');
 
 function fail(code) {
   const error = new Error(code);
@@ -76,7 +77,7 @@ async function verifyRemoteProof({ assertion, challenge, credential, qualificati
   } catch (_) { fail('invalid_passkey_assertion'); }
   if (result?.verified !== true || result.authenticationInfo?.userVerified !== true) fail('user_verification_required');
   const info = result.authenticationInfo;
-  return Object.freeze({
+  return markVerifiedProof({
     verified: true,
     challengeId: challenge.id,
     credentialId: credential.credentialId,

@@ -2,8 +2,9 @@ import http from 'node:http';
 import { chromium } from 'playwright';
 import { createRequire } from 'node:module';
 const require = createRequire(new URL('../../../notification-web.js', import.meta.url));
+const packageRequire = createRequire(import.meta.url);
+const webauthn = packageRequire('@simplewebauthn/server');
 const device = require('./remote-work/device-credentials.js');
-const webauthn = require('@simplewebauthn/server');
 const { consumeVerifiedChallenge } = require('./remote-work/challenges.js');
 const { createMemoryBackend } = require('./test/helpers/remote-work-fixtures.js');
 const browserPath = process.env.WEBAUTHN_BROWSER_PATH;
@@ -29,10 +30,10 @@ try {
   const regValue = device.createChallenge();
   const regChallenge = { ...stamp(), id: 'registration1', actorId: user.uid, challenge: regValue, origin,
     rpId: rp.rpId, profileVersion: rp.version };
-  const regOptions = await device.generateRegistrationOptions({ user, qualification: rp, challenge: regValue });
+  const regOptions = await device.generateRegistrationOptions({ user, qualification: rp, challenge: regValue, webauthn });
   const regResponse = await page.evaluate(async options => (await navigator.credentials.create({
     publicKey: PublicKeyCredential.parseCreationOptionsFromJSON(options) })).toJSON(), regOptions);
-  const reg = await device.verifyRemoteRegistration({ response: regResponse, user, qualification: rp, challenge: regChallenge, now });
+  const reg = await device.verifyRemoteRegistration({ response: regResponse, user, qualification: rp, challenge: regChallenge, now, webauthn });
   output.registrationVerified = Boolean(reg.credentialId && reg.publicKey.length);
   output.deviceType = reg.deviceType; output.backedUp = reg.backedUp;
 
@@ -42,21 +43,21 @@ try {
     origin, rpId: rp.rpId, profileVersion: rp.version, credentialId: reg.credentialId, action: command.kind,
     operationId: command.operationId, payloadHash: command.payloadHash, date: command.date };
   const activeCredential = { ...reg, state: 'active' };
-  const requestOptions = await device.generateAuthenticationOptions({ credential: activeCredential, qualification: rp, challenge: challengeValue });
+  const requestOptions = await device.generateAuthenticationOptions({ credential: activeCredential, qualification: rp, challenge: challengeValue, webauthn });
   const assertion = await page.evaluate(async options => (await navigator.credentials.get({
     publicKey: PublicKeyCredential.parseRequestOptionsFromJSON(options) })).toJSON(), requestOptions);
-  const proof = await device.verifyRemoteProof({ assertion, challenge, credential: activeCredential, qualification: rp, now });
+  const proof = await device.verifyRemoteProof({ assertion, challenge, credential: activeCredential, qualification: rp, now, webauthn });
   output.assertionVerified = proof.verified; output.counter = proof.newCounter;
   const db = createMemoryBackend(); db.seed('remoteWorkChallenges', challenge.id, challenge);
   await db.db.runTransaction(async transaction => {
     await consumeVerifiedChallenge({ db: db.db, transaction, actor: { uid: user.uid, companyId: 'company1', active: true }, command,
-      proof: { ...proof, challengeId: challenge.id }, now });
+      proof, now });
     transaction.set(db.db.collection('remoteWorkTestActions').doc(command.operationId), { success: true });
   });
   output.singleUseConsumed = db.read('remoteWorkChallenges', challenge.id).consumedAt === now.toISOString();
   try {
     await db.db.runTransaction(transaction => consumeVerifiedChallenge({ db: db.db, transaction,
-      actor: { uid: user.uid, companyId: 'company1', active: true }, command, proof: { ...proof, challengeId: challenge.id }, now }));
+      actor: { uid: user.uid, companyId: 'company1', active: true }, command, proof, now }));
     output.replayRejected = false;
   } catch (error) { output.replayRejected = error.code === 'challenge_consumed'; }
 
@@ -67,7 +68,7 @@ try {
   try {
     const noUvResponse = await page.evaluate(async options => (await navigator.credentials.get({
       publicKey: PublicKeyCredential.parseRequestOptionsFromJSON(options) })).toJSON(), noUvOptions);
-    try { await device.verifyRemoteProof({ assertion: noUvResponse, challenge: noUvChallenge, credential: activeCredential, qualification: rp, now }); output.missingUvRejected = false; }
+    try { await device.verifyRemoteProof({ assertion: noUvResponse, challenge: noUvChallenge, credential: activeCredential, qualification: rp, now, webauthn }); output.missingUvRejected = false; }
     catch (error) { output.missingUvError = error.code || error.name; output.missingUvRejected = ['user_verification_required', 'invalid_passkey_assertion'].includes(error.code); }
   } catch (error) { output.missingUvError = error.name; output.missingUvRejected = error.name === 'NotAllowedError'; }
   if (![output.registrationVerified, output.assertionVerified, output.singleUseConsumed, output.replayRejected, output.backedUp, output.missingUvRejected].every(Boolean)) process.exitCode = 1;

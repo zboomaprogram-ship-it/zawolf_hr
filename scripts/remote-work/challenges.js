@@ -2,6 +2,7 @@
 
 const { isoDate } = require('./eligibility');
 const { CHALLENGE_TTL_SECONDS } = require('./security-bounds');
+const { isVerifiedProof } = require('./verified-proofs');
 const SAFE_ID = /^[A-Za-z0-9_-]{1,128}$/;
 const HASH = /^[a-f0-9]{64}$/;
 const ACTIONS = new Set(['check_in', 'check_out', 'save_plan', 'submit_update', 'save_summary']);
@@ -22,7 +23,7 @@ async function consumeVerifiedChallenge({ db, transaction, actor, command, proof
       !SAFE_ID.test(String(actor.companyId || '')) || !SAFE_ID.test(String(proof?.challengeId || '')) ||
       !SAFE_ID.test(String(proof?.credentialId || '')) || !SAFE_ID.test(String(command?.operationId || '')) ||
       !ACTIONS.has(command?.kind) || !HASH.test(String(command?.payloadHash || '')) || !isoDate(command?.date) ||
-      proof?.verified !== true || typeof proof.challenge !== 'string' || !proof.challenge) fail('invalid_challenge_proof');
+      !isVerifiedProof(proof) || typeof proof.challenge !== 'string' || !proof.challenge) fail('invalid_challenge_proof');
   const ref = db.collection('remoteWorkChallenges').doc(proof.challengeId);
   const snapshot = await transaction.get(ref);
   if (!snapshot.exists) fail('challenge_not_found');
