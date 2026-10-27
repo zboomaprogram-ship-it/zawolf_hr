@@ -8,7 +8,7 @@ const server = http.createServer((_, res) => { res.setHeader('content-type', 'te
 await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
 const origin = `http://localhost:${server.address().port}`;
 let browser;
-const output = { platform: process.platform, authenticator: 'virtual_ctap2', node: process.version, library: '@simplewebauthn/server@14.0.0', origin, relyingPartyId: 'localhost' };
+const output = { platform: process.platform, authenticator: 'virtual_ctap2', node: process.version, library: '@simplewebauthn/server@14.0.3', origin, relyingPartyId: 'localhost' };
 try {
   browser = await chromium.launch({ executablePath: browserPath, headless: true, args: ['--no-proxy-server'] });
   output.browser = browser.version();

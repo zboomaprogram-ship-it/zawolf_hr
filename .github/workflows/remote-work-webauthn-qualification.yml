@@ -57,5 +57,7 @@ jobs:
       - name: Test virtual registration and assertions on localhost
         shell: pwsh
         run: |
-          node scripts/test/manual/webauthn-spike/run.mjs | Tee-Object -FilePath "${{ runner.temp }}/webauthn-${{ matrix.browser }}.json"
+          node scripts/test/manual/webauthn-spike/run.mjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node scripts/test/manual/webauthn-spike/qualify-application.mjs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
