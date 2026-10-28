@@ -243,7 +243,7 @@ async function reconcileLeaveEntitlements(now) {
 
 async function runDailyTasks() {
   console.log('Starting daily tasks...');
-  
+
   // By default process yesterday, because absence and missed-checkout decisions
   // must happen after the workday has fully ended.
   const now = new Date();
@@ -288,7 +288,7 @@ async function runDailyTasks() {
   const weekdayShort = new Intl.DateTimeFormat('en-US', jsDayOptions).format(targetNoonUtc);
   const weekdayMap = { 'Sun': 0, 'Mon': 1, 'Tue': 2, 'Wed': 3, 'Thu': 4, 'Fri': 5, 'Sat': 6 };
   const jsDay = weekdayMap[weekdayShort];
-  
+
   // Map JS Day to Dart's DateTime.weekday (1=Mon, 7=Sun)
   const dartWeekday = jsDay === 0 ? 7 : jsDay;
 
@@ -308,6 +308,11 @@ async function runDailyTasks() {
   const activeLeavesByUserId = {};
   leavesSnap.docs.forEach(doc => {
     const leave = doc.data();
+    // Feature 020 / T06: Remote work leaves are an attendance modality, not a vacation leave.
+    const leaveType = String(leave.leaveType || '').toLowerCase();
+    if (['remote', 'wfh', 'remote_work', 'work_from_home'].includes(leaveType)) {
+      return;
+    }
     const startStr = timestampToDateStr(leave.startDate);
     const endStr = timestampToDateStr(leave.endDate);
     if (startStr && endStr && startStr <= todayStr && endStr >= todayStr) {
@@ -807,7 +812,7 @@ async function runDailyTasks() {
           status: 'field_mission',
         });
       }
-      
+
       // 1. Recalculate late arrival against approved late-arrival permission.
       if (log.checkInTime && log.salaryDeductionCode !== 'absent' && !isFieldMission) {
         const latePerm = approvedPermsByUserId[userId]?.['late_arrival'];

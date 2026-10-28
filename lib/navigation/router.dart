@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
@@ -32,6 +33,9 @@ import '../screens/hr/company_day_offs_screen.dart';
 import '../screens/hr/attendance_policy_settings_screen.dart';
 import '../screens/hr/field_assignments_screen.dart';
 import '../features/manual_attendance/data/manual_attendance_repository_impl.dart';
+import '../features/remote_work/data/remote_policy_repository_impl.dart';
+import '../features/remote_work/presentation/cubit/remote_policy_editor_cubit.dart';
+import '../features/remote_work/presentation/cubit/remote_policy_publication_cubit.dart';
 import '../features/manual_attendance/presentation/manual_attendance_screen.dart';
 import '../features/meeting_requests/data/meeting_repository_impl.dart';
 import '../features/meeting_requests/presentation/meeting_request_screen.dart';
@@ -76,6 +80,7 @@ import 'web_attendance_access_entry.dart';
 import '../features/hiring_request/data/hiring_request_repository_impl.dart';
 import '../features/hiring_request/presentation/hiring_request_screen.dart';
 import 'diagnostics_report_entry.dart';
+import 'remote_attendance_entry.dart';
 import 'employee_operations_entry.dart';
 import 'employee_assistant_entry.dart';
 import 'operational_visibility_entry.dart';
@@ -537,6 +542,10 @@ class ZaWolfRouter {
                   (context, state) => const EmployeeAttendanceHistoryScreen(),
             ),
             GoRoute(
+              path: '/employee/remote-attendance',
+              builder: (context, state) => const RemoteAttendanceEntry(),
+            ),
+            GoRoute(
               path: '/assistant',
               builder: (context, state) {
                 final actorId = authService.currentUser?.uid ?? '';
@@ -902,8 +911,25 @@ class ZaWolfRouter {
             ),
             GoRoute(
               path: '/hr/attendance-policy',
-              builder:
-                  (context, state) => const AttendancePolicySettingsScreen(),
+              builder: (context, state) {
+                final repository = RemotePolicyRepositoryImpl();
+                return MultiBlocProvider(
+                  providers: [
+                    BlocProvider(
+                      create: (_) => RemotePolicyEditorCubit(
+                        repository: repository,
+                      ),
+                    ),
+                    BlocProvider(
+                      create: (_) => RemotePolicyPublicationCubit(
+                        repository: repository,
+                        draftId: 'company_attendance_policy',
+                      ),
+                    ),
+                  ],
+                  child: const AttendancePolicySettingsScreen(),
+                );
+              },
             ),
             GoRoute(
               path: '/hr/field-assignments',

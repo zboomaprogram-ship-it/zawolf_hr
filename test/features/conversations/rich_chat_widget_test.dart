@@ -1,5 +1,5 @@
 import 'dart:async';
-import 'dart:typed_data';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -425,9 +425,12 @@ void main() {
           pickAttachments:
               (_) async => [
                 ChatDraftFile(
-                  fileName: 'selected-photo.jpg',
-                  mimeType: 'image/jpeg',
-                  bytes: Uint8List.fromList([0xff, 0xd8, 0xff, 0xd9]),
+                  fileName: 'selected-photo.png',
+                  mimeType: 'image/png',
+                  // A complete 1x1 PNG, so the actual image preview can decode.
+                  bytes: base64Decode(
+                    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR4nGNgAAIAAAUAAXpeqz8AAAAASUVORK5CYII=',
+                  ),
                   kind: 'image',
                 ),
               ],
@@ -442,7 +445,7 @@ void main() {
     await tester.tap(find.byTooltip('إرفاق صور أو فيديو أو ملف'));
     await tester.pumpAndSettle();
 
-    expect(find.text('selected-photo.jpg'), findsOneWidget);
+    expect(find.text('selected-photo.png'), findsOneWidget);
     expect(find.byKey(const Key('chat-send')), findsOneWidget);
     await tester.pumpWidget(const SizedBox.shrink());
     await repository.snapshots.close();

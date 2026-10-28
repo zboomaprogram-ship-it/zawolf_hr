@@ -1,6 +1,22 @@
 {
   "indexes": [
     {
+      "collectionGroup": "remoteWorkCapabilityGrants",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "actorId", "order": "ASCENDING" },
+        { "fieldPath": "companyId", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "attendancePolicyRevisions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "companyId", "order": "ASCENDING" },
+        { "fieldPath": "revision", "order": "DESCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "employeeKpis",
       "queryScope": "COLLECTION",
       "fields": [

@@ -340,6 +340,9 @@ async function submitAttendanceAction({ admin, actor, rawAction }) {
         transaction.get(ref),
         readDeviceBinding({ transaction, ...deviceBinding }),
       ]);
+      if (existing.exists && (existing.data()?.isRemote === true || existing.data()?.attendanceMode === 'remote_web')) {
+        throw gatewayError('اليوم مقفل بالفعل كعمل عن بعد ولا يمكن تسجيل الحضور المكتبي في نفس اليوم.', 'mode_locked');
+      }
       if (existing.exists && existing.data()?.checkInTime) {
         return 'already_recorded';
       }
@@ -408,6 +411,9 @@ async function submitAttendanceAction({ admin, actor, rawAction }) {
     ]);
     if (!existing.exists || !existing.data()?.checkInTime) {
       throw gatewayError('سجل الحضور غير موجود بعد.', 'checkin_missing');
+    }
+    if (existing.data()?.isRemote === true || existing.data()?.attendanceMode === 'remote_web') {
+      throw gatewayError('اليوم مقفل بالفعل كعمل عن بعد ولا يمكن تسجيل الانصراف المكتبي.', 'mode_locked');
     }
     if (existing.data()?.checkOutTime) {
       const boundPermission = existing.data()?.earlyLeaveCheckoutEvidence?.permissionId;

@@ -64,7 +64,12 @@ class LeaveTypePolicy {
   }
 
   static bool isRemote(String type) {
-    return type == remote || type == 'عمل عن بعد' || type == 'يوم عمل عن بعد';
+    final clean = type.trim().toLowerCase();
+    return clean == remote ||
+        clean == 'wfh' ||
+        clean == 'work_from_home' ||
+        type == 'عمل عن بعد' ||
+        type == 'يوم عمل عن بعد';
   }
 
   static String arabicLabel(String type) {

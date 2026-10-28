@@ -1,0 +1,61 @@
+name: Remote work passkey virtual-browser qualification
+
+# This dedicated branch uses standard Windows runners on the public repository.
+# Results appear in job logs; no artifacts, credentials, or production writes.
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - codex/020-webauthn-qualification
+
+permissions:
+  contents: read
+
+jobs:
+  virtual-passkey:
+    name: Windows ${{ matrix.browser }} virtual authenticator
+    runs-on: windows-2022
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [chrome, brave]
+    env:
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+      - name: Install isolated, locked test dependencies
+        shell: pwsh
+        run: npm ci --prefix scripts/test/manual/webauthn-spike --no-audit --no-fund
+      - name: Install pinned Brave test browser
+        if: matrix.browser == 'brave'
+        shell: pwsh
+        run: |
+          $installer = Join-Path $env:RUNNER_TEMP 'BraveBrowserStandaloneSilentSetup.exe'
+          $download = 'https://github.com/brave/brave-browser/releases/download/v1.95.104/BraveBrowserStandaloneSilentSetup.exe'
+          Invoke-WebRequest -Uri $download -OutFile $installer
+          $expected = 'BE66313063F722729F3EC7334D22020725FB4011781177E1148E4840CCF8B5AC'
+          if ((Get-FileHash -Algorithm SHA256 $installer).Hash -ne $expected) { throw 'Brave installer digest mismatch.' }
+          $signature = Get-AuthenticodeSignature $installer
+          if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notmatch 'Brave Software') { throw 'Brave installer signature is not trusted.' }
+          $process = Start-Process -FilePath $installer -Wait -PassThru
+          if ($process.ExitCode -ne 0) { throw "Brave installation failed with exit code $($process.ExitCode)." }
+      - name: Select browser executable
+        shell: pwsh
+        run: |
+          if ('${{ matrix.browser }}' -eq 'chrome') {
+            $candidates = @("$env:ProgramFiles\Google\Chrome\Application\chrome.exe", "${env:ProgramFiles(x86)}\Google\Chrome\Application\chrome.exe")
+          } else {
+            $candidates = @("$env:LOCALAPPDATA\BraveSoftware\Brave-Browser\Application\brave.exe", "$env:ProgramFiles\BraveSoftware\Brave-Browser\Application\brave.exe")
+          }
+          $browser = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $browser) { throw 'Requested browser executable not found.' }
+          "WEBAUTHN_BROWSER_PATH=$browser" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+      - name: Test virtual registration and assertions on localhost
+        shell: pwsh
+        run: |
+          node scripts/test/manual/webauthn-spike/run.mjs | Tee-Object -FilePath "${{ runner.temp }}/webauthn-${{ matrix.browser }}.json"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

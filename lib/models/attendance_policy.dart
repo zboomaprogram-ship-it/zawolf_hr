@@ -152,6 +152,15 @@ class AttendancePolicyConfig {
   /// root, mock-location, and geofence checks but skips the biometric prompt.
   final String attendanceVerificationMode;
 
+  /// Policy-defined remote-work business settings stored with the shared
+  /// attendance policy. Empty means no remote-work policy has been configured.
+  /// Unknown extension fields are retained so older dashboard builds do not
+  /// erase settings added by a newer policy schema.
+  final Map<String, dynamic> remoteWorkPolicy;
+
+  /// Unknown shared-policy extensions survive load/edit/save by older builds.
+  final Map<String, dynamic> extensionFields;
+
   const AttendancePolicyConfig({
     this.checkInOpenTime = AttendancePolicy.defaultCheckInOpenTime,
     this.defaultStartTime = AttendancePolicy.defaultStartTime,
@@ -167,6 +176,8 @@ class AttendancePolicyConfig {
     this.checkInLateWarningMinutes = 10,
     this.checkInFinalWarningLeadMinutes = 5,
     this.attendanceVerificationMode = 'location_only',
+    this.remoteWorkPolicy = const {},
+    this.extensionFields = const {},
   });
 
   bool get requiresBiometric => attendanceVerificationMode != 'location_only';
@@ -180,6 +191,23 @@ class AttendancePolicyConfig {
       return int.tryParse(value?.toString() ?? '') ?? fallback;
     }
 
+    const knownFields = {
+      'checkInOpenTime',
+      'defaultStartTime',
+      'startTime',
+      'defaultEndTime',
+      'endTime',
+      'latestCheckoutTime',
+      'graceMinutes',
+      'quarterDayUntilMinutes',
+      'halfDayUntilMinutes',
+      'payrollWorkDaysPerMonth',
+      'checkInReminderLeadMinutes',
+      'checkInLateWarningMinutes',
+      'checkInFinalWarningLeadMinutes',
+      'attendanceVerificationMode',
+      'remoteWorkPolicy',
+    };
     return AttendancePolicyConfig(
       checkInOpenTime:
           map['checkInOpenTime'] as String? ??
@@ -221,11 +249,21 @@ class AttendancePolicyConfig {
           map['attendanceVerificationMode'] == 'biometric'
               ? 'biometric'
               : 'location_only',
+      remoteWorkPolicy: _copyPolicyMap(
+        map['remoteWorkPolicy'] is Map
+            ? Map<String, dynamic>.from(map['remoteWorkPolicy'] as Map)
+            : const {},
+      ),
+      extensionFields: _copyPolicyMap({
+        for (final entry in map.entries)
+          if (!knownFields.contains(entry.key)) entry.key: entry.value,
+      }),
     );
   }
 
   Map<String, dynamic> toMap() {
     return {
+      ..._copyPolicyMap(extensionFields),
       'checkInOpenTime': checkInOpenTime,
       'defaultStartTime': defaultStartTime,
       'defaultEndTime': defaultEndTime,
@@ -238,6 +276,7 @@ class AttendancePolicyConfig {
       'checkInLateWarningMinutes': checkInLateWarningMinutes,
       'checkInFinalWarningLeadMinutes': checkInFinalWarningLeadMinutes,
       'attendanceVerificationMode': attendanceVerificationMode,
+      'remoteWorkPolicy': _copyPolicyMap(remoteWorkPolicy),
     };
   }
 
@@ -280,22 +319,182 @@ class AttendancePolicyConfig {
           payrollWorkDaysPerMonth == other.payrollWorkDaysPerMonth &&
           checkInReminderLeadMinutes == other.checkInReminderLeadMinutes &&
           checkInLateWarningMinutes == other.checkInLateWarningMinutes &&
-          checkInFinalWarningLeadMinutes == other.checkInFinalWarningLeadMinutes &&
-          attendanceVerificationMode == other.attendanceVerificationMode;
+          checkInFinalWarningLeadMinutes ==
+              other.checkInFinalWarningLeadMinutes &&
+          attendanceVerificationMode == other.attendanceVerificationMode &&
+          _policyValueEquals(remoteWorkPolicy, other.remoteWorkPolicy) &&
+          _policyValueEquals(extensionFields, other.extensionFields);
 
   @override
   int get hashCode => Object.hash(
-        checkInOpenTime,
-        defaultStartTime,
-        defaultEndTime,
-        latestCheckoutTime,
-        graceMinutes,
-        quarterDayUntilMinutes,
-        halfDayUntilMinutes,
-        payrollWorkDaysPerMonth,
-        checkInReminderLeadMinutes,
-        checkInLateWarningMinutes,
-        checkInFinalWarningLeadMinutes,
-        attendanceVerificationMode,
-      );
+    checkInOpenTime,
+    defaultStartTime,
+    defaultEndTime,
+    latestCheckoutTime,
+    graceMinutes,
+    quarterDayUntilMinutes,
+    halfDayUntilMinutes,
+    payrollWorkDaysPerMonth,
+    checkInReminderLeadMinutes,
+    checkInLateWarningMinutes,
+    checkInFinalWarningLeadMinutes,
+    attendanceVerificationMode,
+    _policyValueHash(remoteWorkPolicy),
+    _policyValueHash(extensionFields),
+  );
+}
+
+Map<String, dynamic> _copyPolicyMap(Map<String, dynamic> value) =>
+    value.map((key, nested) => MapEntry(key, _copyPolicyValue(nested)));
+
+dynamic _copyPolicyValue(dynamic value) {
+  if (value is Map) {
+    return value.map(
+      (key, nested) => MapEntry(key.toString(), _copyPolicyValue(nested)),
+    );
+  }
+  if (value is List) return value.map(_copyPolicyValue).toList();
+  return value;
+}
+
+bool _policyValueEquals(dynamic left, dynamic right) {
+  if (identical(left, right)) return true;
+  if (left is Map && right is Map) {
+    if (left.length != right.length ||
+        !left.keys.toSet().containsAll(right.keys)) {
+      return false;
+    }
+    return left.keys.every((key) => _policyValueEquals(left[key], right[key]));
+  }
+  if (left is List && right is List) {
+    if (left.length != right.length) return false;
+    for (var index = 0; index < left.length; index++) {
+      if (!_policyValueEquals(left[index], right[index])) return false;
+    }
+    return true;
+  }
+  return left == right;
+}
+
+int _policyValueHash(dynamic value) {
+  if (value is Map) {
+    final keys = value.keys.map((key) => key.toString()).toList()..sort();
+    return Object.hashAll(
+      keys.map((key) => Object.hash(key, _policyValueHash(value[key]))),
+    );
+  }
+  if (value is List) return Object.hashAll(value.map(_policyValueHash));
+  return value.hashCode;
+}
+
+/// Pure validation for business-defined remote-work policy values.
+///
+/// This validates the current client contract only. Publication must repeat
+/// validation against the server-owned schema and capability catalog.
+class RemoteWorkPolicyValidation {
+  static final _timePattern = RegExp(r'^([01]\d|2[0-3]):[0-5]\d$');
+
+  static List<String> validate(Map<String, dynamic> policy) {
+    if (policy['enabled'] != true) return const [];
+    final errors = <String>[];
+    final eligibility = _asMap(policy['eligibility']);
+    final daysPerWeek = _asInt(eligibility['daysPerWeek']);
+    final weekdays = _asIntList(eligibility['allowedWeekdays']);
+    if (daysPerWeek == null ||
+        daysPerWeek < 1 ||
+        weekdays.isEmpty ||
+        weekdays.any((day) => day < 1 || day > 7) ||
+        weekdays.toSet().length != weekdays.length ||
+        daysPerWeek > weekdays.length) {
+      errors.add('eligibility.daysPerWeek');
+    }
+    final weekStartDay = _asInt(eligibility['weekStartDay']);
+    if (weekStartDay != null && (weekStartDay < 1 || weekStartDay > 7)) {
+      errors.add('eligibility.weekStartDay');
+    }
+    if (eligibility['carryoverEnabled'] == true) {
+      final carryoverCap = _asInt(eligibility['carryoverCap']);
+      if (carryoverCap == null || carryoverCap < 1) {
+        errors.add('eligibility.carryoverCap');
+      }
+    }
+
+    final schedule = _asMap(policy['schedule']);
+    final endDayOffset = _asInt(schedule['endDayOffset']);
+    if (endDayOffset != null && (endDayOffset < 0 || endDayOffset > 1)) {
+      errors.add('schedule.endDayOffset');
+    }
+    final rawCheckpoints = schedule['checkpoints'];
+    if (rawCheckpoints != null && rawCheckpoints is! List) {
+      errors.add('schedule.checkpoints');
+    } else {
+      final checkpoints = rawCheckpoints as List? ?? const [];
+      final ids = <String>{};
+      for (var index = 0; index < checkpoints.length; index++) {
+        final checkpoint = _asMap(checkpoints[index]);
+        final id = checkpoint['id']?.toString().trim() ?? '';
+        if (id.isEmpty || !ids.add(id)) {
+          errors.add('schedule.checkpoints[$index].id');
+        }
+        final dueTime = checkpoint['dueTime']?.toString() ?? '';
+        if (!_timePattern.hasMatch(dueTime)) {
+          errors.add('schedule.checkpoints[$index].dueTime');
+        }
+        final grace = _asInt(checkpoint['graceMinutes']);
+        if (grace == null || grace < 0) {
+          errors.add('schedule.checkpoints[$index].graceMinutes');
+        }
+      }
+    }
+
+    for (final key in const [
+      'startTime',
+      'endTime',
+      'checkInOpenTime',
+      'latestCheckoutTime',
+    ]) {
+      _validateTimeOverride(schedule, key, errors);
+    }
+    for (final key in const [
+      'graceMinutes',
+      'quarterDayUntilMinutes',
+      'halfDayUntilMinutes',
+    ]) {
+      final override = schedule[key];
+      if (override == null) continue;
+      final value = _asMap(override);
+      if (value['mode'] != 'inherit' && value['mode'] != 'override') {
+        errors.add('schedule.$key.mode');
+      } else if (value['mode'] == 'override') {
+        final minutes = _asInt(value['value']);
+        if (minutes == null || minutes < 0) errors.add('schedule.$key.value');
+      }
+    }
+    return errors;
+  }
+
+  static void _validateTimeOverride(
+    Map<String, dynamic> schedule,
+    String key,
+    List<String> errors,
+  ) {
+    final override = schedule[key];
+    if (override == null) return;
+    final value = _asMap(override);
+    if (value['mode'] != 'inherit' && value['mode'] != 'override') {
+      errors.add('schedule.$key.mode');
+    } else if (value['mode'] == 'override' &&
+        !_timePattern.hasMatch(value['value']?.toString() ?? '')) {
+      errors.add('schedule.$key.value');
+    }
+  }
+
+  static Map<String, dynamic> _asMap(dynamic value) =>
+      value is Map ? Map<String, dynamic>.from(value) : const {};
+
+  static int? _asInt(dynamic value) =>
+      value is num ? value.toInt() : int.tryParse(value?.toString() ?? '');
+
+  static List<int> _asIntList(dynamic value) =>
+      value is List ? value.map(_asInt).whereType<int>().toList() : const [];
 }

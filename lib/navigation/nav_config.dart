@@ -447,6 +447,14 @@ List<NavigationItem> _employeeItems() {
       domain: NavDomain.home,
     ),
     _myRequests(),
+    NavigationItem(
+      icon: Icons.home_work_outlined,
+      activeIcon: Icons.home_work,
+      label: 'العمل عن بعد',
+      englishLabel: 'Remote Work',
+      path: '/employee/remote-attendance',
+      domain: NavDomain.time,
+    ),
     _myTasks('مهامي'),
     NavigationItem(
       icon: Icons.bar_chart_outlined,

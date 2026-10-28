@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../models/attendance_policy.dart';
 import '../models/leave_model.dart';
+import '../models/leave_type_policy.dart';
 import '../models/permission_model.dart';
 import '../models/user_model.dart';
 import 'attendance_policy_service.dart';
@@ -78,6 +79,10 @@ class AttendanceReconciliationService {
   }
 
   Future<void> reconcileApprovedLeave(LeaveModel leave) async {
+    if (LeaveTypePolicy.isRemote(leave.leaveType)) {
+      // Remote work is an attendance modality, not a vacation leave.
+      return;
+    }
     final writes = <Future<void>>[];
     for (
       var day = DateTime(

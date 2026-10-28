@@ -13,6 +13,13 @@ const {
 const { oneSignalConfiguration } = require('./onesignal');
 const { createRuntimeLease } = require('./runtime-lease');
 const { queueAttendanceReminders } = require('./attendance-reminders');
+const { resolveActorScope } = require('./remote-work/authorization');
+const { handleRemotePolicyRequest } = require('./remote-work/policy-router');
+const { queueDuePolicyActivations } = require('./remote-work/policy-activation');
+const {
+  queueRemoteWorkReminders,
+  queueRemoteIncidentCoverage,
+} = require('./remote-work/reminders');
 const { processAutomaticAttendance } = require('./auto-attendance');
 const {
   processManagerLeavePermissionBypasses,
@@ -918,6 +925,56 @@ async function authorizeAttendanceRequest(req) {
   const firebaseApp = initializeFirebase();
   const decoded = await getAuth(firebaseApp).verifyIdToken(token);
   return { uid: decoded.uid };
+}
+
+async function authorizeRemoteWorkRequest(req) {
+  const authHeader = String(req.headers.authorization || '');
+  const token = authHeader.startsWith('Bearer ')
+    ? authHeader.slice('Bearer '.length).trim()
+    : '';
+  if (!token) return null;
+  const identity = await getAuth(initializeFirebase()).verifyIdToken(token);
+  const requestedCompanyId = String(req.headers['x-company-id'] || identity.companyId || identity.company_id || 'zawolf').trim();
+  return resolveActorScope({
+    db: admin.firestore(initializeFirebase()),
+    identity,
+    requestedCompanyId,
+  });
+}
+
+async function handleRemoteWorkPolicyRequest(req, res, url) {
+  try {
+    const actor = await authorizeRemoteWorkRequest(req);
+    if (!actor) {
+      sendJson(res, 401, { ok: false, code: 'unauthenticated', error: 'يرجى تسجيل الدخول مرة أخرى.' });
+      return;
+    }
+    const body = req.method === 'POST' ? await readJsonBody(req, 64 * 1024) : {};
+    const result = await handleRemotePolicyRequest({
+      db: admin.firestore(initializeFirebase()),
+      actor,
+      method: req.method,
+      path: url.pathname,
+      query: Object.fromEntries(url.searchParams.entries()),
+      body,
+      now: new Date(),
+    });
+    sendJson(res, 200, { ok: true, ...result });
+  } catch (error) {
+    const code = String(error.code || 'remote_policy_unavailable');
+    const status = code === 'unauthenticated' || code === 'account_inactive' ? 401
+      : code === 'not_authorized' || code === 'wrong_company' ? 403
+        : code === 'not_found' || code.endsWith('_not_found') ? 404
+          : code === 'version_conflict' || code === 'operation_conflict' || code.endsWith('_changed') ? 409
+            : 400;
+    console.error('Remote attendance policy request failed:', code);
+    sendJson(res, status, {
+      ok: false,
+      code,
+      error: String(error.messageAr || 'تعذر تحميل أو حفظ سياسة الدوام. أعد المحاولة.'),
+      ...(Array.isArray(error.validationErrors) ? { validationErrors: error.validationErrors } : {}),
+    });
+  }
 }
 
 async function authorizeCheckoutPolicyRequest(req) {
@@ -4399,6 +4456,7 @@ async function handleDispatch(req, res, url) {
 
   const startedAt = new Date().toISOString();
   runningDispatch = withRuntimeLease('background_attendance', async () => {
+    const policyActivations = await queueDuePolicyActivations({ db: admin.firestore() });
     const managerLeaveBypasses =
       await processManagerLeavePermissionBypasses();
     const attendancePermissionReconciliation =
@@ -4408,6 +4466,7 @@ async function handleDispatch(req, res, url) {
     const automaticAttendance = await processAutomaticAttendance();
     const push = await dispatchNotifications();
     return {
+      policyActivations,
       managerLeaveBypasses,
       attendancePermissionReconciliation,
       earlyLeaveReconciliation,
@@ -4448,6 +4507,7 @@ async function handleAttendanceReminders(req, res, url) {
     return;
   }
   runningDispatch = withRuntimeLease('background_attendance', async () => {
+    const policyActivations = await queueDuePolicyActivations({ db: admin.firestore() });
     const managerLeaveBypasses =
       await processManagerLeavePermissionBypasses();
     const attendancePermissionReconciliation =
@@ -4456,6 +4516,7 @@ async function handleAttendanceReminders(req, res, url) {
     const reminders = await queueAttendanceReminders();
     const push = await dispatchNotifications();
     return {
+      policyActivations,
       managerLeaveBypasses,
       attendancePermissionReconciliation,
       automaticAttendance,
@@ -4494,7 +4555,11 @@ async function runBackgroundDispatch() {
     let earlyLeaveReconciliation;
     let requestApprovalHistory;
     let advanceRouteReconciliation;
+    let policyActivations;
+    let remoteWorkReminders;
+    let remoteIncidentCoverage;
     try {
+      policyActivations = await queueDuePolicyActivations({ db: admin.firestore() });
       managerLeaveBypasses =
         await processManagerLeavePermissionBypasses();
       attendancePermissionReconciliation =
@@ -4513,6 +4578,19 @@ async function runBackgroundDispatch() {
         admin,
       });
       reminders = await queueAttendanceReminders();
+      try {
+        remoteWorkReminders = await queueRemoteWorkReminders({
+          db: admin.firestore(),
+          admin,
+        });
+        remoteIncidentCoverage = await queueRemoteIncidentCoverage({
+          db: admin.firestore(),
+          admin,
+        });
+      } catch (rwErr) {
+        console.error('Remote work reminders scan failed:', rwErr);
+        remoteWorkReminders = { error: String(rwErr.message || rwErr) };
+      }
     } catch (error) {
       // A reminder query failure must not stop approvals, tasks, and other
       // pending notifications from being delivered.
@@ -4528,10 +4606,16 @@ async function runBackgroundDispatch() {
       }
     }
 
-    if (reminders?.queued > 0 || automaticAttendance?.found > 0) {
+    if (
+      reminders?.queued > 0 ||
+      automaticAttendance?.found > 0 ||
+      remoteWorkReminders?.queued > 0 ||
+      remoteIncidentCoverage?.queued > 0
+    ) {
       schedulePushDispatch('scheduled_work');
     }
     return {
+      policyActivations,
       managerLeaveBypasses,
       attendancePermissionReconciliation,
       earlyLeaveReconciliation,
@@ -4539,6 +4623,8 @@ async function runBackgroundDispatch() {
       requestApprovalHistory,
       automaticAttendance,
       reminders,
+      remoteWorkReminders,
+      remoteIncidentCoverage,
     };
   });
 
@@ -6070,6 +6156,12 @@ const server = http.createServer(async (req, res) => {
 
   if (url.pathname === '/attendance/events' && req.method === 'POST') {
     await handleAttendanceGateway(req, res);
+    return;
+  }
+
+  if (url.pathname.startsWith('/attendance/remote-work/') &&
+      ['GET', 'POST'].includes(req.method)) {
+    await handleRemoteWorkPolicyRequest(req, res, url);
     return;
   }
 

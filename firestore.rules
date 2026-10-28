@@ -1429,7 +1429,34 @@ service cloud.firestore {
 
     match /companies/{companyId} {
       allow read: if isAuth() && isActive();
-      allow write: if isAuth() && isActive() && (isHR() || isSuperAdmin() || isCompanyExecutive());
+      allow create: if isAuth() && isActive() && (isHR() || isSuperAdmin() || isCompanyExecutive())
+        && !request.resource.data.keys().hasAny(['attendancePolicy', 'attendancePolicyRevision']);
+      allow update: if isAuth() && isActive() && (isHR() || isSuperAdmin() || isCompanyExecutive())
+        && !request.resource.data.diff(resource.data).affectedKeys()
+          .hasAny(['attendancePolicy', 'attendancePolicyRevision']);
+      allow delete: if isAuth() && isActive() && (isHR() || isSuperAdmin())
+        && !resource.data.keys().hasAny(['attendancePolicy', 'attendancePolicyRevision']);
+    }
+
+    // Remote attendance policy writes must pass through the authenticated,
+    // versioned server command so grants, approvals and publication are atomic.
+    match /attendancePolicyDrafts/{documentId} {
+      allow read, write: if false;
+    }
+    match /attendancePolicyHeads/{documentId} {
+      allow read, write: if false;
+    }
+    match /attendancePolicyRevisions/{documentId} {
+      allow read, write: if false;
+    }
+    match /attendancePolicyOperations/{documentId} {
+      allow read, write: if false;
+    }
+    match /remoteWorkCapabilityGrants/{documentId} {
+      allow read, write: if false;
+    }
+    match /remoteWorkQualifiedProfiles/{documentId} {
+      allow read, write: if false;
     }
 
     match /customRequestTypes/{typeId} {
@@ -2318,7 +2345,7 @@ service cloud.firestore {
         && request.resource.data.amount > 0
         && request.resource.data.keys().hasOnly([
           'userId', 'employeeId', 'employeeName', 'department', 'locationId',
-          'managerId', 'amount', 'reason', 'status', 'monthKey', 'submittedAt',
+          'managerId', 'managerName', 'amount', 'reason', 'subtype', 'status', 'monthKey', 'submittedAt',
           'isRead', 'managerIds', 'managerNames', 'managerApprovalIndex',
           'managerApprovalTotal', 'managerApprovalTrail',
           'jobTitle', 'approvalHistory', 'reviewedAt', 'reviewedBy',
