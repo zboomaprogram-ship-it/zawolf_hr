@@ -98,9 +98,6 @@ async function saveRemoteSchedule({ db, admin, actor, command, now = new Date() 
 
     const currentSchedule = await tx.get(scheduleRef);
     const existingSchedules = [];
-    if (currentSchedule.exists) {
-      existingSchedules.push(currentSchedule.data());
-    }
 
     const validation = validateScheduleRevision({
       schedule,
@@ -130,6 +127,13 @@ async function saveRemoteSchedule({ db, admin, actor, command, now = new Date() 
     };
 
     tx.set(scheduleRef, scheduleData);
+
+    const userRef = db.collection('users').doc(schedule.employeeId);
+    tx.set(userRef, {
+      workSchedule: {
+        remoteWorkDays: schedule.weekdays,
+      },
+    }, { merge: true });
 
     // Monotonically advance calendar guard epoch
     const guardSnap = await tx.get(guardRef);

@@ -85,16 +85,46 @@ async function handleRemotePolicyRequest({ db, actor, method, path, query = {}, 
   if (path === '/attendance/remote-work/eligibility/evaluate' && method === 'POST') {
     const employeeId = body.employeeId || actor.uid;
     const date = body.date;
-    const [employeeDoc, companyDoc] = await Promise.all([
+    const [employeeDoc, companyDoc, schedulesSnap] = await Promise.all([
       db.collection('users').doc(employeeId).get(),
       db.collection('companies').doc(actor.companyId).get(),
+      db.collection('remoteWorkSchedules')
+        .where('companyId', '==', actor.companyId)
+        .where('employeeId', '==', employeeId)
+        .where('status', '==', 'approved')
+        .get(),
     ]);
-    const policy = companyDoc.data()?.attendancePolicy?.remoteWorkPolicy || {};
+    const empData = employeeDoc.exists ? (employeeDoc.data() || {}) : {};
+    const companyData = companyDoc.exists ? (companyDoc.data() || {}) : {};
+    const policy = companyData.attendancePolicy?.remoteWorkPolicy || {};
+
+    const schedules = [];
+    if (schedulesSnap && !schedulesSnap.empty) {
+      schedulesSnap.forEach((doc) => {
+        schedules.push({ id: doc.id, ...doc.data() });
+      });
+    }
+
+    const profileDays = empData.workSchedule?.remoteWorkDays || empData.workSchedule?.remoteDays;
+    if (Array.isArray(profileDays) && profileDays.length > 0 && schedules.length === 0) {
+      schedules.push({
+        id: `profile_${employeeId}`,
+        companyId: actor.companyId,
+        employeeId,
+        startDate: '2020-01-01',
+        endDate: '2099-12-31',
+        weekdays: profileDays,
+        status: 'approved',
+        version: 1,
+      });
+    }
+
     return evaluateRemoteEligibility({
-      employee: employeeDoc.data(),
+      employee: empData,
       companyId: actor.companyId,
       policy,
       date,
+      schedules,
     });
   }
 

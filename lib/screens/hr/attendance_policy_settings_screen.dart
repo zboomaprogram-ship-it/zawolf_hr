@@ -24,6 +24,10 @@ import '../../features/remote_work/presentation/cubit/remote_policy_editor_cubit
 import '../../features/remote_work/presentation/cubit/remote_policy_publication_cubit.dart';
 import '../../features/remote_work/presentation/widgets/remote_policy_effective_time_field.dart';
 import '../../features/remote_work/presentation/widgets/remote_policy_review_actions.dart';
+import '../../features/remote_work/data/remote_work_repository_impl.dart';
+import '../../features/remote_work/domain/entities/remote_work_models.dart';
+import '../../models/user_model.dart';
+import 'widgets/assign_remote_days_dialog.dart';
 
 class AttendancePolicySettingsScreen extends StatefulWidget {
   const AttendancePolicySettingsScreen({super.key});
@@ -974,6 +978,70 @@ class _AttendancePolicySettingsScreenState
                             },
                   ),
               ],
+            ),
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              onPressed: () => AssignRemoteDaysDialog.show(
+                context,
+                eligibility: eligibility,
+                loadEmployees: () async {
+                  final snap = await FirebaseFirestore.instance
+                      .collection('users')
+                      .where('isActive', isEqualTo: true)
+                      .get();
+                  final list =
+                      snap.docs
+                          .map((d) => UserModel.fromFirestore(d))
+                          .toList();
+                  list.sort((a, b) => a.displayName.compareTo(b.displayName));
+                  return list;
+                },
+                onSave: (employeeId, remoteDays) async {
+                  await FirebaseFirestore.instance
+                      .collection('users')
+                      .doc(employeeId)
+                      .update({'workSchedule.remoteWorkDays': remoteDays});
+                  final now = DateTime.now();
+                  final todayStr =
+                      '${now.year.toString().padLeft(4, '0')}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+                  final endYearStr = '${now.year + 1}-12-31';
+                  try {
+                    await RemoteWorkRepositoryImpl().submitScheduleCommand(
+                      RemoteCommand(
+                        operationId:
+                            'sched-$employeeId-${DateTime.now().millisecondsSinceEpoch}',
+                        kind: 'save_schedule',
+                        payload: {
+                          'schedule': {
+                            'employeeId': employeeId,
+                            'startDate': todayStr,
+                            'endDate': endYearStr,
+                            'weekdays': remoteDays,
+                          },
+                        },
+                      ),
+                    );
+                  } catch (_) {}
+                },
+              ),
+              icon: const Icon(
+                Icons.person_add_alt_1_outlined,
+                color: ZaWolfColors.primaryCyan,
+              ),
+              label: const Text(
+                'تعيين جدول العمل عن بُعد للموظفين',
+                style: TextStyle(
+                  color: ZaWolfColors.primaryCyan,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              style: OutlinedButton.styleFrom(
+                side: const BorderSide(color: ZaWolfColors.primaryCyan),
+                padding: const EdgeInsets.symmetric(
+                  vertical: 12,
+                  horizontal: 16,
+                ),
+              ),
             ),
             const Divider(),
             Text(

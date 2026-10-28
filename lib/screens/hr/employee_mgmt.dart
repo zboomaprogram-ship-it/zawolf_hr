@@ -1364,6 +1364,41 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
                                     ),
                                   ),
                                 ),
+                                if (emp.workSchedule.remoteWorkDays?.isNotEmpty == true) ...[
+                                  const SizedBox(width: 8),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 6,
+                                      vertical: 3,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: ZaWolfColors.primaryCyan.withValues(alpha: 0.1),
+                                      borderRadius: BorderRadius.circular(6),
+                                      border: Border.all(
+                                        color: ZaWolfColors.primaryCyan.withValues(alpha: 0.3),
+                                      ),
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        const Icon(
+                                          Icons.home_work_outlined,
+                                          size: 11,
+                                          color: ZaWolfColors.primaryCyan,
+                                        ),
+                                        const SizedBox(width: 3),
+                                        Text(
+                                          '${emp.workSchedule.remoteWorkDays!.length} عن بُعد',
+                                          style: const TextStyle(
+                                            color: ZaWolfColors.primaryCyan,
+                                            fontSize: 10,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
                                 const Spacer(),
                                 IconButton(
                                   padding: EdgeInsets.zero,
@@ -2211,6 +2246,7 @@ class _AddEmployeeDialogState extends State<AddEmployeeDialog> {
   String _workStartTime = '09:00';
   String _workEndTime = '17:00';
   List<int> _workDays = [6, 7, 1, 2, 3, 4];
+  List<int> _remoteWorkDays = [];
   DateTime? _hiringDate;
   bool _salesAnalyticsEnabled = false;
   String _salesAnalyticsRole = 'sales';
@@ -2441,6 +2477,7 @@ class _AddEmployeeDialogState extends State<AddEmployeeDialog> {
           startTime: _workStartTime,
           endTime: _workEndTime,
           workDays: _workDays,
+          remoteWorkDays: _remoteWorkDays,
         ),
         hiringDate: _hiringDate!,
       );
@@ -3009,11 +3046,13 @@ class _AddEmployeeDialogState extends State<AddEmployeeDialog> {
                   startTime: _workStartTime,
                   endTime: _workEndTime,
                   workDays: _workDays,
-                  onChanged: (start, end, days) {
+                  remoteWorkDays: _remoteWorkDays,
+                  onChanged: (start, end, days, remoteDays) {
                     setState(() {
                       _workStartTime = start;
                       _workEndTime = end;
                       _workDays = days;
+                      _remoteWorkDays = remoteDays;
                     });
                   },
                 ),
@@ -3085,6 +3124,7 @@ class _EditEmployeeDialogState extends State<EditEmployeeDialog> {
   late String _workStartTime;
   late String _workEndTime;
   late List<int> _workDays;
+  late List<int> _remoteWorkDays;
   DateTime? _hiringDate;
   late bool _salesAnalyticsEnabled;
   late String _salesAnalyticsRole;
@@ -3144,6 +3184,9 @@ class _EditEmployeeDialogState extends State<EditEmployeeDialog> {
     _workEndTime = emp.workSchedule.endTime ?? '17:00';
     _workDays = List<int>.from(
       emp.workSchedule.workDays ?? const [6, 7, 1, 2, 3, 4],
+    );
+    _remoteWorkDays = List<int>.from(
+      emp.workSchedule.remoteWorkDays ?? const [],
     );
     final rawManagerIds = [
       if (emp.managerId != null && emp.managerId!.isNotEmpty) emp.managerId!,
@@ -3461,6 +3504,7 @@ class _EditEmployeeDialogState extends State<EditEmployeeDialog> {
               startTime: _workStartTime,
               endTime: _workEndTime,
               workDays: _workDays,
+              remoteWorkDays: _remoteWorkDays,
             ).toMap(),
         'salesAnalyticsEnabled': _salesAnalyticsEnabled,
         'salesAnalyticsRole': _salesAnalyticsEnabled ? _salesAnalyticsRole : '',
@@ -4095,11 +4139,13 @@ class _EditEmployeeDialogState extends State<EditEmployeeDialog> {
                   startTime: _workStartTime,
                   endTime: _workEndTime,
                   workDays: _workDays,
-                  onChanged: (start, end, days) {
+                  remoteWorkDays: _remoteWorkDays,
+                  onChanged: (start, end, days, remoteDays) {
                     setState(() {
                       _workStartTime = start;
                       _workEndTime = end;
                       _workDays = days;
+                      _remoteWorkDays = remoteDays;
                     });
                   },
                 ),
@@ -4237,12 +4283,19 @@ class _WorkScheduleEditor extends StatelessWidget {
   final String startTime;
   final String endTime;
   final List<int> workDays;
-  final void Function(String start, String end, List<int> days) onChanged;
+  final List<int> remoteWorkDays;
+  final void Function(
+    String start,
+    String end,
+    List<int> days,
+    List<int> remoteDays,
+  ) onChanged;
 
   const _WorkScheduleEditor({
     required this.startTime,
     required this.endTime,
     required this.workDays,
+    this.remoteWorkDays = const [],
     required this.onChanged,
   });
 
@@ -4278,6 +4331,7 @@ class _WorkScheduleEditor extends StatelessWidget {
       start ? value : startTime,
       start ? endTime : value,
       List<int>.from(workDays),
+      List<int>.from(remoteWorkDays),
     );
   }
 
@@ -4326,6 +4380,12 @@ class _WorkScheduleEditor extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 12),
+          Text(
+            'أيام العمل الأسبوعية',
+            style: theme.textTheme.titleSmall?.copyWith(color: Colors.white70),
+            textDirection: TextDirection.rtl,
+          ),
+          const SizedBox(height: 8),
           Wrap(
             alignment: WrapAlignment.end,
             spacing: 8,
@@ -4338,6 +4398,7 @@ class _WorkScheduleEditor extends StatelessWidget {
                     selected: selected,
                     onSelected: (enabled) {
                       final days = List<int>.from(workDays);
+                      final remoteDays = List<int>.from(remoteWorkDays);
                       enabled ? days.add(entry.key) : days.remove(entry.key);
                       if (days.isEmpty) {
                         ScaffoldMessenger.of(context).showSnackBar(
@@ -4347,7 +4408,104 @@ class _WorkScheduleEditor extends StatelessWidget {
                         );
                         return;
                       }
-                      onChanged(startTime, endTime, days);
+                      if (!enabled) {
+                        remoteDays.remove(entry.key);
+                      }
+                      onChanged(startTime, endTime, days, remoteDays);
+                    },
+                  );
+                }).toList(),
+          ),
+          const Divider(height: 24, color: ZaWolfColors.surface03),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              if (remoteWorkDays.isNotEmpty)
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 2,
+                  ),
+                  decoration: BoxDecoration(
+                    color: ZaWolfColors.primaryCyan.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: ZaWolfColors.primaryCyan.withValues(alpha: 0.3),
+                    ),
+                  ),
+                  child: Text(
+                    '${remoteWorkDays.length} يوم عمل عن بُعد',
+                    style: const TextStyle(
+                      color: ZaWolfColors.primaryCyan,
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                )
+              else
+                const SizedBox.shrink(),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(
+                    Icons.home_work_outlined,
+                    size: 18,
+                    color: ZaWolfColors.primaryCyan,
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    'أيام العمل عن بُعد (Remote Days)',
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                    ),
+                    textDirection: TextDirection.rtl,
+                  ),
+                ],
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          const Text(
+            'حدد يوماً أو أكثر للعمل عن بُعد من المنزل وفقاً لسياسة الشركة.',
+            style: TextStyle(color: ZaWolfColors.textSecondary, fontSize: 12),
+            textDirection: TextDirection.rtl,
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            alignment: WrapAlignment.end,
+            spacing: 8,
+            runSpacing: 8,
+            children:
+                _dayLabels.entries.map((entry) {
+                  final selected = remoteWorkDays.contains(entry.key);
+                  return FilterChip(
+                    avatar:
+                        selected
+                            ? const Icon(
+                              Icons.check,
+                              size: 16,
+                              color: ZaWolfColors.primaryCyan,
+                            )
+                            : null,
+                    label: Text(entry.value),
+                    selected: selected,
+                    selectedColor: ZaWolfColors.primaryCyan.withValues(
+                      alpha: 0.25,
+                    ),
+                    checkmarkColor: ZaWolfColors.primaryCyan,
+                    onSelected: (enabled) {
+                      final remoteDays = List<int>.from(remoteWorkDays);
+                      final nextWorkDays = List<int>.from(workDays);
+                      if (enabled) {
+                        remoteDays.add(entry.key);
+                        if (!nextWorkDays.contains(entry.key)) {
+                          nextWorkDays.add(entry.key);
+                        }
+                      } else {
+                        remoteDays.remove(entry.key);
+                      }
+                      onChanged(startTime, endTime, nextWorkDays, remoteDays);
                     },
                   );
                 }).toList(),

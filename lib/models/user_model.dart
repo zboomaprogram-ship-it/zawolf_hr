@@ -5,8 +5,14 @@ class WorkSchedule {
   final String? startTime;
   final String? endTime;
   final List<int>? workDays;
+  final List<int>? remoteWorkDays;
 
-  WorkSchedule({this.startTime, this.endTime, this.workDays});
+  WorkSchedule({
+    this.startTime,
+    this.endTime,
+    this.workDays,
+    this.remoteWorkDays,
+  });
 
   factory WorkSchedule.fromMap(Map<String, dynamic>? map) {
     if (map == null) return WorkSchedule();
@@ -15,6 +21,9 @@ class WorkSchedule {
       endTime: map['endTime'] as String?,
       workDays:
           (map['workDays'] as List<dynamic>?)?.map((e) => e as int).toList(),
+      remoteWorkDays:
+          (map['remoteWorkDays'] as List<dynamic>?)?.map((e) => e as int).toList() ??
+          (map['remoteDays'] as List<dynamic>?)?.map((e) => e as int).toList(),
     );
   }
 
@@ -26,11 +35,17 @@ class WorkSchedule {
     return workDays!.contains(date.weekday);
   }
 
+  bool isRemoteDay(DateTime date) {
+    if (remoteWorkDays == null || remoteWorkDays!.isEmpty) return false;
+    return remoteWorkDays!.contains(date.weekday);
+  }
+
   Map<String, dynamic> toMap() {
     return {
       if (startTime != null) 'startTime': startTime,
       if (endTime != null) 'endTime': endTime,
       if (workDays != null) 'workDays': workDays,
+      if (remoteWorkDays != null) 'remoteWorkDays': remoteWorkDays,
     };
   }
 }

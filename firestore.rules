@@ -1458,6 +1458,10 @@ service cloud.firestore {
     match /remoteWorkQualifiedProfiles/{documentId} {
       allow read, write: if false;
     }
+    match /remoteWorkSchedules/{documentId} {
+      allow read: if isAuth() && isActive();
+      allow write: if false;
+    }
 
     match /customRequestTypes/{typeId} {
       allow read: if isAuth() && isActive();
