@@ -92,6 +92,92 @@ class HrDirectRequestService {
       reviewedBy: hr.uid,
       reviewerName: hr.displayName,
     );
+    const allowedLeaveKeys = <String>{
+      'userId',
+      'employeeId',
+      'employeeName',
+      'department',
+      'locationId',
+      'jobTitle',
+      'managerId',
+      'leaveType',
+      'startDate',
+      'endDate',
+      'numberOfDays',
+      'reason',
+      'attachmentUrl',
+      'workHandoverTo',
+      'status',
+      'submittedAt',
+      'isRead',
+      'reviewedAt',
+      'reviewedBy',
+      'reviewerName',
+      'managerIds',
+      'managerNames',
+      'managerApprovalIndex',
+      'managerApprovalTotal',
+      'managerApprovalTrail',
+      'deductsLeaveBalance',
+      'leaveBalanceKey',
+      'leaveBalanceKeys',
+      'requiresFullDaySalaryDeduction',
+      'requiresCeoApproval',
+      'requiresHrApproval',
+      'directHrGrant',
+      'grantedBy',
+      'grantedByName',
+      'approvalHistory',
+      'convertToAnnual',
+      'daysOffInCurrentPeriod',
+      'currentPeriodKey',
+      'currentPeriodRange',
+      'notes',
+      'comments',
+      'managerCodes',
+      'teamLeaderCodes',
+      'approvalRouteVersion',
+      'currentApprovalIndex',
+      'currentApproverId',
+      'currentApproverName',
+      'approvalRoute',
+      'finalApproverId',
+      'finalApproverName',
+      'finalApprovalAt',
+    };
+    final rawLeaveData = <String, dynamic>{
+      ...leave.toFirestore(),
+      'managerIds': <String>[],
+      'managerNames': <String>[],
+      'managerApprovalIndex': 0,
+      'managerApprovalTotal': 0,
+      'managerApprovalTrail': <Map<String, dynamic>>[],
+      'deductsLeaveBalance': balanceKeys.isNotEmpty,
+      if (LeaveTypePolicy.balanceKey(leaveType) != null)
+        'leaveBalanceKey': LeaveTypePolicy.balanceKey(leaveType),
+      if (balanceKeys.isNotEmpty) 'leaveBalanceKeys': balanceKeys,
+      'requiresFullDaySalaryDeduction':
+          LeaveTypePolicy.requiresFullDaySalaryDeduction(leaveType),
+      'requiresCeoApproval': false,
+      'requiresHrApproval': false,
+      'directHrGrant': true,
+      'grantedBy': hr.uid,
+      'grantedByName': hr.displayName,
+      'approvalHistory': [
+        {
+          'stage': 'hr_direct',
+          'status': 'approved',
+          'actorId': hr.uid,
+          'actorName': hr.displayName,
+          'timestamp': Timestamp.now(),
+        },
+      ],
+    };
+    final firestoreLeaveData = Map<String, dynamic>.fromEntries(
+      rawLeaveData.entries.where(
+        (entry) => allowedLeaveKeys.contains(entry.key),
+      ),
+    );
     await _db.runTransaction((transaction) async {
       if (balanceKeys.isNotEmpty) {
         final userRef = _db.collection('users').doc(employee.uid);
@@ -107,34 +193,7 @@ class HrDirectRequestService {
             'leaveBalance.$key': FieldValue.increment(-days),
         });
       }
-      transaction.set(ref, {
-        ...leave.toFirestore(),
-        'managerIds': <String>[],
-        'managerNames': <String>[],
-        'managerApprovalIndex': 0,
-        'managerApprovalTotal': 0,
-        'managerApprovalTrail': <Map<String, dynamic>>[],
-        'deductsLeaveBalance': balanceKeys.isNotEmpty,
-        if (LeaveTypePolicy.balanceKey(leaveType) != null)
-          'leaveBalanceKey': LeaveTypePolicy.balanceKey(leaveType),
-        if (balanceKeys.isNotEmpty) 'leaveBalanceKeys': balanceKeys,
-        'requiresFullDaySalaryDeduction':
-            LeaveTypePolicy.requiresFullDaySalaryDeduction(leaveType),
-        'requiresCeoApproval': false,
-        'requiresHrApproval': false,
-        'directHrGrant': true,
-        'grantedBy': hr.uid,
-        'grantedByName': hr.displayName,
-        'approvalHistory': [
-          {
-            'stage': 'hr_direct',
-            'status': 'approved',
-            'actorId': hr.uid,
-            'actorName': hr.displayName,
-            'timestamp': Timestamp.now(),
-          },
-        ],
-      });
+      transaction.set(ref, firestoreLeaveData);
     });
     await _reconciliation.reconcileApprovedLeave(leave);
     await RoleNotificationService.instance.createNotification(
@@ -220,7 +279,49 @@ class HrDirectRequestService {
     final checkoutDecisionSnapshot = await _checkoutDecisionSnapshot(
       permissionType,
     );
-    await ref.set({
+    const allowedPermissionKeys = <String>{
+      'userId',
+      'employeeId',
+      'employeeName',
+      'department',
+      'locationId',
+      'jobTitle',
+      'managerId',
+      'permissionType',
+      'requestDate',
+      'expectedTime',
+      'requestDateTimestamp',
+      'expectedTimestamp',
+      'durationMinutes',
+      'reason',
+      'status',
+      'isExceedingQuota',
+      'isDeductible',
+      'isSubmittedAfterWorkStart',
+      'salaryDeductionFraction',
+      'salaryDeductionAmount',
+      'salaryCurrency',
+      'salaryDeductionCode',
+      'salaryDeductionLabel',
+      'salaryDeductionApprovalStatus',
+      'monthKey',
+      'submittedAt',
+      'isRead',
+      'reviewedAt',
+      'reviewedBy',
+      'reviewerName',
+      'managerIds',
+      'managerNames',
+      'managerApprovalIndex',
+      'managerApprovalTotal',
+      'managerApprovalTrail',
+      'requiresHrApproval',
+      'directHrGrant',
+      'grantedBy',
+      'grantedByName',
+      'approvalHistory',
+    };
+    final rawPermissionData = <String, dynamic>{
       ...permission.toFirestore(),
       ...checkoutDecisionSnapshot,
       'requestDateTimestamp': Timestamp.fromDate(date),
@@ -245,7 +346,13 @@ class HrDirectRequestService {
           'timestamp': Timestamp.now(),
         },
       ],
-    });
+    };
+    final firestorePermissionData = Map<String, dynamic>.fromEntries(
+      rawPermissionData.entries.where(
+        (entry) => allowedPermissionKeys.contains(entry.key),
+      ),
+    );
+    await ref.set(firestorePermissionData);
     await _reconciliation.reconcileApprovedPermission(permission);
     await RoleNotificationService.instance.createNotification(
       recipientId: employee.uid,
