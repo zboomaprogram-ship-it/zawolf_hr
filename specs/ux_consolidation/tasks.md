@@ -24,10 +24,10 @@
 
 ## Phase 1: Loading System Core (Build beside legacy)
 
-- [ ] C010 [P] Add shape-accurate skeleton patterns (`SkeletonEmployeeRow`, `SkeletonStatCard`, `SkeletonInsightCard`, `SkeletonAttendanceRow`, `SkeletonTableRows`, `SkeletonDetailPane`) in `lib/design_system/components/skeletons.dart`
-- [ ] C011 [P] Write height-parity widget tests for each skeleton pattern (mobile 390px + desktop 1024px) in `test/design_system/skeleton_height_parity_test.dart`
-- [ ] C012 Implement stale-while-refresh contract widget and mixin in `lib/design_system/components/stale_while_refresh.dart` + test in `test/design_system/stale_while_refresh_test.dart`
-- [ ] C013 Extract keep-mounted tab behavior from `_LazyRequestTab` into shared component `lib/design_system/components/keep_mounted_tab_view.dart` (preserving AGENTS.md 2-consumer rule)
+- [x] C010 [P] Add shape-accurate skeleton patterns (`SkeletonEmployeeRow`, `SkeletonStatCard`, `SkeletonInsightCard`, `SkeletonAttendanceRow`, `SkeletonTableRows`, `SkeletonDetailPane`) in `lib/design_system/components/skeletons.dart`
+- [x] C011 [P] Write height-parity widget tests for each skeleton pattern (mobile 390px + desktop 1024px) in `test/design_system/skeleton_height_parity_test.dart`
+- [x] C012 Implement stale-while-refresh contract widget and mixin in `lib/design_system/components/stale_while_refresh.dart` + test in `test/design_system/stale_while_refresh_test.dart`
+- [x] C013 Extract keep-mounted tab behavior from `_LazyRequestTab` into shared component `lib/design_system/components/keep_mounted_tab_view.dart` (preserving AGENTS.md 2-consumer rule)
 
 **Checkpoint 1:** Design-system tests, `flutter analyze`, and architecture guards green.
 
