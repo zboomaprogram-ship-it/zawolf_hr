@@ -208,3 +208,91 @@ test('finalizeRemoteShift marks session and attendance completed or missing chec
 
   await harness.close();
 });
+
+test('submit_update enforces checkpoint window and rejects expired submissions', async () => {
+  const harness = await createRemoteHarness({
+    now: '2026-11-02T12:00:00.000Z',
+    fixtures: {
+      'companies/zawolf': {
+        name: 'ZaWolf',
+        attendancePolicy: {
+          remoteWorkPolicy: {
+            enabled: true,
+            schedule: {
+              checkpoints: [
+                { id: 'cp_1', label: 'متابعة الصباح', dueTime: '10:00', graceMinutes: 15 },
+                { id: 'cp_2', label: 'متابعة الظهيرة', dueTime: '13:00', graceMinutes: 15 },
+              ],
+            },
+          },
+        },
+      },
+      'remoteWorkSessions/zawolf_sess_200': {
+        sessionId: 'sess_200',
+        companyId: 'zawolf',
+        userId: 'u1',
+        date: '2026-11-02',
+        status: 'active',
+        version: 1,
+      },
+    },
+  });
+
+  const actor = { uid: 'u1', active: true, companyId: 'zawolf' };
+
+  // 1. Trying to submit cp_1 at 10:30 Cairo (which is past 10:00 + 15 min deadline) -> throws checkpoint_window_expired
+  // Cairo is UTC+2, so 08:30 UTC = 10:30 Cairo
+  await assert.rejects(
+    executeRemoteSessionCommand({
+      db: harness.db,
+      admin: {},
+      actor,
+      command: {
+        operationId: 'op_update_expired',
+        kind: 'submit_update',
+        date: '2026-11-02',
+        sessionId: 'sess_200',
+        expectedVersion: 1,
+        payload: {
+          checkpointId: 'cp_1',
+          updateText: 'Late update should be rejected',
+        },
+      },
+      now: new Date('2026-11-02T08:30:00.000Z'),
+    }),
+    (err) => {
+      assert.equal(err.code, 'checkpoint_window_expired');
+      assert.match(err.messageAr, /انتهت فترة السماح المحددة لنقطة المتابعة/);
+      return true;
+    }
+  );
+
+  // 2. Submitting cp_2 at 13:10 Cairo (11:10 UTC) which is within 13:00 + 15m grace window -> succeeds
+  const validReceipt = await executeRemoteSessionCommand({
+    db: harness.db,
+    admin: {},
+    actor,
+    command: {
+      operationId: 'op_update_valid',
+      kind: 'submit_update',
+      date: '2026-11-02',
+      sessionId: 'sess_200',
+      expectedVersion: 1,
+      payload: {
+        checkpointId: 'cp_2',
+        updateText: 'On time checkpoint update',
+      },
+    },
+    now: new Date('2026-11-02T11:10:00.000Z'),
+  });
+
+  assert.equal(validReceipt.status, 'recorded');
+  assert.equal(validReceipt.version, 2);
+
+  const updatedSession = await harness.read('remoteWorkSessions', 'zawolf_sess_200');
+  assert.equal(updatedSession.updates.length, 1);
+  assert.equal(updatedSession.updates[0].checkpointId, 'cp_2');
+
+  await harness.close();
+});
+

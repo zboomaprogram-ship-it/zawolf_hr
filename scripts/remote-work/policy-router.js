@@ -119,13 +119,19 @@ async function handleRemotePolicyRequest({ db, actor, method, path, query = {}, 
       });
     }
 
-    return evaluateRemoteEligibility({
+    const evalResult = evaluateRemoteEligibility({
       employee: empData,
       companyId: actor.companyId,
       policy,
       date,
       schedules,
     });
+
+    return {
+      ...evalResult,
+      checkpoints: Array.isArray(policy.schedule?.checkpoints) ? policy.schedule.checkpoints : [],
+      dailyWork: policy.dailyWork || {},
+    };
   }
 
   if (path === '/attendance/remote-work/policies/current' && method === 'GET') {

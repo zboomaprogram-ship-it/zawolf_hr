@@ -6,6 +6,7 @@ import '../../domain/entities/remote_work_models.dart';
 import '../../domain/repositories/remote_work_repository.dart';
 import '../cubit/remote_day_cubit.dart';
 import '../widgets/remote_attendance_status_card.dart';
+import '../widgets/remote_checkpoints_card.dart';
 
 class RemoteAttendancePage extends StatelessWidget {
   const RemoteAttendancePage({
@@ -106,6 +107,17 @@ class _RemoteAttendanceViewState extends State<_RemoteAttendanceView> {
     );
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('تم حفظ أهداف خطة اليوم بنجاح.')),
+    );
+  }
+
+  void _handleSubmitCheckpoint(BuildContext context, String checkpointId, String text, int slotIndex) {
+    context.read<RemoteDayCubit>().submitCheckpointUpdate(
+      checkpointId: checkpointId,
+      text: text,
+      slotIndex: slotIndex,
+    );
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('تم إرسال المتابعة بنجاح.')),
     );
   }
 
@@ -284,6 +296,14 @@ class _RemoteAttendanceViewState extends State<_RemoteAttendanceView> {
                               ),
                             ],
                           ),
+                        ),
+                        const SizedBox(height: 24),
+
+                        // Checkpoints Card
+                        RemoteCheckpointsCard(
+                          checkpoints: state.eligibility?.checkpoints ?? const [],
+                          completedUpdates: state.checkpointUpdates,
+                          onSubmit: (cpId, text, slot) => _handleSubmitCheckpoint(context, cpId, text, slot),
                         ),
                         const SizedBox(height: 24),
 

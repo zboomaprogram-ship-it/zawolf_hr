@@ -118,3 +118,102 @@ test('queueRemoteIncidentCoverage fanouts coverage and holds for active incident
   const inc = await harness.read('remoteWorkIncidents', 'inc_01');
   assert.equal(inc.fanoutStatus, 'completed');
 });
+
+test('queueRemoteWorkReminders escalates missed checkpoint to manager and HR after grace period', async () => {
+  const harness = await createRemoteHarness({
+    now: '2026-11-02T08:30:00.000Z', // 10:30 Cairo (past 10:15 deadline)
+    fixtures: {
+      'companies/zawolf': {
+        name: 'ZaWolf',
+        attendancePolicy: {
+          remoteWorkPolicy: {
+            enabled: true,
+            notifications: { enabled: true, quietHours: { enabled: false } },
+            schedule: {
+              checkpoints: [
+                { id: 'cp_morning', label: 'متابعة الصباح', dueTime: '10:00', graceMinutes: 15 },
+              ],
+            },
+          },
+        },
+      },
+      'users/u_emp': {
+        displayName: 'أحمد علي',
+        directManagerId: 'u_mgr',
+        isActive: true,
+      },
+      'users/u_mgr': {
+        displayName: 'مدير أحمد',
+        role: 'manager',
+        isActive: true,
+      },
+      'users/u_hr': {
+        displayName: 'مسؤول HR',
+        role: 'hr',
+        isActive: true,
+      },
+      'remoteWorkSchedules/sch_emp': {
+        companyId: 'zawolf',
+        employeeId: 'u_emp',
+        status: 'approved',
+      },
+      'attendance/u_emp_2026-11-02': {
+        userId: 'u_emp',
+        date: '2026-11-02',
+        checkInTime: '2026-11-02T07:00:00.000Z',
+        remoteSessionId: 'sess_emp_today',
+        attendanceMode: 'remote_web',
+      },
+      'remoteWorkSessions/zawolf_sess_emp_today': {
+        sessionId: 'sess_emp_today',
+        companyId: 'zawolf',
+        userId: 'u_emp',
+        date: '2026-11-02',
+        status: 'active',
+        updates: [], // No update submitted!
+      },
+    },
+  });
+
+  const scanResult = await queueRemoteWorkReminders({
+    db: harness.db,
+    admin: {},
+    now: new Date('2026-11-02T08:30:00.000Z'),
+  });
+
+  assert.equal(scanResult.queued, 1);
+
+  // Check escalation record
+  const esc = await harness.read('remoteWorkEscalations', 'missed_cp_u_emp_2026-11-02_cp_morning');
+  assert.equal(esc.userId, 'u_emp');
+  assert.equal(esc.checkpointId, 'cp_morning');
+  assert.equal(esc.managerId, 'u_mgr');
+
+  // Check Manager received notification
+  const mgrNotif = await harness.read(
+    'notifications/u_mgr/items',
+    'mgr_missed_cp_u_emp_2026-11-02_cp_morning'
+  );
+  assert.equal(mgrNotif.type, 'remote_missed_checkpoint');
+  assert.match(mgrNotif.title, /نقطة متابعة فائتة/);
+  assert.match(mgrNotif.body, /أحمد علي/);
+
+  // Check HR received notification
+  const hrNotif = await harness.read(
+    'notifications/u_hr/items',
+    'hr_missed_cp_u_emp_2026-11-02_cp_morning_u_hr'
+  );
+  assert.equal(hrNotif.type, 'remote_missed_checkpoint');
+  assert.match(hrNotif.title, /مخالفة دوام عن بُعد/);
+
+  // Second scan must be idempotent (no re-queuing)
+  const secondScan = await queueRemoteWorkReminders({
+    db: harness.db,
+    admin: {},
+    now: new Date('2026-11-02T08:35:00.000Z'),
+  });
+  assert.equal(secondScan.queued, 0);
+
+  await harness.close();
+});
+

@@ -63,6 +63,46 @@ async function executeRemoteSessionCommand({ db, admin, actor, command, now = ne
     if (text.length === 0 || text.length > updateTextLimit) {
       throw sessionError('invalid_update', `يجب إدخال تفاصيل التحديث الدوري بما لا يتجاوز ${updateTextLimit} حرف.`);
     }
+
+    let targetCheckpoint = null;
+    if (payload.checkpointId || Number.isInteger(payload.slotIndex)) {
+      let checkpoints = command.checkpoints || command.resolvedPolicy?.schedule?.checkpoints;
+      if (!Array.isArray(checkpoints)) {
+        const compSnap = await db.collection('companies').doc(companyId).get();
+        const compData = compSnap.exists ? (compSnap.data() || {}) : {};
+        checkpoints = compData.attendancePolicy?.remoteWorkPolicy?.schedule?.checkpoints || [];
+      }
+      if (Array.isArray(checkpoints)) {
+        targetCheckpoint = checkpoints.find((c) => c.id === payload.checkpointId) ||
+          (Number.isInteger(payload.slotIndex) && payload.slotIndex > 0 ? checkpoints[payload.slotIndex - 1] : null);
+      }
+    }
+
+    if (targetCheckpoint && targetCheckpoint.dueTime) {
+      const parts = String(targetCheckpoint.dueTime).split(':').map(Number);
+      if (parts.length >= 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
+        const dueMin = parts[0] * 60 + parts[1];
+        const graceMin = Number(targetCheckpoint.graceMinutes ?? 15);
+        const deadlineMin = dueMin + graceMin;
+
+        const cairoDate = new Intl.DateTimeFormat('en-US', {
+          timeZone: 'Africa/Cairo',
+          hour: 'numeric',
+          minute: 'numeric',
+          hourCycle: 'h23',
+        }).formatToParts(now);
+        const currentHour = Number(cairoDate.find((p) => p.type === 'hour')?.value ?? 0);
+        const currentMinute = Number(cairoDate.find((p) => p.type === 'minute')?.value ?? 0);
+        const nowMin = currentHour * 60 + currentMinute;
+
+        if (nowMin > deadlineMin) {
+          throw sessionError(
+            'checkpoint_window_expired',
+            `انتهت فترة السماح المحددة لنقطة المتابعة (${targetCheckpoint.label || targetCheckpoint.dueTime}) ولا يمكن تسجيلها بعد انتهاء الوقت.`
+          );
+        }
+      }
+    }
   } else if (kind === 'save_summary') {
     const summary = String(payload.summaryText || '').trim();
     if (summary.length === 0 || summary.length > summaryTextLimit) {
@@ -141,6 +181,7 @@ async function executeRemoteSessionCommand({ db, admin, actor, command, now = ne
         ...existingUpdates,
         {
           slotIndex: payload.slotIndex ?? (existingUpdates.length + 1),
+          checkpointId: payload.checkpointId || null,
           text: payload.updateText.trim(),
           submittedAt: now.toISOString(),
         },

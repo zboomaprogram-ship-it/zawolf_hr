@@ -136,6 +136,8 @@ final class RemoteEligibility {
     this.scheduleVersion,
     this.employeeEpoch,
     this.calendarEpoch,
+    this.checkpoints = const [],
+    this.dailyWork = const {},
   });
 
   final bool eligible;
@@ -146,6 +148,8 @@ final class RemoteEligibility {
   final int? scheduleVersion;
   final int? employeeEpoch;
   final int? calendarEpoch;
+  final List<Map<String, dynamic>> checkpoints;
+  final Map<String, dynamic> dailyWork;
 
   factory RemoteEligibility.fromMap(Map<String, dynamic> map) {
     return RemoteEligibility(
@@ -157,6 +161,14 @@ final class RemoteEligibility {
       scheduleVersion: (map['scheduleVersion'] as num?)?.toInt(),
       employeeEpoch: (map['employeeEpoch'] as num?)?.toInt(),
       calendarEpoch: (map['calendarEpoch'] as num?)?.toInt(),
+      checkpoints: (map['checkpoints'] as List?)
+              ?.whereType<Map>()
+              .map((e) => Map<String, dynamic>.from(e))
+              .toList() ??
+          const [],
+      dailyWork: map['dailyWork'] is Map
+          ? Map<String, dynamic>.from(map['dailyWork'] as Map)
+          : const {},
     );
   }
 }

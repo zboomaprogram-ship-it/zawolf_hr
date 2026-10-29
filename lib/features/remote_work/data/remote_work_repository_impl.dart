@@ -43,16 +43,11 @@ final class RemoteWorkRepositoryImpl implements RemoteWorkRepository {
         'date': dateKey,
       },
     );
-    return RemoteEligibility(
-      eligible: response['eligible'] == true,
-      reason: response['reason'] as String? ?? 'unknown',
-      date: dateKey,
-      weekStart: response['weekStart'] as String? ?? dateKey,
-      policyVersion: (response['policyVersion'] as num?)?.toInt(),
-      scheduleVersion: (response['scheduleVersion'] as num?)?.toInt(),
-      employeeEpoch: (response['employeeEpoch'] as num?)?.toInt(),
-      calendarEpoch: (response['calendarEpoch'] as num?)?.toInt(),
-    );
+    return RemoteEligibility.fromMap({
+      ...response,
+      'date': response['date'] ?? dateKey,
+      'weekStart': response['weekStart'] ?? dateKey,
+    });
   }
 
   @override

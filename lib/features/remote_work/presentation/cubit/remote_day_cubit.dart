@@ -3,60 +3,8 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../domain/entities/remote_work_models.dart';
 import '../../domain/repositories/remote_work_repository.dart';
 
-enum RemoteDayStatus {
-  initial,
-  loading,
-  eligible,
-  checkedIn,
-  checkedOut,
-  ineligible,
-  modeLocked,
-  error,
-}
-
-final class RemoteDayState {
-  const RemoteDayState({
-    this.status = RemoteDayStatus.initial,
-    this.eligibility,
-    this.receipt,
-    this.errorMessage,
-    this.goals = const [],
-    this.summary,
-    this.attendanceId,
-    this.sessionId,
-  });
-
-  final RemoteDayStatus status;
-  final RemoteEligibility? eligibility;
-  final RemoteReceipt? receipt;
-  final String? errorMessage;
-  final List<String> goals;
-  final String? summary;
-  final String? attendanceId;
-  final String? sessionId;
-
-  RemoteDayState copyWith({
-    RemoteDayStatus? status,
-    RemoteEligibility? eligibility,
-    RemoteReceipt? receipt,
-    String? errorMessage,
-    List<String>? goals,
-    String? summary,
-    String? attendanceId,
-    String? sessionId,
-  }) {
-    return RemoteDayState(
-      status: status ?? this.status,
-      eligibility: eligibility ?? this.eligibility,
-      receipt: receipt ?? this.receipt,
-      errorMessage: errorMessage ?? this.errorMessage,
-      goals: goals ?? this.goals,
-      summary: summary ?? this.summary,
-      attendanceId: attendanceId ?? this.attendanceId,
-      sessionId: sessionId ?? this.sessionId,
-    );
-  }
-}
+export 'remote_day_state.dart';
+import 'remote_day_state.dart';
 
 final class RemoteDayCubit extends Cubit<RemoteDayState> {
   RemoteDayCubit({required RemoteWorkRepository repository})
@@ -244,6 +192,31 @@ final class RemoteDayCubit extends Cubit<RemoteDayState> {
           errorMessage: 'تعذر حفظ ملخص الإنجاز. أعد المحاولة.',
         ),
       );
+    }
+  }
+
+  Future<void> submitCheckpointUpdate({
+    required String checkpointId,
+    required String text,
+    int? slotIndex,
+  }) async {
+    final sessionId = state.sessionId;
+    if (sessionId == null) return;
+    emit(state.copyWith(status: RemoteDayStatus.loading, errorMessage: null));
+    final command = RemoteCommand(
+      operationId: 'upd-$sessionId-$checkpointId-${DateTime.now().microsecondsSinceEpoch}',
+      kind: 'submit_update',
+      sessionId: sessionId,
+      payload: {'checkpointId': checkpointId, 'updateText': text, if (slotIndex != null) 'slotIndex': slotIndex},
+    );
+    try {
+      await _repository.submitSessionCommand(command);
+      final next = Map<String, String>.from(state.checkpointUpdates)..[checkpointId] = text;
+      emit(state.copyWith(status: RemoteDayStatus.checkedIn, checkpointUpdates: next));
+    } on RemoteWorkDomainException catch (e) {
+      emit(state.copyWith(status: RemoteDayStatus.checkedIn, errorMessage: e.messageAr));
+    } catch (_) {
+      emit(state.copyWith(status: RemoteDayStatus.checkedIn, errorMessage: 'تعذر إرسال المتابعة. تأكد من الوقت وحاول مجدداً.'));
     }
   }
 
