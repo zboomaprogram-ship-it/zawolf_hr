@@ -282,6 +282,15 @@ NavigationItem _myAttendance({
   domain: domain,
 );
 
+NavigationItem _remoteWorkItem() => NavigationItem(
+  icon: Icons.home_work_outlined,
+  activeIcon: Icons.home_work,
+  label: 'العمل عن بعد',
+  englishLabel: 'Remote Work',
+  path: '/employee/remote-attendance',
+  domain: NavDomain.time,
+);
+
 NavigationItem _myRequests() => NavigationItem(
   icon: Icons.assignment_outlined,
   activeIcon: Icons.assignment,
@@ -447,14 +456,7 @@ List<NavigationItem> _employeeItems() {
       domain: NavDomain.home,
     ),
     _myRequests(),
-    NavigationItem(
-      icon: Icons.home_work_outlined,
-      activeIcon: Icons.home_work,
-      label: 'العمل عن بعد',
-      englishLabel: 'Remote Work',
-      path: '/employee/remote-attendance',
-      domain: NavDomain.time,
-    ),
+    _remoteWorkItem(),
     _myTasks('مهامي'),
     NavigationItem(
       icon: Icons.bar_chart_outlined,
@@ -520,6 +522,7 @@ List<NavigationItem> _teamLeaderItems() {
       domain: NavDomain.home,
     ),
     _myAttendance(domain: NavDomain.time, label: 'سجل حضوري'),
+    _remoteWorkItem(),
     _myRequests(),
     NavigationItem(
       icon: Icons.people_outline,
@@ -563,6 +566,7 @@ List<NavigationItem> _managerItems() {
       domain: NavDomain.home,
     ),
     _myAttendance(domain: NavDomain.time, label: 'سجل حضوري'),
+    _remoteWorkItem(),
     _myRequests(),
     NavigationItem(
       icon: Icons.rule_outlined,
@@ -661,6 +665,7 @@ List<NavigationItem> _hrItems() {
       domain: NavDomain.home,
     ),
     _myAttendance(domain: NavDomain.time, label: 'سجل حضوري'),
+    _remoteWorkItem(),
     _myRequests(),
     NavigationItem(
       icon: Icons.rule_outlined,
@@ -807,6 +812,7 @@ List<NavigationItem> _superAdminItems() {
       domain: NavDomain.home,
     ),
     _myAttendance(domain: NavDomain.time, label: 'سجل حضوري'),
+    _remoteWorkItem(),
     _myRequests(),
     NavigationItem(
       icon: Icons.assignment_turned_in_outlined,
