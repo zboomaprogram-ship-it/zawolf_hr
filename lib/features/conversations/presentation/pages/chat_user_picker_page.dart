@@ -143,7 +143,11 @@ class ChatUserPickerPage extends StatelessWidget {
                                         locked.contains(user.id)
                                             ? null
                                             : (_) => cubit.toggle(user.id),
-                                    title: Text(user.name),
+                                    title: Text(
+                                      user.employeeId.isNotEmpty
+                                          ? '${user.name} (${user.employeeId})'
+                                          : user.name,
+                                    ),
                                     subtitle:
                                         user.department.isEmpty
                                             ? null

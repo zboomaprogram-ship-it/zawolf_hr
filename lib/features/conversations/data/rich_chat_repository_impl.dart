@@ -738,6 +738,7 @@ class RichChatRepositoryImpl implements RichChatRepository {
               id: '${u['id']}',
               name: '${u['name']}',
               department: '${u['department'] ?? ''}',
+              employeeId: '${u['employeeId'] ?? u['code'] ?? ''}',
             ),
           )
           .toList(),

@@ -76,11 +76,15 @@ class ChatDirectPickerCubit extends Cubit<ChatDirectPickerState> {
         _cachedAllContacts = page.items;
       }
       final q = trimmed.toLowerCase();
+      final nq = _normalizeSearch(trimmed);
       final filtered = _cachedAllContacts!
           .where(
             (u) =>
                 u.name.toLowerCase().contains(q) ||
+                _normalizeSearch(u.name).contains(nq) ||
+                u.employeeId.toLowerCase().contains(q) ||
                 u.department.toLowerCase().contains(q) ||
+                _normalizeSearch(u.department).contains(nq) ||
                 u.id.toLowerCase().contains(q),
           )
           .toList();
@@ -144,4 +148,14 @@ class ChatDirectPickerCubit extends Cubit<ChatDirectPickerState> {
       }
     }
   }
+}
+
+String _normalizeSearch(String text) {
+  return text
+      .toLowerCase()
+      .replaceAll(RegExp(r'[أإآ]'), 'ا')
+      .replaceAll('ة', 'ه')
+      .replaceAll('ى', 'ي')
+      .replaceAll('عبد ', 'عبد')
+      .trim();
 }

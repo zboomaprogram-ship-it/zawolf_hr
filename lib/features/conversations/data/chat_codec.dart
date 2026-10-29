@@ -93,6 +93,7 @@ ChatUser decodeUser(Map<String, Object?> v) => ChatUser(
   name: '${v['name'] ?? ''}',
   department: '${v['department'] ?? ''}',
   photoUrl: v['photoUrl'] as String?,
+  employeeId: '${v['employeeId'] ?? v['code'] ?? ''}',
 );
 ChatDepartment decodeDepartment(Map<String, Object?> v) => ChatDepartment(
   id: '${v['id'] ?? ''}',

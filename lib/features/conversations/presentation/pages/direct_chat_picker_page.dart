@@ -108,7 +108,11 @@ class _DirectChatPickerPageState extends State<DirectChatPickerPage> {
                                   name: user.name,
                                   photoUrl: user.photoUrl,
                                 ),
-                                title: Text(user.name),
+                                title: Text(
+                                  user.employeeId.isNotEmpty
+                                      ? '${user.name} (${user.employeeId})'
+                                      : user.name,
+                                ),
                                 subtitle: Text(
                                   user.department.isEmpty
                                       ? 'موظف'
@@ -155,7 +159,11 @@ class _DirectChatPickerPageState extends State<DirectChatPickerPage> {
                                   name: user.name,
                                   photoUrl: user.photoUrl,
                                 ),
-                                title: Text(user.name),
+                                title: Text(
+                                  user.employeeId.isNotEmpty
+                                      ? '${user.name} (${user.employeeId})'
+                                      : user.name,
+                                ),
                                 subtitle: Text(user.department),
                                 onTap: () => _start(context, user),
                               ),

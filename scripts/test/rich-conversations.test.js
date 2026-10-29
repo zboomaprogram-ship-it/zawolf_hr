@@ -405,6 +405,30 @@ test('eligible-contacts and contact-departments route through router without thr
   assert.equal(response.data.departments[0].name, 'Data Analytics');
 });
 
+test('functional employee titles like Project Manager are eligible for peer chat and include employeeId', async () => {
+  const {handleRichConversationRequest} = require('../conversations/router');
+  let response;
+  const db = seed({
+    'users/alice': { isActive: true, role: 'employee', department: 'R&D', displayName: 'أليس', employeeId: 'R&D-700' },
+    'users/lamei': { isActive: true, role: 'employee', position: 'Project Manager', department: 'R&D', displayName: 'عبدالله لمعي', employeeId: 'R&D-702' },
+  });
+  const sendJson = (_res, status, data) => { response = { status, data }; };
+  await handleRichConversationRequest({
+    req: { method: 'GET' },
+    res: {},
+    url: new URL('https://example.org/conversations/v2/eligible-contacts?department=R%26D'),
+    db,
+    actor: { uid: 'alice', role: 'employee', displayName: 'أليس' },
+    enabled: true,
+    sendJson,
+  });
+  assert.equal(response.status, 200);
+  assert.ok(Array.isArray(response.data.contacts));
+  assert.equal(response.data.contacts.length, 1);
+  assert.equal(response.data.contacts[0].id, 'lamei');
+  assert.equal(response.data.contacts[0].employeeId, 'R&D-702');
+});
+
 test('posting message to direct channel with encoded colon and admin object succeeds', async () => {
   const { handleRichConversationRequest } = require('../conversations/router');
   let response;

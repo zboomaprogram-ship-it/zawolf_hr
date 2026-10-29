@@ -110,8 +110,9 @@ class ChatUser {
     required this.name,
     this.department = '',
     this.photoUrl,
+    this.employeeId = '',
   });
-  final String id, name, department;
+  final String id, name, department, employeeId;
   final String? photoUrl;
 }
 

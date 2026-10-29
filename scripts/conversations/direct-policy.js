@@ -11,14 +11,17 @@ const isAdmin = user => ['super_admin', 'owner', 'admin', 'administrator'].inclu
 // administrative operations, which is broader than this contact policy.
 const isHr = user => ['hr', 'hr_admin', 'hr_manager'].includes(role(user));
 const jobTitle = user => String(user?.position || user?.jobTitle || '').trim();
-// "Account Manager" (and its Arabic equivalent) is a client-facing employee
-// title, not an organisational approval/management role. Treating any title
-// containing "manager" as an authority role hid Account Management employees
-// from normal employees' direct-chat picker.
-const isAccountManagementTitle = user => /\baccounts?\s*(?:manager|management|executive)\b|(?:مدير\s*حساب|إدارة\s*الحسابات)/i.test(jobTitle(user));
+// Functional titles containing "manager" (e.g. Project Manager, Product Manager,
+// Account Manager, Social Media Manager, Brand Manager, Community Manager, Campaign Manager)
+// are specialized or client-facing roles held by employees, not organizational managers.
+// Treating any title with "manager" as an authority role prevented peer employees
+// from finding or messaging employees in the direct-chat picker.
+const isNonAdministrativeManagerTitle = user =>
+  /\b(?:accounts?|project|product|brand|community|campaign|social\s*media|content|media|studio|case|office)\s*(?:manager|management|executive)\b|(?:مدير\s*(?:حساب|مشروع|منتج|حملة|محتوى|علامة|مجتمع|مكتب)|إدارة\s*الحسابات)/i.test(jobTitle(user));
 const isManager = user => {
   if (['manager', 'general_manager', 'gm', 'ceo', 'coo'].includes(role(user)) || user?.isManager === true) return true;
-  if (isAccountManagementTitle(user)) return false;
+  if (isNonAdministrativeManagerTitle(user)) return false;
+  if (role(user) === 'employee') return false;
   return /(?:^|\s)(?:general\s+|department\s+|team\s+)?manager(?:\s|$)|(?:مدير\s*(?:عام|قسم|إدارة)|قائد\s*فريق)/i.test(jobTitle(user));
 };
 const isIt = user => /^(it|information technology)$/i.test(department(user)) || /\bit\b|تقنية المعلومات|تكنولوجيا المعلومات/i.test(`${user?.position || ''} ${user?.jobTitle || ''}`);

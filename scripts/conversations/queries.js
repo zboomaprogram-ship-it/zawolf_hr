@@ -175,10 +175,13 @@ async function channelSummary({db, actor, channel}) {
   return { channel: channelDto(channel, actor, 0, directName(channel, actor, names)) };
 }
 function userDto(doc, eligibilityReason) {
-  const data = doc.data();
+  const data = doc.data ? doc.data() : doc;
+  const employeeId = data.employeeId || data.employeeCode || '';
   return {
     id: doc.id,
     name: data.displayName || data.name || data.employeeName || doc.id,
+    employeeId,
+    code: employeeId,
     department: P.department(data),
     // The current user profile is authoritative. It is never copied into a
     // message record, so replacement/deletion applies across chat instantly.
@@ -245,12 +248,18 @@ async function users({db, params}) {
   if (q.length > 120) C.fail('validation_failed');
   const docs = await pageById(db.collection('users').where('isActive', '==', true), params.get('cursor'), 100).get();
   return {
-    users: docs.docs.map(doc => ({
-      id: doc.id,
-      name: doc.data().displayName || doc.data().name || doc.data().employeeName || doc.id,
-      department: doc.data().department || '',
-      photoUrl: typeof doc.data().photoURL === 'string' ? doc.data().photoURL : null,
-    })).filter(user => !q || `${user.name} ${user.department}`.toLocaleLowerCase().includes(q)),
+    users: docs.docs.map(doc => {
+      const data = doc.data() || {};
+      const empId = data.employeeId || data.employeeCode || '';
+      return {
+        id: doc.id,
+        name: data.displayName || data.name || data.employeeName || doc.id,
+        employeeId: empId,
+        code: empId,
+        department: data.department || '',
+        photoUrl: typeof data.photoURL === 'string' ? data.photoURL : null,
+      };
+    }).filter(user => !q || `${user.name} ${user.department} ${user.employeeId}`.toLocaleLowerCase().includes(q)),
     nextCursor: docs.size === 100 ? docs.docs.at(-1).id : null,
   };
 }
