@@ -89,6 +89,14 @@ import 'company_os_it_entry.dart';
 import 'company_os_operations_entry.dart';
 import 'company_os_requests_entry.dart';
 import 'company_os_organization_entry.dart';
+import '../features/request_workspace/presentation/pages/requests_hub_page.dart';
+import '../features/request_workspace/presentation/pages/request_detail_page.dart';
+import '../features/request_workspace/presentation/cubits/request_queue_cubit.dart';
+import '../features/request_workspace/presentation/cubits/request_browse_cubit.dart';
+import '../features/request_workspace/presentation/cubits/request_detail_cubit.dart';
+import '../features/request_workspace/data/request_repository_impl.dart';
+import '../features/request_visibility/data/request_visibility_repository.dart';
+import '../features/request_visibility/data/firestore_request_visibility_data_source.dart';
 import '../theme/theme.dart';
 
 class ZaWolfRouter {
@@ -446,6 +454,52 @@ class ZaWolfRouter {
                     canDecide:
                         authService.currentUser?.role != EmployeeRole.employee,
                   ),
+            ),
+            GoRoute(
+              path: '/requests',
+              builder: (context, state) {
+                final actorId = authService.currentUser?.uid ?? '';
+                const companyId = 'zawolf';
+                final repo = RequestRepositoryImpl(
+                  visibilityRepository: RequestVisibilityRepositoryImpl(
+                    FirestoreRequestVisibilityDataSource(),
+                  ),
+                );
+                return MultiBlocProvider(
+                  providers: [
+                    BlocProvider(create: (_) => RequestQueueCubit(repository: repo)),
+                    BlocProvider(create: (_) => RequestBrowseCubit(repository: repo)),
+                    BlocProvider(create: (_) => RequestDetailCubit(repository: repo)),
+                  ],
+                  child: RequestsHubPage(
+                    actorId: actorId,
+                    companyId: companyId,
+                    initialTabIndex: int.tryParse(state.uri.queryParameters['tab'] ?? '0') ?? 0,
+                  ),
+                );
+              },
+            ),
+            GoRoute(
+              path: '/requests/:collection/:requestId',
+              builder: (context, state) {
+                final actorId = authService.currentUser?.uid ?? '';
+                final collection = state.pathParameters['collection'] ?? 'leaves';
+                final requestId = state.pathParameters['requestId'] ?? '';
+                final repo = RequestRepositoryImpl(
+                  visibilityRepository: RequestVisibilityRepositoryImpl(
+                    FirestoreRequestVisibilityDataSource(),
+                  ),
+                );
+                return BlocProvider(
+                  create: (_) => RequestDetailCubit(repository: repo)
+                    ..loadDetail(collection: collection, requestId: requestId),
+                  child: RequestDetailPage(
+                    collection: collection,
+                    requestId: requestId,
+                    actorId: actorId,
+                  ),
+                );
+              },
             ),
             GoRoute(
               path: '/employee/tasks',

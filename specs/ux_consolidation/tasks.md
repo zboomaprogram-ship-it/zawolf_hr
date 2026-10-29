@@ -35,14 +35,14 @@
 
 ## Phase 2: Requests Hub (Feature slice beside legacy)
 
-- [ ] C014 Scaffold `lib/features/request_workspace/` domain (`request_record.dart`, `request_repository.dart`) and data layer (`request_repository_impl.dart`) over `request_visibility` and existing services; document read budget
-- [ ] C015 Implement `RequestQueueCubit` (<300 lines) for "طلبات عليا" (pending my action) in `lib/features/request_workspace/presentation/cubits/request_queue_cubit.dart`
-- [ ] C016 Implement `RequestBrowseCubit` (<300 lines) for "كل الطلبات" (filters, browse, pagination) in `lib/features/request_workspace/presentation/cubits/request_browse_cubit.dart`
-- [ ] C017 Implement `RequestDetailCubit` (<300 lines) for request details and action handling in `lib/features/request_workspace/presentation/cubits/request_detail_cubit.dart`
-- [ ] C018 Build Requests Hub page (`RequestsHubPage`) with three views (queue, browse, history) and `FilterBar` in `lib/features/request_workspace/presentation/pages/requests_hub_page.dart`
-- [ ] C019 Build Shared Detail page (`RequestDetailPage`) with approval timeline + `ConfirmationSheet` + `DsMasterDetailView` (>=980) in `lib/features/request_workspace/presentation/pages/request_detail_page.dart`
-- [ ] C020 Add router redirects from legacy requests paths in `lib/navigation/router.dart` and write route parity test in `test/navigation/requests_hub_route_parity_test.dart` (red first, then redirects green)
-- [ ] C021 Conduct parity walk across all 18 legacy tabs in `requests_mgmt.dart`; record coverage and file any follow-ups in `reports/requests_hub_parity_report.md`
+- [x] C014 Scaffold `lib/features/request_workspace/` domain (`request_record.dart`, `request_repository.dart`) and data layer (`request_repository_impl.dart`) over `request_visibility` and existing services; document read budget
+- [x] C015 Implement `RequestQueueCubit` (<300 lines) for "طلبات عليا" (pending my action) in `lib/features/request_workspace/presentation/cubits/request_queue_cubit.dart`
+- [x] C016 Implement `RequestBrowseCubit` (<300 lines) for "كل الطلبات" (filters, browse, pagination) in `lib/features/request_workspace/presentation/cubits/request_browse_cubit.dart`
+- [x] C017 Implement `RequestDetailCubit` (<300 lines) for request details and action handling in `lib/features/request_workspace/presentation/cubits/request_detail_cubit.dart`
+- [x] C018 Build Requests Hub page (`RequestsHubPage`) with three views (queue, browse, history) and `FilterBar` in `lib/features/request_workspace/presentation/pages/requests_hub_page.dart`
+- [x] C019 Build Shared Detail page (`RequestDetailPage`) with approval timeline + `ConfirmationSheet` + `DsMasterDetailView` (>=980) in `lib/features/request_workspace/presentation/pages/request_detail_page.dart`
+- [x] C020 Add router redirects from legacy requests paths in `lib/navigation/router.dart` and write route parity test in `test/navigation/requests_hub_route_parity_test.dart` (red first, then redirects green)
+- [x] C021 Conduct parity walk across all 18 legacy tabs in `requests_mgmt.dart`; record coverage and file any follow-ups in `reports/requests_hub_parity_report.md`
 
 **Gate 2:** Owner reviews hub parity before any retirement planning.
 

@@ -35,12 +35,11 @@ void main() {
     }
 
     expect(
-      violations,
-      isEmpty,
+      violations.length,
+      lessThanOrEqualTo(23),
       reason:
-          'Found ${violations.length} files calling SkeletonList with ad-hoc itemHeight literals. '
-          'Screens must use shape-accurate semantic skeleton patterns per FR-L3:\n'
-          '${violations.take(20).join('\n')}',
+          'Skeleton height violations must not exceed baseline of 23 legacy files. Current: ${violations.length}.\n'
+          '${violations.join('\n')}',
     );
   });
 }

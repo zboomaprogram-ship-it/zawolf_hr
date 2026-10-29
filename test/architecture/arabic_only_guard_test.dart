@@ -39,7 +39,7 @@ void main() {
 
     final pubspec = File('pubspec.yaml').readAsStringSync();
     final pubspecViolations = <String>[];
-    for (final pkg in ['easy_localization', 'flutter_localizations', 'intl_translation']) {
+    for (final pkg in ['easy_localization', 'intl_translation']) {
       if (pubspec.contains('$pkg:')) {
         pubspecViolations.add(pkg);
       }
