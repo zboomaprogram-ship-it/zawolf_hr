@@ -71,3 +71,33 @@ test('active account without company membership or a scoped grant is rejected', 
     (error) => error.code === 'wrong_company',
   );
 });
+
+test('admin account bootstraps capabilities when live Firestore collection supports document writes', async () => {
+  const written = {};
+  const query = {
+    where() { return this; },
+    limit() { return this; },
+    async get() { return { docs: [] }; },
+    doc(id) {
+      return {
+        async set(data) {
+          written[id] = data;
+        },
+      };
+    },
+  };
+  const db = {
+    collection(name) {
+      if (name === 'users') return { doc: () => ({ get: async () => ({ exists: true, data: () => ({ isActive: true, role: 'hr_admin' }) }) }) };
+      if (name === 'remoteWorkCapabilityGrants') return query;
+      throw new Error(`unexpected collection ${name}`);
+    },
+  };
+  const result = await resolveActorScope({ db, identity: { uid: 'admin_1' }, requestedCompanyId: 'zawolf', now: new Date('2026-10-29T12:00:00Z') });
+  assert.equal(result.companyId, 'zawolf');
+  assert.ok(result.capabilities.includes('manage_policy_drafts'));
+  assert.ok(result.capabilities.includes('approve_policy'));
+  assert.ok(result.capabilities.includes('publish_policy'));
+  assert.ok(written['bootstrap_zawolf_admin_1']);
+});
+

@@ -512,9 +512,13 @@ class _AttendancePolicySettingsScreenState
         effectiveFrom: _policyEffectiveFrom,
       );
       if (draftReceipt == null) {
-        throw const RemotePolicyException(
+        final failureMessage = (editor.state is RemotePolicyEditorReady)
+            ? (editor.state as RemotePolicyEditorReady).message
+            : null;
+        throw RemotePolicyException(
           'policy_draft_failed',
-          'تعذر حفظ مسودة السياسة. تحقق من صلاحية إدارة سياسة الدوام ثم أعد المحاولة.',
+          failureMessage ??
+              'تعذر حفظ مسودة السياسة. تحقق من صلاحية إدارة سياسة الدوام ثم أعد المحاولة.',
         );
       }
       _remoteDraftVersion = draftReceipt.version;
@@ -523,6 +527,7 @@ class _AttendancePolicySettingsScreenState
       final db = FirebaseFirestore.instance;
       final batch = db.batch();
       batch.set(db.collection('companies').doc('zawolf'), {
+        'attendancePolicy': policy.toMap(),
         'securityPolicy': securityPolicy.toMap(),
         'updatedAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));

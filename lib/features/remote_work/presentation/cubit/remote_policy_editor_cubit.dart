@@ -113,18 +113,29 @@ final class RemotePolicyEditorCubit extends Cubit<RemotePolicyEditorState> {
   void edit(RemotePolicyAggregate aggregate) {
     if (isClosed) return;
     final current = state;
-    if (current is! RemotePolicyEditorReady) return;
     _editRevision++;
-    emit(
-      RemotePolicyEditorReady(
-        aggregate: aggregate,
-        schema: current.schema,
-        draftId: current.draftId,
-        draftVersion: current.draftVersion,
-        dirty: true,
-        effectiveFrom: current.effectiveFrom,
-      ),
-    );
+    if (current is RemotePolicyEditorReady) {
+      emit(
+        RemotePolicyEditorReady(
+          aggregate: aggregate,
+          schema: current.schema,
+          draftId: current.draftId,
+          draftVersion: current.draftVersion,
+          dirty: true,
+          effectiveFrom: current.effectiveFrom,
+        ),
+      );
+    } else {
+      emit(
+        RemotePolicyEditorReady(
+          aggregate: aggregate,
+          schema: const {},
+          draftId: _draftId,
+          draftVersion: 0,
+          dirty: true,
+        ),
+      );
+    }
   }
 
   Future<RemotePolicyCommandReceipt?> saveDraft({
@@ -172,18 +183,25 @@ final class RemotePolicyEditorCubit extends Cubit<RemotePolicyEditorState> {
       return receipt;
     } catch (error) {
       if (isClosed || generation != _generation) return null;
-      final latest = state as RemotePolicyEditorReady;
-      emit(
-        RemotePolicyEditorReady(
-          aggregate: latest.aggregate,
-          schema: current.schema,
-          draftId: current.draftId,
-          draftVersion: current.draftVersion,
-          dirty: true,
-          message: error.toString(),
-          effectiveFrom: latest.effectiveFrom,
-        ),
-      );
+      final errorMessage = error is RemotePolicyException
+          ? error.message
+          : (error is Exception
+              ? error.toString().replaceFirst('Exception: ', '')
+              : error.toString());
+      if (state is RemotePolicyEditorReady) {
+        final latest = state as RemotePolicyEditorReady;
+        emit(
+          RemotePolicyEditorReady(
+            aggregate: latest.aggregate,
+            schema: current.schema,
+            draftId: current.draftId,
+            draftVersion: current.draftVersion,
+            dirty: true,
+            message: errorMessage,
+            effectiveFrom: latest.effectiveFrom,
+          ),
+        );
+      }
       return null;
     } finally {
       _saving = false;
