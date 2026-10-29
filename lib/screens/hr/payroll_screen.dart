@@ -13,6 +13,7 @@ import '../../services/sheets_export_service.dart';
 import '../../theme/theme.dart';
 import '../../utils/payroll_cycle.dart';
 import '../../design_system/components/rtl_navigation.dart';
+import '../../design_system/components/skeletons.dart';
 import 'widgets/payroll_pre_audit_dialog.dart';
 
 class PayrollScreen extends StatefulWidget {
@@ -337,8 +338,11 @@ class _PayrollScreenState extends State<PayrollScreen> {
               stream: _payrollService.watchPayrollRuns(_monthKey),
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(
-                    child: CircularProgressIndicator(color: ZaWolfColors.primaryCyan),
+                  return ListView.separated(
+                    padding: const EdgeInsets.all(16),
+                    itemCount: 5,
+                    separatorBuilder: (_, __) => const SizedBox(height: 8),
+                    itemBuilder: (_, __) => const SkeletonEmployeeRow(),
                   );
                 }
 

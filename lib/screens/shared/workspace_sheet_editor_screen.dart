@@ -10,7 +10,8 @@ import '../../models/company_workspace_models.dart';
 import '../../services/google_workspace_service.dart';
 import '../../utils/user_facing_error.dart';
 import '../../theme/theme.dart';
-import '../../design_system/components/skeletons.dart' show SkeletonList;
+import '../../design_system/components/skeletons.dart'
+    show SkeletonTableRows;
 
 /// Audited spreadsheet editor. Google IDs remain on the server and every
 /// mutation is sent through the ZaWolf permission/audit gateway.
@@ -893,7 +894,7 @@ class _WorkspaceSheetEditorScreenState
           body: _loading
               ? const Padding(
                   padding: EdgeInsets.all(16),
-                  child: SkeletonList(itemCount: 6, itemHeight: 40),
+                  child: SkeletonTableRows(rowCount: 6),
                 )
               : sheet == null
               ? _errorPanel()

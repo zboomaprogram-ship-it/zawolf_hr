@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../design_system/components/skeletons.dart';
 import '../domain/hiring_request_repository.dart';
 
 class HiringRequestScreen extends StatefulWidget {
@@ -640,7 +641,12 @@ class _HiringRequestScreenState extends State<HiringRequestScreen> {
             future: _future,
             builder: (context, snapshot) {
               if (snapshot.connectionState != ConnectionState.done) {
-                return const Center(child: CircularProgressIndicator());
+                return ListView.separated(
+                  padding: const EdgeInsets.all(16),
+                  itemCount: 4,
+                  separatorBuilder: (_, __) => const SizedBox(height: 8),
+                  itemBuilder: (_, __) => const SkeletonEmployeeRow(),
+                );
               }
               if (snapshot.hasError) {
                 return Center(child: Text('${snapshot.error}'));

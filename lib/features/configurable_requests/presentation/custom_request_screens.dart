@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../../theme/theme.dart';
+import '../../../design_system/components/skeletons.dart';
 
 import '../domain/configurable_requests_repository.dart';
 
@@ -335,7 +336,12 @@ class _CustomRequestTypesScreenState extends State<CustomRequestTypesScreen> {
             foregroundColor: ZaWolfColors.background,
           ),
           body: _loading
-              ? const Center(child: CircularProgressIndicator())
+              ? ListView.separated(
+                  padding: const EdgeInsets.all(16),
+                  itemCount: 4,
+                  separatorBuilder: (_, __) => const SizedBox(height: 8),
+                  itemBuilder: (_, __) => const SkeletonEmployeeRow(),
+                )
               : _mySubmittedRequests.isEmpty
                   ? Center(
                       child: Column(
@@ -562,7 +568,10 @@ class _CustomRequestSubmissionScreenState
       appBar: AppBar(title: const Text('طلب مخصص')),
       body:
           _loading
-              ? const Center(child: CircularProgressIndicator())
+              ? const Padding(
+                  padding: EdgeInsets.all(16),
+                  child: SkeletonDetailPane(),
+                )
               : ListView(
                 padding: const EdgeInsets.all(16),
                 children: [
@@ -693,7 +702,12 @@ class _CustomRequestQueueScreenState extends State<CustomRequestQueueScreen> {
   Widget build(BuildContext context) {
     final body =
         _loading
-            ? const Center(child: CircularProgressIndicator())
+            ? ListView.separated(
+                padding: const EdgeInsets.all(16),
+                itemCount: 4,
+                separatorBuilder: (_, __) => const SizedBox(height: 8),
+                itemBuilder: (_, __) => const SkeletonEmployeeRow(),
+              )
             : _items.isEmpty
             ? Center(
               child: Text(

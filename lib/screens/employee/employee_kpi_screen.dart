@@ -9,6 +9,7 @@ import '../../services/kpi_service.dart';
 import '../../theme/theme.dart';
 import '../../utils/payroll_cycle.dart';
 import '../../design_system/components/rtl_navigation.dart';
+import '../../design_system/components/skeletons.dart';
 
 class EmployeeKpiScreen extends StatelessWidget {
   const EmployeeKpiScreen({super.key});
@@ -21,8 +22,11 @@ class EmployeeKpiScreen extends StatelessWidget {
 
     if (user == null) {
       return const Scaffold(
-        body: Center(
-          child: CircularProgressIndicator(color: ZaWolfColors.primaryCyan),
+        body: SafeArea(
+          child: Padding(
+            padding: EdgeInsets.all(16),
+            child: SkeletonDetailPane(),
+          ),
         ),
       );
     }
@@ -51,8 +55,11 @@ class EmployeeKpiScreen extends StatelessWidget {
               stream: KpiService().watchMyKpis(user, monthKey),
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(
-                    child: CircularProgressIndicator(color: ZaWolfColors.primaryCyan),
+                  return ListView.separated(
+                    padding: const EdgeInsets.all(16),
+                    itemCount: 4,
+                    separatorBuilder: (_, __) => const SizedBox(height: 12),
+                    itemBuilder: (_, __) => const SkeletonStatCard(),
                   );
                 }
                 final records = snapshot.data ?? [];

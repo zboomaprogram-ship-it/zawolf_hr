@@ -14,7 +14,8 @@ import '../../core/feature_flags/phase007_feature_flags.dart';
 import '../../design_system/components/feedback_states.dart'
     show EmptyState, ErrorState;
 import '../../design_system/components/rtl_navigation.dart';
-import '../../design_system/components/skeletons.dart' show SkeletonList;
+import '../../design_system/components/skeletons.dart'
+    show SkeletonEmployeeRow, SkeletonStatCard, SkeletonDetailPane;
 
 class AttendanceSummaryDetailsScreen extends StatefulWidget {
   const AttendanceSummaryDetailsScreen({
@@ -78,11 +79,12 @@ class _AttendanceSummaryDetailsScreenState
         ),
         body:
             user == null
-                ? const Center(
-                  child: CircularProgressIndicator(
-                    color: ZaWolfColors.primaryCyan,
-                  ),
-                )
+                ? const SafeArea(
+                    child: Padding(
+                      padding: EdgeInsets.all(16),
+                      child: SkeletonDetailPane(),
+                    ),
+                  )
                 : widget.initialStatus != null
                 ? _TodayCategoryDetails(
                   service: _service,
@@ -104,9 +106,11 @@ class _AttendanceSummaryDetailsScreenState
                       );
                     }
                     if (!snapshot.hasData) {
-                      return const Padding(
-                        padding: EdgeInsets.all(16),
-                        child: SkeletonList(itemCount: 5, itemHeight: 120),
+                      return ListView.separated(
+                        padding: const EdgeInsets.all(16),
+                        itemCount: 5,
+                        separatorBuilder: (_, __) => const SizedBox(height: 12),
+                        itemBuilder: (_, __) => const SkeletonStatCard(),
                       );
                     }
 
@@ -281,9 +285,11 @@ class _DayDetailsSheet extends StatelessWidget {
                     );
                   }
                   if (!snapshot.hasData) {
-                    return const Padding(
-                      padding: EdgeInsets.all(16),
-                      child: SkeletonList(itemCount: 4, itemHeight: 96),
+                    return ListView.separated(
+                      padding: const EdgeInsets.all(16),
+                      itemCount: 4,
+                      separatorBuilder: (_, __) => const SizedBox(height: 8),
+                      itemBuilder: (_, __) => const SkeletonEmployeeRow(),
                     );
                   }
 
@@ -568,9 +574,11 @@ class _TodayCategoryDetails extends StatelessWidget {
           return const ErrorState(message: 'تعذر تحميل تفاصيل الحضور.');
         }
         if (!snapshot.hasData) {
-          return const Padding(
-            padding: EdgeInsets.all(16),
-            child: SkeletonList(itemCount: 4, itemHeight: 84),
+          return ListView.separated(
+            padding: const EdgeInsets.all(16),
+            itemCount: 4,
+            separatorBuilder: (_, __) => const SizedBox(height: 8),
+            itemBuilder: (_, __) => const SkeletonEmployeeRow(),
           );
         }
         final people =

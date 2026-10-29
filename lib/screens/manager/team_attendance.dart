@@ -12,7 +12,8 @@ import '../../components/wolf_card.dart';
 import '../../core/feature_flags/phase007_feature_flags.dart';
 import '../../core/feature_flags/remote_phase007_feature_flags.dart';
 import '../../design_system/components/feedback_states.dart' show EmptyState;
-import '../../design_system/components/skeletons.dart' show SkeletonList;
+import '../../design_system/components/skeletons.dart'
+    show SkeletonAttendanceRow, SkeletonDetailPane;
 
 class TeamAttendanceScreen extends StatefulWidget {
   const TeamAttendanceScreen({super.key});
@@ -176,8 +177,11 @@ class _TeamAttendanceScreenState extends State<TeamAttendanceScreen> {
 
     if (manager == null) {
       return const Scaffold(
-        body: Center(
-          child: CircularProgressIndicator(color: ZaWolfColors.primaryCyan),
+        body: SafeArea(
+          child: Padding(
+            padding: EdgeInsets.all(16),
+            child: SkeletonDetailPane(),
+          ),
         ),
       );
     }
@@ -270,9 +274,11 @@ class _TeamAttendanceScreenState extends State<TeamAttendanceScreen> {
                   ),
                   builder: (context, snapshot) {
                     if (snapshot.connectionState == ConnectionState.waiting) {
-                      return const Padding(
-                        padding: EdgeInsets.all(16),
-                        child: SkeletonList(itemCount: 6, itemHeight: 84),
+                      return ListView.separated(
+                        padding: const EdgeInsets.all(16),
+                        itemCount: 6,
+                        separatorBuilder: (_, __) => const SizedBox(height: 8),
+                        itemBuilder: (_, __) => const SkeletonAttendanceRow(),
                       );
                     }
 

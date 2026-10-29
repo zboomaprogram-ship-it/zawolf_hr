@@ -6,6 +6,7 @@ import 'package:image_picker/image_picker.dart';
 import 'dart:convert';
 import 'dart:ui' as ui;
 import '../../theme/theme.dart';
+import '../../design_system/components/skeletons.dart';
 import '../../components/wolf_card.dart';
 import '../../components/wolf_button.dart';
 import '../../components/wolf_input_field.dart';
@@ -515,7 +516,14 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
     final theme = Theme.of(context);
 
     if (user == null) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+      return const Scaffold(
+        body: SafeArea(
+          child: Padding(
+            padding: EdgeInsets.all(16),
+            child: SkeletonDetailPane(),
+          ),
+        ),
+      );
     }
 
     final joinDateStr =

@@ -31,7 +31,8 @@ import '../../services/role_notification_service.dart';
 import '../../models/employee_deletion_request.dart';
 import '../../services/employee_deletion_request_service.dart';
 import '../../design_system/components/feedback_states.dart' show EmptyState;
-import '../../design_system/components/skeletons.dart' show SkeletonList;
+import '../../design_system/components/skeletons.dart'
+    show SkeletonEmployeeRow;
 import '../../features/profile_images/presentation/employee_avatar.dart';
 
 List<DropdownMenuItem<String>> _roleMenuItems({
@@ -1100,9 +1101,11 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
               stream: _employeesStream,
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Padding(
-                    padding: EdgeInsets.all(16),
-                    child: SkeletonList(itemCount: 6, itemHeight: 88),
+                  return ListView.separated(
+                    padding: const EdgeInsets.all(16),
+                    itemCount: 6,
+                    separatorBuilder: (_, __) => const SizedBox(height: 8),
+                    itemBuilder: (_, __) => const SkeletonEmployeeRow(),
                   );
                 }
 

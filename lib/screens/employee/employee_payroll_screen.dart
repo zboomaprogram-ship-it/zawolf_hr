@@ -8,7 +8,8 @@ import '../../services/payroll_service.dart';
 import '../../theme/theme.dart';
 import '../../utils/payroll_cycle.dart';
 import '../../design_system/components/rtl_navigation.dart';
-import '../../design_system/components/skeletons.dart' show SkeletonList;
+import '../../design_system/components/skeletons.dart'
+    show SkeletonStatCard, SkeletonDetailPane;
 
 class EmployeePayrollScreen extends StatefulWidget {
   const EmployeePayrollScreen({super.key});
@@ -64,8 +65,11 @@ class _EmployeePayrollScreenState extends State<EmployeePayrollScreen> {
 
     if (user == null) {
       return const Scaffold(
-        body: Center(
-          child: CircularProgressIndicator(color: ZaWolfColors.primaryCyan),
+        body: SafeArea(
+          child: Padding(
+            padding: EdgeInsets.all(16),
+            child: SkeletonDetailPane(),
+          ),
         ),
       );
     }
@@ -120,9 +124,11 @@ class _EmployeePayrollScreenState extends State<EmployeePayrollScreen> {
               stream: PayrollService().watchMyPayroll(user.uid, _monthKey),
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Padding(
-                    padding: EdgeInsets.all(24),
-                    child: SkeletonList(itemCount: 4, itemHeight: 110),
+                  return ListView.separated(
+                    padding: const EdgeInsets.all(24),
+                    itemCount: 4,
+                    separatorBuilder: (_, __) => const SizedBox(height: 12),
+                    itemBuilder: (_, __) => const SkeletonStatCard(),
                   );
                 }
                 final run = snapshot.data;

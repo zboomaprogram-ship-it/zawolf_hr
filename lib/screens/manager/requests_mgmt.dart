@@ -46,6 +46,7 @@ import '../../components/wolf_button.dart';
 import '../../components/request_approval_timeline.dart';
 import '../../design_system/components/confirmation_sheet.dart';
 import '../../design_system/components/data_presentations.dart';
+import '../../design_system/components/skeletons.dart';
 import '../../features/configurable_requests/data/configurable_requests_repository_impl.dart';
 import '../../features/configurable_requests/presentation/custom_request_screens.dart';
 import '../../design_system/bidi.dart';
@@ -3188,13 +3189,9 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
                           }
                           if (snapshot.connectionState ==
                               ConnectionState.waiting) {
-                            return const Center(
-                              child: Padding(
-                                padding: EdgeInsets.all(32),
-                                child: CircularProgressIndicator(
-                                  color: ZaWolfColors.primaryCyan,
-                                ),
-                              ),
+                            return const Padding(
+                              padding: EdgeInsets.all(16),
+                              child: SkeletonDetailPane(),
                             );
                           }
                           if (!snapshot.hasData || !snapshot.data!.exists) {
@@ -3913,8 +3910,11 @@ class _RequestsManagementScreenState extends State<RequestsManagementScreen> {
 
     if (manager == null) {
       return const Scaffold(
-        body: Center(
-          child: CircularProgressIndicator(color: ZaWolfColors.primaryCyan),
+        body: SafeArea(
+          child: Padding(
+            padding: EdgeInsets.all(16),
+            child: SkeletonDetailPane(),
+          ),
         ),
       );
     }
@@ -10112,19 +10112,11 @@ class _RequestLoadingStateState extends State<_RequestLoadingState> {
         ),
       );
     }
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const CircularProgressIndicator(color: ZaWolfColors.primaryCyan),
-          const SizedBox(height: 12),
-          Text(
-            widget.label,
-            textDirection: TextDirection.rtl,
-            style: const TextStyle(color: ZaWolfColors.textSecondary),
-          ),
-        ],
-      ),
+    return ListView.separated(
+      padding: const EdgeInsets.all(16),
+      itemCount: 4,
+      separatorBuilder: (_, __) => const SizedBox(height: 8),
+      itemBuilder: (_, __) => const SkeletonEmployeeRow(),
     );
   }
 }

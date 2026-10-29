@@ -1466,7 +1466,14 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
     final theme = Theme.of(context);
 
     if (user == null) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+      return const Scaffold(
+        body: SafeArea(
+          child: Padding(
+            padding: EdgeInsets.all(16),
+            child: SkeletonDetailPane(),
+          ),
+        ),
+      );
     }
 
     return Directionality(
@@ -3812,8 +3819,9 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
         ),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(
-              child: CircularProgressIndicator(color: ZaWolfColors.primaryCyan),
+            return const Padding(
+              padding: EdgeInsets.symmetric(vertical: 8),
+              child: SkeletonAttendanceRow(),
             );
           }
           final records = snapshot.data ?? const <AttendanceModel>[];
@@ -5762,9 +5770,11 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
   }
 
   Widget _buildHistoryLoading() {
-    return const Padding(
-      padding: EdgeInsets.all(16),
-      child: SkeletonList(itemCount: 4, itemHeight: 88),
+    return ListView.separated(
+      padding: const EdgeInsets.all(16),
+      itemCount: 4,
+      separatorBuilder: (_, __) => const SizedBox(height: 8),
+      itemBuilder: (_, __) => const SkeletonEmployeeRow(),
     );
   }
 

@@ -8,7 +8,8 @@ import '../../services/auth_service.dart';
 import '../../services/task_service.dart';
 import '../../theme/theme.dart';
 import '../../design_system/components/rtl_navigation.dart';
-import '../../design_system/components/skeletons.dart' show SkeletonList;
+import '../../design_system/components/skeletons.dart'
+    show SkeletonEmployeeRow;
 
 class EmployeeTasksScreen extends StatefulWidget {
   // Legacy fallback retained while work_outcomes_v2 is piloted and reversible.
@@ -35,10 +36,12 @@ class _EmployeeTasksScreenState extends State<EmployeeTasksScreen> {
     final theme = Theme.of(context);
 
     if (user == null) {
-      return const Scaffold(
-        body: Padding(
-          padding: EdgeInsets.all(16),
-          child: SkeletonList(itemCount: 4, itemHeight: 96),
+      return Scaffold(
+        body: ListView.separated(
+          padding: const EdgeInsets.all(16),
+          itemCount: 4,
+          separatorBuilder: (_, __) => const SizedBox(height: 8),
+          itemBuilder: (_, __) => const SkeletonEmployeeRow(),
         ),
       );
     }
@@ -66,8 +69,11 @@ class _EmployeeTasksScreenState extends State<EmployeeTasksScreen> {
               stream: taskService.watchMyTasks(user.uid),
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(
-                    child: CircularProgressIndicator(color: ZaWolfColors.primaryCyan),
+                  return ListView.separated(
+                    padding: const EdgeInsets.all(16),
+                    itemCount: 4,
+                    separatorBuilder: (_, __) => const SizedBox(height: 8),
+                    itemBuilder: (_, __) => const SkeletonEmployeeRow(),
                   );
                 }
                 final tasks = snapshot.data ?? [];

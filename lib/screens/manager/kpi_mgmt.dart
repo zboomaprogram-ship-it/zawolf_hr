@@ -23,7 +23,8 @@ import '../../theme/theme.dart';
 import '../../utils/user_facing_error.dart';
 import '../../utils/payroll_cycle.dart';
 import '../../design_system/components/rtl_navigation.dart';
-import '../../design_system/components/skeletons.dart' show SkeletonList;
+import '../../design_system/components/skeletons.dart'
+    show SkeletonEmployeeRow, SkeletonStatCard, SkeletonDetailPane;
 import '../../design_system/components/feedback_states.dart' show EmptyState;
 
 class KpiManagementScreen extends StatefulWidget {
@@ -44,8 +45,11 @@ class _KpiManagementScreenState extends State<KpiManagementScreen> {
 
     if (reviewer == null) {
       return const Scaffold(
-        body: Center(
-          child: CircularProgressIndicator(color: ZaWolfColors.primaryCyan),
+        body: SafeArea(
+          child: Padding(
+            padding: EdgeInsets.all(16),
+            child: SkeletonDetailPane(),
+          ),
         ),
       );
     }
@@ -185,9 +189,11 @@ class _ProviderDashboardTabState extends State<_ProviderDashboardTab> {
           final current = snapshot.data;
           if (current == null &&
               snapshot.connectionState == ConnectionState.waiting) {
-            return const Padding(
-              padding: EdgeInsets.all(16),
-              child: SkeletonList(itemCount: 4, itemHeight: 88),
+            return ListView.separated(
+              padding: const EdgeInsets.all(16),
+              itemCount: 4,
+              separatorBuilder: (_, __) => const SizedBox(height: 12),
+              itemBuilder: (_, __) => const SkeletonStatCard(),
             );
           }
           final legacy = current?.filters;
@@ -223,9 +229,11 @@ class _ProviderDashboardTabState extends State<_ProviderDashboardTab> {
       ),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Padding(
-            padding: EdgeInsets.all(16),
-            child: SkeletonList(itemCount: 5, itemHeight: 88),
+          return ListView.separated(
+            padding: const EdgeInsets.all(16),
+            itemCount: 5,
+            separatorBuilder: (_, __) => const SizedBox(height: 8),
+            itemBuilder: (_, __) => const SkeletonEmployeeRow(),
           );
         }
         final providerRecords = (snapshot.data ?? [])
@@ -239,9 +247,11 @@ class _ProviderDashboardTabState extends State<_ProviderDashboardTab> {
           builder: (context, summarySnapshot) {
             if (summarySnapshot.connectionState == ConnectionState.waiting &&
                 !summarySnapshot.hasData) {
-              return const Padding(
-                padding: EdgeInsets.all(16),
-                child: SkeletonList(itemCount: 3, itemHeight: 96),
+              return ListView.separated(
+                padding: const EdgeInsets.all(16),
+                itemCount: 3,
+                separatorBuilder: (_, __) => const SizedBox(height: 12),
+                itemBuilder: (_, __) => const SkeletonStatCard(),
               );
             }
             return _buildDashboard(
@@ -686,9 +696,11 @@ class _EmployeeKpiTabState extends State<_EmployeeKpiTab> {
       ),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Padding(
-            padding: EdgeInsets.all(16),
-            child: SkeletonList(itemCount: 5, itemHeight: 88),
+          return ListView.separated(
+            padding: const EdgeInsets.all(16),
+            itemCount: 5,
+            separatorBuilder: (_, __) => const SizedBox(height: 8),
+            itemBuilder: (_, __) => const SkeletonEmployeeRow(),
           );
         }
         var records = snapshot.data ?? [];
@@ -1096,9 +1108,11 @@ class _TemplatesTab extends StatelessWidget {
       stream: kpiService.watchTemplates(includeInactive: true),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Padding(
-            padding: EdgeInsets.all(16),
-            child: SkeletonList(itemCount: 4, itemHeight: 80),
+          return ListView.separated(
+            padding: const EdgeInsets.all(16),
+            itemCount: 4,
+            separatorBuilder: (_, __) => const SizedBox(height: 8),
+            itemBuilder: (_, __) => const SkeletonEmployeeRow(),
           );
         }
         final templates = snapshot.data ?? [];
@@ -1652,7 +1666,13 @@ class _AssignKpiSheetState extends State<_AssignKpiSheet> {
               builder: (context, snapshot) {
                 final employees = snapshot.data ?? [];
                 if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(child: CircularProgressIndicator());
+                  return ListView.separated(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    itemCount: 3,
+                    separatorBuilder: (_, __) => const SizedBox(height: 8),
+                    itemBuilder: (_, __) => const SkeletonEmployeeRow(),
+                  );
                 }
                 return Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,

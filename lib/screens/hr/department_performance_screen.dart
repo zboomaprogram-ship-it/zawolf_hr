@@ -20,7 +20,8 @@ import '../../utils/payroll_cycle.dart';
 import '../shared/productivity_score_details_sheet.dart';
 import '../shared/performance_report_export_dialog.dart';
 import '../../design_system/components/rtl_navigation.dart';
-import '../../design_system/components/skeletons.dart' show SkeletonList;
+import '../../design_system/components/skeletons.dart'
+    show SkeletonEmployeeRow, SkeletonDetailPane;
 
 class DepartmentPerformanceData {
   final String departmentName;
@@ -188,9 +189,11 @@ class _DepartmentPerformanceScreenState
     final theme = Theme.of(context);
     if (reviewer == null) {
       return const Scaffold(
-        body: Padding(
-          padding: EdgeInsets.all(16),
-          child: SkeletonList(itemCount: 5, itemHeight: 96),
+        body: SafeArea(
+          child: Padding(
+            padding: EdgeInsets.all(16),
+            child: SkeletonDetailPane(),
+          ),
         ),
       );
     }
@@ -301,8 +304,11 @@ class _DepartmentPerformanceScreenState
       stream: _service.watchRanking(reviewer, _monthKey),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(
-            child: CircularProgressIndicator(color: ZaWolfColors.primaryCyan),
+          return ListView.separated(
+            padding: const EdgeInsets.all(16),
+            itemCount: 5,
+            separatorBuilder: (_, __) => const SizedBox(height: 8),
+            itemBuilder: (_, __) => const SkeletonEmployeeRow(),
           );
         }
         if (snapshot.hasError) {
@@ -657,8 +663,11 @@ class _DepartmentPerformanceScreenState
       future: _organizationFuture,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(
-            child: CircularProgressIndicator(color: ZaWolfColors.primaryCyan),
+          return ListView.separated(
+            padding: const EdgeInsets.all(16),
+            itemCount: 5,
+            separatorBuilder: (_, __) => const SizedBox(height: 8),
+            itemBuilder: (_, __) => const SkeletonEmployeeRow(),
           );
         }
         if (snapshot.hasError) {
@@ -724,8 +733,11 @@ class _OrganizationChart extends StatelessWidget {
       ]),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(
-            child: CircularProgressIndicator(color: ZaWolfColors.primaryCyan),
+          return ListView.separated(
+            padding: const EdgeInsets.all(16),
+            itemCount: 5,
+            separatorBuilder: (_, __) => const SizedBox(height: 8),
+            itemBuilder: (_, __) => const SkeletonEmployeeRow(),
           );
         }
         final values = snapshot.data;

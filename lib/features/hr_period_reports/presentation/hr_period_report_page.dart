@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart' hide TextDirection;
 
 import '../../../components/wolf_card.dart';
+import '../../../design_system/components/skeletons.dart';
 import '../../../theme/theme.dart';
 import '../domain/hr_period_report.dart';
 import 'hr_period_report_cubit.dart';
@@ -1407,8 +1408,8 @@ class _LoadingReport extends StatelessWidget {
   @override
   Widget build(BuildContext context) => const WolfCard(
     child: Padding(
-      padding: EdgeInsets.all(40),
-      child: Center(child: CircularProgressIndicator()),
+      padding: EdgeInsets.all(24),
+      child: SkeletonDetailPane(),
     ),
   );
 }

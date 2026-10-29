@@ -17,7 +17,8 @@ import '../../utils/csv_file_download.dart';
 import '../../utils/payroll_cycle.dart';
 import '../../design_system/components/feedback_states.dart'
     show EmptyState, ErrorState;
-import '../../design_system/components/skeletons.dart' show SkeletonList;
+import '../../design_system/components/skeletons.dart'
+    show SkeletonEmployeeRow;
 
 class RequestsLogScreen extends StatefulWidget {
   const RequestsLogScreen({super.key});
@@ -192,9 +193,11 @@ class _RequestsLogScreenState extends State<RequestsLogScreen> {
         future: _logsFuture,
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Padding(
-              padding: EdgeInsets.all(16),
-              child: SkeletonList(itemCount: 5, itemHeight: 96),
+            return ListView.separated(
+              padding: const EdgeInsets.all(16),
+              itemCount: 5,
+              separatorBuilder: (_, __) => const SizedBox(height: 8),
+              itemBuilder: (_, __) => const SkeletonEmployeeRow(),
             );
           }
           if (snapshot.hasError) {

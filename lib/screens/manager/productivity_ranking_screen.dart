@@ -12,7 +12,8 @@ import '../../utils/payroll_cycle.dart';
 import '../shared/productivity_score_details_sheet.dart';
 import '../../design_system/components/feedback_states.dart'
     show EmptyState;
-import '../../design_system/components/skeletons.dart' show SkeletonList;
+import '../../design_system/components/skeletons.dart'
+    show SkeletonEmployeeRow, SkeletonDetailPane;
 import '../../design_system/components/rtl_navigation.dart';
 
 class ProductivityRankingScreen extends StatefulWidget {
@@ -116,8 +117,11 @@ class _ProductivityRankingScreenState extends State<ProductivityRankingScreen> {
     final theme = Theme.of(context);
     if (reviewer == null) {
       return const Scaffold(
-        body: Center(
-          child: CircularProgressIndicator(color: ZaWolfColors.primaryCyan),
+        body: SafeArea(
+          child: Padding(
+            padding: EdgeInsets.all(16),
+            child: SkeletonDetailPane(),
+          ),
         ),
       );
     }
@@ -154,9 +158,11 @@ class _ProductivityRankingScreenState extends State<ProductivityRankingScreen> {
           stream: _service.watchRanking(reviewer, _monthKey),
           builder: (context, snapshot) {
             if (snapshot.connectionState == ConnectionState.waiting) {
-              return const Padding(
-                padding: EdgeInsets.all(16),
-                child: SkeletonList(itemCount: 6, itemHeight: 84),
+              return ListView.separated(
+                padding: const EdgeInsets.all(16),
+                itemCount: 6,
+                separatorBuilder: (_, __) => const SizedBox(height: 8),
+                itemBuilder: (_, __) => const SkeletonEmployeeRow(),
               );
             }
             if (snapshot.hasError) {

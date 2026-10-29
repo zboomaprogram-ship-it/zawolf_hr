@@ -15,7 +15,8 @@ import '../../design_system/tokens.dart';
 import '../../design_system/components/feedback_states.dart'
     show EmptyState, ErrorState;
 import '../../design_system/components/rtl_navigation.dart';
-import '../../design_system/components/skeletons.dart' show SkeletonList;
+import '../../design_system/components/skeletons.dart'
+    show SkeletonAttendanceRow, SkeletonDetailPane;
 import '../../design_system/components/status_pill.dart';
 import 'widgets/employee_quick_action.dart' show attendanceStatusToDsStatus;
 
@@ -119,8 +120,11 @@ class _EmployeeAttendanceHistoryScreenState
 
     if (user == null) {
       return const Scaffold(
-        body: Center(
-          child: CircularProgressIndicator(color: ZaWolfColors.primaryCyan),
+        body: SafeArea(
+          child: Padding(
+            padding: EdgeInsets.all(16),
+            child: SkeletonDetailPane(),
+          ),
         ),
       );
     }
@@ -175,9 +179,13 @@ class _EmployeeAttendanceHistoryScreenState
                         _buildFilterChips(),
                         const SizedBox(height: DsSpacing.lg),
                         if (_isLoadingSummary && _periodSummary == null)
-                          const Padding(
-                            padding: EdgeInsets.all(DsSpacing.xl),
-                            child: SkeletonList(itemCount: 5, itemHeight: 80),
+                          ListView.separated(
+                            shrinkWrap: true,
+                            physics: const NeverScrollableScrollPhysics(),
+                            padding: const EdgeInsets.symmetric(vertical: DsSpacing.md),
+                            itemCount: 5,
+                            separatorBuilder: (_, __) => const SizedBox(height: 8),
+                            itemBuilder: (_, __) => const SkeletonAttendanceRow(),
                           )
                         else if (_errorMessage != null && _periodSummary == null)
                           ErrorState(

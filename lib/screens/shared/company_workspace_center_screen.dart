@@ -18,7 +18,8 @@ import '../../utils/user_facing_error.dart';
 import '../../utils/workspace_csv_import.dart';
 import 'workspace_sheet_editor_screen.dart';
 import 'workspace_folder_browser_screen.dart';
-import '../../design_system/components/skeletons.dart' show SkeletonList;
+import '../../design_system/components/skeletons.dart'
+    show SkeletonDetailPane;
 
 class CompanyWorkspaceCenterScreen extends StatefulWidget {
   const CompanyWorkspaceCenterScreen({super.key});
@@ -984,9 +985,11 @@ class _CompanyWorkspaceCenterScreenState
     final user = context.watch<AuthService>().currentUser;
     if (user == null) {
       return const Scaffold(
-        body: Padding(
-          padding: EdgeInsets.all(16),
-          child: SkeletonList(itemCount: 4, itemHeight: 88),
+        body: SafeArea(
+          child: Padding(
+            padding: EdgeInsets.all(16),
+            child: SkeletonDetailPane(),
+          ),
         ),
       );
     }

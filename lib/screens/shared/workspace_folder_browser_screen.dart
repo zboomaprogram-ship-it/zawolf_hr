@@ -9,7 +9,8 @@ import '../../utils/binary_file_action.dart';
 import '../../utils/user_facing_error.dart';
 import 'workspace_sheet_editor_screen.dart';
 import '../../design_system/components/rtl_navigation.dart';
-import '../../design_system/components/skeletons.dart' show SkeletonList;
+import '../../design_system/components/skeletons.dart'
+    show SkeletonEmployeeRow;
 
 /// Folder-first company Drive browser. It requests children only after the
 /// folder is opened, keeping the workspace landing page fast and uncluttered.
@@ -170,10 +171,12 @@ class _WorkspaceFolderBrowserScreenState
         ],
       ),
       body: _loading
-          ? const Padding(
-            padding: EdgeInsets.all(16),
-            child: SkeletonList(itemCount: 5, itemHeight: 72),
-          )
+          ? ListView.separated(
+              padding: const EdgeInsets.all(16),
+              itemCount: 5,
+              separatorBuilder: (_, __) => const SizedBox(height: 8),
+              itemBuilder: (_, __) => const SkeletonEmployeeRow(),
+            )
           : _error != null
           ? Center(
               child: Padding(

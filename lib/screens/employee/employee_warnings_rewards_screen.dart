@@ -8,7 +8,8 @@ import '../../models/warning_reward_model.dart';
 import '../../services/auth_service.dart';
 import '../../services/warning_reward_service.dart';
 import '../../theme/theme.dart';
-import '../../design_system/components/skeletons.dart' show SkeletonList;
+import '../../design_system/components/skeletons.dart'
+    show SkeletonEmployeeRow;
 
 class EmployeeWarningsRewardsScreen extends StatelessWidget {
   const EmployeeWarningsRewardsScreen({super.key});
@@ -18,10 +19,12 @@ class EmployeeWarningsRewardsScreen extends StatelessWidget {
     final user = context.watch<AuthService>().currentUser;
     final theme = Theme.of(context);
     if (user == null) {
-      return const Scaffold(
-        body: Padding(
-          padding: EdgeInsets.all(16),
-          child: SkeletonList(itemCount: 5, itemHeight: 84),
+      return Scaffold(
+        body: ListView.separated(
+          padding: const EdgeInsets.all(16),
+          itemCount: 5,
+          separatorBuilder: (_, __) => const SizedBox(height: 8),
+          itemBuilder: (_, __) => const SkeletonEmployeeRow(),
         ),
       );
     }
@@ -40,8 +43,11 @@ class EmployeeWarningsRewardsScreen extends StatelessWidget {
         stream: WarningRewardService().watchMyRecords(user.uid),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(
-              child: CircularProgressIndicator(color: ZaWolfColors.primaryCyan),
+            return ListView.separated(
+              padding: const EdgeInsets.all(16),
+              itemCount: 5,
+              separatorBuilder: (_, __) => const SizedBox(height: 8),
+              itemBuilder: (_, __) => const SkeletonEmployeeRow(),
             );
           }
           final records = snapshot.data ?? [];

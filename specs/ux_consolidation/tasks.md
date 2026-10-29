@@ -52,14 +52,14 @@
 
 *Each increment bundles: skeleton patterns, stale-while-refresh, error surfacing (FR-S2), pull-to-refresh (FR-S3), Wolf* component swaps (FR-C), token color replacement (FR-C), and icon labels (FR-A1).*
 
-- [ ] C022 Migrate Requests family screens in `lib/screens/requests/` and `lib/features/request_workspace/` (bundle sweep)
-- [ ] C023 Migrate Attendance family screens in `lib/screens/attendance/` and `lib/features/remote_work/` (bundle sweep, presentation only, no payroll/attendance behavior change)
-- [ ] C024 Migrate People & Employees screens in `lib/screens/employee/` and `lib/screens/hr/employees/` (bundle sweep)
-- [ ] C025 Migrate Performance & KPI screens in `lib/screens/kpi/` and `lib/screens/performance/` (bundle sweep)
-- [ ] C026 Migrate Payroll & Reports screens in `lib/screens/payroll/` and `lib/screens/reports/` (bundle sweep, no business behavior change)
-- [ ] C027 Migrate Workspace & Company OS screens in `lib/screens/company_os/` and `lib/screens/workspace/` (bundle sweep)
-- [ ] C028 Migrate Auth-adjacent & Profile screens in `lib/screens/auth/` and `lib/screens/profile/` (bundle sweep)
-- [ ] C029 Maintain per-increment evidence log with exact grep counts and test runs in `reports/ux_consolidation_increments_log.md`
+- [x] C022 Migrate Requests family screens in `lib/screens/requests/` and `lib/features/request_workspace/` (bundle sweep)
+- [x] C023 Migrate Attendance family screens in `lib/screens/attendance/` and `lib/features/remote_work/` (bundle sweep, presentation only, no payroll/attendance behavior change)
+- [x] C024 Migrate People & Employees screens in `lib/screens/employee/` and `lib/screens/hr/employees/` (bundle sweep)
+- [x] C025 Migrate Performance & KPI screens in `lib/screens/kpi/` and `lib/screens/performance/` (bundle sweep)
+- [x] C026 Migrate Payroll & Reports screens in `lib/screens/payroll/` and `lib/screens/reports/` (bundle sweep, no business behavior change)
+- [x] C027 Migrate Workspace & Company OS screens in `lib/screens/company_os/` and `lib/screens/workspace/` (bundle sweep)
+- [x] C028 Migrate Auth-adjacent & Profile screens in `lib/screens/auth/` and `lib/screens/profile/` (bundle sweep)
+- [x] C029 Maintain per-increment evidence log with exact grep counts and test runs in `reports/ux_consolidation_increments_log.md`
 
 ---
 

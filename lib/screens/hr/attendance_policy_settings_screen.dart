@@ -6,6 +6,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../components/wolf_card.dart';
 import '../../components/wolf_input_field.dart';
+import '../../design_system/components/skeletons.dart';
 import '../../models/attendance_policy.dart';
 import '../../models/chat_policy.dart';
 import '../../models/request_approval_policy.dart';
@@ -1748,8 +1749,11 @@ class _AttendancePolicySettingsScreenState
         ),
       ),
       body: _loading
-          ? const Center(
-              child: CircularProgressIndicator(color: ZaWolfColors.primaryCyan),
+          ? const SafeArea(
+              child: Padding(
+                padding: EdgeInsets.all(16),
+                child: SkeletonDetailPane(),
+              ),
             )
           : Form(
               key: _formKey,
