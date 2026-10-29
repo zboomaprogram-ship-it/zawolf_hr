@@ -8,14 +8,14 @@
 
 ## Phase 0: Inventory & Baseline Guards
 
-- [ ] C001 Run loading-adoption inventory: grep and record exact counts of spinners (`CircularProgressIndicator`, `LinearProgressIndicator`) and ad-hoc `SkeletonList(itemHeight: ...)` → `reports/loading_adoption_inventory.md`
-- [ ] C002 Extend `reports/loading_adoption_inventory.md` with per-screen columns: error-surface, pull-to-refresh, icon-action labeling, component adoption (`Wolf*` vs raw), and color-token violations
-- [ ] C003 Walk navigation config vs six-domain IA and document leftovers → `reports/grouping_leftovers.md`
-- [ ] C004 Write spinner-allowlist guard test in `test/design_system/spinner_allowlist_guard_test.dart` (red on current baseline)
-- [ ] C005 Write hand-tuned skeleton height guard test in `test/design_system/skeleton_height_guard_test.dart` (red on current baseline)
-- [ ] C006 Write silent-catch guard test in `test/architecture/silent_catch_guard_test.dart` (fails on unhandled presentation catch blocks)
-- [ ] C007 Write icon-action labeling guard test in `test/design_system/icon_action_labeling_guard_test.dart` (fails on `IconButton` missing tooltip and Semantics)
-- [ ] C008 Write Arabic-only / closed-i18n guard test in `test/architecture/arabic_only_guard_test.dart` (fails on localization packages or imports)
+- [x] C001 Run loading-adoption inventory: grep and record exact counts of spinners (`CircularProgressIndicator`, `LinearProgressIndicator`) and ad-hoc `SkeletonList(itemHeight: ...)` → `reports/loading_adoption_inventory.md`
+- [x] C002 Extend `reports/loading_adoption_inventory.md` with per-screen columns: error-surface, pull-to-refresh, icon-action labeling, component adoption (`Wolf*` vs raw), and color-token violations
+- [x] C003 Walk navigation config vs six-domain IA and document leftovers → `reports/grouping_leftovers.md`
+- [x] C004 Write spinner-allowlist guard test in `test/design_system/spinner_allowlist_guard_test.dart` (red on current baseline)
+- [x] C005 Write hand-tuned skeleton height guard test in `test/design_system/skeleton_height_guard_test.dart` (red on current baseline)
+- [x] C006 Write silent-catch guard test in `test/architecture/silent_catch_guard_test.dart` (fails on unhandled presentation catch blocks)
+- [x] C007 Write icon-action labeling guard test in `test/design_system/icon_action_labeling_guard_test.dart` (fails on `IconButton` missing tooltip and Semantics)
+- [x] C008 Write Arabic-only / closed-i18n guard test in `test/architecture/arabic_only_guard_test.dart` (fails on localization packages or imports)
 - [ ] C009 Confirm with owner: searchable entity list for v1 global search (requests, employees, tasks, notifications, conversations proposed)
 
 **Gate 0:** Owner reviews inventory + grouping leftovers + search scope; baseline guards activated.
